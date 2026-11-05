@@ -24,8 +24,6 @@ backups.manage
 operations.read
 operations.cancel
 events.subscribe
-activity.read
-diagnostics.read
 settings.read
 settings.manage
 unity.hub.open
@@ -198,7 +196,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
   UI-only extension 可不请求它；Portable UI session 也不产生隐式 background lease。
 - client capability/metadata、GUI identity、session ID、guest-session-id 与 InvocationContextId 都不是授权凭据。
 
-## M7 Official GUI settings/activity/diagnostics
+## M7 Official GUI settings
 
 - `settings.read` 只允许读取 当前 Config Schema 7 的规范化公开设置；不允许直接读取文件、extension-owned
   data 或未来 updater/MCP/Discord/migration setting。
@@ -208,10 +206,5 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
   但不授权读取该程序内容或任意文件。Editor 发现仍单独要求 `unity.manage`。全局默认启动参数更新（含清除和空数组）同时要求 `unity.manage`；
   Hub-only 更新不受该额外要求影响。窗口 `rememberState` 开关仅要求既有 settings 权限，不需 unity.manage；
   它不授权任意窗口几何、文件或数据库写入。
-- `activity.read` 只允许读取现有 durable Event/Operation 的 closed user-facing projection；不返回 payload、
-  request/result JSON、技术日志、路径、credential 或 extension value。
-- `diagnostics.read` 只允许读取 Operation failure 与 safe Event evidence 的 bounded redacted projection；不
-  授权 raw log export、argv/env、SQL、Debug/backtrace、路径或 Portable UI payload，且默认不授予外部
-  Principal。
-- `settings.get`、`settings.update`、`activity.list`、`diagnostics.list` 是 base RPC v1 compatible additions；
-  不新建 capability，也不能把 client metadata 当作上述 permission。
+- 日志与活动权限已随2026-11-05所有者批准的整套系统删除撤销；不再提供 `activity.read`、`diagnostics.read` 或对应读取接口。普通任务和Event读取保留自身权限。
+- `settings.get`、`settings.update` 保持base RPC v1，不把client metadata当作permission。

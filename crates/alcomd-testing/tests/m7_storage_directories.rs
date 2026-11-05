@@ -105,7 +105,7 @@ impl UnityHubLauncher for UnusedHub {
 }
 
 struct ConfiguredDirectory {
-    settings: M7OfficialApplication<StateStoreHandle>,
+    settings: M7OfficialApplication,
     unavailable: AtomicBool,
     reads: AtomicUsize,
 }
@@ -197,7 +197,6 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         fixture.0.join("data/config/settings.toml"),
     ));
     let settings = M7OfficialApplication::new(
-        store.clone(),
         config.clone(),
         Arc::new(UnusedHub),
         Arc::new(UnusedHub),

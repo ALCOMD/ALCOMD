@@ -116,7 +116,8 @@ pub(super) fn create_template_plan(
         return Err(error(M5TemplateErrorCode::InvalidInput));
     }
     let plan_id = PlanId::new();
-    connection
+    let transaction = connection.transaction().map_err(failure)?;
+    transaction
         .execute(
             "INSERT INTO template_plans (
                 plan_id,owner_principal_id,kind,state,plan_fingerprint,plan_json,created_at_ms
@@ -131,7 +132,18 @@ pub(super) fn create_template_plan(
             ],
         )
         .map_err(failure)?;
-    load_plan(connection, owner, plan_id)
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        plan_id,
+        operation_kind(draft.kind),
+        None,
+        created_at_ms,
+    )
+    .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?;
+    let record = load_plan(&transaction, owner, plan_id)?;
+    transaction.commit().map_err(failure)?;
+    Ok(record)
 }
 
 pub(super) fn get_template_plan(
@@ -193,8 +205,6 @@ pub(super) fn accept_template_plan(
             ],
         )
         .map_err(failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE template_plans SET state='applied',apply_operation_id=?1
@@ -481,7 +491,6 @@ pub(super) fn complete_template_apply(
         completed_at_ms,
     )?;
     transaction.commit().map_err(failure)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = operation_kind(plan.kind), template_id = %published.record.template_id, "operation completed");
     Ok(())
 }
 
@@ -652,7 +661,6 @@ pub(super) fn complete_template_project_create(
     )?;
     test_template_kill_gate("project_registry_commit_intent")?;
     transaction.commit().map_err(failure)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = "templates.create-project", project_id = %project.project_id, "operation completed");
     test_template_kill_gate("state_committed")
 }
 
@@ -848,6 +856,16 @@ pub(super) fn set_template_favorite(
         next,
         now_ms,
     )?;
+    if current.favorite != favorite {
+        log_template(
+            &transaction,
+            owner,
+            &record,
+            "templates.favorite",
+            if favorite { "favorited" } else { "unfavorited" },
+            now_ms,
+        )?;
+    }
     save_response(
         &transaction,
         owner,
@@ -888,15 +906,6 @@ pub(super) fn remove_template(
     if current.revision != expected {
         return Err(error(M5TemplateErrorCode::TemplateRevisionConflict));
     }
-    super::activity::resource(
-        &transaction,
-        owner,
-        "template.remove",
-        "template",
-        &template_id.to_string(),
-        now_ms,
-    )
-    .map_err(failure)?;
     transaction
         .execute(
             "DELETE FROM templates WHERE template_id=?1 AND owner_principal_id=?2 AND revision=?3",
@@ -914,6 +923,14 @@ pub(super) fn remove_template(
         "template.removed",
         template_id,
         next,
+        now_ms,
+    )?;
+    log_template(
+        &transaction,
+        owner,
+        &current,
+        "templates.remove",
+        "unregistered",
         now_ms,
     )?;
     save_response(
@@ -1103,15 +1120,6 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
-    super::activity::resource_event(
-        transaction,
-        owner,
-        kind,
-        "template",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(failure)?;
     Ok(())
 }
 
@@ -1139,6 +1147,17 @@ fn insert_operation_event(
             ],
         )
         .map_err(failure)?;
+    super::operation_logs::operation_edge(
+        transaction,
+        owner,
+        operation_id,
+        kind,
+        "{}",
+        integer(now_ms)?,
+    )
+    .map_err(|error| {
+        M5TemplateError::new(M5TemplateErrorCode::StoreUnavailable).with_source(error)
+    })?;
     Ok(())
 }
 
@@ -1252,6 +1271,40 @@ fn operation_kind(value: TemplatePlanKind) -> &'static str {
         TemplatePlanKind::Derive => "templates.derive",
         TemplatePlanKind::CreateProject => "templates.create-project",
     }
+}
+
+fn log_template(
+    connection: &Connection,
+    owner: &PrincipalId,
+    record: &StoredTemplateRecord,
+    action: &str,
+    step: &str,
+    now_ms: u64,
+) -> Result<(), M5TemplateError> {
+    let name = serde_json::from_str::<serde_json::Value>(&record.manifest_json)
+        .ok()
+        .and_then(|manifest| {
+            manifest
+                .get("displayName")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        });
+    let path = std::path::Path::new(&record.payload_locator)
+        .is_absolute()
+        .then(|| record.payload_locator.clone());
+    let target = alcomd_application::LogTarget {
+        kind: "template".to_owned(),
+        id: Some(record.template_id.to_string()),
+        name,
+        path,
+    };
+    super::operation_logs::committed(
+        connection,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(action, step, Some(target)),
+    )
+    .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))
 }
 
 fn digest(bytes: Vec<u8>) -> rusqlite::Result<[u8; 32]> {

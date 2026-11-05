@@ -6,7 +6,6 @@ type ReviewContext = {
     plan: TemplatePlan;
     templateId: string;
     displayName: string;
-    templateVersion: string;
 };
 
 export type TemplateReview = ReviewContext & (
@@ -45,16 +44,16 @@ export function reviewTemplateImport(plan: TemplatePlan, inspection: TemplateBun
         && (replacing ? validHash(plan.oldBundleSha256) && plan.oldBundleSha256 === existing.bundleSha256 : plan.oldBundleSha256 === null)
         && validHash(plan.newBundleSha256) && plan.newBundleSha256 === inspection.bundleSha256
         && validHash(plan.manifestFingerprint) && plan.manifestFingerprint === inspection.manifestFingerprint);
-    return { plan, action: replacing ? "override" : "import", templateId: inspection.templateId, displayName: inspection.displayName, templateVersion: inspection.templateVersion, expectedRevision: plan.expectedRevision as number, replacing };
+    return { plan, action: replacing ? "override" : "import", templateId: inspection.templateId, displayName: inspection.displayName, expectedRevision: plan.expectedRevision as number, replacing };
 }
 
-export function reviewTemplateDerive(plan: TemplatePlan, request: { templateId: string; projectId: string; expectedProjectRevision: number; displayName: string; templateVersion: string }): TemplateReview {
+export function reviewTemplateDerive(plan: TemplatePlan, request: { templateId: string; projectId: string; expectedProjectRevision: number; displayName: string }): TemplateReview {
     validateBase(plan);
     requireEvidence(plan.action === "derive" && plan.templateId === request.templateId
         && validId(plan.sourceProjectId) && plan.sourceProjectId === request.projectId
         && validRevision(plan.sourceProjectRevision) && plan.sourceProjectRevision === request.expectedProjectRevision
         && validHash(plan.sourceProjectFingerprint) && plan.includePolicyVersion === 1);
-    return { plan, action: "derive", templateId: request.templateId, displayName: request.displayName, templateVersion: request.templateVersion, sourceProjectId: request.projectId, sourceProjectRevision: request.expectedProjectRevision };
+    return { plan, action: "derive", templateId: request.templateId, displayName: request.displayName, sourceProjectId: request.projectId, sourceProjectRevision: request.expectedProjectRevision };
 }
 
 export function reviewTemplateCreation(plan: TemplatePlan, template: TemplateRecord, targetParent: string, targetLeaf: string, unityVersion: string): TemplateReview {
@@ -68,7 +67,7 @@ export function reviewTemplateCreation(plan: TemplatePlan, template: TemplateRec
         && typeof plan.targetLeaf === "string" && plan.targetLeaf.length > 0 && plan.targetLeaf === targetLeaf
         && plan.targetMustBeAbsent === true && plan.unityVersion === unityVersion && validHash(plan.projectVersionSha256)
         && Array.isArray(plan.resourceDigests) && plan.resourceDigests.length <= 4096 && plan.resourceDigests.every(validHash) && new Set(plan.resourceDigests).size === plan.resourceDigests.length);
-    return { plan, action: "create_project", templateId: template.templateId, displayName: template.displayName, templateVersion: template.templateVersion, templateRevision: template.revision, targetParent, targetLeaf, unityVersion };
+    return { plan, action: "create_project", templateId: template.templateId, displayName: template.displayName, templateRevision: template.revision, targetParent, targetLeaf, unityVersion };
 }
 
 export function TemplatePlanReview({ review }: { review: TemplateReview }) {
@@ -79,7 +78,6 @@ export function TemplatePlanReview({ review }: { review: TemplateReview }) {
             <div><dt>{t("Action:")}</dt><dd>{action}</dd></div>
             <div><dt>{t("Template ID")}</dt><dd><code>{review.templateId}</code></dd></div>
             <div><dt>{review.action === "derive" ? t("Display name") : t("Template")}</dt><dd>{review.displayName}</dd></div>
-            <div><dt>{review.action === "derive" ? t("Template version") : t("Version")}</dt><dd>{review.templateVersion}</dd></div>
             {review.action === "import" || review.action === "override" ? <>
                 <div><dt>{t("Expected revision")}</dt><dd>{review.expectedRevision}</dd></div>
                 <div><dt>{t("Replace existing template")}</dt><dd>{review.replacing ? t("Yes") : t("No")}</dd></div>

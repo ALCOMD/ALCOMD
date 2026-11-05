@@ -19,7 +19,7 @@ async function expectSegmentsVisible(group: Locator, boundary: Locator) {
     }
 }
 
-for (const route of ["/repositories", "/unity", "/activity"]) {
+for (const route of ["/repositories", "/unity"]) {
     test(`${route} desktop segments stay visible without a scroll container`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1920, height: 1000 });
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=ready&theme-mode=dark`);
@@ -53,7 +53,7 @@ test("Chinese Settings segments keep 24px inner spacing before and after selecti
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
     const main = page.locator("#main-content");
-    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观", "通知"]);
+    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观"]);
     await expect(page.locator(".alcomd-segmented-sizer")).toHaveCount(0);
     await expectSegmentsVisible(group, main);
     for (const zoom of [1, 0.8, 1.25]) {

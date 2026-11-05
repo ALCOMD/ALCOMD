@@ -2,7 +2,7 @@ use super::*;
 use alcomd_application::{
     AccessContext, Application, EventInvalidation, EventsCursor, ExtensionInstallPlanDraft,
     ExtensionPackageEvidence, ExtensionSourceKind, ExtensionTrustDecision, FilesystemPhase,
-    JournalState, OfficialGuiStore, Permission,
+    JournalState, Permission,
 };
 use rusqlite::params;
 use std::time::Duration;
@@ -126,9 +126,9 @@ async fn extension_changes_of_another_owner_do_not_invalidate_local_resources() 
         .await
         .expect("fence");
     assert!(
-        commits
+        !commits
             .has_changed()
-            .expect("foreign history advances the global durable watermark")
+            .expect("foreign resource changes do not wake local owner")
     );
     assert!(
         store
@@ -148,7 +148,9 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
     let installed = installed_extension(&store).await;
     let app = Application::new(store.clone());
     let access = AccessContext::local_owner();
-    let mut subscription = app.subscribe_events(&access, None, 100).expect("subscribe");
+    let mut subscription = app
+        .subscribe_events(&access, None, 100, false)
+        .expect("subscribe");
     let old_cursor = subscription.baseline_cursor.clone();
     let mut commits = store.event_commits();
     commits.borrow_and_update();
@@ -170,9 +172,8 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
     .await
     .expect("grant commit");
     let page = subscription.next_page().await.expect("resource-only page");
-    assert_eq!(page.events.len(), 1);
-    assert_eq!(page.events[0].kind, "activity.changed");
-    assert!(page.next_sequence > old_cursor.sequence);
+    assert!(page.events.is_empty());
+    assert_eq!(page.next_sequence, old_cursor.sequence);
     assert_eq!(page.invalidated_scopes, vec![EventInvalidation::Extensions]);
     assert_eq!(page.resources_revision, old_cursor.resources_revision + 1);
     assert!(
@@ -201,7 +202,7 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
         .expect("worker fence");
     assert!(!commits.has_changed().expect("worker live"));
     let reset = app
-        .subscribe_events(&access, Some(old_cursor), 100)
+        .subscribe_events(&access, Some(old_cursor), 100, false)
         .expect("resource mismatch reset");
     assert!(reset.resync_required);
     assert_eq!(
@@ -209,7 +210,7 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
         page.resources_revision
     );
     let resume = app
-        .subscribe_events(&access, Some(reset.baseline_cursor.clone()), 100)
+        .subscribe_events(&access, Some(reset.baseline_cursor.clone()), 100, false)
         .expect("valid resource cursor");
     assert!(!resume.resync_required);
     let current = M6Store::get_extension(
@@ -230,9 +231,8 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
     .await
     .expect("enable");
     let page = subscription.next_page().await.expect("enable invalidation");
-    assert_eq!(page.events.len(), 1);
-    assert_eq!(page.events[0].kind, "activity.changed");
-    assert!(page.next_sequence > reset.baseline_cursor.sequence);
+    assert!(page.events.is_empty());
+    assert_eq!(page.next_sequence, reset.baseline_cursor.sequence);
     subscription
         .advance(page.next_sequence, page.resources_revision)
         .expect("enable ACK");
@@ -320,9 +320,8 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
         .next_page()
         .await
         .expect("dropped-caller invalidation");
-    assert!(page.next_sequence > reset.baseline_cursor.sequence);
-    assert_eq!(page.events.len(), 1);
-    assert_eq!(page.events[0].kind, "activity.changed");
+    assert_eq!(page.next_sequence, reset.baseline_cursor.sequence);
+    assert!(page.events.is_empty());
     assert_eq!(page.invalidated_scopes, vec![EventInvalidation::Extensions]);
 }
 
@@ -349,7 +348,7 @@ async fn rollback_noop_and_reads_do_not_publish_commit_watermarks() {
         .expect("create");
     commits.changed().await.expect("commit signal");
     let sequence = commits.borrow_and_update().sequence;
-    assert_eq!(sequence, 2);
+    assert_eq!(sequence, 1);
     store
         .create_state_check(PrincipalId::local_owner(), key("once"), 2)
         .await
@@ -393,7 +392,7 @@ async fn dropped_reply_receiver_does_not_drop_a_committed_notification() {
         .await
         .expect("prompt notification")
         .expect("worker alive");
-    assert_eq!(commits.borrow_and_update().sequence, 2);
+    assert_eq!(commits.borrow_and_update().sequence, 1);
     assert_eq!(
         store
             .list_events(PrincipalId::local_owner(), 0, 100)
@@ -401,7 +400,7 @@ async fn dropped_reply_receiver_does_not_drop_a_committed_notification() {
             .expect("durable event")
             .events
             .len(),
-        2
+        1
     );
 }
 
@@ -411,7 +410,9 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
     let store = StateStoreHandle::open(directory.database()).expect("open isolated store");
     let app = Application::new(store.clone());
     let access = AccessContext::local_owner();
-    let mut subscription = app.subscribe_events(&access, None, 100).expect("subscribe");
+    let mut subscription = app
+        .subscribe_events(&access, None, 100, false)
+        .expect("subscribe");
     assert!(subscription.resync_required);
     let baseline = subscription.baseline_cursor.clone();
     for i in 0..3 {
@@ -421,7 +422,7 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
             .expect("task commit");
     }
     let page = subscription.next_page().await.expect("live page");
-    assert_eq!(page.events.len(), 6);
+    assert_eq!(page.events.len(), 3);
     subscription
         .advance(page.events[0].sequence, page.resources_revision)
         .expect("sent prefix only");
@@ -429,7 +430,7 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
         .next_page()
         .await
         .expect("remainder is not skipped");
-    assert_eq!(suffix.events.len(), 5);
+    assert_eq!(suffix.events.len(), 2);
     assert!(
         subscription
             .advance(suffix.next_sequence + 1, suffix.resources_revision)
@@ -444,6 +445,7 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
                 resources_revision: baseline.resources_revision,
             }),
             100,
+            false,
         )
         .expect("resume");
     assert!(!resumed.resync_required);
@@ -454,7 +456,7 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
             .expect("replayed suffix")
             .events
             .len(),
-        5
+        2
     );
     let reset = app
         .subscribe_events(
@@ -465,21 +467,22 @@ async fn live_subscription_resumes_prefixes_and_resets_a_new_instance() {
                 resources_revision: 0,
             }),
             100,
+            false,
         )
         .expect("new instance reset");
     assert!(reset.resync_required);
-    assert_eq!(reset.baseline_cursor.sequence, 6);
+    assert_eq!(reset.baseline_cursor.sequence, 3);
     let denied = AccessContext::new(
         PrincipalId::parse("test:other").expect("other owner"),
         [Permission::EventsRead],
     );
     assert!(matches!(
-        app.subscribe_events(&denied, None, 100),
+        app.subscribe_events(&denied, None, 100, false),
         Err(alcomd_application::ApplicationError::PermissionDenied)
     ));
     let denied = AccessContext::new(PrincipalId::local_owner(), []);
     assert!(matches!(
-        app.subscribe_events(&denied, None, 100),
+        app.subscribe_events(&denied, None, 100, false),
         Err(alcomd_application::ApplicationError::PermissionDenied)
     ));
 }
@@ -615,7 +618,7 @@ async fn public_package_phase_is_atomic_and_duplicate_phase_is_not_a_new_change(
     assert_eq!(get(&connection).revision.get(), 3);
     let events =
         sqlite::list_events(&connection, &PrincipalId::local_owner(), 0, 100).expect("events");
-    assert_eq!(events.events.len(), 3);
+    assert_eq!(events.events.len(), 2);
     assert!(
         events
             .events
@@ -650,21 +653,15 @@ async fn public_package_phase_is_atomic_and_duplicate_phase_is_not_a_new_change(
             .expect("unchanged events")
             .events
             .len(),
-        3
+        2
     );
     drop(connection);
     let store = StateStoreHandle::open(directory.database()).expect("reopen fixture");
     let visible = store
-        .list_official_activity(PrincipalId::local_owner(), None, 100)
+        .get_operation(PrincipalId::local_owner(), operation)
         .await
-        .expect("activity projection");
-    assert!(
-        visible
-            .items
-            .iter()
-            .all(|item| item.action != "operation.progress")
-    );
-    assert_eq!(visible.items.len(), 1);
+        .expect("task remains readable");
+    assert_eq!(visible.progress_phase, Some(FilesystemPhase::Extracted));
 }
 
 #[test]

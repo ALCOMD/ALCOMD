@@ -9,6 +9,14 @@ pub const REPOSITORY_LIST_MAX_ENTRIES: usize = 4096;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RepositoryListError(pub &'static str);
 
+impl std::fmt::Display for RepositoryListError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+impl std::error::Error for RepositoryListError {}
+
 #[derive(Clone, Debug)]
 pub struct RepositoryListRecord {
     pub repository_id: String,
@@ -145,9 +153,16 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             byte_count: prepared.preview.byte_count,
             sha256: prepared.sha256,
         };
-        self.files
-            .create_new(path, prepared.bytes, snapshot.project_roots)
-            .await?;
+        crate::log_execution_step(
+            "repositories.exportListFile",
+            "write_repository_list",
+            Some(crate::log_path("file", path.clone())),
+            self.files
+                .create_new(path, prepared.bytes, snapshot.project_roots),
+            |_| None,
+        )
+        .await?;
+        crate::flush_log_steps().await;
         Ok(result)
     }
 

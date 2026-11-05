@@ -541,9 +541,7 @@ fn package(value: app::RepositoryPackageVersion) -> rpc::RepositoryPackageVersio
 
 fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
     use app::M3ErrorCode as C;
-    let diagnostic_id =
-        super::failure_report::report(&error, error.technical_path(), "resource request failed");
-    let mut rpc_error = match error.code() {
+    let rpc_error = match error.code() {
         C::PermissionDenied => rpc::RpcError::permission_denied(),
         C::RevisionConflict => rpc::RpcError::revision_conflict(),
         C::IdempotencyConflict => rpc::RpcError::idempotency_conflict(),
@@ -551,7 +549,6 @@ fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
         C::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         code => rpc::RpcError::m3_resource(m3_code(code)),
     };
-    rpc_error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), rpc_error, false)
 }
 
@@ -584,16 +581,15 @@ fn m3_code(code: app::M3ErrorCode) -> &'static str {
 }
 
 #[cfg(test)]
-mod rebuilt_log_tests {
+mod source_error_tests {
     use super::*;
     use app::M3ReadAdapter;
-    use tracing_subscriber::prelude::*;
     #[tokio::test]
-    async fn actual_manifest_failure_keeps_path_and_cause_and_rejection_history_is_explicit() {
+    async fn actual_manifest_failure_preserves_private_cause_without_exposing_it_over_rpc() {
         let parent = std::env::temp_dir()
             .canonicalize()
             .expect("temporary parent");
-        let dir = parent.join(format!("alcomd-source-log-{}", app::OperationId::new()));
+        let dir = parent.join(format!("alcomd-source-error-{}", app::OperationId::new()));
         let project = dir.join("项目 A");
         std::fs::create_dir_all(project.join("Packages")).expect("isolated packages");
         std::fs::create_dir_all(project.join("ProjectSettings")).expect("isolated project");
@@ -604,8 +600,6 @@ mod rebuilt_log_tests {
         .expect("version");
         let manifest = project.join("Packages/vpm-manifest.json");
         std::fs::write(&manifest, "{broken JSON").expect("bad fixture");
-        let runtime = alcomd_logging::LoggingRuntime::start(dir.join("logs"), "core");
-        let source = runtime.source();
         let reader = alcomd_vpm::VpmReader::new().expect("reader");
         let error = reader
             .inspect_project(
@@ -619,108 +613,10 @@ mod rebuilt_log_tests {
             Some(manifest.to_string_lossy().as_ref())
         );
         assert!(std::error::Error::source(&error).is_some());
-        let subscriber = tracing_subscriber::registry().with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .with_writer(source.writer()),
-        );
-        let mut action =
-            tracing::subscriber::with_default(subscriber, || m3_error("attempt-1".into(), error));
-        let id = action.response["error"]["diagnosticId"]
-            .as_str()
-            .expect("correlation")
-            .to_owned();
+        let action = m3_error("attempt-1".into(), error);
+        assert!(action.response["error"]["code"].is_string());
         assert!(!action.response.to_string().contains("broken JSON"));
         assert!(!action.response.to_string().contains("项目 A"));
-        let store =
-            alcomd_store::StateStoreHandle::open(dir.join("state.db")).expect("isolated store");
-        let application = app::M7OfficialApplication::new(
-            store.clone(),
-            std::sync::Arc::new(alcomd_store::FileConfigStore::new(
-                dir.join("settings.toml"),
-            )),
-            std::sync::Arc::new(crate::hub_platform::PlatformUnityHubAdapter),
-            std::sync::Arc::new(crate::hub_platform::PlatformUnityHubLauncher::default()),
-            std::sync::Arc::new(crate::storage_platform::PlatformStorageDirectories),
-        );
-        let request = || rpc::RequestEnvelope {
-            id: "attempt".into(),
-            method: rpc::METHOD_PROJECTS_REGISTER.into(),
-            params: serde_json::json!({"path":project,"idempotencyKey":"precheck"}),
-        };
-        let mut denied = super::super::error_action(
-            Some("no-cap".into()),
-            rpc::RpcError::capability_required(rpc::CAPABILITY_PROJECTS_REGISTRY_V1),
-            false,
-        );
-        crate::failure_activity::record_rejection(
-            crate::failure_activity::prepare(&request()),
-            &mut denied,
-            &application,
-            &app::AccessContext::local_owner(),
-        )
-        .await;
-        assert!(
-            application
-                .list_activity(&app::AccessContext::local_owner(), None, None)
-                .await
-                .expect("history")
-                .items
-                .is_empty()
-        );
-        let denied_access = app::AccessContext::new(
-            app::PrincipalId::local_owner(),
-            [app::Permission::ActivityRead],
-        );
-        crate::failure_activity::record_rejection(
-            crate::failure_activity::prepare(&request()),
-            &mut action,
-            &application,
-            &denied_access,
-        )
-        .await;
-        assert!(
-            application
-                .list_activity(&app::AccessContext::local_owner(), None, None)
-                .await
-                .expect("history")
-                .items
-                .is_empty()
-        );
-        crate::failure_activity::record_rejection(
-            crate::failure_activity::prepare(&request()),
-            &mut action,
-            &application,
-            &app::AccessContext::local_owner(),
-        )
-        .await;
-        let history = application
-            .list_activity(&app::AccessContext::local_owner(), None, None)
-            .await
-            .expect("history");
-        assert_eq!(history.items.len(), 1);
-        assert_eq!(history.items[0].action, "project.add");
-        assert_eq!(history.items[0].diagnostic_id.as_deref(), Some(id.as_str()));
-        assert_eq!(history.items[0].subject.name.as_deref(), Some("项目 A"));
-        let projects = app::M3Application::new(store.clone(), reader)
-            .list_projects(&app::AccessContext::local_owner(), None, 100)
-            .await
-            .expect("business state");
-        assert!(projects.projects.is_empty());
-        let shutdown = runtime.shutdown();
-        assert!(shutdown.drained && shutdown.flushed);
-        let logs = source
-            .history(None, None, 100, alcomd_logging::LogQuery::default())
-            .await
-            .expect("same files");
-        assert_eq!(logs.items.len(), 1);
-        let record = &logs.items[0].record["fields"];
-        assert_eq!(record["diagnostic_id"], id);
-        assert_eq!(record["path"], manifest.to_string_lossy().as_ref());
-        assert!(record["error"].as_str().expect("cause").contains("line 1"));
-        drop(application);
-        drop(store);
-        drop(source);
         assert!(
             dir.canonicalize()
                 .expect("canonical fixture")

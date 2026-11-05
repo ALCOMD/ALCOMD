@@ -47,7 +47,7 @@
                 "instanceId": {"$ref": "#/$defs/identity"},
                 "batchId": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
                 "events": {"type": "array", "maxItems": 1000, "items": {"$ref": "event.schema.json"}},
-                "invalidatedScopes": {"type": "array", "maxItems": 1, "uniqueItems": true, "items": {"enum": ["extensions"]}},
+                "invalidatedScopes": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"enum": ["extensions", "operation-log"]}},
                 "nextCursor": {"$ref": "#/$defs/cursor"}
             },
             "anyOf": [

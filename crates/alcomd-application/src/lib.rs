@@ -17,7 +17,6 @@ pub use alcomd_domain::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
-mod diagnostic_log;
 mod error_context;
 mod events;
 mod m4;
@@ -33,11 +32,11 @@ mod m7_delete;
 mod m7_official;
 mod m7_unity_migration;
 mod m7_user_packages;
+mod operation_logs;
 mod project_authority;
 mod project_discovery;
 mod repository_list;
 
-pub use diagnostic_log::*;
 pub use error_context::*;
 pub use events::*;
 pub use m4::*;
@@ -53,6 +52,7 @@ pub use m7_delete::*;
 pub use m7_official::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
+pub use operation_logs::*;
 pub use project_authority::*;
 pub use project_discovery::*;
 pub use repository_list::*;
@@ -814,6 +814,7 @@ pub trait StateStore: Clone + Send + Sync + 'static {
 #[derive(Clone, Debug)]
 pub struct AccessContext {
     principal: PrincipalId,
+    actor: String,
     permissions: HashSet<Permission>,
     project_read_scopes: AccessScopes,
     extension_ui_scopes: AccessScopes,
@@ -833,6 +834,7 @@ impl AccessContext {
     pub fn new(principal: PrincipalId, permissions: impl IntoIterator<Item = Permission>) -> Self {
         Self {
             principal,
+            actor: "Core".to_owned(),
             permissions: permissions.into_iter().collect(),
             project_read_scopes: AccessScopes::None,
             extension_ui_scopes: AccessScopes::None,
@@ -849,8 +851,6 @@ impl AccessContext {
                 Permission::OperationsRead,
                 Permission::OperationsCancel,
                 Permission::EventsRead,
-                Permission::ActivityRead,
-                Permission::DiagnosticsRead,
                 Permission::SettingsRead,
                 Permission::SettingsManage,
                 Permission::ProjectsRead,
@@ -885,6 +885,18 @@ impl AccessContext {
     #[must_use]
     pub fn principal(&self) -> &PrincipalId {
         &self.principal
+    }
+
+    /// Binds the invoking entry point as metadata, independently of permissions.
+    #[must_use]
+    pub fn with_actor(mut self, actor: String) -> Self {
+        self.actor = actor;
+        self
+    }
+
+    #[must_use]
+    pub fn actor(&self) -> &str {
+        &self.actor
     }
 
     /// Revalidates one application permission at the use-case boundary.
@@ -1181,12 +1193,9 @@ impl<S: StateStore> Application<S> {
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(tracing::Instrument::instrument(
-            async move {
-                let _ = application.run_state_check(operation_id).await;
-            },
-            tracing::info_span!("operation",operation_id=%operation_id),
-        ));
+        tokio::spawn(async move {
+            let _ = application.run_state_check(operation_id).await;
+        });
     }
 
     async fn run_state_check(&self, operation_id: OperationId) -> Result<(), ApplicationError> {
@@ -1224,8 +1233,7 @@ impl<S: StateStore> Application<S> {
                 .await?;
             return Ok(());
         }
-        let operation = self
-            .store
+        self.store
             .finish_state_check(
                 operation_id,
                 StateCheckResult {
@@ -1235,11 +1243,6 @@ impl<S: StateStore> Application<S> {
                 unix_time_ms()?,
             )
             .await?;
-        if integrity == CheckClassification::Ok && foreign_keys == CheckClassification::Ok {
-            tracing::info!(operation_id=%operation_id, "database integrity and foreign key checks passed");
-        } else {
-            tracing::warn!(operation_id=%operation_id, ?integrity, ?foreign_keys, diagnostic_id=operation.diagnostic_id.as_deref(), "database checks detected integrity issues");
-        }
         Ok(())
     }
 
@@ -1252,12 +1255,7 @@ impl<S: StateStore> Application<S> {
             StoreErrorKind::Unavailable => "store_unavailable",
             _ => "internal_error",
         };
-        let diagnostic_id = record_technical_failure(
-            &error,
-            None,
-            Some(operation_id),
-            "state integrity check failed",
-        );
+        let diagnostic_id = OperationId::new().to_string();
         let _ = self
             .store
             .finish_failed(
@@ -1328,18 +1326,28 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         require_m3(access, Permission::ProjectsManage)?;
-        let observation = self
-            .reader
-            .inspect_project(path, ProjectDiscoveryMode::ExactRoot)
-            .await?;
-        let result = self
-            .store
-            .register_project(access.principal().clone(), observation, key, m3_time_ms()?)
-            .await?;
-        if !result.replayed {
-            tracing::info!(project_id=%result.value.project_id,path=%result.value.observation.root_path,"project registration completed");
-        }
-        Ok(result)
+        let observation = log_execution_step(
+            "projects.register",
+            "inspect_project",
+            Some(log_path("project", path.clone())),
+            self.reader
+                .inspect_project(path, ProjectDiscoveryMode::ExactRoot),
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await?;
+        let target = log_path("project", observation.root_path.clone());
+        log_transaction_step(
+            "projects.register",
+            "registered",
+            Some(target),
+            self.store.register_project(
+                access.principal().clone(),
+                observation,
+                key,
+                m3_time_ms()?,
+            ),
+        )
+        .await
     }
 
     pub async fn refresh_project(
@@ -1355,13 +1363,16 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .get_project(access.principal().clone(), id)
             .await?;
-        let observation = self
-            .reader
-            .inspect_project(
-                current.observation.root_path,
-                ProjectDiscoveryMode::ExactRoot,
-            )
-            .await?;
+        let path = current.observation.root_path;
+        let observation = log_execution_step(
+            "projects.refresh",
+            "inspect_project",
+            Some(log_path("project", path.clone())),
+            self.reader
+                .inspect_project(path, ProjectDiscoveryMode::ExactRoot),
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await?;
         let result = self
             .store
             .refresh_project(
@@ -1373,9 +1384,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 m3_time_ms()?,
             )
             .await?;
-        if !result.replayed {
-            tracing::info!(project_id=%result.value.project_id,path=%result.value.observation.root_path,"project snapshot refresh completed");
-        }
         Ok(result)
     }
 
@@ -1400,9 +1408,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 m3_time_ms()?,
             )
             .await?;
-        if !result.replayed {
-            tracing::info!(project_id=%result.value.project_id,"project favorite request completed");
-        }
         Ok(result)
     }
 
@@ -1419,9 +1424,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .unregister_project(access.principal().clone(), id, expected, key, m3_time_ms()?)
             .await?;
-        if !result.replayed {
-            tracing::info!(project_id=%result.id,"project removal completed");
-        }
         Ok(result)
     }
 
@@ -1484,20 +1486,40 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
-        let observation = match self.reader.inspect_repository(source, None).await? {
+        let target = match &source {
+            RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
+            RepositorySource::Remote { .. } => None,
+        };
+        let observation = match log_execution_step(
+            "repositories.register",
+            "fetch_repository",
+            target,
+            self.reader.inspect_repository(source, None),
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await?
+        {
             RepositoryReadOutcome::Fresh(value) => value,
             RepositoryReadOutcome::NotModified(_) => {
                 return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
             }
         };
-        let result = self
-            .store
-            .register_repository(access.principal().clone(), observation, key, m3_time_ms()?)
-            .await?;
-        if !result.replayed {
-            tracing::info!(repository_id=%result.value.repository_id,"repository registration completed");
-        }
-        Ok(result)
+        let target = match &observation.source {
+            RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
+            RepositorySource::Remote { .. } => None,
+        };
+        log_transaction_step(
+            "repositories.register",
+            "registered",
+            target,
+            self.store.register_repository(
+                access.principal().clone(),
+                observation,
+                key,
+                m3_time_ms()?,
+            ),
+        )
+        .await
     }
 
     pub async fn refresh_repository(
@@ -1513,13 +1535,21 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .get_repository(access.principal().clone(), id)
             .await?;
-        match self
-            .reader
-            .inspect_repository(
+        let target = match &current.observation.source {
+            RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
+            RepositorySource::Remote { .. } => None,
+        };
+        match log_execution_step(
+            "repositories.refresh",
+            "fetch_repository",
+            target,
+            self.reader.inspect_repository(
                 current.observation.source,
                 Some(current.observation.validators),
-            )
-            .await?
+            ),
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await?
         {
             RepositoryReadOutcome::Fresh(observation) => {
                 self.store
@@ -1566,9 +1596,6 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .unregister_repository(access.principal().clone(), id, expected, key, m3_time_ms()?)
             .await?;
-        if !result.replayed {
-            tracing::info!(repository_id=%result.id,"repository removal completed");
-        }
         Ok(result)
     }
 }

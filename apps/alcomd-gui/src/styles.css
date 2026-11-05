@@ -1679,7 +1679,6 @@ code {
     .settings-section-heading { flex-wrap: wrap; }
     .settings-row { flex-wrap: wrap; }
     .settings-row md-filled-select { width: min(280px, 100%); min-width: 0; flex: 0 1 auto; }
-    .logs-search { width: min(380px, 100%); }
     .extension-card-heading, .extension-card-actions, .extension-grants li { flex-wrap: wrap; }
 }
 
@@ -1693,4 +1692,8 @@ code {
     .settings-path-row md-outlined-text-field { flex-basis: 100%; }
     .settings-row md-filled-select { width: 100%; }
     .dialog-summary div { grid-template-columns: minmax(0, 1fr); }
+}
+
+[role="alert"] code {
+    overflow-wrap: anywhere;
 }

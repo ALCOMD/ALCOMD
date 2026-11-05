@@ -71,33 +71,6 @@ impl CandidateStore for PausedReadStore {
     }
 }
 
-// This fixture deliberately implements no Plan, Operation, Event or write store port.
-impl OfficialGuiStore for PausedReadStore {
-    async fn get_official_activity(
-        &self,
-        _: PrincipalId,
-        _: String,
-    ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
-        panic!("this fixture must not read Activity")
-    }
-    async fn record_failed_activity(
-        &self,
-        _: PrincipalId,
-        _: alcomd_application::NewFailedActivity,
-    ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
-        panic!("this fixture must not write Activity")
-    }
-
-    async fn list_official_activity(
-        &self,
-        _: PrincipalId,
-        _: Option<OfficialActivityCursor>,
-        _: u32,
-    ) -> Result<OfficialActivityPage, StoreError> {
-        panic!("candidate query must not read Activity")
-    }
-}
-
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
@@ -149,7 +122,6 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         },
     };
     let config = M7OfficialApplication::new(
-        store.clone(),
         Arc::new(alcomd_store::FileConfigStore::new(settings_path.clone())),
         Arc::new(NoHubInspection),
         Arc::new(NoHubInspection),
@@ -279,7 +251,6 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
             project,
         };
         let config = M7OfficialApplication::new(
-            store.clone(),
             Arc::new(alcomd_store::FileConfigStore::new(
                 fixture.0.join("settings.toml"),
             )),
@@ -352,7 +323,6 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
         },
     };
     let config = M7OfficialApplication::new(
-        store.clone(),
         Arc::new(alcomd_store::FileConfigStore::new(path.clone())),
         Arc::new(NoHubInspection),
         Arc::new(NoHubInspection),

@@ -43,17 +43,11 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
 
     let store = StateStoreHandle::open(path.clone()).expect("registered State16 to latest upgrade");
     let connection = Connection::open(&path).expect("inspect upgraded fixture");
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 19);
-    assert_eq!(CURRENT_DATA_SCHEMA, 19);
-    let mut retained = row_snapshot(&connection);
-    let activity_index = retained
-        .iter()
-        .position(|(name, _)| name == "activities")
-        .expect("State19 adds its own history table");
-    assert!(
-        retained.remove(activity_index).1.is_empty(),
-        "no legacy activity is fabricated"
+    assert_eq!(
+        integer(&connection, "PRAGMA user_version"),
+        i64::from(CURRENT_DATA_SCHEMA)
     );
+    let retained = row_snapshot(&connection);
     assert_eq!(retained, before, "every pre-existing row remains unchanged");
     assert_eq!(
         integer(
@@ -86,7 +80,10 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     let reopened = StateStoreHandle::open(path.clone()).expect("reopen latest state");
     let connection = Connection::open(&path).expect("inspect reopened fixture");
     assert_eq!(row_snapshot(&connection), accepted);
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 19);
+    assert_eq!(
+        integer(&connection, "PRAGMA user_version"),
+        i64::from(CURRENT_DATA_SCHEMA)
+    );
     assert_eq!(
         integer(&connection, "SELECT count(*) FROM pragma_foreign_key_check"),
         0
@@ -272,7 +269,7 @@ fn integer(connection: &Connection, sql: &str) -> i64 {
 }
 
 fn row_snapshot(connection: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
-    let names: Vec<String> = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").expect("tables").query_map([], |row| row.get(0)).expect("table names").map(|row| row.expect("table name")).collect();
+    let names: Vec<String> = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'operation_log_entries' ORDER BY name").expect("tables").query_map([], |row| row.get(0)).expect("table names").map(|row| row.expect("table name")).collect();
     names
         .into_iter()
         .map(|name| {

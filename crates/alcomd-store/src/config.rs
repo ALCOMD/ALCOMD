@@ -72,7 +72,7 @@ fn report_config_failure(
     };
     error
         .with_path(path.to_string_lossy().into_owned())
-        .record(message)
+        .with_reason(message)
 }
 
 fn initialize_settings_file(path: &Path) -> Result<(), ConfigStoreError> {
@@ -680,8 +680,7 @@ mod tests {
     use super::*;
     use alcomd_application::{
         AccessContext, ConfigAppearanceUpdate, ConfigNullableUpdate, ConfigPackageSettingsUpdate,
-        ConfigUpdate, M7OfficialApplication, OfficialActivityCursor, OfficialActivityPage,
-        OfficialGuiError, OfficialGuiStore, PrincipalId, StoreError,
+        ConfigUpdate, M7OfficialApplication, OfficialGuiError,
     };
     use std::sync::Arc;
 
@@ -748,8 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn config_failure_preserves_path_parser_position_and_diagnostic_without_configuration_secrets()
-    {
+    fn config_failure_preserves_path_and_parser_position_without_configuration_secrets() {
         let path = temporary_path("真实日志路径-configuration-secret.toml");
         let mut snapshot = default_snapshot();
         snapshot.settings.unity.default_launch_arguments =
@@ -770,13 +768,7 @@ mod tests {
         assert!(chain.contains("typed document contract at bytes"));
         assert!(!chain.contains("sensitive-schema-marker"));
         assert!(!chain.contains("sensitive-argv-marker"));
-        let diagnostic = error
-            .diagnostic_id()
-            .expect("source boundary assigned diagnostic")
-            .to_owned();
-        assert!(uuid::Uuid::parse_str(&diagnostic).is_ok());
         let propagated = OfficialGuiError::from(error);
-        assert_eq!(propagated.diagnostic_id(), Some(diagnostic.as_str()));
         assert_eq!(propagated.path(), Some(path.to_string_lossy().as_ref()));
         assert!(
             alcomd_application::technical_error_chain(&propagated)
@@ -796,7 +788,6 @@ mod tests {
             .expect_err("cannot publish over a directory");
         assert_eq!(error.path(), Some(path.to_string_lossy().as_ref()));
         assert!(std::error::Error::source(&error).is_some());
-        assert!(error.diagnostic_id().is_some());
         fs::remove_file(blocked_parent).expect("remove private parent fixture");
     }
 
@@ -1263,7 +1254,6 @@ mod tests {
         fs::write(&path, &legacy).expect("Config6 with retained preferences");
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let app = M7OfficialApplication::new(
-            NoStore,
             store.clone(),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -1435,7 +1425,6 @@ mod tests {
         let path = root.join("settings.toml");
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let app = M7OfficialApplication::new(
-            NoStore,
             store.clone(),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -1575,7 +1564,6 @@ mod tests {
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let make_app = || {
             M7OfficialApplication::new(
-                NoStore,
                 store.clone(),
                 Arc::new(TestHub),
                 Arc::new(TestHubLauncher),
@@ -1744,7 +1732,6 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let app = M7OfficialApplication::new(
-            NoStore,
             store.clone(),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -1878,7 +1865,6 @@ mod tests {
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -1943,7 +1929,6 @@ mod tests {
             expected.settings.appearance.motion = motion;
             assert_eq!(accepted, expected);
             let reopened = M7OfficialApplication::new(
-                NoStore,
                 Arc::new(FileConfigStore::new(path.clone())),
                 Arc::new(TestHub),
                 Arc::new(TestHubLauncher),
@@ -2021,7 +2006,6 @@ mod tests {
         let path = root.join("config/settings.toml");
         let _ = fs::remove_dir_all(&root);
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2094,7 +2078,6 @@ mod tests {
         )
         .expect("write v1");
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2140,7 +2123,6 @@ mod tests {
         fs::write(&path, legacy).expect("write v2");
         let expected = parse_settings(legacy).expect("supported v2 input");
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2186,7 +2168,6 @@ mod tests {
         assert!(!path.with_extension("toml.new").exists());
         assert!(!path.with_extension("toml.bak").exists());
         let restarted = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2353,7 +2334,6 @@ mod tests {
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2482,7 +2462,6 @@ mod tests {
         fs::write(path.with_extension("toml.new"), "incomplete replacement")
             .expect("interrupted write");
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2523,7 +2502,6 @@ mod tests {
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
@@ -2643,34 +2621,6 @@ mod tests {
             validate_hidden_repository_ids(values),
             Err(OfficialGuiError::InvalidInput)
         );
-    }
-
-    #[derive(Clone)]
-    struct NoStore;
-    impl OfficialGuiStore for NoStore {
-        async fn get_official_activity(
-            &self,
-            _: PrincipalId,
-            _: String,
-        ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not read Activity")
-        }
-        async fn record_failed_activity(
-            &self,
-            _: PrincipalId,
-            _: alcomd_application::NewFailedActivity,
-        ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not write Activity")
-        }
-
-        async fn list_official_activity(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialActivityCursor>,
-            _: u32,
-        ) -> Result<OfficialActivityPage, StoreError> {
-            unreachable!()
-        }
     }
 
     #[test]

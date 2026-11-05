@@ -3,15 +3,13 @@ import { expect, test } from "@playwright/test";
 test.use({ viewport: { width: 1440, height: 900 } });
 
 test("Extensions expose installed cards and their lifecycle and Open actions", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready");
+    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1");
     await expect(page.getByRole("heading", { name: "Installed", exact: true })).toBeVisible();
-    const card = page.getByRole("article", { name: "com.vrclearn.discord", exact: true });
-    await expect(card.getByRole("heading", { name: "com.vrclearn.discord", exact: true })).toBeVisible();
+    const card = page.getByRole("article", { name: "com.example.alpha", exact: true });
+    await expect(card.getByRole("heading", { name: "com.example.alpha", exact: true })).toBeVisible();
     await expect(page.getByRole("table", { name: "Extensions", exact: true })).toHaveCount(0);
     await card.getByRole("switch", { name: "Enabled", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Extension disabled." })).toBeVisible();
-    // The lifecycle fixture is stateless: assert the returned mutation feedback,
-    // not a fictitious persisted change after its subsequent list refresh.
+    await expect(card.getByRole("switch", { name: "Enabled", exact: true })).not.toBeChecked();
     await card.getByRole("button", { name: "Manage extension", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Extension detail", exact: true })).toBeVisible();
 });

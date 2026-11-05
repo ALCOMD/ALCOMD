@@ -1,3 +1,4 @@
+import { requestErrorMessage } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -9,7 +10,6 @@ import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 import { useReconnect } from "./capabilities";
 import type { RpcError } from "@alcomd/sdk";
-import { RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { useCoreEvents, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
@@ -125,17 +125,18 @@ export function UtilityWorkspace<T>({
         if (events) retryRead(); else refresh();
     };
 
-    const failure = error === undefined || value !== undefined ? null : <RequestReminder error={error}>
+    const failure = error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
         <p>{t("This page could not be loaded.")}</p>
         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
-    </RequestReminder>;
+    </div>;
 
+    const toolbar = value === undefined ? null : tools?.(value, refresh);
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
             <PageHeader className="utility-workspace-toolbar" leading={back} title={title}>
                 {navigation}
-                <div className="utility-workspace-actions">
-                    {value === undefined ? null : tools?.(value, refresh)}
+                {action === undefined && toolbar == null ? null : <div className="utility-workspace-actions">
+                    {toolbar}
                     {action === undefined ? null : (
                         <Button
                             aria-haspopup="dialog"
@@ -146,10 +147,10 @@ export function UtilityWorkspace<T>({
                             {action.label}
                         </Button>
                     )}
-                </div>
+                </div>}
             </PageHeader>
             <ScrollArea className="utility-workspace-body">
-                {failure}
+                {value === undefined ? failure : null}
                 {value === undefined ? (
                     pending ? <LoadingState title={t("Loading…")} /> : null
                 ) : (

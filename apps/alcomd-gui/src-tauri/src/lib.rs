@@ -8,9 +8,7 @@ use tauri::State;
 use tauri::async_runtime::Mutex;
 use tauri_plugin_dialog::DialogExt;
 
-mod diagnostic_log;
 mod events;
-mod local_log;
 mod window_state;
 
 #[derive(Default)]
@@ -40,6 +38,20 @@ async fn gui_state_check(
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.state_check(idempotency_key).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_logs_read(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::LogsReadParams,
+) -> Result<alcomd_protocol::LogsReadResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.logs_read(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -119,34 +131,6 @@ async fn gui_settings_update(
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.settings_update(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_activity_list(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::ActivityListParams,
-) -> Result<alcomd_protocol::ActivityListResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.activity_list(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_activity_get(
-    state: State<'_, GuiClientState>,
-    activity_id: String,
-) -> Result<alcomd_protocol::ActivityGetResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.activity_get(activity_id).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1600,13 +1584,10 @@ async fn gui_extension_ui_close(
 async fn connect_if_needed(client: &mut Option<AlcomdClient>) -> Result<(), RpcError> {
     if client.is_none() {
         *client = Some(
-            AlcomdClient::connect(ClientConfig::default())
+            AlcomdClient::connect(ClientConfig::default().with_client_name(env!("CARGO_PKG_NAME")))
                 .await
                 .map_err(client_error)?,
         );
-    }
-    if CORE_OFFLINE.swap(false, std::sync::atomic::Ordering::Relaxed) {
-        tracing::info!("Core RPC connection restored");
     }
     Ok(())
 }
@@ -1625,17 +1606,10 @@ fn finish_call<T>(
     }
 }
 
-static CORE_OFFLINE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn client_error(error: ClientError) -> RpcError {
     match error {
         ClientError::Remote(error) => error,
-        error => {
-            CORE_OFFLINE.store(true, std::sync::atomic::Ordering::Relaxed);
-            let id = local_log::record_native_error(&error, "Core RPC transport failed");
-            let mut result = daemon_unavailable();
-            result.diagnostic_id = Some(id);
-            result
-        }
+        _ => daemon_unavailable(),
     }
 }
 
@@ -1653,46 +1627,26 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(local_log::initialize)
         .manage(GuiClientState::default())
-        .manage(diagnostic_log::DiagnosticLogClient::default())
         .manage(events::EventsClient::default())
         .on_page_load(|view, payload| {
             events::on_page_load(view, payload);
-            if matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
-                use tauri::Manager;
-                local_log::cancel_reads(view.app_handle());
-            }
         })
         .manage(window_state::WindowStateController::default())
         .on_window_event(|window, event| {
             window_state::on_window_event(window, event);
             events::on_window_event(window, event);
-            if matches!(event, tauri::WindowEvent::Destroyed) {
-                use tauri::Manager;
-                local_log::cancel_reads(window.app_handle());
-            }
         })
         .invoke_handler(tauri::generate_handler![
             window_state::gui_window_state_configure,
             gui_system_status,
             gui_state_check,
             gui_operations_list,
+            gui_logs_read,
             gui_operation_get,
             gui_operation_cancel,
             gui_settings_get,
             gui_settings_update,
-            gui_activity_list,
-            gui_activity_get,
-            diagnostic_log::gui_diagnostic_log_read,
-            diagnostic_log::gui_diagnostic_log_health,
-            local_log::gui_local_log_read,
-            local_log::gui_local_log_history,
-            local_log::gui_local_log_health,
-            local_log::gui_local_log_cancel,
-            local_log::gui_report_frontend_error,
-            diagnostic_log::gui_diagnostic_log_history,
-            diagnostic_log::gui_diagnostic_log_cancel,
             events::gui_events_start,
             events::gui_events_ack,
             events::gui_events_cancel,
@@ -1786,11 +1740,7 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("failed to build alcomd-gui")
-        .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) {
-                local_log::shutdown(app);
-            }
-        });
+        .run(|_, _| {});
 }
 
 #[cfg(test)]

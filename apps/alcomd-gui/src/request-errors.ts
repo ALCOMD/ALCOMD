@@ -10,10 +10,7 @@ export function normalizeRequestError(caught: unknown): RpcError {
         const diagnosticId = typeof value.diagnosticId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,4095}$/.test(value.diagnosticId)
             ? value.diagnosticId : undefined;
         // RpcError requires a message field; discard its original contents.
-        const data = typeof value.data === "object" && value.data !== null
-            && (value.data as Record<string, unknown>).activityRecordingUnavailable === true
-            ? { activityRecordingUnavailable: true } : undefined;
-        return { code, message: "", ...(diagnosticId === undefined ? {} : { diagnosticId }), ...(data === undefined ? {} : { data }) };
+        return { code, message: "", ...(diagnosticId === undefined ? {} : { diagnosticId }) };
     } catch {
         return fallback;
     }
@@ -193,7 +190,7 @@ export function requestErrorMessage(code: string): string {
         case "project_copy_recovery_required":
         case "project_delete_recovery_required":
         case "project_unity_migration_recovery_required":
-            return "The previous operation needs recovery. Check its task and technical logs before starting another change.";
+            return "The previous operation needs recovery. Check its task before starting another change.";
         case "project_not_found":
         case "project_not_registered":
             return "This project is not available in the registry. Refresh the project list.";

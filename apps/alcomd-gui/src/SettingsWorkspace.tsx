@@ -1,3 +1,4 @@
+import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
 import { StorageDirectoryConflictError, UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
@@ -16,7 +17,6 @@ import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
-import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
@@ -29,7 +29,7 @@ interface SettingsWorkspaceProps {
     onApplied(value: SettingsGetResult): void;
 }
 
-type SettingsCategory = "general" | "unity" | "appearance" | "notifications";
+type SettingsCategory = "general" | "unity" | "appearance";
 
 export function SettingsWorkspace({ client, settingsWriter, onApplied }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
@@ -52,8 +52,7 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                     options={[
                         { value: "general", label: t("General") },
                         { value: "unity", label: "Unity" },
-                        { value: "appearance", label: t("Appearance") },
-                        { value: "notifications", label: t("Notifications") }
+                        { value: "appearance", label: t("Appearance") }
                     ]} />
             </nav>
         }>
@@ -364,7 +363,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                 void run({ kind: "edit", trigger: "blur" });
             }}>
             <div className="settings-path-row">
-                <PathField id="settings-unity-hub-path" label={t("Unity Hub Path")} readOnly={busy || state.failed}
+                <PathField id="settings-unity-hub-path" label={t("Unity Hub Path")} error={invalid || (!edit.current.dirty && location.configuredPathStatus === "invalid")} readOnly={busy || state.failed}
                     placeholder={location.path === null && accepted.settings.unity.hubPath === null ? pathLabel : undefined} value={draft}
                     onFocus={() => { if (!edit.current.dirty) resetDraft(acceptedRef.current); }}
                     onInput={(value) => {
@@ -453,9 +452,9 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
         }>
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
-                    {error === undefined || items.length > 0 ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")}>
+                    {error === undefined || items.length > 0 ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
-                    </RequestReminder>}
+                    </div>}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
                     {items.length === 0 && error === undefined ? busy ? <LoadingState title={t("Loading Unity installations…")} /> : <p role="status">{t("No Unity installations registered")}</p> : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}

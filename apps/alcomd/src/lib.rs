@@ -29,13 +29,10 @@ use alcomd_protocol::{
 use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::Instrument;
 
-mod diagnostic_log_rpc;
 mod events_rpc;
-mod failure_activity;
-mod failure_report;
 mod hub_platform;
+mod logs_rpc;
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
@@ -87,7 +84,7 @@ type M7ExtensionApplication = M7Application<
     m6_runtime::PlatformExtensionRuntime,
     m7_rpc::ProtocolUiValidator,
 >;
-type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
+type M7OfficialGuiApplication = M7OfficialApplication;
 type ProjectCandidateApplication = alcomd_application::ProjectCandidateApplication<
     StateStoreHandle,
     alcomd_vpm::ProjectCandidateEngine,
@@ -104,8 +101,7 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
-    technical_logs: diagnostic_log_rpc::LogApplication,
-    _logging_runtime: Option<alcomd_logging::LoggingRuntime>,
+    store: StateStoreHandle,
     m2: M2Application,
     m3: M3ReadApplication,
     project_discovery: ProjectDiscoveryApplication,
@@ -139,28 +135,6 @@ where
         .map_err(BindError::Io)
 }
 
-/// Starts Core with the same safe log source used by its tracing subscriber.
-pub async fn serve_with_data_and_logs_until<F>(
-    ipc: IpcConfig,
-    data: DataConfig,
-    log_source: alcomd_logging::LogSource,
-    shutdown: F,
-) -> Result<(), BindError>
-where
-    F: Future<Output = ()>,
-{
-    let (mut listener, applications) = initialize_daemon_with_logs(
-        ipc,
-        data,
-        Arc::new(storage_platform::PlatformStorageDirectories),
-        Some(log_source),
-    )
-    .await?;
-    run_listener(&mut listener, applications, shutdown)
-        .await
-        .map_err(BindError::Io)
-}
-
 async fn initialize_daemon(
     ipc: IpcConfig,
     data: DataConfig,
@@ -178,15 +152,6 @@ async fn initialize_daemon_with_directories(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_logs(ipc, data, directory_platform, None).await
-}
-
-async fn initialize_daemon_with_logs(
-    ipc: IpcConfig,
-    data: DataConfig,
-    directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
-    log_source: Option<alcomd_logging::LogSource>,
-) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
@@ -194,17 +159,6 @@ async fn initialize_daemon_with_logs(
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
     let cache_root = data_root.join("package-cache");
-    let logging_runtime = log_source.is_none().then(|| {
-        alcomd_logging::LoggingRuntime::start(data_root.join("logs").join("core"), "core")
-    });
-    let source = log_source.unwrap_or_else(|| {
-        logging_runtime
-            .as_ref()
-            .expect("owned log runtime")
-            .source()
-    });
-    let technical_logs =
-        alcomd_application::TechnicalLogApplication::new(diagnostic_log_rpc::CoreLogReader(source));
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
@@ -224,7 +178,6 @@ async fn initialize_daemon_with_logs(
         .await
         .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let official_gui = M7OfficialApplication::new(
-        store.clone(),
         Arc::new(alcomd_store::FileConfigStore::new(
             data_root.join("config").join("settings.toml"),
         )),
@@ -329,21 +282,11 @@ async fn initialize_daemon_with_logs(
         .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())
         .await
     {
-        let project_directory = defaults.project_directory;
-        let prepared_directory = project_directory.clone();
-        let prepared = tokio::task::spawn_blocking(move || {
+        let prepared_directory = defaults.project_directory;
+        let _ = tokio::task::spawn_blocking(move || {
             alcomd_platform::prepare_storage_directory(std::path::Path::new(&prepared_directory))
         })
         .await;
-        match prepared {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => {
-                tracing::warn!(path=%project_directory, error=%alcomd_application::technical_error_chain(&error), "Default project directory could not be prepared")
-            }
-            Err(error) => {
-                tracing::warn!(path=%project_directory, error=%alcomd_application::technical_error_chain(&error), "Default project directory preparation did not finish")
-            }
-        }
     }
     let backups = BackupService::with_locks(
         store.clone(),
@@ -365,8 +308,7 @@ async fn initialize_daemon_with_logs(
         official_gui.clone(),
     );
     let applications = Arc::new(Applications {
-        technical_logs,
-        _logging_runtime: logging_runtime,
+        store: store.clone(),
         m2,
         m3: M3ReadApplication::new(store.clone(), reader.clone()),
         project_discovery: ProjectDiscoveryApplication::with_locks(
@@ -443,27 +385,7 @@ where
             _ = discovery_tick.tick() => discovery_requested = true,
             () = discovery_notify.notified() => discovery_requested = true,
             () = project_recovery_notify.notified() => discovery_requested = true,
-            result = discovery_tasks.join_next(), if !discovery_tasks.is_empty() => {
-                match result {
-                    Some(Ok(Ok(report))) => {
-                        if report.registered > 0 || report.reached_limit {
-                            tracing::info!(registered = report.registered, already_registered = report.already_registered,
-                                rejected = report.rejected, reached_limit = report.reached_limit,
-                                "Default project discovery completed");
-                        }
-                    }
-                    Some(Ok(Err(_))) => {}
-                    Some(Err(error)) => {
-                        alcomd_application::record_technical_failure(
-                            &error,
-                            None,
-                            None,
-                            "default project discovery task did not finish",
-                        );
-                    }
-                    None => {}
-                }
-            }
+            _ = discovery_tasks.join_next(), if !discovery_tasks.is_empty() => {}
             _ = runtime_tick.tick() => {
                 applications
                     .m6
@@ -477,8 +399,15 @@ where
         if discovery_requested && discovery_tasks.is_empty() {
             discovery_requested = false;
             let discovery = applications.project_discovery.clone();
-            discovery_tasks
-                .spawn(async move { discovery.scan().await }.instrument(tracing::Span::current()));
+            let store = applications.store.clone();
+            discovery_tasks.spawn(async move {
+                alcomd_application::with_log_caller(
+                    store,
+                    &AccessContext::local_owner(),
+                    discovery.scan(),
+                )
+                .await
+            });
         }
     }
 
@@ -504,6 +433,7 @@ fn bind_as_io(error: BindError) -> io::Error {
 struct ConnectionState {
     connection_id: String,
     client_instance_id: Option<String>,
+    actor: String,
     handshake_complete: bool,
     capabilities: HashSet<String>,
 }
@@ -515,6 +445,7 @@ async fn serve_connection(
     let mut state = ConnectionState {
         connection_id: OperationId::new().to_string(),
         client_instance_id: None,
+        actor: "Local IPC".to_owned(),
         handshake_complete: false,
         capabilities: HashSet::new(),
     };
@@ -524,20 +455,7 @@ async fn serve_connection(
                 Some(payload) => payload,
                 None => return Ok(()),
             };
-            // Keep the large RPC dispatch future on the heap when it is moved into
-            // either the normal request path or the disconnect-aware log read.
-            let dispatch = Box::pin(
-                dispatch_payload(&payload, &state, &applications)
-                    .instrument(tracing::info_span!("rpc_request")),
-            );
-            let action = if diagnostic_log_rpc::is_log_read(&payload) {
-                match diagnostic_log_rpc::until_disconnect(&mut stream, dispatch).await? {
-                    Some(action) => action,
-                    None => return Ok(()),
-                }
-            } else {
-                dispatch.await
-            };
+            let action = Box::pin(dispatch_payload(&payload, &state, &applications)).await;
             if action.event_subscription.is_some() {
                 tokio::time::timeout(
                     std::time::Duration::from_secs(5),
@@ -554,6 +472,9 @@ async fn serve_connection(
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;
+                if let Some(actor) = action.actor {
+                    state.actor = actor;
+                }
             }
             if let Some(subscription) = action.event_subscription {
                 return events_rpc::serve(&mut stream, subscription).await;
@@ -575,6 +496,7 @@ struct DispatchAction {
     response: Value,
     complete_handshake: Option<HashSet<String>>,
     client_instance_id: Option<String>,
+    actor: Option<String>,
     close_after_response: bool,
     event_subscription: Option<alcomd_application::EventSubscription<StateStoreHandle>>,
 }
@@ -607,9 +529,8 @@ async fn dispatch_payload(
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-    let attempt = failure_activity::prepare(&request);
-    let access = AccessContext::local_owner();
-    let mut action = if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
+    let access = AccessContext::local_owner().with_actor(state.actor.clone());
+    if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
         m7_candidates_rpc::failure(
             request.id,
             alcomd_application::CandidateQueryError::LimitExceeded,
@@ -617,18 +538,13 @@ async fn dispatch_payload(
     } else if request.method == METHOD_SYSTEM_STATUS {
         dispatch_status(request, state)
     } else {
-        let project_id = request
-            .params
-            .get("projectId")
-            .and_then(Value::as_str)
-            .filter(|v| alcomd_application::ProjectId::parse(v).is_ok());
-        let span = tracing::info_span!("request",request_method=%request.method,request_id=%request.id,project_id);
-        tracing::Instrument::instrument(dispatch_m2(request, state, applications, &access), span)
-            .await
-    };
-    failure_activity::record_rejection(attempt, &mut action, &applications.official_gui, &access)
-        .await;
-    action
+        alcomd_application::with_log_caller(
+            applications.store.clone(),
+            &access,
+            dispatch_m2(request, state, applications, &access),
+        )
+        .await
+    }
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
@@ -654,11 +570,11 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         );
     }
     let supported = [
-        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
         alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1,
+        alcomd_protocol::CAPABILITY_LOGS_READ_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_READ_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1,
@@ -688,6 +604,14 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1,
     ];
     let client_instance_id = hello.client.instance_id;
+    let actor = match hello.client.name.as_str() {
+        "alcomd-gui" => "GUI".to_owned(),
+        "alcomd-cli" => "CLI".to_owned(),
+        "alcomd-mcp" => "MCP".to_owned(),
+        "alcomd-api" => "Local API".to_owned(),
+        // The actual transport remains known even without a named official entry point.
+        _ => "Local IPC".to_owned(),
+    };
     let capabilities = hello
         .capabilities
         .into_iter()
@@ -701,6 +625,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         Some(capabilities),
     );
     action.client_instance_id = Some(client_instance_id);
+    action.actor = Some(actor);
     action
 }
 
@@ -736,6 +661,9 @@ async fn dispatch_m2(
 ) -> DispatchAction {
     let application = &applications.m2;
     match request.method.as_str() {
+        alcomd_protocol::METHOD_LOGS_READ => {
+            logs_rpc::dispatch(request, state, &applications.store, access).await
+        }
         alcomd_protocol::METHOD_EVENTS_SUBSCRIBE => {
             events_rpc::dispatch(request, state, application, access)
         }
@@ -900,18 +828,11 @@ async fn dispatch_m2(
                 Err(error) => application_error(request.id, error),
             }
         }
-        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ
-        | alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HISTORY
-        | alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HEALTH => {
-            diagnostic_log_rpc::dispatch(request, state, &applications.technical_logs, access).await
-        }
         _ if matches!(
             request.method.as_str(),
             alcomd_protocol::METHOD_SETTINGS_GET
                 | alcomd_protocol::METHOD_SETTINGS_UPDATE
                 | alcomd_protocol::METHOD_UNITY_HUB_OPEN
-                | alcomd_protocol::METHOD_ACTIVITY_LIST
-                | alcomd_protocol::METHOD_ACTIVITY_GET
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
@@ -1151,10 +1072,7 @@ fn application_rpc_error(error: ApplicationError) -> RpcError {
 }
 
 fn application_error(id: String, error: ApplicationError) -> DispatchAction {
-    let diagnostic_id = failure_report::report(&error, None, "state request failed");
-    let mut public = application_rpc_error(error);
-    public.diagnostic_id = Some(diagnostic_id);
-    error_action(Some(id), public, false)
+    error_action(Some(id), application_rpc_error(error), false)
 }
 
 fn invalid(id: String) -> DispatchAction {
@@ -1172,6 +1090,7 @@ fn success_action<T: serde::Serialize>(
         response,
         complete_handshake: handshake,
         client_instance_id: None,
+        actor: None,
         close_after_response: false,
         event_subscription: None,
     }
@@ -1184,6 +1103,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         response,
         complete_handshake: None,
         client_instance_id: None,
+        actor: None,
         close_after_response: close,
         event_subscription: None,
     }
@@ -1221,6 +1141,7 @@ mod tests {
         let state = ConnectionState {
             connection_id: "schema-handshake-test".to_owned(),
             client_instance_id: None,
+            actor: "Local IPC".to_owned(),
             handshake_complete: false,
             capabilities: HashSet::new(),
         };

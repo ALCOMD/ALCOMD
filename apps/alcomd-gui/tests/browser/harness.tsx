@@ -15,6 +15,7 @@ import type {
     UiDocument,
     UiSnapshot
 } from "@alcomd/sdk";
+import type { LogsReadParams, LogsReadResult, OperationLogEntry } from "@alcomd/sdk";
 import { RPC_CAPABILITIES } from "@alcomd/sdk";
 import React from "react";
 import ReactDOM from "react-dom/client";
@@ -27,20 +28,18 @@ import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
+import { OperationLogEvidence } from "./OperationLogEvidence";
 import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
 import { withH5UtilitiesClient } from "./h5-utilities-client";
 import { withH5SettingsClient } from "./h5-settings-client";
-import { ReminderPresentationEvidence, RequestReminderEvidence } from "./RequestReminderEvidence";
-import { BrowserDiagnosticLog } from "./diagnostic-log-client";
-import { enableViewCachePressure } from "./view-cache-pressure";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
 
 declare global {
     interface Window {
         fixtureCore: GuiRpcClient;
-        frontendErrorReports: Array<Parameters<GuiRpcClient["reportFrontendError"]>[0]>;
+        fixtureLogs: { entries: OperationLogEntry[]; reads: LogsReadParams[]; replace(entries: OperationLogEntry[]): void; fail: boolean };
         h3ReadError?: string;
         queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
@@ -73,7 +72,13 @@ declare global {
 // The concurrency probe supplies only the read method used by the shared function.
 window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
-window.frontendErrorReports = [];
+window.fixtureLogs = {
+    entries: [], reads: [], fail: false,
+    replace(entries) {
+        this.entries = structuredClone(entries);
+        browserCoreEvents.invalidateOperationLog();
+    }
+};
 window.projectSnapshots = [];
 window.autoDiscoveryProjects = [];
 const discovered = window.autoDiscoveryProjects;
@@ -127,6 +132,7 @@ window.releasedInitialSettingsReads = 0;
 type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "package-filter-conflict" | "package-filter-denied" | "capabilities-missing";
 
 const SUPPORTED_CAPABILITIES = [
+    RPC_CAPABILITIES.logsRead,
     "backups.create.v1",
     "backups.read.v1",
     "backups.restore.v1",
@@ -173,14 +179,28 @@ const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
 const mode = (query.get("state") ?? "ready") as HarnessMode;
 const materialEvidence = query.get("material") === "1";
-if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
+const operationLogEvidence = query.get("operation-log-preview") === "1";
+if (!materialEvidence && !operationLogEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
+    async logsRead(params: LogsReadParams): Promise<LogsReadResult> {
+        const fixture = window.fixtureLogs;
+        fixture.reads.push(structuredClone(params));
+        if (fixture.fail) throw { code: "daemon_unavailable", message: "" };
+        const forward = params.afterSequence !== undefined;
+        const matches = fixture.entries.filter((entry) => forward ? entry.sequence > params.afterSequence!
+            : entry.sequence < (params.beforeSequence ?? Number.POSITIVE_INFINITY));
+        matches.sort((a, b) => forward ? a.sequence - b.sequence : b.sequence - a.sequence);
+        const entries = matches.slice(0, params.limit ?? 100);
+        const hasMore = entries.length < matches.length;
+        const nextSequence = hasMore ? entries.at(-1)?.sequence : undefined;
+        if (!forward) entries.reverse();
+        return { entries, highWatermark: Math.max(0, ...fixture.entries.map((entry) => entry.sequence)), hasMore, nextSequence };
+    }
+
     subscribeEvents = browserCoreEvents.subscribe;
     private genericTasks = new Map<string, Operation>();
     private operationSequence = 0;
-    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"), query.has("log-history"), query.has("history-initial-failure"));
-    private readonly localLog = new BrowserDiagnosticLog(true, false, false, false, "gui");
     private listExportAttempts = 0;
     private listPreviewReads = 0;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
@@ -229,7 +249,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             unity: { hubPath: null, defaultLaunchArguments: query.has("default-arguments") ? JSON.parse(query.get("default-arguments")!) as string[] : null },
             window: { rememberState: false, fullscreen: query.has("window-fullscreen") },
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
-            locale: "en-US",
+            locale: query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US",
             packages: {
                 showPrerelease: false,
                 hiddenRepositoryIds: [],
@@ -331,7 +351,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : [...SUPPORTED_CAPABILITIES, ...(query.has("diagnostic-log") ? ["diagnostics.log.v1"] : [])].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
+                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
         });
     }
 
@@ -394,14 +414,19 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value(this.genericTasks.get(operationId) ?? runningOperation());
     }
 
-    operationCancel(operationId: string, expectedRevision: number): ReturnType<GuiRpcClient["operationCancel"]> {
+    async operationCancel(operationId: string, expectedRevision: number): ReturnType<GuiRpcClient["operationCancel"]> {
         if (query.has("h3")) {
             window.h3Requests.push({ method: "operations.cancel", params: { operationId, expectedRevision } });
             if (query.has("h3-cancel-conflict") && window.h3Requests.filter((request) => request.method === "operations.cancel").length === 1) return Promise.reject({ code: "resource_revision_conflict" });
             window.h3Operation = { ...window.h3Operation, state: "cancelling", revision: expectedRevision + 1 };
             return this.value({ operation: window.h3Operation, replayed: false });
         }
-        return this.value({ operation: { ...runningOperation(), operationId, state: "cancelling", revision: 4 }, replayed: false });
+        const current = this.genericTasks.get(operationId) ?? { ...runningOperation(), operationId };
+        if (current.revision !== expectedRevision) throw { code: "revision_conflict" };
+        const result = await this.value({ operation: { ...current, state: "cancelling" as const, revision: expectedRevision + 1 }, replayed: false });
+        this.genericTasks.set(operationId, result.operation);
+        browserCoreEvents.emit("operation", operationId, "operation.state_changed", result.operation.revision);
+        return result;
     }
 
     private hubLocation(hubPath: string | null): SettingsGetResult["unityHub"] {
@@ -499,29 +524,6 @@ class DeterministicGuiClient implements GuiRpcClient {
             throw { code: "internal_error" };
         }
         return this.value(this.settings);
-    }
-
-    activityList(): ReturnType<GuiRpcClient["activityList"]> {
-        return this.value({ items: this.mode === "empty" ? [] : [{ activityId: OPERATION_ID, revision: 1, action: "packages.apply", status: "running", startedAtMs: 1_700_000_000_000, subject: { kind: "project", id: PROJECT_ID, name: "Sample" }, parameters: {}, operationId: OPERATION_ID }] });
-    }
-    activityGet(activityId: string): ReturnType<GuiRpcClient["activityGet"]> { return this.value({ activity: { activityId, revision: 1, action: "packages.apply", status: "running", startedAtMs: 1_700_000_000_000, subject: { kind: "project", id: PROJECT_ID, name: "Sample" }, parameters: {}, operationId: OPERATION_ID } }); }
-    diagnosticLogRead(params: Parameters<GuiRpcClient["diagnosticLogRead"]>[0]): ReturnType<GuiRpcClient["diagnosticLogRead"]> { return this.diagnosticLog.read(params); }
-    diagnosticLogCancel(): Promise<void> { return this.diagnosticLog.cancel(); }
-    diagnosticLogHistory(params: Parameters<GuiRpcClient["diagnosticLogHistory"]>[0]): ReturnType<GuiRpcClient["diagnosticLogHistory"]> { return this.diagnosticLog.history(params); }
-    diagnosticLogHealth(): ReturnType<GuiRpcClient["diagnosticLogHealth"]> { return this.diagnosticLog.health(); }
-    localLogRead(params: Parameters<GuiRpcClient["localLogRead"]>[0]): ReturnType<GuiRpcClient["localLogRead"]> { return this.localLog.read(params); }
-    localLogCancel(): Promise<void> { return this.localLog.cancel(); }
-    localLogHistory(params: Parameters<GuiRpcClient["localLogHistory"]>[0]): ReturnType<GuiRpcClient["localLogHistory"]> { return this.localLog.history(params); }
-    localLogHealth(): ReturnType<GuiRpcClient["localLogHealth"]> { return this.localLog.health(); }
-    reportFrontendError(error: Parameters<GuiRpcClient["reportFrontendError"]>[0]): Promise<void> {
-        const bytes = (value: string) => new TextEncoder().encode(value).byteLength;
-        if (!error.name || bytes(error.name) > 128 || bytes(error.message) > 4096
-            || error.stack !== undefined && bytes(error.stack) > 16384
-            || error.location !== undefined && bytes(error.location) > 2048
-            || ["RpcError", "CoreRpcError"].includes(error.name)) return Promise.reject({ code: "invalid_params" });
-        window.frontendErrorReports.push(structuredClone(error));
-        this.localLog.append({ message: "unhandled frontend exception", target: "alcomd_gui::frontend", frontendError: error });
-        return this.value(undefined);
     }
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
@@ -1230,11 +1232,11 @@ const browserClient = query.has("h4-portable") ? withH4PortableClient(management
 const utilitiesClient = query.has("h5-utilities") ? withH5UtilitiesClient(browserClient, query) : browserClient;
 const settingsClient = query.has("h5-settings") ? withH5SettingsClient(utilitiesClient, query) : utilitiesClient;
 window.fixtureCore = withBrowserCoreEvents(settingsClient);
-if (query.has("view-cache-pressure")) enableViewCachePressure();
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        {query.has("reminder-presentation") ? <ReminderPresentationEvidence mode={query.get("appearance") === "dark" ? "dark" : "light"} /> : query.has("request-reminder") ? <RequestReminderEvidence locale={query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US"} /> : materialEvidence
+        {materialEvidence
             ? <MaterialFoundationEvidence />
+            : operationLogEvidence ? <OperationLogEvidence />
             : <App client={window.fixtureCore} />}
     </React.StrictMode>
 );

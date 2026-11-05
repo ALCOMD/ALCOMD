@@ -145,46 +145,6 @@ pub(super) async fn dispatch(
                 Err(error) => official_error(request.id, error),
             }
         }
-        rpc::METHOD_ACTIVITY_LIST => {
-            let p: rpc::ActivityListParams = match serde_json::from_value(request.params) {
-                Ok(p) => p,
-                Err(_) => return invalid(request.id),
-            };
-            let cursor = p.cursor.map(|c| app::OfficialActivityCursor {
-                started_at_ms: c.started_at_ms,
-                activity_id: c.activity_id,
-            });
-            match application.list_activity(access, cursor, p.limit).await {
-                Ok(page) => success_action(
-                    request.id,
-                    rpc::ActivityListResult {
-                        items: page.items.into_iter().map(activity_item).collect(),
-                        next_cursor: page.next_cursor.map(|c| rpc::ActivityCursor {
-                            started_at_ms: c.started_at_ms,
-                            activity_id: c.activity_id,
-                        }),
-                    },
-                    None,
-                ),
-                Err(e) => official_error(request.id, e),
-            }
-        }
-        rpc::METHOD_ACTIVITY_GET => {
-            let p: rpc::ActivityGetParams = match serde_json::from_value(request.params) {
-                Ok(p) => p,
-                Err(_) => return invalid(request.id),
-            };
-            match application.get_activity(access, p.activity_id).await {
-                Ok(item) => success_action(
-                    request.id,
-                    rpc::ActivityGetResult {
-                        activity: activity_item(item),
-                    },
-                    None,
-                ),
-                Err(e) => official_error(request.id, e),
-            }
-        }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }
@@ -358,12 +318,6 @@ fn locale_from_rpc(value: rpc::SettingsLocale) -> app::ConfigLocale {
 fn official_error(id: String, error: app::OfficialGuiError) -> DispatchAction {
     let diagnostic = error.diagnostic_id().map(str::to_owned);
     let mut error = match error.kind() {
-        app::OfficialGuiErrorKind::ActivityNotFound => rpc::RpcError {
-            code: "activity_not_found".to_owned(),
-            message: "The activity was not found.".to_owned(),
-            diagnostic_id: None,
-            data: None,
-        },
         app::OfficialGuiErrorKind::InvalidInput => rpc::RpcError::invalid_request(),
         app::OfficialGuiErrorKind::PermissionDenied => rpc::RpcError::permission_denied(),
         app::OfficialGuiErrorKind::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -402,26 +356,6 @@ fn hub_open_error(id: String, error: app::UnityHubOpenError) -> DispatchAction {
     };
     error.diagnostic_id = diagnostic;
     error_action(Some(id), error, false)
-}
-
-fn activity_item(v: app::OfficialActivityItem) -> rpc::ActivityItem {
-    rpc::ActivityItem {
-        activity_id: v.activity_id,
-        revision: v.revision,
-        action: v.action,
-        status: v.status,
-        started_at_ms: v.started_at_ms,
-        finished_at_ms: v.finished_at_ms,
-        subject: rpc::ActivitySubject {
-            kind: v.subject.kind,
-            id: v.subject.id,
-            name: v.subject.name,
-        },
-        parameters: v.parameters,
-        result: v.result.map(|r| rpc::ActivityResult { code: r.code }),
-        operation_id: v.operation_id,
-        diagnostic_id: v.diagnostic_id,
-    }
 }
 
 #[cfg(test)]

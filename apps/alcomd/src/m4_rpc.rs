@@ -372,9 +372,7 @@ fn source_pin(value: app::PackageSourcePin) -> rpc::PackageSourcePin {
 }
 
 fn m4_error(id: String, error: app::M4Error) -> DispatchAction {
-    let diagnostic_id = error.diagnostic_id().map(str::to_owned).unwrap_or_else(|| {
-        super::failure_report::report(&error, error.path(), "execution request failed")
-    });
+    let diagnostic_id = error.diagnostic_id().map(str::to_owned);
     let mut rpc_error = match error.code() {
         app::M4ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M4ErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
@@ -387,7 +385,9 @@ fn m4_error(id: String, error: app::M4Error) -> DispatchAction {
         }
         code => rpc::RpcError::m4_resource(code.as_str(), error.subreason()),
     };
-    rpc_error.diagnostic_id = Some(diagnostic_id);
+    if diagnostic_id.is_some() {
+        rpc_error.diagnostic_id = diagnostic_id;
+    }
     error_action(Some(id), rpc_error, false)
 }
 

@@ -183,6 +183,14 @@ pub(super) fn enroll(
         "user_package.enrolled",
         now_ms,
     )?;
+    log_package(
+        &transaction,
+        owner,
+        &response.user_package,
+        ENROLL,
+        "registered",
+        now_ms,
+    )?;
     save_response(
         &transaction,
         owner,
@@ -269,6 +277,14 @@ pub(super) fn refresh(
         user_package: record,
         replayed: false,
     };
+    log_package(
+        &transaction,
+        owner,
+        &response.user_package,
+        REFRESH,
+        "refreshed",
+        now_ms,
+    )?;
     save_response(
         &transaction,
         owner,
@@ -308,15 +324,6 @@ pub(super) fn remove(
         return Err(error(UserPackageErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
-    super::activity::resource(
-        &transaction,
-        owner,
-        "user-package.remove",
-        "user-package",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM user_package_sources WHERE owner_principal_id=?1 AND
@@ -336,6 +343,14 @@ pub(super) fn remove(
         id,
         next,
         "user_package.removed",
+        now_ms,
+    )?;
+    log_package(
+        &transaction,
+        owner,
+        &current,
+        REMOVE,
+        "unregistered",
         now_ms,
     )?;
     save_response(
@@ -541,16 +556,26 @@ fn insert_event(
             ],
         )
         .map_err(sql_failure)?;
-    super::activity::resource_event(
-        transaction,
-        owner,
-        kind,
-        "user-package",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(sql_failure)?;
     Ok(())
+}
+
+fn log_package(
+    connection: &Connection,
+    owner: &PrincipalId,
+    record: &UserPackageRecord,
+    action: &str,
+    step: &str,
+    now_ms: u64,
+) -> Result<(), UserPackageError> {
+    let mut target = alcomd_application::log_path("package", record.source_root_path.clone());
+    target.name = Some(record.package_id.clone());
+    super::operation_logs::committed(
+        connection,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(action, step, Some(target)),
+    )
+    .map_err(|cause| unavailable().with_source(cause))
 }
 
 fn enroll_fingerprint(source_path: &str) -> Result<String, UserPackageError> {

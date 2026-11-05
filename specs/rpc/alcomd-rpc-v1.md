@@ -762,44 +762,15 @@ State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable che
 action、replay 与 renderer state 都不持久化。State v9 是该功能的引入版本；当前 hello 报告 ready Store 的实际
 State v18，并只在 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
 
-## 24. M7 兼容增加：Official GUI settings/activity/diagnostics
+## 24. M7：Official GUI settings
 
-M7 在 RPC major 1 上提供设置和独立活动 base methods，无独立 capability；技术日志使用 `diagnostics.log.v1`，另有已批准的
-`unity.hub.open`，使用独立 `unity.hub.open.v1` capability：
+M7 保留设置 base methods 与独立 `unity.hub.open.v1`。所有者于2026-11-05批准撤销日志、活动记录及提示系统，这是未发布RPC major 1的破坏性删除：`activity.list/get`、`diagnostics.list`、`diagnostics.log.read/history/health`、`diagnostics.log.v1`及其专属权限/DTO不再提供，无兼容别名；旧方法按未知方法拒绝。业务Operation、Event与`events.live.v1`不受影响。
 
 | method | params | result | permission |
 |---|---|---|---|
 | `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
 | `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
-| `activity.list` | optional stable start-time/ID `cursor`, optional `limit` | independent activity items and next cursor | `activity.read` |
-| `activity.get` | `activityId` | one owner-visible activity | `activity.read` |
-| `diagnostics.log.read` | opaque `cursor`, `limit` 1–200, `follow`, closed `query` | standard JSON records, readable cursor and independent health | `diagnostics.read`, authenticated local-owner only |
-| `diagnostics.log.history` | opaque `cursor`, optional baseline `before`, bounded `query`, `limit` 1–200 | retained records, scan progress, issues and health | `diagnostics.read`, authenticated local-owner only |
-| `diagnostics.log.health` | `{}` | independent process-local source health | `diagnostics.read`, authenticated local-owner only |
-
-These are owner-approved unpublished breaking replacements. The complete log contract is
-`m7-diagnostic-log.schema.json`. Records retain standard tracing JSON, wrapped only with
-source/session/segment/offset identities. No notification or GUI-authored business log exists.
-Core and GUI own separate controlled sources; native GUI reads its own files while Core is offline.
-The file worker publishes only complete readable lines, never enqueue acknowledgements. Each
-source retains five 5MiB segments across sessions, with a 512KiB record and 64-record lossy queue.
-Health revisions independently wake readers on rejection and I/O failure; they do not require a
-successful log line. Reads register the latest-state signal before checking data/health. The initial
-baseline B joins forward live reads to history before B. Idle follow has no periodic timeout or
-empty heartbeat. Search matches decoded JSON field names/values, including spans and actual paths, case-insensitively; search is bounded to 4096 UTF-8 bytes. Closed filters apply at the source over retained files, with 1MiB scan, 100 default /
-200 maximum items and the existing 4MiB encoded frame limit. No-match scans still advance.
-Corruption, partial sealed tails, source replacement and expired cursors are explicit; no arbitrary
-path is accepted. Read issues are capped at 32, with further issues aggregated as additional_issues; health lastFailure.message is at most 4096 characters. Request writes and partially arriving follow frames have five-second bounds; healthy idle waits do not. JSON and ordinary business errors have
-different boundaries: full technical paths/causes are local-owner-only, ordinary errors stay stable.
-Activity uses independent State19 records, snapshot subjects and closed action parameters. Task
-creation/status/recovery/terminal changes and activity.changed commit together; progress, replay
-and repeated state do not change activity revision. Explicit authorized execution precheck failures
-may record a separate failure activity without changing business/Operation/idempotency state;
-if that write fails, error.data.activityRecordingUnavailable=true preserves the original error.
-Protocol/authorization rejection and queries/previews do not create activity. No old data conversion
-or old-format compatibility is implemented. See the current approved M7 ExecPlan for bounds,
-shutdown, health, source ownership and isolated fault tests.
 
 已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
 偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
@@ -811,7 +782,7 @@ configuredPathStatus；读取使用该响应的准确 ConfigSnapshot，派生状
 `../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v8.md`。
 
 settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对路径，这是通用 redaction
-denylist 的窄例外；Activity、Event、普通错误和诊断投影不得因此泄露路径。位置偏好本身不新增
+denylist 的窄例外；Event和普通错误不得因此泄露路径。位置偏好本身不新增
 method、capability、permission、Config version 或 State migration；严格旧客户端须更新新增的发布前响应字段。
 
 已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v1` 和权限
@@ -839,10 +810,6 @@ Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程�
 此方法不写配置／项目／State，不创建 Plan、Apply、Operation 或 Event。没有持久幂等承诺；
 传输结果不明不能自动重试，GUI 保留明确错误并要求确认 Hub 是否已经打开，再由所有者再次
 点击形成新意图。完整请求、结果及新增错误枚举由当前 RPC Schema 冻结。
-
-Activity page size defaults to 100 (maximum 200), ordered by fixed (startedAtMs,activityId).
-Owner isolation, immutable subject snapshots and no cascade deletion apply. Technical log paging
-and source health are governed by the dedicated local-owner contract, not the removed diagnostics.list projection.
 
 ## 25. M7 兼容增加：Project Copy
 
@@ -928,7 +895,7 @@ journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemo
 `project.unity_version_migrated` Event；Unity exit status 本身不是成功 authority。
 
 公开 Plan/Event/error 不包含 project/executable 完整路径、argv、PID、stdout/stderr 或 private recovery locator。受控本地技术
-日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Activity、Event 或普通 diagnostics 的脱敏合同。完整 DTO、phase、
+日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Event或普通错误 的脱敏合同。完整 DTO、phase、
 permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
 和 M7 Unity ExecPlan 冻结。当前 Store 初始化至 State v18 后，hello 广告 `dataSchema: 18`。
 
@@ -1007,3 +974,38 @@ templates.planCreateProject的请求增加必需unityVersion完整规范Editor�
 包/锁依赖的普通范围与项目直接依赖范围分开；普通完整裸版本为exact，项目直接依赖单版本沿有据的minimum语义。unityRelease补充unity最低版本判断，Core候选与Plan一致；无unity时不施加此门槛。权限、来源、强摘要、Plan/Apply和启动exact匹配保持。
 
 本轮PackageChangeSet formatVersion=3固定新的范围上下文及保留锁元数据写出依据（Schema同时描述历史1/2）。1/2未接受Plan返回既有plan_stale；已接受任务保持原冻结摘要恢复，禁止自动重签。此依据标记不改变SQL结构、权限或请求幂等语义。
+
+## M7 单页业务日志（2026-11-06，所有者已批准实施）
+
+范围和存储以`docs/exec-plans/M7-official-gui-extension-ui.md`的“单页业务操作日志”为准。这是向RPC v1新增只读方法和经能力协商的失效范围，不恢复diagnostics/activity接口。
+
+- 新增`logs.read`，能力`logs.read.v1`，仅authenticated local-owner且有既有`operations.read`权限，按owner隔离，无公开写入方法。
+- params：可选`beforeSequence`、`afterSequence`互斥，limit默认100、最大200；无位置读最近记录，before向旧、after向新。所有位置为非负JSON安全整数。
+- result：`entries`始终sequence升序；`highWatermark`为同一数据库读取快照中该owner的最新日志sequence；`hasMore`及有剩余时的`nextSequence`支持内部续读。before的next为本批最小sequence，after的next为最大sequence；无位置按before处理。单条512KiB、帧4MiB，按完整条目编码大小控制批次，不截断或跳过剩余条目。
+- 每行保存稳定`action`/`step`、实际发生时的`outcome`、目标快照、真实必要详情，GUI负责标签本地化。sequence和entryId跨重启保持；不从RPC响应、事件投影或GUI提示生成日志。
+- `actor`是发起入口（GUI、CLI、MCP、Local API、Core或Local IPC），沿用`system.hello`的客户端名称元数据绑定到连接，不代表权限或自然人身份。任务执行及恢复沿用原发起入口，取消请求记录实际提交入口。
+- 既有`events.batch.invalidatedScopes`拟增加`operation-log`；由Store提交后的日志水位变化唤醒，共用订阅/ACK/取消和重连，不新增计时轮询或第二条页面通知连接。失效不包含日志正文、不授予读取权限。
+- 页面无用户分页，自动按滚动范围续读；历史仍在Core，展示缓存有界。读取失败按现有错误响应处理，不能返回空成功；Core离线保留已读内容并明确过期/重试。
+
+以下仅为预期数据形状，非实际运行记录：
+
+```json
+{
+  "sequence": 4,
+  "entryId": "11111111-1111-4111-8111-111111111111",
+  "executionId": "22222222-2222-4222-8222-222222222222",
+  "actor": "GUI",
+  "occurredAtMs": 1793937603000,
+  "action": "projects.register",
+  "step": "read_manifest",
+  "outcome": "failed",
+  "target": {
+    "kind": "project",
+    "name": "项目A",
+    "path": "C:\\ALCOMD-Test\\项目A\\Packages\\vpm-manifest.json"
+  },
+  "details": "Failed to read project manifest: C:\\ALCOMD-Test\\项目A\\Packages\\vpm-manifest.json\ncaused by: access denied (os error 5)"
+}
+```
+
+owner仅为内部归属，不在条目中暴露；operationId仅关联已接受任务时存在。数据库不可用无法保证写历史，不能由前端补造。普通业务RPC错误不因此增加任意技术正文。

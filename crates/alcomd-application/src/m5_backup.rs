@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -159,6 +158,20 @@ pub enum BackupPhase {
     PublishIntent,
     ArchivePublished,
     StateCommitted,
+}
+
+impl BackupPhase {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::InventoryReady => "inventory_ready",
+            Self::Archiving => "archiving",
+            Self::ArchiveReady => "archive_ready",
+            Self::PublishIntent => "publish_intent",
+            Self::ArchivePublished => "archive_published",
+            Self::StateCommitted => "state_committed",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -379,14 +392,11 @@ impl M5BackupError {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
-    fn record_failure(
-        mut self,
-        operation_id: crate::OperationId,
-        message: &'static str,
-    ) -> (Self, String) {
-        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
-            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
-        });
+    fn ensure_diagnostic_id(mut self) -> (Self, String) {
+        let id = self
+            .diagnostic_id
+            .clone()
+            .unwrap_or_else(|| crate::OperationId::new().to_string());
         self.diagnostic_id = Some(id.clone());
         (self, id)
     }
@@ -786,7 +796,17 @@ where
             destination: None,
         };
         if let Some(directory) = defaults.directory {
-            request.destination = Some(self.adapter.prepare_destination(directory).await?);
+            let target = crate::log_path("directory", directory.clone());
+            request.destination = Some(
+                crate::log_execution_step(
+                    "backups.create",
+                    "prepare_destination",
+                    Some(target),
+                    self.adapter.prepare_destination(directory),
+                    |error| error.path().map(str::to_owned),
+                )
+                .await?,
+            );
         }
         let outcome = self
             .store
@@ -815,10 +835,22 @@ where
             .store
             .get_backup(access.principal().clone(), backup_id)
             .await?;
-        let draft = self
-            .adapter
-            .plan_restore(backup, target_parent, target_leaf)
-            .await?;
+        let target = crate::log_path(
+            "project",
+            target_parent
+                .join(&target_leaf)
+                .to_string_lossy()
+                .into_owned(),
+        );
+        let draft = crate::log_execution_step(
+            "backups.restore",
+            "check_backup",
+            Some(target),
+            self.adapter
+                .plan_restore(backup, target_parent, target_leaf),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         let plan = self
             .store
             .create_backup_restore_plan(access.principal().clone(), draft, now_ms()?)
@@ -859,42 +891,34 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                if let Err(source) = application.run(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Backup execution failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _ = application.run(operation_id).await;
+        });
     }
 
     fn schedule_restore(&self, operation_id: OperationId, recovery: Option<ProjectRecoveryGuard>) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                let _recovery = recovery;
-                if let Err(source) = application.run_restore(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Backup execution failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _recovery = recovery;
+            let _ = application.run_restore(operation_id).await;
+        });
     }
 
     async fn run_restore(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
         let result = self.run_restore_inner(operation_id).await;
         if let Err(source) = result {
-            let (source, diagnostic_id) =
-                source.record_failure(operation_id, "Backup execution failed");
-            self.store
-                .fail_backup_restore(
+            let (source, diagnostic_id) = source.ensure_diagnostic_id();
+            crate::with_operation_log_failure(
+                operation_id,
+                crate::operation_log_error(&source, source.path()),
+                self.store.fail_backup_restore(
                     operation_id,
                     error_name(source.code()).to_owned(),
                     diagnostic_id.clone(),
                     now_ms()?,
-                )
-                .await?;
+                ),
+            )
+            .await?;
             return Err(source);
         }
         Ok(())
@@ -1029,22 +1053,24 @@ where
     async fn run(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
         let result = self.run_inner(operation_id).await;
         if let Err(source) = result {
-            let (source, diagnostic_id) =
-                source.record_failure(operation_id, "Backup execution failed");
+            let (source, diagnostic_id) = source.ensure_diagnostic_id();
             if source.code() == M5BackupErrorCode::RecoveryRequired {
                 self.store
                     .defer_backup_recovery(operation_id, diagnostic_id.clone(), now_ms()?)
                     .await?;
                 return Err(source);
             }
-            self.store
-                .fail_backup_create(
+            crate::with_operation_log_failure(
+                operation_id,
+                crate::operation_log_error(&source, source.path()),
+                self.store.fail_backup_create(
                     operation_id,
                     error_name(source.code()).to_owned(),
                     diagnostic_id.clone(),
                     now_ms()?,
-                )
-                .await?;
+                ),
+            )
+            .await?;
             return Err(source);
         }
         Ok(())
@@ -1123,22 +1149,19 @@ where
             let cancellation = BackupCancellation::default();
             let monitor = cancellation.clone();
             let store = self.store.clone();
-            let polling = tokio::spawn(
-                (async move {
-                    while !monitor.stopped() {
-                        if store
-                            .cancellation_requested(operation_id)
-                            .await
-                            .unwrap_or(false)
-                        {
-                            monitor.cancel();
-                            break;
-                        }
-                        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            let polling = tokio::spawn(async move {
+                while !monitor.stopped() {
+                    if store
+                        .cancellation_requested(operation_id)
+                        .await
+                        .unwrap_or(false)
+                    {
+                        monitor.cancel();
+                        break;
                     }
-                })
-                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-            );
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+            });
             let archived = self
                 .adapter
                 .archive(

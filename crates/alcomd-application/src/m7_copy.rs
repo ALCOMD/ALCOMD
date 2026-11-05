@@ -4,7 +4,6 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -187,14 +186,11 @@ impl M7CopyError {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
-    fn record_failure(
-        mut self,
-        operation_id: crate::OperationId,
-        message: &'static str,
-    ) -> (Self, String) {
-        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
-            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
-        });
+    fn ensure_diagnostic_id(mut self) -> (Self, String) {
+        let id = self
+            .diagnostic_id
+            .clone()
+            .unwrap_or_else(|| crate::OperationId::new().to_string());
         self.diagnostic_id = Some(id.clone());
         (self, id)
     }
@@ -380,15 +376,10 @@ where
         {
             let recovery = self.locks.project_recovery_guard();
             let application = self.clone();
-            tokio::spawn(
-                (async move {
-                    let _recovery = recovery;
-                    if let Err(source) = application.run(operation_id).await {
-                        let _ = source.record_failure(operation_id, "Project copy failed");
-                    }
-                })
-                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-            );
+            tokio::spawn(async move {
+                let _recovery = recovery;
+                let _ = application.run(operation_id).await;
+            });
         }
         Ok(())
     }
@@ -421,10 +412,16 @@ where
         if writer.state == UnityWriterStateKind::RunningConfirmed {
             return Err(error(M7CopyErrorCode::UnityProjectRunning));
         }
-        let draft = self
-            .adapter
-            .plan(source, target_parent, target_leaf, writer, key, now_ms()?)
-            .await?;
+        let target = crate::log_path("project", source.observation.root_path.clone());
+        let draft = crate::log_execution_step(
+            "projects.copy",
+            "inspect_project",
+            Some(target),
+            self.adapter
+                .plan(source, target_parent, target_leaf, writer, key, now_ms()?),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .create_project_copy_plan(access.principal().clone(), draft)
             .await
@@ -497,29 +494,26 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                if let Err(source) = application.run(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Project copy failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _ = application.run(operation_id).await;
+        });
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M7CopyError> {
         let result = self.run_inner(operation_id).await;
         if let Err(source) = result {
-            let (source, diagnostic_id) =
-                source.record_failure(operation_id, "Project copy failed");
-            self.store
-                .fail_project_copy(
+            let (source, diagnostic_id) = source.ensure_diagnostic_id();
+            crate::with_operation_log_failure(
+                operation_id,
+                crate::operation_log_error(&source, source.path()),
+                self.store.fail_project_copy(
                     operation_id,
                     project_copy_error_name(source.code()).to_owned(),
                     diagnostic_id.clone(),
                     now_ms()?,
-                )
-                .await?;
+                ),
+            )
+            .await?;
             return Err(source);
         }
         Ok(())

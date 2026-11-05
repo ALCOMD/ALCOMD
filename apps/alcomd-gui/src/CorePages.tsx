@@ -2,13 +2,11 @@ import { Translated, useTranslation } from "./i18n";
 import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
-import { ActivityLogItems, activityItemKey } from "./ActivityLogItems";
 import { OperationItems } from "./OperationItems";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
-import "./LogsWorkspace.css";
 import { actionableVersion, candidateSource, candidateSourceKey, choiceText, intentForSummary, queryCandidates, readCandidateSummary, reasonText, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
@@ -83,14 +81,11 @@ import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
-import { Reminder, RequestReminder, useInlineError } from "./Reminder";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
-import { TechnicalLogs } from "./TechnicalLogs";
-import type { DiagnosticLogLevel } from "@alcomd/sdk";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -187,7 +182,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`}>
             <h2>{disconnected ? t("ALCOMD core disconnected") : t("Request failed")}</h2>
-            <RequestReminder error={error} title={null} />
+            <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>
             <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">{t("Reconnect and retry")}</Button>
         </section>
     );
@@ -653,8 +648,8 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             {workspace ? null : unityLaunch.dialogs}
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? t("Preparing permanent deletion…") : workspace ? t("Remove this project from the list?") : t("Remove this project?") : t("Permanently delete project directory?")}>
-                {removalFailure === undefined ? null : removalFailure.error === undefined ? <Reminder tone="error">{removalFailure.message}</Reminder>
-                    : <RequestReminder error={removalFailure.error} message={removalFailure.message} />}
+                {removalFailure === undefined ? null : removalFailure.error === undefined ? <p role="alert">{removalFailure.message}</p>
+                    : <div role="alert"><p>{t((removalFailure.message) ?? requestErrorMessage((removalFailure.error).code))}</p><code>{(removalFailure.error).code}</code>{removalFailure.error.diagnosticId === undefined ? null : <p><code>{removalFailure.error.diagnosticId}</code></p>}</div>}
                 {deletePlan === undefined && removalIntent === "unregister" ? <>
                     <p>{workspace ? t("Remove the ALCOMD registration for this project?") : t("Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.")}</p>
                     <p>{t("Removing from the list does not delete files.")}</p>
@@ -821,8 +816,8 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         </div>
                     </>
                 )}
-                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
-                {error === undefined ? null : <RequestReminder error={error} message={t("Copy failed: ") + t(requestErrorMessage(error.code))} />}
+                {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
+                {error === undefined ? null : <div role="alert"><p>{t(t("Copy failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             </div>
         </Dialog>
     );
@@ -932,7 +927,7 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
                     <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{t("Confirm")}</Button>
                 </div>
             </div>
-            {error === undefined ? null : <RequestReminder error={error} message={t("Registration failed: ") + t(requestErrorMessage(error.code))} />}
+            {error === undefined ? null : <div role="alert"><p>{t(t("Registration failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         </Dialog>
     );
 }
@@ -1590,11 +1585,11 @@ function ResourceNavigation({ current, navigate }: { current: string; navigate(p
     return <nav aria-label={t("Resources")} className="resource-navigation"><SegmentedButtons label={t("Resource sections")} value={current} onChange={navigate} options={[{ value: "/repositories", label: t("Repositories") }, { value: "/user-packages", label: t("User Packages"), disabled: !canUseUserPackages, title: capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages, t) }, { value: "/templates", label: t("Templates") }]} /></nav>;
 }
 
-function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings" | "logs"; navigate(path: string): void }) {
+function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings"; navigate(path: string): void }) {
     const { t, locale } = useTranslation();
     const unity = useCapability(capabilities.unityRead);
-    const items = kind === "settings" ? [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }] : [{ path: "/activity", label: t("Activity") }, { path: "/diagnostics", label: t("Technical Logs") }];
-    return <nav aria-label={kind === "settings" ? t("Settings sections") : t("Logs")} className="resource-navigation"><SegmentedButtons label={kind === "settings" ? t("Settings sections") : t("Log sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
+    const items = [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }];
+    return <nav aria-label={t("Settings sections")} className="resource-navigation"><SegmentedButtons label={t("Settings sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
 }
 
 function ActionDisclosure({ children, title }: { children: ReactNode; title: string }) {
@@ -1707,7 +1702,7 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
         </Dialog>
         {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
-        {error === undefined ? null : <RequestReminder error={error} />}
+        {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => { setRemoving(undefined); setError(undefined); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
     </Dialog>}</section>;
 }
@@ -1945,105 +1940,6 @@ export function AboutPage({ client }: PageProps) {
     </section>;
 }
 
-export function ActivityPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
-    const load = useCallback(() => client.activityList(), [client]);
-    const [search, setSearch] = useViewState("activity", "search", "");
-    return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
-        tools={() => <SearchField className="logs-search" label={t("Search activity")} value={search} onInput={setSearch} />}>
-        {(value) => <ActivityLogItems client={client} initial={value}>
-            {(items) => <ActivityLogRows client={client} items={items} search={search} />}
-        </ActivityLogItems>}
-    </UtilityWorkspace>;
-}
-
-type LoadedActivityItem = Awaited<ReturnType<GuiRpcClient["activityList"]>>["items"][number];
-
-function LogFilter({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange(value: string): void }) {
-    const { t, locale } = useTranslation();
-    const options = [...new Set(values)].sort().map((item) => ({ label: item === "unknown" ? t("Unknown") : humanize(t, item), value: item }));
-    if (value !== "" && !options.some((item) => item.value === value)) options.push({ label: humanize(t, value), value });
-    return <Select label={label} value={value} onSelect={onChange} options={[{ label: t("All {value0}", { value0: label }), value: "" }, ...options]} />;
-}
-
-function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {
-    const { t, locale } = useTranslation();
-    const canReadOperations = useCapability(capabilities.operations);
-    const [status, setStatus] = useViewState("activity", "status", "");
-    const [kind, setKind] = useViewState("activity", "kind", "");
-    const [details, setDetails] = useViewState("activity", "details", false);
-    const [selected, setSelected] = useState<string>();
-    const query = search.trim().toLowerCase();
-    const shown = items.filter((item) => (status === "" || (item.status) === status)
-        && (kind === "" || item.action === kind)
-        && [item.action, humanize(t, item.action), item.status, item.subject.name, item.subject.id, item.operationId].some((value) => value?.toLowerCase().includes(query)));
-    return <div className="logs-workspace">
-        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Activity filters")}>
-            <LogFilter label={t("Status")} value={status} values={items.map((item) => item.status)} onChange={setStatus} />
-            <LogFilter label={t("Action")} value={kind} values={items.map((item) => item.action)} onChange={setKind} />
-            <Checkbox checked={details} label={t("Show details")} onChange={setDetails} />
-            <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: items.length })}</p>
-        </div>
-        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "status", header: t("Status"), width: 110 }, { key: "activity", header: t("Activity") }, { key: "target", header: t("Target"), width: 150 }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={items.length === 0 ? t("No activity yet") : t("No matching loaded activity. Change the filters or load more entries.")} label={t("Activity")} minWidth={760} rows={shown.map((item) => ({ key: activityItemKey(item), cells: [
-            formatTime(t, locale, item.startedAtMs),
-            <span className={`state-chip state-chip--${item.status}`}>{humanize(t, item.status)}</span>,
-            <span className="logs-summary"><span>{humanize(t, item.action)}</span>{details ? <dl className="logs-details"><Detail label={t("Action")} value={item.action} />{item.operationId === undefined ? null : <Detail label={t("Operation")} value={item.operationId} />}<Detail label={t("Parameters")} value={JSON.stringify(item.parameters)} />{item.result === undefined ? null : <Detail label={t("Result")} value={humanize(t, item.result.code)} />}{item.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={item.diagnosticId} />}</dl> : null}</span>,
-            <span>{item.subject.name ?? humanize(t, item.subject.kind)}{details && item.subject.id ? <small>{item.subject.id}</small> : null}</span>,
-            item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
-        ] }))} sizing="fixed" />
-        {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
-    </div>;
-}
-
-function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcClient; operationId: string; onClose(): void }) {
-    const { t, locale } = useTranslation();
-    return <Dialog wide open title={t("Operation detail")} onClose={onClose}>
-        <OperationFollow client={client} operationId={operationId}>{(operation, error) => <>
-            {error === undefined ? null : <RequestReminder error={error}><p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p></RequestReminder>}
-            {operation === undefined ? error === undefined ? <LoadingState title={t("Reading progress…")} /> : null : <dl className="logs-operation-details">
-                <Detail label={t("Operation")} value={operation.operationId} /><Detail label={t("Kind")} value={humanize(t, operation.kind)} />
-                <Detail label={t("State")} value={humanize(t, operation.state)} /><Detail label={t("Phase")} value={operation.progress?.phase ?? "—"} />
-                <Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode === undefined ? t("None") : t(requestErrorMessage(operation.errorCode))} />
-                {operation.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={operation.diagnosticId} />}
-            </dl>}
-        </>}</OperationFollow>
-        <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">{t("Close")}</Button></div>
-    </Dialog>;
-}
-
-export function DiagnosticsPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
-    const canCheckState = useCapability(capabilities.stateCheck);
-    const canReadOperations = useCapability(capabilities.operations);
-    const current = useActionScope(client);
-    const [operationId, setOperationId] = useState<string>();
-    const [checking, setChecking] = useState(false);
-    const checkingRef = useRef(false);
-    const inlineError = useInlineError();
-    const runStateCheck = async () => {
-        if (!canCheckState || !canReadOperations || checkingRef.current) return;
-        checkingRef.current = true; setChecking(true); inlineError.clear();
-        try {
-            const result = await client.stateCheck();
-            if (current()) setOperationId(result.operationId);
-        } catch (caught: unknown) {
-            if (current()) inlineError.show(safeError(t, locale, caught), t("State check failed"));
-            checkingRef.current = false; setChecking(false);
-        }
-    };
-    return <section className="utility-workspace">
-        <PageHeader title={t(navigationLabels.logs)}>
-            <UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />
-            <Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} type="button" variant="tonal">{t("Run state check")}</Button>
-        </PageHeader>
-        <ScrollArea className="utility-workspace-body">
-            {inlineError.notice}
-            {operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); }} />}
-            <TechnicalLogs client={client} />
-        </ScrollArea>
-    </section>;
-}
-
 export function SettingsPage(props: PageProps & { settingsWriter: import("./settings-autosave").SettingsAutosave; onApplied(value: SettingsGetResult): void; }) {
     return <SettingsWorkspace {...props} />;
 }
@@ -2100,7 +1996,6 @@ function humanize(t: Translate, value: string): string {
         "packages.upgrade": "Upgrade packages",
         "packages.remove": "Remove packages",
         "packages.install": "Install packages",
-        "project.activity-recorded": "Requested opening in Unity",
         "queued": "queued",
         "running": "running",
         "recovering": "recovering",
@@ -2130,9 +2025,6 @@ function humanize(t: Translate, value: string): string {
         "ready": "ready",
         "warning": "warning",
         "error": "error",
-        "trace": "trace",
-        "debug": "debug",
-        "info": "info",
         "operation": "operation",
         "event": "event",
         "project": "project",

@@ -90,7 +90,7 @@ test("English remains the source-language baseline for shell and project creatio
     await page.goto("/browser-harness.html?route=%2Fprojects&projectGrid=1");
     await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-    for (const name of ["Projects", "Resources", "Settings", "Logs"]) await expect(navigationItem(page, name)).toBeVisible();
+    for (const name of ["Projects", "Resources", "Settings"]) await expect(navigationItem(page, name)).toBeVisible();
     const first = page.locator(".projects-list tbody tr").filter({ hasText: "Avatar Studio" });
     await expect(first.getByRole("button", { name: "Open Unity", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Create project", exact: true }).click();

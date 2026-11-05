@@ -37,6 +37,7 @@ pub(super) fn dispatch(
         access,
         cursor,
         params.limit.unwrap_or(rpc::DEFAULT_EVENT_BATCH_LIMIT),
+        state.capabilities.contains(rpc::CAPABILITY_LOGS_READ_V1),
     ) {
         Ok(subscription) => {
             let mut action = super::success_action(
@@ -112,6 +113,7 @@ async fn deliver<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
             .iter()
             .map(|scope| match scope {
                 app::EventInvalidation::Extensions => rpc::EventInvalidation::Extensions,
+                app::EventInvalidation::OperationLog => rpc::EventInvalidation::OperationLog,
             })
             .collect::<Vec<_>>();
         let metadata = BatchMetadata {
@@ -344,6 +346,7 @@ mod tests {
         let state = ConnectionState {
             connection_id: "permission-test".into(),
             client_instance_id: Some("test".into()),
+            actor: "Local IPC".to_owned(),
             handshake_complete: true,
             capabilities: [rpc::CAPABILITY_EVENTS_LIVE_V1.to_owned()].into(),
         };
@@ -368,7 +371,7 @@ mod tests {
     async fn unexpected_subscription_input_closes_with_a_permanent_notification() {
         let application = application();
         let subscription = application
-            .subscribe_events(&AccessContext::local_owner(), None, 100)
+            .subscribe_events(&AccessContext::local_owner(), None, 100, false)
             .expect("subscription");
         let (mut client, server) = tokio::io::duplex(1024);
         let (reader, writer) = tokio::io::split(server);
@@ -407,7 +410,7 @@ mod tests {
         let application = application();
         let access = AccessContext::local_owner();
         let subscription = application
-            .subscribe_events(&AccessContext::local_owner(), None, 100)
+            .subscribe_events(&AccessContext::local_owner(), None, 100, false)
             .expect("subscription");
         let (mut client, server) = tokio::io::duplex(16);
         let (reader, writer) = tokio::io::split(server);

@@ -3,7 +3,6 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -246,14 +245,11 @@ impl M7UnityMigrationError {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
-    fn record_failure(
-        mut self,
-        operation_id: crate::OperationId,
-        message: &'static str,
-    ) -> (Self, String) {
-        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
-            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
-        });
+    fn ensure_diagnostic_id(mut self) -> (Self, String) {
+        let id = self
+            .diagnostic_id
+            .clone()
+            .unwrap_or_else(|| crate::OperationId::new().to_string());
         self.diagnostic_id = Some(id.clone());
         (self, id)
     }
@@ -494,10 +490,16 @@ where
             &target_unity_version,
             project.observation.project_type,
         )?;
-        let Some(draft) = self
-            .adapter
-            .plan(project, target, writer, authority, key, now_ms()?)
-            .await?
+        let log_target = crate::log_path("project", project.observation.root_path.clone());
+        let Some(draft) = crate::log_execution_step(
+            "projects.unity-migration",
+            "check_editor",
+            Some(log_target),
+            self.adapter
+                .plan(project, target, writer, authority, key, now_ms()?),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?
         else {
             return Err(error(M7UnityMigrationErrorCode::Internal));
         };
@@ -568,14 +570,9 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                if let Err(source) = application.run(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Unity migration failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _ = application.run(operation_id).await;
+        });
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M7UnityMigrationError> {
@@ -827,9 +824,8 @@ where
                     record.phase = UnityMigrationPhase::UnityExited;
                 }
                 Err(cause) => {
-                    let (failure, diagnostic_id) = cause
-                        .with_path(project_path.clone())
-                        .record_failure(operation_id, "Unity migration launch failed");
+                    let (failure, diagnostic_id) =
+                        cause.with_path(project_path.clone()).ensure_diagnostic_id();
                     self.store
                         .record_unity_migration_checkpoint(
                             operation_id,
@@ -931,8 +927,7 @@ where
                     }
                     UnityMigrationRecoveryDisposition::SafelyUnchanged(evidence) => {
                         let failure = launch_failure.take().unwrap_or_else(|| error(M7UnityMigrationErrorCode::Internal).with_reason("Unity migration recovery confirmed the project remained unchanged")).with_path(project_path.clone());
-                        let (_, diagnostic_id) = failure
-                            .record_failure(operation_id, "Unity migration did not complete");
+                        let (_, diagnostic_id) = failure.ensure_diagnostic_id();
                         self.store
                             .record_unity_migration_checkpoint(
                                 operation_id,
@@ -1047,16 +1042,18 @@ where
         operation_id: OperationId,
         failure: M7UnityMigrationError,
     ) -> Result<(), M7UnityMigrationError> {
-        let (failure, diagnostic_id) =
-            failure.record_failure(operation_id, "Unity migration preflight failed");
-        self.store
-            .fail_unity_migration(
+        let (failure, diagnostic_id) = failure.ensure_diagnostic_id();
+        crate::with_operation_log_failure(
+            operation_id,
+            crate::operation_log_error(&failure, failure.path()),
+            self.store.fail_unity_migration(
                 operation_id,
                 error_code(failure.code()).to_owned(),
                 diagnostic_id,
                 now_ms()?,
-            )
-            .await
+            ),
+        )
+        .await
     }
 
     async fn record_recovery_failure(
@@ -1066,9 +1063,7 @@ where
         failure: M7UnityMigrationError,
         path: &str,
     ) -> Result<M7UnityMigrationError, M7UnityMigrationError> {
-        let (failure, diagnostic_id) = failure
-            .with_path(path)
-            .record_failure(operation_id, "Unity migration requires recovery");
+        let (failure, diagnostic_id) = failure.with_path(path).ensure_diagnostic_id();
         self.mark_recovery_required(operation_id, evidence, diagnostic_id)
             .await?;
         Ok(failure)

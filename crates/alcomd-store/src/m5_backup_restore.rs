@@ -12,7 +12,8 @@ pub(super) fn create_plan(
     draft: BackupRestorePlanDraft,
     created_at_ms: u64,
 ) -> Result<BackupRestorePlanRecord, M5BackupError> {
-    connection
+    let transaction = transaction(connection)?;
+    transaction
         .execute(
             "INSERT INTO backup_restore_plans (
                 plan_id,owner_principal_id,state,backup_id,preallocated_project_id,
@@ -43,7 +44,20 @@ pub(super) fn create_plan(
             ],
         )
         .map_err(failure)?;
-    load_plan(connection, owner, draft.plan_id)
+    let target =
+        super::operation_logs::destination_target(&draft.target.parent, &draft.target.leaf);
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        draft.plan_id,
+        "backups.restore",
+        Some(target),
+        created_at_ms,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
+    let record = load_plan(&transaction, owner, draft.plan_id)?;
+    transaction.commit().map_err(failure)?;
+    Ok(record)
 }
 
 pub(super) fn accept(
@@ -102,8 +116,6 @@ pub(super) fn accept(
             ],
         )
         .map_err(failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE backup_restore_plans SET state='applied',apply_operation_id=?1
@@ -235,6 +247,14 @@ pub(super) fn checkpoint(
         "operation.progress",
         updated_at_ms,
     )?;
+    super::operation_logs::operation_phase(
+        &transaction,
+        &owner,
+        operation_id,
+        phase.as_str(),
+        integer(updated_at_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(failure)
 }
 
@@ -345,6 +365,14 @@ pub(super) fn complete(
         "operation.progress",
         completed_at_ms,
     )?;
+    super::operation_logs::operation_phase(
+        &transaction,
+        &owner,
+        operation_id,
+        "state_committed",
+        integer(completed_at_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(failure)
 }
 
@@ -395,7 +423,6 @@ pub(super) fn finish_success(
         completed_at_ms,
     )?;
     transaction.commit().map_err(failure)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = "backups.restore", backup_id = %plan.draft.backup_id, project_id = %plan.draft.project_id, "operation completed");
     Ok(())
 }
 
@@ -750,6 +777,15 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
+    super::operation_logs::operation_edge(
+        connection,
+        owner,
+        operation_id,
+        kind,
+        "{}",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     Ok(())
 }
 

@@ -6,7 +6,7 @@ import { normalizeRequestError } from "./request-errors";
 
 export const EVENT_LIMITS = { mergeMs: 100, intervalMs: 250, maxWaitMs: 500, concurrency: 4, normalConcurrency: 3, dirtyKeys: 512,
     cachedRows: 5_000, cachedBytes: 8 * 1024 * 1024 } as const;
-export type ChangeScope = "projects" | "operations" | "activity" | "diagnostics" | "repositories" | "user-packages" | "templates" | "unity" | "extensions" | "backups";
+export type ChangeScope = "projects" | "operations" | "repositories" | "user-packages" | "templates" | "unity" | "extensions" | "backups";
 export interface EventConnectionState { kind: "connecting" | "ready" | "resyncing" | "disconnected" | "failed"; error?: RpcError; retained?: boolean }
 interface Job { key: string; scopes: readonly string[]; run(): Promise<void>; dirty: boolean; blocked: boolean; urgent: boolean; version: number;
     first: number; last: number; running: boolean; retired: boolean }
@@ -15,8 +15,8 @@ interface ViewRecord { data?: unknown; rows: number; bytes: number; visit: numbe
 
 const terminal = (value: Operation) => ["succeeded", "failed", "cancelled"].includes(value.state);
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-const aggregateKinds = new Set(["activity", "operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
-const READS = new Set(["operationsList", "operationGet", "activityList", "activityGet", "projectsList", "projectGet", "repositoriesList",
+const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
+const READS = new Set(["operationsList", "logsRead", "operationGet", "projectsList", "projectGet", "repositoriesList",
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
     "unityWriterState", "unityLaunchOptions", "templatesList", "templateGet", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
@@ -199,7 +199,8 @@ export class CoreEvents {
         }
         if (!Number.isSafeInteger(batch.nextCursor.resourcesRevision) || batch.nextCursor.resourcesRevision < this.resourcesRevision || batch.invalidatedScopes.length > 0 && batch.nextCursor.resourcesRevision <= this.resourcesRevision
             || batch.invalidatedScopes.length === 0 && batch.nextCursor.resourcesRevision !== this.resourcesRevision
-            || batch.invalidatedScopes.some((scope) => scope !== "extensions")) { this.failed({ code: "event_protocol_error", message: "" }, false); return; }
+            || batch.invalidatedScopes.length > 2 || new Set(batch.invalidatedScopes).size !== batch.invalidatedScopes.length
+            || batch.invalidatedScopes.some((scope) => scope !== "extensions" && scope !== "operation-log")) { this.failed({ code: "event_protocol_error", message: "" }, false); return; }
         let last = this.eventSequence;
         for (const event of batch.events) {
             if (!Number.isSafeInteger(event.sequence) || event.sequence <= last || !uuid(event.eventId) || !uuid(event.aggregateId)
@@ -267,7 +268,6 @@ export class CoreEvents {
             "user-package": "user-packages", "unity-installation": "unity", "project-editor-preference": "projects", "project-unity-launch-config": "projects" };
         const scope = scopes[event.aggregateKind];
         if (scope !== undefined) this.invalidate(scope, /registered|removed|unregistered|deleted/.test(event.kind));
-        if (event.kind === "activity.changed") this.invalidate("activity");
     }
     private lookupResourceImpact(id: string) {
         if (this.jobs.has(`operation:${id}`) || this.lookups.has(id)) return;
@@ -293,7 +293,7 @@ export class CoreEvents {
         let promoted: string | undefined;
         if (this.dirty.size < EVENT_LIMITS.dirtyKeys || this.dirty.has(scope)) this.dirty.add(scope);
         else {
-            const category = scope.startsWith("operation:") ? "operations" : scope.split(":")[0] ?? "activity";
+            const category = scope.startsWith("operation:") ? "operations" : scope.split(":")[0] ?? "operations";
             for (const key of this.dirty) if (key.startsWith(category === "operations" ? "operation:" : category + ":")) this.dirty.delete(key);
             this.dirty.add(category);
             promoted = category;
@@ -453,9 +453,9 @@ export class CoreEvents {
         return result;
     }
     private readVersion(method: string) {
-        const scopes = method === "settingsGet" ? [] : method === "systemStatus" ? ["diagnostics"] : method === "packageQueryProjectCandidates" ? ["projects", "repositories", "user-packages"]
+        const scopes = method === "settingsGet" ? [] : method === "systemStatus" ? [] : method === "packageQueryProjectCandidates" ? ["projects", "repositories", "user-packages"]
             : method === "operationGet" ? ["operation-progress"] : method.startsWith("operations") ? ["operations"]
-            : method.startsWith("activity") ? ["activity"] : method.startsWith("diagnostics") ? ["diagnostics"]
+            : method === "logsRead" ? ["operation-log"]
             : method.startsWith("project") ? ["projects"] : method.startsWith("repositor") ? ["repositories"]
             : method.startsWith("userPackage") ? ["user-packages"] : method.startsWith("unity") ? ["unity", "projects"]
             : method.startsWith("template") ? ["templates"] : method.startsWith("backup") ? ["backups"] : ["extensions"];
@@ -564,19 +564,19 @@ export class CoreEvents {
         if (this.consumedTerminal.size > 1_024) this.consumedTerminal.delete(this.consumedTerminal.values().next().value!);
         return true;
     }
-    metadata<T>(view: "projects" | "operations" | "activity", key: string, initial: T): T {
+    metadata<T>(view: "projects" | "operations" | "operation-log", key: string, initial: T): T {
         const record = this.view(view);
         return Object.hasOwn(record.metadata, key) ? record.metadata[key] as T : initial;
     }
-    setMetadata(view: "projects" | "operations" | "activity", key: string, value: unknown) { this.view(view).metadata[key] = value; }
+    setMetadata(view: "projects" | "operations" | "operation-log", key: string, value: unknown) { this.view(view).metadata[key] = value; }
     private view(key: string) {
         let record = this.views.get(key);
         if (!record) { record = { rows: 0, bytes: 0, visit: ++this.visit, metadata: {} }; this.views.set(key, record); }
         record.visit = ++this.visit;
         return record;
     }
-    readView<T>(key: "projects" | "operations" | "activity"): T | undefined { return this.view(key).data as T | undefined; }
-    writeView(key: "projects" | "operations" | "activity", data: unknown, rows: number) {
+    readView<T>(key: "projects" | "operations"): T | undefined { return this.view(key).data as T | undefined; }
+    writeView(key: "projects" | "operations", data: unknown, rows: number) {
         const record = this.view(key);
         record.data = data; record.rows = rows; record.bytes = new TextEncoder().encode(JSON.stringify(data)).length;
         const totals = () => [...this.views.values()].reduce((sum, item) => ({ rows: sum.rows + item.rows, bytes: sum.bytes + item.bytes }), { rows: 0, bytes: 0 });

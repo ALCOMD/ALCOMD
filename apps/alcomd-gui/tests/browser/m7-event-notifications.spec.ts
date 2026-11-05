@@ -1,7 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import type {} from "./core-events-client";
-import type {} from "./h5-utilities-client";
-import type {} from "./h4-management-client";
 
 const taskId = "00000000-0000-4000-8000-000000000701";
 const extensionId = "com.example.alpha";

@@ -2,7 +2,7 @@ use super::events_tests::{Directory, installed_extension_for};
 use super::*;
 use alcomd_application::{
     AccessContext, Application, EventInvalidation, ExtensionDataDisposition, ExtensionDesiredState,
-    ManifestState, OfficialGuiStore, ProjectType, RepositorySource, UnityArchitecture,
+    ManifestState, ProjectType, RepositorySource, UnityArchitecture,
     UnityMigrationClassificationKind, UnitySourceKind, UnityWriterState, UnityWriterStateKind,
 };
 use rusqlite::{Connection, params};
@@ -47,7 +47,7 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
         );
         let app = Application::new(store.clone());
         let mut subscription = app
-            .subscribe_events(&AccessContext::local_owner(), None, 100)
+            .subscribe_events(&AccessContext::local_owner(), None, 100, false)
             .expect("subscribe");
         M6Store::begin_apply(&store, accepted.operation_id, 12)
             .await
@@ -60,9 +60,8 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
             let page = subscription.next_page().await.expect("uninstall signal");
             assert_eq!(page.invalidated_scopes, [EventInvalidation::Extensions]);
             assert_eq!(page.resources_revision, 1);
-            assert_eq!(page.events.len(), 2);
-            assert_eq!(page.events[0].kind, "activity.changed");
-            assert_eq!(page.events[1].kind, "operation.state_changed");
+            assert_eq!(page.events.len(), 1);
+            assert_eq!(page.events[0].kind, "operation.state_changed");
         } else {
             assert_eq!(
                 commits.borrow().resources_revision,
@@ -325,7 +324,7 @@ fn checkpoint_staged(
 }
 
 #[test]
-fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_duplicate_replay() {
+fn migration_checkpoint_diagnostic_updates_task_and_event_atomically_without_duplicate_replay() {
     let directory = Directory::new();
     let mut connection =
         sqlite::initialize_connection(&directory.database()).expect("isolated database");
@@ -343,12 +342,10 @@ fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_
     .expect("persist public launch intent");
     let before = sqlite::load_owned_operation(&connection, &owner, operation)
         .expect("task before real spawn error");
-    let activity_before =
-        activity::get(&connection, &owner, &operation.to_string()).expect("matching task activity");
     let diagnostic = uuid::Uuid::new_v4().to_string();
     connection
-        .execute_batch("CREATE TEMP TRIGGER reject_activity_diagnostic BEFORE INSERT ON events WHEN NEW.kind='activity.changed' BEGIN SELECT RAISE(ABORT,'controlled activity event failure'); END;")
-        .expect("inject activity event failure");
+        .execute_batch("CREATE TEMP TRIGGER reject_task_diagnostic BEFORE INSERT ON events WHEN NEW.kind='operation.progress' BEGIN SELECT RAISE(ABORT,'controlled task event failure'); END;")
+        .expect("inject task event failure");
     assert!(
         m7_unity_migration::checkpoint(
             &mut connection,
@@ -366,12 +363,8 @@ fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_
             .revision,
         before.revision
     );
-    assert_eq!(
-        activity::get(&connection, &owner, &operation.to_string()).expect("activity rollback"),
-        activity_before
-    );
     connection
-        .execute_batch("DROP TRIGGER reject_activity_diagnostic")
+        .execute_batch("DROP TRIGGER reject_task_diagnostic")
         .expect("release injected failure");
     m7_unity_migration::checkpoint(
         &mut connection,
@@ -384,12 +377,8 @@ fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_
     .expect("commit real error association without changing launch phase");
     let task = sqlite::load_owned_operation(&connection, &owner, operation)
         .expect("committed diagnostic task");
-    let activity = activity::get(&connection, &owner, &operation.to_string())
-        .expect("committed diagnostic activity");
     assert_eq!(task.revision.get(), before.revision.get() + 1);
     assert_eq!(task.diagnostic_id.as_deref(), Some(diagnostic.as_str()));
-    assert_eq!(activity.diagnostic_id, task.diagnostic_id);
-    assert_eq!(activity.revision, activity_before.revision + 1);
     let events_before_replay =
         sqlite::list_events(&connection, &owner, 0, 100).expect("diagnostic commit events");
     for diagnostic_id in [None, Some(diagnostic)] {
@@ -410,10 +399,6 @@ fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_
         task.revision
     );
     assert_eq!(
-        activity::get(&connection, &owner, &operation.to_string()).expect("replayed activity"),
-        activity
-    );
-    assert_eq!(
         sqlite::list_events(&connection, &owner, 0, 100)
             .expect("replay events")
             .events,
@@ -422,43 +407,12 @@ fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_
 }
 
 #[test]
-fn successful_task_logs_only_after_commit_and_not_on_replay() {
-    struct CountSuccess(std::sync::Arc<std::sync::atomic::AtomicUsize>);
-    impl tracing::Subscriber for CountSuccess {
-        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            *metadata.level() == tracing::Level::INFO
-        }
-        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-            tracing::span::Id::from_u64(1)
-        }
-        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-        fn event(&self, event: &tracing::Event<'_>) {
-            struct SuccessMessage(bool);
-            impl tracing::field::Visit for SuccessMessage {
-                fn record_debug(
-                    &mut self,
-                    field: &tracing::field::Field,
-                    value: &dyn std::fmt::Debug,
-                ) {
-                    if field.name() == "message" && format!("{value:?}") == "operation completed" {
-                        self.0 = true;
-                    }
-                }
-            }
-            let mut message = SuccessMessage(false);
-            event.record(&mut message);
-            if message.0 {
-                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
-        fn enter(&self, _: &tracing::span::Id) {}
-        fn exit(&self, _: &tracing::span::Id) {}
-    }
+fn successful_task_and_event_commit_together_and_terminal_replay_is_quiet() {
     let directory = Directory::new();
     let mut connection =
         sqlite::initialize_connection(&directory.database()).expect("isolated database");
     let operation = staged_operation(&mut connection, "migration");
+    let owner = PrincipalId::local_owner();
     begin_staged(&mut connection, "migration", operation, 3);
     m7_unity_migration::checkpoint(
         &mut connection,
@@ -469,28 +423,47 @@ fn successful_task_logs_only_after_commit_and_not_on_replay() {
         None,
     )
     .expect("cleanup ready");
-    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    tracing::subscriber::with_default(CountSuccess(std::sync::Arc::clone(&count)), || {
-        connection.execute_batch("CREATE TEMP TRIGGER reject_success BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'controlled commit failure'); END;").expect("inject failed transaction");
-        assert!(m7_unity_migration::finish_success(&mut connection, operation, 5).is_err());
-        assert_eq!(
-            count.load(std::sync::atomic::Ordering::Relaxed),
-            0,
-            "rollback is not successful execution"
-        );
-        connection
-            .execute_batch("DROP TRIGGER reject_success")
-            .expect("release failure");
-        m7_unity_migration::finish_success(&mut connection, operation, 6)
-            .expect("real success commit");
-        assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1);
-        m7_unity_migration::finish_success(&mut connection, operation, 7).expect("terminal replay");
-        assert_eq!(
-            count.load(std::sync::atomic::Ordering::Relaxed),
-            1,
-            "terminal replay does not make another technical record"
-        );
-    });
+    let before = sqlite::load_owned_operation(&connection, &owner, operation).expect("before");
+    let events = sqlite::list_events(&connection, &owner, 0, 100).expect("before events");
+    connection.execute_batch("CREATE TEMP TRIGGER reject_success BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'controlled commit failure'); END;").expect("inject failure");
+    assert!(m7_unity_migration::finish_success(&mut connection, operation, 5).is_err());
+    assert_eq!(
+        sqlite::load_owned_operation(&connection, &owner, operation)
+            .expect("rollback")
+            .revision,
+        before.revision
+    );
+    assert_eq!(
+        sqlite::list_events(&connection, &owner, 0, 100)
+            .expect("rollback events")
+            .events,
+        events.events
+    );
+    connection
+        .execute_batch("DROP TRIGGER reject_success")
+        .expect("release failure");
+    m7_unity_migration::finish_success(&mut connection, operation, 6).expect("commit success");
+    let completed =
+        sqlite::load_owned_operation(&connection, &owner, operation).expect("completed");
+    assert_eq!(completed.state, alcomd_domain::OperationState::Succeeded);
+    let events = sqlite::list_events(&connection, &owner, 0, 100).expect("completed events");
+    assert_eq!(
+        events.events.last().expect("terminal event").kind,
+        "operation.succeeded"
+    );
+    m7_unity_migration::finish_success(&mut connection, operation, 7).expect("replay");
+    assert_eq!(
+        sqlite::load_owned_operation(&connection, &owner, operation)
+            .expect("replay")
+            .revision,
+        completed.revision
+    );
+    assert_eq!(
+        sqlite::list_events(&connection, &owner, 0, 100)
+            .expect("replay events")
+            .events,
+        events.events
+    );
 }
 
 #[test]
@@ -604,7 +577,7 @@ fn public_stage_replay_is_quiet_while_internal_journals_and_rollback_remain_corr
 }
 
 #[tokio::test]
-async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noise_is_excluded() {
+async fn accepted_launch_updates_project_metadata_once_and_observation_noise_is_excluded() {
     // Isolated SQLite and Store worker requests: no network, Unity or project IO.
     let directory = Directory::new();
     let store = StateStoreHandle::open(directory.database()).expect("isolated store");
@@ -630,7 +603,7 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
         .expect("initial commit fence");
     let app = Application::new(store.clone());
     let mut subscription = app
-        .subscribe_events(&AccessContext::local_owner(), None, 100)
+        .subscribe_events(&AccessContext::local_owner(), None, 100, false)
         .expect("subscribe");
     let baseline = subscription.baseline_cursor.sequence;
     let config = ProjectUnityLaunchConfig {
@@ -715,9 +688,6 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
             .collect::<Vec<_>>(),
         [
             "project.activity-recorded",
-            "activity.changed",
-            "activity.changed",
-            "activity.changed",
             "repository.observed",
             "repository.observed"
         ]
@@ -742,43 +712,6 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
             .events
             .is_empty()
     );
-    let before_activity = store
-        .list_official_activity(owner.clone(), None, 100)
-        .await
-        .expect("activity");
-    assert_eq!(
-        before_activity.items.len(),
-        5,
-        "accepted launch and original registrations remain visible"
-    );
-    let launch_activity = before_activity
-        .items
-        .iter()
-        .filter(|item| item.action == "unity.launch")
-        .collect::<Vec<_>>();
-    assert_eq!(
-        launch_activity.len(),
-        3,
-        "three distinct accepted requests, with same-key replay excluded"
-    );
-    assert_eq!(
-        launch_activity[0].subject.id.as_deref(),
-        Some(project.project_id.to_string().as_str())
-    );
-    assert_eq!(launch_activity[0].started_at_ms, 10);
-    assert_eq!(launch_activity[0].status, "running");
-    assert!(
-        launch_activity[0].result.is_none(),
-        "accepting a request is not spawning Unity"
-    );
-    assert!(
-        store
-            .list_official_activity(PrincipalId::parse("test:other").expect("owner"), None, 100)
-            .await
-            .expect("owner-filtered activity")
-            .items
-            .is_empty()
-    );
     let mut content = repository.observation.clone();
     content.name = Some("Changed".to_owned());
     content.refreshed_at_ms = 4;
@@ -797,33 +730,9 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
         .next_page()
         .await
         .expect("content invalidation");
-    assert_eq!(page.events.len(), 2);
+    assert_eq!(page.events.len(), 1);
     assert_eq!(page.events[0].kind, "repository.refreshed");
     assert_eq!(page.events[0].aggregate_revision.get(), 2);
-    assert_eq!(page.events[1].kind, "activity.changed");
-    // Raw task/progress events are no longer manufactured into user history.
-    store.request_worker(|connection| {
-        for kind in ["operation.progress", "operation.succeeded"] {
-            connection.execute("INSERT INTO events(event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json) VALUES(?1,?2,'operation',?3,1,?4,5,'{}')",
-                params![OperationId::new().to_string(),kind,OperationId::new().to_string(),PrincipalId::LOCAL_OWNER]).map_err(|_|sqlite::unavailable())?;
-        }
-        Ok(())
-    },sqlite::unavailable).await.expect("internal event fixture");
-    let activity = store
-        .list_official_activity(owner, None, 100)
-        .await
-        .expect("durable user activity");
-    assert_eq!(
-        activity.items.len(),
-        6,
-        "registrations, accepted launch and real repository change only"
-    );
-    assert!(
-        activity
-            .items
-            .iter()
-            .all(|item| !item.action.starts_with("operation."))
-    );
 }
 
 #[test]
@@ -1064,8 +973,8 @@ fn each_existing_recovery_commits_state_revision_and_event_atomically_and_repeat
 }
 
 #[tokio::test]
-async fn extension_worker_failure_and_activity_share_the_reported_diagnostic() {
-    use alcomd_application::{M6ErrorCode, OfficialGuiStore};
+async fn extension_worker_failure_keeps_task_diagnostic_and_replay_is_quiet() {
+    use alcomd_application::M6ErrorCode;
     let directory = Directory::new();
     let store =
         StateStoreHandle::open(directory.database()).expect("valid isolated activity fixture");
@@ -1108,14 +1017,9 @@ async fn extension_worker_failure_and_activity_share_the_reported_diagnostic() {
     let task = StateStore::get_operation(&store, owner.clone(), accepted.operation_id)
         .await
         .expect("valid isolated activity fixture");
-    let activity = store
-        .get_official_activity(owner.clone(), accepted.operation_id.to_string())
-        .await
-        .expect("valid isolated activity fixture");
     assert_eq!(task.diagnostic_id.as_deref(), Some(diagnostic.as_str()));
-    assert_eq!(activity.diagnostic_id, task.diagnostic_id);
-    assert_eq!(activity.status, "failed");
-    let revision = activity.revision;
+    assert_eq!(task.state, alcomd_domain::OperationState::Failed);
+    let revision = task.revision;
     M6Store::fail_operation(
         &store,
         accepted.operation_id,
@@ -1127,7 +1031,7 @@ async fn extension_worker_failure_and_activity_share_the_reported_diagnostic() {
     .expect("valid isolated activity fixture");
     assert_eq!(
         store
-            .get_official_activity(owner, accepted.operation_id.to_string())
+            .get_operation(owner, accepted.operation_id)
             .await
             .expect("valid isolated activity fixture")
             .revision,

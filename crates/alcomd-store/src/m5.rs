@@ -88,6 +88,18 @@ pub(super) fn register_installation(
         &record,
         now_ms,
     )?;
+    let target = alcomd_application::log_path("unity", record.observation.executable_path.clone());
+    super::operation_logs::committed(
+        &transaction,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(
+            "unity.installations.register",
+            "registered",
+            Some(target),
+        ),
+    )
+    .map_err(|cause| unavailable().with_source(cause))?;
     transaction.commit().map_err(failure)?;
     Ok((record, false))
 }
@@ -181,15 +193,6 @@ pub(super) fn remove_installation(
     if record.revision != expected {
         return Err(error(M5UnityErrorCode::RevisionConflict));
     }
-    super::activity::resource(
-        &transaction,
-        owner,
-        "unity.installation.remove",
-        "unity-installation",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(failure)?;
     transaction
         .execute(
             "DELETE FROM unity_installations WHERE installation_id=?1 AND owner_principal_id=?2",
@@ -215,6 +218,18 @@ pub(super) fn remove_installation(
         &true,
         now_ms,
     )?;
+    let target = alcomd_application::log_path("unity", record.observation.executable_path);
+    super::operation_logs::committed(
+        &transaction,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(
+            "unity.installations.remove",
+            "unregistered",
+            Some(target),
+        ),
+    )
+    .map_err(|cause| unavailable().with_source(cause))?;
     transaction.commit().map_err(failure)?;
     Ok((true, false))
 }
@@ -284,6 +299,17 @@ pub(super) fn synchronize_installations(
         &page,
         now_ms,
     )?;
+    super::operation_logs::committed(
+        &transaction,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(
+            "unity.installations.refresh",
+            "installations_synchronized",
+            None,
+        ),
+    )
+    .map_err(|cause| unavailable().with_source(cause))?;
     transaction.commit().map_err(failure)?;
     Ok((page, false))
 }
@@ -430,6 +456,7 @@ pub(super) fn set_project_launch_config(
         &response,
         now_ms,
     )?;
+    log_launch_config(&transaction, owner, project_id, now_ms, "saved")?;
     transaction.commit().map_err(failure)?;
     Ok((response.config, true, false))
 }
@@ -507,8 +534,33 @@ pub(super) fn clear_project_launch_config(
         &response,
         now_ms,
     )?;
+    if response.changed {
+        log_launch_config(&transaction, owner, project_id, now_ms, "cleared")?;
+    }
     transaction.commit().map_err(failure)?;
     Ok((response.config, response.changed, false))
+}
+
+fn log_launch_config(
+    connection: &Connection,
+    owner: &PrincipalId,
+    project: ProjectId,
+    now_ms: u64,
+    step: &str,
+) -> Result<(), M5UnityError> {
+    let target = super::operation_logs::project_target(connection, owner, project.to_string())
+        .map_err(|cause| unavailable().with_source(cause))?;
+    super::operation_logs::committed(
+        connection,
+        owner,
+        now_ms,
+        super::operation_logs::CommittedStep::succeeded(
+            "unity.projectLaunchConfig",
+            step,
+            Some(target),
+        ),
+    )
+    .map_err(|cause| unavailable().with_source(cause))
 }
 
 pub(super) fn accept_launch(
@@ -579,14 +631,17 @@ pub(super) fn accept_launch(
             now_ms,
         )?;
     }
-    super::activity::launch_created(
-        &transaction,
-        owner,
-        &record.launch_id.to_string(),
-        &project.project_id.to_string(),
-        now_ms,
-    )
-    .map_err(failure)?;
+    let mut log = super::operation_logs::CommittedStep::succeeded(
+        "unity.launch",
+        "accepted",
+        Some(alcomd_application::log_path(
+            "project",
+            project.observation.root_path.clone(),
+        )),
+    );
+    log.outcome = alcomd_application::LogOutcome::Started;
+    super::operation_logs::committed(&transaction, owner, now_ms, log)
+        .map_err(|cause| unavailable().with_source(cause))?;
     save_response(
         &transaction,
         owner,
@@ -689,7 +744,6 @@ pub(super) fn set_launch_state(
     launch_id: UnityLaunchId,
     state: UnityLaunchState,
     spawn_accepted: bool,
-    diagnostic_id: Option<String>,
 ) -> Result<UnityLaunchRecord, M5UnityError> {
     let transaction = transaction(connection)?;
     let mut stored = load_launch(&transaction, owner, launch_id)?;
@@ -704,16 +758,6 @@ pub(super) fn set_launch_state(
             params![response, owner.as_str(), launch_id.to_string()],
         )
         .map_err(failure)?;
-    super::activity::launch_updated(
-        &transaction,
-        owner,
-        &launch_id.to_string(),
-        stored.record.created_at_ms,
-        state == UnityLaunchState::Failed,
-        spawn_accepted,
-        diagnostic_id.as_deref(),
-    )
-    .map_err(failure)?;
     transaction.commit().map_err(failure)?;
     Ok(stored.record)
 }
@@ -866,15 +910,6 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
-    super::activity::resource_event(
-        transaction,
-        owner,
-        kind,
-        aggregate_kind,
-        aggregate_id,
-        now_ms,
-    )
-    .map_err(failure)?;
     Ok(())
 }
 

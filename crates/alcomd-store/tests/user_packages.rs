@@ -150,15 +150,7 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
             "user_package.removed"
         ]
     );
-    assert_eq!(events.events.len(), 6);
-    assert_eq!(
-        events
-            .events
-            .iter()
-            .filter(|event| event.kind == "activity.changed" && event.aggregate_kind == "activity")
-            .count(),
-        3
-    );
+    assert_eq!(events.events.len(), 3);
     assert!(
         events
             .events

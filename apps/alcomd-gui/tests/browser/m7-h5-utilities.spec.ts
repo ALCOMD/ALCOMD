@@ -2,112 +2,64 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import guiMetadata from "../../package.json" with { type: "json" };
 import { createTranslator } from "../../src/i18n";
 import { requestErrorMessage } from "../../src/request-errors";
-import { H5_ACTIVITY_CURSOR, H5_CHECK_ID, H5_CORE_VERSION, H5_DIAGNOSTIC_ID, H5_FAILED_ID, H5_INSTALL_ID, H5_SECRET } from "./h5-utilities-client";
+import { H5_CHECK_ID, H5_CORE_VERSION, H5_DIAGNOSTIC_ID, H5_FAILED_ID, H5_INSTALL_ID, H5_SECRET } from "./h5-utilities-client";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
 async function open(page: Page, route: string, flags = "") {
-    await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=ready&h5-utilities=1&diagnostic-log=1&${flags}`);
+    await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=ready&h5-utilities=1&${flags}`);
     await expect.poll(() => page.evaluate(() => typeof window.h5Utilities)).toBe("object");
 }
 function modal(page: Page) { return page.locator("md-dialog[open]"); }
 function detail(scope: Locator, label: string) { return scope.getByText(label, { exact: true }).locator("..").locator("dd"); }
-function logs(page: Page) { return page.getByRole("navigation", { name: "Logs", exact: true }); }
 async function requests(page: Page, method: string) {
     return page.evaluate((name) => window.h5Utilities.requests.filter((request) => request.method === name), method);
 }
 
-test("H5 operation detail follows one ID through a read failure and the actual failed terminal result", async ({ page }) => {
-    await open(page, "/activity");
-    await page.getByRole("button", { name: "Load more", exact: true }).click();
-    await page.locator('tr[data-row-key="' + H5_INSTALL_ID + '"]').getByRole("button", { name: "View operation", exact: true }).click();
-    await expect(detail(modal(page), "State")).toHaveText("running");
+test("H5 task detail follows one ID through a read failure and the actual failed terminal result", async ({ page }) => {
+    await open(page, "/operations/" + H5_INSTALL_ID);
+    await expect(page.locator(".operation-follow")).toContainText("running");
     await page.evaluate((operationId) => {
         window.h5Utilities.deny("operations.get", "daemon_unavailable");
         window.h5Utilities.recordOperation({ operationId, kind: "extensions.install", state: "running", revision: 2,
             createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_003_000, progress: { phase: "prepared" } });
     }, H5_INSTALL_ID);
-    await expect(modal(page).getByRole("alert")).toContainText(requestErrorMessage("daemon_unavailable"));
-    await expect(detail(modal(page), "Operation")).toHaveText(H5_INSTALL_ID);
-    await expect(detail(modal(page), "State")).toHaveText("running");
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.locator(".operation-follow")).not.toContainText("Progress is temporarily unavailable");
+    await expect(page.locator(".operation-follow")).toContainText("running");
     await page.evaluate((operationId) => {
         window.h5Utilities.complete(operationId, "failed", "extension_signature_invalid");
         window.h5Utilities.deny("operations.get");
     }, H5_INSTALL_ID);
-    await expect(detail(modal(page), "State")).toHaveText("failed");
-    await expect(detail(modal(page), "Error")).toHaveText(requestErrorMessage("extension_signature_invalid"));
-    await expect(modal(page).getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".operation-follow")).toContainText("failed");
+    await expect(page.getByRole("alert")).toContainText(requestErrorMessage("extension_signature_invalid"));
     expect((await requests(page, "operations.get")).every((request) => request.params.operationId === H5_INSTALL_ID)).toBe(true);
     await expect(page.locator("body")).not.toContainText(H5_SECRET);
 });
 
-test("H5 closing a pending operation dialog isolates its late failure from another task", async ({ page }) => {
-    await open(page, "/activity");
+test("H5 leaving a pending task isolates its late failure from another task", async ({ page }) => {
+    await open(page, "/operations");
     await page.evaluate(() => window.h5Utilities.hold("operations.get", true));
-    await page.getByRole("table", { name: "Activity", exact: true }).getByRole("button", { name: "View operation", exact: true }).first().click();
+    await page.locator('tr[data-row-key="' + H5_INSTALL_ID + '"]').getByRole("button", { name: "View operation", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Utilities.pending("operations.get"))).toBeGreaterThan(0);
-    await modal(page).getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("navigation", { name: "Utilities", exact: true }).locator("md-list-item").filter({ hasText: /^Tasks/ }).click();
     await page.evaluate(() => window.h5Utilities.hold("operations.get", false));
     await page.locator('tr[data-row-key="' + H5_CHECK_ID + '"]').getByRole("button", { name: "View operation", exact: true }).click();
-    await expect(detail(modal(page), "Operation")).toHaveText(H5_CHECK_ID);
+    await expect(page.locator(".operation-follow")).toContainText("succeeded");
     await page.evaluate(() => window.h5Utilities.release("operations.get", "permission_denied"));
-    await expect(detail(modal(page), "Operation")).toHaveText(H5_CHECK_ID);
-    await expect(detail(modal(page), "State")).toHaveText("succeeded");
-    await expect(modal(page).getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".operation-follow")).toContainText("succeeded");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
 });
 
-test("H5 missing Operations disables dependent actions while log permission denial remains explicit", async ({ page }) => {
-    await open(page, "/activity", "h5-no-operations=1");
-    await expect(page.getByRole("table", { name: "Activity", exact: true }).getByRole("button", { name: "View operation", exact: true }).first()).toBeDisabled();
-    await logs(page).getByRole("button", { name: "Technical Logs", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Run state check", exact: true })).toBeDisabled();
-    expect(await requests(page, "operations.get")).toHaveLength(0);
-    expect(await requests(page, "state.check")).toHaveLength(0);
-    await open(page, "/activity");
-    await page.evaluate(() => window.h5Utilities.deny("diagnostics.log.read", "permission_denied"));
-    await logs(page).getByRole("button", { name: "Technical Logs", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText(requestErrorMessage("permission_denied"));
-    await expect(page.locator("body")).not.toContainText(H5_SECRET);
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+test("retired activity and diagnostic routes do not call their old interfaces", async ({ page }) => {
+    for (const route of ["/activity", "/diagnostics"]) {
+        await open(page, route);
+        await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
+        await expect(page.getByRole("navigation", { name: "Utilities", exact: true }).getByRole("button", { name: "Logs", exact: true })).toHaveCount(1);
+        expect(await requests(page, "activity.list")).toHaveLength(0);
+        expect(await requests(page, "diagnostics.log.read")).toHaveLength(0);
+    }
 });
-
-for (const surface of [
-    { route: "/activity", label: "Activity", method: "activity.list", initial: 2, cursor: H5_ACTIVITY_CURSOR }
-]) {
-    test(`H5 ${surface.label} pagination retains loaded rows after failure and retries its same cursor`, async ({ page }) => {
-        await open(page, surface.route);
-        const table = page.getByRole("table", { name: surface.label, exact: true });
-        await expect(table.locator("tbody tr")).toHaveCount(surface.initial);
-        await page.evaluate((method) => window.h5Utilities.failNext(method, "store_unavailable"), surface.method);
-        await page.getByRole("button", { name: "Load more", exact: true }).click();
-        await expect(page.getByRole("alert")).toContainText(requestErrorMessage("store_unavailable"));
-        await expect(table.locator("tbody tr")).toHaveCount(surface.initial);
-        await page.getByRole("button", { name: "Retry loading more", exact: true }).click();
-        await expect(table.locator("tbody tr")).toHaveCount(surface.initial + 1);
-        await expect(page.getByRole("alert")).toHaveCount(0);
-        const pages = (await requests(page, surface.method)).filter((request) => request.params.cursor !== undefined);
-        expect(pages.map((request) => request.params.cursor)).toEqual([surface.cursor, surface.cursor]);
-    });
-}
-
-for (const locale of ["zh-CN", "ja-JP"] as const) {
-    test(`H5 ${locale} localizes activity actions while technical text and long identities remain exact`, async ({ page }) => {
-        const t = createTranslator(locale);
-        await open(page, "/activity", `h5-locale=${locale}`);
-        await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        const table = page.getByRole("table", { name: t("Activity"), exact: true });
-        await expect(table.getByText(t("Check state"), { exact: true })).toBeVisible();
-        await page.getByRole("button", { name: t("Load more"), exact: true }).click();
-        await expect(table.getByText(t("Install extension"), { exact: true })).toBeVisible();
-        await page.evaluate((diagnosticId) => window.dispatchEvent(new CustomEvent("test-diagnostic-log", { detail: { message: "Actual extension verification failed", diagnosticId } })), H5_DIAGNOSTIC_ID);
-        await page.getByRole("navigation", { name: t("Logs"), exact: true }).getByRole("button", { name: t("Technical Logs"), exact: true }).click();
-        const technical = page.getByRole("table", { name: t("Technical Logs"), exact: true });
-        await expect(technical).toContainText("Actual extension verification failed");
-        await page.getByRole("checkbox", { name: t("Show details"), exact: true }).check();
-        await expect(technical).toContainText(H5_DIAGNOSTIC_ID);
-        expect(await technical.locator(".logs-message").evaluateAll((nodes) => nodes.every((n) => n.scrollWidth <= n.clientWidth + 1))).toBe(true);
-    });
-}
 
 test("H5 About keeps local GUI version and licenses available with slow Operations and an offline Core", async ({ page }) => {
     await open(page, "/about", "h5-operations-slow=1");
@@ -143,19 +95,3 @@ for (const width of [800, 1280]) {
         await page.screenshot({ path: testInfo.outputPath(`about-${width}.png`), animations: "disabled" });
     });
 }
-
-test("H5 state check accepts one operation and follows its actual terminal state", async ({ page }) => {
-    await open(page, "/diagnostics");
-    const start = page.getByRole("button", { name: "Run state check", exact: true });
-    const initialReads = (await requests(page, "diagnostics.list")).length;
-    await start.click();
-    await expect(page.locator(".operation-follow")).toContainText("running");
-    await expect(start).toBeDisabled();
-    expect(await requests(page, "state.check")).toHaveLength(1);
-    await page.evaluate((operationId) => window.h5Utilities.complete(operationId, "succeeded"), H5_CHECK_ID);
-    await expect(page.locator(".operation-follow")).toContainText("succeeded");
-    await expect(start).toBeEnabled();
-    expect((await requests(page, "diagnostics.list")).length).toBe(initialReads);
-    expect((await requests(page, "operations.get")).every((request) => request.params.operationId === H5_CHECK_ID)).toBe(true);
-    expect(await requests(page, "state.check")).toHaveLength(1);
-});

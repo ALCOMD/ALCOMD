@@ -1,97 +1,12 @@
 import type { TemplatePlanCreateProjectParams } from "@alcomd/sdk";
-import type {
-    ProjectCandidateRequest,
-    ProjectCandidatePage,
-    ExtensionResult,
-    ExtensionPermissionsListResult,
-    ExtensionUiCloseParams,
-    ExtensionUiCloseResult,
-    ExtensionUiDispatchParams,
-    ExtensionUiDispatchResult,
-    ExtensionUiOpenParams,
-    ExtensionUiOpenResult,
-    ExtensionUiRefreshParams,
-    ExtensionUiSnapshotResult,
-    RpcError,
-    DiagnosticLogReadParams,
-    DiagnosticLogHealth,
-    FrontendException,
-    DiagnosticLogHistoryParams,
-    DiagnosticLogHistoryResult,
-    DiagnosticLogReadResult
-} from "@alcomd/sdk";
+import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
+import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
 import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 
-import type {
-    ActivityCursor,
-    ActivityListResult,
-    ActivityGetResult,
-    BackupApplyRestoreResult,
-    BackupCreateResult,
-    BackupRecord,
-    BackupRestorePlan,
-    BackupsListResult,
-    ExtensionGrantResult,
-    ExtensionOperationResult,
-    ExtensionPlanResult,
-    ExtensionsListResult,
-    Operation,
-    OperationAccepted,
-    OperationWriteResult,
-    OperationsListResult,
-    PackageApplyPlanParams,
-    PackageCursor,
-    PackagePlan,
-    PackagePlanBulkParams,
-    PackagePlanDowngradeParams,
-    PackagePlanInstallParams,
-    PackagePlanRemoveParams,
-    PackagePlanResolveParams,
-    PackagePlanReinstallParams,
-    ProjectUnityLaunchConfigMutationResult,
-    ProjectUnityLaunchConfigResult,
-    ProjectResult,
-    ProjectsApplyCopyResult,
-    ProjectsApplyDeleteDirectoryResult,
-    ProjectsPlanCopyResult,
-    ProjectsPlanDeleteDirectoryResult,
-    ProjectsApplyUnityMigrationResult,
-    ProjectsPlanUnityMigrationResult,
-    ProjectUnregisterResult,
-    ProjectWriteResult,
-    ProjectsListResult,
-    RegistryCursor,
-    RepositoriesListResult,
-    RepositoryPackagesResult,
-    RepositoryResult,
-    RepositorySource,
-    RepositoryUnregisterResult,
-    RepositoryWriteResult,
-    SettingsGetResult,
-    SettingsUpdate,
-    SystemStatus,
-    TemplateApplyResult,
-    TemplateBundleInspection,
-    TemplateExportResult,
-    TemplatePlan,
-    TemplateRecordResult,
-    TemplateRemoveResult,
-    TemplatesListResult,
-    UnityInstallationResult,
-    UnityInstallationRemoveResult,
-    UnityInstallationsListResult,
-    UnityLaunchResult,
-    UnityLaunchOptionsResult,
-    UnityWriterState,
-    UserPackageCursor,
-    UserPackageRemoveResult,
-    UserPackageResult,
-    UserPackagesListResult,
-    UserPackageWriteResult
-} from "./core-models";
+import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, TemplateApplyResult, TemplateBundleInspection, TemplateExportResult, TemplatePlan, TemplateRecordResult, TemplateRemoveResult, TemplatesListResult, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
 export interface GuiRpcClient {
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
@@ -99,21 +14,11 @@ export interface GuiRpcClient {
     systemStatus(): Promise<SystemStatus>;
     stateCheck(): Promise<OperationAccepted>;
     operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly?: boolean): Promise<OperationsListResult>;
+    logsRead(params: LogsReadParams): Promise<LogsReadResult>;
     operationGet(operationId: string): Promise<Operation>;
     operationCancel(operationId: string, expectedRevision: number): Promise<OperationWriteResult>;
     settingsGet(): Promise<SettingsGetResult>;
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult>;
-    activityList(cursor?: ActivityCursor): Promise<ActivityListResult>;
-    activityGet(activityId: string): Promise<ActivityGetResult>;
-    diagnosticLogHealth(): Promise<DiagnosticLogHealth>;
-    localLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
-    localLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult>;
-    localLogHealth(): Promise<DiagnosticLogHealth>;
-    localLogCancel(): Promise<void>;
-    reportFrontendError(error: FrontendException): Promise<void>;
-    diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
-    diagnosticLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult>;
-    diagnosticLogCancel(): Promise<void>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
     projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
@@ -236,6 +141,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_state_check", { idempotencyKey: crypto.randomUUID() });
     }
 
+    logsRead(params: LogsReadParams): Promise<LogsReadResult> {
+        return invoke("gui_logs_read", { params });
+    }
+
     operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly = false): Promise<OperationsListResult> {
         return invokeTyped("gui_operations_list", { params: { cursor, limit: 100, activeOnly } });
     }
@@ -254,30 +163,6 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult> {
         return invokeTyped("gui_settings_update", { params: { expectedRevision, update } });
-    }
-
-    activityList(cursor?: ActivityCursor): Promise<ActivityListResult> {
-        return invokeTyped("gui_activity_list", { params: { cursor, limit: 100 } });
-    }
-
-    activityGet(activityId: string): Promise<ActivityGetResult> { return invokeTyped("gui_activity_get", { activityId }); }
-    diagnosticLogHealth(): Promise<DiagnosticLogHealth> { return invokeTyped("gui_diagnostic_log_health", {}); }
-    localLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult> { return invokeTyped("gui_local_log_read", { params }); }
-    localLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult> { return invokeTyped("gui_local_log_history", { params }); }
-    localLogHealth(): Promise<DiagnosticLogHealth> { return invokeTyped("gui_local_log_health", {}); }
-    localLogCancel(): Promise<void> { return invokeTyped("gui_local_log_cancel", {}); }
-    reportFrontendError(error: FrontendException): Promise<void> { return invokeTyped("gui_report_frontend_error", { error }); }
-
-    diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult> {
-        return invokeTyped("gui_diagnostic_log_read", { params });
-    }
-
-    diagnosticLogCancel(): Promise<void> {
-        return invokeTyped("gui_diagnostic_log_cancel", {});
-    }
-
-    diagnosticLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult> {
-        return invokeTyped("gui_diagnostic_log_history", { params });
     }
 
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult> {

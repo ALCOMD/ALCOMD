@@ -45,8 +45,10 @@ test("closed User Package details cannot replace the next read with an old snaps
     const initialReads = (await requests(page, "packages.userPackages.get")).length;
     await page.locator("md-dialog[open]").getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "User Package details", exact: true })).toBeHidden();
-    await page.evaluate(() => window.dispatchEvent(new Event("test-user-package-advance")));
+    await page.evaluate((id) => { window.dispatchEvent(new Event("test-user-package-advance")); window.coreEvents.emit("user-package", id, "user_package.refreshed", 2); }, userPackageId);
     await page.getByRole("button", { name: "Details", exact: true }).click();
+    expect((await requests(page, "packages.userPackages.get")).length).toBe(initialReads);
+    await page.evaluate(() => window.dispatchEvent(new Event("test-user-details-ready")));
     await expect.poll(async () => (await requests(page, "packages.userPackages.get")).length).toBeGreaterThan(initialReads);
     await page.evaluate(() => window.dispatchEvent(new Event("test-user-details-ready")));
     await expect(page.locator("md-dialog[open]").getByText("1.3.0", { exact: true })).toBeVisible();
@@ -95,7 +97,7 @@ test("User Package revision conflicts require an explicit list read before a new
     await expectRequestError(page.getByRole("alert"), "revision_conflict");
     expect(await requests(page, "packages.userPackages.refresh")).toHaveLength(1);
     await expect(row).toContainText("revision 1");
-    await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh list", exact: true }).click();
+    await page.getByRole("alert").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(row).toContainText("revision 2");
     await row.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(row).toContainText("revision 3");
@@ -145,7 +147,6 @@ test("repository refresh failure retains the last catalog until a successful exp
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expectRequestError(page.getByRole("alert"), "repository_unavailable");
     await expect(row).toBeVisible();
-    await page.locator("md-dialog[open]").getByRole("button", { name: "Close", exact: true }).click();
     await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     await expect(page.locator("md-dialog[open]").getByText("First catalog package", { exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Close", exact: true }).click();
@@ -163,10 +164,10 @@ test("repository CAS conflicts do not auto-retry or replace a stale revision", a
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expectRequestError(page.getByRole("alert"), "revision_conflict");
     expect(await requests(page, "repositories.refresh")).toHaveLength(1);
-    await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh list", exact: true }).click();
+    await page.getByRole("alert").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(row.getByRole("status")).toHaveCount(0);
     expect((await requests(page, "repositories.refresh")).map((request) => (request.params as { expectedRevision: number }).expectedRevision)).toEqual([1, 2]);
 });
@@ -220,7 +221,6 @@ async function registerRepository(page: Page, kind: "remote" | "local") {
     await reviewRepository(page, kind);
     const host = page.locator("md-dialog[open]");
     await host.getByRole("button", { name: "Add repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository added." })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toBeHidden();
     await expect(repositoryRow(page, kind)).toBeVisible();
 }

@@ -98,14 +98,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "操作包含所有选中的软件包，包括已隐藏的行：安装／更新需要符合条件的目标；重装需要已锁定版本；移除需要直接依赖。每次限 1–256 个软件包。",
         "ja-JP": "非表示の行も含む、選択したすべてのパッケージが対象です。インストール／更新には適格な対象、再インストールにはロック済みバージョン、削除には直接依存が必要です。1 回につき 1～256 個です。"
     },
-    "Activity": {
-        "zh-CN": "活动记录",
-        "ja-JP": "アクティビティ"
-    },
-    "Activity filters": {
-        "zh-CN": "活动筛选",
-        "ja-JP": "アクティビティのフィルター"
-    },
     "Add existing project": {
         "zh-CN": "添加已有项目",
         "ja-JP": "既存のプロジェクトを追加"
@@ -318,14 +310,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "目标位置：",
         "ja-JP": "コピー先："
     },
-    "Log entry": {
-        "zh-CN": "日志内容",
-        "ja-JP": "ログ内容"
-    },
-    "Technical log filters": {
-        "zh-CN": "技术日志筛选",
-        "ja-JP": "技術ログのフィルター"
-    },
     "Diagnostic ID": {
         "zh-CN": "诊断 ID",
         "ja-JP": "診断 ID"
@@ -498,10 +482,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "本地用户软件包",
         "ja-JP": "ローカルのユーザーパッケージ"
     },
-    "Log sections": {
-        "zh-CN": "日志分类",
-        "ja-JP": "ログの分類"
-    },
     "Manage": {
         "zh-CN": "管理",
         "ja-JP": "管理"
@@ -546,10 +526,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "更多创建项目选项",
         "ja-JP": "プロジェクト作成のその他のオプション"
     },
-    "No activity yet": {
-        "zh-CN": "暂无活动记录",
-        "ja-JP": "アクティビティはまだありません"
-    },
     "No automatic backup will be created. This is different from removing the project from the list.": {
         "zh-CN": "不会自动创建备份。此操作与仅从列表中移除项目不同。",
         "ja-JP": "バックアップは自動作成されません。一覧からのみ削除する操作とは異なります。"
@@ -558,10 +534,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "此项目暂无备份",
         "ja-JP": "このプロジェクトのバックアップはありません"
     },
-    "No technical logs yet": {
-        "zh-CN": "暂无技术日志",
-        "ja-JP": "技術ログはまだありません"
-    },
     "No extensions installed": {
         "zh-CN": "尚未安装扩展",
         "ja-JP": "拡張機能はインストールされていません"
@@ -569,14 +541,6 @@ export const pageMessages: TranslationTable = {
     "No matching items": {
         "zh-CN": "没有匹配的项目",
         "ja-JP": "一致する項目がありません"
-    },
-    "No matching loaded activity. Change the filters or load more entries.": {
-        "zh-CN": "已加载的活动中没有匹配项。请更改筛选条件或加载更多记录。",
-        "ja-JP": "読み込み済みのアクティビティに一致する項目がありません。フィルターを変更するか、さらに読み込んでください。"
-    },
-    "No matching loaded technical logs. Change the filters or load more entries.": {
-        "zh-CN": "已加载的技术日志中没有匹配项。请更改筛选条件或加载更多记录。",
-        "ja-JP": "読み込み済みの技術ログに一致する項目がありません。フィルターを変更するか、さらに読み込んでください。"
     },
     "No matching packages": {
         "zh-CN": "没有匹配的软件包",
@@ -953,14 +917,6 @@ export const pageMessages: TranslationTable = {
     "Run state check": {
         "zh-CN": "运行状态检查",
         "ja-JP": "状態を検査"
-    },
-    "Search activity": {
-        "zh-CN": "搜索活动",
-        "ja-JP": "アクティビティを検索"
-    },
-    "Search technical logs": {
-        "zh-CN": "搜索技术日志",
-        "ja-JP": "技術ログを検索"
     },
     "Search packages": {
         "zh-CN": "搜索软件包",

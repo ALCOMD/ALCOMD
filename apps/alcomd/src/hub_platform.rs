@@ -28,7 +28,7 @@ impl app::UnityHubLauncher for PlatformUnityHubLauncher {
             classified
                 .with_source(error)
                 .with_path(path)
-                .record("failed to open Unity Hub")
+                .with_reason("failed to open Unity Hub")
         })
     }
 }
@@ -43,7 +43,7 @@ impl app::UnityHubPlatform for PlatformUnityHubAdapter {
             classified
                 .with_source(error)
                 .with_path(path)
-                .record("failed to validate Unity Hub executable")
+                .with_reason("failed to validate Unity Hub executable")
         })
     }
 

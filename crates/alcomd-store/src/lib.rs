@@ -46,8 +46,9 @@ use tokio::sync::{mpsc, oneshot, watch};
 mod events_sources_tests;
 #[cfg(test)]
 mod events_tests;
+#[cfg(test)]
+mod remove_activity_tests;
 
-mod activity;
 mod config;
 mod m3;
 mod m4;
@@ -59,9 +60,9 @@ mod m6;
 mod m7_candidates;
 mod m7_copy;
 mod m7_delete;
-mod m7_official;
 mod m7_unity_migration;
 mod m7_user_packages;
+mod operation_logs;
 mod sqlite;
 
 pub use config::FileConfigStore;
@@ -70,7 +71,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 19;
+pub const CURRENT_DATA_SCHEMA: u32 = 21;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -135,6 +136,7 @@ impl StateStoreHandle {
             sequence: 0,
             resources_revision: 0,
             available: false,
+            ..EventCommitWatermark::default()
         });
         let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
         let worker = thread::Builder::new()
@@ -179,7 +181,10 @@ impl StateStoreHandle {
             .cloned()
             .ok_or_else(sqlite::unavailable)?;
         commands
-            .send(create(sender))
+            .send(Command::WithLogContext(
+                alcomd_application::log_write_context(),
+                Box::new(create(sender)),
+            ))
             .await
             .map_err(|_| sqlite::unavailable())?;
         receiver.await.map_err(|_| sqlite::unavailable())?
@@ -206,8 +211,10 @@ impl StateStoreHandle {
             .as_ref()
             .cloned()
             .ok_or_else(&unavailable)?;
+        let log_context = alcomd_application::log_write_context();
         commands
             .send(Command::M3(Box::new(move |connection| {
+                let _log = operation_logs::ContextGuard::install(log_context);
                 let _ = reply.send(work(connection));
                 false
             })))
@@ -230,8 +237,10 @@ impl StateStoreHandle {
             .as_ref()
             .cloned()
             .ok_or_else(m6::unavailable)?;
+        let log_context = alcomd_application::log_write_context();
         commands
             .send(Command::M3(Box::new(move |connection| {
+                let _log = operation_logs::ContextGuard::install(log_context);
                 let (result, changed) = match work(connection) {
                     Ok((value, changed)) => (Ok(value), changed),
                     Err(error) => (Err(error), false),
@@ -1302,18 +1311,10 @@ impl M5UnityStore for StateStoreHandle {
         launch_id: UnityLaunchId,
         state: UnityLaunchState,
         spawn_accepted: bool,
-        diagnostic_id: Option<String>,
     ) -> Result<UnityLaunchRecord, M5UnityError> {
         self.request_worker(
             move |connection| {
-                m5::set_launch_state(
-                    connection,
-                    &owner,
-                    launch_id,
-                    state,
-                    spawn_accepted,
-                    diagnostic_id,
-                )
+                m5::set_launch_state(connection, &owner, launch_id, state, spawn_accepted)
             },
             m5::unavailable,
         )
@@ -2545,6 +2546,7 @@ impl StateStore for StateStoreHandle {
 }
 
 enum Command {
+    WithLogContext(alcomd_application::LogWriteContext, Box<Command>),
     M3(Box<dyn FnOnce(&mut rusqlite::Connection) -> bool + Send>),
     CreateStateCheck {
         owner: PrincipalId,
@@ -2625,15 +2627,19 @@ fn publish_event_watermark(
     if !connection.is_autocommit() {
         return Err(rusqlite::Error::InvalidQuery);
     }
-    let sequence: i64 =
-        connection.query_row("SELECT coalesce(MAX(sequence), 0) FROM events", [], |row| {
-            row.get(0)
-        })?;
+    let (sequence, log_sequence): (i64, i64) = connection.query_row(
+        "SELECT (SELECT coalesce(MAX(sequence), 0) FROM events),
+                (SELECT coalesce(MAX(sequence), 0) FROM operation_log_entries)",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
     let sequence = u64::try_from(sequence).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let log_sequence = u64::try_from(log_sequence).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let logs_changed = commits.borrow().log_sequence != log_sequence;
     let resources_revision = commits
         .borrow()
         .resources_revision
-        .checked_add(u64::from(extensions_changed))
+        .checked_add(u64::from(extensions_changed || logs_changed))
         .filter(|value| *value <= i64::MAX as u64)
         .ok_or(rusqlite::Error::InvalidQuery)?;
     commits.send_if_modified(|current| {
@@ -2644,6 +2650,13 @@ fn publish_event_watermark(
             return false;
         }
         current.sequence = sequence;
+        current.log_sequence = log_sequence;
+        if logs_changed {
+            current.logs_revision = resources_revision;
+        }
+        if extensions_changed {
+            current.extensions_revision = resources_revision;
+        }
         current.resources_revision = resources_revision;
         current.available = true;
         true
@@ -2657,10 +2670,18 @@ fn run_worker(
     commits: watch::Sender<EventCommitWatermark>,
 ) {
     while let Some(command) = receiver.blocking_recv() {
+        let (command, log_context) = match command {
+            Command::WithLogContext(context, command) => (*command, context),
+            command => (command, alcomd_application::LogWriteContext::default()),
+        };
+        let _log = operation_logs::ContextGuard::install(log_context);
         let changes = connection.total_changes();
         let was_autocommit = connection.is_autocommit();
         let mut extensions_changed = false;
         match command {
+            Command::WithLogContext(..) => {
+                unreachable!("log context is unwrapped once at the worker boundary")
+            }
             Command::M3(work) => extensions_changed = work(&mut connection),
             Command::CreateStateCheck {
                 owner,

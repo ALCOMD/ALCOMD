@@ -23,7 +23,6 @@ export const settingsH5Messages: TranslationTable = {
     "Launch arguments could not be saved.": { "zh-CN": "无法保存启动参数。", "ja-JP": "起動引数を保存できませんでした。" },
     "Launch argument save result is unknown": { "zh-CN": "启动参数保存结果待确认", "ja-JP": "起動引数の保存結果を確認できません" },
     "General": { "zh-CN": "常规", "ja-JP": "一般" },
-    "Notifications": { "zh-CN": "通知", "ja-JP": "通知" },
     "Default project location": { "zh-CN": "默认项目保存位置", "ja-JP": "既定のプロジェクト保存先" },
     "Default backup location": { "zh-CN": "默认备份保存位置", "ja-JP": "既定のバックアップ保存先" },
     "Automatically add projects from the default location": { "zh-CN": "自动将默认位置中的项目添加到项目列表", "ja-JP": "既定の保存先のプロジェクトを一覧に自動追加" },

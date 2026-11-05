@@ -66,6 +66,17 @@ pub(super) fn create_plan(
         )
         .map_err(failure)?;
     let plan = load_plan(&transaction, owner, draft.plan_id)?;
+    let target =
+        super::operation_logs::destination_target(&draft.target_parent_path, &draft.target_leaf);
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        draft.plan_id,
+        "projects.copy",
+        Some(target),
+        draft.created_at_ms,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     let outcome = ProjectCopyPlanOutcome {
         plan,
         replayed: false,
@@ -187,8 +198,6 @@ pub(super) fn accept(
             ],
         )
         .map_err(failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE project_copy_plans SET state='applied',apply_operation_id=?1
@@ -267,6 +276,14 @@ pub(super) fn begin_operation(
             "operation.progress",
             now_ms,
         )?;
+        super::operation_logs::operation_phase(
+            &transaction,
+            &owner,
+            operation_id,
+            "execute",
+            integer(now_ms)?,
+        )
+        .map_err(|error| unavailable().with_source(error))?;
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let (phase, inventory, published) = latest_evidence(&transaction, operation_id)?;
@@ -323,6 +340,14 @@ pub(super) fn checkpoint(
         "operation.progress",
         now_ms,
     )?;
+    super::operation_logs::operation_phase(
+        &transaction,
+        &owner,
+        operation_id,
+        phase.as_str(),
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(failure)
 }
 
@@ -394,6 +419,14 @@ pub(super) fn complete(
         "operation.progress",
         now_ms,
     )?;
+    super::operation_logs::operation_phase(
+        &transaction,
+        &owner,
+        operation_id,
+        "state_committed",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(failure)
 }
 
@@ -441,7 +474,6 @@ pub(super) fn finish_success(
         now_ms,
     )?;
     transaction.commit().map_err(failure)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = "projects.copy", project_id = %plan.draft.target_project_id, "operation completed");
     Ok(())
 }
 
@@ -875,6 +907,15 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
+    super::operation_logs::operation_edge(
+        transaction,
+        owner,
+        operation_id,
+        kind,
+        "{}",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     Ok(())
 }
 

@@ -121,12 +121,10 @@ pub trait CandidateEvidenceEngine: Clone + Send + Sync + 'static {
 pub struct ProjectCandidateApplication<S, E> {
     store: S,
     engine: E,
-    config: M7OfficialApplication<S>,
+    config: M7OfficialApplication,
 }
-impl<S: CandidateStore + OfficialGuiStore, E: CandidateEvidenceEngine>
-    ProjectCandidateApplication<S, E>
-{
-    pub fn new(store: S, engine: E, config: M7OfficialApplication<S>) -> Self {
+impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<S, E> {
+    pub fn new(store: S, engine: E, config: M7OfficialApplication) -> Self {
         Self {
             store,
             engine,
@@ -506,31 +504,6 @@ mod tests {
             panic!("unauthorized query reached store")
         }
     }
-    impl OfficialGuiStore for NeverRead {
-        async fn get_official_activity(
-            &self,
-            _: PrincipalId,
-            _: String,
-        ) -> Result<crate::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not read Activity")
-        }
-        async fn record_failed_activity(
-            &self,
-            _: PrincipalId,
-            _: crate::NewFailedActivity,
-        ) -> Result<crate::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not write Activity")
-        }
-
-        async fn list_official_activity(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialActivityCursor>,
-            _: u32,
-        ) -> Result<OfficialActivityPage, StoreError> {
-            panic!()
-        }
-    }
     impl CandidateEvidenceEngine for NeverRead {
         fn summarize(
             &self,
@@ -598,7 +571,6 @@ mod tests {
             NeverRead,
             NeverRead,
             M7OfficialApplication::new(
-                NeverRead,
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
@@ -683,7 +655,6 @@ mod tests {
             NeverRead,
             engine,
             M7OfficialApplication::new(
-                NeverRead,
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),

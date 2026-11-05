@@ -245,6 +245,18 @@ pub(super) fn create_package_plan(
         )
         .map_err(store_error)?;
     let record = load_plan(&transaction, owner, plan_id)?;
+    let target =
+        super::operation_logs::project_target(&transaction, owner, draft.project_id.to_string())
+            .map_err(|error| M4Error::from(error.kind()).with_source(error))?;
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        plan_id,
+        &format!("packages.{}", draft.action.as_str()),
+        Some(target),
+        u64::try_from(created_at_ms).map_err(|_| internal())?,
+    )
+    .map_err(|error| M4Error::from(error.kind()).with_source(error))?;
     transaction.commit().map_err(store_error)?;
     Ok(record)
 }
@@ -337,8 +349,6 @@ pub(super) fn accept_package_plan(
             ],
         )
         .map_err(store_error)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE package_plans SET state='applied', apply_operation_id=?1
@@ -690,7 +700,6 @@ pub(super) fn complete_package_apply(
         completed_at_ms,
     )?;
     transaction.commit().map_err(store_error)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = "packages.apply", project_id = %plan.project_id, action = ?plan.action, "operation completed");
     Ok(())
 }
 
@@ -972,7 +981,16 @@ fn insert_operation_event_revision(
         kind,
         payload,
         occurred_at_ms,
+    )?;
+    super::operation_logs::operation_edge(
+        transaction,
+        owner,
+        operation_id,
+        kind,
+        payload,
+        occurred_at_ms,
     )
+    .map_err(|error| M4Error::from(error.kind()).with_source(error))
 }
 
 fn insert_aggregate_event(

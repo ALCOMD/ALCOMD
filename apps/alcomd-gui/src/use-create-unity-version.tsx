@@ -1,9 +1,9 @@
+import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
 import type { TemplateRecord, UnityInstallation } from "./core-models";
 import { Button, Select, TextField } from "./Material";
-import { RequestReminder } from "./Reminder";
 import { useTranslation } from "./i18n";
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
@@ -78,8 +78,8 @@ export function CreateUnityVersionField({ disabled, selection }: { disabled: boo
                 value={selection.custom ? "custom" : selection.version} />
         </div>
         {selection.custom ? <TextField disabled={disabled} label={t("Unity version")} onInput={selection.setVersion} required value={selection.version} /> : null}
-        {selection.error !== undefined ? <RequestReminder error={selection.error} title={t("Installed Unity versions could not be loaded.")}>
+        {selection.error !== undefined ? <div role="alert"><strong>{t("Installed Unity versions could not be loaded.")}</strong><p>{t(requestErrorMessage((selection.error).code))}</p><code>{(selection.error).code}</code>{selection.error.diagnosticId === undefined ? null : <p><code>{selection.error.diagnosticId}</code></p>}
             <Button disabled={disabled} onClick={selection.retry} type="button" variant="text">{t("Retry")}</Button>
-        </RequestReminder> : null}
+        </div> : null}
     </>;
 }

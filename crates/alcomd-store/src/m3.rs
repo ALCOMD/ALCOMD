@@ -10,6 +10,29 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
+use crate::operation_logs::{CommittedStep, committed};
+
+fn project_target(id: ProjectId, path: &str) -> alcomd_application::LogTarget {
+    let mut target = alcomd_application::log_path("project", path.to_owned());
+    target.id = Some(id.to_string());
+    target
+}
+
+fn repository_target(
+    id: RepositoryId,
+    value: &RepositoryObservation,
+) -> alcomd_application::LogTarget {
+    alcomd_application::LogTarget {
+        kind: "repository".to_owned(),
+        id: Some(id.to_string()),
+        name: value.name.clone(),
+        path: match &value.source {
+            RepositorySource::Local { path } => Some(path.clone()),
+            RepositorySource::Remote { .. } => None,
+        },
+    }
+}
+
 const PROJECT_REGISTER: &str = "projects.register";
 const PROJECT_REFRESH: &str = "projects.refresh";
 const PROJECT_SET_FAVORITE: &str = "projects.setFavorite";
@@ -188,15 +211,6 @@ fn insert_event(
             ],
         )
         .map_err(sql_failure)?;
-    super::activity::resource_event(
-        transaction,
-        owner,
-        kind,
-        aggregate_kind,
-        aggregate_id,
-        now_ms,
-    )
-    .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -340,6 +354,17 @@ pub(super) fn register_project(
         "project.registered",
         now_ms,
     )?;
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            PROJECT_REGISTER,
+            "registered",
+            Some(project_target(id, &record.observation.root_path)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = SyncWrite {
         value: record,
         replayed: false,
@@ -477,6 +502,17 @@ pub(super) fn refresh_project(
             now_ms,
         )?;
     }
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            PROJECT_REFRESH,
+            if changed { "updated" } else { "no_changes" },
+            Some(project_target(id, &observation.root_path)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let record = ProjectRecord {
         project_id: id,
         observation,
@@ -560,6 +596,17 @@ pub(super) fn set_project_favorite(
             "project.favorite_changed",
             now_ms,
         )?;
+        committed(
+            &transaction,
+            owner,
+            now_ms,
+            CommittedStep::succeeded(
+                PROJECT_SET_FAVORITE,
+                if favorite { "favorited" } else { "unfavorited" },
+                Some(project_target(id, &current.observation.root_path)),
+            ),
+        )
+        .map_err(sql_failure)?;
         ProjectRecord {
             favorite,
             revision,
@@ -609,15 +656,6 @@ pub(super) fn unregister_project(
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
-    super::activity::resource(
-        &transaction,
-        owner,
-        "project.remove",
-        "project",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM projects WHERE owner_principal_id=?1 AND project_id=?2",
@@ -633,6 +671,17 @@ pub(super) fn unregister_project(
         "project.unregistered",
         now_ms,
     )?;
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            PROJECT_UNREGISTER,
+            "unregistered",
+            Some(project_target(id, &current.observation.root_path)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = UnregisterResult {
         id,
         revision: next,
@@ -957,6 +1006,17 @@ pub(super) fn register_repository(
         "repository.registered",
         now_ms,
     )?;
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_REGISTER,
+            "registered",
+            Some(repository_target(id, &record.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = SyncWrite {
         value: record,
         replayed: false,
@@ -1196,6 +1256,17 @@ pub(super) fn refresh_repository(
         revision: next,
         registered_at_ms: current.registered_at_ms,
     };
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_REFRESH,
+            if changed { "updated" } else { "no_changes" },
+            Some(repository_target(id, &record.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = SyncWrite {
         value: record,
         replayed: false,
@@ -1259,6 +1330,17 @@ pub(super) fn update_repository_validators(
         value: current,
         replayed: false,
     };
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_REFRESH,
+            "no_changes",
+            Some(repository_target(id, &response.value.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     save_response(
         &transaction,
         owner,
@@ -1298,15 +1380,6 @@ pub(super) fn unregister_repository(
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
-    super::activity::resource(
-        &transaction,
-        owner,
-        "repository.remove",
-        "repository",
-        &id.to_string(),
-        now_ms,
-    )
-    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
@@ -1322,6 +1395,17 @@ pub(super) fn unregister_repository(
         "repository.unregistered",
         now_ms,
     )?;
+    committed(
+        &transaction,
+        owner,
+        now_ms,
+        CommittedStep::succeeded(
+            REPOSITORY_UNREGISTER,
+            "unregistered",
+            Some(repository_target(id, &current.observation)),
+        ),
+    )
+    .map_err(sql_failure)?;
     let response = UnregisterResult {
         id,
         revision: next,

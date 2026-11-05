@@ -76,7 +76,9 @@ test("a lost default-argument save response is reconciled without another write"
     await page.getByLabel("Argument 1", { exact: true }).fill("-batchmode");
     await page.getByRole("button", { name: "Save launch arguments", exact: true }).click();
     await expect(defaultsDialog(page)).toBeHidden();
-    await expect(page.getByRole("status").filter({ hasText: "Default Unity launch arguments saved." })).toBeVisible();
+    await editDefaults(page);
+    await expect(page.getByLabel("Argument 1", { exact: true })).toHaveValue("-batchmode");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await writes(page)).toHaveLength(1);
 });
 

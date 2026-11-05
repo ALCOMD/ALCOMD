@@ -90,7 +90,7 @@ pub trait UnityLaunchDefaultsSource: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, M5UnityError>> + Send + '_>>;
 }
 
-impl<S: crate::OfficialGuiStore> UnityLaunchDefaultsSource for crate::M7OfficialApplication<S> {
+impl UnityLaunchDefaultsSource for crate::M7OfficialApplication {
     fn arguments(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, M5UnityError>> + Send + '_>> {
@@ -238,12 +238,7 @@ impl M5UnityError {
         self.context = Some(self.context.take().unwrap_or_default().with_path(path));
         self
     }
-    pub fn reported(mut self, id: String) -> Self {
-        self.context
-            .get_or_insert_with(Default::default)
-            .diagnostic_id = Some(id);
-        self
-    }
+
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.context
             .as_ref()
@@ -341,7 +336,6 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         launch_id: UnityLaunchId,
         state: UnityLaunchState,
         spawn_accepted: bool,
-        diagnostic_id: Option<String>,
     ) -> impl Future<Output = Result<UnityLaunchRecord, M5UnityError>> + Send;
 }
 
@@ -421,10 +415,15 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         key: IdempotencyKey,
     ) -> Result<(UnityInstallationRecord, bool), M5UnityError> {
         require(access, Permission::UnityManage)?;
-        let observation = self
-            .platform
-            .validate_installation(executable_path, UnitySourceKind::Manual)
-            .await?;
+        let observation = crate::log_execution_step(
+            "unity.installations.register",
+            "check_editor",
+            Some(crate::log_path("unity", executable_path.clone())),
+            self.platform
+                .validate_installation(executable_path, UnitySourceKind::Manual),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .register_installation(access.principal().clone(), observation, key, now_ms()?)
             .await
@@ -449,7 +448,14 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         key: IdempotencyKey,
     ) -> Result<(UnityInstallationPage, bool), M5UnityError> {
         require(access, Permission::UnityManage)?;
-        let observations = self.platform.discover_installations().await?;
+        let observations = crate::log_execution_step(
+            "unity.installations.refresh",
+            "find_editors",
+            None,
+            self.platform.discover_installations(),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .synchronize_installations(access.principal().clone(), observations, key, now_ms()?)
             .await
@@ -698,28 +704,30 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         }
         let executable_path = installation.observation.executable_path;
         let project_path = project.observation.root_path;
-        if let Err(error) = self
-            .platform
-            .launch(
+        if let Err(error) = crate::log_execution_step(
+            "unity.launch",
+            "launch_requested",
+            Some(crate::log_path("project", project_path.clone())),
+            self.platform.launch(
                 executable_path.clone(),
                 project_path.clone(),
                 config.arguments,
-            )
-            .await
+            ),
+            |error| error.path().map(str::to_owned),
+        )
+        .await
         {
-            let id = crate::OperationId::new().to_string();
-            tracing::error!(diagnostic_id=%id,executable_path,project_path,error=%crate::technical_error_chain(&error),"failed to submit Unity Editor launch");
             self.store
                 .set_launch_state(
                     access.principal().clone(),
                     record.launch_id,
                     UnityLaunchState::Failed,
                     false,
-                    Some(id.clone()),
                 )
                 .await?;
-            return Err(error.reported(id));
+            return Err(error);
         }
+        crate::flush_log_steps().await;
         let accepted = self
             .store
             .set_launch_state(
@@ -727,10 +735,8 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
                 record.launch_id,
                 UnityLaunchState::Opening,
                 true,
-                None,
             )
             .await?;
-        tracing::info!(launch_id=%accepted.launch_id, executable_path, project_path, "Unity Editor launch request submitted");
         Ok((accepted, replayed))
     }
 }

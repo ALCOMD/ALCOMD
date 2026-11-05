@@ -236,20 +236,12 @@ async fn project_registry_is_revisioned_evented_and_idempotent() {
         .list_events(owner.clone(), 0, 100)
         .await
         .expect("events");
-    assert_eq!(events.events.len(), 4);
+    assert_eq!(events.events.len(), 2);
     assert_eq!(
         events
             .events
             .iter()
             .filter(|event| event.aggregate_kind == "project")
-            .count(),
-        2
-    );
-    assert_eq!(
-        events
-            .events
-            .iter()
-            .filter(|event| event.kind == "activity.changed")
             .count(),
         2
     );

@@ -58,7 +58,8 @@ test("H4 Portable UI ignores a late identity read from the prior locale session"
         window.h4Portable.locale = "ja-JP";
         window.h4Portable.releaseAll("settings");
     });
-    await expect(page.getByRole("heading", { name: "Fixture h4-session-2", exact: true })).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute("lang", "ja-JP");
+    // Same-resource reads remain single-flight; release the old read before the new identity can be queried.
     await page.evaluate(() => window.h4Portable.release("identity"));
     await expect(page.getByRole("heading", { name: "Fixture h4-session-2", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toHaveCount(0);

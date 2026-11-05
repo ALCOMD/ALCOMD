@@ -104,26 +104,21 @@ impl M6RuntimeAdapter for PlatformExtensionRuntime {
 
     async fn start(&self, context: ExtensionStartContext) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        let span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || span.in_scope(|| start_host(&inner, context, None)))
+        tokio::task::spawn_blocking(move || start_host(&inner, context, None))
             .await
             .map_err(|_| internal())?
     }
 
     async fn stop(&self, extension_id: String, reason: ExtensionStopReason) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        let span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || {
-            span.in_scope(|| stop_host(&inner, &extension_id, reason))
-        })
-        .await
-        .map_err(|_| internal())?
+        tokio::task::spawn_blocking(move || stop_host(&inner, &extension_id, reason))
+            .await
+            .map_err(|_| internal())?
     }
 
     async fn poll(&self) -> Result<ExtensionRuntimePoll, M6Error> {
         let inner = Arc::clone(&self.inner);
-        let span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || span.in_scope(|| poll_hosts(&inner)))
+        tokio::task::spawn_blocking(move || poll_hosts(&inner))
             .await
             .map_err(|_| internal())?
     }
@@ -162,12 +157,9 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
         authority: ExtensionUiInvocationAuthority,
     ) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        let span = tracing::Span::current();
-        tokio::task::spawn_blocking(move || {
-            span.in_scope(|| start_host(&inner, context, Some(authority)))
-        })
-        .await
-        .map_err(|_| internal())?
+        tokio::task::spawn_blocking(move || start_host(&inner, context, Some(authority)))
+            .await
+            .map_err(|_| internal())?
     }
 
     async fn active_lease(
@@ -205,55 +197,52 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
         }
         let timeout = Duration::from_millis(remaining_ms.min(2_000));
         let inner = Arc::clone(&self.inner);
-        let span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
-            span.in_scope(|| {
-                let mut processes = inner.processes.lock().map_err(|_| internal())?;
-                let process = processes
-                    .get_mut(&lease.extension_id)
-                    .filter(|process| process.lease == lease)
-                    .ok_or_else(|| error(M6ErrorCode::InstanceStale))?;
-                let (name, input, expects_document) = match export {
-                    ExtensionUiExport::Open { session_id, locale } => (
-                        "ui.open",
-                        json!({"sessionId": session_id, "locale": locale}),
-                        true,
-                    ),
-                    ExtensionUiExport::Refresh { session_id } => {
-                        ("ui.refresh", json!({"sessionId": session_id}), true)
-                    }
-                    ExtensionUiExport::Dispatch { session_id, action } => {
-                        let action = serde_json::from_slice::<Value>(&action)
-                            .map_err(|_| error(M6ErrorCode::InvalidInput))?;
-                        (
-                            "ui.dispatch",
-                            json!({"sessionId": session_id, "action": action}),
-                            true,
-                        )
-                    }
-                    ExtensionUiExport::Close { session_id } => {
-                        ("ui.close", json!({"sessionId": session_id}), false)
-                    }
-                };
-                let result = invoke(
-                    &inner,
-                    process,
-                    name,
-                    input,
-                    timeout,
-                    RuntimeInvocation {
-                        kind: authority.kind,
-                        ui_authority: Some(authority),
-                    },
-                )?;
-                if expects_document {
-                    serde_json::to_vec(&result)
-                        .map(Some)
-                        .map_err(|_| internal())
-                } else {
-                    Ok(None)
+            let mut processes = inner.processes.lock().map_err(|_| internal())?;
+            let process = processes
+                .get_mut(&lease.extension_id)
+                .filter(|process| process.lease == lease)
+                .ok_or_else(|| error(M6ErrorCode::InstanceStale))?;
+            let (name, input, expects_document) = match export {
+                ExtensionUiExport::Open { session_id, locale } => (
+                    "ui.open",
+                    json!({"sessionId": session_id, "locale": locale}),
+                    true,
+                ),
+                ExtensionUiExport::Refresh { session_id } => {
+                    ("ui.refresh", json!({"sessionId": session_id}), true)
                 }
-            })
+                ExtensionUiExport::Dispatch { session_id, action } => {
+                    let action = serde_json::from_slice::<Value>(&action)
+                        .map_err(|_| error(M6ErrorCode::InvalidInput))?;
+                    (
+                        "ui.dispatch",
+                        json!({"sessionId": session_id, "action": action}),
+                        true,
+                    )
+                }
+                ExtensionUiExport::Close { session_id } => {
+                    ("ui.close", json!({"sessionId": session_id}), false)
+                }
+            };
+            let result = invoke(
+                &inner,
+                process,
+                name,
+                input,
+                timeout,
+                RuntimeInvocation {
+                    kind: authority.kind,
+                    ui_authority: Some(authority),
+                },
+            )?;
+            if expects_document {
+                serde_json::to_vec(&result)
+                    .map(Some)
+                    .map_err(|_| internal())
+            } else {
+                Ok(None)
+            }
         })
         .await
         .map_err(|_| internal())?
@@ -761,14 +750,10 @@ fn stable_error(error: M6Error) -> HostStableError {
     HostStableError {
         code: code.to_owned(),
         diagnostic_id: (code == "internal_error").then(|| {
-            error.diagnostic_id().map(str::to_owned).unwrap_or_else(|| {
-                alcomd_application::record_technical_failure(
-                    &error,
-                    error.path(),
-                    None,
-                    "extension capability execution failed",
-                )
-            })
+            error
+                .diagnostic_id()
+                .map(str::to_owned)
+                .unwrap_or_else(|| alcomd_application::OperationId::new().to_string())
         }),
     }
 }
@@ -895,56 +880,24 @@ fn internal() -> M6Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
-
-    #[derive(Clone)]
-    struct Capture(Arc<Mutex<Vec<u8>>>);
-    impl Write for Capture {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0
-                .lock()
-                .expect("capture lock")
-                .extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
     #[test]
-    fn capability_failure_reports_original_source_and_only_accepts_core_issued_identity() {
-        let bytes = Arc::new(Mutex::new(Vec::new()));
-        let output = bytes.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .json()
-            .with_writer(move || Capture(output.clone()))
-            .finish();
-        let path = std::env::temp_dir()
-            .join("ALCOMD 原始路径")
-            .join("host-data.json")
-            .display()
-            .to_string();
-        let failure = || {
+    fn capability_failure_only_accepts_core_issued_identity() {
+        let id = OperationId::new().to_string();
+        let response = stable_error(
             M6Error::new(M6ErrorCode::Internal)
-                .with_path(path.clone())
+                .with_diagnostic_id(id.clone())
                 .with_source(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
-                    "controlled host-data write failure",
-                ))
-        };
-        let response = tracing::subscriber::with_default(subscriber, || {
-            let response = stable_error(failure());
-            let repeated = stable_error(
-                failure().with_diagnostic_id(response.diagnostic_id.clone().expect("recorded ID")),
-            );
-            assert_eq!(response, repeated);
-            response
-        });
-        let id = response.diagnostic_id.clone().expect("recorded ID");
+                    "private host-data failure",
+                )),
+        );
+        assert_eq!(response.code, "internal_error");
+        assert_eq!(response.diagnostic_id.as_deref(), Some(id.as_str()));
         let known = HashSet::from([id.clone()]);
-        let propagated = host_error(response, &known);
-        assert_eq!(propagated.diagnostic_id(), Some(id.as_str()));
+        assert_eq!(
+            host_error(response, &known).diagnostic_id(),
+            Some(id.as_str())
+        );
         let forged = host_error(
             HostStableError {
                 code: "internal_error".into(),
@@ -953,21 +906,6 @@ mod tests {
             &known,
         );
         assert!(forged.diagnostic_id().is_none());
-        let captured =
-            String::from_utf8(bytes.lock().expect("capture").clone()).expect("UTF-8 logs");
-        let records = captured
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).expect("standard JSON"))
-            .collect::<Vec<_>>();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0]["fields"]["diagnostic_id"], id);
-        assert_eq!(records[0]["fields"]["path"], path);
-        assert!(
-            records[0]["fields"]["error"]
-                .as_str()
-                .expect("original cause")
-                .contains("controlled host-data write failure")
-        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import { requestErrorMessage } from "./request-errors";
 import { useTranslation } from "./i18n";
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
@@ -6,7 +7,6 @@ import { Button, Dialog, Select } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
-import { RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 
 export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaunchSettled, project }: {
@@ -100,7 +100,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             </Dialog>
             <Dialog dismissible={!busy} onClose={() => closed("choose")} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
                 <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${displayPath(item.executablePath)}`, value: item.installationId }))]} value={installationId} />
-                {error === undefined ? null : <RequestReminder error={error} />}
+                {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
                     <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
                     <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">{t("Open Unity")}</Button>

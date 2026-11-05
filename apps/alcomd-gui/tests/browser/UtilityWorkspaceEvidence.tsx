@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { Button, Dialog, TextField } from "../../src/Material";
 import { UtilityWorkspace } from "../../src/UtilityWorkspace";
 import { OperationFollow } from "../../src/CoreActions";
-import { RequestReminder } from "../../src/Reminder";
 import type { Operation } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 import { CoreEvents } from "../../src/core-events";
@@ -32,7 +31,7 @@ function Draft() {
         <TextField label="Draft" value={value} onInput={setValue} />
         <Button onClick={() => setFailed(true)}>Report operation failure</Button>
         <Button onClick={() => setNested(true)}>Open nested dialog</Button>
-        {failed ? <RequestReminder error={{ code: "permission_denied", message: "" }}><Button onClick={() => setFailed(false)}>Recover operation</Button></RequestReminder> : null}
+        {failed ? <div role="alert"><p>permission_denied</p><Button onClick={() => setFailed(false)}>Recover operation</Button></div> : null}
         <Dialog open={nested} onClose={() => setNested(false)} title="Nested evidence">
             <Button onClick={() => setNested(false)}>Close nested dialog</Button>
         </Dialog>

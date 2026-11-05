@@ -1,7 +1,6 @@
 //! M5 native Template registry and immutable import/derive Plan use cases.
 
 use std::future::Future;
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -219,14 +218,11 @@ impl M5TemplateError {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
-    fn record_failure(
-        mut self,
-        operation_id: crate::OperationId,
-        message: &'static str,
-    ) -> (Self, String) {
-        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
-            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
-        });
+    fn ensure_diagnostic_id(mut self) -> (Self, String) {
+        let id = self
+            .diagnostic_id
+            .clone()
+            .unwrap_or_else(|| crate::OperationId::new().to_string());
         self.diagnostic_id = Some(id.clone());
         (self, id)
     }
@@ -496,15 +492,10 @@ where
         for operation_id in operations {
             let recovery = self.locks.project_recovery_guard();
             let application = self.clone();
-            tokio::spawn(
-                (async move {
-                    let _recovery = recovery;
-                    if let Err(source) = application.run_operation(operation_id).await {
-                        let _ = source.record_failure(operation_id, "Template operation failed");
-                    }
-                })
-                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-            );
+            tokio::spawn(async move {
+                let _recovery = recovery;
+                let _ = application.run_operation(operation_id).await;
+            });
         }
         Ok(())
     }
@@ -576,7 +567,14 @@ where
         expected_revision: Option<Revision>,
     ) -> Result<TemplatePlanRecord, M5TemplateError> {
         require_local_owner(access, crate::Permission::TemplatesManage)?;
-        let evidence = self.adapter.inspect_bundle(source_path).await?;
+        let evidence = crate::log_execution_step(
+            "templates.import",
+            "inspect_bundle",
+            Some(crate::log_path("template", source_path.clone())),
+            self.adapter.inspect_bundle(source_path),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         let existing = match self
             .store
             .get_template(access.principal().clone(), evidence.template_id)
@@ -640,7 +638,16 @@ where
         if template.revision != expected_revision {
             return Err(error(M5TemplateErrorCode::TemplateRevisionConflict));
         }
-        self.adapter.export_bundle(template, target_path).await
+        crate::log_execution_step(
+            "templates.export",
+            "write_bundle",
+            Some(crate::log_path("template", target_path.clone())),
+            self.adapter.export_bundle(template, target_path),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
+        crate::flush_log_steps().await;
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -687,9 +694,12 @@ where
         if !catalog.complete {
             return Err(error(M5TemplateErrorCode::TemplatePlanStale));
         }
-        let draft = self
-            .adapter
-            .derive_plan(
+        let target = crate::log_path("project", project.observation.root_path.clone());
+        let draft = crate::log_execution_step(
+            "templates.derive",
+            "inspect_project",
+            Some(target),
+            self.adapter.derive_plan(
                 project,
                 catalog,
                 template_id,
@@ -697,8 +707,10 @@ where
                 display_name,
                 description,
                 writer.state,
-            )
-            .await?;
+            ),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .create_template_plan(access.principal().clone(), draft, now_ms()?)
             .await
@@ -757,10 +769,24 @@ where
         if !catalog.complete {
             return Err(error(M5TemplateErrorCode::TemplatePlanStale));
         }
-        let draft = self
-            .adapter
-            .create_project_plan(template, catalog, target_parent, target_leaf, unity_version)
-            .await?;
+        let path = std::path::Path::new(&target_parent)
+            .join(&target_leaf)
+            .to_string_lossy()
+            .into_owned();
+        let draft = crate::log_execution_step(
+            "templates.create-project",
+            "check_destination",
+            Some(crate::log_path("project", path)),
+            self.adapter.create_project_plan(
+                template,
+                catalog,
+                target_parent,
+                target_leaf,
+                unity_version,
+            ),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .create_template_plan(access.principal().clone(), draft, now_ms()?)
             .await
@@ -843,14 +869,9 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                if let Err(source) = application.run_operation(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Template operation failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _ = application.run_operation(operation_id).await;
+        });
     }
 
     async fn run_operation(&self, operation_id: OperationId) -> Result<(), M5TemplateError> {
@@ -901,11 +922,14 @@ where
             }
             Err(source) => {
                 let code = template_error_name(source.code()).to_owned();
-                let (source, diagnostic_id) =
-                    source.record_failure(operation_id, "Template operation failed");
-                self.store
-                    .fail_template_apply(operation_id, code, diagnostic_id, now_ms()?)
-                    .await?;
+                let (source, diagnostic_id) = source.ensure_diagnostic_id();
+                crate::with_operation_log_failure(
+                    operation_id,
+                    crate::operation_log_error(&source, source.path()),
+                    self.store
+                        .fail_template_apply(operation_id, code, diagnostic_id, now_ms()?),
+                )
+                .await?;
                 Err(source)
             }
         }
@@ -918,8 +942,7 @@ where
     ) -> Result<(), M5TemplateError> {
         let result = self.run_create_project_inner(operation_id, plan).await;
         if let Err(source) = result {
-            let (source, diagnostic_id) =
-                source.record_failure(operation_id, "Template operation failed");
+            let (source, diagnostic_id) = source.ensure_diagnostic_id();
             let code = template_error_name(source.code()).to_owned();
             self.store
                 .fail_template_apply(operation_id, code, diagnostic_id, now_ms()?)

@@ -575,7 +575,8 @@ async fn main() -> ExitCode {
         return write_completion(*shell);
     }
 
-    let mut config = alcomd_client::ClientConfig::default();
+    let mut config =
+        alcomd_client::ClientConfig::default().with_client_name(env!("CARGO_PKG_NAME"));
     if arguments.no_start_daemon {
         config = config.without_daemon_start();
     }

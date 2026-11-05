@@ -321,7 +321,14 @@ where
         {
             return Ok(response);
         }
-        let snapshot = self.adapter.snapshot(source_path).await?;
+        let snapshot = crate::log_execution_step(
+            "packages.userPackages.enroll",
+            "inspect_package",
+            Some(crate::log_path("package", source_path.clone())),
+            self.adapter.snapshot(source_path),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .enroll_user_package(access.principal().clone(), snapshot, key, now_ms()?)
             .await
@@ -351,7 +358,14 @@ where
             .store
             .get_user_package(access.principal().clone(), user_package_id)
             .await?;
-        let snapshot = self.adapter.snapshot(current.source_root_path).await?;
+        let snapshot = crate::log_execution_step(
+            "packages.userPackages.refresh",
+            "inspect_package",
+            Some(crate::log_path("package", current.source_root_path.clone())),
+            self.adapter.snapshot(current.source_root_path),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         if snapshot.source_identity_key != current.source_identity_key
             || snapshot.package_id != current.package_id
         {

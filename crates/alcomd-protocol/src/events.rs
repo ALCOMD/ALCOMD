@@ -20,11 +20,12 @@ pub struct EventsCursor {
     pub resources_revision: u64,
 }
 
-/// The single non-durable resource category required by current M6 writes.
+/// Resource invalidations that carry no business record body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum EventInvalidation {
     Extensions,
+    OperationLog,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]

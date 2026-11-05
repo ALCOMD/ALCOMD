@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, type RefObject } from "react";
 import type { CoreEvents } from "./core-events";
 
-type View = "projects" | "operations" | "activity";
+type View = "projects" | "operations";
 interface ReadingPosition { row?: string; index: number; offset: number; scrollTop: number }
 
 /** Restore a stable row only after its history has returned, rather than clamping on the first page. */

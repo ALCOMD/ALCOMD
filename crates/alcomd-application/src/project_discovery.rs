@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use crate::{
     AccessContext, IdempotencyKey, M3ErrorCode, M3ReadAdapter, M3RegistryStore,
-    M7OfficialApplication, OfficialGuiStore, PrincipalId, ProjectDiscoveryMode, ProjectId,
-    ResourceKey, ResourceLockCoordinator, m3_time_ms,
+    M7OfficialApplication, PrincipalId, ProjectDiscoveryMode, ProjectId, ResourceKey,
+    ResourceLockCoordinator, m3_time_ms,
 };
 
 /// Maximum directory entries observed during one default-root scan, including non-projects.
@@ -92,20 +92,6 @@ impl ProjectDiscoveryError {
             .as_ref()
             .and_then(|context| context.diagnostic_id.as_deref())
     }
-    fn record(mut self) -> Self {
-        if self.diagnostic_id().is_none() {
-            let id = crate::record_technical_failure(
-                &self,
-                self.path(),
-                None,
-                "default project discovery failed",
-            );
-            self.context
-                .get_or_insert_with(Default::default)
-                .diagnostic_id = Some(id);
-        }
-        self
-    }
 }
 
 impl std::fmt::Display for ProjectDiscoveryError {
@@ -185,18 +171,18 @@ pub struct ProjectDiscoveryApplication<S, R, P> {
     store: S,
     reader: R,
     platform: P,
-    settings: M7OfficialApplication<S>,
+    settings: M7OfficialApplication,
     locks: Arc<ResourceLockCoordinator>,
 }
 
 impl<S, R, P> ProjectDiscoveryApplication<S, R, P>
 where
-    S: M3RegistryStore + OfficialGuiStore,
+    S: M3RegistryStore,
     R: M3ReadAdapter,
     P: ProjectDiscoveryPlatform,
 {
     #[must_use]
-    pub fn new(store: S, reader: R, platform: P, settings: M7OfficialApplication<S>) -> Self {
+    pub fn new(store: S, reader: R, platform: P, settings: M7OfficialApplication) -> Self {
         Self::with_locks(
             store,
             reader,
@@ -211,7 +197,7 @@ where
         store: S,
         reader: R,
         platform: P,
-        settings: M7OfficialApplication<S>,
+        settings: M7OfficialApplication,
         locks: Arc<ResourceLockCoordinator>,
     ) -> Self {
         Self {
@@ -230,9 +216,7 @@ where
 
     /// One bounded scan. Scheduling and the single-in-flight task belong to the daemon lifecycle.
     pub async fn scan(&self) -> Result<ProjectDiscoveryReport, ProjectDiscoveryError> {
-        self.scan_inner()
-            .await
-            .map_err(ProjectDiscoveryError::record)
+        self.scan_inner().await
     }
 
     async fn scan_inner(&self) -> Result<ProjectDiscoveryReport, ProjectDiscoveryError> {
@@ -351,7 +335,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn previously_reported_configuration_failure_keeps_its_cause_path_and_identity() {
+    fn configuration_failure_keeps_its_cause_path_and_identity() {
         let id = crate::OperationId::new().to_string();
         let path = std::env::temp_dir()
             .join("ALCOMD 设置")
@@ -365,13 +349,13 @@ mod tests {
                 "controlled configuration read failure",
             ))
             .with_diagnostic_id(Some(id.clone()));
-        let failure = configuration_error(source).record();
+        let failure = configuration_error(source);
         assert_eq!(failure.diagnostic_id(), Some(id.as_str()));
         assert_eq!(failure.path(), Some(path.as_str()));
         assert!(
             crate::technical_error_chain(&failure)
                 .contains("controlled configuration read failure")
         );
-        assert_eq!(failure.record().diagnostic_id(), Some(id.as_str()));
+        assert_eq!(failure.diagnostic_id(), Some(id.as_str()));
     }
 }

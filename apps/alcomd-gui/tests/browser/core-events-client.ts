@@ -10,6 +10,8 @@ export class BrowserCoreEvents {
     private instance = crypto.randomUUID();
     private sequence = 0;
     private resourcesRevision = 0;
+    private extensionsRevision = 0;
+    private logRevision = 0;
     private readers = new Set<Reader>();
     private history: CoreEvent[] = [];
     private held = false;
@@ -60,7 +62,8 @@ export class BrowserCoreEvents {
         return event;
     }
     hold(value: boolean) { this.held = value; if (!value) for (const reader of this.readers) this.flush(reader); }
-    invalidateExtensions() { this.resourcesRevision++; this.requestFlush(); }
+    invalidateExtensions() { this.extensionsRevision = ++this.resourcesRevision; this.requestFlush(); }
+    invalidateOperationLog() { this.logRevision = ++this.resourcesRevision; this.requestFlush(); }
     holdAcknowledgement(value: boolean) { this.ackHeld = value; if (!value) for (const reader of this.readers) { reader.heldAck?.resolve(); reader.heldAck = undefined; } }
     duplicate() {
         for (const reader of this.readers) {
@@ -81,7 +84,7 @@ export class BrowserCoreEvents {
                 error: { code, message: "" }, retryable } });
         }
     }
-    restart() { this.instance = crypto.randomUUID(); this.sequence = 0; this.resourcesRevision = 0; this.history = []; this.disconnect(); }
+    restart() { this.instance = crypto.randomUUID(); this.sequence = 0; this.resourcesRevision = 0; this.extensionsRevision = 0; this.logRevision = 0; this.history = []; this.disconnect(); }
     private cursor(sequence: number): EventsCursor { return { instanceId: this.instance, sequence, resourcesRevision: this.resourcesRevision }; }
     private requestFlush() {
         if (this.flushQueued) return;
@@ -98,7 +101,9 @@ export class BrowserCoreEvents {
     private flush(reader: Reader) {
         if (this.held || reader.pending || !this.readers.has(reader)) return;
         const events = this.history.filter((event) => event.sequence > reader.cursor).slice(0, 100);
-        const invalidatedScopes: Array<"extensions"> = reader.resourcesRevision !== this.resourcesRevision ? ["extensions"] : [];
+        const invalidatedScopes: EventsBatch["invalidatedScopes"] = [];
+        if (this.extensionsRevision > reader.resourcesRevision) invalidatedScopes.push("extensions");
+        if (this.logRevision > reader.resourcesRevision) invalidatedScopes.push("operation-log");
         if (!events.length && !invalidatedScopes.length) return;
         const batch: EventsBatch = { subscriptionId: reader.subscriptionId, instanceId: this.instance, batchId: ++reader.batchId,
             events: structuredClone(events), invalidatedScopes, nextCursor: this.cursor(events.at(-1)?.sequence ?? reader.cursor) };

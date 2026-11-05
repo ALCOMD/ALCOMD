@@ -31,7 +31,7 @@ export function useWorkspaceInvalidation(scopes: readonly ChangeScope[], read: (
     return useCoreInvalidation("workspace:" + id, scopes, read);
 }
 
-export function useViewState<T>(view: "projects" | "operations" | "activity", key: string, initial: T) {
+export function useViewState<T>(view: "projects" | "operations", key: string, initial: T) {
     const events = useCoreEvents();
     const [value, setValue] = useState(() => events?.metadata(view, key, initial) ?? initial);
     const write = (next: T | ((previous: T) => T)) => setValue((previous) => {
@@ -42,7 +42,7 @@ export function useViewState<T>(view: "projects" | "operations" | "activity", ke
     return [value, write] as const;
 }
 
-export function useViewReadingPosition(view: "projects" | "operations" | "activity", root: RefObject<HTMLElement | null>, revision: unknown, complete = true) {
+export function useViewReadingPosition(view: "projects" | "operations", root: RefObject<HTMLElement | null>, revision: unknown, complete = true) {
     const events = useCoreEvents();
     useReadingPosition(events, view, root, revision, complete);
 }

@@ -87,6 +87,7 @@ async fn explicit_creation_version_round_trips_over_a_private_pipe_without_an_in
         let mut state = ConnectionState {
             connection_id: "private-creation-test".into(),
             client_instance_id: None,
+            actor: "Local IPC".to_owned(),
             handshake_complete: false,
             capabilities: std::collections::HashSet::new(),
         };

@@ -2,17 +2,6 @@ import { expect, test } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 test.use({ viewport: { width: 1280, height: 800 } });
 
-test("an unavailable activity write retains the original failure and its diagnostic identity", async ({ page }) => {
-    await page.goto("/browser-harness.html?request-reminder=1");
-    await page.getByRole("button", { name: "Activity recording unavailable", exact: true }).click();
-    const feedback = page.getByRole("alert");
-    await expect(feedback).toContainText("The activity record for this operation could not be saved.");
-    await expectRequestError(feedback, "extension_publisher_confirmation_required");
-    await expect(feedback.locator("code")).toContainText(["extension_publisher_confirmation_required", "test-diagnostic"]);
-    await expect(page.locator("body")).not.toContainText("do-not-display");
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
-});
-
 test("favorite failure leaves the row intact and the original action retries it", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&state=favorite-conflict");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();

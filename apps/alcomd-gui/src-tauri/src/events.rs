@@ -223,7 +223,9 @@ async fn run(
         identity: identity.clone(),
     };
     let mut subscription = match EventSubscription::connect(
-        ClientConfig::default().without_daemon_start(),
+        ClientConfig::default()
+            .with_client_name(env!("CARGO_PKG_NAME"))
+            .without_daemon_start(),
         EventsSubscribeParams {
             cursor,
             limit: None,

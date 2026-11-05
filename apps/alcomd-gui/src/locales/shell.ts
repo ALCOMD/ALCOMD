@@ -122,10 +122,6 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "诊断 ID：{id}",
         "ja-JP": "診断 ID: {id}"
     },
-    "Technical Logs": {
-        "zh-CN": "技术日志",
-        "ja-JP": "技術ログ"
-    },
     "disabled": {
         "zh-CN": "已停用",
         "ja-JP": "無効"
@@ -257,10 +253,6 @@ export const shellMessages: TranslationTable = {
     "local": {
         "zh-CN": "本地",
         "ja-JP": "ローカル"
-    },
-    "Logs": {
-        "zh-CN": "日志",
-        "ja-JP": "ログ"
     },
     "Manage installations": {
         "zh-CN": "管理安装",

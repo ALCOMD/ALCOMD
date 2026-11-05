@@ -396,6 +396,24 @@ pub(super) fn create_install_plan(
         )
         .map_err(store_error)?;
     let record = get_plan_on(&transaction, plan_id)?;
+    let path = std::path::Path::new(&draft.evidence.source_locator)
+        .is_absolute()
+        .then(|| draft.evidence.source_locator.clone());
+    let target = alcomd_application::LogTarget {
+        kind: "extension".to_owned(),
+        id: Some(draft.evidence.extension_id.clone()),
+        name: Some(draft.evidence.extension_id.clone()),
+        path,
+    };
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        plan_id,
+        "extensions.install",
+        Some(target),
+        now_ms,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(store_error)?;
     Ok(record)
 }
@@ -447,6 +465,21 @@ pub(super) fn create_uninstall_plan(
         )
         .map_err(store_error)?;
     let record = get_plan_on(&transaction, plan_id)?;
+    let target = alcomd_application::LogTarget {
+        kind: "extension".to_owned(),
+        id: Some(current.extension_id.clone()),
+        name: Some(current.extension_id),
+        path: None,
+    };
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        plan_id,
+        "extensions.uninstall",
+        Some(target),
+        now_ms,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(store_error)?;
     Ok(record)
 }
@@ -714,8 +747,6 @@ pub(super) fn accept_plan(
             ],
         )
         .map_err(store_error)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE extension_plans SET state='applied', apply_operation_id=?1
@@ -937,9 +968,6 @@ pub(super) fn complete_operation(
         )?;
     }
     transaction.commit().map_err(store_error)?;
-    if let Some((_, _, kind)) = completion {
-        tracing::info!(operation_id = %operation_id, operation_kind = kind.as_str(), "operation completed");
-    }
     Ok(())
 }
 
@@ -1065,16 +1093,15 @@ pub(super) fn set_grant(
         grant_revision: next,
         replayed: false,
     };
+    let mut log = super::operation_logs::CommittedStep::succeeded(
+        "extensions.permission",
+        if grant { "granted" } else { "revoked" },
+        Some(log_extension_target(extension_id)),
+    );
+    log.details = Some(permission.to_owned());
+    super::operation_logs::committed(&transaction, owner, now_ms, log)
+        .map_err(|cause| unavailable().with_source(cause))?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
-    super::activity::permission_changed(
-        &transaction,
-        owner,
-        extension_id,
-        permission,
-        grant,
-        now_ms,
-    )
-    .map_err(store_error)?;
     transaction.commit().map_err(store_error)?;
     Ok((result, owner == &PrincipalId::local_owner()))
 }
@@ -1140,16 +1167,22 @@ pub(super) fn set_desired(
         )
         .map_err(store_error)?;
     let result = get_extension(&transaction, owner, extension_id)?;
-    save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
-    super::activity::resource(
+    super::operation_logs::committed(
         &transaction,
         owner,
-        method,
-        "extension",
-        extension_id,
         now_ms,
+        super::operation_logs::CommittedStep::succeeded(
+            method,
+            if enable {
+                "enable_requested"
+            } else {
+                "disable_requested"
+            },
+            Some(log_extension_target(extension_id)),
+        ),
     )
-    .map_err(store_error)?;
+    .map_err(|cause| unavailable().with_source(cause))?;
+    save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
     transaction.commit().map_err(store_error)?;
     Ok((result, owner == &PrincipalId::local_owner()))
 }
@@ -1979,6 +2012,8 @@ fn insert_operation_event(
             ],
         )
         .map_err(store_error)?;
+    super::operation_logs::operation_edge(transaction, owner, operation_id, kind, "{}", now)
+        .map_err(|error| unavailable().with_source(error))?;
     Ok(())
 }
 
@@ -2229,6 +2264,15 @@ fn internal() -> M6Error {
 
 fn store_error(source: rusqlite::Error) -> M6Error {
     error(M6ErrorCode::StoreUnavailable).with_source(source)
+}
+
+fn log_extension_target(id: &str) -> alcomd_application::LogTarget {
+    alcomd_application::LogTarget {
+        kind: "extension".to_owned(),
+        id: Some(id.to_owned()),
+        name: Some(id.to_owned()),
+        path: None,
+    }
 }
 
 pub(super) fn unavailable() -> M6Error {

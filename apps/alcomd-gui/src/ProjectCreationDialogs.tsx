@@ -1,10 +1,10 @@
+import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
 import type { BackupApplyRestoreResult, BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
 import { Button, Dialog, PathField, Select, TextField } from "./Material";
 import { OperationFollow, TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useActionScope, useTemplateOperations } from "./CoreActions";
-import { Reminder, RequestReminder } from "./Reminder";
 import { capabilities, useCapability } from "./capabilities";
 import { reviewTemplateCreation, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { LoadingState, useDelayedPending } from "./LoadingState";
@@ -254,8 +254,8 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                         </div>
                     </>
                 )}
-                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
-                {error === undefined ? null : <RequestReminder error={error}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
+                {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
+                {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </div>
         </Dialog>{operations.follow()}</>
     );
@@ -437,7 +437,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                             <div><span>{t("Plan")}</span><code>{plan.planFingerprint.slice(0, 12)}</code></div>
                         </div>
                         <p>{t("ALCOMD Core will validate the managed archive, restore transactionally, and register the completed project.")}</p>
-                        {plan.packagesRequireResolve ? <Reminder tone="warning">{t("VPM packages require a separate resolve after restoration.")}</Reminder> : null}
+                        {plan.packagesRequireResolve ? <p role="alert">{t("VPM packages require a separate resolve after restoration.")}</p> : null}
                         <div className="dialog-actions">
                             <Button disabled={busy || (submitted && templateApplyResultUnknown(error))} onClick={() => { setPlan(undefined); setSubmitted(false); setError(undefined); }} type="button" variant="text">{t("Back")}</Button>
                             <Button disabled={!canRestore || busy || submitted} onClick={() => void apply()} type="button">{t("Restore project")}</Button>
@@ -445,8 +445,8 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                         </div>
                     </>
                 )}
-                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
-                {error === undefined ? null : <RequestReminder error={error} title={t("Restore project")}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
+                {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
+                {error === undefined ? null : <div role="alert"><strong>{t("Restore project")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </div>
         </Dialog>
     );

@@ -52,18 +52,6 @@ impl Error for TechnicalMessage {
     }
 }
 
-/// The execution owner records before reducing the error to a public code.
-pub fn record_technical_failure(
-    error: &(dyn Error + 'static),
-    path: Option<&str>,
-    operation_id: Option<crate::OperationId>,
-    message: &'static str,
-) -> String {
-    let id = crate::OperationId::new().to_string();
-    let chain = technical_error_chain(error);
-    tracing::error!(diagnostic_id=%id,path,operation_id=operation_id.map(|v|v.to_string()),error=%chain,"{message}");
-    id
-}
 pub fn technical_error_chain(error: &(dyn Error + 'static)) -> String {
     let mut text = error.to_string();
     let mut previous = text.clone();

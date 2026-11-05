@@ -109,8 +109,8 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
 
     const navigation = page.locator("#primary-navigation");
     await expect(navigation.locator("md-list")).toHaveCount(2);
-    await expect(navigation.locator("md-list-item")).toHaveCount(7);
-    await expect(navigation.locator(".navigation-item .alcomd-icon")).toHaveCount(7);
+    await expect(navigation.locator("md-list-item")).toHaveCount(6);
+    await expect(navigation.locator(".navigation-item .alcomd-icon")).toHaveCount(6);
     await expect(navigationItem(page, "Projects")).toBeVisible();
     await expect(navigationItem(page, "Resources")).toBeVisible();
     await expect(navigation.locator("nav[aria-label='Utilities']")).toBeVisible();

@@ -3,10 +3,7 @@ use std::sync::{Arc, OnceLock};
 
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
-use crate::{AccessContext, Permission, PrincipalId, StoreError};
-
-const DEFAULT_PAGE_LIMIT: u32 = 100;
-const MAX_PAGE_LIMIT: u32 = 200;
+use crate::{AccessContext, Permission, PrincipalId};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigAppearanceMode {
@@ -332,85 +329,8 @@ pub struct ConfigPackageSettingsUpdate {
     pub hide_local_user_packages: Option<bool>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialActivityCursor {
-    pub started_at_ms: u64,
-    pub activity_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OfficialActivitySubject {
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialActivityItem {
-    pub activity_id: String,
-    pub revision: u64,
-    pub action: String,
-    pub status: String,
-    pub started_at_ms: u64,
-    pub finished_at_ms: Option<u64>,
-    pub subject: OfficialActivitySubject,
-    pub parameters: serde_json::Value,
-    pub result: Option<OfficialActivityResult>,
-    pub operation_id: Option<String>,
-    pub diagnostic_id: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct OfficialActivityResult {
-    pub code: String,
-}
-
-/// Accepted command context only. Ordinary queries and rejected authorization
-/// must never call the failure-history write use case.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct NewFailedActivity {
-    pub activity_id: String,
-    pub action: String,
-    pub subject: OfficialActivitySubject,
-    pub parameters: serde_json::Value,
-    pub diagnostic_id: Option<String>,
-    pub occurred_at_ms: u64,
-    pub error_code: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialActivityPage {
-    pub items: Vec<OfficialActivityItem>,
-    pub next_cursor: Option<OfficialActivityCursor>,
-}
-
-pub trait OfficialGuiStore: Clone + Send + Sync + 'static {
-    fn list_official_activity(
-        &self,
-        owner: PrincipalId,
-        cursor: Option<OfficialActivityCursor>,
-        limit: u32,
-    ) -> impl std::future::Future<Output = Result<OfficialActivityPage, StoreError>> + Send;
-
-    fn get_official_activity(
-        &self,
-        owner: PrincipalId,
-        activity_id: String,
-    ) -> impl std::future::Future<Output = Result<OfficialActivityItem, StoreError>> + Send;
-    fn record_failed_activity(
-        &self,
-        owner: PrincipalId,
-        activity: NewFailedActivity,
-    ) -> impl std::future::Future<Output = Result<OfficialActivityItem, StoreError>> + Send;
-}
-
 #[derive(Clone)]
-pub struct M7OfficialApplication<S> {
-    store: S,
+pub struct M7OfficialApplication {
     config: Arc<dyn ConfigStore>,
     hub_platform: Arc<dyn UnityHubPlatform>,
     hub_launcher: Arc<dyn UnityHubLauncher>,
@@ -433,17 +353,15 @@ impl Drop for ProjectDiscoveryNotify {
     }
 }
 
-impl<S: OfficialGuiStore> M7OfficialApplication<S> {
+impl M7OfficialApplication {
     #[must_use]
     pub fn new(
-        store: S,
         config: Arc<dyn ConfigStore>,
         hub_platform: Arc<dyn UnityHubPlatform>,
         hub_launcher: Arc<dyn UnityHubLauncher>,
         directory_platform: Arc<dyn StorageDirectoryPlatform>,
     ) -> Self {
         Self {
-            store,
             config,
             hub_platform,
             hub_launcher,
@@ -476,7 +394,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         .map_err(|error| {
             OfficialGuiError::Unavailable
                 .with_source(error)
-                .record("settings read worker did not complete")
+                .with_reason("settings read worker did not complete")
         })?
     }
 
@@ -496,7 +414,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         .map_err(|error| {
             OfficialGuiError::Unavailable
                 .with_source(error)
-                .record("settings initialization worker did not complete")
+                .with_reason("settings initialization worker did not complete")
         })?
     }
 
@@ -551,7 +469,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         .map_err(|error| {
             OfficialGuiError::Unavailable
                 .with_source(error)
-                .record("storage directory worker did not complete")
+                .with_reason("storage directory worker did not complete")
         })?
     }
 
@@ -598,7 +516,10 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         let launcher = Arc::clone(&self.hub_launcher);
         // Cancellation must not release settings coordination between validation and
         // process-creation acknowledgement. Child lifetime belongs to the launcher.
-        tokio::task::spawn_blocking(move || {
+        let log_target = expected_path
+            .clone()
+            .map(|path| crate::log_path("unity", path));
+        let disk = tokio::task::spawn_blocking(move || {
             *guard = None;
             let snapshot = config.load().map_err(|error| {
                 let diagnostic = error.diagnostic_id().map(str::to_owned);
@@ -634,13 +555,39 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                 UnityHubStatus::NotFound => Err(UnityHubOpenError::PathInvalid),
                 UnityHubStatus::Unavailable => Err(UnityHubOpenError::Unavailable),
             }
-        })
-        .await
-        .map_err(|error| {
-            UnityHubOpenError::Internal
-                .with_source(error)
-                .record("Unity Hub dispatch worker did not complete")
-        })?
+        });
+        let dispatch = async move {
+            let result = disk
+                .await
+                .map_err(|error| {
+                    UnityHubOpenError::Internal
+                        .with_source(error)
+                        .with_reason("Unity Hub dispatch worker did not complete")
+                })
+                .and_then(std::convert::identity);
+            let (step, outcome, details) = match &result {
+                Ok(UnityHubOpenOutcome::Spawned) => {
+                    ("launch_requested", crate::LogOutcome::Succeeded, None)
+                }
+                Ok(UnityHubOpenOutcome::DownloadRequired) => {
+                    ("hub_not_installed", crate::LogOutcome::Waiting, None)
+                }
+                Err(error) => (
+                    "open_hub",
+                    crate::LogOutcome::Failed,
+                    Some(crate::operation_log_error(error, error.path())),
+                ),
+            };
+            crate::log_external_fact("unity.hub.open", step, outcome, log_target, details).await;
+            result
+        };
+        tokio::spawn(crate::carry_log_caller(dispatch))
+            .await
+            .map_err(|error| {
+                UnityHubOpenError::Internal
+                    .with_source(error)
+                    .with_reason("Unity Hub dispatch worker did not complete")
+            })?
     }
 
     pub async fn update_settings(
@@ -685,7 +632,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         let directory_defaults = Arc::clone(&self.directory_defaults);
         let can_manage_projects = access.require(Permission::ProjectsManage).is_ok();
         let discovery_notify = Arc::clone(&self.project_discovery_notify);
-        tokio::task::spawn_blocking(move || {
+        let disk = tokio::task::spawn_blocking(move || {
             let _discovery_notify = ProjectDiscoveryNotify(discovery_notify);
             // A publication failure can occur after rename. Never retain an older
             // confirmed snapshot when the resulting disk revision is uncertain.
@@ -731,7 +678,9 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                     }
                 }
             }
+            let previous = current.settings.clone();
             let settings = apply_update(current.settings, update)?;
+            let groups = changed_settings_groups(&previous, &settings);
             let snapshot = ConfigSnapshot { revision, settings };
             resolve_storage_directories(
                 &snapshot.settings.paths,
@@ -740,108 +689,66 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             )?;
             config.publish(&snapshot).map_err(OfficialGuiError::from)?;
             *guard = Some(snapshot.clone());
-            Ok(snapshot)
-        })
-        .await
-        .map_err(|error| {
-            OfficialGuiError::Unavailable
-                .with_source(error)
-                .record("settings publication worker did not complete")
-        })?
-    }
-
-    pub async fn list_activity(
-        &self,
-        access: &AccessContext,
-        cursor: Option<OfficialActivityCursor>,
-        limit: Option<u32>,
-    ) -> Result<OfficialActivityPage, OfficialGuiError> {
-        access
-            .require(Permission::ActivityRead)
-            .map_err(|_| OfficialGuiError::PermissionDenied)?;
-        let limit = validate_limit(limit)?;
-        validate_activity_cursor(cursor.as_ref())?;
-        self.store
-            .list_official_activity(access.principal().clone(), cursor, limit)
-            .await
-            .map_err(|error| {
-                OfficialGuiError::from(error).record("failed to read activity history")
-            })
-    }
-
-    pub async fn get_activity(
-        &self,
-        access: &AccessContext,
-        activity_id: String,
-    ) -> Result<OfficialActivityItem, OfficialGuiError> {
-        access
-            .require(Permission::ActivityRead)
-            .map_err(|_| OfficialGuiError::PermissionDenied)?;
-        if !canonical_uuid(&activity_id) {
-            return Err(OfficialGuiError::InvalidInput);
-        }
-        self.store
-            .get_official_activity(access.principal().clone(), activity_id)
-            .await
-            .map_err(|error| {
-                if error.kind() == crate::StoreErrorKind::OperationNotFound {
-                    OfficialGuiError::ActivityNotFound
-                } else {
-                    OfficialGuiError::Unavailable
-                        .with_source(error)
-                        .record("failed to read activity")
+            Ok((snapshot, groups))
+        });
+        let publish = async move {
+            match disk
+                .await
+                .map_err(|error| OfficialGuiError::Unavailable.with_source(error))
+                .and_then(std::convert::identity)
+            {
+                Ok((snapshot, groups)) => {
+                    if !groups.is_empty() {
+                        crate::log_external_fact(
+                            "settings.update",
+                            "saved",
+                            crate::LogOutcome::Succeeded,
+                            None,
+                            Some(groups.join(", ")),
+                        )
+                        .await;
+                    }
+                    Ok(snapshot)
                 }
-            })
-    }
-
-    /// The transport supplies the already authenticated command permission,
-    /// never a client-supplied history-write capability.
-    pub async fn record_failed_activity(
-        &self,
-        access: &AccessContext,
-        command_permission: Permission,
-        activity: NewFailedActivity,
-    ) -> Result<OfficialActivityItem, OfficialGuiError> {
-        if !matches!(
-            command_permission,
-            Permission::ProjectsManage
-                | Permission::ProjectsCreate
-                | Permission::ProjectsDelete
-                | Permission::ProjectsUnityMigrate
-                | Permission::RepositoriesManage
-                | Permission::PackagesManage
-                | Permission::UnityManage
-                | Permission::UnityLaunch
-                | Permission::UnityHubOpen
-                | Permission::TemplatesManage
-                | Permission::BackupsManage
-                | Permission::ExtensionsManage
-                | Permission::ExtensionsPermissionsManage
-                | Permission::StateCheck
-                | Permission::OperationsCancel
-        ) {
-            return Err(OfficialGuiError::PermissionDenied);
-        }
-        access
-            .require(command_permission)
-            .map_err(|_| OfficialGuiError::PermissionDenied)?;
-        if !valid_failed_activity(&activity) {
-            return Err(OfficialGuiError::InvalidInput);
-        }
-        self.store
-            .record_failed_activity(access.principal().clone(), activity)
+                Err(error) => {
+                    if error != OfficialGuiError::PermissionDenied {
+                        crate::log_external_fact(
+                            "settings.update",
+                            "saved",
+                            crate::LogOutcome::Failed,
+                            None,
+                            Some(crate::operation_log_error(&error, error.path())),
+                        )
+                        .await;
+                    }
+                    Err(error)
+                }
+            }
+        };
+        tokio::spawn(crate::carry_log_caller(publish))
             .await
             .map_err(|error| {
-                OfficialGuiError::from(error)
-                    .record("failed to persist rejected execution activity")
-            })
+                OfficialGuiError::Unavailable
+                    .with_source(error)
+                    .with_reason("settings publication worker did not complete")
+            })?
     }
 }
 
-impl From<StoreError> for OfficialGuiError {
-    fn from(error: StoreError) -> Self {
-        Self::Unavailable.with_source(error)
-    }
+fn changed_settings_groups(before: &ConfigSettings, after: &ConfigSettings) -> Vec<&'static str> {
+    [
+        ("appearance", before.appearance != after.appearance),
+        ("locale", before.locale != after.locale),
+        ("packages", before.packages != after.packages),
+        ("unity", before.unity != after.unity),
+        ("window", before.window != after.window),
+        ("paths", before.paths != after.paths),
+        ("projects", before.projects != after.projects),
+        ("backups", before.backups != after.backups),
+    ]
+    .into_iter()
+    .filter_map(|(name, changed)| changed.then_some(name))
+    .collect()
 }
 
 fn default_snapshot() -> ConfigSnapshot {
@@ -1041,108 +948,6 @@ fn path_update_is_empty(paths: &ConfigPathUpdate) -> bool {
         && matches!(paths.backup_directory, ConfigNullableUpdate::Unchanged)
 }
 
-fn validate_limit(limit: Option<u32>) -> Result<u32, OfficialGuiError> {
-    let value = limit.unwrap_or(DEFAULT_PAGE_LIMIT);
-    (value > 0 && value <= MAX_PAGE_LIMIT)
-        .then_some(value)
-        .ok_or(OfficialGuiError::InvalidInput)
-}
-
-fn validate_activity_cursor(
-    cursor: Option<&OfficialActivityCursor>,
-) -> Result<(), OfficialGuiError> {
-    if cursor.is_some_and(|value| {
-        value.started_at_ms > i64::MAX as u64 || !canonical_uuid(&value.activity_id)
-    }) {
-        Err(OfficialGuiError::InvalidInput)
-    } else {
-        Ok(())
-    }
-}
-
-fn valid_failed_activity(value: &NewFailedActivity) -> bool {
-    canonical_uuid(&value.activity_id)
-        && value.occurred_at_ms <= i64::MAX as u64
-        && value.action.len() <= 128
-        && safe_identity(&value.action)
-        && value.subject.kind.len() <= 64
-        && safe_identity(&value.subject.kind)
-        && value
-            .subject
-            .id
-            .as_deref()
-            .is_none_or(|id| id.len() <= 255 && safe_identity(id))
-        && value
-            .subject
-            .name
-            .as_deref()
-            .is_none_or(|name| name.chars().count() <= 512 && !name.chars().any(char::is_control))
-        && value.diagnostic_id.as_deref().is_none_or(canonical_uuid)
-        && value.error_code.len() <= 128
-        && safe_identity(&value.error_code)
-        && valid_activity_parameters(&value.action, &value.parameters)
-}
-
-pub fn valid_activity_parameters(action: &str, value: &serde_json::Value) -> bool {
-    let allowed: &[&str] = match action {
-        "project.favorite" | "template.favorite" => &["favorite"],
-        "extensions.permission.change" => &["permission", "granted"],
-        "packages.install" | "packages.remove" | "packages.upgrade" | "packages.downgrade"
-        | "packages.resolve" | "packages.reinstall" | "packages.bulk" => &["planId", "changeCount"],
-        "packages.apply"
-        | "projects.copy"
-        | "projects.delete-directory"
-        | "backups.restore"
-        | "templates.import"
-        | "templates.derive"
-        | "templates.create-project"
-        | "extensions.install"
-        | "extensions.uninstall" => &["planId"],
-        "projects.unity-migration" => &["planId", "unityVersion"],
-        "backups.create" => &["compression", "excludeVpmPackages", "includeLibrary"],
-        "state.check"
-        | "project.add"
-        | "project.refresh"
-        | "project.remove"
-        | "repository.add"
-        | "repository.fetch"
-        | "repository.remove"
-        | "unity.installation.add"
-        | "unity.installation.remove"
-        | "unity.launch-config.change"
-        | "unity.launch"
-        | "template.remove"
-        | "user-package.add"
-        | "user-package.refresh"
-        | "user-package.remove"
-        | "extensions.enable"
-        | "extensions.disable" => &[],
-        _ => return false,
-    };
-    let Some(object) = value.as_object() else {
-        return false;
-    };
-    serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 8192)
-        && object.keys().all(|key| allowed.contains(&key.as_str()))
-        && object.iter().all(|(key, value)| match key.as_str() {
-            "planId" => value.as_str().is_some_and(canonical_uuid),
-            "compression" | "unityVersion" | "permission" => value
-                .as_str()
-                .is_some_and(|text| text.len() <= 128 && !text.chars().any(char::is_control)),
-            "favorite" | "includeLibrary" | "excludeVpmPackages" | "granted" => value.is_boolean(),
-            "changeCount" => value.as_u64().is_some_and(|count| count <= 100_000),
-            _ => false,
-        })
-}
-
-fn safe_identity(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 255
-        && value.bytes().enumerate().all(|(index, byte)| {
-            byte.is_ascii_alphanumeric() || index > 0 && matches!(byte, b'.' | b'_' | b':' | b'-')
-        })
-}
-
 fn validate_hidden_repository_ids(
     mut values: Vec<String>,
 ) -> Result<Vec<String>, OfficialGuiError> {
@@ -1196,86 +1001,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn activity_parameter_contract_rejects_cross_action_fields_and_secrets() {
+    fn official_contract_does_not_expose_removed_activity_history() {
         let contract: serde_json::Value = serde_json::from_str(include_str!(
             "../../../specs/rpc/m7-official-gui.schema.json"
         ))
-        .expect("activity contract JSON");
-        let item = &contract["$defs"]["activityItem"];
-        let samples = serde_json::json!({
-            "planId": "11111111-1111-4111-8111-111111111111", "changeCount": 1,
-            "favorite": true, "permission": "network", "granted": false,
-            "unityVersion": "2022.3.22f1", "compression": "fast",
-            "excludeVpmPackages": false, "includeLibrary": true
-        });
-        for action in item["properties"]["action"]["enum"]
-            .as_array()
-            .expect("closed action list")
-        {
-            let action = action.as_str().expect("action name");
-            assert!(
-                valid_activity_parameters(action, &serde_json::json!({})),
-                "{action}"
-            );
-            let branches = item["oneOf"]
-                .as_array()
-                .expect("action-specific parameter contracts");
-            let matches = branches
-                .iter()
-                .filter(|branch| {
-                    let selector = &branch["properties"]["action"];
-                    selector["const"].as_str() == Some(action)
-                        || selector["enum"].as_array().is_some_and(|values| {
-                            values.iter().any(|value| value.as_str() == Some(action))
-                        })
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(matches.len(), 1, "one unambiguous contract for {action}");
-            let parameters = &matches[0]["properties"]["parameters"];
-            assert_eq!(parameters["additionalProperties"], false);
-            let keys = parameters["properties"]
+        .expect("official GUI contract");
+        assert!(
+            contract["$defs"]
                 .as_object()
-                .expect("closed parameter keys");
-            for (key, value) in samples.as_object().expect("field samples") {
-                let sample = serde_json::json!({key: value});
-                assert_eq!(
-                    valid_activity_parameters(action, &sample),
-                    keys.contains_key(key),
-                    "{action}: {key}"
-                );
-            }
-            for secret in ["argv", "token", "authorization", "environment", "request"] {
-                assert!(
-                    !valid_activity_parameters(action, &serde_json::json!({secret: "private"})),
-                    "{action}: {secret}"
-                );
-            }
-        }
-        assert!(!valid_activity_parameters(
-            "unknown.execute",
-            &serde_json::json!({})
-        ));
-        assert!(!valid_activity_parameters(
-            "project.favorite",
-            &serde_json::json!({"favorite": "true"})
-        ));
-        assert!(!valid_activity_parameters(
-            "packages.install",
-            &serde_json::json!({"changeCount": 100001})
-        ));
-        assert!(!valid_activity_parameters(
-            "packages.install",
-            &serde_json::json!({"planId": "invalid"})
-        ));
-        assert!(!valid_activity_parameters(
-            "projects.unity-migration",
-            &serde_json::json!({"unityVersion": "invalid\nversion"})
-        ));
-        assert!(!valid_activity_parameters(
-            "backups.create",
-            &serde_json::json!({"compression": "x".repeat(129)})
-        ));
+                .expect("definitions")
+                .keys()
+                .all(|key| !key.starts_with("activity"))
+        );
+        assert!(
+            contract["$defs"]["methodName"]["enum"]
+                .as_array()
+                .expect("methods")
+                .iter()
+                .all(|method| !method.as_str().expect("method").starts_with("activity."))
+        );
     }
+
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Condvar, Mutex as StdMutex};
     use tokio::sync::Notify;
@@ -1332,7 +1078,7 @@ mod tests {
     fn open_fixture(
         location: UnityHubLocation,
     ) -> (
-        M7OfficialApplication<NoStore>,
+        M7OfficialApplication,
         Arc<MemoryConfig>,
         Arc<OpenHubPlatform>,
         Arc<RecordingHubLauncher>,
@@ -1344,7 +1090,6 @@ mod tests {
         });
         let launcher = Arc::new(RecordingHubLauncher::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             platform.clone(),
             launcher.clone(),
@@ -1697,34 +1442,6 @@ mod tests {
         }
     }
 
-    #[derive(Clone)]
-    struct NoStore;
-    impl OfficialGuiStore for NoStore {
-        async fn get_official_activity(
-            &self,
-            _: PrincipalId,
-            _: String,
-        ) -> Result<crate::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not read Activity")
-        }
-        async fn record_failed_activity(
-            &self,
-            _: PrincipalId,
-            _: crate::NewFailedActivity,
-        ) -> Result<crate::OfficialActivityItem, StoreError> {
-            panic!("this fixture must not write Activity")
-        }
-
-        async fn list_official_activity(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialActivityCursor>,
-            _: u32,
-        ) -> Result<OfficialActivityPage, StoreError> {
-            unreachable!()
-        }
-    }
-
     fn locale_update(locale: ConfigLocale) -> ConfigUpdate {
         ConfigUpdate {
             projects: None,
@@ -1744,7 +1461,6 @@ mod tests {
         let original = config.snapshot.lock().expect("config").clone();
         assert!(!original.settings.window.remember_state);
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -1829,7 +1545,6 @@ mod tests {
     async fn config8_project_discovery_permissions_and_backup_partial_updates_preserve_authority() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -1962,7 +1677,6 @@ mod tests {
     async fn project_discovery_fence_serializes_acceptance_with_disabling_and_rejects_old_revision()
     {
         let app = M7OfficialApplication::new(
-            NoStore,
             Arc::new(MemoryConfig::default()),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2053,7 +1767,6 @@ mod tests {
         }
         let directories = Arc::new(RefusingDefaultDirectories::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2119,7 +1832,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let directories = Arc::new(RefusingDefaultDirectories::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2176,7 +1888,6 @@ mod tests {
     async fn storage_directories_preserve_partial_updates_and_clear_to_resolved_defaults() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2248,7 +1959,6 @@ mod tests {
     async fn invalid_directory_or_empty_paths_rejects_the_entire_update() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2335,7 +2045,6 @@ mod tests {
     async fn default_arguments_require_unity_manage_without_changing_hub_authority() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2381,7 +2090,6 @@ mod tests {
     async fn default_arguments_preserve_literal_values_empty_clear_and_unrelated_updates() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2441,7 +2149,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let original = config.snapshot.lock().expect("config").clone();
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2472,7 +2179,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let hub = Arc::new(FakeHub::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
@@ -2514,7 +2220,6 @@ mod tests {
         let hub = Arc::new(FakeHub::default());
         hub.reject.store(true, Ordering::SeqCst);
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
@@ -2553,7 +2258,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let hub = Arc::new(FakeHub::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
@@ -2600,7 +2304,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let hub = Arc::new(FakeHub::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
@@ -2640,7 +2343,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let hub = Arc::new(FakeHub::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
@@ -2667,7 +2369,6 @@ mod tests {
     async fn settings_permissions_and_empty_updates_are_checked_before_storage() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2719,7 +2420,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let original = config.snapshot.lock().expect("memory config").clone();
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2756,7 +2456,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         let original = config.snapshot.lock().expect("memory config").clone();
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2800,7 +2499,6 @@ mod tests {
     async fn uncertain_publication_invalidates_cache_until_read_confirms_actual_authority() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2843,7 +2541,6 @@ mod tests {
         let config = Arc::new(MemoryConfig::default());
         *config.blocked.lock().expect("publication gate") = true;
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
@@ -2893,7 +2590,6 @@ mod tests {
     async fn fullscreen_preference_uses_the_same_cas_and_preserves_omitted_window_fields() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
-            NoStore,
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),

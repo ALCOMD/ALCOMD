@@ -29,14 +29,6 @@ macro_rules! contextual_error {
             pub fn with_diagnostic_id(mut self,id:Option<String>)->Self {
                 self.context.get_or_insert_with(Default::default).diagnostic_id=id;self
             }
-            /// Called only by the selected source execution owner, never an RPC encoder.
-            pub fn record(mut self,message:&'static str)->Self {
-                if self.diagnostic_id().is_none() {
-                    let id=crate::record_technical_failure(&self,self.path(),None,message);
-                    self.context.get_or_insert_with(Default::default).diagnostic_id=Some(id);
-                }
-                self
-            }
         }
         impl std::fmt::Display for $name {
             fn fmt(&self,f:&mut std::fmt::Formatter<'_>)->std::fmt::Result {
@@ -55,7 +47,6 @@ contextual_error!(OfficialGuiError, OfficialGuiErrorKind, {
     InvalidInput => "invalid settings input",
     PermissionDenied => "settings access denied",
     RevisionConflict => "settings revision changed",
-    ActivityNotFound => "activity not found",
     Unavailable => "settings storage unavailable",
     Corrupt => "settings document is invalid",
 });
@@ -79,45 +70,16 @@ contextual_error!(UnityHubOpenError, UnityHubOpenErrorKind, {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    struct CountErrors(Arc<AtomicUsize>);
-    impl tracing::Subscriber for CountErrors {
-        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
-            *metadata.level() == tracing::Level::ERROR
-        }
-        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
-            tracing::span::Id::from_u64(1)
-        }
-        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
-        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
-        fn event(&self, _: &tracing::Event<'_>) {
-            self.0.fetch_add(1, Ordering::Relaxed);
-        }
-        fn enter(&self, _: &tracing::span::Id) {}
-        fn exit(&self, _: &tracing::span::Id) {}
-    }
     #[test]
-    fn source_error_is_reported_once_and_propagation_preserves_its_identity() {
-        let count = Arc::new(AtomicUsize::new(0));
-        tracing::subscriber::with_default(CountErrors(Arc::clone(&count)), || {
-            let source = ConfigStoreError::Unavailable
-                .with_source(std::io::Error::other("isolated disk failure"))
-                .with_path("C:/测试/settings.toml")
-                .record("failed to read settings");
-            let diagnostic = source
-                .diagnostic_id()
-                .expect("source diagnostic")
-                .to_owned();
-            let propagated = OfficialGuiError::from(source)
-                .record("must not duplicate an already recorded failure");
-            assert_eq!(propagated.diagnostic_id(), Some(diagnostic.as_str()));
-            assert_eq!(propagated.path(), Some("C:/测试/settings.toml"));
-            assert!(crate::technical_error_chain(&propagated).contains("isolated disk failure"));
-            assert_eq!(count.load(Ordering::Relaxed), 1);
-        });
+    fn propagated_configuration_error_preserves_its_context_and_identity() {
+        let diagnostic = crate::OperationId::new().to_string();
+        let source = ConfigStoreError::Unavailable
+            .with_source(std::io::Error::other("isolated disk failure"))
+            .with_path("C:/测试/settings.toml")
+            .with_diagnostic_id(Some(diagnostic.clone()));
+        let propagated = OfficialGuiError::from(source);
+        assert_eq!(propagated.diagnostic_id(), Some(diagnostic.as_str()));
+        assert_eq!(propagated.path(), Some("C:/测试/settings.toml"));
+        assert!(crate::technical_error_chain(&propagated).contains("isolated disk failure"));
     }
 }

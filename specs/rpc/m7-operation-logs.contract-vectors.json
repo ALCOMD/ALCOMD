@@ -1,0 +1,20 @@
+{
+    "params": {"afterSequence": 9, "limit": 100},
+    "result": {
+        "entries": [{
+            "sequence": 10,
+            "entryId": "11111111-1111-4111-8111-111111111111",
+            "executionId": "22222222-2222-4222-8222-222222222222",
+            "actor": "CLI",
+            "occurredAtMs": 1793937603000,
+            "action": "projects.register",
+            "step": "inspect_project",
+            "outcome": "failed",
+            "target": {"kind": "project", "path": "C:\\Isolated\\项目\\Packages\\vpm-manifest.json"},
+            "details": "Failed to read the manifest\ncaused by: access denied (os error 5)"
+        }],
+        "highWatermark": 11,
+        "hasMore": true,
+        "nextSequence": 10
+    }
+}

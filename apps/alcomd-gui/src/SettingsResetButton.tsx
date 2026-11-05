@@ -1,8 +1,8 @@
+import { requestErrorMessage } from "./request-errors";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { RpcError } from "@alcomd/sdk";
 import { Button, Dialog } from "./Material";
 import { useTranslation } from "./i18n";
-import { RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 
 const ResetContext = createContext<{ current: boolean } | undefined>(undefined);
@@ -60,9 +60,7 @@ export function SettingsResetButton({ title, disabled, onRestore }: {
             onClose={() => { setError(undefined); if (scope) scope.current = false; }}>
             <p>{t("Restore the default settings for {name}?", { name: title })}</p>
             <p>{t("Only this card's settings will be reset.")}</p>
-            {error === undefined ? null : <RequestReminder error={error}
-                title={t(error.code === "internal_error" || error.code === "daemon_unavailable" ? "Restore result is unknown" : "Defaults could not be restored.")}
-                message={error.code === "internal_error" || error.code === "daemon_unavailable" ? "Retry checks the current settings before writing again." : undefined} />}
+            {error === undefined ? null : <div role="alert"><strong>{t(error.code === "internal_error" || error.code === "daemon_unavailable" ? "Restore result is unknown" : "Defaults could not be restored.")}</strong><p>{t((error.code === "internal_error" || error.code === "daemon_unavailable" ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
                 <Button disabled={busy} onClick={() => setOpen(false)} type="button" variant="text">{t("Cancel")}</Button>
                 <Button disabled={busy || disabled} onClick={() => void restore()} type="button">{t("Restore defaults")}</Button>

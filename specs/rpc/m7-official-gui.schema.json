@@ -4,539 +4,292 @@
     "title": "ALCOMD RPC v1 M7 official GUI support contract",
     "x-alcomd-publication": "active-unreleased-breaking-replacement-rpc-v1",
     "x-alcomd-method-permissions": {
-    "settings.get": [
-        "settings.read"
-    ],
-    "settings.update": [
-        "settings.manage"
-    ],
-    "unity.hub.open": [
-        "settings.read",
-        "unity.hub.open"
-    ],
-    "activity.list": [
-        "activity.read"
-    ],
-    "activity.get": [
-        "activity.read"
-    ]
-},
+        "settings.get": [
+            "settings.read"
+        ],
+        "settings.update": [
+            "settings.manage"
+        ],
+        "unity.hub.open": [
+            "settings.read",
+            "unity.hub.open"
+        ]
+    },
     "x-alcomd-capability": null,
-    "x-alcomd-method-capabilities": {"unity.hub.open": "unity.hub.open.v1"},
+    "x-alcomd-method-capabilities": {
+        "unity.hub.open": "unity.hub.open.v1"
+    },
     "x-alcomd-redaction": {
         "forbidden": [
-            "token", "authorization", "raw-argv", "environment", "full-private-path",
-            "raw-sql", "rust-debug", "backtrace", "extension-owned-value", "portable-ui-payload",
-            "raw-request-json", "raw-result-json"
+            "token",
+            "authorization",
+            "raw-argv",
+            "environment",
+            "full-private-path",
+            "raw-sql",
+            "rust-debug",
+            "backtrace",
+            "extension-owned-value",
+            "portable-ui-payload",
+            "raw-request-json",
+            "raw-result-json"
         ],
-        "rawDiagnosticExport": false,
-        "authorizedSettingsPathException": ["settings.unity.hubPath", "unityHub.path", "settings.paths.projectDirectory", "settings.paths.backupDirectory", "directories.projectDirectory", "directories.backupDirectory"]
+        "authorizedSettingsPathException": [
+            "settings.unity.hubPath",
+            "unityHub.path",
+            "settings.paths.projectDirectory",
+            "settings.paths.backupDirectory",
+            "directories.projectDirectory",
+            "directories.backupDirectory"
+        ]
     },
     "x-alcomd-field-permissions": {
-        "settings.update.unity.defaultLaunchArguments": ["settings.manage", "unity.manage"],
-        "settings.update.projects.autoDiscover": ["settings.manage", "projects.manage"]
+        "settings.update.unity.defaultLaunchArguments": [
+            "settings.manage",
+            "unity.manage"
+        ],
+        "settings.update.projects.autoDiscover": [
+            "settings.manage",
+            "projects.manage"
+        ]
     },
     "x-alcomd-conditional-field-permissions": {
         "settings.update.paths.projectDirectory": {
-            "when": {"field": "projects.autoDiscover", "equals": true, "source": "effective-update"},
-            "permissions": ["settings.manage", "projects.manage"]
+            "when": {
+                "field": "projects.autoDiscover",
+                "equals": true,
+                "source": "effective-update"
+            },
+            "permissions": [
+                "settings.manage",
+                "projects.manage"
+            ]
         }
     },
     "$defs": {
-    "methodName": {
-        "enum": [
-            "settings.get",
-            "settings.update",
-            "unity.hub.open",
-            "activity.list",
-            "activity.get"
-        ]
-    },
-    "revision": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 18446744073709551615
-    },
-    "timestamp": {
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 9223372036854775807
-    },
-    "safeCode": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 128,
-        "pattern": "^[a-z0-9][a-z0-9._-]*$"
-    },
-    "safeIdentity": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 255,
-        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$"
-    },
-    "pageLimit": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 200
-    },
-    "hubOpenParams": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "expectedRevision",
-            "expectedPath"
-        ],
-        "properties": {
-            "expectedRevision": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 18446744073709551615
-            },
-            "expectedPath": {
-                "type": [
-                    "string",
-                    "null"
-                ],
-                "minLength": 1,
-                "maxLength": 4096,
-                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
-            }
-        }
-    },
-    "hubOpenResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "outcome"
-        ],
-        "properties": {
-            "outcome": {
-                "enum": [
-                    "spawned",
-                    "download_required"
-                ]
-            }
-        }
-    },
-    "settingsGetParams": {
-        "type": "object",
-        "additionalProperties": false
-    },
-    "unityHubLocation": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "status",
-            "source",
-            "path",
-            "configuredPathStatus"
-        ],
-        "properties": {
-            "status": {
-                "enum": [
-                    "available",
-                    "not_found",
-                    "unavailable"
-                ]
-            },
-            "source": {
-                "enum": [
-                    "configured",
-                    "discovered",
-                    "none"
-                ]
-            },
-            "path": {
-                "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/hubPath"
-            },
-            "configuredPathStatus": {
-                "enum": [
-                    "unset",
-                    "available",
-                    "invalid",
-                    "unavailable"
-                ]
+        "methodName": {
+            "enum": [
+                "settings.get",
+                "settings.update",
+                "unity.hub.open"
+            ]
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18446744073709551615
+        },
+        "hubOpenParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "expectedRevision",
+                "expectedPath"
+            ],
+            "properties": {
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 18446744073709551615
+                },
+                "expectedPath": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                }
             }
         },
-        "allOf": [
-            {
-                "if": {
-                    "properties": {
-                        "status": {
-                            "const": "available"
+        "hubOpenResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "outcome"
+            ],
+            "properties": {
+                "outcome": {
+                    "enum": [
+                        "spawned",
+                        "download_required"
+                    ]
+                }
+            }
+        },
+        "settingsGetParams": {
+            "type": "object",
+            "additionalProperties": false
+        },
+        "unityHubLocation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "source",
+                "path",
+                "configuredPathStatus"
+            ],
+            "properties": {
+                "status": {
+                    "enum": [
+                        "available",
+                        "not_found",
+                        "unavailable"
+                    ]
+                },
+                "source": {
+                    "enum": [
+                        "configured",
+                        "discovered",
+                        "none"
+                    ]
+                },
+                "path": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/hubPath"
+                },
+                "configuredPathStatus": {
+                    "enum": [
+                        "unset",
+                        "available",
+                        "invalid",
+                        "unavailable"
+                    ]
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "status": {
+                                "const": "available"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "source": {
+                                "enum": [
+                                    "configured",
+                                    "discovered"
+                                ]
+                            },
+                            "path": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "source": {
+                                "const": "none"
+                            },
+                            "path": {
+                                "type": "null"
+                            }
                         }
                     }
                 },
-                "then": {
-                    "properties": {
-                        "source": {
-                            "enum": [
-                                "configured",
-                                "discovered"
-                            ]
-                        },
-                        "path": {
-                            "type": "string"
+                {
+                    "if": {
+                        "properties": {
+                            "source": {
+                                "const": "configured"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "available"
+                            }
                         }
                     }
                 },
-                "else": {
-                    "properties": {
-                        "source": {
-                            "const": "none"
-                        },
-                        "path": {
-                            "type": "null"
+                {
+                    "if": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "available"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "source": {
+                                "const": "configured"
+                            },
+                            "status": {
+                                "const": "available"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "unavailable"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "status": {
+                                "const": "unavailable"
+                            }
                         }
                     }
                 }
-            },
-            {
-                "if": {
-                    "properties": {
-                        "source": {
-                            "const": "configured"
-                        }
-                    }
+            ]
+        },
+        "settingsGetResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "configSchema",
+                "revision",
+                "settings",
+                "unityHub",
+                "directories"
+            ],
+            "properties": {
+                "configSchema": {
+                    "const": 10
                 },
-                "then": {
-                    "properties": {
-                        "configuredPathStatus": {
-                            "const": "available"
-                        }
-                    }
-                }
-            },
-            {
-                "if": {
-                    "properties": {
-                        "configuredPathStatus": {
-                            "const": "available"
-                        }
-                    }
+                "revision": {
+                    "$ref": "#/$defs/revision"
                 },
-                "then": {
-                    "properties": {
-                        "source": {
-                            "const": "configured"
-                        },
-                        "status": {
-                            "const": "available"
-                        }
-                    }
-                }
-            },
-            {
-                "if": {
-                    "properties": {
-                        "configuredPathStatus": {
-                            "const": "unavailable"
-                        }
-                    }
+                "settings": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/settings"
                 },
-                "then": {
-                    "properties": {
-                        "status": {
-                            "const": "unavailable"
-                        }
-                    }
+                "unityHub": {
+                    "$ref": "#/$defs/unityHubLocation"
+                },
+                "directories": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/storageDirectories"
                 }
             }
-        ]
-    },
-    "settingsGetResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "configSchema",
-            "revision",
-            "settings",
-            "unityHub",
-            "directories"
-        ],
-        "properties": {
-            "configSchema": {
-                "const": 10
-            },
-            "revision": {
-                "$ref": "#/$defs/revision"
-            },
-            "settings": {
-                "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/settings"
-            },
-            "unityHub": {
-                "$ref": "#/$defs/unityHubLocation"
-            },
-            "directories": {
-                "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/storageDirectories"
+        },
+        "settingsUpdateParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "expectedRevision",
+                "update"
+            ],
+            "properties": {
+                "expectedRevision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "update": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/partialUpdate"
+                }
             }
+        },
+        "settingsUpdateResult": {
+            "$ref": "#/$defs/settingsGetResult"
         }
-    },
-    "settingsUpdateParams": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "expectedRevision",
-            "update"
-        ],
-        "properties": {
-            "expectedRevision": {
-                "$ref": "#/$defs/revision"
-            },
-            "update": {
-                "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/partialUpdate"
-            }
-        }
-    },
-    "settingsUpdateResult": {
-        "$ref": "#/$defs/settingsGetResult"
-    },
-    "activityCursor": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "startedAtMs": {
-                "$ref": "#/$defs/timestamp"
-            },
-            "activityId": {
-                "type": "string",
-                "format": "uuid",
-                "minLength": 36,
-                "maxLength": 36
-            }
-        },
-        "required": [
-            "startedAtMs",
-            "activityId"
-        ]
-    },
-    "activityListParams": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "cursor": {
-                "$ref": "#/$defs/activityCursor"
-            },
-            "limit": {
-                "$ref": "#/$defs/pageLimit"
-            }
-        }
-    },
-    "activityItem": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "activityId": {
-                "type": "string",
-                "format": "uuid",
-                "minLength": 36,
-                "maxLength": 36
-            },
-            "revision": {
-                "$ref": "#/$defs/revision"
-            },
-            "action": {
-                "enum": [
-                    "state.check", "project.add", "project.refresh", "project.favorite", "project.remove",
-                    "repository.add", "repository.fetch", "repository.remove",
-                    "unity.installation.add", "unity.installation.remove", "unity.launch-config.change", "unity.launch",
-                    "template.favorite", "template.remove", "user-package.add", "user-package.refresh", "user-package.remove",
-                    "extensions.enable", "extensions.disable", "extensions.permission.change", "extensions.install", "extensions.uninstall",
-                    "packages.apply", "packages.install", "packages.remove", "packages.upgrade", "packages.downgrade", "packages.resolve", "packages.reinstall", "packages.bulk",
-                    "templates.import", "templates.derive", "templates.create-project", "backups.create", "backups.restore",
-                    "projects.copy", "projects.delete-directory", "projects.unity-migration"
-                ]
-            },
-            "status": {
-                "enum": [
-                    "queued",
-                    "planning",
-                    "waiting_for_input",
-                    "running",
-                    "cancelling",
-                    "succeeded",
-                    "failed",
-                    "cancelled",
-                    "interrupted",
-                    "recovering"
-                ]
-            },
-            "startedAtMs": {
-                "$ref": "#/$defs/timestamp"
-            },
-            "finishedAtMs": {
-                "$ref": "#/$defs/timestamp"
-            },
-            "subject": {
-                "$ref": "#/$defs/activitySubject"
-            },
-            "parameters": {
-                "type": "object",
-                "x-alcomd-max-encoded-bytes": 8192
-            },
-            "result": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "code": {
-                        "$ref": "#/$defs/safeCode"
-                    }
-                },
-                "required": [
-                    "code"
-                ]
-            },
-            "operationId": {
-                "type": "string",
-                "format": "uuid",
-                "minLength": 36,
-                "maxLength": 36
-            },
-            "diagnosticId": {
-                "type": "string",
-                "format": "uuid",
-                "minLength": 36,
-                "maxLength": 36
-            }
-        },
-        "required": [
-            "activityId",
-            "revision",
-            "action",
-            "status",
-            "startedAtMs",
-            "subject",
-            "parameters"
-        ],
-        "oneOf": [
-            {
-                "properties": {
-                    "action": {"enum": ["state.check", "project.add", "project.refresh", "project.remove", "repository.add", "repository.fetch", "repository.remove", "unity.installation.add", "unity.installation.remove", "unity.launch-config.change", "unity.launch", "template.remove", "user-package.add", "user-package.refresh", "user-package.remove", "extensions.enable", "extensions.disable"]},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {}}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"enum": ["project.favorite", "template.favorite"]},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {"favorite": {"type": "boolean"}}}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"const": "extensions.permission.change"},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {
-                        "permission": {"$ref": "#/$defs/activityParameterText"}, "granted": {"type": "boolean"}
-                    }}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"enum": ["packages.install", "packages.remove", "packages.upgrade", "packages.downgrade", "packages.resolve", "packages.reinstall", "packages.bulk"]},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {
-                        "planId": {"$ref": "#/$defs/activityParameterPlanId"}, "changeCount": {"type": "integer", "minimum": 0, "maximum": 100000}
-                    }}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"enum": ["packages.apply", "projects.copy", "projects.delete-directory", "backups.restore", "templates.import", "templates.derive", "templates.create-project", "extensions.install", "extensions.uninstall"]},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {
-                        "planId": {"$ref": "#/$defs/activityParameterPlanId"}
-                    }}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"const": "projects.unity-migration"},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {
-                        "planId": {"$ref": "#/$defs/activityParameterPlanId"}, "unityVersion": {"$ref": "#/$defs/activityParameterText"}
-                    }}
-                }
-            },
-            {
-                "properties": {
-                    "action": {"const": "backups.create"},
-                    "parameters": {"type": "object", "additionalProperties": false, "properties": {
-                        "compression": {"$ref": "#/$defs/activityParameterText"}, "excludeVpmPackages": {"type": "boolean"}, "includeLibrary": {"type": "boolean"}
-                    }}
-                }
-            }
-        ]
-    },
-    "activityParameterPlanId": {
-        "type": "string", "format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-    },
-    "activityParameterText": {
-        "type": "string", "maxLength": 128, "x-alcomd-max-utf8-bytes": 128,
-        "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
-    },
-    "activityListResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-            "items"
-        ],
-        "properties": {
-            "items": {
-                "type": "array",
-                "maxItems": 200,
-                "items": {
-                    "$ref": "#/$defs/activityItem"
-                }
-            },
-            "nextCursor": {
-                "$ref": "#/$defs/activityCursor"
-            }
-        }
-    },
-    "activitySubject": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "kind": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 96
-            },
-            "id": {
-                "type": "string",
-                "maxLength": 255
-            },
-            "name": {
-                "type": "string",
-                "maxLength": 512
-            }
-        },
-        "required": [
-            "kind"
-        ]
-    },
-    "activityGetParams": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "activityId": {
-                "type": "string",
-                "format": "uuid",
-                "minLength": 36,
-                "maxLength": 36
-            }
-        },
-        "required": [
-            "activityId"
-        ]
-    },
-    "activityGetResult": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "activity": {
-                "$ref": "#/$defs/activityItem"
-            }
-        },
-        "required": [
-            "activity"
-        ]
     }
-}
 }

@@ -1,6 +1,6 @@
 import type { RpcError } from "./index";
 
-export type CoreEventAggregateKind = "activity" | "operation" | "project" | "repository" | "unity-installation"
+export type CoreEventAggregateKind = "operation" | "project" | "repository" | "unity-installation"
     | "project-editor-preference" | "project-unity-launch-config" | "template" | "user-package";
 
 export interface CoreEvent {
@@ -20,7 +20,7 @@ export interface EventsCursor {
     resourcesRevision: number;
 }
 
-export type EventInvalidation = "extensions";
+export type EventInvalidation = "extensions" | "operation-log";
 
 export interface EventsSubscribeParams {
     cursor?: EventsCursor;

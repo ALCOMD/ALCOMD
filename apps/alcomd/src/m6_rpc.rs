@@ -440,12 +440,7 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
 }
 
 fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
-    let diagnostic_id = source
-        .diagnostic_id()
-        .map(str::to_owned)
-        .unwrap_or_else(|| {
-            super::failure_report::report(&source, source.path(), "execution request failed")
-        });
+    let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M6ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M6ErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
@@ -455,7 +450,9 @@ fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
         app::M6ErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         code => rpc::RpcError::extension(error_name(code)),
     };
-    error.diagnostic_id = Some(diagnostic_id);
+    if diagnostic_id.is_some() {
+        error.diagnostic_id = diagnostic_id;
+    }
     error_action(Some(id), error, false)
 }
 
@@ -657,6 +654,7 @@ mod tests {
         let state = ConnectionState {
             connection_id: "permissions-read-test".to_owned(),
             client_instance_id: Some("permissions-test".to_owned()),
+            actor: "Local IPC".to_owned(),
             handshake_complete: true,
             capabilities: std::collections::HashSet::from([
                 rpc::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1.to_owned(),

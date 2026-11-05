@@ -19,9 +19,7 @@ const languages = [
             { path: "/templates", title: "资源", role: "button", control: "创建模板" },
             { path: "/unity", title: "设置", role: "button", control: "管理安装" },
             { path: "/extensions", title: "扩展", role: "button", control: "安装扩展" },
-            { path: "/activity", title: "日志", role: "searchbox", control: "搜索活动" },
-            { path: "/diagnostics", title: "日志", role: "button", control: "运行状态检查" },
-            { path: "/operations", title: "任务", role: "columnheader", control: "状态" },
+            { path: "/operations", title: "任务", role: "heading", control: "暂无任务" },
             { path: "/about", title: "关于", role: "heading", control: "许可证" }
         ]
     },
@@ -33,9 +31,7 @@ const languages = [
             { path: "/templates", title: "パッケージ&テンプレート", role: "button", control: "テンプレートを作成" },
             { path: "/unity", title: "設定", role: "button", control: "インストールを管理" },
             { path: "/extensions", title: "拡張機能", role: "button", control: "拡張機能をインストール" },
-            { path: "/activity", title: "ログ", role: "searchbox", control: "アクティビティを検索" },
-            { path: "/diagnostics", title: "ログ", role: "button", control: "状態を検査" },
-            { path: "/operations", title: "タスク", role: "columnheader", control: "状態" },
+            { path: "/operations", title: "タスク", role: "heading", control: "タスクはまだありません" },
             { path: "/about", title: "このアプリについて", role: "heading", control: "ライセンス" }
         ]
     }
@@ -54,9 +50,7 @@ const englishRoutes: RouteExpectation[] = [
     { path: "/templates", title: "Resources", role: "button", control: "Create template" },
     { path: "/unity", title: "Settings", role: "button", control: "Manage installations" },
     { path: "/extensions", title: "Extensions", role: "button", control: "Install extension" },
-    { path: "/activity", title: "Logs", role: "searchbox", control: "Search activity" },
-    { path: "/diagnostics", title: "Logs", role: "button", control: "Run state check" },
-    { path: "/operations", title: "Tasks", role: "columnheader", control: "Status" },
+    { path: "/operations", title: "Tasks", role: "heading", control: "No operations yet" },
     { path: "/about", title: "About", role: "heading", control: "Licenses" }
 ];
 
@@ -192,12 +186,6 @@ async function assertExternalFixtureText(page: Page, path: string) {
         await expect(page.getByRole("table")).toContainText("x86_64");
     } else if (path === "/extensions") {
         await expect(page.locator(".extension-card h4").filter({ hasText: /^com\.vrclearn\.discord$/ })).toBeVisible();
-    } else if (path === "/diagnostics") {
-        await expect(page.getByRole("table")).toContainText("package_archive_invalid");
-        const locale = await page.locator("html").getAttribute("lang");
-        const t = createTranslator(locale === "zh-CN" || locale === "ja-JP" ? locale : "en-US");
-        const summary = t(requestErrorMessage("package_archive_invalid"));
-        await expect(page.getByRole("table")).toContainText(summary);
     } else if (path === "/about") {
         await expect(page.locator(".detail-grid dd").filter({ hasText: /^ALCOMD$/ })).toBeVisible();
         await expect(page.getByText("THIRD_PARTY_NOTICES.md", { exact: true })).toBeVisible();

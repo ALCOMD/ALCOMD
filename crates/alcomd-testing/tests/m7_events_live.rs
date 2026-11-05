@@ -7,8 +7,8 @@ use std::time::Duration;
 use alcomd_client::{AlcomdClient, ClientConfig, EventSubscription};
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
 use alcomd_protocol::{
-    ActivityListParams, CAPABILITY_EVENTS_LIVE_V1, ClientInfo, Event, EventNotification,
-    EventsCursor, EventsSubscribeParams, HelloParams, METHOD_EVENTS_SUBSCRIBE, METHOD_SYSTEM_HELLO,
+    CAPABILITY_EVENTS_LIVE_V1, ClientInfo, Event, EventNotification, EventsCursor,
+    EventsSubscribeParams, HelloParams, METHOD_EVENTS_SUBSCRIBE, METHOD_SYSTEM_HELLO,
     OperationState, RPC_VERSION, RequestEnvelope, decode_frame_length, encode_frame, error_code,
 };
 use serde_json::{Value, json};
@@ -32,15 +32,10 @@ async fn committed_events_cross_clients_replay_unaccepted_batches_and_resync_aft
         .state_check("m7-live-independent-client".into())
         .await
         .expect("accept on a distinct command connection");
-    let activity_id = task_activity_id(&mut commands, &operation.operation_id).await;
 
     let first = next_batch(&mut subscriber).await;
     assert_eq!(first.events.len(), 1);
-    assert!(task_event(
-        &first.events[0],
-        &operation.operation_id,
-        &activity_id
-    ));
+    assert!(task_event(&first.events[0], &operation.operation_id));
     let accepted_cursor = first.next_cursor.clone();
     let unaccepted = next_batch(&mut subscriber).await;
     let unaccepted_event_id = unaccepted.events[0].event_id.clone();
@@ -59,8 +54,7 @@ async fn committed_events_cross_clients_replay_unaccepted_batches_and_resync_aft
     observed.extend(replayed.events);
     let mut final_cursor = replayed.next_cursor;
     if !observed.iter().any(terminal_event) {
-        let (tail, cursor) =
-            through_terminal(&mut resumed, &operation.operation_id, &activity_id).await;
+        let (tail, cursor) = through_terminal(&mut resumed, &operation.operation_id).await;
         observed.extend(tail);
         final_cursor = cursor;
     }
@@ -68,13 +62,6 @@ async fn committed_events_cross_clients_replay_unaccepted_batches_and_resync_aft
         observed
             .windows(2)
             .all(|pair| pair[0].sequence < pair[1].sequence)
-    );
-    assert!(
-        observed
-            .iter()
-            .any(|event| event.aggregate_kind == "activity"
-                && event.aggregate_id == activity_id
-                && event.kind == "activity.changed")
     );
     let operation_events = observed
         .iter()
@@ -171,19 +158,17 @@ async fn committed_events_cross_clients_replay_unaccepted_batches_and_resync_aft
         .state_check("m7-new-core-instance".into())
         .await
         .expect("new instance command");
-    let fresh_activity_id = task_activity_id(&mut commands, &fresh.operation_id).await;
-    let (fresh_events, _) =
-        through_terminal(&mut restarted, &fresh.operation_id, &fresh_activity_id).await;
+    let (fresh_events, _) = through_terminal(&mut restarted, &fresh.operation_id).await;
     assert!(
         fresh_events
             .iter()
             .all(|event| event.sequence > restarted_ready.baseline_cursor.sequence)
     );
-    assert!(fresh_events.iter().all(|event| task_event(
-        event,
-        &fresh.operation_id,
-        &fresh_activity_id
-    )));
+    assert!(
+        fresh_events
+            .iter()
+            .all(|event| task_event(event, &fresh.operation_id))
+    );
     assert!(
         fresh_events
             .iter()
@@ -330,7 +315,6 @@ fn terminal_event(event: &Event) -> bool {
 async fn through_terminal(
     subscription: &mut EventSubscription,
     operation_id: &str,
-    activity_id: &str,
 ) -> (Vec<Event>, EventsCursor) {
     tokio::time::timeout(Duration::from_secs(10), async {
         let mut events = vec![];
@@ -340,7 +324,7 @@ async fn through_terminal(
                 batch
                     .events
                     .into_iter()
-                    .filter(|event| task_event(event, operation_id, activity_id)),
+                    .filter(|event| task_event(event, operation_id)),
             );
             if events.iter().any(terminal_event) {
                 break (events, batch.next_cursor);
@@ -351,24 +335,8 @@ async fn through_terminal(
     .expect("task lifecycle delivery")
 }
 
-fn task_event(event: &Event, operation_id: &str, activity_id: &str) -> bool {
+fn task_event(event: &Event, operation_id: &str) -> bool {
     event.aggregate_kind == "operation" && event.aggregate_id == operation_id
-        || event.aggregate_kind == "activity" && event.aggregate_id == activity_id
-}
-
-async fn task_activity_id(commands: &mut AlcomdClient, operation_id: &str) -> String {
-    commands
-        .activity_list(ActivityListParams {
-            cursor: None,
-            limit: Some(200),
-        })
-        .await
-        .expect("accepted task has its atomic activity")
-        .items
-        .into_iter()
-        .find(|item| item.operation_id.as_deref() == Some(operation_id))
-        .expect("activity belongs to the accepted task")
-        .activity_id
 }
 
 async fn stop(daemon: alcomd_daemon::test_support::TestDaemon, shutdown: oneshot::Sender<()>) {

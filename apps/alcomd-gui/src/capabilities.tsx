@@ -11,6 +11,7 @@ export const capabilities = {
     extensionsPermissionsRead: RPC_CAPABILITIES.extensionsPermissionsRead,
     extensionsPortableUi: "extensions.ui.portable.v1",
     operations: "operations.v1",
+    logsRead: RPC_CAPABILITIES.logsRead,
     packagesApply: "packages.apply.v1",
     packagesCandidates: RPC_CAPABILITIES.packagesCandidates,
     packagesPlanV1: "packages.plan.v1",

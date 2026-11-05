@@ -59,6 +59,17 @@ pub(super) fn create_plan(
         ],
     ).map_err(failure)?;
     let plan = load_plan(&transaction, owner, draft.plan_id)?;
+    let target =
+        alcomd_application::log_path("project", draft.project.observation.root_path.clone());
+    super::operation_logs::plan(
+        &transaction,
+        owner,
+        draft.plan_id,
+        "projects.unity-migration",
+        Some(target),
+        draft.created_at_ms,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     let outcome = UnityMigrationPlanOutcome::Planned {
         plan: Box::new(plan),
         replayed: false,
@@ -133,8 +144,6 @@ pub(super) fn accept(
          VALUES (?1,'projects.unity-migration','queued',1,?2,?3,?4,?4)",
         params![operation_id.to_string(), owner.as_str(), request, integer(now_ms)?],
     ).map_err(failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     if transaction
         .execute(
             "UPDATE project_unity_migration_plans SET state='applied',operation_id=?1
@@ -210,6 +219,14 @@ pub(super) fn begin_operation(
             "operation.progress",
             now_ms,
         )?;
+        super::operation_logs::operation_phase(
+            &transaction,
+            &owner,
+            operation_id,
+            "execute",
+            integer(now_ms)?,
+        )
+        .map_err(|error| unavailable().with_source(error))?;
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let (phase, evidence) = latest(&transaction, operation_id)?;
@@ -283,6 +300,16 @@ pub(super) fn checkpoint(
         "operation.progress",
         now_ms,
     )?;
+    if public_phase_changed {
+        super::operation_logs::operation_phase(
+            &transaction,
+            &owner,
+            operation_id,
+            phase.as_str(),
+            integer(now_ms)?,
+        )
+        .map_err(|error| unavailable().with_source(error))?;
+    }
     transaction.commit().map_err(failure)
 }
 
@@ -375,6 +402,14 @@ pub(super) fn commit_project(
         "operation.progress",
         now_ms,
     )?;
+    super::operation_logs::operation_phase(
+        &transaction,
+        &owner,
+        operation_id,
+        "state_committed",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     transaction.commit().map_err(failure)
 }
 
@@ -539,9 +574,6 @@ fn finish_terminal(
         now_ms,
     )?;
     transaction.commit().map_err(failure)?;
-    if state_target == "succeeded" {
-        tracing::info!(operation_id = %operation_id, operation_kind = "projects.unity-migration", "operation completed");
-    }
     Ok(())
 }
 
@@ -684,6 +716,15 @@ fn operation_event(
          VALUES (?1,?2,'operation',?3,?4,?5,?6,'{}')",
         params![Uuid::new_v4().to_string(), kind, operation_id.to_string(), integer(revision_value.get())?, owner.as_str(), integer(now_ms)?]
     ).map_err(failure)?;
+    super::operation_logs::operation_edge(
+        transaction,
+        owner,
+        operation_id,
+        kind,
+        "{}",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     Ok(())
 }
 

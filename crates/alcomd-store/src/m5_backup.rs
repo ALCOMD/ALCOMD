@@ -104,8 +104,6 @@ pub(super) fn accept_backup_create(
          VALUES (?1,'backups.create','queued',1,?2,?3,?4,?4)",
         params![operation_id.to_string(), owner.as_str(), request_json, integer(request.created_at_ms)?],
     ).map_err(failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
-        .map_err(|_| internal())?;
     transaction.execute(
         "INSERT INTO operation_journal (operation_id,step,kind,state,payload_json,updated_at_ms)
          VALUES (?1,1,'backups.create','prepared',?2,?3)",
@@ -300,6 +298,14 @@ pub(super) fn record_backup_checkpoint(
             "operation.progress",
             now_ms,
         )?;
+        super::operation_logs::operation_phase(
+            &transaction,
+            &owner,
+            operation_id,
+            phase.as_str(),
+            integer(now_ms)?,
+        )
+        .map_err(|error| unavailable().with_source(error))?;
     }
     transaction.commit().map_err(failure)
 }
@@ -364,7 +370,6 @@ pub(super) fn complete_backup_create(
         now_ms,
     )?;
     transaction.commit().map_err(failure)?;
-    tracing::info!(operation_id = %operation_id, operation_kind = "backups.create", backup_id = %backup.record.backup_id, project_id = %backup.record.source_project_id, "operation completed");
     Ok(())
 }
 
@@ -578,6 +583,15 @@ fn insert_event(
         "INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json) VALUES (?1,?2,'operation',?3,?4,?5,?6,'{}')",
         params![Uuid::new_v4().to_string(), kind, operation_id.to_string(), integer(revision.get())?, owner.as_str(), integer(now_ms)?],
     ).map_err(failure)?;
+    super::operation_logs::operation_edge(
+        connection,
+        owner,
+        operation_id,
+        kind,
+        "{}",
+        integer(now_ms)?,
+    )
+    .map_err(|error| unavailable().with_source(error))?;
     Ok(())
 }
 

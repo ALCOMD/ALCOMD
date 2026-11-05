@@ -1,3 +1,6 @@
+import { requestErrorMessage } from "./request-errors";
+import { logIcon } from "@alcomd/ui/icons";
+import { OperationLogsRoute } from "./OperationLogsRoute";
 import { createTranslator, LocaleProvider, preferredLocale, useTranslation } from "./i18n";
 import type {
     ExtensionRecord,
@@ -16,7 +19,6 @@ import {
 import {
     extensionIcon,
     infoIcon,
-    logIcon,
     packagesIcon,
     projectsIcon,
     settingsIcon,
@@ -27,34 +29,11 @@ import type { ReactNode } from "react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
-import { RequestReminder } from "./Reminder";
-import { FrontendErrorBoundary, FrontendErrorReporter } from "./FrontendErrors";
+import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import {
-    AboutPage,
-    ActivityPage,
-    BackupDetailPage,
-    DiagnosticsPage,
-    ExtensionDetailPage,
-    ExtensionsPage,
-    OperationDetailPage,
-    OperationsPage,
-    ProjectBackupsPage,
-    ProjectDetailPage,
-    ProjectPackagesPage,
-    ProjectsPage,
-    ProjectUnityPage,
-    RepositoriesPage,
-    RepositoryDetailPage,
-    RouteState,
-    SettingsPage,
-    TemplateDetailPage,
-    TemplatesPage,
-    UnityPage,
-    UserPackagesPage
-} from "./CorePages";
+import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplateDetailPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
@@ -95,12 +74,11 @@ type Route =
     | { kind: "unity" }
     | { kind: "backup-detail"; backupId: string }
     | { kind: "operations" }
+    | { kind: "logs" }
     | { kind: "operation-detail"; operationId: string }
     | { kind: "extensions" }
     | { kind: "extension-detail"; extensionId: string }
     | { kind: "extension-ui"; extensionId: string }
-    | { kind: "activity" }
-    | { kind: "diagnostics" }
     | { kind: "settings" }
     | { kind: "about" }
     | { kind: "not-found" };
@@ -277,8 +255,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
 
     return (
         <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
-            <FrontendErrorReporter client={client} />
-            <CoreEventsProvider events={events} enabled={negotiatedCapabilities?.kind === "ready"}>
+            <CoreEventsProvider events={events} enabled={negotiatedCapabilities !== undefined}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation
@@ -290,7 +267,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
-                                    <FrontendErrorBoundary key={visibleNavigation.read.visit} client={client}><RouteContent
+                                    <RouteErrorBoundary key={visibleNavigation.read.visit}><RouteContent
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
@@ -298,7 +275,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                                         onSettingsApplied={applySettings}
                                         settingsWriter={settingsWriter}
                                         route={visibleNavigation.route}
-                                    /></FrontendErrorBoundary>
+                                    /></RouteErrorBoundary>
                                 </PageReadContext.Provider>
                             </Suspense>
                         </div>
@@ -324,7 +301,6 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
         { icon: projectsIcon, label: navigationLabels.projects, path: "/projects", section: "projects" },
         { icon: packagesIcon, label: navigationLabels.resources, path: "/repositories", section: "packages" },
         { icon: settingsIcon, label: navigationLabels.settings, path: "/settings", section: "settings" },
-        { icon: logIcon, label: navigationLabels.logs, path: "/activity", section: "log" }
     ];
     return (
         <aside className="primary-navigation" id="primary-navigation" ref={scrollRef}>
@@ -360,7 +336,7 @@ interface NavigationItem {
     readonly icon: IconAsset;
     readonly label: string;
     readonly path: string;
-    readonly section: "projects" | "packages" | "settings" | "log";
+    readonly section: "projects" | "packages" | "settings";
 }
 
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
@@ -414,6 +390,17 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
                         {activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{activeTasks}</span>}
+                    </NavigationListItem>
+                    <NavigationListItem
+                        aria-label={t("Logs")}
+                        aria-current={routeSection(current) === "logs" ? "page" : undefined}
+                        className="navigation-item"
+                        onClick={() => navigate("/logs")}
+                        selected={routeSection(current) === "logs"}
+                        title={t("Logs")}
+                    >
+                        <Icon asset={logIcon} size={24} slot="start" />
+                        <span className="navigation-item-label" slot="headline">{t("Logs")}</span>
                     </NavigationListItem>
                     <NavigationListItem
                         aria-label={`${t(navigationLabels.about)} ${guiVersion}`}
@@ -471,12 +458,11 @@ function RouteContent({
         case "unity": return <CapabilityRoute required={[capabilities.unityRead]}><UnityPage {...props} /></CapabilityRoute>;
         case "backup-detail": return <CapabilityRoute required={[capabilities.backupsRead]}><BackupDetailPage {...props} backupId={route.backupId} /></CapabilityRoute>;
         case "operations": return <CapabilityRoute required={[capabilities.operations]}><OperationsPage {...props} /></CapabilityRoute>;
+        case "logs": return <CapabilityRoute required={[capabilities.logsRead]}><OperationLogsRoute client={props.client} /></CapabilityRoute>;
         case "operation-detail": return <CapabilityRoute required={[capabilities.operations]}><OperationDetailPage {...props} operationId={route.operationId} /></CapabilityRoute>;
         case "extensions": return <CapabilityRoute required={[capabilities.extensionsLifecycle]}><ExtensionsPage {...props} /></CapabilityRoute>;
         case "extension-detail": return <CapabilityRoute required={[capabilities.extensionsLifecycle]}><ExtensionDetailPage {...props} extensionId={route.extensionId} /></CapabilityRoute>;
         case "extension-ui": return <CapabilityRoute required={[capabilities.extensionsLifecycle, capabilities.extensionsPortableUi]}><ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
-        case "activity": return <ActivityPage {...props} />;
-        case "diagnostics": return <DiagnosticsPage {...props} />;
         case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} settingsWriter={settingsWriter} onApplied={onSettingsApplied} /></CapabilityRoute>;
         case "about": return <AboutPage {...props} />;
         case "not-found": return <RouteState kind="error" title={t("Page not found")} detail={t("Use the primary navigation to continue.")} />;
@@ -694,9 +680,9 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <LoadingState title={t("Opening extension UI")} />
                 ) : null}
                 {error === undefined || snapshot !== undefined ? null : (
-                    <RequestReminder error={error} title={t(errorTitle(error.code))}>
+                    <div role="alert"><strong>{t(errorTitle(error.code))}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
-                    </RequestReminder>
+                    </div>
                 )}
                 <MaterialDialog onClose={() => setPendingReconnect(false)} open={pendingReconnect} title={t("Discard unsaved changes?")}>
                     <p>{t(DISCARD_MESSAGE)}</p>
@@ -823,9 +809,8 @@ function readRoute(pathname: string, search = ""): Route {
             case "user-packages": return { kind: "user-packages" };
             case "unity": return { kind: "unity" };
             case "operations": return { kind: "operations" };
+            case "logs": return { kind: "logs" };
             case "extensions": return { kind: "extensions" };
-            case "activity": return { kind: "activity" };
-            case "diagnostics": return { kind: "diagnostics" };
             case "settings": return { kind: "settings" };
             case "about": return { kind: "about" };
             default: return { kind: "not-found" };
@@ -863,12 +848,11 @@ function routePath(route: Route): string {
         case "unity": return "/unity";
         case "backup-detail": return `/backups/${encodeURIComponent(route.backupId)}`;
         case "operations": return "/operations";
+        case "logs": return "/logs";
         case "operation-detail": return `/operations/${encodeURIComponent(route.operationId)}`;
         case "extensions": return "/extensions";
         case "extension-detail": return `/extensions/${encodeURIComponent(route.extensionId)}`;
         case "extension-ui": return `/extensions/${encodeURIComponent(route.extensionId)}/ui`;
-        case "activity": return "/activity";
-        case "diagnostics": return "/diagnostics";
         case "settings": return "/settings";
         case "about": return "/about";
         case "not-found": return window.location.pathname;
@@ -891,8 +875,6 @@ function routeSection(route: Route): string {
         case "operation-detail": return "tasks";
         case "extension-detail":
         case "extension-ui": return "extensions";
-        case "activity":
-        case "diagnostics": return "log";
         case "unity":
         case "settings": return "settings";
         case "about": return "about";
@@ -906,8 +888,8 @@ function sectionLabel(section: string): string {
         case "packages": return "Resources";
         case "extensions": return "Extensions";
         case "settings": return "Settings";
-        case "log": return "Logs";
         case "tasks": return navigationLabels.taskCenter;
+        case "logs": return "Logs";
         case "about": return "About";
         default: return productFamily;
     }

@@ -99,13 +99,11 @@ pub(crate) struct WindowStateController {
 fn unavailable() -> RpcError {
     window_failure(std::io::Error::other("window geometry is unavailable"))
 }
-fn window_failure(error: impl std::error::Error) -> RpcError {
-    let id =
-        super::local_log::record_native_error(&error, "window state could not be read or restored");
+fn window_failure(_error: impl std::error::Error) -> RpcError {
     RpcError {
         code: "window_state_unavailable".to_owned(),
         message: "The window state could not be read or restored.".to_owned(),
-        diagnostic_id: Some(id),
+        diagnostic_id: None,
         data: None,
     }
 }

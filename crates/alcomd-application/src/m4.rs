@@ -1,5 +1,4 @@
 use std::future::Future;
-use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -579,14 +578,11 @@ impl M4Error {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
-    fn record_failure(
-        mut self,
-        operation_id: crate::OperationId,
-        message: &'static str,
-    ) -> (Self, String) {
-        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
-            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
-        });
+    fn ensure_diagnostic_id(mut self) -> (Self, String) {
+        let id = self
+            .diagnostic_id
+            .clone()
+            .unwrap_or_else(|| crate::OperationId::new().to_string());
         self.diagnostic_id = Some(id.clone());
         (self, id)
     }
@@ -793,7 +789,16 @@ where
         if request.action != PlanAction::Remove && !catalog.complete {
             return Err(M4Error::new(M4ErrorCode::RepositoryRefreshRequired));
         }
-        let draft = self.adapter.prepare_plan(project, catalog, request).await?;
+        let action = format!("packages.{}", request.action.as_str());
+        let target = crate::log_path("project", project.observation.root_path.clone());
+        let draft = crate::log_execution_step(
+            &action,
+            "resolve_dependencies",
+            Some(target),
+            self.adapter.prepare_plan(project, catalog, request),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
         self.store
             .create_package_plan(access.principal().clone(), draft, m4_time_ms()?)
             .await
@@ -847,17 +852,29 @@ where
                     .any(PackageSourcePin::is_user_package),
             )
             .await?;
-        self.adapter.revalidate_plan(project, catalog, plan).await?;
-        let outcome = self
-            .store
-            .accept_package_plan(
+        let target = crate::log_path("project", project.observation.root_path.clone());
+        let action = format!("packages.{}", plan.action.as_str());
+        crate::log_execution_step(
+            &action,
+            "check_plan",
+            Some(target.clone()),
+            self.adapter.revalidate_plan(project, catalog, plan),
+            |error| error.path().map(str::to_owned),
+        )
+        .await?;
+        let outcome = crate::log_transaction_step(
+            &action,
+            "accepted",
+            Some(target),
+            self.store.accept_package_plan(
                 access.principal().clone(),
                 plan_id,
                 expected_revision,
                 idempotency_key,
                 m4_time_ms()?,
-            )
-            .await?;
+            ),
+        )
+        .await?;
         if outcome.schedule {
             self.schedule(outcome.operation_id);
         }
@@ -866,14 +883,9 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(
-            (async move {
-                if let Err(source) = application.run(operation_id).await {
-                    let _ = source.record_failure(operation_id, "Package application failed");
-                }
-            })
-            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
-        );
+        tokio::spawn(async move {
+            let _ = application.run(operation_id).await;
+        });
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M4Error> {
@@ -923,19 +935,21 @@ where
                         .map_err(|error| M4Error::from(error.kind()))?;
                     return Ok(());
                 }
-                let (error, diagnostic_id) =
-                    error.record_failure(operation_id, "Package application failed");
+                let (error, diagnostic_id) = error.ensure_diagnostic_id();
                 if error.code() == M4ErrorCode::RecoveryRequired {
                     return Err(error);
                 }
-                self.store
-                    .fail_package_apply(
+                crate::with_operation_log_failure(
+                    operation_id,
+                    crate::operation_log_error(&error, error.path()),
+                    self.store.fail_package_apply(
                         operation_id,
                         error.code().as_str().to_owned(),
                         diagnostic_id,
                         m4_time_ms()?,
-                    )
-                    .await?;
+                    ),
+                )
+                .await?;
                 Ok(())
             }
         }
@@ -1042,70 +1056,30 @@ mod tests {
 }
 
 #[cfg(test)]
-mod execution_log_tests {
+mod error_identity_tests {
     use super::*;
-    use std::io::Write;
-    use std::sync::{Arc, Mutex};
-    #[derive(Clone)]
-    struct Capture(Arc<Mutex<Vec<u8>>>);
-    impl Write for Capture {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().expect("capture").extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
     #[test]
-    fn failure_owner_preserves_causes_and_only_real_retry_gets_a_new_diagnostic() {
-        let data = Arc::new(Mutex::new(Vec::new()));
-        let output = data.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .json()
-            .with_ansi(false)
-            .with_writer(move || Capture(output.clone()))
-            .finish();
-        let operation = OperationId::new();
-        let path = "C:\\ALCOMD-Test\\项目 A\\Packages\\vpm-manifest.json";
-        let (first_id, retry_id) = tracing::subscriber::with_default(subscriber, || {
-            let source = M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
-                .with_path(path)
-                .with_source(std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied,
-                    "test underlying file permission failure",
-                ));
-            let (source, id) = source.record_failure(operation, "Package application failed");
-            let (propagated, again) =
-                source.record_failure(operation, "Outer propagation must not record again");
-            assert_eq!(id, again);
-            assert_eq!(propagated.diagnostic_id(), Some(id.as_str()));
-            assert!(std::error::Error::source(&propagated).is_some());
-            let (_, retry) = M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+    fn operation_failure_preserves_causes_and_only_a_new_failure_gets_a_new_identity() {
+        let path = "C:/ALCOMD-Test/项目 A/Packages/vpm-manifest.json";
+        let failure = || {
+            M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
                 .with_path(path)
                 .with_source(std::io::Error::new(
                     std::io::ErrorKind::PermissionDenied,
                     "test underlying file permission failure",
                 ))
-                .record_failure(operation, "Package application failed");
-            (id, retry)
-        });
-        assert_ne!(first_id, retry_id);
-        let text = String::from_utf8(data.lock().expect("capture").clone()).expect("UTF8");
-        let rows = text
-            .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("standard JSON"))
-            .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0]["fields"]["diagnostic_id"], first_id);
-        assert_eq!(rows[1]["fields"]["diagnostic_id"], retry_id);
+        };
+        let (source, first) = failure().ensure_diagnostic_id();
+        let (propagated, again) = source.ensure_diagnostic_id();
+        assert_eq!(first, again);
+        assert_eq!(propagated.diagnostic_id(), Some(first.as_str()));
+        assert_eq!(propagated.path(), Some(path));
+        assert!(std::error::Error::source(&propagated).is_some());
         assert!(
-            rows[0]["fields"]["error"]
-                .as_str()
-                .expect("chain")
+            crate::technical_error_chain(&propagated)
                 .contains("test underlying file permission failure")
         );
-        assert_eq!(rows[0]["fields"]["path"], path);
-        assert_eq!(rows[0]["fields"]["operation_id"], operation.to_string());
+        let (_, retry) = failure().ensure_diagnostic_id();
+        assert_ne!(first, retry);
     }
 }

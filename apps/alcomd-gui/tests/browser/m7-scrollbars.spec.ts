@@ -40,8 +40,6 @@ test("all shared lists and page scrollers use the application scrollbar theme", 
         ["/settings", "ready"],
         ["/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
         ["/operations", "ready"],
-        ["/activity", "ready"],
-        ["/diagnostics", "ready"]
     ];
     for (const [route, state] of routes) {
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route!)}&state=${state}`);

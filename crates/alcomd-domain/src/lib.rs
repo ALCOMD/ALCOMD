@@ -524,12 +524,6 @@ pub enum Permission {
     /// Replay visible durable Events.
     #[serde(rename = "events.read")]
     EventsRead,
-    /// Read the safe user-facing Event/Operation activity projection.
-    #[serde(rename = "activity.read")]
-    ActivityRead,
-    /// Read redacted structured diagnostics.
-    #[serde(rename = "diagnostics.read")]
-    DiagnosticsRead,
     /// Read Config Schema 1 settings.
     #[serde(rename = "settings.read")]
     SettingsRead,
@@ -613,8 +607,6 @@ impl Permission {
             Self::OperationsRead => "operations.read",
             Self::OperationsCancel => "operations.cancel",
             Self::EventsRead => "events.read",
-            Self::ActivityRead => "activity.read",
-            Self::DiagnosticsRead => "diagnostics.read",
             Self::SettingsRead => "settings.read",
             Self::SettingsManage => "settings.manage",
             Self::ProjectsRead => "projects.read",

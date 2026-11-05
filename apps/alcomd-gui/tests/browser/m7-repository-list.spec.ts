@@ -162,7 +162,7 @@ for (const code of ["repository_list_target_exists", "repository_list_changed", 
         const consent = host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true });
         await consent.check();
         await host.getByRole("button", { name: "Save new list file", exact: true }).click();
-        await expectRequestError(host.locator(".reminder--error"), code);
+        await expectRequestError(host.locator("[role=alert]"), code);
         expect(await requests(page, "repositories.exportListFile")).toHaveLength(1);
         if (code === "repository_list_changed") {
             await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeDisabled();

@@ -21,32 +21,23 @@ test("H6 skip navigation reaches the canvas and keyboard focus reveals the table
     expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
 });
 
-test("H6 keyboard alone edits and cancels inline Theme at 200 percent equivalent layout", async ({ page }) => {
+test("H6 keyboard edits inline Theme through autosave at 200 percent equivalent layout", async ({ page }) => {
     await open(page, "/settings");
     await selectSettingsSection(page, "appearance");
     await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
     await page.keyboard.press("Enter");
     const theme = page.getByRole("form", { name: "Theme", exact: true });
-    await expect(theme).toBeVisible();
     const source = page.getByRole("textbox", { name: "Source color", exact: true });
     await tabTo(page, source);
+    await expectFocusVisible(page, source);
     await page.keyboard.press("ControlOrMeta+A");
     await page.keyboard.type("#315DA8");
-    const save = page.getByRole("button", { name: "Save", exact: true });
-    await expect(save).toBeEnabled();
-    await tabTo(page, save);
-    await expectFocusVisible(page, save);
-    await page.keyboard.press("Shift+Tab");
-    const cancel = theme.getByRole("button", { name: "Cancel", exact: true });
-    await expect(cancel).toBeFocused();
-    await expectFocusVisible(page, cancel);
-    await page.keyboard.press("Enter");
-    await expect(theme).toBeVisible();
-    await expect(source).toHaveValue("#6CB6FF");
-    await expect(save).toBeDisabled();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("html")).toHaveAttribute("data-source-color", "#315DA8");
+    await expect(source).toHaveValue("#315DA8");
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await expect(page.locator("html")).toHaveAttribute("data-source-color", "#6CB6FF");
+    await expect.poll(() => page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { appearance: { sourceColor: "#315DA8" } } }]);
 });
 
 async function open(page: Page, route: string) {

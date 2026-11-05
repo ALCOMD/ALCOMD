@@ -16,11 +16,14 @@ pub struct EventsCursor {
 }
 
 /// The only in-memory state needed to wake durable event readers.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EventCommitWatermark {
     pub instance_id: String,
     pub sequence: u64,
     pub resources_revision: u64,
+    pub extensions_revision: u64,
+    pub logs_revision: u64,
+    pub log_sequence: u64,
     pub available: bool,
 }
 
@@ -28,6 +31,17 @@ pub struct EventCommitWatermark {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EventInvalidation {
     Extensions,
+    OperationLog,
+}
+
+impl EventCommitWatermark {
+    fn resources_for(&self, include_logs: bool) -> u64 {
+        if include_logs {
+            self.resources_revision
+        } else {
+            self.extensions_revision
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +66,7 @@ pub struct EventSubscription<S: StateStore> {
     resources_revision: u64,
     offered_resources_revision: u64,
     limit: u32,
+    include_logs: bool,
 }
 
 impl<S: StateStore> Application<S> {
@@ -61,8 +76,12 @@ impl<S: StateStore> Application<S> {
         access: &AccessContext,
         cursor: Option<EventsCursor>,
         limit: u32,
+        include_logs: bool,
     ) -> Result<EventSubscription<S>, ApplicationError> {
         access.require(Permission::EventsRead)?;
+        if include_logs {
+            access.require(Permission::OperationsRead)?;
+        }
         if access.principal() != &PrincipalId::local_owner() {
             return Err(ApplicationError::PermissionDenied);
         }
@@ -80,15 +99,25 @@ impl<S: StateStore> Application<S> {
         if !watermark.available || commits.has_changed().is_err() {
             return Err(unavailable());
         }
+        let current_resources_revision = watermark.resources_for(include_logs);
         let resync_required = cursor.as_ref().is_none_or(|value| {
             value.instance_id != watermark.instance_id
                 || value.sequence > watermark.sequence
-                || value.resources_revision != watermark.resources_revision
+                || value.resources_revision > current_resources_revision
+                || value.resources_revision < watermark.extensions_revision
         });
         let sequence = if resync_required {
             watermark.sequence
         } else {
             cursor.as_ref().expect("validated cursor").sequence
+        };
+        let resources_revision = if resync_required {
+            current_resources_revision
+        } else {
+            cursor
+                .as_ref()
+                .expect("validated cursor")
+                .resources_revision
         };
         Ok(EventSubscription {
             subscription_id: OperationId::new().to_string(),
@@ -96,7 +125,7 @@ impl<S: StateStore> Application<S> {
             baseline_cursor: EventsCursor {
                 instance_id: watermark.instance_id,
                 sequence,
-                resources_revision: watermark.resources_revision,
+                resources_revision,
             },
             resync_required,
             store: self.store.clone(),
@@ -104,9 +133,10 @@ impl<S: StateStore> Application<S> {
             commits,
             sequence,
             offered_through: sequence,
-            resources_revision: watermark.resources_revision,
-            offered_resources_revision: watermark.resources_revision,
+            resources_revision,
+            offered_resources_revision: resources_revision,
             limit,
+            include_logs,
         })
     }
 }
@@ -123,6 +153,7 @@ impl<S: StateStore> EventSubscription<S> {
             &mut self.commits,
             &self.instance_id,
             self.resources_revision,
+            self.include_logs,
             || store.list_events(owner.clone(), sequence, limit),
         )
         .await?;
@@ -155,6 +186,7 @@ async fn read_committed_page<F, R>(
     commits: &mut watch::Receiver<EventCommitWatermark>,
     instance_id: &str,
     resources_revision: u64,
+    include_logs: bool,
     mut read: R,
 ) -> Result<LiveEventPage, ApplicationError>
 where
@@ -176,16 +208,20 @@ where
         if !watermark.available || watermark.instance_id != instance_id {
             return Err(unavailable());
         }
-        if !page.events.is_empty() || watermark.resources_revision != resources_revision {
+        let next_resources_revision = watermark.resources_for(include_logs);
+        if !page.events.is_empty() || next_resources_revision != resources_revision {
+            let mut invalidated_scopes = Vec::new();
+            if watermark.extensions_revision > resources_revision {
+                invalidated_scopes.push(EventInvalidation::Extensions);
+            }
+            if include_logs && watermark.logs_revision > resources_revision {
+                invalidated_scopes.push(EventInvalidation::OperationLog);
+            }
             return Ok(LiveEventPage {
                 events: page.events,
                 next_sequence: page.next_sequence,
-                resources_revision: watermark.resources_revision,
-                invalidated_scopes: if watermark.resources_revision != resources_revision {
-                    vec![EventInvalidation::Extensions]
-                } else {
-                    vec![]
-                },
+                resources_revision: next_resources_revision,
+                invalidated_scopes,
             });
         }
         // The receiver was marked before the read. A commit racing with an
@@ -227,9 +263,10 @@ mod tests {
             sequence: 0,
             resources_revision: 0,
             available: true,
+            ..EventCommitWatermark::default()
         });
         let reads = AtomicUsize::new(0);
-        let result = read_committed_page(&mut receiver, &identity, 0, || {
+        let result = read_committed_page(&mut receiver, &identity, 0, false, || {
             if reads.fetch_add(1, Ordering::SeqCst) == 0 {
                 // Exact race: the read saw empty; commit happens before its
                 // caller can begin awaiting the change signal.
@@ -259,11 +296,15 @@ mod tests {
             sequence: 0,
             resources_revision: 0,
             available: true,
+            ..EventCommitWatermark::default()
         });
         let reads = AtomicUsize::new(0);
-        let page = read_committed_page(&mut receiver, &identity, 0, || {
+        let page = read_committed_page(&mut receiver, &identity, 0, false, || {
             if reads.fetch_add(1, Ordering::SeqCst) == 0 {
-                sender.send_modify(|watermark| watermark.resources_revision = 1);
+                sender.send_modify(|watermark| {
+                    watermark.resources_revision = 1;
+                    watermark.extensions_revision = 1;
+                });
             }
             ready(Ok(EventPage {
                 events: vec![],
@@ -286,11 +327,13 @@ mod tests {
             sequence: 0,
             resources_revision: 0,
             available: true,
+            ..EventCommitWatermark::default()
         });
-        let page = read_committed_page(&mut receiver, &identity, 0, || {
+        let page = read_committed_page(&mut receiver, &identity, 0, false, || {
             sender.send_modify(|watermark| {
                 watermark.sequence = 1;
                 watermark.resources_revision = 1;
+                watermark.extensions_revision = 1;
             });
             ready(Ok(EventPage {
                 events: vec![event(1)],
@@ -312,11 +355,13 @@ mod tests {
             sequence: 0,
             resources_revision: 0,
             available: true,
+            ..EventCommitWatermark::default()
         });
-        let first = read_committed_page(&mut receiver, &identity, 0, || {
+        let first = read_committed_page(&mut receiver, &identity, 0, false, || {
             sender.send_modify(|watermark| {
                 watermark.sequence = 2;
                 watermark.resources_revision = 1;
+                watermark.extensions_revision = 1;
             });
             ready(Ok(EventPage {
                 events: vec![event(1)],
@@ -327,7 +372,7 @@ mod tests {
         .expect("committed event page");
         assert_eq!(first.next_sequence, 1);
         assert_eq!(first.resources_revision, 1);
-        let second = read_committed_page(&mut receiver, &identity, 1, || {
+        let second = read_committed_page(&mut receiver, &identity, 1, false, || {
             ready(Ok(EventPage {
                 events: vec![event(2)],
                 next_sequence: 2,
@@ -347,9 +392,10 @@ mod tests {
             sequence: 0,
             resources_revision: 0,
             available: true,
+            ..EventCommitWatermark::default()
         });
         let reads = AtomicUsize::new(0);
-        let future = read_committed_page(&mut receiver, &identity, 0, || {
+        let future = read_committed_page(&mut receiver, &identity, 0, false, || {
             let sequence = sender.borrow().sequence;
             reads.fetch_add(1, Ordering::SeqCst);
             ready(Ok(EventPage {

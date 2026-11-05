@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-operation-logs.json",
+    "title": "ALCOMD Core operation logs",
+    "x-alcomd-method-permissions": {"logs.read": ["operations.read"]},
+    "x-alcomd-method-capabilities": {"logs.read": "logs.read.v1"},
+    "x-alcomd-method-params": {"logs.read": "#/$defs/params"},
+    "x-alcomd-method-results": {"logs.read": "#/$defs/result"},
+    "x-alcomd-local-owner-only": true,
+    "x-alcomd-max-encoded-frame-bytes": 4194304,
+    "x-alcomd-max-encoded-entry-bytes": 524288,
+    "$defs": {
+        "sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "params": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "beforeSequence": {"$ref": "#/$defs/sequence"},
+                "afterSequence": {"$ref": "#/$defs/sequence"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100}
+            },
+            "not": {"required": ["beforeSequence", "afterSequence"]}
+        },
+        "target": {
+            "type": "object", "additionalProperties": false, "required": ["kind"],
+            "properties": {
+                "kind": {"type": "string", "minLength": 1, "maxLength": 128},
+                "id": {"type": "string"}, "name": {"type": "string"},
+                "path": {"type": "string", "maxLength": 131072}
+            }
+        },
+        "entry": {
+            "type": "object", "additionalProperties": false,
+            "required": ["sequence", "entryId", "executionId", "actor", "occurredAtMs", "action", "step", "outcome"],
+            "properties": {
+                "sequence": {"$ref": "#/$defs/sequence", "minimum": 1},
+                "entryId": {"type": "string", "format": "uuid"},
+                "executionId": {"type": "string", "format": "uuid"},
+                "actor": {"type": "string", "minLength": 1, "maxLength": 64},
+                "operationId": {"type": "string", "format": "uuid"},
+                "occurredAtMs": {"$ref": "#/$defs/sequence"},
+                "action": {"type": "string", "minLength": 1, "maxLength": 128},
+                "step": {"type": "string", "minLength": 1, "maxLength": 128},
+                "outcome": {"enum": ["started", "succeeded", "failed", "cancelled", "waiting"]},
+                "target": {"$ref": "#/$defs/target"},
+                "details": {"type": "string", "maxLength": 262144}
+            }
+        },
+        "result": {
+            "type": "object", "additionalProperties": false,
+            "required": ["entries", "highWatermark", "hasMore"],
+            "properties": {
+                "entries": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/entry"}},
+                "highWatermark": {"$ref": "#/$defs/sequence"},
+                "hasMore": {"type": "boolean"},
+                "nextSequence": {"$ref": "#/$defs/sequence", "minimum": 1}
+            },
+            "if": {"properties": {"hasMore": {"const": true}}},
+            "then": {"required": ["nextSequence"]},
+            "else": {"not": {"required": ["nextSequence"]}}
+        }
+    }
+}

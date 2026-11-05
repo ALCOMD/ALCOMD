@@ -1,3 +1,4 @@
+import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
 import type { Translate } from "./i18n-types";
@@ -29,7 +30,6 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
-import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
@@ -88,7 +88,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         finally { pending.current = false; }
     };
     const fieldError = preview === undefined && feedback.error !== undefined && ["repository_source_invalid", "repository_document_invalid", "invalid_params"].includes(feedback.error.code) ? feedback.error : undefined;
-    const error = feedback.error === undefined || fieldError !== undefined ? null : <RequestReminder error={feedback.error} />;
+    const error = feedback.error === undefined || fieldError !== undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     return <ActionSection title={t("Add repository")}>
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
@@ -97,7 +97,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
             <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : displayPath(preview.source.path)}</dd></div></dl>
-            {preview.issues.length === 0 ? null : <Reminder tone="warning">{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</Reminder>}
+            {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</div>}
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
         </>}
@@ -248,7 +248,7 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                     <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p><div className="dialog-actions"><Button onClick={closeChanges} type="button">{t("Close")}</Button></div></div>
                 )}
             </MaterialDialog>
-            {feedback.error === undefined ? null : <RequestReminder error={feedback.error} title={t("Package changes were not applied")} message={packageErrorMessage(feedback.error)} onDismiss={() => setFeedback((current) => ({ ...current, error: undefined }))} />}
+            {feedback.error === undefined ? null : <div role="alert"><strong>{t("Package changes were not applied")}</strong><p>{t((packageErrorMessage(feedback.error)) ?? requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} title={t("Package changes")} />}
         </>
     );
@@ -350,7 +350,7 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
                 options={[{ value: "default", label: t("Use global defaults") }, { value: "custom", label: t("Custom arguments") }]} />
             <UnityArgumentsEditor id="project-unity-argument" value={inherit ? snapshot.defaultArguments : arguments_}
                 onChange={(next) => { setArguments(next); setFeedback(INITIAL_FEEDBACK); }} disabled={!canManage || feedback.busy || conflict} readOnly={inherit} />
-            {conflict ? <Reminder tone="error">{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</Reminder> : null}
+            {conflict ? <div>{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</div> : null}
             <div className="dialog-actions">
                 <Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
                 <Button disabled={!canManage || feedback.busy || conflict || (inherit && snapshot.config.revision === 0)} type="submit">{t(feedback.error === undefined ? "Save launch arguments" : "Retry")}</Button>
@@ -468,7 +468,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button" variant="tonal">{t("Review migration")}</Button>
             <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
+                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </PlanDialog>
             {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} onTerminal={migrationFinished} background />}
         </ActionSection>
@@ -568,7 +568,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
             {unityLaunch.dialogs}
             <ModalDialog dismissible={!feedback.busy} onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationChooserOpen} title={t("Choose Unity {version} installation", { version: migrationVersion })}>
                 <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
-                {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
+                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
                     <Button onClick={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); }} type="button" variant="tonal">{t("Cancel")}</Button>
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
@@ -576,7 +576,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
             </ModalDialog>
             <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <RequestReminder error={feedback.error}>{submitted && templateApplyResultUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
+                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && templateApplyResultUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </PlanDialog>
 
         </>
@@ -887,7 +887,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, onOpenProject, opera
             <TextField disabled={feedback.busy} id="create-leaf" label={t("Project folder name")} onInput={(next) => update("leaf", next)} required value={fields.leaf} />
             <PathField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
             <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
-            {projectDirectory.error === undefined ? null : <RequestReminder error={projectDirectory.error} title={t("Default project location could not be loaded.")} />}
+            {projectDirectory.error === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((projectDirectory.error).code))}</p><code>{(projectDirectory.error).code}</code>{projectDirectory.error.diagnosticId === undefined ? null : <p><code>{projectDirectory.error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0 || unity.version.trim().length === 0} type="submit">{t("Review")}</Button></div>
         </form> : action === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple(); }}>
             <p><Translated message="Export {name} as a template bundle." values={{ name: <strong>{template.displayName}</strong> }} /></p>
@@ -956,9 +956,9 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} label={options !== undefined && unknown ? t("Close") : undefined} />
             <Button disabled={!available || feedback.busy || unknown || options === undefined || project.revision === undefined} onClick={() => void create()} type="button">{t("Create backup")}</Button>
         </div>
-        {feedback.error === undefined ? null : options === undefined ? <RequestReminder error={feedback.error} title={t("Backup defaults could not be loaded.")}>
+        {feedback.error === undefined ? null : options === undefined ? <div role="alert"><strong>{t("Backup defaults could not be loaded.")}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}
             <Button onClick={() => setReadGeneration((value) => value + 1)} type="button" variant="text">{t("Retry")}</Button>
-        </RequestReminder> : <RequestReminder error={feedback.error}>{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
+        </div> : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
     </ActionSection>;
 }
 
@@ -985,7 +985,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
         <Button className="material-button--danger" disabled={!available || terminal || operation.state === "cancelling" || feedback.busy} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirm(true); }} title={capabilityUnavailableTitle(available, capabilities.operations, t)} type="button" variant="text">{t("Cancel operation")}</Button>
         <MaterialDialog dismissible={!feedback.busy} onClose={() => { setConfirm(false); setFeedback(INITIAL_FEEDBACK); }} open={confirm} title={t("Request cancellation?")}>
             <p>{t("Cancellation is cooperative. The operation remains authoritative until the daemon reports a terminal state.")}</p>
-            {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
+            {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirm(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button className="material-button--danger" disabled={!available || feedback.busy || terminal || operation.state === "cancelling"} onClick={() => void cancel()} type="button">{t("Confirm")}</Button></div>
         </MaterialDialog>
     </ActionSection>;
@@ -1041,7 +1041,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}
-        {submitted && templateApplyResultUnknown(feedback.error) ? <RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && templateApplyResultUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 
@@ -1099,7 +1099,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
                 <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
             </>}
-            {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+            {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
         </MaterialDialog>
     </ActionSection>;
 }
@@ -1118,8 +1118,8 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
 }
 
 function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
-
-    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} title={errorTitle} />;
+    const { t } = useTranslation();
+    if (feedback.error !== undefined) return <div role="alert"><strong>{errorTitle}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
     return null;
 }
@@ -1206,7 +1206,7 @@ export function TemplateOperationProgress({ operationId, operations }: { operati
     const item = operations.snapshot(operationId);
     return <><OperationProgress error={item?.progressError} operation={item?.operation} />
         {item?.progressError === undefined || events === undefined ? null : <Button type="button" variant="text" onClick={() => events.invalidate(`operation:${operationId}`, true)}>{t("Retry")}</Button>}
-        {item?.error === undefined ? null : <RequestReminder error={item.error} />}</>;
+        {item?.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((item.error).code))}</p><code>{(item.error).code}</code>{item.error.diagnosticId === undefined ? null : <p><code>{item.error.diagnosticId}</code></p>}</div>}</>;
 }
 
 export function OperationFollow({ background = false, children, client, initialOperation, onReadError, onSnapshot, onTerminal, operationId, title = "Operation" }: {
@@ -1282,7 +1282,7 @@ export function OperationProgress({ error, operation, title = "Operation" }: { e
     const { t } = useTranslation();
     return <>
         <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
-        {operation?.state !== "failed" ? null : <RequestReminder error={{ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }} title={t("Operation failed")} />}
+        {operation?.state !== "failed" ? null : <div role="alert"><strong>{t("Operation failed")}</strong><p>{t(requestErrorMessage(({ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }).code))}</p><code>{operation.errorCode ?? "internal_error"}</code>{operation.diagnosticId === undefined ? null : <p><code>{operation.diagnosticId}</code></p>}</div>}
     </>;
 }
 
@@ -1321,7 +1321,7 @@ function packageErrorMessage(error: RpcError): string {
     if (error.code === "package_intent_conflict") {
         return "The selected package actions conflict. Review the selection and try again.";
     }
-    return "ALCOMD could not complete the package changes. Try again or open Logs for more information.";
+    return "ALCOMD could not complete the package changes. Try again.";
 }
 function shortValue(value: string): string { return value.length <= 28 ? value : `${value.slice(0, 20)}…${value.slice(-8)}`; }
 function isTerminal(state: string): boolean { return ["succeeded", "failed", "cancelled"].includes(state); }

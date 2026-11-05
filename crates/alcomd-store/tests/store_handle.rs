@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use alcomd_application::{OfficialGuiStore, StateCheckResult, StateStore, StoreErrorKind};
+use alcomd_application::{StateCheckResult, StateStore, StoreErrorKind};
 use alcomd_domain::{IdempotencyKey, OperationId, OperationState, PrincipalId, Revision};
 use alcomd_store::{CURRENT_DATA_SCHEMA, StateStoreHandle, StoreOpenError};
 use rusqlite::Connection;
@@ -95,16 +95,8 @@ async fn state_check_is_persistent_idempotent_and_evented() {
         .list_events(owner.clone(), 0, 100)
         .await
         .expect("list events");
-    assert_eq!(events.events.len(), 6);
-    assert_eq!(
-        events
-            .events
-            .iter()
-            .filter(|e| e.kind == "activity.changed")
-            .count(),
-        3
-    );
-    assert_eq!(events.next_sequence, events.events[5].sequence);
+    assert_eq!(events.events.len(), 3);
+    assert_eq!(events.next_sequence, events.events[2].sequence);
     let empty = store
         .list_events(owner.clone(), events.next_sequence, 100)
         .await
@@ -117,88 +109,6 @@ async fn state_check_is_persistent_idempotent_and_evented() {
         .await
         .expect("list operations");
     assert_eq!(operations.operations, [completed]);
-}
-
-#[tokio::test]
-async fn official_activity_is_one_per_task_owner_scoped_and_pageable() {
-    let directory = TestDirectory::new();
-    let store = StateStoreHandle::open(directory.database()).expect("open store");
-    let owner = PrincipalId::local_owner();
-    let accepted = store
-        .create_state_check(owner.clone(), key("history-failure"), 10)
-        .await
-        .expect("create");
-    store
-        .begin_state_check(accepted.operation_id, 20)
-        .await
-        .expect("begin");
-    let diagnostic = "00000000-0000-4000-8000-000000000777";
-    store
-        .finish_failed(
-            accepted.operation_id,
-            "internal_error".into(),
-            diagnostic.into(),
-            30,
-        )
-        .await
-        .expect("fail");
-    for time in [40, 50] {
-        store
-            .create_state_check(owner.clone(), key(&format!("history-{time}")), time)
-            .await
-            .expect("another task");
-    }
-    let first = store
-        .list_official_activity(owner.clone(), None, 2)
-        .await
-        .expect("page");
-    assert_eq!(first.items.len(), 2);
-    assert!(first.next_cursor.is_some());
-    let second = store
-        .list_official_activity(owner.clone(), first.next_cursor, 2)
-        .await
-        .expect("older page");
-    assert_eq!(second.items.len(), 1);
-    assert!(second.next_cursor.is_none());
-    let failed = &second.items[0];
-    assert_eq!(failed.activity_id, accepted.operation_id.to_string());
-    assert_eq!(failed.revision, 3);
-    assert_eq!(failed.status, "failed");
-    assert_eq!(
-        failed
-            .result
-            .as_ref()
-            .expect("valid isolated activity fixture")
-            .code,
-        "internal_error"
-    );
-    assert_eq!(failed.diagnostic_id.as_deref(), Some(diagnostic));
-    assert_eq!(failed.parameters, serde_json::json!({}));
-    let loaded = store
-        .get_official_activity(owner.clone(), failed.activity_id.clone())
-        .await
-        .expect("activity by ID");
-    assert_eq!(&loaded, failed);
-    let original = store
-        .get_operation(owner, accepted.operation_id)
-        .await
-        .expect("task remains authoritative");
-    assert_eq!(original.error_code.as_deref(), Some("internal_error"));
-    let other = PrincipalId::parse("test:other-owner").expect("valid isolated activity fixture");
-    assert!(
-        store
-            .list_official_activity(other.clone(), None, 100)
-            .await
-            .expect("valid isolated activity fixture")
-            .items
-            .is_empty()
-    );
-    assert!(
-        store
-            .get_official_activity(other, failed.activity_id.clone())
-            .await
-            .is_err()
-    );
 }
 
 #[tokio::test]
@@ -369,8 +279,8 @@ async fn running_operation_recovers_through_interrupted_and_recovering() {
         .expect("recovery events");
     assert_eq!(
         events.events.len(),
-        8,
-        "four task changes plus four activity changes, reopening remains quiet"
+        4,
+        "four task changes, reopening remains quiet"
     );
 }
 
@@ -532,15 +442,7 @@ async fn principal_scopes_operations_events_and_idempotency() {
         .list_events(owner_b, 0, 100)
         .await
         .expect("events for B");
-    assert_eq!(events.events.len(), 2);
-    assert_eq!(
-        events
-            .events
-            .iter()
-            .filter(|e| e.kind == "activity.changed")
-            .count(),
-        1
-    );
+    assert_eq!(events.events.len(), 1);
     assert_eq!(
         events.events[0].aggregate_id,
         second.operation_id.to_string()

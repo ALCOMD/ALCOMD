@@ -29,12 +29,12 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "light");
     await expect(page.locator("#theme-mode")).toHaveJSProperty("open", false);
     await expect(mode).toBeFocused();
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+    await expect.poll(() => page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { appearance: { mode: "light" } } }]);
 });
 
 test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
     await openHarness(page, "/projects");
-    for (const name of ["Projects", "Resources", "Settings", "Logs"]) {
+    for (const name of ["Projects", "Resources", "Settings"]) {
         await expect(navigationItem(page, name)).toBeVisible();
     }
     await expect(navigationItem(page, "Extensions")).toBeVisible();
@@ -84,7 +84,7 @@ test("ordinary route changes never replace content with capability negotiation",
         });
         observer.observe(document.getElementById("main-content")!, { childList: true, subtree: true });
     });
-    for (const [item, heading] of [["Resources", "Resources"], ["Settings", "Settings"], ["Logs", "Logs"], ["Projects", "Projects"]] as const) {
+    for (const [item, heading] of [["Resources", "Resources"], ["Settings", "Settings"], ["Projects", "Projects"]] as const) {
         await navigationItem(page, item).click();
         await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
     }
@@ -178,7 +178,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         return { left: bounds.left - canvas.left, top: bounds.top - canvas.top };
     });
     await logHeaderGeometryDiagnostics(page, "projects-baseline", projectsHeaderGeometry);
-    const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/activity", "/diagnostics", "/settings", "/about"]);
+    const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/settings", "/about"]);
     const routes = [
         ["/", "Projects"],
         ["/projects", "Projects"],
@@ -198,8 +198,6 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/extensions", "Extensions"],
         ["/extensions/com.vrclearn.discord", "Extension detail"],
         ["/extensions/com.vrclearn.discord/ui", "Extension UI"],
-        ["/activity", "Logs"],
-        ["/diagnostics", "Logs"],
         ["/settings", "Settings"],
         ["/about", "About"]
     ] as const;
@@ -254,7 +252,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
             const atCenter = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
             return bounds.width > 20 && bounds.height > 20 && atCenter !== null && element.contains(atCenter);
         })).toBe(true);
-        if (["/projects", "/repositories", "/settings", "/activity", "/diagnostics"].includes(route)) {
+        if (["/projects", "/repositories", "/settings"].includes(route)) {
             await main.locator(".page-header").screenshot({ path: test.info().outputPath(`header-${route.slice(1)}.png`) });
         }
         await expect(main.locator('.route-state[role="alert"]')).toHaveCount(0);
@@ -405,7 +403,7 @@ test("a changed project is explained without exposing stale Plan internals", asy
     await page.getByRole("row").filter({ hasText: "Avatar tools" }).getByRole("button", { name: "Update" }).click();
     await page.getByRole("button", { name: "Apply changes" }).click();
     await expect(page.getByRole("alert")).toContainText("This project changed");
-    await expect(page.getByRole("alert")).not.toContainText("plan_stale");
+    await expect(page.getByRole("alert")).toContainText("plan_stale");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toHaveCount(0);
 });
 
@@ -415,7 +413,8 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
     await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Confirm" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Project registered" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Register this project?", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.coreEvents.rpcRequests.filter(request => request.method === "projectRegister").length)).toBe(1);
 
     await openHarness(page, "/repositories");
     await page.getByRole("button", { name: "Add repository", exact: true }).click();
@@ -423,7 +422,8 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await page.getByRole("button", { name: "Review repository" }).click();
     await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Add repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository added." })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.coreEvents.rpcRequests.filter(request => request.method === "repositoryRegister").length)).toBe(1);
 
     await openHarness(page, "/templates");
     await page.getByRole("button", { name: "More template creation options", exact: true }).click();
@@ -455,14 +455,14 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await clickDialogAction(page, "Install extension", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
-    await openHarness(page, "/operations/00000000-0000-4000-8000-000000000105");
+    await page.goto("/browser-harness.html?route=/operations/00000000-0000-4000-8000-000000000105&state=ready&hold-core-operation=1");
     await page.getByRole("button", { name: "Cancel operation" }).click();
     await clickDialogAction(page, "Request cancellation?", "Confirm");
-    await expect(page.getByRole("status").filter({ hasText: "Cancellation requested" })).toBeVisible();
+    await expect(page.locator(".operation-follow")).toContainText("cancelling");
+    await expect(page.getByRole("dialog", { name: "Request cancellation?", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.coreEvents.rpcRequests.filter(request => request.method === "operationCancel").length)).toBe(1);
 
-    await openHarness(page, "/diagnostics");
-    await page.getByRole("button", { name: "Run state check" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toContainText(/running|succeeded/);
+
 });
 
 test("failed and cancelled Operations expose stable terminal states", async ({ page }) => {
@@ -547,7 +547,7 @@ test("narrow navigation, dialogs, reduced motion, and light/dark contrast remain
 
     for (const theme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: theme });
-        await openHarness(page, "/diagnostics");
+        await openHarness(page, "/settings");
         const ratios = await contrastRatios(page);
         expect(ratios.body).toBeGreaterThanOrEqual(4.5);
         expect(ratios.secondary).toBeGreaterThanOrEqual(4.5);

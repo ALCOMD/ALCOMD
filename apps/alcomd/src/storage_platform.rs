@@ -15,20 +15,20 @@ impl app::StorageDirectoryPlatform for PlatformStorageDirectories {
         let (projects, backups) = platform::default_storage_directories().map_err(|error| {
             app::OfficialGuiError::Unavailable
                 .with_source(error)
-                .record("failed to resolve default storage directories")
+                .with_reason("failed to resolve default storage directories")
         })?;
         Ok(app::StorageDirectories {
             project_directory: projects.into_os_string().into_string().map_err(|path| {
                 app::OfficialGuiError::Unavailable
                     .with_reason("default project directory cannot be represented as UTF-8")
                     .with_path(path.to_string_lossy().into_owned())
-                    .record("failed to resolve default project directory")
+                    .with_reason("failed to resolve default project directory")
             })?,
             backup_directory: backups.into_os_string().into_string().map_err(|path| {
                 app::OfficialGuiError::Unavailable
                     .with_reason("default backup directory cannot be represented as UTF-8")
                     .with_path(path.to_string_lossy().into_owned())
-                    .record("failed to resolve default backup directory")
+                    .with_reason("failed to resolve default backup directory")
             })?,
         })
     }
@@ -44,7 +44,7 @@ impl app::StorageDirectoryPlatform for PlatformStorageDirectories {
             classified
                 .with_source(error)
                 .with_path(path)
-                .record("failed to validate storage directory")
+                .with_reason("failed to validate storage directory")
         })
     }
 }

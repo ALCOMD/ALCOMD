@@ -1,5 +1,4 @@
 import { expect, test, type Page } from "@playwright/test";
-import type {} from "./event-limits-evidence";
 
 async function open(page: Page) {
     await page.clock.install();
@@ -71,13 +70,12 @@ test("the combined 5000-row view cache evicts the oldest snapshot and retains fi
         events.writeView("operations", { name: "operations" }, 2_000);
         const exact = events.readView("projects") !== undefined && events.readView("operations") !== undefined;
         events.readView("projects"); // Retain the more recently visited snapshot.
-        events.writeView("activity", { name: "activity" }, 1);
-        return { exact, projects: events.readView("projects"), operations: events.readView("operations"), activity: events.readView("activity"),
+        events.writeView("projects", { name: "projects updated" }, 3_001);
+        return { exact, projects: events.readView("projects"), operations: events.readView("operations"),
             metadata: events.metadata("operations", "reading", null) };
     });
     expect(state.exact).toBe(true);
-    expect(state.projects).toEqual({ name: "projects" });
-    expect(state.activity).toEqual({ name: "activity" });
+    expect(state.projects).toEqual({ name: "projects updated" });
     expect(state.operations).toBeUndefined();
     expect(state.metadata).toEqual({ filter: "failed", anchor: { operationId: "old-active", offset: 17 }, history: { createdAtMs: 42, operationId: "last-history" } });
 });

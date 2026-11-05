@@ -9,6 +9,147 @@ use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{ProjectSetFavoriteParams, ProjectType, RepositorySource};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test]
+async fn operation_log_records_real_filesystem_checks_and_preserves_the_background_actor() {
+    use alcomd_application::{
+        AccessContext, Application, IdempotencyKey, LogOutcome, M3Application, OperationLogQuery,
+        read_operation_logs, with_log_caller,
+    };
+
+    let fixture = TestDirectory::new();
+    let project = fixture.path().join("项目带空格 Test");
+    create_project(&project);
+    let store = alcomd_store::StateStoreHandle::open(fixture.path().join("state.db"))
+        .expect("isolated database");
+    let registry = M3Application::new(
+        store.clone(),
+        alcomd_vpm::VpmReader::new().expect("production file reader"),
+    );
+    let cli = AccessContext::local_owner().with_actor("CLI".to_owned());
+    let gui = AccessContext::local_owner().with_actor("GUI".to_owned());
+    let path = project.to_string_lossy().into_owned();
+    let key = IdempotencyKey::parse("real-operation-log-registration").expect("key");
+    let registered = with_log_caller(
+        store.clone(),
+        &cli,
+        registry.register_project(&cli, path.clone(), key.clone()),
+    )
+    .await
+    .expect("register fixture project");
+    assert!(
+        with_log_caller(
+            store.clone(),
+            &cli,
+            registry.register_project(&cli, path, key)
+        )
+        .await
+        .expect("replay")
+        .replayed
+    );
+    let missing = fixture
+        .path()
+        .join("不存在的项目")
+        .to_string_lossy()
+        .into_owned();
+    let fail = registry.register_project(
+        &gui,
+        missing.clone(),
+        IdempotencyKey::parse("real-operation-log-failure").expect("key"),
+    );
+    assert!(with_log_caller(store.clone(), &gui, fail).await.is_err());
+    let query = OperationLogQuery {
+        limit: 100,
+        ..Default::default()
+    };
+    let first = read_operation_logs(&store, &gui, query.clone())
+        .await
+        .expect("read facts");
+    assert_eq!(
+        first
+            .entries
+            .iter()
+            .map(|entry| (entry.actor.as_str(), entry.step.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("CLI", "inspect_project"),
+            ("CLI", "registered"),
+            ("GUI", "inspect_project")
+        ]
+    );
+    assert_eq!(
+        first.entries[1]
+            .target
+            .as_ref()
+            .and_then(|target| target.path.as_deref()),
+        Some(registered.value.observation.root_path.as_str())
+    );
+    assert_eq!(first.entries[2].outcome, LogOutcome::Failed);
+    assert!(
+        first.entries[2]
+            .target
+            .as_ref()
+            .and_then(|target| target.path.as_ref())
+            .is_some_and(|path| path.ends_with("不存在的项目"))
+    );
+    assert!(
+        first.entries[2]
+            .details
+            .as_ref()
+            .is_some_and(|details| !details.is_empty())
+    );
+
+    let application = Application::new(store.clone());
+    let mut changes = application
+        .subscribe_events(&gui, None, 100, true)
+        .expect("subscribe");
+    let operation = with_log_caller(
+        store.clone(),
+        &cli,
+        application.state_check(
+            &cli,
+            IdempotencyKey::parse("background-log-actor").expect("key"),
+        ),
+    )
+    .await
+    .expect("schedule Core task");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let batch = changes.next_page().await.expect("committed changes");
+            let finished = batch.events.iter().any(|event| {
+                event.aggregate_id == operation.operation_id.to_string()
+                    && event.kind == "operation.completed"
+            });
+            changes
+                .advance(batch.next_sequence, batch.resources_revision)
+                .expect("advance");
+            if finished {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("background completion");
+    let final_records = read_operation_logs(&store, &gui, query)
+        .await
+        .expect("read task facts");
+    let operation_id = operation.operation_id.to_string();
+    let task = final_records
+        .entries
+        .iter()
+        .filter(|entry| entry.operation_id.as_ref() == Some(&operation_id))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        task.iter()
+            .map(|entry| entry.step.as_str())
+            .collect::<Vec<_>>(),
+        ["accepted", "execute", "completed"]
+    );
+    assert!(
+        task.iter()
+            .all(|entry| entry.actor == "CLI" && entry.execution_id == operation_id)
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_and_repository_read_slice_round_trips_without_source_writes() {
     let fixture = TestDirectory::new();
@@ -32,7 +173,8 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
     )
     .await
     .expect("start owned test daemon");
-    let mut client = connect_with_retry(config).await;
+    let mut client = connect_with_retry(config.clone().with_client_name("alcomd-cli")).await;
+    let mut log_reader = connect_with_retry(config.with_client_name("alcomd-gui")).await;
 
     let inspected = client
         .project_inspect(
@@ -60,6 +202,84 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .await
         .expect("register project");
     assert_eq!(registered.project.revision, Some(1));
+    let log_params = alcomd_protocol::LogsReadParams::default();
+    let first_logs = log_reader
+        .logs_read(log_params.clone())
+        .await
+        .expect("read Core logs through GUI client");
+    assert_eq!(
+        first_logs
+            .entries
+            .iter()
+            .map(|entry| entry.step.as_str())
+            .collect::<Vec<_>>(),
+        ["inspect_project", "registered"]
+    );
+    assert!(
+        first_logs
+            .entries
+            .iter()
+            .all(|entry| entry.actor == "CLI" && entry.action == "projects.register")
+    );
+    assert_eq!(
+        first_logs.entries[0].execution_id,
+        first_logs.entries[1].execution_id
+    );
+    assert_eq!(
+        first_logs.entries[1]
+            .target
+            .as_ref()
+            .and_then(|target| target.path.as_deref()),
+        Some(registered.project.root_path.as_str())
+    );
+    client
+        .project_register(
+            project.to_string_lossy().into_owned(),
+            "m3-project-register".to_owned(),
+        )
+        .await
+        .expect("replay registration");
+    assert_eq!(
+        log_reader
+            .logs_read(log_params.clone())
+            .await
+            .expect("read after replay"),
+        first_logs
+    );
+    let missing = fixture
+        .path()
+        .join("不存在的项目")
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        log_reader
+            .project_register(missing.clone(), "m7-operation-log-failed-check".to_owned())
+            .await
+            .is_err()
+    );
+    let failure = log_reader
+        .logs_read(alcomd_protocol::LogsReadParams {
+            after_sequence: Some(first_logs.high_watermark),
+            ..log_params
+        })
+        .await
+        .expect("read failed check");
+    assert_eq!(failure.entries.len(), 1);
+    assert_eq!(failure.entries[0].actor, "GUI");
+    assert_eq!(
+        failure.entries[0].outcome,
+        alcomd_protocol::LogOutcome::Failed
+    );
+    assert!(
+        failure.entries[0]
+            .target
+            .as_ref()
+            .and_then(|target| target.path.as_ref())
+            .is_some_and(|path| path.ends_with("不存在的项目"))
+    );
+    assert!(failure.entries[0].details.as_ref().is_some_and(
+        |details| !details.is_empty() && !details.contains("execution request failed")
+    ));
     assert_eq!(registered.project.favorite, Some(false));
     let registered_at_ms = registered
         .project

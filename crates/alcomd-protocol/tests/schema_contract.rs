@@ -11,6 +11,10 @@ use alcomd_protocol::{
 
 const SCHEMAS: [(&str, &str); 31] = [
     (
+        "m7-operation-logs",
+        include_str!("../../../specs/rpc/m7-operation-logs.schema.json"),
+    ),
+    (
         "m7-events-live",
         include_str!("../../../specs/rpc/m7-events-live.schema.json"),
     ),
@@ -130,78 +134,7 @@ const SCHEMAS: [(&str, &str); 31] = [
         "m7-repository-list",
         include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
-    (
-        "m7-diagnostic-log",
-        include_str!("../../../specs/rpc/m7-diagnostic-log.schema.json"),
-    ),
 ];
-
-#[test]
-fn diagnostic_log_contract_is_owner_scoped_closed_and_bounded() {
-    use alcomd_protocol::{DiagnosticLogReadParams, DiagnosticLogReadResult};
-    let contract = schema("m7-diagnostic-log");
-    assert_eq!(contract["x-alcomd-local-owner-only"], true);
-    assert_eq!(
-        contract["x-alcomd-method-permissions"],
-        json!({"diagnostics.log.read":["diagnostics.read"],"diagnostics.log.history":["diagnostics.read"],"diagnostics.log.health":["diagnostics.read"]})
-    );
-    assert_eq!(contract["x-alcomd-max-record-bytes"], 524288);
-    assert_eq!(contract["x-alcomd-queue-records"], 64);
-    for invalid in [
-        json!({"owner":"other"}),
-        json!({"path":"private"}),
-        json!({"waitMs":20000}),
-        json!({"cursor":{"instanceId":"a","sequence":1}}),
-        json!({"query":{"request":"secret"}}),
-    ] {
-        assert!(serde_json::from_value::<DiagnosticLogReadParams>(invalid).is_err());
-    }
-    let params: DiagnosticLogReadParams = serde_json::from_value(
-        json!({"limit":200,"follow":true,"query":{"levels":["ERROR"],"search":"项目"}}),
-    )
-    .expect("closed query");
-    assert!(params.follow);
-    assert_eq!(params.limit, Some(200));
-    let health = json!({"sourceId":"00000000-0000-4000-8000-000000000001","sessionId":"00000000-0000-4000-8000-000000000002","revision":1,"state":"degraded","queueDropped":1,"oversizeRejected":0,"writeFailed":0,"rotationFailed":0,"flushFailed":0,"hasGap":true});
-    let fixture = json!({"items":[{"sourceId":health["sourceId"],"sessionId":health["sessionId"],"segmentId":"00000000-0000-4000-8000-000000000003","offset":0,"record":{"timestamp":"2026-11-05T00:00:00Z","level":"ERROR","target":"alcomd::project","fields":{"message":"failed to inspect project","path":"C:\\项目\\Packages\\vpm-manifest.json","error":"invalid manifest\ncaused by: expected version object"}}}],"nextCursor":"opaque","baseline":false,"health":health,"issues":[],"hasMore":false,"scannedBytes":300});
-    let result: DiagnosticLogReadResult =
-        serde_json::from_value(fixture.clone()).expect("standard body");
-    assert_eq!(
-        serde_json::to_value(result).expect("valid log result"),
-        fixture
-    );
-    let mut leaked = fixture.clone();
-    leaked["items"][0]["notify"] = json!(true);
-    assert!(serde_json::from_value::<DiagnosticLogReadResult>(leaked).is_err());
-    let mut health_only = fixture.clone();
-    health_only["items"] = json!([]);
-    health_only["scannedBytes"] = json!(0);
-    assert!(serde_json::from_value::<DiagnosticLogReadResult>(health_only).is_ok());
-    assert_eq!(
-        contract["$defs"]["readParams"]["properties"]["limit"]["maximum"],
-        200
-    );
-    assert!(
-        contract["$defs"]["readParams"]["properties"]
-            .get("waitMs")
-            .is_none()
-    );
-    assert!(
-        contract["$defs"]["item"]["properties"]
-            .get("notify")
-            .is_none()
-    );
-    assert!(
-        serde_json::from_value::<alcomd_protocol::DiagnosticLogHistoryParams>(
-            json!({"path":"arbitrary"})
-        )
-        .is_err()
-    );
-    assert_eq!(
-        contract["$defs"]["historyResult"]["properties"]["items"]["maxItems"],
-        200
-    );
-}
 
 #[test]
 fn live_events_contract_separates_ready_responses_and_closed_bounded_notifications() {
@@ -254,7 +187,11 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
     );
     assert_eq!(
         contract["$defs"]["batch"]["properties"]["invalidatedScopes"]["items"]["enum"],
-        json!(["extensions"])
+        json!(["extensions", "operation-log"])
+    );
+    assert_eq!(
+        contract["$defs"]["batch"]["properties"]["invalidatedScopes"]["maxItems"],
+        json!(2)
     );
     assert!(contract["$defs"]["batch"]["anyOf"].is_array());
     let durable_kinds = schema("event")["properties"]["aggregateKind"]["enum"].clone();
@@ -268,10 +205,9 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
             "project-editor-preference",
             "project-unity-launch-config",
             "template",
-            "user-package",
-            "activity"
+            "user-package"
         ]),
-        "all aggregate kinds allowed by current State19 must remain readable"
+        "the log scope does not add a durable business Event aggregate"
     );
     assert!(
         !durable_kinds
@@ -406,25 +342,16 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     assert_eq!(contract["x-alcomd-capability"], Value::Null);
     assert_eq!(
         contract["$defs"]["methodName"]["enum"],
-        json!([
-            "settings.get",
-            "settings.update",
-            "unity.hub.open",
-            "activity.list",
-            "activity.get"
-        ])
+        json!(["settings.get", "settings.update", "unity.hub.open"])
     );
     assert_eq!(
         contract["x-alcomd-method-permissions"],
         json!({
             "settings.get": ["settings.read"],
             "settings.update": ["settings.manage"],
-            "unity.hub.open": ["settings.read", "unity.hub.open"],
-            "activity.list": ["activity.read"],
-            "activity.get": ["activity.read"]
+            "unity.hub.open": ["settings.read", "unity.hub.open"]
         })
     );
-    assert_eq!(contract["x-alcomd-redaction"]["rawDiagnosticExport"], false);
 
     let settings: Value = serde_json::from_str(include_str!(
         "../../../specs/config/settings-v10.schema.json"
@@ -1384,7 +1311,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21
         ])
     );
 }
@@ -1479,7 +1406,7 @@ fn hello_schema_accepts_the_project_observation_removal_v16_store() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21
         ])
     );
 }

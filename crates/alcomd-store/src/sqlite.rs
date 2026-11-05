@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 19;
+const DATA_SCHEMA_VERSION: i64 = 21;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -34,7 +34,8 @@ const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modifi
 const MIGRATION_V16: &str = include_str!("../migrations/0016_remove_project_observed.sql");
 const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
 const MIGRATION_V18: &str = include_str!("../migrations/0018_backup_compression_levels.sql");
-const MIGRATION_V19: &str = include_str!("../migrations/0019_activity.sql");
+const MIGRATION_V20: &str = include_str!("../migrations/0020_remove_activity.sql");
+const MIGRATION_V21: &str = include_str!("../migrations/0021_operation_logs.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let mut connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -162,9 +163,14 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 17 {
         migrate_backup_compression(&mut connection, MIGRATION_V18)?;
     }
-    if version <= 18 {
+    if version <= 19 {
         connection
-            .execute_batch(MIGRATION_V19)
+            .execute_batch(MIGRATION_V20)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 20 {
+        connection
+            .execute_batch(MIGRATION_V21)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -313,8 +319,6 @@ pub(super) fn create_state_check(
                 created_at_ms
             ],
         )
-        .map_err(store_failure)?;
-    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
         .map_err(store_failure)?;
     transaction
         .execute(
@@ -1194,6 +1198,14 @@ fn insert_event(
             ],
         )
         .map_err(store_failure)?;
+    super::operation_logs::operation_edge(
+        transaction,
+        owner,
+        operation_id,
+        kind,
+        payload_json,
+        occurred_at_ms,
+    )?;
     Ok(())
 }
 

@@ -96,7 +96,6 @@ export interface SettingsUpdate {
     };
 }
 
-export type { ActivityCursor, ActivityItem, ActivityListResult, ActivityGetResult } from "@alcomd/sdk";
 
 export interface DependencyIdentity {
     packageId: string;

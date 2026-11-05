@@ -32,6 +32,7 @@ static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 /// Client connection settings.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClientConfig {
+    client_name: String,
     runtime_directory: Option<PathBuf>,
     data_directory: Option<PathBuf>,
     start_daemon: bool,
@@ -41,6 +42,7 @@ pub struct ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
+            client_name: "alcomd-client".to_owned(),
             runtime_directory: None,
             data_directory: None,
             start_daemon: true,
@@ -50,6 +52,13 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    /// Identifies this entry point in the existing hello metadata.
+    #[must_use]
+    pub fn with_client_name(mut self, name: &str) -> Self {
+        self.client_name = name.to_owned();
+        self
+    }
+
     /// Disables automatic daemon startup.
     #[must_use]
     pub fn without_daemon_start(mut self) -> Self {
@@ -102,26 +111,26 @@ impl AlcomdClient {
             next_request_id: 1,
             usable: true,
         };
-        let _ = client.hello().await?;
+        let _ = client.hello(&config.client_name).await?;
         Ok(client)
     }
 
     /// Performs the mandatory M1 handshake.
-    async fn hello(&mut self) -> Result<HelloResult, ClientError> {
+    async fn hello(&mut self, client_name: &str) -> Result<HelloResult, ClientError> {
         let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let params = HelloParams {
             rpc_version: RPC_VERSION,
             client: ClientInfo {
-                name: "alcomd-client".to_owned(),
+                name: client_name.to_owned(),
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
             capabilities: vec![
-                alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_LOGS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
@@ -175,6 +184,13 @@ impl AlcomdClient {
     }
 
     /// Lists visible Operations using the frozen tuple cursor.
+    pub async fn logs_read(
+        &mut self,
+        params: alcomd_protocol::LogsReadParams,
+    ) -> Result<alcomd_protocol::LogsReadResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_LOGS_READ, params).await
+    }
+
     pub async fn operations_list(
         &mut self,
         cursor: Option<OperationsListCursor>,
@@ -208,40 +224,6 @@ impl AlcomdClient {
             },
         )
         .await
-    }
-
-    /// Reads bounded safe Core log records on a dedicated client connection.
-    pub async fn diagnostic_log_read(
-        &mut self,
-        params: alcomd_protocol::DiagnosticLogReadParams,
-    ) -> Result<alcomd_protocol::DiagnosticLogReadResult, ClientError> {
-        let deadline = if params.follow {
-            None
-        } else {
-            Some(Duration::from_secs(5))
-        };
-        self.call_with_deadline(
-            alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ,
-            params,
-            deadline,
-        )
-        .await
-    }
-
-    /// Pages saved technical logs without subscribing to notifications.
-    pub async fn diagnostic_log_history(
-        &mut self,
-        params: alcomd_protocol::DiagnosticLogHistoryParams,
-    ) -> Result<alcomd_protocol::DiagnosticLogHistoryResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HISTORY, params)
-            .await
-    }
-
-    pub async fn diagnostic_log_health(
-        &mut self,
-    ) -> Result<alcomd_protocol::DiagnosticLogHealth, ClientError> {
-        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HEALTH, json!({}))
-            .await
     }
 
     /// Replays visible durable Events after an exclusive sequence.
@@ -284,26 +266,6 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::UnityHubOpenResult, ClientError> {
         self.call(alcomd_protocol::METHOD_UNITY_HUB_OPEN, params)
             .await
-    }
-
-    /// Lists the current Principal's redacted activity projection.
-    pub async fn activity_list(
-        &mut self,
-        params: alcomd_protocol::ActivityListParams,
-    ) -> Result<alcomd_protocol::ActivityListResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_ACTIVITY_LIST, params)
-            .await
-    }
-
-    pub async fn activity_get(
-        &mut self,
-        activity_id: String,
-    ) -> Result<alcomd_protocol::ActivityGetResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_ACTIVITY_GET,
-            alcomd_protocol::ActivityGetParams { activity_id },
-        )
-        .await
     }
 
     pub async fn extensions_list(
@@ -1145,25 +1107,12 @@ impl AlcomdClient {
         };
         let payload = serde_json::to_vec(&request).map_err(|_| ClientError::InvalidResponse)?;
         let frame = encode_frame(&payload).map_err(|_| ClientError::InvalidResponse)?;
-        let payload = if method == alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ {
-            // Waiting for a new readable record is intentionally unbounded. A
-            // blocked request write or partially received frame is not idle.
-            tokio::time::timeout(Duration::from_secs(5), async {
-                self.stream.write_all(&frame).await?;
-                self.stream.flush().await
-            })
+        self.stream
+            .write_all(&frame)
             .await
-            .map_err(|_| ClientError::ReadTimeout)?
             .map_err(ClientError::Transport)?;
-            read_waiting_frame(&mut self.stream, Duration::from_secs(5)).await?
-        } else {
-            self.stream
-                .write_all(&frame)
-                .await
-                .map_err(ClientError::Transport)?;
-            self.stream.flush().await.map_err(ClientError::Transport)?;
-            read_frame(&mut self.stream).await?
-        };
+        self.stream.flush().await.map_err(ClientError::Transport)?;
+        let payload = read_frame(&mut self.stream).await?;
         decode_response(&payload, &request.id)
     }
 }
@@ -1185,10 +1134,7 @@ fn decode_response<T: DeserializeOwned>(
 
 fn read_deadline(method: &str) -> Option<Duration> {
     use alcomd_protocol::*;
-    if matches!(
-        method,
-        METHOD_SYSTEM_HELLO | METHOD_EVENTS_SUBSCRIBE | METHOD_DIAGNOSTICS_LOG_HISTORY
-    ) {
+    if matches!(method, METHOD_SYSTEM_HELLO | METHOD_EVENTS_SUBSCRIBE) {
         return Some(Duration::from_secs(5));
     }
     matches!(
@@ -1196,6 +1142,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
         METHOD_SYSTEM_STATUS
             | METHOD_OPERATIONS_GET
             | METHOD_OPERATIONS_LIST
+            | METHOD_LOGS_READ
             | METHOD_EVENTS_LIST
             | METHOD_PROJECTS_LIST
             | METHOD_PROJECTS_GET
@@ -1218,9 +1165,6 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_EXTENSIONS_GET
             | METHOD_EXTENSIONS_PERMISSIONS_LIST
             | METHOD_SETTINGS_GET
-            | METHOD_ACTIVITY_LIST
-            | METHOD_ACTIVITY_GET
-            | METHOD_DIAGNOSTICS_LOG_HEALTH
     )
     .then_some(Duration::from_secs(10))
 }
@@ -1306,66 +1250,6 @@ async fn read_frame(stream: &mut IpcStream) -> Result<Vec<u8>, ClientError> {
         .await
         .map_err(ClientError::Transport)?;
     Ok(payload)
-}
-
-async fn read_waiting_frame<R: tokio::io::AsyncRead + Unpin>(
-    stream: &mut R,
-    transfer_deadline: Duration,
-) -> Result<Vec<u8>, ClientError> {
-    let mut prefix = [0_u8; 4];
-    stream
-        .read_exact(&mut prefix[..1])
-        .await
-        .map_err(ClientError::Transport)?;
-    tokio::time::timeout(transfer_deadline, async {
-        stream
-            .read_exact(&mut prefix[1..])
-            .await
-            .map_err(ClientError::Transport)?;
-        let length = decode_frame_length(prefix).map_err(|_| ClientError::InvalidResponse)?;
-        let mut payload = vec![0; length];
-        stream
-            .read_exact(&mut payload)
-            .await
-            .map_err(ClientError::Transport)?;
-        Ok(payload)
-    })
-    .await
-    .map_err(|_| ClientError::ReadTimeout)?
-}
-
-#[cfg(test)]
-mod log_transport_tests {
-    use super::*;
-    #[tokio::test]
-    async fn idle_log_wait_has_no_timeout_but_incomplete_frame_does() {
-        let (mut reader, mut writer) = tokio::io::duplex(64);
-        let task = tokio::spawn(async move {
-            read_waiting_frame(&mut reader, Duration::from_millis(25)).await
-        });
-        tokio::time::sleep(Duration::from_millis(60)).await;
-        assert!(
-            !task.is_finished(),
-            "healthy idle follow is not a timed read"
-        );
-        writer.write_all(&[3]).await.expect("first prefix byte");
-        assert!(matches!(
-            task.await.expect("reader task"),
-            Err(ClientError::ReadTimeout)
-        ));
-    }
-    #[tokio::test]
-    async fn waiting_log_frame_preserves_the_normal_frame_contract() {
-        let (mut reader, mut writer) = tokio::io::duplex(64);
-        let frame = encode_frame(b"{} ").expect("valid frame");
-        writer.write_all(&frame).await.expect("complete frame");
-        assert_eq!(
-            read_waiting_frame(&mut reader, Duration::from_secs(1))
-                .await
-                .expect("read frame"),
-            b"{} "
-        );
-    }
 }
 
 /// Errors produced by the RPC client.

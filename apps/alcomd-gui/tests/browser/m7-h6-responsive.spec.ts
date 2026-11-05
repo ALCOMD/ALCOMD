@@ -7,7 +7,7 @@ for (const width of [320, 640, 800, 1024, 1280]) {
         await openHarness(page, "/projects");
         const navigation = page.locator("#primary-navigation");
         expect((await navigation.boundingBox())?.width).toBe(width <= 1100 ? 80 : 260);
-        for (const label of ["Projects", "Resources", "Settings", "Logs", "Extensions", "Tasks", "About"]) {
+        for (const label of ["Projects", "Resources", "Settings", "Extensions", "Tasks", "About"]) {
             const item = navigationItem(page, label);
             const name = label === "Tasks" ? /^Tasks(?: \d+ active)?$/ : label === "About" ? /^About \S+$/ : label;
             await expect(item).toHaveAccessibleName(name);
@@ -188,7 +188,7 @@ test.describe("H6 200 percent equivalent CSS layout", () => {
     test.use({ viewport: { width: 720, height: 450 }, deviceScaleFactor: 2 });
 
     test("primary pages retain reachable tools and local scrolling in the shorter canvas", async ({ page }) => {
-        for (const route of ["/projects", "/repositories", "/extensions", "/activity", "/diagnostics", "/settings"]) {
+        for (const route of ["/projects", "/repositories", "/extensions", "/settings"]) {
             await openHarness(page, route);
             await expectCanvasFits(page);
             await expectHeaderFits(page);
@@ -204,8 +204,6 @@ test.describe("H6 200 percent equivalent CSS layout", () => {
                     await wheelIntoView(page, page.getByRole("combobox", { name: "GUI animation", exact: true }), body);
                 } else if (route === "/extensions") {
                     await wheelIntoView(page, page.getByRole("button", { name: "Manage extension", exact: true }).last(), body);
-                } else {
-                    await expectReachable(page, page.getByRole("searchbox", { name: route === "/activity" ? "Search activity" : "Search technical logs", exact: true }));
                 }
             }
         }

@@ -1,9 +1,9 @@
+import { requestErrorMessage } from "./request-errors";
 import { useEffect, useRef, useState } from "react";
 import type { ExtensionPermissionGrant, ExtensionPermissionsListResult, RpcError } from "@alcomd/sdk";
 import type { ProjectSnapshot } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Select } from "./Material";
-import { Reminder, RequestReminder } from "./Reminder";
 import { LoadingState } from "./LoadingState";
 import { capabilities, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
@@ -167,8 +167,8 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const requested = value === undefined ? [] : [...new Set([...value.requiredPermissions, ...value.optionalPermissions])].filter((item) => item === "background.run" || item === "projects.read");
     const selected = requested.includes(permission) ? permission : requested[0];
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
-        {!canRead ? <Reminder tone="warning">{t("Permission details are unavailable from this Core.")}</Reminder> : loading ? <LoadingState title={t("Loading…")} /> : null}
-        {error === undefined ? null : <RequestReminder error={error}>{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button></RequestReminder>}
+        {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : loading ? <LoadingState title={t("Loading…")} /> : null}
+        {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button></div>}
         {value === undefined ? null : <>
             <ExtensionPermissionRequests required={value.requiredPermissions} optional={value.optionalPermissions} />
             <section aria-label={t("Allowed permissions")}>
@@ -184,7 +184,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 {selected !== "projects.read" ? <p>{t("This extension")}</p> : <>
                     <Select disabled={!canReadProjects || projectsLoading || writing || moreLoading} label={t("Project")} value={projectId} onChange={(next) => { setProjectId(next); setError(undefined); }} options={[{ value: "", label: t("Select project") }, ...projects.flatMap((project) => project.projectId === undefined ? [] : [{ value: project.projectId, label: displayPath(project.rootPath) }])]} />
                     {projectsLoading ? <LoadingState title={t("Loading…")} /> : null}
-                    {projectsError === undefined ? null : <RequestReminder error={projectsError}><Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button></RequestReminder>}
+                    {projectsError === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((projectsError).code))}</p><code>{(projectsError).code}</code>{projectsError.diagnosticId === undefined ? null : <p><code>{projectsError.diagnosticId}</code></p>}<Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button></div>}
                 </>}
                 <div className="dialog-actions"><Button disabled={!canWrite || writing || moreLoading || (selected === "projects.read" && !projects.some((project) => project.projectId === projectId))} onClick={() => void write({ permission: selected, resourceKind: selected === "background.run" ? "Extension" : "Project", resourceId: selected === "background.run" ? extensionId : projectId }, false)} type="button">{t("Grant")}</Button></div>
             </>}

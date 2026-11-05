@@ -151,7 +151,9 @@ impl SubscriptionState {
                     .ok_or(ClientError::InvalidResponse)?
             || batch.batch_id > 9_007_199_254_740_991
             || batch.events.len() > self.limit
-            || batch.invalidated_scopes.len() > 1
+            || batch.invalidated_scopes.len() > 2
+            || (batch.invalidated_scopes.len() == 2
+                && batch.invalidated_scopes[0] == batch.invalidated_scopes[1])
             || batch.next_cursor.resources_revision < self.received_resources_revision
             || batch.next_cursor.resources_revision > i64::MAX as u64
             || (batch.next_cursor.resources_revision > self.received_resources_revision
@@ -180,7 +182,6 @@ impl SubscriptionState {
                         | "project-unity-launch-config"
                         | "template"
                         | "user-package"
-                        | "activity"
                 )
                 || event.aggregate_revision == 0
                 || event.aggregate_revision > i64::MAX as u64
@@ -356,7 +357,6 @@ mod tests {
             "project-unity-launch-config",
             "template",
             "user-package",
-            "activity",
         ] {
             let mut wire = vectors()["batch"].clone();
             wire["params"]["events"][0]["aggregateKind"] = json!(kind);
@@ -402,7 +402,7 @@ mod tests {
         assert!(ClientError::ReadTimeout.is_retryable());
     }
     #[test]
-    fn logs_keep_their_long_wait_and_writes_never_acquire_read_retry_deadlines() {
+    fn reads_are_bounded_and_writes_never_acquire_read_retry_deadlines() {
         for method in [
             "operations.get",
             "repositories.packages",
@@ -416,7 +416,6 @@ mod tests {
                 "{method}"
             );
         }
-        assert_eq!(super::super::read_deadline("diagnostics.log.read"), None);
         assert_eq!(super::super::read_deadline("state.check"), None);
         assert_eq!(super::super::read_deadline("operations.cancel"), None);
     }

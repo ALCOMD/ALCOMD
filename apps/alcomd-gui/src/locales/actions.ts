@@ -108,10 +108,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "用户软件包刷新失败",
         "ja-JP": "ユーザーパッケージの更新に失敗しました"
     },
-    "Dismiss notification": {
-        "zh-CN": "关闭提醒",
-        "ja-JP": "通知を閉じる"
-    },
     "Hide details": {
         "zh-CN": "收起详情",
         "ja-JP": "詳細を隠す"
@@ -140,9 +136,9 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "附加参数",
         "ja-JP": "追加の引数"
     },
-    "ALCOMD could not complete the package changes. Try again or open Logs for more information.": {
-        "zh-CN": "ALCOMD 无法完成软件包更改。请重试，或打开日志查看详情。",
-        "ja-JP": "ALCOMDはパッケージの変更を完了できませんでした。再試行するか、ログで詳細を確認してください。"
+    "ALCOMD could not complete the package changes. Try again.": {
+        "zh-CN": "ALCOMD 无法完成软件包更改，请重试。",
+        "ja-JP": "ALCOMDはパッケージの変更を完了できませんでした。再試行してください。"
     },
     "ALCOMD will inspect the selected root and add it to the per-user registry.": {
         "zh-CN": "ALCOMD 将检查所选路径，并将项目添加到当前用户的项目列表。",

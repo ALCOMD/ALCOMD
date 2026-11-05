@@ -1,10 +1,10 @@
+import { requestErrorMessage } from "./request-errors";
 import { useRef, useState, useSyncExternalStore } from "react";
 import type { RpcError } from "@alcomd/sdk";
 import type { SettingsGetResult } from "./core-models";
 import { Button, Dialog } from "./Material";
 import { capabilities, useCapability } from "./capabilities";
 import { useTranslation } from "./i18n";
-import { Reminder, RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { SettingsAutosave, UnityArgumentsConflictError } from "./settings-autosave";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
@@ -70,9 +70,8 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
     return <Dialog open={open} onClose={onClose} dismissible={!busy} title={t("Default Unity launch arguments")}>
         <form onSubmit={(event) => { event.preventDefault(); void save(draft); }}>
             <UnityArgumentsEditor id="default-unity-argument" value={draft ?? []} onChange={(next) => { setDraft(next); setError(undefined); }} disabled={busy || !canManage || conflict} />
-            {conflict ? <Reminder tone="error">{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</Reminder> : error === undefined ? null
-                : <RequestReminder error={error} title={unknown ? t("Launch argument save result is unknown") : t("Launch arguments could not be saved.")}
-                    message={unknown ? "Retry checks the current settings before writing again." : undefined} />}
+            {conflict ? <div>{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</div> : error === undefined ? null
+                : <div role="alert"><strong>{unknown ? t("Launch argument save result is unknown") : t("Launch arguments could not be saved.")}</strong><p>{t((unknown ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
                 <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
                 <Button disabled={busy || !canManage || conflict || JSON.stringify(draft) === JSON.stringify(baseline)} type="submit">{t(error === undefined ? "Save launch arguments" : "Retry")}</Button>

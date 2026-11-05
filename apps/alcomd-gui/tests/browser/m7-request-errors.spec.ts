@@ -3,27 +3,19 @@ import { createTranslator } from "../../src/i18n";
 import { normalizeRequestError, requestErrorMessage } from "../../src/request-errors";
 
 for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
-    test(`readable request errors preserve context and hide technical details in ${locale}`, async ({ page }) => {
+    test(`readable execution errors preserve context and hide private messages in ${locale}`, async ({ page }) => {
         const t = createTranslator(locale);
-        await page.goto(`/browser-harness.html?request-reminder=1&locale=${locale}`);
-        const alert = page.getByRole("alert");
+        await page.goto(`/browser-harness.html?route=/extensions&h4-management=1&locale=${locale}`);
+        await page.getByRole("button", { name: t("Install extension"), exact: true }).click();
+        const dialog = page.locator("md-dialog[open]");
+        await dialog.getByLabel(t("Extension package"), { exact: true }).fill("C:\\Fixture\\sample.alcomdext");
+        await dialog.getByRole("button", { name: t("Create install plan"), exact: true }).click();
+        const alert = dialog.getByRole("alert");
         await expect(alert).toContainText(t(requestErrorMessage("extension_publisher_confirmation_required")));
-        await expect(alert).not.toContainText("extension_publisher_confirmation_required");
-        await expect(page.locator("body")).not.toContainText("do-not-display");
-        await alert.getByRole("button", { name: t("Show details"), exact: true }).click();
         await expect(alert).toContainText("extension_publisher_confirmation_required");
-        await expect(alert).toContainText("test-diagnostic");
-        await alert.getByRole("button", { name: "Change error", exact: true }).click();
-        await expect(alert).toContainText(t(requestErrorMessage("extension_signature_invalid")));
-        await expect(alert).not.toContainText("extension_signature_invalid");
-        await expect(alert).not.toContainText("test-diagnostic");
-        await expect(alert.getByRole("button", { name: t("Show details"), exact: true })).toBeVisible();
-        await page.getByRole("button", { name: "Unknown error", exact: true }).click();
-        await expect(alert).toContainText(t(requestErrorMessage("unrecognized_future_error")));
-        await expect(alert).not.toContainText("unrecognized_future_error");
-        await alert.getByRole("button", { name: t("Show details"), exact: true }).click();
-        await expect(alert).toContainText("unrecognized_future_error");
-        await expect(page.locator("body")).not.toContainText("private.invalid");
+        await expect(page.locator("body")).not.toContainText("Fixture request refused.");
+        await expect(dialog.getByLabel(t("Approve this publisher for this extension"), { exact: true })).not.toBeChecked();
+        expect(await page.evaluate(() => window.h4Management.requests.filter(value => value.method === "extensions.planInstall").length)).toBe(1);
     });
 }
 
