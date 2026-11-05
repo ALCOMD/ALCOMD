@@ -349,6 +349,32 @@ async fn gui_repository_list_inspect_file(
 }
 
 #[tauri::command]
+async fn gui_repository_list_import_file(
+    params: alcomd_protocol::RepositoryListImportParams,
+) -> Result<alcomd_protocol::RepositoryListImportResult, RpcError> {
+    let mut client = None;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_list_import_file(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_list_cancel_registration(
+    params: alcomd_protocol::RepositoryListCancelParams,
+) -> Result<alcomd_protocol::RepositoryListCancelResult, RpcError> {
+    let mut client = None;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_list_cancel_registration(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_repository_list_preview_export(
     state: State<'_, GuiClientState>,
 ) -> Result<alcomd_protocol::RepositoryListPreview, RpcError> {
@@ -696,12 +722,11 @@ async fn gui_repository_register(
 
 #[tauri::command]
 async fn gui_repository_refresh(
-    state: State<'_, GuiClientState>,
     repository_id: String,
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = None;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -709,6 +734,19 @@ async fn gui_repository_refresh(
                 .repository_refresh(repository_id, expected_revision, idempotency_key)
                 .await
         }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repositories_refresh_all(
+    params: alcomd_protocol::RepositoryRefreshAllParams,
+) -> Result<alcomd_protocol::RepositoryRefreshAllResult, RpcError> {
+    let mut client = None;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repositories_refresh_all(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1558,6 +1596,8 @@ pub fn run() {
             gui_select_directory,
             gui_select_repository_list_file,
             gui_repository_list_inspect_file,
+            gui_repository_list_import_file,
+            gui_repository_list_cancel_registration,
             gui_repository_list_preview_export,
             gui_repository_list_export_file,
             gui_select_unity_hub,
@@ -1580,6 +1620,7 @@ pub fn run() {
             gui_open_package_link,
             gui_repository_register,
             gui_repository_refresh,
+            gui_repositories_refresh_all,
             gui_repository_unregister,
             gui_package_plan_install,
             gui_package_plan_remove,

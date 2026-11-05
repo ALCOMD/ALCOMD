@@ -539,6 +539,10 @@ mod tests {
     }
 
     impl M3ReadAdapter for HeldReader {
+        fn normalize_remote_repository_url(&self, url: &str) -> Result<String, app::M3Error> {
+            self.reader.normalize_remote_repository_url(url)
+        }
+
         async fn inspect_project(
             &self,
             path: String,

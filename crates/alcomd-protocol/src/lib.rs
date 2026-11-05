@@ -95,6 +95,7 @@ pub const METHOD_REPOSITORIES_GET: &str = "repositories.get";
 pub const METHOD_REPOSITORIES_PACKAGES: &str = "repositories.packages";
 pub const METHOD_REPOSITORIES_REGISTER: &str = "repositories.register";
 pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
+pub const METHOD_REPOSITORIES_REFRESH_ALL: &str = "repositories.refreshAll";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
 pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
 pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
@@ -1305,6 +1306,30 @@ pub struct RepositoryMutationParams {
     pub repository_id: String,
     pub expected_revision: u64,
     pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryRefreshAllParams {
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "status",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum RepositoryRefreshAllItem {
+    Refreshed { repository_id: String },
+    Failed { repository_id: String, code: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryRefreshAllResult {
+    pub items: Vec<RepositoryRefreshAllItem>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

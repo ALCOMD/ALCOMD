@@ -3,11 +3,12 @@
 //! Transport adapters call this layer rather than inventing business state in
 //! the daemon, CLI, or other entry points.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
 pub use alcomd_domain::{
     BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
@@ -380,6 +381,8 @@ impl std::error::Error for M3Error {
 
 /// External read adapter. Implementations perform bounded I/O but never mutate sources.
 pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
+    fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error>;
+
     fn inspect_project(
         &self,
         path: String,
@@ -1273,6 +1276,18 @@ pub struct M3Application<S: M3RegistryStore, R: M3ReadAdapter> {
     store: S,
     reader: R,
     locks: Arc<ResourceLockCoordinator>,
+    repository_import: Arc<Mutex<()>>,
+    repository_previews: Arc<Mutex<VecDeque<RepositoryPreview>>>,
+}
+
+const REPOSITORY_PREVIEW_TTL: Duration = Duration::from_secs(60);
+const REPOSITORY_PREVIEW_LIMIT: usize = 8;
+
+struct RepositoryPreview {
+    connection_id: String,
+    owner: PrincipalId,
+    expires_at: Instant,
+    observation: RepositoryObservation,
 }
 
 impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
@@ -1282,6 +1297,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             store,
             reader,
             locks: Arc::new(ResourceLockCoordinator::default()),
+            repository_import: Arc::new(Mutex::new(())),
+            repository_previews: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -1428,15 +1445,48 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     pub async fn inspect_repository(
         &self,
         access: &AccessContext,
+        connection_id: &str,
         source: RepositorySource,
     ) -> Result<RepositoryObservation, M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;
-        match self.reader.inspect_repository(source, None).await? {
-            RepositoryReadOutcome::Fresh(observation) => Ok(observation),
+        self.forget_repository_preview(connection_id).await;
+        let mut observation = match self.reader.inspect_repository(source, None).await? {
+            RepositoryReadOutcome::Fresh(observation) => observation,
             RepositoryReadOutcome::NotModified(_) => {
-                Err(M3Error::new(M3ErrorCode::RepositoryUnavailable))
+                return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
             }
+        };
+        // Retain only remote observations that this connection can register.
+        // Local registration still rechecks the file at the selected path.
+        if matches!(observation.source, RepositorySource::Remote { .. })
+            && access.require(Permission::RepositoriesManage).is_ok()
+        {
+            let packages = std::mem::take(&mut observation.packages);
+            let mut previews = self.repository_previews.lock().await;
+            let now = Instant::now();
+            previews.retain(|preview| preview.expires_at > now);
+            if previews.len() == REPOSITORY_PREVIEW_LIMIT {
+                previews.pop_front();
+            }
+            previews.push_back(RepositoryPreview {
+                connection_id: connection_id.to_owned(),
+                owner: access.principal().clone(),
+                expires_at: now + REPOSITORY_PREVIEW_TTL,
+                observation: RepositoryObservation {
+                    packages,
+                    ..observation.clone()
+                },
+            });
         }
+        Ok(observation)
+    }
+
+    pub async fn forget_repository_preview(&self, connection_id: &str) {
+        let now = Instant::now();
+        self.repository_previews
+            .lock()
+            .await
+            .retain(|preview| preview.connection_id != connection_id && preview.expires_at > now);
     }
 
     pub async fn list_repositories(
@@ -1502,6 +1552,48 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
             }
         };
+        self.persist_repository(access, observation, key).await
+    }
+
+    pub async fn register_repository_for_connection(
+        &self,
+        access: &AccessContext,
+        connection_id: &str,
+        source: RepositorySource,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        let preview = {
+            let mut previews = self.repository_previews.lock().await;
+            let now = Instant::now();
+            previews.retain(|preview| preview.expires_at > now);
+            previews
+                .iter()
+                .position(|preview| {
+                    preview.connection_id == connection_id && &preview.owner == access.principal()
+                })
+                .and_then(|index| previews.remove(index))
+        };
+        if let Some(preview) = preview
+            && let RepositorySource::Remote { url } = &source
+            && self
+                .reader
+                .normalize_remote_repository_url(url)
+                .is_ok_and(|url| preview.observation.source == RepositorySource::Remote { url })
+        {
+            self.persist_repository(access, preview.observation, key)
+                .await
+        } else {
+            self.register_repository(access, source, key).await
+        }
+    }
+
+    async fn persist_repository(
+        &self,
+        access: &AccessContext,
+        observation: RepositoryObservation,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         let target = match &observation.source {
             RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
             RepositorySource::Remote { .. } => None,
@@ -1518,6 +1610,182 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             ),
         )
         .await
+    }
+
+    /// Downloads a full list through a rolling window, then persists in list order.
+    /// Stopping closes admission and lets the already admitted work finish.
+    pub async fn register_repository_list(
+        &self,
+        access: &AccessContext,
+        urls: Vec<String>,
+        key: IdempotencyKey,
+        mut stop: Option<tokio::sync::watch::Receiver<bool>>,
+    ) -> Result<Vec<RepositoryBatchItem>, M3Error>
+    where
+        S: RepositoryListStore,
+    {
+        const REORDER_WINDOW: usize = 2 * DOWNLOAD_CONCURRENCY;
+
+        require_m3(access, Permission::RepositoriesManage)?;
+        if access.principal() != &PrincipalId::local_owner() {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        let invalid = || M3Error::new(M3ErrorCode::RepositorySourceInvalid);
+        if urls.is_empty() || urls.len() > REPOSITORY_LIST_MAX_ENTRIES || key.as_str().len() > 100 {
+            return Err(invalid());
+        }
+        let mut distinct = HashSet::with_capacity(urls.len());
+        let entries = urls
+            .into_iter()
+            .enumerate()
+            .map(|(index, url)| {
+                if url.len() > 2048 {
+                    return Err(invalid());
+                }
+                let url = self.reader.normalize_remote_repository_url(&url)?;
+                if url.len() > 2048 || !distinct.insert(url.clone()) {
+                    return Err(invalid());
+                }
+                let key = IdempotencyKey::parse(format!("list:{}:{index}", key.as_str()))
+                    .map_err(|_| invalid())?;
+                Ok((url, key))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // One ordered import owns the bounded reorder window at a time.
+        let _import = if let Some(signal) = &mut stop {
+            tokio::select! {
+                biased;
+                _ = signal.wait_for(|stopped| *stopped) => {
+                    return Ok(vec![RepositoryBatchItem::Unprocessed; entries.len()]);
+                }
+                guard = self.repository_import.lock() => guard,
+            }
+        } else {
+            self.repository_import.lock().await
+        };
+        let known = self
+            .store
+            .repository_list_snapshot(access.principal().clone())
+            .await?
+            .repositories
+            .into_iter()
+            .filter_map(|entry| match entry.source {
+                RepositorySource::Remote { url } => Some(url),
+                RepositorySource::Local { .. } => None,
+            })
+            .collect::<HashSet<_>>();
+        let mut downloads = tokio::task::JoinSet::new();
+        let mut download_indices = HashMap::new();
+        let mut observations = HashMap::new();
+        let mut admitted = 0;
+        let mut outcomes = Vec::with_capacity(entries.len());
+        let mut commit = None;
+        while outcomes.len() < entries.len() {
+            while admitted < entries.len()
+                && admitted - outcomes.len() < REORDER_WINDOW
+                && downloads.len() < DOWNLOAD_CONCURRENCY
+                && !stop
+                    .as_ref()
+                    .is_some_and(|stop| *stop.borrow() || stop.has_changed().is_err())
+            {
+                let (url, _) = &entries[admitted];
+                if known.contains(url) {
+                    observations.insert(admitted, None);
+                } else {
+                    let reader = self.reader.clone();
+                    let source = RepositorySource::Remote { url: url.clone() };
+                    let task = downloads
+                        .spawn(async move { reader.inspect_repository(source, None).await });
+                    download_indices.insert(task.id(), admitted);
+                }
+                admitted += 1;
+            }
+
+            if commit.is_none()
+                && let Some(observation) = observations.remove(&outcomes.len())
+            {
+                commit = Some(Box::pin(self.persist_repository_list_item(
+                    access,
+                    entries[outcomes.len()].1.clone(),
+                    observation,
+                )));
+            }
+            if commit.is_none() && downloads.is_empty() {
+                break;
+            }
+            // Refill download slots while the next ordered registration is in
+            // the store, with no more than one write in progress.
+            tokio::select! {
+                joined = downloads.join_next_with_id(), if !downloads.is_empty() => {
+                    let (id, observation) = match joined.ok_or_else(|| M3Error::new(M3ErrorCode::Internal))? {
+                        Ok(joined) => joined,
+                        Err(error) => (error.id(), Err(M3Error::new(M3ErrorCode::Internal).with_source(error))),
+                    };
+                    let index = download_indices.remove(&id).ok_or_else(|| M3Error::new(M3ErrorCode::Internal))?;
+                    observations.insert(index, Some(observation));
+                }
+                outcome = async {
+                    match &mut commit {
+                        Some(commit) => commit.await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    commit = None;
+                    outcomes.push(outcome);
+                    if matches!(outcome, RepositoryBatchItem::Unknown(_)) {
+                        // Remaining jobs are read-only. An ambiguous store result
+                        // prevents any further registrations for this import.
+                        downloads.shutdown().await;
+                        break;
+                    }
+                }
+            }
+        }
+        outcomes.resize(entries.len(), RepositoryBatchItem::Unprocessed);
+        Ok(outcomes)
+    }
+
+    async fn persist_repository_list_item(
+        &self,
+        access: &AccessContext,
+        key: IdempotencyKey,
+        observation: Option<Result<RepositoryReadOutcome, M3Error>>,
+    ) -> RepositoryBatchItem {
+        let Some(observation) = observation else {
+            return RepositoryBatchItem::Existing;
+        };
+        match log_execution_step(
+            "repositories.register",
+            "fetch_repository",
+            None,
+            async { observation },
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await
+        {
+            Ok(RepositoryReadOutcome::Fresh(value)) => {
+                match self.persist_repository(access, value, key).await {
+                    Ok(_) => RepositoryBatchItem::Added,
+                    Err(error) if error.code() == M3ErrorCode::RepositoryAlreadyRegistered => {
+                        RepositoryBatchItem::Existing
+                    }
+                    Err(error)
+                        if matches!(
+                            error.code(),
+                            M3ErrorCode::Internal | M3ErrorCode::StoreUnavailable
+                        ) =>
+                    {
+                        RepositoryBatchItem::Unknown(error.code())
+                    }
+                    Err(error) => RepositoryBatchItem::Failed(error.code()),
+                }
+            }
+            Ok(RepositoryReadOutcome::NotModified(_)) => {
+                RepositoryBatchItem::Failed(M3ErrorCode::RepositoryUnavailable)
+            }
+            Err(error) => RepositoryBatchItem::Failed(error.code()),
+        }
     }
 
     pub async fn refresh_repository(
@@ -1579,6 +1847,89 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 Ok(record)
             }
         }
+    }
+
+    pub async fn refresh_all_repositories(
+        &self,
+        access: &AccessContext,
+        key: IdempotencyKey,
+    ) -> Result<Vec<(RepositoryId, Result<(), M3ErrorCode>)>, M3Error>
+    where
+        S: RepositoryListStore + OperationLogStore,
+    {
+        require_m3(access, Permission::RepositoriesRead)?;
+        require_m3(access, Permission::RepositoriesManage)?;
+        let invalid = || M3Error::new(M3ErrorCode::RepositorySourceInvalid);
+        if key.as_str().len() > 75 {
+            return Err(invalid());
+        }
+        let snapshot = self
+            .store
+            .repository_list_snapshot(access.principal().clone())
+            .await?;
+        if snapshot.repositories.len() > REPOSITORY_LIST_MAX_ENTRIES {
+            return Err(M3Error::new(M3ErrorCode::RepositoryDocumentTooLarge));
+        }
+        let invalid_snapshot = || M3Error::new(M3ErrorCode::Internal);
+        let jobs = snapshot
+            .repositories
+            .into_iter()
+            .map(|record| {
+                let id =
+                    RepositoryId::parse(&record.repository_id).map_err(|_| invalid_snapshot())?;
+                let revision = Revision::new(record.revision).ok_or_else(invalid_snapshot)?;
+                let prefix = format!("refresh-all:{}:{id}", key.as_str());
+                let first = IdempotencyKey::parse(format!("{prefix}:0")).map_err(|_| invalid())?;
+                let retry = IdempotencyKey::parse(format!("{prefix}:1")).map_err(|_| invalid())?;
+                Ok((id, revision, first, retry))
+            })
+            .collect::<Result<Vec<_>, M3Error>>()?;
+        let mut outcomes = jobs
+            .iter()
+            .map(|(id, ..)| (*id, Ok(())))
+            .collect::<Vec<_>>();
+        let mut pending = jobs.into_iter().enumerate();
+        let mut running = tokio::task::JoinSet::new();
+        let mut indices = HashMap::new();
+        loop {
+            while running.len() < DOWNLOAD_CONCURRENCY {
+                let Some((index, (id, revision, first, retry))) = pending.next() else {
+                    break;
+                };
+                let application = self.clone();
+                let access = access.clone();
+                let task = running.spawn(async move {
+                    with_log_caller(application.store.clone(), &access, async {
+                        match application
+                            .refresh_repository(&access, id, revision, first)
+                            .await
+                        {
+                            Err(error) if error.code() == M3ErrorCode::RevisionConflict => {
+                                let latest = application.get_repository(&access, id).await?;
+                                application
+                                    .refresh_repository(&access, id, latest.revision, retry)
+                                    .await
+                            }
+                            result => result,
+                        }
+                    })
+                    .await
+                    .map(|_| ())
+                    .map_err(|error| error.code())
+                });
+                indices.insert(task.id(), index);
+            }
+            let Some(joined) = running.join_next_with_id().await else {
+                break;
+            };
+            let (id, result) = match joined {
+                Ok(result) => result,
+                Err(error) => (error.id(), Err(M3ErrorCode::Internal)),
+            };
+            let index = indices.remove(&id).ok_or_else(invalid_snapshot)?;
+            outcomes[index].1 = result;
+        }
+        Ok(outcomes)
     }
 
     pub async fn unregister_repository(

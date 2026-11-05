@@ -465,18 +465,22 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | `projects.register` | `projects.registry.v1` | `projects.manage` | exact root 读取成功后写 registry |
 | `projects.refresh` | `projects.registry.v1` | `projects.manage` | 刷新 normalized snapshot，不写项目 |
 | `projects.unregister` | `projects.registry.v1` | `projects.manage` | 只删 registry row，不删目录 |
-| `repositories.inspect` | `repositories.read.v1` | `repositories.read` | 无状态读取 local/remote source |
+| `repositories.inspect` | `repositories.read.v1` | `repositories.read` | 读取 local/remote source，不修改 registry；远程预览可供同一连接确认登记时复用 |
 | `repositories.list` | `repositories.read.v1` | `repositories.read` | 注册 source 稳定分页 |
 | `repositories.get` | `repositories.read.v1` | `repositories.read` | 读取一个 last-known-good snapshot |
 | `repositories.packages` | `repositories.read.v1` | `repositories.read` | raw package/version identity 分页 |
-| `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 首次完整读取成功后写 registry/cache |
+| `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 完整读取成功后写 registry/cache；同一连接可复用 60 秒内同一规范化远程来源的预览 |
 | `repositories.refresh` | `repositories.registry.v1` | `repositories.manage` | 条件刷新并保留 last-known-good |
+| `repositories.refreshAll` | `repositories.registry.v1` | `repositories.read` + `repositories.manage` | Core 滚动刷新调用者已登记的仓库，复用共享下载额度 |
 | `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，不删 local source |
 
 `projects.inspect/register` 的 RPC path 必须绝对；CLI 可先解析相对路径。local repository path 同样
 必须绝对，remote URL 只允许无 userinfo 的 HTTP(S)。DTO、枚举、长度、cursor 与可选字段由
 `m3-project-repository.schema.json` 冻结。列表默认 limit 100、最大 1000；registry page 按
 `(registeredAtMs DESC, id DESC)`，package page 按 `(packageId ASC, version ASC)`，cursor exclusive。
+`repositories.refreshAll` 接收单个最多 64 字节的幂等键。Core 对本 principal 最多 4096 个已登记的源
+滚动发起刷新，修订冲突时读取当前修订并重试一次。结果按登记快照顺序逐仓库返回 `refreshed` 或
+`failed`，失败附稳定错误码。单仓失败时保留其 last-known-good 状态。
 注册项目的 `ProjectSnapshot` 以兼容可选字段返回 `registeredAtMs`（Unix epoch
 milliseconds）；`projects.inspect` 产生的未注册 snapshot 不返回该字段。客户端必须继续接受字段缺失，
 不得使用检查时间推断或伪造注册时间。
@@ -924,29 +928,36 @@ P6 snake_case wire 的直接替换，不接受旧字段或混合格式，不增�
 
 ## 30. M7 H2-B：仓库列表文件交换
 
-项目所有者批准在 RPC major 1 增加 `repositories.list-files.v1`，使用
-`m7-repository-list.schema.json` 的独立公开 DTO；不改 State Schema，不增加持久任务。
+项目所有者批准在 RPC major 1 增加 `repositories.list-files.v1` 和 `repositories.list-import.v1`，
+使用 `m7-repository-list.schema.json` 的独立公开 DTO。列表导入复用仓库登记事务和事件。
 
 | Method | Params / Result | Access |
 | --- | --- | --- |
 | repositories.inspectListFile | inspectListFileParams / inspectListFileResult | 已认证 local-owner + repositories.read |
+| repositories.importListFile | importListFileParams / importListFileResult | 已认证 local-owner + repositories.read + repositories.manage |
+| repositories.cancelListRegistration | cancelListRegistrationParams / cancelListRegistrationResult | 已认证 local-owner + repositories.manage |
 | repositories.previewListExport | previewListExportParams / previewListExportResult | repositories.read |
 | repositories.exportListFile | exportListFileParams / exportListFileResult | 已认证 local-owner + repositories.read |
 
 输入为最多 1 MiB、4096 个非空条目的 UTF-8 文本，接受可选 BOM、LF/CRLF、trim 与 `#` 行内注释。
 普通 http(s) URL 和无 headers 的 `vcc://vpm/addRepo?url=...` 可以成为 candidate；重复来源标为
 duplicate，无效或不支持条目保留行号/稳定原因。带 headers、userinfo 等不能完整表达的来源
-不降级为匿名 URL；不返回或记录原始无效行和认证秘密。inspectListFile 只读解析、不登记、不下载。
-GUI 在预览、选择及显式确认后复用既有 inspect/register，逐条追加；取消不调度新登记，在途请求
-实际完成仍计入，成功/失败/未处理/未知分开显示，不自动重试未知写入，不清空或回滚已完成登记。
+不降级为匿名 URL；不返回或记录原始无效行和认证秘密。`inspectListFile` 只读解析并返回文件精确
+字节的 SHA-256 fingerprint，不登记、不下载。
+GUI 确认一次后，将选定路径、预览 fingerprint 与本次幂等键交给 `importListFile`。
+Core 复用相同读取和解析边界，文件内容变化时返回 `repository_list_changed`，下载和登记均未开始。
+Core 跳过已登记项，在共享的 64 路下载额度内滚动下载和解析其余候选，按原列表顺序登记。每个不同的有效来源返回一项，
+包括已登记项。结果含原文件行号与 added、existing、failed、unknown 或 unprocessed 状态，
+失败或未知项带有界错误码。结果最多 4096 项，继续受 RPC 帧限制。
+`cancelListRegistration` 按本次幂等键请求停止接纳新条目。`stopped: true` 表示 Core 已记录停止，
+包括停止请求先于导入请求到达的情况。已开始项按原流程完成，原导入请求返回逐项结果。
 
 导出预览基于 Core 一致的全量登记快照，不能只取 GUI 当前页。fingerprint 绑定输出内容、登记
 范围和排除项；执行时变化即在创建文件前返回 repository_list_changed，要求重新预览。
 输出复用 v3 普通 URL 列表，保留 Core 已验证完整 URL，包含 query 的原内容与顺序；不因存在
 query 排除，也不删除或重排参数。GUI 必须说明地址本身可能包含凭据、分享前需检查，显式确认
 后才能导出。不会读取凭据存储或自动附带 headers/密码/token，不声称文件绝无秘密，不自动上传。
-本地或当前格式/权限不能表达的认证来源逐项列出排除原因；不称作完整备份。当前 Core 没有
-内置仓库类型或预置注入，不按 URL 猜测 builtin，不构造 v3 默认仓库。
+本地或当前格式/权限不能表达的认证来源逐项列出排除原因。
 
 仅允许新建输出文件：已存在目标返回 repository_list_target_exists 并保持原文件；Core 数据和
 已登记项目内目标拒绝。写入失败只清理本次创建且身份匹配的半成品，不删除其他文件；保存选择

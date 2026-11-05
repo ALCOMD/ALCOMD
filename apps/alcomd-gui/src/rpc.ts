@@ -2,7 +2,7 @@ import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesListRe
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
-import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult } from "@alcomd/sdk";
+import type { RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
@@ -40,6 +40,8 @@ export interface GuiRpcClient {
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
+    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult>;
+    repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult>;
     repositoryListPreviewExport(): Promise<RepositoryListPreview>;
     repositoryListExportFile(targetPath: string, expectedFingerprint: string): Promise<RepositoryListExportResult>;
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
@@ -48,6 +50,7 @@ export interface GuiRpcClient {
     openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void>;
     repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
+    repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult>;
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
     packagePlanInstall(params: PackagePlanInstallParams): Promise<PackagePlan>;
     packagePlanRemove(params: PackagePlanRemoveParams): Promise<PackagePlan>;
@@ -124,6 +127,15 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection> {
         return invokeTyped("gui_repository_list_inspect_file", { path });
+    }
+
+    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult> {
+        const params: RepositoryListImportParams = { path, expectedFingerprint, idempotencyKey };
+        return invokeTyped("gui_repository_list_import_file", { params });
+    }
+    repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult> {
+        const params: RepositoryListCancelParams = { idempotencyKey };
+        return invokeTyped("gui_repository_list_cancel_registration", { params });
     }
     repositoryListPreviewExport(): Promise<RepositoryListPreview> {
         return invokeTyped("gui_repository_list_preview_export", {});
@@ -256,6 +268,11 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult> {
         return invokeTyped("gui_repository_refresh", { repositoryId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    }
+
+    repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult> {
+        const params: RepositoryRefreshAllParams = { idempotencyKey: crypto.randomUUID() };
+        return invokeTyped("gui_repositories_refresh_all", { params });
     }
 
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult> {

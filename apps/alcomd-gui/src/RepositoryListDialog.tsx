@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { RepositoryListEntry, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RpcError } from "@alcomd/sdk";
+import type { RepositoryListImportItem, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
 import { Button, Checkbox, Dialog, MenuItem, Progress, TextField } from "./Material";
@@ -8,13 +8,14 @@ import { UtilityActionDialog } from "./UtilityActionDialog";
 import { ScrollArea } from "./ScrollArea";
 import { useTranslation } from "./i18n";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
-import { requestErrorMessage } from "./request-errors";
+import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import "./RepositoryListDialog.css";
 
 export function RepositoryToolbar({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
     const { t } = useTranslation();
     const manage = useCapability(capabilities.repositoriesRegistry);
     const files = useCapability(capabilities.repositoriesListFiles);
+    const importAvailable = useCapability(capabilities.repositoriesListImport);
     const [dialog, setDialog] = useState<"add" | "import" | "export">();
     const menu = useRef<HTMLElement | null>(null);
     const primary = useRef<HTMLElement | null>(null);
@@ -26,7 +27,7 @@ export function RepositoryToolbar({ client, onChanged }: { client: GuiRpcClient;
     const close = () => setDialog(undefined);
     return <>
         <SplitButton disabled={!manage} label={t("Add repository")} menuButtonRef={menu} primaryRef={primary} menuLabel={t("Repository list actions")} onClick={() => setDialog("add")} title={capabilityUnavailableTitle(manage, capabilities.repositoriesRegistry, t)}>
-            <MenuItem disabled={!files || !manage} label={t("Import list")} onClick={() => setDialog("import")} title={capabilityUnavailableTitle(files, capabilities.repositoriesListFiles, t)} />
+            <MenuItem disabled={!files || !manage || !importAvailable} label={t("Import list")} onClick={() => setDialog("import")} title={capabilityUnavailableTitle(files, capabilities.repositoriesListFiles, t) ?? capabilityUnavailableTitle(importAvailable, capabilities.repositoriesListImport, t)} />
             <MenuItem disabled={!files} label={t("Export list")} onClick={() => setDialog("export")} title={capabilityUnavailableTitle(files, capabilities.repositoriesListFiles, t)} />
         </SplitButton>
         {dialog === "add" ? <UtilityActionDialog title={t("Add repository")} onClose={close}><RegisterRepositoryPanel client={client} onChanged={onChanged} /></UtilityActionDialog> : null}
@@ -35,116 +36,118 @@ export function RepositoryToolbar({ client, onChanged }: { client: GuiRpcClient;
     </>;
 }
 
-type ItemPhase = "pending" | "checking" | "ready" | "failed" | "registering" | "registered" | "unknown" | "duplicate";
-interface ItemResult { phase: ItemPhase; error?: RpcError }
 const safeError = (caught: unknown): RpcError => ({ code: typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string" ? caught.code : "internal_error", message: "Repository list request failed" });
-const definiteRejection = new Set(["repository_already_registered", "repository_source_invalid", "repository_inaccessible", "repository_unavailable", "repository_document_invalid", "repository_document_too_large", "repository_credentials_unsupported", "permission_denied", "invalid_request", "capability_required"]);
 
 function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcClient; onChanged(): void; onClose(): void }) {
     const { t } = useTranslation();
     const current = useActionScope(client);
-    const [inspection, setInspection] = useState<RepositoryListInspection>();
-    const [selected, setSelected] = useState<Set<number>>(new Set());
-    const [results, setResults] = useState<Record<number, ItemResult>>({});
-    const [stage, setStage] = useState<"select" | "review" | "result">("select");
-    const [busy, setBusy] = useState(false);
-    const [busyAction, setBusyAction] = useState<"reading" | "checking" | "adding">("reading");
-    const [cancelled, setCancelled] = useState(false);
+    const [preview, setPreview] = useState<{ path: string; inspection: RepositoryListInspection }>();
+    const [results, setResults] = useState<RepositoryListImportItem[]>();
+    const [finished, setFinished] = useState(false);
+    const [busyAction, setBusyAction] = useState<"reading" | "adding">();
+    const [stopping, setStopping] = useState(false);
     const [error, setError] = useState<RpcError>();
     const pending = useRef(false);
-    const cancel = useRef(false);
-    const stoppedForUnknown = useRef(false);
-    useEffect(() => () => { cancel.current = true; }, []);
-    const begin = (action: "reading" | "checking" | "adding") => { pending.current = true; cancel.current = false; stoppedForUnknown.current = false; setCancelled(false); setBusyAction(action); setBusy(true); setError(undefined); };
-    const end = () => { pending.current = false; if (current()) setBusy(false); };
+    const cancelRead = useRef(false);
+    const activeImport = useRef<string | undefined>(undefined);
+    useEffect(() => () => {
+        cancelRead.current = true;
+        if (activeImport.current !== undefined) void client.repositoryListCancelRegistration(activeImport.current).catch(() => {});
+    }, [client]);
+
+    const inspection = preview?.inspection;
+    const entries = inspection?.entries ?? [];
+    const candidateCount = entries.filter(({ status }) => status === "candidate").length;
+    const busy = busyAction !== undefined;
+    const begin = (action: "reading" | "adding") => {
+        pending.current = true;
+        cancelRead.current = false;
+        setStopping(false);
+        setBusyAction(action);
+        setError(undefined);
+    };
+    const end = () => { pending.current = false; if (current()) setBusyAction(undefined); };
     const read = async () => {
         if (pending.current) return;
         begin("reading");
         try {
             const path = await client.selectRepositoryListFile("open");
-            if (!current() || cancel.current || path === undefined) return;
-            const value = await client.repositoryListInspectFile(path);
-            if (!current()) return;
-            setInspection(value); setSelected(new Set(value.entries.filter((entry) => entry.status === "candidate").map((entry) => entry.line))); setResults({}); setStage("select");
-        } catch (caught) { if (current()) setError(safeError(caught)); }
+            if (!current() || cancelRead.current || path === undefined) return;
+            const inspection = await client.repositoryListInspectFile(path);
+            if (!current() || cancelRead.current) return;
+            setPreview({ path, inspection });
+            setResults(undefined);
+            setFinished(false);
+        } catch (caught) { if (current() && !cancelRead.current) setError(normalizeRequestError(caught)); }
         finally { end(); }
     };
-    const update = (line: number, value: ItemResult) => { if (current()) setResults((items) => ({ ...items, [line]: value })); };
-    const check = async () => {
-        if (pending.current || !inspection) return;
-        begin("checking");
-        const entries = inspection.entries.filter((entry) => selected.has(entry.line) && entry.source);
-        setResults(Object.fromEntries(entries.map((entry) => [entry.line, { phase: "pending" }])));
-        for (const entry of entries) {
-            if (cancel.current || !current()) break;
-            update(entry.line, { phase: "checking" });
-            try { await client.repositoriesInspect(entry.source!); update(entry.line, { phase: "ready" }); }
-            catch (caught) { update(entry.line, { phase: "failed", error: safeError(caught) }); }
-        }
-        if (current()) { setStage("review"); setCancelled(cancel.current); }
-        end();
-    };
     const register = async () => {
-        if (pending.current || !inspection || stage !== "review") return;
+        if (pending.current || finished || !preview || candidateCount === 0) return;
         begin("adding");
-        for (const entry of inspection.entries) {
-            if (cancel.current || !current()) break;
-            if (results[entry.line]?.phase !== "ready" || !entry.source) continue;
-            update(entry.line, { phase: "registering" });
-            try {
-                await client.repositoryRegister(entry.source);
-                update(entry.line, { phase: "registered" });
-                if (current()) onChanged();
-            } catch (caught) {
-                const failure = safeError(caught);
-                update(entry.line, { phase: failure.code === "repository_already_registered" ? "duplicate" : definiteRejection.has(failure.code) ? "failed" : "unknown", error: failure });
-                // A transport/store failure may hide a committed write. Do not retry it or start more writes.
-                if (!definiteRejection.has(failure.code)) { cancel.current = true; stoppedForUnknown.current = true; if (current()) onChanged(); break; }
+        const key = crypto.randomUUID();
+        activeImport.current = key;
+        try {
+            const { items } = await client.repositoryListImportFile(preview.path, preview.inspection.fingerprint, key);
+            if (current()) setResults(items);
+        } catch (caught) {
+            if (current()) setError(normalizeRequestError(caught));
+        } finally {
+            activeImport.current = undefined;
+            end();
+            if (current()) {
+                setFinished(true);
+                onChanged();
             }
         }
-        if (current()) { setStage("result"); setCancelled(cancel.current && !stoppedForUnknown.current); }
-        end();
     };
-    const entries = inspection?.entries ?? [];
-    const ready = Object.values(results).filter((item) => item.phase === "ready").length;
-    const registered = Object.values(results).filter((item) => item.phase === "registered").length;
-    const failures = Object.values(results).filter((item) => item.phase === "failed").length;
-    const unknown = Object.values(results).filter((item) => item.phase === "unknown").length;
-    const unprocessed = Object.values(results).filter((item) => item.phase === "pending" || item.phase === "ready").length;
-    const completed = Object.values(results).filter((item) => !["pending", "checking", "registering", ...(busyAction === "adding" ? ["ready"] : [])].includes(item.phase)).length;
-    const phaseText = (entry: RepositoryListEntry) => {
-        if (stage !== "select" && entry.status === "candidate" && !results[entry.line]) return t("Not selected");
-        const phase = results[entry.line]?.phase ?? entry.status;
-        const labels = { candidate: "Available to select", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", pending: "Not processed", checking: "Checking repository", ready: stage === "result" ? "Not processed" : "Ready to add", failed: "Failed", registering: "In flight", registered: "Added", unknown: "Result unknown" };
-        return t(labels[phase]);
+    const stop = async () => {
+        if (busyAction === "reading") {
+            cancelRead.current = true;
+            setStopping(true);
+            return;
+        }
+        const key = activeImport.current;
+        if (key === undefined || stopping) return;
+        setStopping(true);
+        setError(undefined);
+        try {
+            const { stopped } = await client.repositoryListCancelRegistration(key);
+            if (!stopped && current() && activeImport.current === key) setStopping(false);
+        } catch (caught) {
+            if (current() && activeImport.current === key) {
+                setError(normalizeRequestError(caught));
+                setStopping(false);
+            }
+        }
     };
+    const byLine = new Map(results?.map((item) => [item.line, item]));
+    const counts = { added: 0, failed: 0, unknown: 0, unprocessed: 0 };
+    for (const { status } of results ?? []) if (status !== "existing") counts[status] += 1;
+    const labels = { candidate: "To import", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", failed: "Failed", added: "Added", unknown: "Result unknown", existing: "Already added", unprocessed: "Not processed" } as const;
     return <Dialog wide open dismissible={!busy} title={t("Import list")} onClose={onClose} actions={<>
-        {busy ? <Button disabled={cancelled} onClick={() => { cancel.current = true; setCancelled(true); }} type="button" variant="text">{t("Stop after current request")}</Button> : <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button>}
-        {!busy && (inspection === undefined || stage === "select" || stage === "result") ? <Button onClick={() => void read()} type="button" variant="text">{t("Choose list file")}</Button> : null}
-        {!busy && stage === "select" && inspection ? <Button disabled={selected.size === 0} onClick={() => void check()} type="button">{t("Check selected repositories")}</Button> : null}
-        {!busy && stage === "review" ? <><Button onClick={() => { setStage("select"); setResults({}); setError(undefined); setCancelled(false); }} type="button" variant="text">{t("Back")}</Button><Button disabled={ready === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: ready })}</Button></> : null}
+        {busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button> : <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button>}
+        {!busy ? <Button onClick={() => void read()} type="button" variant="text">{t("Choose list file")}</Button> : null}
+        {!busy && !finished && inspection ? <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button> : null}
     </>}>
         <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
-        {error ? <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
+        {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>
             <p>{t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>
-            {stage !== "result" ? <div>{t("Checking only reads repositories. Adding starts after your explicit confirmation; each entry is independent.")}</div> : <div>
-                <p>{t("Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: registered, failed: failures, unknown, pending: unprocessed })}</p>
-                <p>{t("Completed additions are kept. Unknown results are never retried automatically. Refresh the list and check them before starting another import.")}</p>
+            {results === undefined ? null : <div aria-live="polite">
+                <p>{t("Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: counts.added, failed: counts.failed, unknown: counts.unknown, pending: counts.unprocessed })}</p>
             </div>}
-            {stage === "review" ? <div>{t("Ready: {ready} · Check failed: {failed} · Not processed: {pending}", { ready, failed: failures, pending: Object.values(results).filter((item) => item.phase === "pending").length })}</div> : null}
-            {cancelled ? <div>{t("Cancellation stopped new requests. Completed additions remain; an in-flight request is allowed to finish.")}</div> : null}
+            {finished && (counts.unknown > 0 || results === undefined) ? <p>{t("Completed additions are kept. Check the repository list before importing again.")}</p> : null}
             <ScrollArea className="repository-list-entries"><ul>{entries.map((entry) => {
-                const failure = results[entry.line]?.error;
+                const outcome = byLine.get(entry.line);
                 return <li key={entry.line}>
-                    <div>{stage === "select" && entry.status === "candidate" ? <Checkbox checked={selected.has(entry.line)} disabled={busy} label={t("Select line {line}", { line: entry.line })} onChange={(checked) => setSelected((before) => { const next = new Set(before); if (checked) next.add(entry.line); else next.delete(entry.line); return next; })} /> : <strong>{t("Line {line}", { line: entry.line })}</strong>}<span>{phaseText(entry)}</span></div>
+                    <div><strong>{t("Line {line}", { line: entry.line })}</strong><span>{t(labels[outcome?.status ?? entry.status])}</span></div>
                     {entry.source ? <code>{entry.source.url}</code> : null}
                     {entry.reason ? <span>{t(requestErrorMessage(entry.reason))}</span> : null}
-                    {failure === undefined ? null : <span className="repository-list-error">{t(requestErrorMessage(failure.code))}</span>}
+                    {outcome === undefined || !("code" in outcome) ? null : <span className="repository-list-error">{t(requestErrorMessage(outcome.code))}</span>}
                 </li>;
             })}</ul></ScrollArea>
         </> : null}
-        {busy ? <div className="repository-list-progress" aria-live="polite"><Progress label={t("Repository list progress")} /><span>{busyAction === "reading" ? t("Loading…") : busyAction === "checking" ? t("Checking repositories: {count} completed", { count: completed }) : t("Adding repositories: {count} completed", { count: completed })}</span></div> : null}
+        {busy ? <div className="repository-list-progress" aria-live="polite"><Progress label={t("Repository list progress")} /><span>{busyAction === "reading" ? t("Loading…") : stopping ? t("Stopping import…") : t("Adding repositories…")}</span></div> : null}
     </Dialog>;
 }
 

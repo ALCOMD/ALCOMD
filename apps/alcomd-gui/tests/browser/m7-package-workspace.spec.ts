@@ -154,33 +154,45 @@ test("Package refresh is visible and handles zero or one repository with a final
     await expect(refresh).toBeVisible();
     await refresh.click();
     await expect(refresh).toBeEnabled();
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll"))).toHaveLength(1);
     expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh"))).toHaveLength(0);
 
     await openHarness(page, "ready");
     await expect(packageName(page, "Refreshed package")).toHaveCount(0);
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll").length)).toBe(1);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 });
 
 test("Package refresh attempts every repository and reloads available results without inserting a notice", async ({ page }) => {
     await openHarness(page, "package-multiple");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll").length)).toBe(1);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 
     await openHarness(page, "package-partial-failure");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll").length)).toBe(1);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
+    await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", `Refresh failed: ${requestErrorMessage("repository_unavailable")}`);
     await expect(page.getByText(/refreshed, .* failed/)).toHaveCount(0);
 });
 
-test("Package refresh retries a revision conflict once and then reloads", async ({ page }) => {
+test("Package refresh delegates a large inventory to one Core request", async ({ page }) => {
+    await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/projects/${PROJECT_ID}`)}&package-refresh-parallel=1`);
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll").length)).toBe(1);
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh"))).toEqual([]);
+    await page.evaluate(() => window.dispatchEvent(new Event("test-package-refresh-ready")));
+    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+});
+
+test("Package refresh leaves revision retry to Core and reloads its result", async ({ page }) => {
     await openHarness(page, "package-revision-conflict");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refreshAll").length)).toBe(1);
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh"))).toEqual([]);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 });
 

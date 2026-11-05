@@ -27,6 +27,7 @@ vrc-get / vrc-get-vpm 不是代码上游，不得复制、Fork、包装、移植
 - `alcomd` 是唯一状态持有者、数据库写入者和 Unity 项目写入者。
 - GUI、CLI、MCP、Local API、外部应用与扩展不得直接访问数据库或修改项目。
 - 所有入口必须调用同一个 `alcomd-application` 用例层。
+- 业务输入校验、资格与范围判定、批量调度、冲突恢复和业务结果生成由 Core 实现。GUI 负责收集用户输入、调用用例和呈现结果，可维护本地界面状态，不复制 CLI、MCP 等入口也需要的业务规则。
 - `alcomd-mcp` 必须独立于 GUI 和扩展运行。
 - MCP 可视化管理界面必须作为第一方扩展实现。
 - Discord GUI、后台逻辑和 Rich Presence 必须作为第一方扩展实现。

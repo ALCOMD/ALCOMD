@@ -1401,7 +1401,10 @@ list、register、refresh、unregister，尚无列表文件读写合同。GUI �
 
 | RPC | 输入 / 输出 | 权限及边界 |
 | --- | --- | --- |
-| repositories.inspectListFile | `{path}` → 有界条目 `{line, source?, status, reason?}` 与忽略行数 | local-owner + 既有 repositories.read；只读 UTF-8，最多 1 MiB / 4096 条，超限整体拒绝，不写 registry，不自动下载 |
+| repositories.inspectListFile | `{path}` → 有界条目 `{line, source?, status, reason?}`、忽略行数和文件摘要 | local-owner + 既有 repositories.read；只读 UTF-8，最多 1 MiB / 4096 条，不写 registry，不自动下载 |
+| repositories.importListFile | `{path, expectedFingerprint, idempotencyKey}` → 含原始行号的逐条状态 | local-owner + 既有 repositories.read 与 repositories.manage；`repositories.list-import.v1`；Core 读取并复验整份文件 |
+| repositories.cancelListRegistration | `{idempotencyKey}` → `{stopped}` | local-owner + 既有 repositories.manage；停止当前导入接纳新条目 |
+| repositories.refreshAll | `{idempotencyKey}` → 各仓库的刷新结果 | 既有 repositories.read 与 repositories.manage；Core 枚举登记仓库并重试一次修订冲突 |
 | repositories.previewListExport | `{}` → 全量登记快照的可导出数量、排除项及 fingerprint | 既有 repositories.read；Core 从一致只读快照取得全量，不受 GUI 当前页限制；返回排除原因，不返回认证秘密 |
 | repositories.exportListFile | `{targetPath, expectedFingerprint}` → 实际导出数量及摘要 | 认证 local-owner + 既有 repositories.read；重验预览内容与范围的全量快照，变化则在创建文件前拒绝；仅创建全新文件，拒绝 Core 数据/已登记项目内目标，取消选择不调用 |
 
@@ -1415,16 +1418,17 @@ list、register、refresh、unregister，尚无列表文件读写合同。GUI �
 - 复用 v3 普通 UTF-8 URL 列表，支持 CRLF/LF、可选 UTF-8 BOM、注释及不带 headers 的 vcc 添加链接；
   不是 repository manifest、package 导入或旧数据库迁移。带 headers/userinfo 的条目明确列为不支持，
   不降级为匿名条目，不显示其秘密；其他 scheme、无效行都给行号和原因，不静默忽略。
-- 导入先预览并选择，再调用既有 repositories.inspect 检查可访问性和现有来源规则；重复 URL/ID、
-  无效或不可访问项留在结果中。显式确认后按所选项逐条调用既有 register，默认追加，不清空或替换。
-  不是原子事务；取消停止调度新条目，在途请求的实际完成仍计入，分别展示成功/失败/未处理/未知。
+- Core 解析文件并提供预览，GUI 确认后一次提交路径和预览摘要。Core 重新读取整份文件，摘要变化时在写入前拒绝。
+  有下载空位就滚动补入，待按顺序提交的窗口最多 128 项。已存在条目在下载前跳过，成功项按文件顺序登记，
+  逐条结果带原始行号。停止后已开始的任务继续返回结果，尚未开始的任务标为未处理。
 - 导出预览和实际文件覆盖 Core 全量登记快照，不能只导出 GUI 已加载的一页。保留 Core 已验证的
   完整 http(s) URL，包括 query 的字节顺序与内容，不删除、重排或因存在 query 而排除。
   预览明确提示文件包含完整地址，地址自身可能携带凭据、分享前需检查，显式确认后才导出。
   不读取凭据库、不附带 headers/密码/token，不承诺 URL 已被认证为无秘密，不建立按参数名猜测
   所有秘密的系统。当前无法表达的认证来源和本地来源明确排除，逐项说明，不称作完整备份。
-- 当前 Core 没有内置仓库记录类型或预置仓库注入；导出当前实际登记的远程来源，不按 URL 猜测
-  builtin，也不凭空加入 v3 官方/精选默认仓库。本地来源不伪装为 URL。
+- 导出当前实际登记的远程来源。本地来源不伪装为 URL。
+- 仓库读取、仓库刷新和软件包归档下载共用 Core 的 64 路 HTTP 额度。
+- 项目包页的全部刷新一次调用 Core，滚动刷新并逐仓返回结果。
 - 原生打开/保存只选择路径，Core 负责格式、全量查询和文件写入。保存只创建新文件，已有文件
   明确报冲突并允许另选路径，保存弹窗不承诺覆盖。失败不留下可被当作成功的半成品，且不能清理
   非本次创建的文件。普通成功轻提示，排除项/部分失败持续保留供用户处理。

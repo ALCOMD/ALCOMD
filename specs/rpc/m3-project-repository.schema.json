@@ -202,6 +202,19 @@
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
+        },
+        "repositoryRefreshAllParams": {
+            "type": "object", "additionalProperties": false, "required": ["idempotencyKey"],
+            "properties": {"idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[!-~]+$"}}
+        },
+        "repositoryRefreshAllResult": {
+            "type": "object", "additionalProperties": false, "required": ["items"],
+            "properties": {"items": {"type": "array", "maxItems": 4096, "items": {
+                "oneOf": [
+                    {"type": "object", "additionalProperties": false, "required": ["repositoryId", "status"], "properties": {"repositoryId": {"$ref": "#/$defs/uuid"}, "status": {"const": "refreshed"}}},
+                    {"type": "object", "additionalProperties": false, "required": ["repositoryId", "status", "code"], "properties": {"repositoryId": {"$ref": "#/$defs/uuid"}, "status": {"const": "failed"}, "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128}}}
+                ]
+            }}}
         }
     },
     "type": "object",

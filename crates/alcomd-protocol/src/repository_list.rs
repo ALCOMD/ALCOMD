@@ -5,6 +5,46 @@ pub const METHOD_REPOSITORIES_INSPECT_LIST_FILE: &str = "repositories.inspectLis
 pub const METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT: &str = "repositories.previewListExport";
 pub const METHOD_REPOSITORIES_EXPORT_LIST_FILE: &str = "repositories.exportListFile";
 pub const CAPABILITY_REPOSITORIES_LIST_FILES_V1: &str = "repositories.list-files.v1";
+pub const METHOD_REPOSITORIES_IMPORT_LIST_FILE: &str = "repositories.importListFile";
+pub const METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION: &str =
+    "repositories.cancelListRegistration";
+pub const CAPABILITY_REPOSITORIES_LIST_IMPORT_V1: &str = "repositories.list-import.v1";
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryListImportParams {
+    pub path: String,
+    pub expected_fingerprint: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RepositoryListImportItem {
+    Added { line: u32 },
+    Existing { line: u32 },
+    Failed { line: u32, code: String },
+    Unknown { line: u32, code: String },
+    Unprocessed { line: u32 },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryListImportResult {
+    pub items: Vec<RepositoryListImportItem>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryListCancelParams {
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepositoryListCancelResult {
+    pub stopped: bool,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -54,6 +94,7 @@ pub struct RepositoryListEntry {
 pub struct RepositoryListInspection {
     pub entries: Vec<RepositoryListEntry>,
     pub ignored_lines: u32,
+    pub fingerprint: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

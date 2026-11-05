@@ -4,6 +4,7 @@ export const RPC_CAPABILITIES = {
     eventsLive: "events.live.v1",
     logsRead: "logs.read.v1",
     repositoriesListFiles: "repositories.list-files.v1",
+    repositoriesListImport: "repositories.list-import.v1",
     unityHubOpen: "unity.hub.open.v1",
     packagesCandidates: "packages.candidates.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",

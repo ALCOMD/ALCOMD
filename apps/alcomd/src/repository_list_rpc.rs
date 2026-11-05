@@ -1,6 +1,6 @@
 use super::{
-    AccessContext, ConnectionState, DispatchAction, RepositoryListApplication, error_action,
-    invalid, require_capability, success_action,
+    AccessContext, ConnectionState, DispatchAction, IdempotencyKey, M3ReadApplication,
+    RepositoryListApplication, error_action, invalid, require_capability, success_action,
 };
 use alcomd_application as app;
 use alcomd_protocol as rpc;
@@ -9,13 +9,17 @@ pub(super) async fn dispatch(
     request: rpc::RequestEnvelope,
     state: &ConnectionState,
     application: &RepositoryListApplication,
+    registry: &M3ReadApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    if let Some(action) = require_capability(
-        &request.id,
-        state,
-        rpc::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
-    ) {
+    let capability = match request.method.as_str() {
+        rpc::METHOD_REPOSITORIES_IMPORT_LIST_FILE
+        | rpc::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION => {
+            rpc::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1
+        }
+        _ => rpc::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
+    };
+    if let Some(action) = require_capability(&request.id, state, capability) {
         return action;
     }
     match request.method.as_str() {
@@ -29,6 +33,7 @@ pub(super) async fn dispatch(
                 Ok(result) => success_action(
                     request.id,
                     rpc::RepositoryListInspection {
+                        fingerprint: result.fingerprint,
                         ignored_lines: result.ignored_lines,
                         entries: result
                             .entries
@@ -64,6 +69,78 @@ pub(super) async fn dispatch(
                 Err(error) => failure(request.id, error),
             }
         }
+        rpc::METHOD_REPOSITORIES_IMPORT_LIST_FILE => {
+            let Ok(params) =
+                serde_json::from_value::<rpc::RepositoryListImportParams>(request.params)
+            else {
+                return invalid(request.id);
+            };
+            if !valid_fingerprint(&params.expected_fingerprint) {
+                return invalid(request.id);
+            }
+            let Some(key) = list_key(params.idempotency_key) else {
+                return invalid(request.id);
+            };
+            match application
+                .import(
+                    access,
+                    registry,
+                    params.path,
+                    params.expected_fingerprint,
+                    key,
+                )
+                .await
+            {
+                Ok(outcomes) => {
+                    let items = outcomes
+                        .into_iter()
+                        .map(|(line, item)| match item {
+                            app::RepositoryBatchItem::Added => {
+                                rpc::RepositoryListImportItem::Added { line }
+                            }
+                            app::RepositoryBatchItem::Existing => {
+                                rpc::RepositoryListImportItem::Existing { line }
+                            }
+                            app::RepositoryBatchItem::Failed(code) => {
+                                rpc::RepositoryListImportItem::Failed {
+                                    line,
+                                    code: super::m3_rpc::m3_code(code).into(),
+                                }
+                            }
+                            app::RepositoryBatchItem::Unknown(code) => {
+                                rpc::RepositoryListImportItem::Unknown {
+                                    line,
+                                    code: super::m3_rpc::m3_code(code).into(),
+                                }
+                            }
+                            app::RepositoryBatchItem::Unprocessed => {
+                                rpc::RepositoryListImportItem::Unprocessed { line }
+                            }
+                        })
+                        .collect();
+                    success_action(request.id, rpc::RepositoryListImportResult { items }, None)
+                }
+                Err(error) => failure(request.id, error),
+            }
+        }
+        rpc::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION => {
+            let Ok(params) =
+                serde_json::from_value::<rpc::RepositoryListCancelParams>(request.params)
+            else {
+                return invalid(request.id);
+            };
+            let Some(key) = list_key(params.idempotency_key) else {
+                return invalid(request.id);
+            };
+            match application.cancel_registration(access, &key) {
+                Ok(stopped) => success_action(
+                    request.id,
+                    rpc::RepositoryListCancelResult { stopped },
+                    None,
+                ),
+                Err(error) => failure(request.id, error),
+            }
+        }
         rpc::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT => {
             if serde_json::from_value::<rpc::RepositoryListPreviewParams>(request.params).is_err() {
                 return invalid(request.id);
@@ -89,12 +166,7 @@ pub(super) async fn dispatch(
             else {
                 return invalid(request.id);
             };
-            if params.expected_fingerprint.len() != 64
-                || !params
-                    .expected_fingerprint
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            {
+            if !valid_fingerprint(&params.expected_fingerprint) {
                 return invalid(request.id);
             }
             match application
@@ -115,6 +187,19 @@ pub(super) async fn dispatch(
         }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
+}
+
+fn list_key(value: String) -> Option<IdempotencyKey> {
+    (value.len() <= 100)
+        .then_some(value)
+        .and_then(|value| IdempotencyKey::parse(value).ok())
+}
+
+fn valid_fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn failure(id: String, error: app::RepositoryListError) -> DispatchAction {

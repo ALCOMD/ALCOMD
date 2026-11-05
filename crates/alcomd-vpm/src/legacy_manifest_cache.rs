@@ -117,6 +117,10 @@ impl PackageCache {
     }
 
     async fn read_index(&self, url: &Url) -> Result<Vec<u8>, CacheError> {
+        let _transfer = crate::HTTP_DOWNLOADS
+            .acquire()
+            .await
+            .map_err(|cause| cache_error(CacheErrorCode::DownloadFailed).with_source(cause))?;
         let mut response = self
             .client
             .get(url.clone())

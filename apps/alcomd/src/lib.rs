@@ -52,6 +52,9 @@ mod project_discovery_platform;
 mod repository_list_rpc;
 mod storage_platform;
 
+#[cfg(test)]
+mod repository_batch_tests;
+
 #[cfg(feature = "test-kill-gates")]
 pub mod test_support;
 
@@ -488,6 +491,10 @@ async fn serve_connection(
     }
     .await;
     applications
+        .m3
+        .forget_repository_preview(&state.connection_id)
+        .await;
+    applications
         .m7
         .close_connection(&state.connection_id, current_time_ms().unwrap_or(0))
         .await;
@@ -585,6 +592,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
+        alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2,
         alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1,
@@ -901,12 +909,20 @@ async fn dispatch_m2(
         _ if matches!(
             request.method.as_str(),
             alcomd_protocol::METHOD_REPOSITORIES_INSPECT_LIST_FILE
+                | alcomd_protocol::METHOD_REPOSITORIES_IMPORT_LIST_FILE
+                | alcomd_protocol::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION
                 | alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT
                 | alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE
         ) =>
         {
-            repository_list_rpc::dispatch(request, state, &applications.repository_lists, access)
-                .await
+            repository_list_rpc::dispatch(
+                request,
+                state,
+                &applications.repository_lists,
+                &applications.m3,
+                access,
+            )
+            .await
         }
         _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }

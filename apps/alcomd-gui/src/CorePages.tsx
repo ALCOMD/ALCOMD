@@ -1319,6 +1319,7 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
+    const current = useActionScope(client);
 
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
@@ -1335,6 +1336,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     useEffect(() => setEvidenceInvalid(false), [load]);
     const [bulkSelection, setBulkSelection] = useState<string[]>([]);
     const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
+    const [repositoryRefreshError, setRepositoryRefreshError] = useState<RpcError>();
+    const repositoryRefreshPending = useRef(false);
     const [selection, setSelection] = useState<PackageActionSelection>();
     const selectedSource = (row: PackageWorkspaceRow): PackageSourceSelector | undefined => {
         const selectedKey = sourceSelections[row.packageId];
@@ -1357,24 +1360,23 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
     };
     const refreshRepositories = async (reload: () => void) => {
+        if (repositoryRefreshPending.current) return;
+        repositoryRefreshPending.current = true;
         setRepositoriesRefreshing(true);
+        setRepositoryRefreshError(undefined);
         try {
-            for (const repository of await listAllRepositories(client)) {
-                const { repositoryId, revision } = repository;
-                if (repositoryId === undefined || revision === undefined) continue;
-                try {
-                    await client.repositoryRefresh(repositoryId, revision);
-                } catch (caught: unknown) {
-                    if (normalizeRequestError(caught).code !== "revision_conflict") continue;
-                    try {
-                        const current = await client.repositoryGet(repositoryId);
-                        if (current.repository.revision !== undefined) await client.repositoryRefresh(repositoryId, current.repository.revision);
-                    } catch {}
-                }
+            const { items } = await client.repositoriesRefreshAll();
+            if (current()) {
+                const failure = items.find((item) => item.status === "failed");
+                if (failure?.status === "failed") setRepositoryRefreshError(normalizeRequestError({ code: failure.code }));
+                reload();
             }
-            reload();
-        } catch {}
-        finally { setRepositoriesRefreshing(false); }
+        } catch (caught: unknown) {
+            if (current()) setRepositoryRefreshError(normalizeRequestError(caught));
+        } finally {
+            repositoryRefreshPending.current = false;
+            setRepositoriesRefreshing(false);
+        }
     };
     return (
         <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
@@ -1383,6 +1385,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
             const evidenceFailure = candidateError ? t(requestErrorMessage(candidateError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
+            const repositoryRefreshFailure = repositoryRefreshError === undefined ? undefined : t("Refresh failed: ") + t(requestErrorMessage(repositoryRefreshError.code));
             const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
@@ -1449,7 +1452,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
-                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || refreshing || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshRepositories(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
+                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || refreshing || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshRepositories(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? repositoryRefreshFailure ?? t("Refresh packages")} />
+                             <span className="visually-hidden" role="status" aria-live="polite">{repositoryRefreshFailure}</span>
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
                                  <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={(event) => submitBulk(allLatest.intents, { current: event.currentTarget }, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>

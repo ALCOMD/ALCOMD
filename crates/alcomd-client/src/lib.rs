@@ -141,6 +141,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1.to_owned(),
@@ -882,6 +883,28 @@ impl AlcomdClient {
         .await
     }
 
+    pub async fn repository_list_import_file(
+        &mut self,
+        params: alcomd_protocol::RepositoryListImportParams,
+    ) -> Result<alcomd_protocol::RepositoryListImportResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_IMPORT_LIST_FILE,
+            params,
+        )
+        .await
+    }
+
+    pub async fn repository_list_cancel_registration(
+        &mut self,
+        params: alcomd_protocol::RepositoryListCancelParams,
+    ) -> Result<alcomd_protocol::RepositoryListCancelResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION,
+            params,
+        )
+        .await
+    }
+
     pub async fn repository_list_export_file(
         &mut self,
         target_path: String,
@@ -967,6 +990,14 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    pub async fn repositories_refresh_all(
+        &mut self,
+        params: alcomd_protocol::RepositoryRefreshAllParams,
+    ) -> Result<alcomd_protocol::RepositoryRefreshAllResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_REPOSITORIES_REFRESH_ALL, params)
+            .await
     }
 
     pub async fn repository_unregister(

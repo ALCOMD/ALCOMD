@@ -92,7 +92,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
             <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : displayPath(preview.source.path)}</dd></div></dl>
-            {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</div>}
+            {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues.", { count: preview.issues.length })}</div>}
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
         </>}

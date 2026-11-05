@@ -184,7 +184,11 @@ pub(super) async fn dispatch(
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_READ_V1);
             let params: rpc::RepositoryInspectParams = parse!(request);
             match application
-                .inspect_repository(access, repository_source(params.source))
+                .inspect_repository(
+                    access,
+                    &state.connection_id,
+                    repository_source(params.source),
+                )
                 .await
             {
                 Ok(value) => success_action(
@@ -275,7 +279,12 @@ pub(super) async fn dispatch(
             let params: rpc::RepositoryRegisterParams = parse!(request);
             let key = key!(request, params.idempotency_key);
             match application
-                .register_repository(access, repository_source(params.source), key)
+                .register_repository_for_connection(
+                    access,
+                    &state.connection_id,
+                    repository_source(params.source),
+                    key,
+                )
                 .await
             {
                 Ok(value) => success_action(
@@ -286,6 +295,35 @@ pub(super) async fn dispatch(
                     },
                     None,
                 ),
+                Err(error) => m3_error(request.id, error),
+            }
+        }
+        rpc::METHOD_REPOSITORIES_REFRESH_ALL => {
+            require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
+            let params: rpc::RepositoryRefreshAllParams = parse!(request);
+            if params.idempotency_key.len() > 64 {
+                return invalid(request.id);
+            }
+            let key = key!(request, params.idempotency_key);
+            match application.refresh_all_repositories(access, key).await {
+                Ok(outcomes) => {
+                    let items = outcomes
+                        .into_iter()
+                        .map(|(repository_id, outcome)| {
+                            let repository_id = repository_id.to_string();
+                            match outcome {
+                                Ok(()) => {
+                                    rpc::RepositoryRefreshAllItem::Refreshed { repository_id }
+                                }
+                                Err(code) => rpc::RepositoryRefreshAllItem::Failed {
+                                    repository_id,
+                                    code: m3_code(code).into(),
+                                },
+                            }
+                        })
+                        .collect();
+                    success_action(request.id, rpc::RepositoryRefreshAllResult { items }, None)
+                }
                 Err(error) => m3_error(request.id, error),
             }
         }
@@ -552,7 +590,7 @@ fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
     error_action(Some(id), rpc_error, false)
 }
 
-fn m3_code(code: app::M3ErrorCode) -> &'static str {
+pub(super) fn m3_code(code: app::M3ErrorCode) -> &'static str {
     use app::M3ErrorCode as C;
     match code {
         C::PathEncodingUnsupported => rpc::error_code::PATH_ENCODING_UNSUPPORTED,
@@ -572,11 +610,11 @@ fn m3_code(code: app::M3ErrorCode) -> &'static str {
         C::RepositoryDocumentInvalid => rpc::error_code::REPOSITORY_DOCUMENT_INVALID,
         C::RepositoryDocumentTooLarge => rpc::error_code::REPOSITORY_DOCUMENT_TOO_LARGE,
         C::RepositoryCredentialsUnsupported => rpc::error_code::REPOSITORY_CREDENTIALS_UNSUPPORTED,
-        C::RevisionConflict
-        | C::IdempotencyConflict
-        | C::PermissionDenied
-        | C::StoreUnavailable
-        | C::Internal => rpc::error_code::INTERNAL_ERROR,
+        C::RevisionConflict => rpc::error_code::REVISION_CONFLICT,
+        C::IdempotencyConflict => rpc::error_code::IDEMPOTENCY_CONFLICT,
+        C::PermissionDenied => rpc::error_code::PERMISSION_DENIED,
+        C::StoreUnavailable => rpc::error_code::STORE_UNAVAILABLE,
+        C::Internal => rpc::error_code::INTERNAL_ERROR,
     }
 }
 

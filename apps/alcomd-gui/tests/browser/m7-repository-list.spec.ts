@@ -11,16 +11,20 @@ async function openList(page: Page, action: "Import list" | "Export list") {
 async function requests(page: Page, method: string) {
     return page.evaluate((name) => window.resourceRequests.filter((entry) => entry.method === name), method);
 }
-async function review(page: Page) {
+function expectedImport() {
+    return { method: "repositories.importListFile", params: { path: "C:/fixture/repositories.txt", expectedFingerprint: "a".repeat(64), idempotencyKey: expect.any(String) } };
+}
+async function review(page: Page, candidateCount = 3) {
     const host = await openList(page, "Import list");
     await host.getByRole("button", { name: "Choose list file", exact: true }).click();
     await expect(host.getByText("Duplicate", { exact: true })).toBeVisible();
     await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
     await expect(host.getByText("Unsupported", { exact: true })).toBeVisible();
+    await expect(host.getByRole("button", { name: `Add ${candidateCount} repositories`, exact: true })).toBeEnabled();
+    await expect(host.getByRole("checkbox")).toHaveCount(0);
+    expect(await requests(page, "repositories.inspect")).toEqual([]);
     expect(await requests(page, "repositories.register")).toEqual([]);
-    await host.getByRole("button", { name: "Check selected repositories", exact: true }).click();
-    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
-    expect(await requests(page, "repositories.register")).toEqual([]);
+    expect(await requests(page, "repositories.importListFile")).toEqual([]);
     return host;
 }
 
@@ -29,7 +33,7 @@ test("long preview content scrolls independently of actions and closing restores
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Import list");
     await host.getByRole("button", { name: "Choose list file", exact: true }).click();
-    for (const name of ["Close", "Choose list file", "Check selected repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
+    for (const name of ["Close", "Choose list file", "Add 3 repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
     await host.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("button", { name: "Repository list actions", exact: true })).toBeFocused();
     const exportHost = await openList(page, "Export list");
@@ -37,16 +41,27 @@ test("long preview content scrolls independently of actions and closing restores
     expect(await exportHost.locator(".material-dialog-content").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 });
 
-test("list import previews classifications and requires selection and confirmation before appending", async ({ page }) => {
+test("one confirmation adds every candidate once without downloading a preview", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=success");
     const host = await review(page);
-    const checked = await requests(page, "repositories.inspect");
-    expect(checked).toHaveLength(3);
+    const readsBefore = (await requests(page, "repositories.list")).length;
     await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
     await expect(host.getByText("Added: 3 · Failed: 0 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.register")).toEqual(checked.map((entry) => ({ ...entry, method: "repositories.register" })));
-    expect(JSON.stringify(checked)).toContain("?z=2&a=1");
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+    expect(await requests(page, "repositories.register")).toEqual([]);
+    expect(await requests(page, "repositories.inspect")).toEqual([]);
+    await expect.poll(async () => (await requests(page, "repositories.list")).length).toBe(readsBefore + 1);
     expect(await requests(page, "repositories.unregister")).toEqual([]);
+});
+
+test("large lists are sent to Core in one file request and reload once", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&list-import=large");
+    const host = await review(page, 67);
+    const readsBefore = (await requests(page, "repositories.list")).length;
+    await host.getByRole("button", { name: "Add 67 repositories", exact: true }).click();
+    await expect(host.getByText("Added: 67 · Failed: 0 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+    await expect.poll(async () => (await requests(page, "repositories.list")).length).toBe(readsBefore + 1);
 });
 
 test("list import keeps partial failures visible without retrying or claiming rollback", async ({ page }) => {
@@ -57,29 +72,45 @@ test("list import keeps partial failures visible without retrying or claiming ro
     await expect(host.getByText("Added: 2 · Failed: 1 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
     await page.clock.fastForward(10_000);
     await expect(host.getByText(requestErrorMessage("repository_unavailable"), { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.register")).toHaveLength(3);
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
     await expect(host.getByRole("button", { name: "Close", exact: true })).toBeVisible();
 });
 
-test("unknown registration result stops subsequent writes and remains distinct from failure", async ({ page }) => {
+test("an ordered batch result preserves added, unknown, and unprocessed rows", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=unknown");
     const host = await review(page);
     await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
     await expect(host.getByText("Added: 1 · Failed: 0 · Unknown: 1 · Not processed: 1", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.register")).toHaveLength(2);
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
     await expect(host.getByText("Result unknown", { exact: true })).toBeVisible();
 });
 
-test("cancellation waits for the in-flight registration and starts no later entry", async ({ page }) => {
+test("stopping forwards the current import key and displays Core outcomes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=hold");
-    const host = await review(page);
-    await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
-    await expect(host.getByText("In flight", { exact: true })).toBeVisible();
-    await host.getByRole("button", { name: "Stop after current request", exact: true }).click();
-    expect(await requests(page, "repositories.register")).toHaveLength(1);
+    const host = await review(page, 67);
+    await host.getByRole("button", { name: "Add 67 repositories", exact: true }).click();
+    await expect.poll(() => requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+    const [submission] = await requests(page, "repositories.importListFile");
+    await host.getByRole("button", { name: "Stop import", exact: true }).click();
+    const { idempotencyKey } = submission!.params as { idempotencyKey: string };
+    await expect.poll(() => requests(page, "repositories.cancelListRegistration")).toEqual([
+        { method: "repositories.cancelListRegistration", params: { idempotencyKey } }
+    ]);
     await page.evaluate(() => window.dispatchEvent(new Event("test-list-register-ready")));
-    await expect(host.getByText("Added: 1 · Failed: 0 · Unknown: 0 · Not processed: 2", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.register")).toHaveLength(1);
+    await expect(host.getByText("Added: 64 · Failed: 0 · Unknown: 0 · Not processed: 3", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+});
+
+test("transport loss shows an unresolved import without inventing per-line outcomes", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&list-import=transport");
+    const host = await review(page, 67);
+    const readsBefore = (await requests(page, "repositories.list")).length;
+    await host.getByRole("button", { name: "Add 67 repositories", exact: true }).click();
+    await expect(host.getByRole("alert")).toContainText(requestErrorMessage("daemon_unavailable"));
+    await expect(host.getByText("Completed additions are kept. Check the repository list before importing again.", { exact: true })).toBeVisible();
+    await expect(host.getByText("Result unknown", { exact: true })).toHaveCount(0);
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+    await expect.poll(async () => (await requests(page, "repositories.list")).length).toBe(readsBefore + 1);
 });
 
 test("cancelled list file picker performs no inspection or registration", async ({ page }) => {
@@ -88,35 +119,38 @@ test("cancelled list file picker performs no inspection or registration", async 
     await host.getByRole("button", { name: "Choose list file", exact: true }).click();
     await expect(host.getByRole("button", { name: "Close", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
-    expect(await requests(page, "repositories.register")).toEqual([]);
+    expect(await requests(page, "repositories.importListFile")).toEqual([]);
 });
 
-test("only selected and successfully checked entries are offered for explicit append", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/repositories&list-import=success&list-check=partial");
-    const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Choose list file", exact: true }).click();
-    await host.getByRole("checkbox", { name: "Select line 3", exact: true }).uncheck();
-    await host.getByRole("button", { name: "Check selected repositories", exact: true }).click();
-    await expect(host.getByText("Ready: 1 · Check failed: 1 · Not processed: 0", { exact: true })).toBeVisible();
-    await expect(host.getByText("Not selected", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.inspect")).toHaveLength(2);
-    expect(await requests(page, "repositories.register")).toHaveLength(0);
-    await host.getByRole("button", { name: "Add 1 repositories", exact: true }).click();
-    await expect(host.getByText("Added: 1 · Failed: 1 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.register")).toHaveLength(1);
+test("an already registered source is skipped and the batch continues", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&list-import=duplicate");
+    const host = await review(page);
+    await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
+    await expect(host.getByText("Added: 2 · Failed: 0 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
+    await expect(host.getByText("Already added", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
 });
 
-test("cancelling read-only repository checks does not register or start the next check", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/repositories&list-check=hold");
+test("lists with no candidates cannot start registration", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&list-import=invalid");
     const host = await openList(page, "Import list");
     await host.getByRole("button", { name: "Choose list file", exact: true }).click();
-    await host.getByRole("button", { name: "Check selected repositories", exact: true }).click();
-    await expect(host.getByText("Checking repository", { exact: true })).toBeVisible();
-    await host.getByRole("button", { name: "Stop after current request", exact: true }).click();
-    await page.evaluate(() => window.dispatchEvent(new Event("test-list-check-ready")));
-    await expect(host.getByText("Ready: 1 · Check failed: 0 · Not processed: 2", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.inspect")).toHaveLength(1);
-    expect(await requests(page, "repositories.register")).toEqual([]);
+    await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
+    await expect(host.getByRole("button", { name: "Add 0 repositories", exact: true })).toBeDisabled();
+    expect(await requests(page, "repositories.importListFile")).toEqual([]);
+});
+
+test("a repository without published checksums adds and displays packages normally", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&list-import=success");
+    const host = await review(page);
+    await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
+    const row = host.locator("li").filter({ has: page.getByText("Line 1", { exact: true }) });
+    const warning = "Package versions without checksums cannot be installed.";
+    await expect(row.getByText("Added", { exact: true })).toBeVisible();
+    await expect(row.getByText(warning, { exact: true })).toHaveCount(0);
+    await page.goto("/browser-harness.html?route=/repositories/00000000-0000-4000-8000-000000000102");
+    await expect(page.getByText("Avatar tools", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(warning, { exact: true })).toHaveCount(0);
 });
 
 test("cancelled native save selection never sends a Core file write", async ({ page }) => {

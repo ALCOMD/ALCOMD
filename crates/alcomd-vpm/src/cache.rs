@@ -216,6 +216,10 @@ impl PackageCache {
         prepare_cache_directory(&self.root, parent).await?;
         let part = object.with_extension("zip.part");
         let mut guard = PartialDownload::create(part.clone()).await?;
+        let transfer = crate::HTTP_DOWNLOADS
+            .acquire()
+            .await
+            .map_err(|cause| cache_error(CacheErrorCode::DownloadFailed).with_source(cause))?;
         let mut response = self.client.get(url.clone()).send().await.map_err(|cause| {
             cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
         })?;
@@ -256,6 +260,7 @@ impl PackageCache {
                     .with_path(object.display().to_string())
             })?;
         }
+        drop(transfer);
         let actual: [u8; 32] = hasher.finalize().into();
         if &actual != expected_digest {
             return Err(cache_error(CacheErrorCode::IntegrityMismatch));

@@ -17,7 +17,7 @@ import type {
     UiSnapshot
 } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult, OperationLogEntry } from "@alcomd/sdk";
-import { RPC_CAPABILITIES } from "@alcomd/sdk";
+import { RPC_CAPABILITIES, type RepositoryListImportItem } from "@alcomd/sdk";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
@@ -158,6 +158,7 @@ const SUPPORTED_CAPABILITIES = [
     "repositories.read.v1",
     "repositories.registry.v1",
     RPC_CAPABILITIES.repositoriesListFiles,
+    RPC_CAPABILITIES.repositoriesListImport,
     "state.check.v1",
     "projects.create.v1",
     "projectTemplates.v1",
@@ -263,14 +264,40 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
     }
+    private listImportStopped = false;
+    private listFixtureCount(): number {
+        const mode = query.get("list-import");
+        return mode === "invalid" ? 0 : ["large", "hold", "transport"].includes(mode ?? "") ? 67 : 3;
+    }
     repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
         window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
-        return this.value({ ignoredLines: 2, entries: [
-            ...[1, 2, 3].map((line) => ({ line, status: "candidate" as const, source: { kind: "remote" as const, url: `https://list.example/${line}.json?z=2&a=1` } })),
-            { line: 4, status: "duplicate", source: { kind: "remote", url: "https://list.example/1.json?z=2&a=1" }, reason: "duplicate_source" },
-            { line: 5, status: "invalid", reason: "source_invalid" },
-            { line: 6, status: "unsupported", reason: "authentication_not_supported" }
+        const count = this.listFixtureCount();
+        return this.value({ ignoredLines: 2, fingerprint: HASH, entries: [
+            ...Array.from({ length: count }, (_, index) => ({ line: index + 1, status: "candidate" as const, source: { kind: "remote" as const, url: "https://list.example/" + (index + 1) + ".json?z=2&a=1" } })),
+            { line: count + 1, status: "duplicate", source: { kind: "remote", url: "https://list.example/1.json?z=2&a=1" }, reason: "duplicate_source" },
+            { line: count + 2, status: "invalid", reason: "source_invalid" },
+            { line: count + 3, status: "unsupported", reason: "authentication_not_supported" }
         ] });
+    }
+    async repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): ReturnType<GuiRpcClient["repositoryListImportFile"]> {
+        window.resourceRequests.push({ method: "repositories.importListFile", params: { path, expectedFingerprint, idempotencyKey } });
+        const mode = query.get("list-import");
+        if (mode === "hold") await new Promise<void>((resolve) => window.addEventListener("test-list-register-ready", () => resolve(), { once: true }));
+        if (mode === "transport") throw { code: "daemon_unavailable" };
+        if (mode === "changed") throw { code: "repository_list_changed" };
+        return this.value({ items: Array.from({ length: this.listFixtureCount() }, (_, index): RepositoryListImportItem => {
+            const line = index + 1;
+            if (line === 2 && mode === "partial") return { line, status: "failed", code: "repository_unavailable" };
+            if (line === 2 && mode === "unknown") return { line, status: "unknown", code: "internal_error" };
+            if ((line === 3 && mode === "unknown") || (this.listImportStopped && line > 64)) return { line, status: "unprocessed" };
+            if (line === 1 && mode === "duplicate") return { line, status: "existing" };
+            return { line, status: "added" };
+        }) });
+    }
+    repositoryListCancelRegistration(idempotencyKey: string): ReturnType<GuiRpcClient["repositoryListCancelRegistration"]> {
+        window.resourceRequests.push({ method: "repositories.cancelListRegistration", params: { idempotencyKey } });
+        this.listImportStopped = true;
+        return this.value({ stopped: true });
     }
     repositoryListPreviewExport(): ReturnType<GuiRpcClient["repositoryListPreviewExport"]> {
         window.resourceRequests.push({ method: "repositories.previewListExport", params: {} });
@@ -329,6 +356,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private projectFavorites = new Map<string, boolean>();
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
+    private refreshedRepositoryRevisions = new Map<string, number>();
     private userPackageRemoved = false;
     private userPackageRevision = 1;
     private userPackageEnrolled = false;
@@ -719,14 +747,13 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
         window.resourceRequests.push({ method: "repositories.inspect", params: { source } });
-        if (query.get("list-check") === "hold" && source.kind === "remote" && source.url.includes("/1.json")) await new Promise<void>((resolve) => window.addEventListener("test-list-check-ready", () => resolve(), { once: true }));
-        if (query.get("list-check") === "partial" && source.kind === "remote" && source.url.includes("/2.json")) throw { code: "repository_unavailable" };
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository() });
         if (query.has("resource-invalid-source")) return Promise.reject({ code: "repository_document_invalid" });
         const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
         return this.value({ repository: preview });
     }
     async repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+        if (query.has("list-import")) window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
         if (query.has("resource-lifecycle")) {
             window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
             return this.value({ repositories: [...this.lifecycleRepositories.values()] });
@@ -739,12 +766,21 @@ class DeterministicGuiClient implements GuiRpcClient {
             await this.repositoriesReady;
         }
         if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ repositories: [] });
+        if (query.has("package-refresh-parallel")) return this.value({ repositories: Array.from({ length: 66 }, (_, index) => ({
+            ...repository(),
+            repositoryId: `04000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+            name: `Repository ${index + 1}`
+        })) });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
-                ? this.value({ repositories: [repository()], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
-                : this.value({ repositories: [localRepository()] });
+                ? this.value({ repositories: [this.refreshedRepository(repository())], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
+                : this.value({ repositories: [this.refreshedRepository(localRepository())] });
         }
-        return this.value({ repositories: [repository()] });
+        return this.value({ repositories: [this.refreshedRepository(repository())] });
+    }
+    private refreshedRepository(repository: RepositorySnapshot): RepositorySnapshot {
+        const revision = repository.repositoryId === undefined ? undefined : this.refreshedRepositoryRevisions.get(repository.repositoryId);
+        return revision === undefined ? repository : { ...repository, revision };
     }
     repositoryGet(repositoryId: string): ReturnType<GuiRpcClient["repositoryGet"]> {
         if (query.has("resource-lifecycle")) {
@@ -791,17 +827,25 @@ class DeterministicGuiClient implements GuiRpcClient {
     async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
         window.resourceRequests.push({ method: "repositories.register", params: { source } });
         if (query.has("resource-register-invalid")) throw { code: "repository_document_invalid" };
-        if (query.has("list-import") && source.kind === "remote") {
-            if (query.get("list-import") === "hold" && source.url.includes("/1.json")) await new Promise<void>((resolve) => window.addEventListener("test-list-register-ready", () => resolve(), { once: true }));
-            if (source.url.includes("/2.json") && query.get("list-import") === "partial") throw { code: "repository_unavailable" };
-            if (source.url.includes("/2.json") && query.get("list-import") === "unknown") throw { code: "daemon_unavailable" };
-            return this.value({ repository: { ...repository(), source }, replayed: false });
-        }
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
         const record = this.resourceRepository(source);
         if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });
         this.lifecycleRepositories.set(record.repositoryId!, record);
         return this.value({ repository: record, replayed: false });
+    }
+    async repositoriesRefreshAll(): ReturnType<GuiRpcClient["repositoriesRefreshAll"]> {
+        window.resourceRequests.push({ method: "repositories.refreshAll", params: {} });
+        if (query.has("package-refresh-parallel")) await new Promise<void>((resolve) => window.addEventListener("test-package-refresh-ready", () => resolve(), { once: true }));
+        if (this.mode === "package-no-repositories") return this.value({ items: [] });
+        this.repositoryRefreshCompleted = true;
+        this.refreshedRepositoryRevisions.set(REPOSITORY_ID, this.mode === "package-revision-conflict" ? 4 : 3);
+        const items: Awaited<ReturnType<GuiRpcClient["repositoriesRefreshAll"]>>["items"] = [{ status: "refreshed", repositoryId: REPOSITORY_ID }];
+        if (this.mode === "package-partial-failure") items.push({ status: "failed", repositoryId: LOCAL_REPOSITORY_ID, code: "repository_unavailable" });
+        else if (this.mode === "package-multiple") {
+            items.push({ status: "refreshed", repositoryId: LOCAL_REPOSITORY_ID });
+            this.refreshedRepositoryRevisions.set(LOCAL_REPOSITORY_ID, 3);
+        }
+        return this.value({ items });
     }
     async repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
         window.resourceRequests.push({ method: "repositories.refresh", params: { repositoryId, expectedRevision } });
@@ -821,7 +865,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts === 1) return Promise.reject({ code: "revision_conflict" });
         if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts > 2) return Promise.reject({ code: "unexpected_retry" });
         this.repositoryRefreshCompleted = true;
-        return this.value({ repository: repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository(), replayed: false });
+        this.refreshedRepositoryRevisions.set(repositoryId, expectedRevision + 1);
+        return this.value({ repository: { ...(repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository()), repositoryId, revision: expectedRevision + 1 }, replayed: false });
     }
     repositoryUnregister(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryUnregister"]> {
         window.resourceRequests.push({ method: "repositories.unregister", params: { repositoryId, expectedRevision } });

@@ -68,6 +68,7 @@ use reqwest::{Client, StatusCode, Url};
 use semver::Version;
 use serde_json::{Map, Value};
 use tokio::io::AsyncReadExt;
+use tokio::sync::Semaphore;
 
 pub const PROJECT_VERSION_LIMIT: usize = 64 * 1024;
 pub const PROJECT_MANIFEST_LIMIT: usize = 4 * 1024 * 1024;
@@ -80,6 +81,8 @@ pub const DEPENDENCY_LIMIT: usize = 4_096;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const REDIRECT_LIMIT: usize = 5;
+const HTTP_DOWNLOAD_CONCURRENCY: usize = alcomd_application::DOWNLOAD_CONCURRENCY;
+static HTTP_DOWNLOADS: Semaphore = Semaphore::const_new(HTTP_DOWNLOAD_CONCURRENCY);
 
 /// Classifies a version with the single approved SemVer parser.
 #[must_use]
@@ -269,6 +272,10 @@ impl VpmReader {
                 request = request.header(IF_MODIFIED_SINCE, last_modified);
             }
         }
+        let transfer = HTTP_DOWNLOADS
+            .acquire()
+            .await
+            .map_err(|cause| M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(cause))?;
         let mut response = request.send().await.map_err(|error| {
             M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(error.without_url())
         })?;
@@ -305,6 +312,7 @@ impl VpmReader {
             }
             bytes.extend_from_slice(&chunk);
         }
+        drop(transfer);
         let source_text = normalized.to_string();
         Ok(RepositoryReadOutcome::Fresh(parse_repository(
             &bytes,
@@ -319,6 +327,10 @@ impl VpmReader {
 }
 
 impl M3ReadAdapter for VpmReader {
+    fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error> {
+        normalize_remote_url(url).map(|url| url.to_string())
+    }
+
     async fn inspect_project(
         &self,
         path: String,

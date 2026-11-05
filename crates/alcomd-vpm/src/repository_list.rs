@@ -137,6 +137,7 @@ fn parse_list(
         entries.push(entry);
     }
     Ok(RepositoryListInspection {
+        fingerprint: hex(&Sha256::digest(bytes)),
         entries,
         ignored_lines,
     })
@@ -174,9 +175,13 @@ fn parse_source(text: &str) -> Result<String, (Status, &'static str)> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err((Status::Unsupported, "scheme_not_supported"));
     }
-    crate::normalize_remote_url(text)
-        .map(|url| url.to_string())
-        .map_err(|_| (Status::Invalid, "source_invalid"))
+    let normalized = crate::normalize_remote_url(text)
+        .map_err(|_| (Status::Invalid, "source_invalid"))?
+        .to_string();
+    if normalized.len() > 2048 {
+        return Err((Status::Invalid, "source_invalid"));
+    }
+    Ok(normalized)
 }
 
 fn prepare_list(snapshot: &RepositoryListSnapshot) -> Result<PreparedRepositoryList, Error> {

@@ -1144,6 +1144,49 @@ fn m3_schema_freezes_project_repository_contract() {
 }
 
 #[test]
+fn repository_refresh_all_uses_one_key_and_reports_each_registered_source() {
+    use alcomd_protocol::*;
+    let contract = schema("m3-project-repository");
+    let definitions = &contract["$defs"];
+    assert_eq!(METHOD_REPOSITORIES_REFRESH_ALL, "repositories.refreshAll");
+    assert_eq!(
+        definitions["repositoryRefreshAllParams"]["required"],
+        json!(["idempotencyKey"])
+    );
+    assert_eq!(
+        definitions["repositoryRefreshAllParams"]["properties"]["idempotencyKey"]["maxLength"],
+        64
+    );
+    assert_eq!(
+        definitions["repositoryRefreshAllResult"]["properties"]["items"]["maxItems"],
+        4096
+    );
+    assert!(
+        serde_json::from_value::<RepositoryRefreshAllParams>(
+            json!({"idempotencyKey":"refresh-key","repositoryIds":[]})
+        )
+        .is_err()
+    );
+    let repository_id = "00000000-0000-4000-8000-000000000101";
+    assert_eq!(
+        serde_json::to_value(RepositoryRefreshAllResult {
+            items: vec![RepositoryRefreshAllItem::Failed {
+                repository_id: repository_id.into(),
+                code: "repository_unavailable".into(),
+            }],
+        })
+        .expect("refresh-all result wire"),
+        json!({"items":[{"repositoryId":repository_id,"status":"failed","code":"repository_unavailable"}]})
+    );
+    assert!(
+        serde_json::from_value::<RepositoryRefreshAllItem>(
+            json!({"repositoryId":repository_id,"status":"refreshed","code":"unexpected"})
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn m3_error_codes_are_machine_readable_and_frozen() {
     let errors = schema("rpc-error");
     let codes = errors["properties"]["code"]["enum"]
@@ -1870,6 +1913,10 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
         "previewListExportParams",
         "exportListFileParams",
         "inspectListFileResult",
+        "importListFileParams",
+        "importListFileResult",
+        "cancelListRegistrationParams",
+        "cancelListRegistrationResult",
         "previewListExportResult",
         "exportListFileResult",
     ] {
@@ -1878,6 +1925,66 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
     assert_eq!(
         CAPABILITY_REPOSITORIES_LIST_FILES_V1,
         "repositories.list-files.v1"
+    );
+    assert_eq!(
+        CAPABILITY_REPOSITORIES_LIST_IMPORT_V1,
+        "repositories.list-import.v1"
+    );
+    assert_eq!(
+        METHOD_REPOSITORIES_IMPORT_LIST_FILE,
+        "repositories.importListFile"
+    );
+    assert_eq!(
+        METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION,
+        "repositories.cancelListRegistration"
+    );
+    assert_eq!(
+        contract["$defs"]["importListFileParams"]["required"],
+        json!(["path", "expectedFingerprint", "idempotencyKey"])
+    );
+    assert_eq!(
+        contract["$defs"]["importListFileResult"]["properties"]["items"]["maxItems"],
+        4096
+    );
+    assert_eq!(
+        contract["$defs"]["inspectListFileResult"]["required"],
+        json!(["entries", "ignoredLines", "fingerprint"])
+    );
+    assert_eq!(
+        contract["$defs"]["cancelListRegistrationParams"]["required"],
+        json!(["idempotencyKey"])
+    );
+    assert_eq!(
+        serde_json::to_value(RepositoryListImportParams {
+            path: "C:/list.txt".to_owned(),
+            expected_fingerprint: "a".repeat(64),
+            idempotency_key: "import-key".to_owned(),
+        })
+        .expect("import params wire"),
+        json!({"path":"C:/list.txt","expectedFingerprint":"a".repeat(64),"idempotencyKey":"import-key"})
+    );
+    assert_eq!(
+        serde_json::to_value(RepositoryListCancelResult { stopped: true }).expect("cancel wire"),
+        json!({"stopped":true})
+    );
+    assert_eq!(
+        serde_json::to_value(RepositoryListImportItem::Failed {
+            line: 7,
+            code: "repository_unavailable".to_owned()
+        })
+        .expect("import failure wire"),
+        json!({"line":7,"status":"failed","code":"repository_unavailable"})
+    );
+    assert!(
+        serde_json::from_value::<RepositoryListImportItem>(
+            json!({"line":7,"status":"added","code":"unexpected"})
+        )
+        .is_err()
+    );
+    assert!(serde_json::from_value::<RepositoryListImportItem>(json!({"status":"added"})).is_err());
+    assert!(
+        serde_json::from_value::<RepositoryListInspection>(json!({"entries":[],"ignoredLines":0}))
+            .is_err()
     );
     assert_eq!(
         METHOD_REPOSITORIES_INSPECT_LIST_FILE,
