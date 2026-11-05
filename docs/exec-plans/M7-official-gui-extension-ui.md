@@ -114,7 +114,7 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 | Editor观察 / 创建ProjectVersion | Unity 2022.3 -version；ALCOMD显式完整版本策略 | Windows PE，其余显式有界探测；创建选择不冒充安装或启动验证 |
 
 
-- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI单一版本输入，可从安装列表选；仅一个兼容安装时预填，多项不擅选，无安装可填写。
+- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI版本选择器包含已安装版本和“自定义”，仅选自定义时显示完整版本输入框；仅一个兼容安装时预填，多项不擅选，无安装默认自定义。手动输入匹配已安装版本也不切换选择模式；项目页和模板页共用同一组件。
 - Windows保留PE读取；macOS/Linux仅在登记/重新扫描时执行-version，独立空工作目录、直接argv，并发2、总超时10秒、stdout/stderr各64KiB；执行前后核对身份，超时只终止并回收自己子进程。普通列表不探测，失败保留已有记录。
 - ALCOMD原生Template Bundle v1的unity主次对按同一版本线校验（ALCOMD策略，不冒称VRChat外部模板格式的最低版本规则）；patch由所选完整版本与包最低要求决定，不擅自支持未来主次版本。
 - unityRelease进入resolver/candidate共享最低版本判断；缺unity不施加门槛，无法可靠解释则unknown，Plan不据此宣称兼容，启动exact规则保持。数值渠道支持a/b/f/p，experimental及区域/自定义后缀保持unknown；依据[Unity 2022.3版本表达式](https://docs.unity3d.com/2022.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#unity-version-numbers)。
@@ -143,6 +143,23 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 
 未执行完整`cargo test --workspace`、固定Windows用户端点IPC、整套浏览器、三平台CI/CodeQL或原生GUI人工验收。用户Core168708持续占用该端点，本轮不停止/替换它，不为门禁绕过授权；窄私有管道IPC不冒称这些路径已通过。包/扩展等所有历史端到端流程、并行State19与旧profile结合后的恢复、macOS/Linux真实Editor及物理掉电仍未覆盖。已有H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。原数据/profile/截图/材料、Core和Unity保持，未部署、重启或推送。
 
+### 统一完整门禁、真实IPC与环境更新（2026-11-05）
+
+按所有者“分次提交”归档为`4d5e7f4`（缓存栈）、`4251875`（菜单关闭）、`7856ace`（共享日志底座）、`b9af3abe7b036cc9066ea9a157abc304e4aec7eb`（Core/SDK/GUI配套集成）。实际代码提交697项输入与下述验证源逐项一致，仅有Git换行规范化及3份既有回车字节差异；未改变语义或重复测试/构建。提交前后持续出现的项目创建界面修改保留在CoreActions.tsx、ProjectCreationDialogs.tsx、locales/forms.ts、use-create-unity-version.tsx及m7-project-create-restore.spec.ts；重叠文件仅暂存已验证内容，未覆盖工作树，不把这些后续改动计入本候选。截图和临时浏览器输出不入库；本地归档与M7/H7人工验收分开。
+
+所有者追加批准完成完整 Rust/真实 IPC 后构建并更新 Core/GUI，允许短暂停启，沿用原数据和 profile，不动 Unity/真实项目。经明确授权与“日志调整”会话协调，由本会话独占固定 Windows 端点及构建/停启；没有另建 worktree、改写历史或推送。
+
+- **候选与门禁**：HEAD `afe42ef7b25fc517b9af38a85aa88532c6c7dce5` 加既有日志工作树及本轮窄修；697项源码输入 SHA-256 `20e04b3613570a226ba1b971806b772f9edceb19773ba6b5c1c435fb3023f4db`。在标准目录使用独立 Cargo 输出缓存，避免先前源码归档共用旧 target 产生的过期产物。`cargo fmt --all -- --check`、workspace/all-targets Clippy `-D warnings`、`cargo test --locked --workspace --no-fail-fast -- --test-threads=1`、`cargo xtask check` 均通过；85个测试目标合计737通过、0失败，8个ignored条目是由上层强杀/恢复测试显式调用的子进程夹具。不是拼接旧 SHA 的结果。
+- **失败及修复**：首次完整测试发现3个失败目标。用户包 Plan 调用栈在默认 Windows worker 栈上溢出；崩溃夹具已登记用户包但没有Plan/任务，尚未执行删除缓存或Apply。将 `verify_object` 跨 await 的64KiB数组改为同长度堆缓冲，校验/配额不变；现成库类型量测的 `PackageCache::get` future 从66800降至2704字节，原测试在默认线程栈下及完整回归均通过。候选测试仅排除自有 `data/logs/core`（包含独占writer.lock和异步日志），继续完整核对DB/WAL、缓存、配置、项目、Events、Operations与网络零副作用。未登记UUID的实际既有错误是 `project_not_registered`，修正测试及其失败活动预期，保留原错误/活动一致性断言。定向8/0后集中重跑完整门禁；未扩大线程栈、放宽业务校验或吞读取错误。
+- **前端与产物**：根workspace `npm run check` 通过；Tauri `build --debug --no-bundle` 完成GUI check/Vite build及嵌入前端的原生GUI构建，既有chunk大小警告保留。Core、CLI和extension-host使用同一源码配套构建。最终构建与部署前后输入指纹一致；本轮未重跑整套浏览器或release/三平台CI。
+- **收尾检查**：更新后额外运行Python元数据检查，发现其严格workspace清单遗漏已批准的`alcomd-logging`，仅补齐该成员后通过，未知成员仍拒绝。最终输入SHA-256 `5e2ce8c404876fe7d380a6caf2bc137f111584d56d7f8e4436ff614db3ade276`；与上述门禁/构建输入逐项比较，唯一差异为`scripts/validate-metadata.py`，所有Rust/前端编译输入及产物不变，因此只重跑受影响元数据/文档检查，不重复IPC、完整Rust或构建。未将验证器修改描述为重新构建。
+- **真实IPC与恢复**：先复制离线原数据，关闭副本自动发现，使用新Core、认证的真实用户named pipe与每连接服务端PID核验。State18→19后31张既有表所有行保持，9组公开查询保持（副本仅autoDiscover=false；Template可选unity声明是已批准增量）。再用全新隔离数据/目标验证必需完整unityVersion、无效版本拒绝、不可变Plan字节/hash、Apply→事件终态→项目登记→launchOptions无已安装Editor，未启动Unity；同实例安全游标续传、幂等Apply及单次终态消费通过。日志实时/历史/物理JSONL的来源/会话/段/offset及正文一致；重启Core后旧事件游标明确resyncRequired，新日志session、稳定sourceId及旧会话记录可读。原生脚本首轮将.NET异步void完成值混入返回对象而误报握手，保留失败帧并仅修正验证器，产品协议未改。
+- **实际更新**：原数据、profile及旧二进制离线备份并逐字节核验；替换前再次保存原数据。现 `target/debug/alcomd.exe` Core **162992**（SHA-256 `296AEA74…26A26`）、`alcomd-gui.exe` GUI **135892**（`E3677D27…BDE8C`）及匹配CLI/host已更新。原 `target/m7-icon-acceptance-20260906/data`、`target/m7-h4-extensions-20261102/original-gui-profile` 沿用，profile启动前逐文件一致，实际WebView进程仍使用该profile，窗口有句柄且可响应。GUI打开后再次完整分页对照9组状态（3项目、1安装、15个已成功任务、2备份、3模板，其他资源为空）、Config10/revision189及配置字节保持。Core日志ready且所有故障/丢失计数为0；GUI继承原RUST_LOG=warn，正常启动INFO被过滤，未制造错误填日志。Unity/Hub六进程身份和9份项目清单/版本文件摘要保持，无隔离Core遗留。
+
+上述迁移实证覆盖本机全部15个已终态任务；不据此承诺旧State18活跃任务接续，亦不回填旧活动。原事件/任务没有删除。原生GUI仅核对启动、profile和响应，不冒称操作/视觉验收；本候选整套浏览器、真实macOS/Linux Editor、物理掉电及三平台CI/CodeQL仍未执行。H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING，最终确认由所有者完成。
+
+原始日志、源码清单、失败轮次、新旧库future量测、迁移逐行比较、IPC帧、物理记录及二进制hash统一保留在标准目录 `target/m7-full-gates-update-20261105/run-20261105T093004Z/`；关键结果为 `rust-test-counts.json`、`migration-row-preservation.json`、`native-pair-result.json`、`deployment-result.json`、`updated-after-gui-comparison.json` 和 `protected-final.json`。本节补齐此前独立批次声明未执行的完整Rust/固定用户端点IPC和原环境更新，不改写那些历史结果。
+
 ## 当前有效合同
 
 - 所有者于2026-11-05明确批准完整移除手动启动状态查询：删除菜单/弹窗、GUI桥接、Core RPC/application用例和专用Store读取port、Rust SDK方法、CLI命令及专用DTO/Schema。正常打开Unity、安装选择、启动幂等记录及接受/失败反馈保持，不删除共享记录或迁移既有数据。本次为首次公开发布前已批准的接口破坏性删除，RPC major仍为1；原方法按标准未知方法处理，不提供兼容别名、替代入口或轮询，权限名称、数据库、配置与依赖不变。
@@ -154,7 +171,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
   `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
   SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
   复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
-- 当前数据基线为 **State v18**，按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
+- 当前数据基线为 **State v19**，按已批准日志重建增加独立活动，保留原任务/事件且不回填旧活动；按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
   保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
   保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
 - 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
@@ -194,10 +211,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
-- 全局操作成功/失败统一由 ReminderProvider 接收并走唯一右下出口；页面和弹窗持有的操作反馈经同一发布/清除通道展示，不再插入页头、表格或卡片，不为普通操作失败打开独立弹窗。
-  所有浮动通知在同一主题内共用中性表面、文字、圆角及间距，始终提供关闭按钮；调用方未提供关闭动作时由共享出口收起展示，重绘和模态宿主切换不使其重现，新操作仍可再次提示。关闭不清除日志或业务失败；设置保存失败保留页面上的显式重试入口及未知结果核对。
-  宿主随当前原生模态弹窗切换，保持视口位置及详情/重试可操作；关闭来源或离开页面清除对应反馈。成功短暂显示，失败保留原因/详情/重试及原诊断编号，不另写一份诊断记录。
-  收起主题错误不清除未知结果，后续保存仍先核对。字段校验、持续任务状态和首次加载失败显式就地显示；既有确认/Plan 中的操作失败默认进入统一通道。新增日志读取与按源提醒仅按下方已批准的“日志触发提醒”窄合同实施，不增加持久通知历史。
+- 按最新整体批准的“日志系统重建”移除全部浮动提示和日志触发提示；保留字段校验、就地失败、显式重试、确认、导航与完成回调。错误详情及诊断编号继续可读，未知结果仍先核对，不因删除提示掩盖失败或重复执行。Core错误只在责任边界记录，RPC/GUI和终态消费不补造日志；GUI只记录自己的真实异常。此前ReminderProvider和按源弹出合同仅保留为历史。
 - Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
@@ -209,7 +223,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v8.*`（Config1–7 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v10.*`（Config1–9 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -687,15 +701,13 @@ typed client/RPC。当前 hello.configSchema=9。Config1–8 只作为保留原�
 返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config9 不接受该字段。自动发现字段及生效时的项目目录修改附加现有 projects.manage；Unity全局参数修改附加unity.manage。
 开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
 
-### Activity and Diagnostics
+### Activity and Technical Logs
 
-公开 permission 限定 `activity.read`、`diagnostics.read`，公开 RPC 为 `activity.list`、`diagnostics.list` 及另行批准、只限local-owner的 `diagnostics.log.read`。Activity 是现有
-durable Event/Operation 的 bounded、deterministic、keyset-paginated safe projection，不创建第二份 history；不得返回 raw
-request/result/error、完整路径、token、extension payload 或 UI form value。前端不自行 join `events.list`/`operations.list`。
-
-Diagnostics v1 只返回 redacted structured items：occurredAt、severity、subsystem、stable code、optional diagnosticId 与 bounded
-safe summary；不提供 raw log export，不建立第二个 durable log table，不暴露 argv/env/SQL/Debug/backtrace/extension-owned value
-或 Portable UI payload。若现有 safe evidence 无法形成 read model 且需要新 durable logging subsystem，立即停止审批。
+本节按下方“日志系统重建（2026-11-05）”整体批准合同实现，取代原 Event/Operation 活动混合投影及 redacted diagnostics 投影。
+公开权限沿用 `activity.read`、`diagnostics.read`。`activity.list/get` 读取 State19 独立活动；
+`diagnostics.log.read/history/health` 仅供认证 local-owner 读取 Core 真实 JSON 文件及独立健康状态。
+GUI 原生只读自身受控日志目录；普通 RPC、Activity、Event 仍使用闭合安全合同。技术日志允许完整路径和必要原因链，永不记录秘密。
+不实现浮动提示、不向日志补记展示文案、不提供旧内部格式兼容。
 
 ### Accessibility and manual ownership
 
@@ -1068,7 +1080,61 @@ GUI Checkbox和F11共用同一设置意图队列；已接受偏好经现有主�
 后续按所有者要求，窗口开关移至外观页（`249e6d7`）；全局成功、设置保存失败和窗口失败共用 ReminderProvider 右下出口（`76e404b`），删除独立右上定位，保留持久错误、详情、重试及迟到成功隔离。
 GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通过。该批GUI127300（`C8D8B6AE…F9424825`）使用原profile，Core130792持续运行；五组公开状态和配置摘要均保持，不增加Rust/完整浏览器/远端CI重复验证。
 
-#### 日志触发提醒（2026-11-03，最小公共合同已批准）
+#### 日志系统重建（2026-11-05，所有者整体批准，源码候选）
+
+本节取代下方日志/提醒窄修合同。按未发布、空环境首次启动实现；不设计旧数据转换、旧格式兼容、存量任务等待或旧系统接续。开发机原数据、截图与验收材料保留。M7/H7 未签收，不扩展 M8–M12。
+
+- 移除全部浮动提示、日志触发提示、RPC 响应补写、任务终态摘要、recordGui 及独立造记录缓存；保留就地失败、重试、确认、导航与完成回调。普通缓存仅保存真实记录。
+- 技术日志采用 tracing / tracing-subscriber 标准 JSON Lines；默认应用 INFO、第三方 WARN，RUST_LOG 显式启用 DEBUG/TRACE。保留 timestamp/level/target/fields/spans，来源、会话和诊断/任务关联不另造 formatter。
+- 错误保留路径与 source，在责任边界显式展开不重复的原因链并记录一次；逐层传播、RPC/GUI/终态订阅不补写。真实重试可新记；不承诺文件/数据库原子或恰好一次。普通 RPC/Activity 仍保持闭合安全字段；自动插桩跳过请求/配置/argv/env/凭据，网络错误先去认证 URL，正常完整路径保留。
+- 新增 tracing-appender = '=0.2.5'（default-features=false，MIT，MSRV1.63）；现有 tracing-subscriber 0.3.23 增加 json。实际锁文件新增 tracing-appender0.2.5、symlink0.1.0、tracing-serde0.2.0 与本地 alcomd-logging；复用现有外部包，未升级其版本。替代方案为重建私有队列；选择官方有界线程与 guard，项目仅维护窄大小轮转 writer 与健康观测。工程 MSRV1.97.1 保持。
+- 完整记录最大512KiB，队列64条（正文最多32MiB），非阻塞丢弃；每稳定来源跨会话最多5份且每份5MiB。独占来源租约，段ID不复用，不删除有效写入者文件。整行写完且可读后才推进位置，入队不通知内容；不静默截断路径/JSON。
+- 独立内存健康含 sourceId/sessionId/revision/state、queueDropped/oversizeRejected/writeFailed/rotationFailed/flushFailed/hasGap/lastFailure。拒收/磁盘故障直接唤醒健康读取，不依赖成功日志行，不递归记录，不依赖stderr作为唯一出口。
+- 正常退出停止业务、最后记录、关闭生产入口，再在关闭线程释放长期持有的 WorkerGuard；核对排空/flush，日志关闭总预算2秒；不承诺强杀/断电/超时零损失。
+- Core读自身受限日志；GUI原生层写/读/等待自己的受控目录，Core离线仍可用。前端异常仅窄字段上报一次，不接收业务成功、Core失败、RPC响应或任意对象。
+- 记录身份为来源/会话/段ID/字节位置；首次B建立后接续历史与实时。源端筛选覆盖保留文件，默认100/最多200条、每次扫描1MiB、完整帧≤4MiB；无匹配也推进。半行/损坏/清理/游标过期/读失败明确报告。缓存≤2000条或8MiB，无稳态周期读取。
+- diagnostics.log.read 改为基线/向前/真实变化等待（无空闲超时空页），history 改为有界筛选分页，增加 health；沿用 diagnostics.read/local-owner。删除 diagnostics.list 和 notify/提示字段。Rust/SDK/GUI/浏览器夹具同步，无旧格式兼容。
+- 独立活动保存ID/owner/revision/action/status/固定目标快照/闭合参数/起止时间/任务与诊断关联。已核对编号，State19 增加表和索引，并扩展 Events 的 activity aggregate CHECK（保留原事件、序列与索引）；不转换旧活动。Operation继续权威；接受/状态/取消/中断/恢复/终态与活动及activity.changed同事务；进度/重复状态/幂等重放不增加活动revision。
+- 同步业务与活动同事务；已授权明确执行的预检失败独立记录失败活动，业务对象/任务/幂等零副作用允许该历史例外，数据库不可用如实报告。查询/预读/无效协议/未授权无活动；Plan/预览不独立记，Apply/直接执行一次活动。
+- activity.list 使用新模型，增加按ID读取；固定按(startedAtMs,activityId)排序，目标删除不级联、不改摘要，本轮不自动删除。恢复属于新系统自身能力，不是开发数据兼容。
+
+执行顺序：合同→独立清理提示→责任边界→writer/健康→同源读取→活动事务/恢复→页面/夹具→验证闭环后删除旧实现，不长期双写。故障只在隔离目录可控注入。定向日常检查，稳定候选集中完整门禁；不操作真实Unity/项目、不推送。
+
+本轮是发布前破坏性替换：RPC major 仍为1，严格客户端必须同步更新 SDK；不保留旧 DTO/notify/diagnostics.list 别名。`events.live.v1` 和资源读取权限保持。
+搜索按解码后的字段名/值（含正文、target、span）大小写不敏感匹配，最多4096 UTF-8字节；不匹配 JSON 转义字符串、不截短查询。读取问题最多32条，更多合并为 `additional_issues`，健康最后故障最多4096字符。
+空闲 follow 无周期超时；请求写入及首字节到达后的完整帧传输各最多5秒，失败丢弃连接。取消/窗口销毁/页面重载取消旧读取，GUI 离线日志不依赖 Core。
+
+字段职责示例（示意，不是实际操作证据；完整位置身份位于读取包装）：
+
+```json
+{"timestamp":"2026-11-05T04:00:00Z","level":"INFO","target":"alcomd_vpm::repository","fields":{"message":"repository fetch completed","package_count":42},"spans":[{"name":"operation","operation_id":"33333333-3333-4333-8333-333333333333"}]}
+{"timestamp":"2026-11-05T04:01:00Z","level":"ERROR","target":"alcomd_vpm::project","fields":{"message":"failed to inspect Unity project","path":"C:\\ALCOMD-Test\\项目A\\Packages\\vpm-manifest.json","error":"invalid VPM manifest\ncaused by: expected a version object","diagnostic_id":"44444444-4444-4444-8444-444444444444"},"spans":[{"name":"request","request_method":"projects.register"}]}
+{"activityId":"55555555-5555-4555-8555-555555555555","revision":3,"action":"backups.create","status":"succeeded","startedAtMs":1793851200000,"finishedAtMs":1793851202000,"subject":{"kind":"project","id":"66666666-6666-4666-8666-666666666666","name":"项目A"},"parameters":{"compression":"level3","includeLibrary":false},"operationId":"33333333-3333-4333-8333-333333333333","result":{"code":"backups.create.succeeded"}}
+```
+
+技术记录保留技术正文，不本地化；活动只持久稳定 action/result 和闭合参数，由页面翻译。数据库事务不涵盖日志文件；关联日志缺失/已轮转时显示不可用，不合成替代记录。
+State19 的任务触发器保证接受、状态/终态及恢复与活动和独立 `activity.changed` 一起提交；活动目标/参数由相应用例在同一接受事务固定。公开进度不改活动 revision。原业务表、任务、事件和恢复数据不清理，不回填旧活动。
+
+本轮实现覆盖：M2状态检查；项目/仓库与文件观察；包、模板、备份/恢复、复制/删除、Unity迁移、用户包、扩展及Portable UI实际执行失败；配置/Hub与GUI原生连接、窗口、前端真实异常。技术错误由持有原始错误的请求或任务边界记录，不在通用响应、活动或终态订阅补写；项目发现以scan为唯一后台记录边界。未执行完整原生产品流程，不以源链覆盖表冒称每种OS故障均已注入。
+
+本候选验证（各轮原始输出在 `target/m7-logging-rebuild-20261105/`，工作树包含并行改动）：
+
+| 范围 | 实际结果 |
+| --- | --- |
+| Rust静态门禁 | workspace all-targets严格Clippy通过；后续受影响crate再次通过；xtask通过。最终全仓fmt及diff检查通过。 |
+| 单元/二进制 | 排除会激活默认Windows端点夹具的testing/CLI/host后21个目标447/0；CLI5/0、host2/0另跑。收尾改动后Core34/0、App72/0、Store69/0、GUI17/0独立复跑通过，不合称一次完整workspace通过。 |
+| 存储/合同 | Store11个集成目标分批补齐（96个用例分别保留）；Schema43/0、模拟迁移worker7/0。原空override快照先后因版本18断言和新增空activities表失败，随后保留全部旧行对比并显式断言不回填；项目/用户包事件测试保留原业务事件与幂等断言，另核对独立activity.changed。 |
+| 文件/IPC | 日志底座15/0覆盖非阻塞满队列、入队非可读、写入/轮转/flush故障、健康独立唤醒、检查等待竞态、跨会话五段、损坏/超大行跨扫描边界、游标/筛选。私有Windows管道真实帧验证1/0包含hello/read/history/health/取消/空闲无空页，不使用用户Core端点。 |
+| 路径/责任边界 | 真实坏清单及缺Editor/缺发现目录均保留中文完整路径/原因；一次失败一条、已有DID传播/真实重试新DID、扩展伪造DID拒绝。GUI17个单元包含离线真实异常写入读取、连接原因与不补记Core业务失败。 |
+| 前端 | SDK/GUI check通过，1122三语消息；最终Vite build通过（保留既有chunk大小提示）。模型7/0；长中文及emoji异常入口最终4/0，按128/4096/16384/2048 UTF-8字节限额，不切破字符。 |
+| 浏览器轮次 | 135轮134过/1失败；126轮60过/10失败/56未执行；后续68轮65/3、26轮24/2、21轮20/1、13轮12/1，最后长查询边界1/0，前端UTF8异常4/0。旧浮动断言、真实就地遮挡/代际/菜单问题与夹具/选择器分别修复后专项补验；不拼成全套通过。 |
+| 未执行/环境 | 完整cargo test --workspace、现有固定Windows端点集成、整个浏览器套件、三平台CI/CodeQL和原生人工观察未执行。未操作真实Unity/项目、未迁移原数据库、未重启或替换运行Core168708，无GUI进程；原数据/profile/材料保留，未提交日志候选或推送，M7/H7仍由所有者签收。 |
+
+#### 以下为已撤回的旧日志候选证据（不再定义当前实现）
+
+原“日志触发提醒”“日志正文修正”“历史会话日志查看”描述下方历史候选，不能用其既有通过结论证明本次重建。此前以GUI提示补记宣称统一的结论已撤回。
+
+#### 日志触发提醒（2026-11-03，历史合同，已由重建取代）
 
 所有者于2026-11-05进一步明确：浮动提示必须有对应技术日志，技术日志不一定弹出。v3只作行为审计：全局Logger及命令错误显式写日志后进入缓冲/前端，gui_toast只控制是否提醒；不复制或移植其源码。以下保留既有公开读取合同，并补齐Core采集和GUI会话日志入口。
 本切片前Core只有tracing进程输出；`diagnostics.list`是失败任务投影，`events.list`不提供技术日志订阅。本切片以同一Core日志源补齐安全读取，不靠查询失败任务或GUI读取Core输出文件替代。
@@ -1086,7 +1152,6 @@ GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通�
 
 2026-11-05本轮代码为`959a86c`/`3571e39`；活动补链为`1b14336`。Core单元32/0、Store单元51/0、受影响Clippy/fmt、GUI check/build和日志模型通过。定向浏览器首轮21/0，日志基线去重后专项13/0分别保留；不冒称完整Rust/GUI门禁。真实IPC验证错误与日志同ID、读取不递归、3条原被过滤的打开活动恢复。已更新dev Core106648/GUI133500并核对原profile、六组公开状态与配置摘要保持，Unity未动。构建输入与部署证据见`target/m7-log-origin-20261105/runtime-20261104T213920Z/`；会话日志不具备跨重启文件历史，原生观感与M7/H7签收仍由所有者确认，未推送。
 
-### 当前 H7 授权与收束（2026-11-02）
 #### 日志正文修正（2026-11-05，所有者已批准）
 
 本轮根因已核实：Core采集器主动丢弃tracing正文和技术字段，公开记录只有code，GUI再拼通用摘要；随后统一RPC成功Trace进一步制造噪声。v3实际行为是同一完整LogEntry经全局Logger进入文件、内存及前端，不采用代码冒充正文；只参考行为，不复制源码。
@@ -1099,6 +1164,19 @@ GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通�
 
 代码`9b12d93`已实施。Core36/0、采集4/0、Application日志8/0、协议专项1/0、受影响严格Clippy/fmt、xtask、SDK/GUI check/build和模型通过；最终浏览器22/0，既有22/0轮次单独保留。真实IPC证明正文/来源/编号跨管道保留并与文件一致，普通读取零新增日志、默认Trace为0。Core120792/GUI127336已用原数据/profile恢复，六组公开读取和配置摘要保持、Unity未动。文件格式为UTF-8 JSON行；文件写入队列1024，启动记录在取得唯一Core后接入文件，失败/溢出明确报告且不递归。RPC不新增旧文件检索。构建及环境证据在`target/m7-log-origin-20261105/runtime-20261104T221606Z/`；保留并行修改，后续Unity守卫等Rust增量不属于该Core产物，不借用本批结果。未推送，M7/H7签收保持待所有者。
 
+#### 历史会话日志查看（2026-11-05，所有者已批准）
+
+所有者要求技术日志页能查看文件中保留的旧会话。最小新增只读RPC为`diagnostics.log.history`，沿用`diagnostics.log.v1`、`diagnostics.read`及认证local-owner，不新增权限、数据库、配置或依赖。请求为闭合`{cursor?: string, limit?: 1..200}`（默认100）；响应为`{items, nextCursor?, skippedCount}`，items沿用现有完整日志条目并保留原instanceId/sequence，按文件记录从新到旧分页。cursor为最长128字符的不透明记录位置，过期明确返回`log_history_cursor_expired`；文件无法读取返回`log_history_unavailable`。最多读取既有五份5MiB日志；异常/不完整记录计入skippedCount并由界面明确说明，不能伪装为完整空历史，不读取任意用户路径。
+
+Core在独立阻塞读取任务中检查文件，历史读串行且不持有数据库事务；与轮转协调取得文件快照，读取期间不占用写入队列或等待网络。GUI进入技术日志页即加载已保存历史，沿用表格、筛选和“加载更多”，按原日志身份与实时记录去重；历史内容仅供查看，不接入提醒消费队列。读取失败保留当前内容和显式重试。每轮历史遍历最多覆盖保留文件总量25MiB，离页释放历史视图数据；不轮询文件、不加入通知设置或会话管理面板。Rust客户端、SDK、GUI抽象和浏览器内存夹具同步。
+
+定向验证覆盖跨会话、跨文件分页与轮转、实时/文件重复、旧错误不补弹、损坏/不完整记录提示、过期游标、权限/任意路径拒绝、普通操作不被文件读取阻塞，以及更新后真实IPC和原环境保持。其余采集与文件格式沿用上一节，不重做日志系统或历史业务功能。
+
+所有者已明确批准上述最小读取合同，直接完成RPC/SDK/Tauri及界面接入。历史查询以独立连接及5秒读取期限执行；后台最多一个文件读取任务，完整解析前释放轮转目录锁，不占用业务连接或数据库事务。GUI历史缓存仅向更早位置遍历，最多保留既有文件总量25MiB，离页释放，不周期重读。
+
+同时已按截图查明另一独立缺陷：Reminder通过recordGui把前端业务成功提示反向补成GUI会话日志；“Unity启动状态：工程打开”来自此链路。本轮历史接入不构成该缺陷已修复的证据；此前“所有提示已由真实日志驱动”的结论撤回，不能用换文案或增加一层补记宣称完成。
+
+### 当前 H7 授权与收束（2026-11-02）
 
 直接执行既有 H7，不另设规划审批。先核对现有实现与证据，仅修真实使用缺陷；普通文案、一般视觉和过度设计待办继续非阻塞。
 原完整 Chromium 383/12 与后续 53/1、最后新增日语用例 1/0 独立保留，逐项对应不等于合并通过。

@@ -13,10 +13,10 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config5 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About, shell | read Core version/status; local GUI build version remains independent | R | no | no | data/error/reconnect | `gui.m7-core-surfaces` |
 | `state.check` | `state.check.v1` + `operations.v1` for GUI progress | Diagnostics | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
-| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail / Log detail | follow the same accepted ID and open Core results | R | no | existing Operation | polling/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
+| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail / Log detail | follow the same accepted ID and open Core results | R | no | existing Operation | event invalidation/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
 | `operations.list` | `operations.v1` | Operations | page Operations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `operations.cancel` | `operations.v1` | Operation detail | cooperative cancel | W | yes | existing Operation | mutation/stale | `gui.m7-operation-flows` |
-| `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.log-redaction` |
+| `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.transactions-and-owner` |
 | `events.subscribe` | `events.live.v1` | shared app notification entry | receive committed changes and invalidate affected reads | R/stream | no | no | generation/ACK/replay/resync/backpressure; no periodic business reads | `gui.m7-operation-flows` |
 | `projects.inspect` | `projects.read.v1` | Projects add dialog | validate candidate path | R | no | no | dialog data | `gui.m7-core-surfaces` |
 | `projects.list` | `projects.read.v1` | Projects | page projects | R | no | no | data/keyset | `gui.m7-core-surfaces` |
@@ -99,11 +99,13 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `extensions.ui.refresh` | `extensions.ui.portable.v1` | Extension Portable UI | explicit refresh | W/session | discard if dirty | no | refreshing/stale | `gui.m7-portable-ui-renderer` |
 | `extensions.ui.dispatch` | `extensions.ui.portable.v1` | Extension Portable UI | activate/submit action | W/session | host-owned where required | no | progress/error/replay | `gui.m7-portable-ui-security` |
 | `extensions.ui.close` | `extensions.ui.portable.v1` | Extension Portable UI | close route/session | W/session | discard if dirty | no | best-effort | `gui.m7-portable-ui-production` |
-| `settings.get` | base RPC v1; no new capability approved | Settings, shell and project target forms | load Config5 without density, Hub evidence and effective project/backup directories | R | no | no | data/revision | `settings.authoritative-storage` |
+| `settings.get` | base RPC v1; no new capability approved | Settings, shell and project target forms | load current Config without density, Hub evidence and effective project/backup directories | R | no | no | data/revision | `settings.authoritative-storage` |
 | `settings.update` | base RPC v1; no new capability approved | Settings | serial CAS narrow PATCH; theme Save/Cancel | W | immediate ordinary changes; explicit theme save | no | mutation/stale/intent retained/unknown commit | `settings.authoritative-storage` |
-| `activity.list` | base RPC v1; no new capability approved | Activity | page safe Event/Operation projection | R | no | no | data/keyset | `activity.log-redaction` |
-| `diagnostics.list` | base RPC v1; no new capability approved | Diagnostics | page redacted diagnostics | R | no | no | data/keyset | `diagnostics.redacted-list` |
-| `diagnostics.log.read` | `diagnostics.log.v1` | app shell, Diagnostics | consume one safe Core log source; only new eligible entries notify | R | no | no | baseline/sequence/reset/gap/cancellation; dedicated connection | `diagnostics.safe-log-reminders` |
+| `activity.list` | base RPC v1; no new capability approved | Activity | page independent owner-visible activity | R | no | no | data/keyset | `activity.transactions-and-owner` |
+| `activity.get` | base | Activity | update an existing activity by ID | R | no | no | revision/owner/read retry | `activity.atomic-history` |
+| `diagnostics.log.read` | `diagnostics.log.v1` | app shell, Diagnostics | read complete Core records plus independent health; no floating notifications | R | no | no | baseline/file position/health/gap/cancellation; dedicated connection | `diagnostics.standard-json-files` |
+| `diagnostics.log.history` | `diagnostics.log.v1` | Technical Logs | page retained Core files and merge original log identities | R | no | no | paging/rotation/expired cursor/damaged records; health/scan bounds; no floating notifications | `diagnostics.saved-log-history` |
+| `diagnostics.log.health` | `diagnostics.log.v1` | Technical Logs | read source health independently of files | R | no | no | degradation/independent revision | `diagnostics.source-health` |
 
 ## Coverage rules
 

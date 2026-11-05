@@ -4,7 +4,20 @@
 
 ## 当前阶段
 
+2026-11-05 本轮统一候选已按目的本地归档：`4d5e7f4`缓存栈修复、`4251875`菜单关闭、`7856ace`共享日志底座、`b9af3ab`Core/SDK/GUI日志与独立活动集成。代码提交`b9af3abe7b036cc9066ea9a157abc304e4aec7eb`的697项输入已与下方验证指纹逐项核对，仅有既有换行字节差异，无业务内容变化；未重复门禁或重启。另5个进行中的项目创建界面文件（含重叠文件的新改动）和截图输出保留未提交，不属于这次验证或当前运行产物；未推送，M7/H7人工状态保持。
+
+2026-11-05 统一完成跨模块整改与日志重建工作树的完整 Rust 门禁、真实 Windows IPC 和原环境更新。实际候选为 HEAD `afe42ef` 加保留的工作树，697 项源码输入 SHA-256 `20e04b3613570a226ba1b971806b772f9edceb19773ba6b5c1c435fb3023f4db`；fmt、workspace all-targets 严格 Clippy、完整 workspace 测试 **737/0** 和 xtask 全部通过，8 个 ignored 条目为由上层调用的子进程夹具。修复了 Plan 链路跨 await 的 64KiB 栈缓冲导致的真实栈溢出，及两处测试对日志锁文件/未登记项目错误码的错误预期；失败轮次保留。前端全部 workspace check、嵌入前端的 Tauri debug no-bundle 构建通过。原数据副本 State18→19 的31张既有表逐行一致；真实可执行文件验证完整创建→登记→启动选项、事件续传/重启重同步、日志实时/历史/物理文件一致与跨会话身份保持。已配套更新 Core/CLI/extension-host/GUI，Core **162992** / GUI **135892** 在原数据和原 profile 上运行，窗口可响应；9组公开状态、revision189、设置字节、Unity/Hub六进程及9份项目关键文件保持。独立活动按获批合同不回填旧活动；原任务和事件保留。GUI继承原 `RUST_LOG=warn`，未为制造日志改变过滤或操作业务。结果和剩余范围见[统一门禁与环境更新](exec-plans/M7-official-gui-extension-ui.md#统一完整门禁真实ipc与环境更新2026-11-05)。未运行本候选整套浏览器、非Windows真实Editor、物理掉电或原生交互验收，未推送、恢复桌面控制或操作真实项目。H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
+
+门禁/构建后仅将Python元数据校验器的严格成员清单补齐已批准的`alcomd-logging`，元数据检查通过；最终输入指纹`5e2ce8c404876fe7d380a6caf2bc137f111584d56d7f8e4436ff614db3ade276`与上方构建输入只差该验证脚本，全部Rust/前端编译输入及运行产物未变。以下为各独立批次的历史证据；其当时未覆盖项和进程号不替代上方统一候选结果。
+
+2026-11-05 获批日志重建已实现于工作树：标准 tracing JSONL、tracing-appender 有界后台写入、跨会话5×5MiB轮转、独立健康和同文件实时/历史读取；Core/GUI各自受控来源，Core离线仍可读GUI日志。删除浮动提示、recordGui、RPC/终态摘要补记及失败任务伪日志。真实路径/原因链在责任边界记录，传播沿用诊断ID；GUI真实异常按UTF-8字节边界上报，长路径查询按解码值匹配。State19独立活动与任务/业务及activity.changed同事务，参数按38个action闭合；新系统不回填旧活动、不设计开发历史兼容。
+本批验证：workspace严格Clippy、xtask、SDK/GUI check和前端build通过；集中筛选单元回归447/0后，最终受影响Core34/0、App72/0、Store69/0、原生GUI17/0分别复跑通过；Schema43/0、模拟迁移worker7/0，11个Store集成目标分批补齐。隔离真实Windows IPC及GUI脱离Core记录/读取、队列/磁盘/轮转/flush/游标等专项通过，未占用生产端点。浏览器多轮失败后按实际原因修正并补验，最终前端异常UTF8专项4/0；未执行整套浏览器或完整cargo test --workspace，不将分批结果拼成全门禁。实际范围和失败轮次见[M7实施记录](exec-plans/M7-official-gui-extension-ui.md#日志系统重建2026-11-05所有者整体批准源码候选)。
+最终全仓fmt检查及diff检查通过。候选基于HEAD `2029aba` 加现有工作树，源码输入SHA-256 `a2123bf36e59b6fcd079cc02710b194dcc5818d8f7e9c5eab3693edad77a679f`；完整清单及每轮原始结果位于target/m7-logging-rebuild-20261105/。原Core168708持续运行、未替换产物，当前没有GUI进程；未操作原数据/profile/Unity/真实项目或恢复桌面控制，本轮日志变更未提交/推送。原生界面、现有固定Windows端点集成、跨平台和M7/H7最终人工确认仍未覆盖；H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
+
+
 2026-11-05获批A01–A10依据整改已实现并分目的本地提交，代码候选`3a3b22e`。修正UPM/VPM及legacy形状、范围上下文、锁信息写出、完整创建unityVersion、unityRelease、显式Editor探测、TOML和配置持久化；不新增数据库/权限。并行日志/活动工作树独立保留，以提交归档验证避免混入：官方索引303/303、范围对照4180无差异，纯候选App72/0、Store56/0、VPM146/0、模板集成4/0、包链5/0、私有真实创建帧1/0，workspace fmt/严格Clippy/xtask及前端check/build通过。浏览器旧预期及框内缺失重试修正后，最终相关七模块61/0；失败轮次保留，不冒称全套门禁。Rust/契约等与已验证`8a84371`输入完全一致，最终GUI重新验证，来源/精确范围见[M7整改记录](exec-plans/M7-official-gui-extension-ui.md#本轮实现与实际验证a01a10)。完整workspace测试/生产端点IPC、原生GUI、非Windows真实Editor及物理掉电仍未覆盖；原Core168708、数据/profile、Unity和材料保持，未部署、重启、推送。H2–H6保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
+
+2026-11-05修正添加已有VPM项目被误报project_manifest_invalid：登记读取与软件包计划误将VPM直接依赖当作UPM字符串，现改为version对象，清单写出及相关夹具同步；UPM字符串格式和无效内容校验保持。错误文案不再误指“修改软件包”。依据VRChat官方模板文档的VPM版本对象格式独立修正，无旧格式兼容分支。VPM单元125/0、严格Clippy、GUI check通过；指定Test-Avatar只读解析为Avatars（直接20、锁定23）。首轮IPC因原Core占用端点而2/1，保留失败；按已有重启授权释放端点后，登记/读取3、包安装移除/用户包3、备份1、候选列表1共8/0。已构建并恢复dev Core168708，真实IPC检查Test-Avatar的VPM/UPM均valid；五组完整分页公开数据、Unity进程及清单/版本文件摘要保持。未替用户登记真实项目、操作Unity或改数据库合同/依赖；本批未操作GUI，M7/H7人工状态保持。证据位于target/m7-manifest-investigation-20261105/，未运行完整Rust/浏览器门禁或推送。
 
 2026-11-05按所有者要求补齐GUI圆角遗漏：提醒及仓库列表导入/导出预览框共用28px容器；代码底色/跳转正文链接及徽标/状态标签/拾色器改用既有small/full，清理日志搜索框旧覆盖。GUI check与独立端口浏览器实测通过，核对导入预览、菜单、设置字段/拾色器、扩展徽标、日志提醒/搜索及表格行；表格16px、行8px、字段/菜单12px和胶囊保持。未重启或操作原Core/Unity，未重复完整构建/回归；M7/H7人工状态保持。
 

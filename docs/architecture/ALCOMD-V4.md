@@ -333,9 +333,11 @@ Unity
 GUI 迁移要求用户入口、用例、数据结果、错误、进度和可访问性等价，不要求像素级复刻。
 导航或视觉重构必须有冻结流程对照与人工截图签收，不能用外观变化掩盖功能或状态缺失。
 
-Tauri command 只能用于窗口、文件选择器、系统通知和 typed RPC 桥接。Portable Extension UI 仍经同一
+Tauri command 只能用于窗口、文件选择器、系统通知、typed RPC 桥接，以及M7批准的GUI自身受控技术日志读写/等待和有限真实前端异常上报。Portable Extension UI 仍经同一
 ALCOMD RPC/application 边界，不使用 extension private command。Tauri command 不得实现包、项目、MCP、Discord
 或迁移业务。
+
+M7技术日志使用共享 `alcomd-logging` 底座和标准tracing JSONL，Core通过application授权接口读取自身数据目录下的`logs/core`，GUI原生层只读写其平台应用日志目录下的`gui`；不接受任意日志路径，Core离线不影响GUI自身来源。两个来源不是业务状态权威。活动由Core独立数据库投影，与Operation/同步业务及变化事件同事务；不从技术日志、页面文案或任务终态订阅造记录。浮动提示已清理，不实现替代通知机制。
 
 Tauri Bundler 可在某个平台作为 `cargo xtask dist` 的受控底层工具，但不得决定产品组成、
 安装布局、更新事务、迁移流程或最终发行资产集合。这不是禁用 Tauri Bundler；它可以参与
