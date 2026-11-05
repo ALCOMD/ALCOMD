@@ -60,7 +60,9 @@ fn range_fixture_covers_every_frozen_semantic_family() {
             "comparator",
             "exact",
             "hyphen",
+            "official-oracle-boundary",
             "or",
+            "partial",
             "prerelease",
             "tilde",
             "wildcard",
@@ -80,7 +82,7 @@ fn range_fixture_covers_every_frozen_semantic_family() {
             .len(),
         2
     );
-    assert!(fixture["loose"].as_array().expect("loose ranges").len() >= 3);
+    assert_eq!(fixture["loose"], serde_json::json!(["", "1.2.3 ||"]));
     assert!(fixture["invalid"].as_array().expect("invalid ranges").len() >= 2);
 }
 
