@@ -1281,13 +1281,17 @@ function TemplateMutationFeedback({ client, feedback, operations, submitted = fa
 }
 
 export function TemplateOperationProgress({ operationId, operations }: { operationId: string; operations: TemplateOperations }) {
+    const { t } = useTranslation();
+    const events = useCoreEvents();
     const { present } = operations;
     useEffect(() => {
         present(operationId, true);
         return () => present(operationId, false);
     }, [operationId, present]);
     const item = operations.snapshot(operationId);
-    return <><OperationProgress error={item?.progressError} operation={item?.operation} />{item?.error === undefined ? null : <RequestReminder error={item.error} />}</>;
+    return <><OperationProgress error={item?.progressError} operation={item?.operation} />
+        {item?.progressError === undefined || events === undefined ? null : <Button type="button" variant="text" onClick={() => events.invalidate(`operation:${operationId}`, true)}>{t("Retry")}</Button>}
+        {item?.error === undefined ? null : <RequestReminder error={item.error} />}</>;
 }
 
 export function OperationFollow({ children, client, initialOperation, onReadError, onSnapshot, onTerminal, operationId, title = "Operation" }: {
