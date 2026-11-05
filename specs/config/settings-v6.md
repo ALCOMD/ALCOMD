@@ -1,6 +1,6 @@
 # settings.toml Config Schema 6
 
-状态：保留的 Config6 启动迁移输入；当前设置合同见 [Config7](settings-v7.md)。以下保留 Config6 的原始字段与验证形状。
+状态：保留的 Config6 启动迁移输入；当前设置合同见 [Config10](settings-v10.md)。以下保留 Config6 的原始字段与验证形状。
 
 Config6 在 Config5 上增加 `unity.defaultLaunchArguments`，仍由 `alcomd` 经 application 用例层持有唯一设置权威。
 Config1–5 只作为经过各自严格校验的启动迁移输入；保留 revision、主题、语言、包偏好及 Hub 路径，

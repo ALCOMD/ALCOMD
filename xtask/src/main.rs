@@ -81,7 +81,7 @@ const MEMBERS: &[Member] = &[
     (
         "crates/alcomd-store",
         "alcomd-store",
-        &["alcomd-application"],
+        &["alcomd-application", "alcomd-platform"],
     ),
     ("crates/alcomd-platform", "alcomd-platform", &[]),
     (

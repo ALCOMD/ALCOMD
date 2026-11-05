@@ -1,5 +1,4 @@
 //! File-backed configuration adapter. The application owns permissions, update validation and CAS.
-use std::collections::HashSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -98,128 +97,158 @@ fn parse_settings(text: &str) -> Result<ConfigSnapshot, ConfigStoreError> {
     parse_settings_with_schema(text).map(|(snapshot, _)| snapshot)
 }
 
+// Decode directly to typed integers: TOML's generic Value only represents i64,
+// while the settings CAS contract intentionally retains the complete u64 range.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSettings {
+    schema: u64,
+    revision: u64,
+    locale: String,
+    appearance: RawAppearance,
+    packages: Option<RawPackages>,
+    unity: Option<RawUnity>,
+    paths: Option<RawPaths>,
+    window: Option<RawWindow>,
+    projects: Option<RawProjects>,
+    backups: Option<RawBackups>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAppearance {
+    mode: String,
+    source_color: Option<String>,
+    scheme: Option<String>,
+    density: Option<String>,
+    motion: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPackages {
+    show_prerelease: bool,
+    hidden_repository_ids: Vec<String>,
+    hide_local_user_packages: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawUnity {
+    hub_path: Option<String>,
+    default_launch_arguments: Option<Vec<String>>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPaths {
+    project_directory: Option<String>,
+    backup_directory: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWindow {
+    remember_state: Option<bool>,
+    fullscreen: Option<bool>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProjects {
+    auto_discover: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBackups {
+    compression_mode: String,
+    include_vpm_packages: bool,
+    include_library: bool,
+}
+
 fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), ConfigStoreError> {
-    let mut section = "root";
-    let mut seen = HashSet::<String>::new();
-    let mut schema = None;
-    let mut revision = None;
-    let mut locale = None;
-    let mut mode = None;
-    let mut source_color = None;
-    let mut scheme = None;
-    let mut legacy_density = false;
-    let mut motion = None;
-    let mut show_prerelease = None;
-    let mut hidden_repository_ids = None;
-    let mut hide_local_user_packages = None;
-    let mut hub_path = None;
-    let mut default_launch_arguments = None;
-    let mut project_directory = None;
-    let mut backup_directory = None;
-    let mut remember_state = None;
-    let mut fullscreen = None;
-    let mut auto_discover = None;
-    let mut compression_mode = None;
-    let mut include_vpm_packages = None;
-    let mut include_library = None;
-    for raw in text.lines() {
-        let line = raw.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if line.starts_with('[') {
-            let next = match line {
-                "[appearance]" => "appearance",
-                "[packages]" => "packages",
-                "[unity]" => "unity",
-                "[paths]" => "paths",
-                "[window]" => "window",
-                "[projects]" => "projects",
-                "[backups]" => "backups",
-                _ => return Err(ConfigStoreError::Corrupt),
-            };
-            if !seen.insert(format!("section:{next}")) {
-                return Err(ConfigStoreError::Corrupt);
-            }
-            section = next;
-            continue;
-        }
-        let (key, value) = line.split_once('=').ok_or(ConfigStoreError::Corrupt)?;
-        let key = key.trim();
-        let value = value.trim();
-        let identity = format!("{section}:{key}");
-        if !seen.insert(identity) {
-            return Err(ConfigStoreError::Corrupt);
-        }
-        match (section, key) {
-            ("root", "schema") => schema = Some(parse_u64(value)?),
-            ("root", "revision") => revision = Some(parse_u64(value)?),
-            ("root", "locale") => locale = Some(parse_locale(parse_string(value)?)?),
-            ("window", "remember_state") => remember_state = Some(parse_bool(value)?),
-            ("window", "fullscreen") => fullscreen = Some(parse_bool(value)?),
-            ("projects", "auto_discover") => auto_discover = Some(parse_bool(value)?),
-            ("backups", "compression_mode") => {
-                compression_mode = Some(match parse_string(value)? {
-                    "store" => BackupCompression::Store,
-                    "fast" => BackupCompression::Fast,
-                    "level3" => BackupCompression::Level3,
-                    "level5" => BackupCompression::Level5,
-                    "level7" => BackupCompression::Level7,
-                    "maximum" => BackupCompression::Maximum,
-                    _ => return Err(ConfigStoreError::Corrupt),
-                });
-            }
-            ("backups", "include_vpm_packages") => include_vpm_packages = Some(parse_bool(value)?),
-            ("backups", "include_library") => include_library = Some(parse_bool(value)?),
-            ("unity", "hub_path") => hub_path = Some(parse_path_string(value)?),
-            ("unity", "default_launch_arguments") => {
-                default_launch_arguments = Some(parse_argument_array(value)?);
-            }
-            ("paths", "project_directory") => project_directory = Some(parse_path_string(value)?),
-            ("paths", "backup_directory") => backup_directory = Some(parse_path_string(value)?),
-            ("appearance", "mode") => mode = Some(parse_mode(parse_string(value)?)?),
-            ("appearance", "source_color") => {
-                let value = parse_string(value)?.to_owned();
-                source_color = Some(value);
-            }
-            ("appearance", "scheme") => scheme = Some(parse_scheme(parse_string(value)?)?),
-            ("appearance", "density") => {
-                validate_legacy_density(parse_string(value)?)?;
-                legacy_density = true;
-            }
-            ("appearance", "motion") => motion = Some(parse_motion(parse_string(value)?)?),
-            ("packages", "show_prerelease") => show_prerelease = Some(parse_bool(value)?),
-            ("packages", "hidden_repository_ids") => {
-                hidden_repository_ids = Some(parse_uuid_array(value)?)
-            }
-            ("packages", "hide_local_user_packages") => {
-                hide_local_user_packages = Some(parse_bool(value)?)
-            }
-            _ => return Err(ConfigStoreError::Corrupt),
-        }
+    if text.len() as u64 > MAX_SETTINGS_BYTES {
+        return Err(ConfigStoreError::TooLarge);
     }
-    let schema = schema.ok_or(ConfigStoreError::Corrupt)?;
+    let raw: RawSettings = toml::from_str(text).map_err(|_| ConfigStoreError::Corrupt)?;
+    let schema = raw.schema;
+    let revision = Some(raw.revision);
+    let locale = Some(parse_locale(&raw.locale)?);
+    let mode = Some(parse_mode(&raw.appearance.mode)?);
+    let source_color = raw.appearance.source_color;
+    let scheme = raw
+        .appearance
+        .scheme
+        .as_deref()
+        .map(parse_scheme)
+        .transpose()?;
+    let legacy_density = raw.appearance.density.is_some();
+    if let Some(density) = raw.appearance.density {
+        validate_legacy_density(&density)?;
+    }
+    let motion = Some(parse_motion(&raw.appearance.motion)?);
+    let show_prerelease = raw.packages.as_ref().map(|value| value.show_prerelease);
+    let hidden_repository_ids = raw
+        .packages
+        .as_ref()
+        .map(|value| value.hidden_repository_ids.clone());
+    let hide_local_user_packages = raw
+        .packages
+        .as_ref()
+        .map(|value| value.hide_local_user_packages);
+    let hub_path = raw.unity.as_ref().and_then(|value| value.hub_path.clone());
+    let default_launch_arguments = raw
+        .unity
+        .as_ref()
+        .and_then(|value| value.default_launch_arguments.clone());
+    let project_directory = raw
+        .paths
+        .as_ref()
+        .and_then(|value| value.project_directory.clone());
+    let backup_directory = raw
+        .paths
+        .as_ref()
+        .and_then(|value| value.backup_directory.clone());
+    let remember_state = raw.window.as_ref().and_then(|value| value.remember_state);
+    let fullscreen = raw.window.as_ref().and_then(|value| value.fullscreen);
+    let auto_discover = raw.projects.as_ref().map(|value| value.auto_discover);
+    let compression_mode = raw
+        .backups
+        .as_ref()
+        .map(|value| match value.compression_mode.as_str() {
+            "store" => Ok(BackupCompression::Store),
+            "fast" => Ok(BackupCompression::Fast),
+            "level3" => Ok(BackupCompression::Level3),
+            "level5" => Ok(BackupCompression::Level5),
+            "level7" => Ok(BackupCompression::Level7),
+            "maximum" => Ok(BackupCompression::Maximum),
+            _ => Err(ConfigStoreError::Corrupt),
+        })
+        .transpose()?;
+    let include_vpm_packages = raw.backups.as_ref().map(|value| value.include_vpm_packages);
+    let include_library = raw.backups.as_ref().map(|value| value.include_library);
     if !(1..=u64::from(FileConfigStore::SCHEMA_VERSION)).contains(&schema)
         || legacy_density != (schema < 4)
     {
         return Err(ConfigStoreError::Corrupt);
     }
-    if schema < 3 && seen.contains("section:unity") {
+    if schema < 3 && raw.unity.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
-    if schema < 5 && seen.contains("section:paths") {
+    if schema < 5 && raw.paths.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 6 && default_launch_arguments.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
-    if schema < 7 && seen.contains("section:window") {
+    if schema < 7 && raw.window.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 10 && fullscreen.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
-    if schema < 8 && (seen.contains("section:projects") || seen.contains("section:backups")) {
+    if schema < 8 && (raw.projects.is_some() || raw.backups.is_some()) {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 9
@@ -248,7 +277,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         if show_prerelease.is_some()
             || hidden_repository_ids.is_some()
             || hide_local_user_packages.is_some()
-            || seen.contains("section:packages")
+            || raw.packages.is_some()
         {
             return Err(ConfigStoreError::Corrupt);
         }
@@ -258,7 +287,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             hide_local_user_packages: false,
         }
     } else {
-        if !seen.contains("section:packages") {
+        if raw.packages.is_none() {
             return Err(ConfigStoreError::Corrupt);
         }
         ConfigPackageSettings {
@@ -428,164 +457,98 @@ fn publish_settings(path: &Path, contents: &[u8]) -> Result<(), ConfigStoreError
         .open(&temporary)
         .map_err(map_io)?;
     file.write_all(contents).map_err(map_io)?;
+    replace_checkpoint("temporary_written")?;
     file.sync_all().map_err(map_io)?;
     drop(file);
+    replace_checkpoint("temporary_synced")?;
+    alcomd_platform::sync_directory(parent).map_err(map_io)?;
+    replace_checkpoint("temporary_directory_synced")?;
     let had_target = path.exists();
     if had_target {
         fs::rename(path, &backup).map_err(map_io)?;
+        replace_checkpoint("backup_renamed")?;
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
+        replace_checkpoint("backup_directory_synced")?;
     }
-    if fs::rename(&temporary, path).is_err() {
-        if had_target {
-            let _ = fs::rename(&backup, path);
-        }
-        let _ = fs::remove_file(&temporary);
-        return Err(ConfigStoreError::Unavailable);
-    }
+    // A failed operation can have an unknown outcome. Keep both the old backup
+    // and replacement evidence for the same validation-based recovery path.
+    fs::rename(&temporary, path).map_err(map_io)?;
+    replace_checkpoint("replacement_renamed")?;
+    alcomd_platform::sync_directory(parent).map_err(map_io)?;
+    replace_checkpoint("replacement_directory_synced")?;
     let committed = read_settings_without_recovery(path)?;
-    if committed.revision == 0 {
+    if serialize_settings(&committed) != contents {
         return Err(ConfigStoreError::Corrupt);
     }
     if backup.exists() {
         fs::remove_file(backup).map_err(map_io)?;
+        replace_checkpoint("backup_removed")?;
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
+        replace_checkpoint("cleanup_directory_synced")?;
     }
     Ok(())
 }
 
 fn recover_settings_replace(path: &Path) -> Result<(), ConfigStoreError> {
+    let parent = path.parent().ok_or(ConfigStoreError::Unavailable)?;
     let temporary = path.with_extension("toml.new");
     let backup = path.with_extension("toml.bak");
     if path.exists() {
         let _ = read_settings_without_recovery(path)?;
+        if !temporary.exists() && !backup.exists() {
+            return Ok(());
+        }
+        // Establish the observed valid target before discarding its old backup.
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
         if temporary.exists() {
             fs::remove_file(&temporary).map_err(map_io)?;
         }
         if backup.exists() {
             fs::remove_file(&backup).map_err(map_io)?;
         }
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
         return Ok(());
     }
     if backup.exists() {
         let _ = read_settings_without_recovery(&backup)?;
         fs::rename(&backup, path).map_err(map_io)?;
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
     }
     if temporary.exists() {
         fs::remove_file(temporary).map_err(map_io)?;
+        alcomd_platform::sync_directory(parent).map_err(map_io)?;
     }
     Ok(())
+}
+
+// Fault gates exist only in explicit test builds. Ordinary production settings
+// publication has no environment-controlled failure or waiting path.
+fn replace_checkpoint(_checkpoint: &str) -> Result<(), ConfigStoreError> {
+    #[cfg(test)]
+    if REPLACE_FAILURE.with(|failure| failure.get() == Some(_checkpoint)) {
+        return Err(ConfigStoreError::Unavailable);
+    }
+    #[cfg(feature = "test-kill-gates")]
+    if std::env::var("ALCOMD_TEST_CONFIG_KILL_GATE").as_deref() == Ok(_checkpoint) {
+        let signal = std::env::var_os("ALCOMD_TEST_CONFIG_KILL_SIGNAL")
+            .ok_or(ConfigStoreError::Unavailable)?;
+        fs::write(signal, _checkpoint).map_err(map_io)?;
+        loop {
+            std::thread::park();
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    static REPLACE_FAILURE: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
 }
 
 fn read_settings_without_recovery(path: &Path) -> Result<ConfigSnapshot, ConfigStoreError> {
     read_settings_with_schema(path).map(|(snapshot, _)| snapshot)
 }
 
-fn parse_string(value: &str) -> Result<&str, ConfigStoreError> {
-    value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .filter(|value| !value.contains('"') && !value.contains('\\'))
-        .ok_or(ConfigStoreError::Corrupt)
-}
-
-fn parse_path_string(value: &str) -> Result<String, ConfigStoreError> {
-    let inner = value
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .ok_or(ConfigStoreError::Corrupt)?;
-    let mut path = String::with_capacity(inner.len());
-    let mut characters = inner.chars();
-    while let Some(character) = characters.next() {
-        match character {
-            '\\' => match characters.next() {
-                Some(escaped @ ('\\' | '"')) => path.push(escaped),
-                _ => return Err(ConfigStoreError::Corrupt),
-            },
-            '"' => return Err(ConfigStoreError::Corrupt),
-            character => path.push(character),
-        }
-    }
-    Ok(path)
-}
-fn parse_u64(value: &str) -> Result<u64, ConfigStoreError> {
-    value.parse().map_err(|_| ConfigStoreError::Corrupt)
-}
-fn parse_argument_array(value: &str) -> Result<Vec<String>, ConfigStoreError> {
-    let mut inner = value
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or(ConfigStoreError::Corrupt)?
-        .trim();
-    let mut arguments = Vec::new();
-    while !inner.is_empty() {
-        inner = inner.strip_prefix('"').ok_or(ConfigStoreError::Corrupt)?;
-        let mut characters = inner.char_indices();
-        let mut argument = String::new();
-        let remainder = loop {
-            let (_, character) = characters.next().ok_or(ConfigStoreError::Corrupt)?;
-            match character {
-                '"' => break characters.offset(),
-                '\\' => match characters.next().ok_or(ConfigStoreError::Corrupt)?.1 {
-                    '\\' => argument.push('\\'),
-                    '"' => argument.push('"'),
-                    'b' => argument.push('\u{0008}'),
-                    't' => argument.push('\t'),
-                    'n' => argument.push('\n'),
-                    'f' => argument.push('\u{000c}'),
-                    'r' => argument.push('\r'),
-                    escape @ ('u' | 'U') => {
-                        let count = if escape == 'u' { 4 } else { 8 };
-                        let mut codepoint = 0_u32;
-                        for _ in 0..count {
-                            let digit = characters
-                                .next()
-                                .and_then(|(_, character)| character.to_digit(16))
-                                .ok_or(ConfigStoreError::Corrupt)?;
-                            codepoint = (codepoint << 4) | digit;
-                        }
-                        argument.push(char::from_u32(codepoint).ok_or(ConfigStoreError::Corrupt)?);
-                    }
-                    _ => return Err(ConfigStoreError::Corrupt),
-                },
-                character if (character < ' ' && character != '\t') || character == '\u{007f}' => {
-                    return Err(ConfigStoreError::Corrupt);
-                }
-                character => argument.push(character),
-            }
-        };
-        arguments.push(argument);
-        inner = inner[remainder..].trim();
-        if inner.is_empty() {
-            break;
-        }
-        inner = inner
-            .strip_prefix(',')
-            .ok_or(ConfigStoreError::Corrupt)?
-            .trim();
-    }
-    Ok(arguments)
-}
-fn parse_bool(value: &str) -> Result<bool, ConfigStoreError> {
-    match value {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(ConfigStoreError::Corrupt),
-    }
-}
-fn parse_uuid_array(value: &str) -> Result<Vec<String>, ConfigStoreError> {
-    let inner = value
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or(ConfigStoreError::Corrupt)?
-        .trim();
-    let values = if inner.is_empty() {
-        Vec::new()
-    } else {
-        inner
-            .split(',')
-            .map(|value| parse_string(value.trim()).map(str::to_owned))
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    Ok(values)
-}
 fn parse_mode(value: &str) -> Result<ConfigAppearanceMode, ConfigStoreError> {
     match value {
         "system" => Ok(ConfigAppearanceMode::System),
@@ -676,7 +639,7 @@ mod tests {
     use alcomd_application::{
         AccessContext, ConfigAppearanceUpdate, ConfigNullableUpdate, ConfigPackageSettingsUpdate,
         ConfigUpdate, M7OfficialApplication, OfficialActivityCursor, OfficialActivityPage,
-        OfficialDiagnosticCursor, OfficialDiagnosticPage, OfficialGuiError, OfficialGuiStore,
+        OfficialGuiError, OfficialGuiStore,
         PrincipalId, StoreError,
     };
     use std::sync::Arc;
@@ -755,6 +718,198 @@ mod tests {
             parse_settings("schema = 1\nunknown = 2\n"),
             Err(ConfigStoreError::Corrupt)
         );
+    }
+
+    #[test]
+    fn equivalent_toml_syntax_and_unicode_arrays_preserve_settings() {
+        let mut snapshot = default_snapshot();
+        snapshot.settings.paths.project_directory = Some("/fixture/项目".to_owned());
+        snapshot.settings.unity.default_launch_arguments = Some(vec![
+            "-logFile".to_owned(),
+            "/fixture/日志 output.txt".to_owned(),
+        ]);
+        let canonical = String::from_utf8(serialize_settings(&snapshot)).expect("UTF-8");
+        let variants = [
+            canonical
+                .replace("schema = 10", "schema = 10 # current schema")
+                .replace("mode = \"system\"", "mode = 'system' # same value"),
+            canonical
+                .replace("[appearance]", "[\"appearance\"]")
+                .replace("locale = \"system\"", "'locale' = 'system'"),
+            canonical.replace("\"system\"", "\"syst\\u0065m\"").replace(
+                "[\"-logFile\", \"/fixture/日志 output.txt\"]",
+                "[\n '-logFile', # argument\n '/fixture/日志 output.txt',\n]",
+            ),
+        ];
+        for variant in variants {
+            assert_eq!(parse_settings(&variant), Ok(snapshot.clone()), "{variant}");
+        }
+        for invalid in [
+            canonical.replace("revision = 1", "revision = 1\nrevision = 2"),
+            canonical.replace("[appearance]", "[appearance]\nunknown = true"),
+            canonical.replace("remember_state = false", "remember_state = 'false'"),
+            canonical.replace("[paths]", "[paths]\nunknown = 'ignored'"),
+        ] {
+            assert_eq!(parse_settings(&invalid), Err(ConfigStoreError::Corrupt));
+        }
+    }
+
+    #[test]
+    fn revision_retains_full_u64_range_in_typed_toml() {
+        for revision in [1, i64::MAX as u64, i64::MAX as u64 + 1, u64::MAX] {
+            let mut snapshot = default_snapshot();
+            snapshot.revision = revision;
+            let encoded = serialize_settings(&snapshot);
+            assert_eq!(
+                parse_settings(std::str::from_utf8(&encoded).expect("UTF-8")),
+                Ok(snapshot),
+            );
+        }
+    }
+
+    #[test]
+    fn replacement_failure_at_each_boundary_recovers_valid_old_or_new_authority() {
+        for (index, checkpoint) in [
+            "temporary_written",
+            "temporary_synced",
+            "temporary_directory_synced",
+            "backup_renamed",
+            "backup_directory_synced",
+            "replacement_renamed",
+            "replacement_directory_synced",
+            "backup_removed",
+            "cleanup_directory_synced",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let root = temporary_path(&format!("replacement-failure-{checkpoint}"));
+            fs::create_dir_all(&root).expect("fixture");
+            let path = root.join("settings.toml");
+            let store = FileConfigStore::new(path.clone());
+            let old = store.initialize().expect("old authority");
+            let old_bytes = fs::read(&path).expect("old bytes");
+            let mut new = old.clone();
+            new.revision += 1;
+            new.settings.locale = ConfigLocale::ZhCn;
+            REPLACE_FAILURE.with(|failure| failure.set(Some(checkpoint)));
+            let result = store.publish(&new);
+            REPLACE_FAILURE.with(|failure| failure.set(None));
+            assert_eq!(result, Err(ConfigStoreError::Unavailable), "{checkpoint}");
+            let recovered = store.initialize().expect("recover valid authority");
+            assert_eq!(recovered, if index < 5 { old } else { new });
+            if index < 5 {
+                assert_eq!(fs::read(&path).expect("retained old bytes"), old_bytes);
+            }
+            assert!(!path.with_extension("toml.new").exists());
+            assert!(!path.with_extension("toml.bak").exists());
+            fs::remove_dir_all(root).expect("cleanup");
+        }
+    }
+
+    #[test]
+    fn recovery_preserves_invalid_target_and_valid_backup_for_manual_resolution() {
+        let root = temporary_path("replacement-invalid-target");
+        fs::create_dir_all(&root).expect("fixture");
+        let path = root.join("settings.toml");
+        let old_bytes = serialize_settings(&default_snapshot());
+        fs::write(&path, "invalid replacement").expect("invalid target");
+        fs::write(path.with_extension("toml.bak"), &old_bytes).expect("old evidence");
+        fs::write(path.with_extension("toml.new"), "unpublished evidence").expect("new evidence");
+        assert_eq!(
+            FileConfigStore::new(path.clone()).initialize(),
+            Err(ConfigStoreError::Corrupt)
+        );
+        assert_eq!(
+            fs::read_to_string(&path).expect("target evidence"),
+            "invalid replacement"
+        );
+        assert_eq!(
+            fs::read(path.with_extension("toml.bak")).expect("old evidence"),
+            old_bytes
+        );
+        assert_eq!(
+            fs::read_to_string(path.with_extension("toml.new")).expect("new evidence"),
+            "unpublished evidence"
+        );
+        fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[cfg(feature = "test-kill-gates")]
+    #[test]
+    fn configuration_process_kill_child() {
+        let Some(path) = std::env::var_os("ALCOMD_TEST_CONFIG_CHILD_PATH") else {
+            return;
+        };
+        let store = FileConfigStore::new(PathBuf::from(path));
+        let mut snapshot = store.load().expect("child old authority");
+        snapshot.revision += 1;
+        snapshot.settings.locale = ConfigLocale::ZhCn;
+        store
+            .publish(&snapshot)
+            .expect("child pauses at requested gate");
+        panic!("requested process-kill gate was not reached");
+    }
+
+    #[cfg(feature = "test-kill-gates")]
+    #[test]
+    fn killed_settings_writer_recovers_at_each_persistence_boundary() {
+        for (index, checkpoint) in [
+            "temporary_written",
+            "temporary_synced",
+            "temporary_directory_synced",
+            "backup_renamed",
+            "backup_directory_synced",
+            "replacement_renamed",
+            "replacement_directory_synced",
+            "backup_removed",
+            "cleanup_directory_synced",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let root = temporary_path(&format!("process-kill-{checkpoint}"));
+            fs::create_dir_all(&root).expect("fixture");
+            let path = root.join("settings.toml");
+            let signal = root.join("checkpoint.txt");
+            let store = FileConfigStore::new(path.clone());
+            let old = store.initialize().expect("accepted authority");
+            let mut child =
+                std::process::Command::new(std::env::current_exe().expect("test executable"))
+                    .args([
+                        "--exact",
+                        "config::tests::configuration_process_kill_child",
+                        "--nocapture",
+                    ])
+                    .env("ALCOMD_TEST_CONFIG_CHILD_PATH", &path)
+                    .env("ALCOMD_TEST_CONFIG_KILL_GATE", checkpoint)
+                    .env("ALCOMD_TEST_CONFIG_KILL_SIGNAL", &signal)
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                    .expect("spawn owned isolated writer");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while !signal.exists() && std::time::Instant::now() < deadline {
+                if child.try_wait().expect("child status").is_some() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let reached = signal.exists();
+            let _ = child.kill();
+            child.wait().expect("reap only owned child");
+            assert!(reached, "checkpoint not reached: {checkpoint}");
+            let recovered = store
+                .initialize()
+                .expect("recover after process termination");
+            let mut new = old.clone();
+            new.revision += 1;
+            new.settings.locale = ConfigLocale::ZhCn;
+            assert_eq!(recovered, if index < 5 { old } else { new });
+            assert!(!path.with_extension("toml.new").exists());
+            assert!(!path.with_extension("toml.bak").exists());
+            fs::remove_dir_all(root).expect("cleanup");
+        }
     }
 
     #[test]
@@ -2399,6 +2554,9 @@ mod tests {
     #[derive(Clone)]
     struct NoStore;
     impl OfficialGuiStore for NoStore {
+        async fn get_official_activity(&self, _: PrincipalId, _: String) -> Result<alcomd_application::OfficialActivityItem, StoreError> { panic!("this fixture must not read Activity") }
+        async fn record_failed_activity(&self, _: PrincipalId, _: alcomd_application::NewFailedActivity) -> Result<alcomd_application::OfficialActivityItem, StoreError> { panic!("this fixture must not write Activity") }
+
         async fn list_official_activity(
             &self,
             _: PrincipalId,
@@ -2407,14 +2565,7 @@ mod tests {
         ) -> Result<OfficialActivityPage, StoreError> {
             unreachable!()
         }
-        async fn list_official_diagnostics(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialDiagnosticCursor>,
-            _: u32,
-        ) -> Result<OfficialDiagnosticPage, StoreError> {
-            unreachable!()
-        }
+
     }
 
     #[test]
