@@ -66,6 +66,7 @@
             "properties": {
                 "templateId": {"$ref": "#/$defs/uuid"},
                 "sourceKind": {"$ref": "#/$defs/templateSourceKind"},
+                "unity": {"type": "object", "additionalProperties": false, "required": ["major", "minor"], "properties": {"major": {"type": "integer", "minimum": 0, "maximum": 4294967295}, "minor": {"type": "integer", "minimum": 0, "maximum": 4294967295}}},
                 "templateVersion": {"type": "string", "minLength": 1, "maxLength": 128},
                 "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
                 "description": {"type": "string", "maxLength": 4096},
@@ -171,8 +172,13 @@
                             "type": "array", "maxItems": 4096, "uniqueItems": true,
                             "items": {"$ref": "#/$defs/sha256"}
                         },
-                        "projectSummaryFingerprint": {"$ref": "#/$defs/sha256"}
-                    }
+                        "projectSummaryFingerprint": {"$ref": "#/$defs/sha256"},
+                        "unityVersion": {"type": "string", "minLength": 8, "maxLength": 64},
+                        "projectVersionSha256": {"$ref": "#/$defs/sha256"}
+                    },
+                    "if": {"properties": {"state": {"const": "unapplied"}}, "required": ["state"]},
+                    "then": {"required": ["unityVersion", "projectVersionSha256"]},
+                    "$comment": "New creation plans freeze the full version. Accepted historical plans retain their original evidence for recovery."
                 }
             ]
         },
@@ -263,12 +269,13 @@
         },
         "planCreateProjectParams": {
             "type": "object", "additionalProperties": false,
-            "required": ["templateId", "expectedTemplateRevision", "targetParent", "targetLeaf"],
+            "required": ["templateId", "expectedTemplateRevision", "targetParent", "targetLeaf", "unityVersion"],
             "properties": {
                 "templateId": {"$ref": "#/$defs/uuid"},
                 "expectedTemplateRevision": {"$ref": "#/$defs/revision"},
                 "targetParent": {"$ref": "#/$defs/absolutePath"},
-                "targetLeaf": {"$ref": "#/$defs/targetLeaf"}
+                "targetLeaf": {"$ref": "#/$defs/targetLeaf"},
+                "unityVersion": {"type": "string", "minLength": 8, "maxLength": 64, "$comment": "Explicit full canonical Editor version; installation is not required. Core validates template and package compatibility and freezes the final ProjectVersion bytes in the Plan."}
             }
         },
         "createProjectProgress": {

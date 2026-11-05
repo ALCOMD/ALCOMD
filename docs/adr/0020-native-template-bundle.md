@@ -61,8 +61,8 @@ export 只从已验证 object 读取，target 必须不存在且 create-new，�
 ## Create Project Plan/Apply
 
 `templates.planCreateProject` 固定 TemplateId/revision、bundle/tree/manifest digest、validated parent
-filesystem identity、normalized target leaf、target 不存在、Unity compatibility、M4 exact resolved package
-graph/source revision/digest、resource digest 与最终项目摘要。Plan 不写目录、不刷新 repository；catalog
+filesystem identity、normalized target leaf、target 不存在、显式完整unityVersion、模板主次兼容版本线、最终ProjectVersion内容/摘要、M4 exact resolved package
+graph/source revision/digest、resource digest 与最终项目摘要。Plan不发布目标目录、不修改源模板、不刷新repository状态；允许Core-owned staging/cache。必要遗留证据重读必须匹配catalog固定manifest摘要；catalog
 不是 resolver-ready 时返回 `repository_refresh_required`，M4 SHA-256-required 子集无法满足时 fail closed。
 
 目标尚不存在，因此 Resource Key 是 `ProjectCreate(parent_identity, target_leaf)`，不得伪造目标 identity。

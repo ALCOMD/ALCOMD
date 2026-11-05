@@ -1042,3 +1042,11 @@ query 排除，也不删除或重排参数。GUI 必须说明地址本身可能�
 已登记项目内目标拒绝。写入失败只清理本次创建且身份匹配的半成品，不删除其他文件；保存选择
 取消不调用写 RPC。稳定错误另包括 repository_list_invalid、repository_list_target_invalid、
 repository_list_io_error；普通错误与日志均不包含原始秘密。
+
+## M7 实现依据整改：创建版本与兼容语义（2026-11-05已批准）
+
+templates.planCreateProject的请求增加必需unityVersion完整规范Editor版本字符串；不保留省略字段的旧请求形状。指定版本无需已经安装；安装与exact启动选择另行校验。Core校验模板兼容性，以该版本求解软件包，并将最终ProjectVersion内容及摘要固定入Plan。Rust/TypeScript SDK、CLI --unity-version、GUI和Tauri适配同步。首次公开发布前经所有者批准的请求破坏性修订，RPC major保持1，不新增数据库、权限或配置字段。
+
+包/锁依赖的普通范围与项目直接依赖范围分开；普通完整裸版本为exact，项目直接依赖单版本沿有据的minimum语义。unityRelease补充unity最低版本判断，Core候选与Plan一致；无unity时不施加此门槛。权限、来源、强摘要、Plan/Apply和启动exact匹配保持。
+
+本轮PackageChangeSet formatVersion=3固定新的范围上下文及保留锁元数据写出依据（Schema同时描述历史1/2）。1/2未接受Plan返回既有plan_stale；已接受任务保持原冻结摘要恢复，禁止自动重签。此依据标记不改变SQL结构、权限或请求幂等语义。

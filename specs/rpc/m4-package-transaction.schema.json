@@ -117,7 +117,7 @@
             "additionalProperties": false,
             "required": ["formatVersion", "mutations", "dependencyEdges", "vpmManifestSha256"],
             "properties": {
-                "formatVersion": {"const": 1},
+                "formatVersion": {"enum": [1, 2, 3]},
                 "mutations": {
                     "type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/packageMutation"}
                 },
@@ -228,7 +228,7 @@
             "enum": [
                 "project_revision_changed", "project_identity_changed", "project_snapshot_changed",
                 "repository_revision_changed", "source_identity_changed", "manifest_fingerprint_changed",
-                "artifact_url_changed", "archive_digest_changed", "plan_already_applied"
+                "artifact_url_changed", "archive_digest_changed", "plan_already_applied", "implementation_basis_changed"
             ]
         },
         "operationProgress": {

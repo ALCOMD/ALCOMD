@@ -49,6 +49,7 @@
             "pattern": "^[A-Za-z0-9._/-]+$"
         },
         "unityCompatibility": {
+            "$comment": "ALCOMD Template Bundle v1 declares one compatible major/minor line; creation requires an explicit complete version on that line. This is an ALCOMD policy, separate from package unity/unityRelease minimum constraints.",
             "type": "object",
             "additionalProperties": false,
             "required": ["major", "minor"],

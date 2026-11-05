@@ -445,29 +445,32 @@ unsafe allowlist。`zip` 不得调用 convenience extract 绕过 path/link/colli
 
 ### Range crate 筛选结论
 
-已按冻结 vectors 做到合理候选上限，没有单一成熟 crate 完整匹配 VPM/SemVer.NET 合同：
+以下表格保留原候选筛选的执行记录，不作为当前普通范围语义或成熟库能力的证明。
+2026-11-05复核确认，原向量把普通完整裸版本误作minimum，并错误接受`1.2.3 -`；原mismatch数量不能沿用为正确合同下的淘汰依据。
+普通包依赖、锁依赖及调用方range中的完整裸版本是exact；项目直接依赖的单版本minimum是另一入口的生态语义。
+依据为[VRChat包规范](https://vcc.docs.vrchat.com/vpm/packages/)、其引用的
+[固定SemanticVersioning.NET](https://github.com/adamreeve/semver.net/tree/cbd74616bb01348f596715d6d22479106d04dda7)，
+以及用于辅助入口判断的[vrc-get固定版本](https://github.com/vrc-get/vrc-get/tree/14d73d018bdc90c5b005064eb10f8e9714fa8409/vrc-get-vpm/src/version)。
 
 | 候选 | 许可证 / MSRV / 状态 | differential mismatch | 隔离锁文件与实现边界 |
 | --- | --- | --- | --- |
-| `nodejs-semver 5.0.0`，defaults off | 已完成先前审批材料 | 1：bare `1.2.3` 被当 exact，冻结期望是 minimum | 已拒绝；不 patch/fork，不进入 manifest/lock |
-| `semver 1.0.28`，defaults off + `std` | `MIT OR Apache-2.0`；Rust 1.68；维护中的 Cargo 语义库 | 8：空 loose、两个 trailing loose、space-separated comparator、hyphen、OR、显式 prerelease comparator、`includePrerelease` | isolated lock 仅该 crate；Workspace 已传递锁定同版，因此直接采用不会新增 package；无 native/build script，上游内部有 unsafe |
-| `node-semver 2.2.0`，defaults off | `Apache-2.0`；Rust 1.70；当前 crates.io 版本、公开维护仓库 | 3：bare minimum、空 loose、`includePrerelease` | isolated lock 共 19 个 package；与当前 Workspace lock 只读比对会新增 7 个 package：`node-semver`、`bytecount`、`miette`、`miette-derive`、`minimal-lexical`、`nom 7.1.3`、`unicode-width 0.1.14`；无 native/build script，crate 源码未发现 unsafe；未写入生产 Cargo files |
+| `nodejs-semver 5.0.0`，defaults off | 已完成先前审批材料 | 原记录1；bare exact与正确普通范围一致，原minimum预期错误 | 当时未采用；该拒绝理由失效，未按修订向量重评，不改变当前依赖 |
+| `semver 1.0.28`，defaults off + `std` | `MIT OR Apache-2.0`；Rust 1.68；维护中的 Cargo 语义库 | 原记录8：空 loose、两个 trailing loose、space-separated comparator、hyphen、OR、显式 prerelease comparator、`includePrerelease`；向量修正后须重新计数 | isolated lock 仅该 crate；Workspace 已传递锁定同版，因此直接采用不会新增 package；无 native/build script，上游内部有 unsafe |
+| `node-semver 2.2.0`，defaults off | `Apache-2.0`；Rust 1.70；当前 crates.io 版本、公开维护仓库 | 原记录3：bare minimum、空 loose、`includePrerelease`；bare minimum错误，不能沿用为缺陷 | isolated lock 共 19 个 package；与当前 Workspace lock 只读比对会新增 7 个 package：`node-semver`、`bytecount`、`miette`、`miette-derive`、`minimal-lexical`、`nom 7.1.3`、`unicode-width 0.1.14`；无 native/build script，crate 源码未发现 unsafe；未写入生产 Cargo files |
 
 `semver` 只实现 Cargo 风格并要求 compound comparator 使用逗号；`node-semver`/`nodejs-semver` 的 npm
 bare version 是 exact。`versions 7.0.0` 在初筛即因只提供单一 `Requirement` operator，不能表达 compound/
-hyphen/OR，未升级为 differential candidate。继续筛选同类 crate 不再具有合理收益。
+hyphen/OR，未升级为 differential candidate。原筛选没有证明正确区分两种范围上下文后所有成熟matcher仍不适用；本轮不新增或替换生产版本库。
 
 项目所有者随后批准方案 A：`semver 1.0.28` 是唯一 Version model，只用于 Version 解析、prerelease/
 build 结构与 `Version::cmp_precedence`；`alcomd-vpm` 的私有最小 AST/parser 只负责把冻结的 VPM grammar
 转换成 conjunction/OR predicates。生产代码不使用 `semver::VersionReq` 或 `semver::Comparator`，也没有
-第二套 Version/order/build model。上述 mismatch 表因此是对“直接复用候选 range matcher”的淘汰证据，
-不是对 `semver::Version` 的否决。
+第二套 Version/order/build model。当前继续沿用该已批准模型；上述旧mismatch表仅说明历史评估经过，不再作为普通范围的合规证明或当前候选淘汰证据。
 
 剩余依赖边界：
 
-1. **SemVer/range**：三个成熟 crate 的现成 range matcher 均未通过冻结 vectors；已采用获批的
-   `semver 1.0.28` Version + 私有最小 VPM range parser 方案，不补丁/fork 上游，也不维护第二个
-   Version model。
+1. **SemVer/range**：原现成matcher筛选使用了含错误上下文的向量；本轮按修订合同修正私有parser并区分项目直接依赖，保留获批的
+   `semver 1.0.28` Version + 私有VPM range parser方案，不补丁/fork上游，也不维护第二个Version model。
 2. **temp/atomic file**：优先使用现有 platform adapter 与 std/Tokio；只有确实提供安全 create-new、
    persist/replace 语义且三平台验证后才考虑 crate，不预建通用文件事务库。
 
@@ -563,7 +566,7 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   filesystem journal。生产 store 仍只启用 Schema v2。
 - 2026-08-19：隔离完整 Workspace resolver probe 表明 `nodejs-semver 5.0.0` 唯一不一致为 VPM bare
   version：range `1.2.3` 对 version `1.4.0` 的冻结期望为 true，crate 实际为 false。因此按批准条件
-  拒绝该候选，不加入生产 manifest/Cargo.lock，也不在其上增加语义补丁。
+  拒绝该候选，不加入生产 manifest/Cargo.lock，也不在其上增加语义补丁。2026-11-05已确认该普通range的旧预期错误；此处只保留当时执行事实，不作为当前淘汰依据。
 - 2026-08-19：不含已拒绝 range crate 的候选组合为 `zip 8.6.0`（default off，仅
   `deflate-flate2-zlib-rs`）、`sha2 0.11.0`（default off）与 `unicode-normalization 0.1.25`
   （default off，仅 std）。真实 resolver diff 新增 9 个 locked package：上述三项以及
@@ -576,7 +579,7 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   metadata gate 与 active feature graph 已核验最小 feature 边界，Unicode 许可证记录保留完整
   `(MIT OR Apache-2.0) AND Unicode-3.0`。
 - 2026-08-19：追加筛选 `semver 1.0.28` 与 `node-semver 2.2.0`。完整冻结向量分别有 8 项与 3 项
-  mismatch；结合已拒绝的 `nodejs-semver 5.0.0`，合理单 crate 候选已耗尽。未将两者写入生产依赖，
+  mismatch（基于当时旧向量，含2026-11-05已更正的错误预期）；当时据此作出候选已耗尽的判断，该能力判断不再有效。未将两者写入生产依赖，
   也未开始 resolver/download/archive/transaction 实现；停在“成熟 Version parser + 最小自有 range
   parser”窄决策点等待人工批准。
 - 2026-08-19：项目所有者批准方案 A。`semver 1.0.28` 作为唯一 Version model 接入

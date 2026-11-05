@@ -4,6 +4,143 @@
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
+## 实现依据与跨模块整改计划（2026-11-05，已批准实施）
+
+所有者要求先继续检查其他模块，使用官方证据与vrc-get辅助判断，完整梳理后提出统一计划。
+所有者随后明确批准完整实施本计划；下列公开合同修订和生产依赖边属于本次授权。修复与验证尚在实施，不代表M7签收。
+问题/来源/隔离复现和未覆盖范围统一见
+[跨模块依据复核](../testing/m7-implementation-basis-audit-20261105.md)，不另立阶段入口。
+
+### 范围、判断规则与成本
+
+- 仍只收束M7现有产品链路，保留H2–H6签收、已有修改、数据、profile和验收材料；不进入M8–M12，不推送。
+- 外部规范先确定字段所属格式及版本，再确定业务上下文。分别处理UPM项目清单、VPM项目清单、
+  包清单、仓库索引；最低Unity兼容范围、项目实际Editor版本和启动exact匹配也分开。
+- vrc-get冻结`14d73d018bdc90c5b005064eb10f8e9714fa8409`仅作可复查行为/输入对照；
+  不复制、包装、Fork或改写其源码，不继承其内部架构或将全部差异判为ALCOMD错误。
+- 官方文档、真实样本、参考实现和ALCOMD策略冲突时先记录差异；不靠修改测试预期或新特例消除冲突。
+  已批准的SHA-256要求、权限/owner隔离、Plan/Apply、无覆盖恢复和业务扫描保持。
+- 优先内部修正，预期不新增数据库结构、权限名、通用框架或整套前端状态模型。
+  本次已批准：普通范围与项目直接依赖的上下文语义修正；创建请求必需unityVersion；store复用锁定toml 1.1.4；非Windows有界-version探测；补齐unityRelease。
+
+### 批次0：校正依据与验收输入
+
+覆盖A01–A10。建立轻量“格式/字段或动作→版本化来源→上下文→样本→预期→实现→测试”映射，
+原位修订错误的current Config引用、能力声明、fixture形状和依赖评估结论。
+测试先覆盖官方真实输入和相邻模块消费结果，不先做全量构建。
+
+范围夹具明确区分普通VersionRange与项目直接依赖。保留反例：同一个`1.2.3`在不同上下文可能不同；
+不能将上一轮普通版本库对照直接推广为所有入口都exact。每个差分来源固定版本/提交，记录实际比较范围。
+
+### 批次1：清单读取与写出完整性
+
+覆盖A01–A04，是后续模板/迁移验证的基础。
+
+1. 修正legacy对象与数组的区别，保留路径/GUID含义。正常读取、用户包与已有迁移配置使用一致格式。
+   能读取不等于批准删除；需要清理但当前不支持的场景应提供准确的unsupported原因，不新增盲删路径。
+2. 修正整仓resolver解析失败的反馈。可以保留批准的完整性门槛，但必须说明失败原因/适用范围，
+   不再把合法字段误报损坏或无问题地返回全部不可用；若采用逐条解析，仍不得冒称catalog完整。
+3. 补齐批准范围需要的合法partial/caret/tilde/comparator组合，明确非法与暂不支持输入。
+   普通包依赖/锁依赖采用普通范围；项目直接依赖采用具名上下文；GUI不自行求解。
+4. 写出保留未修改条目的依赖与必要元数据，改变条目的锁定依赖来自冻结的权威求解结果。
+   同步Plan字节/hash、Apply materialization、模板staging及已有迁移写出，避免Plan与Apply格式不同。
+
+验收：固定官方索引的合法版本不再因字段形状被拒绝；legacy受限原因准确；跨上下文范围向量正确；
+安装/升级/移除/resolve/重装的单一Plan/Apply链路及重放/恢复保持，删除B不丢未修改A的锁信息。
+当前已签发计划的hash不能静默重签；必要时按既有stale机制拒绝，不修改历史任务。
+
+### 批次2：Editor身份与创建后可启动
+
+覆盖A05、A06、A09。
+
+- 为macOS/Linux建立真实Editor元数据样本，不再把包管理器catalog顶层version当作Editor版本。
+  先核实各平台bundle/executable信息或隔离版本查询的可行性、身份绑定、超时和失败行为；
+  不凭路径名猜版本，不执行真实项目。vrc-get的`-version`路径仅为辅助候选，不直接搬用。
+- 内置模板的主次兼容版本线不再冒充项目实际版本。创建时明确选择完整版本，
+  固定最终ProjectVersion内容与摘要，发布后核对同一观察版本；是否安装由后续启动选项独立报告。
+  现有创建请求增加必需unityVersion完整版本字段，CLI增加必需--unity-version；允许未安装版本，指定版本不冒称安装存在；
+  不硬编码一个补丁号修复所有模板，也不放宽全部exact启动校验。自定义模板的真实版本也须一致处理。
+- `unityRelease`先统一适用范围及版本排序依据，再同时影响Core计划与候选证据；
+  本轮必须补齐unityRelease，不再以原major/minor子集宣称完整兼容。
+
+验收：空白/Avatar/World模板的创建结果均能进入现有启动流程；自定义模板、未安装/多Editor歧义、
+Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验证使用隔离数据和项目；
+真实Unity进程操作或额外环境切换只在已授权的具体范围内安排，不借检查任务启动Unity。
+
+### 批次3：配置语法与持久化
+
+覆盖A07、A08、A10，可与不依赖它的格式修正分别形成候选。
+
+- 首选现有workspace TOML库的有界解析再执行closed业务字段校验；评估新增store生产依赖边、
+  锁文件和维护成本，使用已获批的store→toml生产依赖边。保留16KiB、UTF-8、重复/未知字段、枚举、revision/CAS和Config1–10迁移约束。
+  另核定标准TOML数值与现有revision边界，不能因换parser悄悄缩小公开合同。
+- 同义注释/引号/转义与业务非法内容分开测试；序列化结果同时通过独立标准解析与自身读取。
+  不删除原设置或损坏证据来“恢复正常”。
+- 将配置文件同步、rename、目录同步和备份清理明确为可恢复步骤，复用现有平台原语。
+  对平台不支持的情况明确保证边界，不把错误吞成已落盘。分别验证各步骤失败及恢复窗口。
+
+验收：三种已复现合法配置变体与baseline值相等，非法业务值仍拒绝；旧配置revision/值保持；
+发布后未知结果仍按既有重读核对处理。进程kill测试与真实掉电证据分别记录，不互相代替。
+
+### 批次4：跨模块候选回归与交付
+
+- 日常只运行改动模块的定向检查；稳定候选集中执行适用完整Rust门禁、前端check/build与相关浏览器回归。
+  一次聚合检查已覆盖的内容不在每个提交后重复跑。
+- 同一候选补齐创建→登记→启动选项、包操作→锁信息→模板/备份/迁移读取、设置保存→重启读取等边界用例。
+  继续覆盖通知稳态零周期业务读取、ACK/重连、旧响应/再次失效、任务全活跃内容/历史分页、终态副作用去重。
+- RPC/SDK/原生桥接/浏览器harness同步验证；自有协议不冒充JSON-RPC2.0，WIT exact绑定不被改造成ambient WASI。
+  对本轮未发现错误的模块只做受影响回归，不重写它们来“统一实现”。
+- 按目的分批本地提交（实施时沿用授权），每批只报告实际变化、实际验证和待查看项；
+  不推送，不自动部署/重启应用，不把旧CI/定向结果当新候选完整通过。
+- 交付绑定实际候选与工作区边界，列出已消除/仍受限/未实证项及来源，H7/M7最终确认仍由所有者完成。
+
+### 本次执行定稿
+
+创建Plan沿现有数据库要求保持version=1，以私有creationBasisVersion=2标识本轮完整版本冻结证据；无此标记的未接受计划stale，已接受历史计划按原冻结证据恢复，不新增数据库结构。
+
+
+- 本批保持Config10、不增加SQL迁移（起始State18；并行日志修改另行记录，不由本计划授权）。store新增既有workspace依赖边toml 1.1.4与内部alcomd-platform；前者替换手写语法解析，后者复用目录同步。无新外部解析库；替代方案手写语法无法覆盖标准TOML，重复平台同步实现会扩大维护成本。toml跟随现有锁与升级检查，平台不支持及真实掉电保证单独列证据。
+- 必需创建输入unityVersion贯通RPC/CLI/SDK/GUI；TemplateRecord增加可选unity主次版本线以筛选已安装候选，创建Plan公开所选unityVersion及ProjectVersion摘要。新未接受Plan必须有证据，已接受历史Plan保留原冻结形状及恢复路径。这是未发布RPCmajor1的有意破坏性输入变更，不保留省略unityVersion的旧创建入口。
+- PackageChangeSet formatVersion=3标识本轮范围与完整写出依据；1/2未接受计划返回plan_stale，不重签。已接受1/2仅按原冻结摘要恢复旧输出（包括历史直接依赖字符串/对象的准确字节），不借此给新请求提供旧格式兼容入口。既有JSON列/权限/数据库结构不变。
+- legacy路径/GUID来自固定来源清单：仓库manifest按既有fingerprint校验后保存为有界、内容寻址的Core缓存证据，用户包沿原owned manifest。归档身份正确不等于index遗留信息相同；不能用缺失的归档字段推断index没有清理义务。Apply只读已冻结证据，缺失或不可排除义务时明确失败，不临时网络请求或静默当作无义务。
+
+| 格式/字段 | 来源与上下文 | 实施规则 |
+| --- | --- | --- |
+| UPM项目dependencies | Unity 2022.3项目清单 | 字符串；不套VPM版本对象 |
+| VPM项目dependencies | VRChat官方模板、固定vrc-get项目DependencyRange辅助 | version对象；完整裸版本在此上下文按minimum |
+| VPM locked.dependencies / 包vpmDependencies / 普通调用range | VRChat包规范引用的固定SemanticVersioning.NET；vrc-get普通VersionRange辅助 | 普通完整裸版本exact，partial/caret/tilde/comparator/hyphen独立向量 |
+| legacyFolders / legacyFiles / legacyPackages | VRChat包规范与固定官方索引 | 前两项路径→GUID对象，后一项数组；元数据不授予删除资格 |
+| unity / unityRelease | Unity 2022.3包清单与assembly version expressions | 同一数值最低版本判断；缺unity不施加门槛，无法解释为unknown |
+| Editor观察 / 创建ProjectVersion | Unity 2022.3 -version；ALCOMD显式完整版本策略 | Windows PE，其余显式有界探测；创建选择不冒充安装或启动验证 |
+
+
+- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI单一版本输入，可从安装列表选；仅一个兼容安装时预填，多项不擅选，无安装可填写。
+- Windows保留PE读取；macOS/Linux仅在登记/重新扫描时执行-version，独立空工作目录、直接argv，并发2、总超时10秒、stdout/stderr各64KiB；执行前后核对身份，超时只终止并回收自己子进程。普通列表不探测，失败保留已有记录。
+- ALCOMD原生Template Bundle v1的unity主次对按同一版本线校验（ALCOMD策略，不冒称VRChat外部模板格式的最低版本规则）；patch由所选完整版本与包最低要求决定，不擅自支持未来主次版本。
+- unityRelease进入resolver/candidate共享最低版本判断；缺unity不施加门槛，无法可靠解释则unknown，Plan不据此宣称兼容，启动exact规则保持。数值渠道支持a/b/f/p，experimental及区域/自定义后缀保持unknown；依据[Unity 2022.3版本表达式](https://docs.unity3d.com/2022.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#unity-version-numbers)。
+- TOML依赖沿用workspace当前锁定1.1.4，不增加第二个parser；替代手写语法减少维护分歧，仍执行各历史版本closed校验、16KiB限制及u64 revision/CAS。维护成本为既有库升级与新增store依赖边，替代方案继续手写已因可复现语法缺口拒绝。
+- 本轮按批次本地提交；不推送、不部署或重启用户环境，不操作真实项目和Unity。旧Plan不重签，未接受旧语义计划走stale，已接受任务恢复证据保持。
+
+### 本轮实现与实际验证（A01–A10）
+
+实现已覆盖本节批准范围；当前工作树同时包含另一获批日志/活动重建，尚在拆分提交，不将临时工作树结果绑定到只有配置与探测改动的HEAD。已独立提交`b89dc89`（类型化TOML/配置持久化）和`073d87b`（显式有界Editor探测），其余包/创建链路待按目的收束。所有原始输出保存在`target/m7-basis-implementation-20261105/`。
+
+| 问题 | 已实现与本轮证据 | 保留限制 |
+| --- | --- | --- |
+| A01–A03 清单、范围与来源 | legacy路径/GUID对象及packages数组；逐版本解析并记录问题；区分普通范围与项目直接依赖。固定官方索引303/303版本读取并进入resolver-ready，0问题；固定SemanticVersioning.NET对照4180输入及canonical回读均0差异。 | 未复制参考实现；catalog完整性门槛保持，不能据读到元数据执行删除。 |
+| A04 锁与冻结输出 | 共享写出保留未改条目和元数据，改变条目依赖来自冻结结果；删除直接依赖仍保留必要传递依赖，重装不生成自依赖。Plan/Apply摘要、重放与旧已接受Plan输出测试通过。真实包用例5/0，包含index权威、GUID/已存在文件、Plan后新增遗留目标和同Plan选择legacyPackages的拒绝。 | 新语义使旧未接受Plan过期；已接受任务按原冻结证据恢复，无证据不能重新签字。未新增遗留删除范围。 |
+| A05 Editor探测 | macOS/Linux登记与扫描执行受限-version，普通列表不执行；Windows平台Unity/Hub单元24/0，Core版本解码5/0。平台crate Linux/macOS all-targets编译、Linux严格Clippy及Unix夹具编译通过。 | Windows未改为执行Editor；无macOS/Linux真实安装运行证据，平台编译不能替代实际探测。 |
+| A06 完整创建版本 | RPC/CLI/SDK/GUI/桥接必需unityVersion；GUI可填未安装版本或选择安装，完整版本/ProjectVersion字节及摘要冻结。隔离模板集成4/0包含创建→发布→登记→启动选项查询、版本门槛与旧Plan；CLI必需参数及浏览器输入/分页回归通过。 | 创建成功不代表Editor已经安装；启动仍exact。当前候选未执行真实Unity。 |
+| A07–A08 配置与恢复 | 复用锁定toml，保持Config1–10 closed字段、u64 revision/CAS和16KiB；合法TOML变体、迁移及文件/rename/目录同步恢复定向33/0。独立终止测试1/0覆盖9个自有写入子进程的终止边界。 | 进程终止不是物理掉电；真实断电、非Windows文件系统持久性未实证。不重置或删除原数据。 |
+| A09 unityRelease | Store到候选/求解使用同一数值最低版本判断；覆盖相等、低于、渠道、数值revision、缺unity及非法release，候选与Plan判断一致。VPM最终单元148/0。 | experimental、区域/自定义后缀保持unknown，不借minimum放宽启动exact。 |
+| A10 文档/能力 | 原位修正Config1–9指向当前Config10的链接，撤回旧普通范围bare-minimum依据，区分官方规则与ALCOMD模板版本线、摘要/权限策略。 | 历史证据保留真实版本，不把旧验收写成新代码通过。 |
+
+集中验证：`cargo fmt --all -- --check`、workspace all-targets严格Clippy、`cargo xtask check`均通过；协议单元16/0、兼容2/0、Schema43/0。受影响四库较早一轮App68/0、Domain6/0、Store65/0、VPM147/0，后续VPM148/0；分别列明，不拼接成完整workspace测试。七个定向集成目标：m4_contract5/0、m5_contract7/0、m5_template4/0、m7_legacy_packages5/0、backup/restore合同各4/0、迁移worker7/0。
+
+前端`npm run check`、`npm run build`通过（现有Vite chunk大小警告保留）。七个相关浏览器模块首轮60/1，唯一失败为既有任务标签已人性化而断言仍使用RPC名；改为实际标签后完整模板操作模块17/0补验，失败trace保留，不合称一次全绿61。覆盖创建/模板分页、默认目录、事件入口/ACK/重连、进度合并/队列界限、稳态无周期读取与反馈去重；未运行完整浏览器套件或原生GUI人工验收。
+
+未执行完整`cargo test --workspace`及固定Windows用户端点的IPC回归：原Core168708占用该端点，本轮明确不部署/重启用户环境，未为测试停止它。新合同已由Schema/SDK及同抽象浏览器验证，真实Core IPC与配套原生构建/运行未冒称通过。包/扩展等全部既有流程、所有旧任务在并行State19变化后的恢复、跨平台真实Editor及物理掉电仍未覆盖。最终同SHA候选与完整适用门禁待共享改动分批收束；H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
+
 ## 当前有效合同
 
 - 所有者于2026-11-05明确批准完整移除手动启动状态查询：删除菜单/弹窗、GUI桥接、Core RPC/application用例和专用Store读取port、Rust SDK方法、CLI命令及专用DTO/Schema。正常打开Unity、安装选择、启动幂等记录及接受/失败反馈保持，不删除共享记录或迁移既有数据。本次为首次公开发布前已批准的接口破坏性删除，RPC major仍为1；原方法按标准未知方法处理，不提供兼容别名、替代入口或轮询，权限名称、数据库、配置与依赖不变。

@@ -1424,7 +1424,7 @@
                 {
                     "kind": "rust-test",
                     "file": "crates/alcomd-vpm/src/candidates.rs",
-                    "symbol": "yanked_and_legacy_remain_explanatory_disabled_entries"
+                    "symbol": "yanked_is_blocked_but_legacy_metadata_requires_plan_target_proof"
                 }
             ]
         },
@@ -1558,18 +1558,18 @@
         {
             "id": "legacy-metadata",
             "given": "otherwise usable candidate has legacy metadata",
-            "expected": "blocked legacy_metadata; existing Plan error unchanged",
+            "expected": "metadata presence permits planning; frozen target proof allows only absent cleanup obligations; actual or unprovable obligations retain package_legacy_cleanup_required",
             "status": "implemented-test-reference",
             "testReferences": [
                 {
                     "kind": "rust-test",
                     "file": "crates/alcomd-vpm/src/candidates.rs",
-                    "symbol": "yanked_and_legacy_remain_explanatory_disabled_entries"
+                    "symbol": "yanked_is_blocked_but_legacy_metadata_requires_plan_target_proof"
                 },
                 {
                     "kind": "rust-test",
-                    "file": "crates/alcomd-vpm/src/resolver.rs",
-                    "symbol": "normal_resolution_rejects_direct_and_transitive_legacy_candidates"
+                    "file": "crates/alcomd-testing/tests/m7_legacy_packages.rs",
+                    "symbol": "absent_legacy_obligations_allow_real_install_and_preserve_frozen_lock_information"
                 }
             ]
         },

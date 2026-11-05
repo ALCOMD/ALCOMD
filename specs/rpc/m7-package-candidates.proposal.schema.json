@@ -301,6 +301,7 @@
                     ]
                 },
                 "unity": {
+                    "$comment": "Same numeric package minimum as Plan: unity plus optional unityRelease, a/b/f/p; absent unity adds no minimum, uninterpretable values stay unknown. Legacy metadata alone is not proof that cleanup is required.",
                     "enum": [
                         "not_required",
                         "compatible",
