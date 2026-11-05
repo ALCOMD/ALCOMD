@@ -37,8 +37,8 @@ pub use project_discovery::{
 pub use unity::is_verified_non_editor_executable;
 pub use unity::{
     UnityArchitecture, UnityMigrationExit, UnityMigrationProcess, ValidatedUnityExecutable,
-    discover_unity_executables, launch_unity_editor, spawn_unity_editor_migration,
-    validate_unity_executable,
+    discover_unity_executables, inspect_unity_installation, launch_unity_editor,
+    spawn_unity_editor_migration, validate_unity_executable,
 };
 
 #[cfg(unix)]

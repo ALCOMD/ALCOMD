@@ -14,15 +14,16 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
         source_kind: app::UnitySourceKind,
     ) -> Result<app::UnityInstallationObservation, app::M5UnityError> {
         let executable_path = PathBuf::from(executable_path);
-        std::fs::metadata(&executable_path).map_err(|error| {
-            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor executable is unavailable");
-            invalid_installation()
+        let inspected_path = executable_path.clone();
+        let value = tokio::task::spawn_blocking(move || {
+            alcomd_platform::inspect_unity_installation(&inspected_path)
+        })
+        .await
+        .map_err(|_| invalid_installation())?
+        .map_err(|error| {
+            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor installation could not be verified");
+            installation_validation_error(error.kind())
         })?;
-        let value =
-            alcomd_platform::validate_unity_executable(&executable_path).map_err(|error| {
-                tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor installation could not be verified");
-                installation_validation_error(error.kind())
-            })?;
         observation(value, source_kind).inspect_err(|error| {
             tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor version could not be verified");
         })
@@ -31,7 +32,9 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
     async fn discover_installations(
         &self,
     ) -> Result<Vec<app::UnityInstallationObservation>, app::M5UnityError> {
-        alcomd_platform::discover_unity_executables()
+        tokio::task::spawn_blocking(alcomd_platform::discover_unity_executables)
+            .await
+            .map_err(|_| invalid_installation())?
             .map_err(|error| {
                 tracing::warn!(reason = %error, "Unity Editor discovery failed");
                 installation_validation_error(error.kind())
@@ -134,13 +137,11 @@ fn observation(
     source_kind: app::UnitySourceKind,
 ) -> Result<app::UnityInstallationObservation, app::M5UnityError> {
     #[cfg(not(windows))]
-    let document: serde_json::Value = serde_json::from_slice(value.version_manifest())
-        .map_err(|_| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?;
-    #[cfg(not(windows))]
-    let unity_version = document
-        .get("version")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?;
+    let unity_version = probe_output_version(
+        value
+            .probed_version()
+            .ok_or_else(|| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?,
+    )?;
     #[cfg(windows)]
     let unity_version = editor_product_version(value.product_version())?;
     let unity_version = app::canonical_unity_version(unity_version)?;
@@ -158,6 +159,53 @@ fn observation(
         source_kind,
         observed_at_ms: now_ms()?,
     })
+}
+
+/// Unity's -version output begins with the complete version and may include its
+/// hexadecimal source revision. Arbitrary trailing output is not version proof.
+#[cfg(any(not(windows), test))]
+fn probe_output_version(value: &str) -> Result<&str, app::M5UnityError> {
+    let invalid = || app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified);
+    let mut parts = value.split_ascii_whitespace();
+    let version = parts.next().ok_or_else(invalid)?;
+    if let Some(revision) = parts.next() {
+        let revision = revision
+            .strip_prefix('(')
+            .and_then(|value| value.strip_suffix(')'))
+            .ok_or_else(invalid)?;
+        if !matches!(revision.len(), 12 | 40)
+            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(invalid());
+        }
+    }
+    if parts.next().is_some() {
+        return Err(invalid());
+    }
+    app::canonical_unity_version(version)?;
+    Ok(version)
+}
+
+#[cfg(test)]
+mod version_output_tests {
+    #[test]
+    fn version_output_requires_complete_version_and_only_optional_hash() {
+        for value in ["2022.3.22f1", "2022.3.22f1 (887be4894c44)"] {
+            assert_eq!(
+                super::probe_output_version(value).expect("version"),
+                "2022.3.22f1"
+            );
+        }
+        for value in [
+            "2022.3",
+            "version 2022.3.22f1",
+            "2022.3.22f1 unrelated",
+            "2022.3.22f1 (garbage)",
+            "2022.3.22f1 (887be4894c44) more",
+        ] {
+            assert!(super::probe_output_version(value).is_err(), "{value}");
+        }
+    }
 }
 
 #[cfg(windows)]

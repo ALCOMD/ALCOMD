@@ -13,6 +13,10 @@ const DISCOVERY_ENTRY_LIMIT: usize = 256;
 #[path = "windows_unity_version.rs"]
 mod windows_version;
 
+#[cfg(unix)]
+#[path = "unity_version_probe.rs"]
+mod version_probe;
+
 /// Architecture reported without guessing the executable's binary format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnityArchitecture {
@@ -26,7 +30,7 @@ pub struct ValidatedUnityExecutable {
     executable_path: PathBuf,
     filesystem_identity: Vec<u8>,
     #[cfg(not(windows))]
-    version_manifest: Vec<u8>,
+    probed_version: Option<String>,
     #[cfg(windows)]
     product_version: String,
     architecture: UnityArchitecture,
@@ -72,8 +76,8 @@ impl ValidatedUnityExecutable {
 
     #[cfg(not(windows))]
     #[must_use]
-    pub fn version_manifest(&self) -> &[u8] {
-        &self.version_manifest
+    pub fn probed_version(&self) -> Option<&str> {
+        self.probed_version.as_deref()
     }
 
     #[cfg(windows)]
@@ -164,11 +168,32 @@ pub fn validate_unity_executable(path: &Path) -> io::Result<ValidatedUnityExecut
         filesystem_identity,
         executable_path,
         #[cfg(not(windows))]
-        version_manifest: bytes,
+        probed_version: None,
         #[cfg(windows)]
         product_version,
         architecture: UnityArchitecture::Unknown,
     })
+}
+
+/// Explicitly inspects a registered/discovered installation. Unix version
+/// discovery executes only `-version` in an independent empty working directory;
+/// ordinary layout/identity validation above never executes an Editor.
+pub fn inspect_unity_installation(path: &Path) -> io::Result<ValidatedUnityExecutable> {
+    #[allow(unused_mut)]
+    let mut executable = validate_unity_executable(path)?;
+    #[cfg(unix)]
+    {
+        let result = version_probe::probe(executable.executable_path());
+        if crate::file_identity_key(executable.executable_path())? != executable.filesystem_identity
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Unity executable identity changed during version probe",
+            ));
+        }
+        executable.probed_version = Some(result?);
+    }
+    Ok(executable)
 }
 
 /// Proves that a Windows process executable belongs to a different product.
@@ -228,7 +253,7 @@ fn discover_from_roots(roots: Vec<PathBuf>) -> io::Result<Vec<ValidatedUnityExec
                 Err(error) => return Err(discovery_error(&path, error)),
             }
             let installation =
-                validate_unity_executable(&path).map_err(|error| discovery_error(&path, error))?;
+                inspect_unity_installation(&path).map_err(|error| discovery_error(&path, error))?;
             if !installations
                 .iter()
                 .any(|existing: &ValidatedUnityExecutable| {

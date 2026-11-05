@@ -127,6 +127,9 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
             .expect("replay Editor registration")
             .replayed
     );
+    #[cfg(unix)]
+    let probes_before_list = fs::read(editor.with_extension("version-probes"))
+        .expect("explicit registration executed the owned version probe");
     assert_eq!(
         client
             .unity_installations_list(UnityInstallationsListParams::default())
@@ -135,6 +138,12 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
             .installations
             .len(),
         1
+    );
+    #[cfg(unix)]
+    assert_eq!(
+        fs::read(editor.with_extension("version-probes")).expect("owned probe evidence"),
+        probes_before_list,
+        "ordinary installation listing must use registered evidence without executing the Editor"
     );
     let config = client
         .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
@@ -263,18 +272,20 @@ fn create_fake_editor(root: &Path, directory: &str) -> PathBuf {
         .join(directory)
         .join("Data/Resources/PackageManager/Editor/manifest.json");
     fs::create_dir_all(manifest.parent().expect("manifest parent")).expect("create Editor layout");
-    #[cfg(not(windows))]
-    fs::copy(
-        std::env::current_exe().expect("current test executable"),
-        &executable,
-    )
-    .expect("copy executable fixture");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::write(
+            &executable,
+            "#!/bin/sh\nif [ \"$#\" -eq 1 ] && [ \"$1\" = \"-version\" ]; then\n  printf 'probe\\n' >> \"$0.version-probes\"\n  printf '2022.3.22f1 (887be4894c44)\\n'\n  exit 0\nfi\nexit 0\n",
+        )
+        .expect("write owned Editor fixture with isolated version invocation");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make owned Editor fixture executable");
+    }
     #[cfg(windows)]
     windows_editor_fixture::write_editor_fixture(&executable, "Unity", "2022.3.22f1_887be4894c44")
         .expect("write native Editor version resource");
-    #[cfg(not(windows))]
-    let catalog = r#"{"version":"2022.3.22f1"}"#;
-    #[cfg(windows)]
     let catalog = r#"{"schemaVersion":4,"packages":{"com.unity.collections":{"version":"1.2.4"}}}"#;
     fs::write(manifest, catalog).expect("write Editor package catalog");
     executable
