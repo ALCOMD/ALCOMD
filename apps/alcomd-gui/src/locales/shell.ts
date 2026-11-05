@@ -302,6 +302,30 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "打开 Unity",
         "ja-JP": "Unityを開く"
     },
+    "Opening…": {
+        "zh-CN": "正在打开…",
+        "ja-JP": "起動中…"
+    },
+    "Unity is open": {
+        "zh-CN": "Unity 已打开",
+        "ja-JP": "Unity は起動済み"
+    },
+    "Bring to front": {
+        "zh-CN": "置于前台",
+        "ja-JP": "前面に表示"
+    },
+    "Could not bring Unity to the front": {
+        "zh-CN": "无法将 Unity 置于前台",
+        "ja-JP": "Unity を前面に表示できませんでした"
+    },
+    "The Unity window for this project is no longer available.": {
+        "zh-CN": "此项目的 Unity 窗口已不可用。",
+        "ja-JP": "このプロジェクトの Unity ウィンドウは利用できなくなりました。"
+    },
+    "Windows did not allow the Unity window to move to the front.": {
+        "zh-CN": "Windows 未允许将 Unity 窗口置于前台。",
+        "ja-JP": "Windows が Unity ウィンドウの前面表示を許可しませんでした。"
+    },
     "Opening extension UI": {
         "zh-CN": "正在打开扩展界面",
         "ja-JP": "拡張機能の画面を開いています"

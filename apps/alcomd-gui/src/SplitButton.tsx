@@ -4,6 +4,7 @@ import { useState, type ReactNode, type Ref } from "react";
 import { Button, Icon, Menu } from "./Material";
 
 export interface SplitButtonProps {
+    "aria-busy"?: boolean;
     children: ReactNode;
     /** Primary action availability; menu items retain their own permissions. */
     disabled?: boolean;
@@ -14,12 +15,13 @@ export interface SplitButtonProps {
     onClick(): void;
     primaryRef?: Ref<HTMLElement>;
     title?: string;
+    widthLabels?: readonly string[];
 }
 
-export function SplitButton({ children, disabled, icon, label, menuButtonRef, menuLabel, onClick, primaryRef, title }: SplitButtonProps) {
+export function SplitButton({ "aria-busy": busy, children, disabled, icon, label, menuButtonRef, menuLabel, onClick, primaryRef, title, widthLabels }: SplitButtonProps) {
     const [open, setOpen] = useState(false);
     return <div aria-label={label} className="alcomd-split-button" role="group">
-        <Button className="alcomd-split-button-primary" disabled={disabled} onClick={onClick} ref={primaryRef} title={title} type="button">{icon}{label}</Button>
+        <Button aria-busy={busy} className="alcomd-split-button-primary" disabled={disabled} onClick={onClick} ref={primaryRef} title={title} type="button" widthLabels={widthLabels}>{icon}{label}</Button>
         <Button aria-expanded={open} aria-haspopup="menu" aria-label={menuLabel} className="alcomd-split-button-menu" onClick={() => setOpen(!open)} onKeyDown={(event) => {
             if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); }
         }} ref={menuButtonRef} type="button">

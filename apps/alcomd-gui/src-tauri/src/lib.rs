@@ -4,11 +4,12 @@ use alcomd_protocol::{
     ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult,
     ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError,
 };
-use tauri::State;
 use tauri::async_runtime::Mutex;
+use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 mod events;
+mod unity_windows;
 mod window_state;
 
 #[derive(Default)]
@@ -1122,6 +1123,7 @@ async fn gui_unity_writer_state(
 #[tauri::command]
 async fn gui_unity_launch(
     state: State<'_, GuiClientState>,
+    windows: State<'_, unity_windows::UnityWindows>,
     params: alcomd_protocol::UnityLaunchParams,
 ) -> Result<alcomd_protocol::UnityLaunchResult, RpcError> {
     let mut client = state.client.lock().await;
@@ -1130,7 +1132,9 @@ async fn gui_unity_launch(
         Some(client) => client.unity_launch(params).await,
         None => return Err(daemon_unavailable()),
     };
-    finish_call(&mut client, result)
+    let result = finish_call(&mut client, result);
+    windows.refresh();
+    result
 }
 
 #[tauri::command]
@@ -1517,13 +1521,22 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())
         .manage(events::EventsClient::default())
+        .manage(unity_windows::UnityWindows::default())
         .on_page_load(|view, payload| {
             events::on_page_load(view, payload);
+            if view.label() == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                view.state::<unity_windows::UnityWindows>().reset();
+            }
         })
         .manage(window_state::WindowStateController::default())
         .on_window_event(|window, event| {
             window_state::on_window_event(window, event);
             events::on_window_event(window, event);
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.state::<unity_windows::UnityWindows>().reset();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             window_state::gui_window_state_configure,
@@ -1593,6 +1606,10 @@ pub fn run() {
             gui_unity_writer_state,
             gui_unity_launch_options,
             gui_unity_launch,
+            unity_windows::gui_unity_windows_start,
+            unity_windows::gui_unity_windows_next,
+            unity_windows::gui_unity_windows_stop,
+            unity_windows::gui_focus_project_unity,
             gui_projects_create,
             gui_project_templates_list,
             gui_project_templates_save,

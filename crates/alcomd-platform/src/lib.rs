@@ -49,9 +49,16 @@ mod unix;
 mod windows;
 #[cfg(windows)]
 mod windows_app_identity;
+#[cfg(windows)]
+mod windows_unity_window;
 
 #[cfg(windows)]
 pub use windows_app_identity::set_current_process_app_user_model_id;
+#[cfg(windows)]
+pub use windows_unity_window::{
+    UnityWindowFocus, UnityWindowMonitor, UnityWindowReader, UnityWindowSnapshot, UnityWindowState,
+    focus_unity_window,
+};
 
 #[cfg(unix)]
 pub use unix::{

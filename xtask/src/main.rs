@@ -223,7 +223,7 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: [&str; 6] = [
+    const APPROVED: [&str; 7] = [
         // AUMID: process identity only, documented input/output ownership.
         "crates/alcomd-platform/src/windows_app_identity.rs",
         "crates/alcomd-platform/src/windows_security.rs",
@@ -231,6 +231,8 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_file_identity.rs",
         // H3: bounded read-only version.dll adapter; every unsafe block is documented.
         "crates/alcomd-platform/src/windows_unity_version.rs",
+        // M7: Windows-owned event, process and window handles stay in the native adapter.
+        "crates/alcomd-platform/src/windows_unity_window.rs",
         // Config5: one documented MoveFileExW(flags=0) call; never replaces a destination.
         "crates/alcomd-platform/src/windows_file_publish.rs",
     ];

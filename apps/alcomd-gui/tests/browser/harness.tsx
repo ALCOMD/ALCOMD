@@ -27,6 +27,7 @@ import { App } from "../../src/App";
 import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
+import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 import { OperationLogEvidence } from "./OperationLogEvidence";
@@ -39,6 +40,7 @@ type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates
 
 declare global {
     interface Window {
+        unityWindowEvidence?: BrowserUnityWindows;
         fixtureCore: GuiRpcClient;
         fixtureLogs: { entries: OperationLogEntry[]; reads: LogsReadParams[]; replace(entries: OperationLogEntry[]): void; fail: boolean };
         h3ReadError?: string;
@@ -181,7 +183,62 @@ const materialEvidence = query.get("material") === "1";
 const operationLogEvidence = query.get("operation-log-preview") === "1";
 if (!materialEvidence && !operationLogEvidence) window.history.replaceState(null, "", initialRoute);
 
+class BrowserUnityWindows implements GuiUnityWindows {
+    readonly focused: UnityWindowTarget[] = [];
+    starts = 0;
+    reads = 0;
+    private token: string | undefined;
+    private version = 0;
+    private projects: UnityWindowTarget[] = [];
+    private states = new Map<string, UnityWindowState>();
+    private wake: (() => void) | undefined;
+
+    async start(token: string, targets: UnityWindowTarget[]) {
+        this.starts += 1;
+        this.token = token;
+        this.projects = targets;
+        return this.snapshot();
+    }
+
+    async next(token: string, after: number) {
+        this.reads += 1;
+        if (this.token === token && this.version === after) {
+            await new Promise<void>((resolve) => { this.wake = resolve; });
+        }
+        if (this.token !== token) throw { code: "unity_window_observation_unavailable" };
+        return this.snapshot();
+    }
+
+    async stop(token: string) {
+        if (token === this.token) {
+            this.token = undefined;
+            this.notify();
+        }
+    }
+
+    async focus(projectId: string, revision: number) {
+        this.focused.push({ projectId, revision });
+        if (query.has("unityWindowsReject")) throw { code: "unity_window_focus_rejected" };
+    }
+
+    set(projectId: string, state: UnityWindowState) {
+        this.states.set(projectId, state);
+        this.version += 1;
+        this.notify();
+    }
+
+    private notify() {
+        this.wake?.();
+        this.wake = undefined;
+    }
+
+    private snapshot(): UnityWindowSnapshot {
+        return { observing: true, version: this.version, states: this.projects.map(({ projectId }) => [projectId, this.states.get(projectId) ?? "closed"]) };
+    }
+}
+
 class DeterministicGuiClient implements GuiRpcClient {
+    readonly unityWindows = query.has("unityWindows") ? (window.unityWindowEvidence = new BrowserUnityWindows()) : undefined;
     async logsRead(params: LogsReadParams): Promise<LogsReadResult> {
         const fixture = window.fixtureLogs;
         fixture.reads.push(structuredClone(params));

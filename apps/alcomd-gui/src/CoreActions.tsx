@@ -25,7 +25,7 @@ import type { GuiRpcClient } from "./rpc";
 import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
-import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
+import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
@@ -450,11 +450,16 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             setFeedback({ busy: false, error: safeError(caught) });
         }
     }, [afterMigrationOpen, client, onChanged, projectId, t]);
+    const unityWindow = useUnityWindowAction(client, project, () => void launch(),
+        !canLaunch || projectRevision === undefined || launchInstallation === undefined,
+        feedback.busy, capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t));
+    const { label: unityLabel, ...unityButton } = unityWindow.action;
     return (
         <ActionSection title={t("Unity actions")}>
             <p><Translated message="Project Unity version: {version}" values={{ version: <strong>{project.unityVersion}</strong> }} /></p>
             {effectiveLaunchOptions.exactMatchingInstallations.length > 1 ? <Select id="launch-installation" label={t("Unity installation for this launch")} onChange={setLaunchInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...effectiveLaunchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} /> : null}
-            <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined || launchInstallation === undefined} onClick={() => void launch()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t)} type="button">{t("Open Unity")}</Button>
+            <Button {...unityButton} type="button">{unityLabel}</Button>
+            {unityWindow.feedback}
             <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManage, capabilities.unityManage, t)} type="button" variant="tonal">{t("Edit launch arguments")}</Button>
             {!argumentsOpen || projectId === undefined ? null : <ProjectLaunchArgumentsDialog client={client} launchConfig={launchConfig} onChanged={onChanged} onClose={() => setArgumentsOpen(false)} projectId={projectId} />}
             <h3>{t("Migrate Project Unity version")}</h3>
@@ -477,7 +482,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     navigate(path: string): void;
     onChanged(): void;
     project: ProjectSnapshot;
-    renderLaunch(action: { disabled: boolean; onClick(): void; title?: string }): ReactNode;
+    renderLaunch(action: ProjectUnityLaunchAction): ReactNode;
 }) {
     const { t } = useTranslation();
     const canMigrate = useCapability(capabilities.projectsUnityMigration);

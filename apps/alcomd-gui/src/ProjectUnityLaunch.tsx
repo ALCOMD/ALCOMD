@@ -8,6 +8,70 @@ import { capabilities, capabilityUnavailableTitle, useCapability } from "./capab
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
 import { displayPath } from "./display-path";
+import { useUnityWindowState } from "./unity-window-observation";
+
+export interface ProjectUnityLaunchAction {
+    disabled: boolean;
+    label: string;
+    onClick(): void;
+    title?: string;
+    widthLabels?: readonly string[];
+    "aria-busy"?: boolean;
+}
+
+export function useUnityWindowAction(client: GuiRpcClient, project: ProjectSnapshot, launch: () => void, launchDisabled: boolean, busy: boolean, title?: string) {
+    const { t } = useTranslation();
+    const canReadProject = useCapability(capabilities.projectsRead);
+    const canReadUnity = useCapability(capabilities.unityRead);
+    const native = canReadProject && canReadUnity ? client.unityWindows : undefined;
+    const { projectId, revision } = project;
+    const state = useUnityWindowState(native, projectId, revision);
+    const [failure, setFailure] = useState<string>();
+    const pending = useRef<object | undefined>(undefined);
+    const origin = useRef<HTMLElement | null>(null);
+    useEffect(() => {
+        setFailure(undefined);
+        return () => { pending.current = undefined; };
+    }, [native, projectId, revision]);
+
+    const focus = async () => {
+        if (native === undefined || projectId === undefined || revision === undefined || pending.current !== undefined) return;
+        if (document.activeElement instanceof HTMLElement) origin.current = document.activeElement;
+        const request = {};
+        pending.current = request;
+        try {
+            await native.focus(projectId, revision);
+        } catch (error: unknown) {
+            if (pending.current === request) setFailure(normalizeRpcError(error).code);
+        } finally {
+            if (pending.current === request) pending.current = undefined;
+        }
+    };
+    const open = t("Open Unity");
+    const opening = t("Opening…");
+    const alreadyOpen = t("Unity is open");
+    const front = t("Bring to front");
+    const windowIsActive = state === "opening" || state === "open" || state === "ready";
+    const action: ProjectUnityLaunchAction = {
+        disabled: busy || state === "opening" || state === "open" || (state !== "ready" && launchDisabled),
+        label: state === "opening" ? opening : state === "open" ? alreadyOpen : state === "ready" ? front : open,
+        onClick: state === "ready" ? () => void focus() : launch,
+        title: windowIsActive ? undefined : title,
+        widthLabels: native === undefined ? undefined : [open, opening, alreadyOpen, front],
+        "aria-busy": state === "opening" || undefined
+    };
+    const close = () => {
+        setFailure(undefined);
+        window.requestAnimationFrame(() => { if (origin.current?.isConnected) origin.current.focus(); });
+    };
+    const feedback = failure === undefined ? null : <Dialog open onClose={close} title={t("Could not bring Unity to the front")}>
+        <p>{failure === "unity_window_not_found" ? t("The Unity window for this project is no longer available.")
+            : failure === "unity_window_focus_rejected" ? t("Windows did not allow the Unity window to move to the front.")
+                : t(requestErrorMessage(failure))}</p>
+        <div className="dialog-actions"><Button onClick={close} type="button">{t("Close")}</Button></div>
+    </Dialog>;
+    return { action, feedback, windowIsActive };
+}
 
 export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaunchSettled, project }: {
     client: GuiRpcClient;
@@ -82,15 +146,15 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
         close();
         window.requestAnimationFrame(() => { if (trigger.current?.isConnected) trigger.current.focus(); });
     };
+    const desktop = useUnityWindowAction(client, project, open,
+        !canLaunch || projectId === undefined || revision === undefined,
+        busy, capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t));
 
     return {
         busy,
-        action: {
-            disabled: !canLaunch || busy || projectId === undefined || revision === undefined,
-            onClick: open,
-            title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t)
-        },
+        action: desktop.action,
         dialogs: <>
+            {desktop.feedback}
             <Dialog onClose={() => closed("missing")} open={dialog === "missing"} title={t("Unity installation required")}>
                 <p>{t("This project requires Unity {version}. No exact matching Unity installation was found.", { version: options?.projectUnityVersion ?? project.unityVersion })}</p>
                 <div className="dialog-actions">
@@ -103,7 +167,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
                 {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
                     <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
-                    <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">{t("Open Unity")}</Button>
+                    <Button disabled={!canLaunch || installationId.length === 0 || busy || desktop.windowIsActive} onClick={confirm} type="button">{t("Open Unity")}</Button>
                 </div>
             </Dialog>
         </>

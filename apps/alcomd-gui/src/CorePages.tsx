@@ -76,7 +76,7 @@ import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { RepositoryToolbar } from "./RepositoryListDialog";
-import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
+import { useProjectUnityLaunch, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { ProjectTemplatesWorkspace } from "./ProjectTemplatesWorkspace";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
@@ -480,7 +480,7 @@ function ProjectsTable({
 function ProjectRowActions({ client, context = "row", launchAction, navigate, onChanged, onCopyCompleted, onProjectChanged, onRemoved, project }: {
     client: GuiRpcClient;
     context?: "row" | "workspace" | "card";
-    launchAction?: { disabled: boolean; onClick(): void; title?: string };
+    launchAction?: ProjectUnityLaunchAction;
     navigate(path: string): void;
     onChanged(): void;
     onCopyCompleted?(projectId: string): void;
@@ -513,6 +513,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const revision = project.revision;
     const workspace = context === "workspace";
     const unityLaunch = useProjectUnityLaunch({ client, navigate, onLaunchSettled: onChanged, project });
+    const { label: unityLaunchLabel, ...unityLaunchButton } = unityLaunch.action;
 
     const observeDeletion = useCallback((next: Operation) => {
         setDeleteOperation(next);
@@ -626,9 +627,9 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
         <>
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
                 {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} project={project} />}
-                {workspace ? null : <Button {...unityLaunch.action} className="project-open-unity-action" type="button">
+                {workspace ? null : <Button {...unityLaunchButton} className="project-open-unity-action" type="button">
                     {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
-                    {t("Open Unity")}
+                    {unityLaunchLabel}
                 </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} type="button" variant="tonal">{t("Manage")}</Button>}
                 {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead, t)} type="button" variant="tonal">{t("Backups")}</Button>}
@@ -638,7 +639,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     {menuItems}
                 </Menu>
-                </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label={t("Open Unity")} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
+                </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
             </div>
             {workspace ? null : unityLaunch.dialogs}
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
