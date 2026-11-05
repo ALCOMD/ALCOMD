@@ -114,7 +114,7 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 | Editor观察 / 创建ProjectVersion | Unity 2022.3 -version；ALCOMD显式完整版本策略 | Windows PE，其余显式有界探测；创建选择不冒充安装或启动验证 |
 
 
-- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI版本选择器包含已安装版本和“自定义”，仅选自定义时显示完整版本输入框；仅一个兼容安装时预填，多项不擅选，无安装默认自定义。手动输入匹配已安装版本也不切换选择模式；项目页和模板页共用同一组件。
+- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI版本选择器包含已安装版本和“自定义”，仅选自定义时显示完整版本输入框；仅一个兼容安装时预填，多项不擅选，无安装默认自定义。手动输入匹配已安装版本也不切换选择模式；项目页和模板页共用同一组件，字段顺序为模板→Unity版本→项目名称→保存位置。
 - Windows保留PE读取；macOS/Linux仅在登记/重新扫描时执行-version，独立空工作目录、直接argv，并发2、总超时10秒、stdout/stderr各64KiB；执行前后核对身份，超时只终止并回收自己子进程。普通列表不探测，失败保留已有记录。
 - ALCOMD原生Template Bundle v1的unity主次对按同一版本线校验（ALCOMD策略，不冒称VRChat外部模板格式的最低版本规则）；patch由所选完整版本与包最低要求决定，不擅自支持未来主次版本。
 - unityRelease进入resolver/candidate共享最低版本判断；缺unity不施加门槛，无法可靠解释则unknown，Plan不据此宣称兼容，启动exact规则保持。数值渠道支持a/b/f/p，experimental及区域/自定义后缀保持unknown；依据[Unity 2022.3版本表达式](https://docs.unity3d.com/2022.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#unity-version-numbers)。
