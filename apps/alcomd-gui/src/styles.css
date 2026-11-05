@@ -500,6 +500,9 @@ md-linear-progress {
 .project-create-flow { display: grid; width: 100%; min-width: 0; gap: 16px; }
 .project-create-flow > md-filled-select,
 .project-create-flow > md-outlined-text-field { width: 100%; }
+.project-create-unity-version { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; min-width: 0; }
+.project-create-unity-version > span { white-space: nowrap; }
+.project-create-unity-version > md-filled-select { width: 100%; min-width: 0; }
 .project-target-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .project-target-picker md-outlined-text-field { width: 100%; }
 .project-copy-review { display: grid; width: 100%; min-width: 0; gap: 16px; }

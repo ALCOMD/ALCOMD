@@ -71,9 +71,12 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: TemplateRe
 export function CreateUnityVersionField({ disabled, selection }: { disabled: boolean; selection: ReturnType<typeof useCreateUnityVersion> }) {
     const { t } = useTranslation();
     return <>
-        <Select disabled={disabled} label={t("Installed Unity version")} onChange={selection.chooseVersion}
-            options={[{ label: t("Choose an installed version"), value: "" }, ...selection.versions.map((version) => ({ label: version, value: version })), { label: t("Custom"), value: "custom" }]}
-            value={selection.custom ? "custom" : selection.version} />
+        <div className="project-create-unity-version">
+            <span>{t("Unity version:")}</span>
+            <Select disabled={disabled} label={t("Unity version")} onChange={selection.chooseVersion}
+                options={[{ label: t("Choose an installed version"), value: "" }, ...selection.versions.map((version) => ({ label: version, value: version })), { label: t("Custom"), value: "custom" }]}
+                value={selection.custom ? "custom" : selection.version} />
+        </div>
         {selection.custom ? <TextField disabled={disabled} label={t("Unity version")} onInput={selection.setVersion} required value={selection.version} /> : null}
         {selection.error !== undefined ? <RequestReminder error={selection.error} title={t("Installed Unity versions could not be loaded.")}>
             <Button disabled={disabled} onClick={selection.retry} type="button" variant="text">{t("Retry")}</Button>

@@ -24,7 +24,7 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
 test("creation accepts an explicit uninstalled Editor version", async ({ page }) => {
     await openHarness(page, "/projects", "unity-zero");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
-    await expect(page.getByRole("combobox", { name: "Installed Unity version", exact: true })).toContainText("Custom");
+    await expect(page.getByRole("combobox", { name: "Unity version", exact: true })).toContainText("Custom");
     await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("");
     await page.getByRole("textbox", { name: "Unity version", exact: true }).fill("2022.3.99f1");
     await page.getByLabel("Create project name").fill("Uninstalled Version");
@@ -36,7 +36,7 @@ test("creation accepts an explicit uninstalled Editor version", async ({ page })
 test("creation prefills one compatible Editor but requires a choice for multiple installations", async ({ page }) => {
     await openHarness(page, "/projects");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
-    const version = page.getByRole("combobox", { name: "Installed Unity version", exact: true });
+    const version = page.getByRole("combobox", { name: "Unity version", exact: true });
     await expect(version).toContainText("2022.3.22f1");
     await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveCount(0);
     await version.click();
@@ -49,7 +49,7 @@ test("creation prefills one compatible Editor but requires a choice for multiple
     await expect(custom).toHaveCount(0);
     await openHarness(page, "/projects", "unity-multiple");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
-    await expect(page.getByRole("combobox", { name: "Installed Unity version", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Unity version", exact: true })).toBeVisible();
     await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Review creation" })).toBeDisabled();
 });
