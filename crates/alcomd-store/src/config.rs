@@ -639,7 +639,7 @@ mod tests {
     use alcomd_application::{
         AccessContext, ConfigAppearanceUpdate, ConfigNullableUpdate, ConfigPackageSettingsUpdate,
         ConfigUpdate, M7OfficialApplication, OfficialActivityCursor, OfficialActivityPage,
-        OfficialGuiError, OfficialGuiStore,
+        OfficialDiagnosticCursor, OfficialDiagnosticPage, OfficialGuiError, OfficialGuiStore,
         PrincipalId, StoreError,
     };
     use std::sync::Arc;
@@ -2554,9 +2554,6 @@ mod tests {
     #[derive(Clone)]
     struct NoStore;
     impl OfficialGuiStore for NoStore {
-        async fn get_official_activity(&self, _: PrincipalId, _: String) -> Result<alcomd_application::OfficialActivityItem, StoreError> { panic!("this fixture must not read Activity") }
-        async fn record_failed_activity(&self, _: PrincipalId, _: alcomd_application::NewFailedActivity) -> Result<alcomd_application::OfficialActivityItem, StoreError> { panic!("this fixture must not write Activity") }
-
         async fn list_official_activity(
             &self,
             _: PrincipalId,
@@ -2565,7 +2562,14 @@ mod tests {
         ) -> Result<OfficialActivityPage, StoreError> {
             unreachable!()
         }
-
+        async fn list_official_diagnostics(
+            &self,
+            _: PrincipalId,
+            _: Option<OfficialDiagnosticCursor>,
+            _: u32,
+        ) -> Result<OfficialDiagnosticPage, StoreError> {
+            unreachable!()
+        }
     }
 
     #[test]
