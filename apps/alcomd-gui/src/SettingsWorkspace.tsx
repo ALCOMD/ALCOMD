@@ -16,7 +16,7 @@ import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
-import { GlobalReminder, Reminder, RequestReminder } from "./Reminder";
+import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
@@ -215,9 +215,9 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
             <Button softDisabled={busy || state.saving} onClick={() => void save("select")} type="button">{t("Select")}</Button>
         </div>
         {error === undefined || state.failed ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-            : <GlobalReminder ref={feedbackRef}><RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
+            : <div ref={feedbackRef}><RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
                 {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void save("retry")} type="button" variant="text">{t("Retry")}</Button>}
-            </RequestReminder></GlobalReminder>}
+            </RequestReminder></div>}
     </div>;
 }
 
@@ -448,13 +448,13 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             </div>
             {location.configuredPathStatus === "invalid" ? <Reminder tone="warning">{t("The saved Unity Hub path is no longer usable.")}</Reminder> : null}
             {error === undefined ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-                : <GlobalReminder ref={feedbackRef}><RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
+                : <div ref={feedbackRef}><RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
                     message={readUnknown ? error.message : error.message === "Unity Hub save result is unknown" ? "Retry checks the current path before writing again." : undefined}>
                     {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "retry" })} type="button" variant="text">{t("Retry")}</Button>}
-                </RequestReminder></GlobalReminder>}
+                </RequestReminder></div>}
             {openDisabledReason === undefined ? null : <span className="visually-hidden" id="settings-unity-hub-open-reason">{openDisabledReason}</span>}
-            {openError === undefined ? null : <GlobalReminder>{openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
-                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}</GlobalReminder>}
+            {openError === undefined ? null : <>{openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
+                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}</>}
         </SettingsSection>
     );
 }

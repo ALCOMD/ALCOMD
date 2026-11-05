@@ -203,9 +203,12 @@ async fn state17_to18_preserves_every_row_index_trigger_and_restore_foreign_key_
         }
     }
     drop(connection);
-    let connection =
-        initialize_connection(&path).expect("State17 to18 through production initialization");
-    assert_eq!(CURRENT_DATA_SCHEMA, 18);
+    let mut connection = Connection::open(&path).expect("reopen State17 fixture");
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON")
+        .expect("foreign key enforcement");
+    migrate_backup_compression(&mut connection, MIGRATION_V18)
+        .expect("production State18 migrator");
     assert_eq!(integer(&connection, "PRAGMA user_version"), 18);
     assert_eq!(integer(&connection, "PRAGMA foreign_keys"), 1);
     assert_eq!(
@@ -260,9 +263,12 @@ async fn state17_to18_preserves_every_row_index_trigger_and_restore_foreign_key_
     for (index, mode) in [(4, "level3"), (5, "level5"), (6, "level7")] {
         insert_backup(&connection, index, mode);
     }
+    drop(connection);
+    let connection =
+        initialize_connection(&path).expect("latest initialization before read-only reopen");
     let accepted = rows(&connection);
     drop(connection);
-    let store = crate::StateStoreHandle::open(path.clone()).expect("reopen State18");
+    let store = crate::StateStoreHandle::open(path.clone()).expect("read retained backup metadata");
     let modes = [
         BackupCompression::Store,
         BackupCompression::Fast,

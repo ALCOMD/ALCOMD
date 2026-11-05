@@ -31,12 +31,13 @@ impl TemplateEngine {
         package_cache: PathBuf,
     ) -> Result<Self, M5TemplateError> {
         let staging = root.join("staging");
-        std::fs::create_dir_all(&staging).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        std::fs::create_dir_all(&staging)
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         Ok(Self {
             objects: TemplateObjectStore::new(root.join("objects")).map_err(map_object_error)?,
             staging,
             package_materializer: crate::FrozenPackageMaterializer::new(package_cache)
-                .map_err(|_| error(M5TemplateErrorCode::Internal))?,
+                .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?,
         })
     }
 }
@@ -115,8 +116,8 @@ impl M5TemplateAdapter for TemplateEngine {
             template_version: evidence.template_version,
             manifest_json: evidence.manifest_json,
         };
-        let plan_json =
-            serde_json::to_string(&authority).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        let plan_json = serde_json::to_string(&authority)
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         Ok(TemplatePlanDraft {
             kind: TemplatePlanKind::Import,
             plan_fingerprint: Sha256::digest(plan_json.as_bytes()).into(),
@@ -132,7 +133,7 @@ impl M5TemplateAdapter for TemplateEngine {
             return Err(error(M5TemplateErrorCode::Internal));
         }
         let authority: ImportPlanAuthority = serde_json::from_str(&plan.plan_json)
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         let evidence = inspect_evidence(Path::new(&authority.source_path))?;
         if authority.version != 1
             || authority.kind != "import"
@@ -276,17 +277,29 @@ fn inspect_evidence(path: &Path) -> Result<TemplateBundleEvidence, M5TemplateErr
     if !path.is_absolute() {
         return Err(error(M5TemplateErrorCode::InvalidInput));
     }
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        error(M5TemplateErrorCode::TemplateBundleInvalid)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || is_link_or_reparse(&metadata) {
         return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
     }
-    let identity = alcomd_platform::file_identity_key(path)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
-    let inspection = inspect_template_bundle(path)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
-    let template_id = TemplateId::parse(&inspection.manifest.template_id)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+    let identity = alcomd_platform::file_identity_key(path).map_err(|cause| {
+        error(M5TemplateErrorCode::TemplateBundleInvalid)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    let inspection = inspect_template_bundle(path).map_err(|cause| {
+        error(M5TemplateErrorCode::TemplateBundleInvalid)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    let template_id = TemplateId::parse(&inspection.manifest.template_id).map_err(|cause| {
+        error(M5TemplateErrorCode::TemplateBundleInvalid)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     Ok(TemplateBundleEvidence {
         template_id,
         template_version: inspection.manifest.template_version,
@@ -311,7 +324,7 @@ fn parse_manifest_record(
     record: &StoredTemplateRecord,
 ) -> Result<TemplateManifest, M5TemplateError> {
     let manifest: TemplateManifest = serde_json::from_str(&record.manifest_json)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     if manifest.template_id != record.template_id.to_string()
         || manifest.template_version != record.template_version
     {
@@ -345,14 +358,15 @@ fn provenance_name(value: TemplateProvenanceKind) -> &'static str {
 }
 
 pub(crate) fn map_object_error(source: crate::TemplateObjectError) -> M5TemplateError {
-    match source.code() {
+    (match source.code() {
         TemplateObjectErrorCode::ObjectMissing => error(M5TemplateErrorCode::TemplateObjectMissing),
         TemplateObjectErrorCode::TargetExists => error(M5TemplateErrorCode::TemplateTargetExists),
         TemplateObjectErrorCode::DigestMismatch => {
             error(M5TemplateErrorCode::TemplateBundleChanged)
         }
         TemplateObjectErrorCode::Io => error(M5TemplateErrorCode::Internal),
-    }
+    })
+    .with_source(source)
 }
 
 #[cfg(windows)]
@@ -380,6 +394,6 @@ fn hex_slice(value: &[u8]) -> String {
     result
 }
 
-const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
+fn error(code: M5TemplateErrorCode) -> M5TemplateError {
     M5TemplateError::new(code)
 }

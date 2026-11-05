@@ -140,59 +140,67 @@ const SCHEMAS: [(&str, &str); 31] = [
 fn diagnostic_log_contract_is_owner_scoped_closed_and_bounded() {
     use alcomd_protocol::{DiagnosticLogReadParams, DiagnosticLogReadResult};
     let contract = schema("m7-diagnostic-log");
-    assert_eq!(
-        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ,
-        "diagnostics.log.read"
-    );
-    assert_eq!(
-        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
-        "diagnostics.log.v1"
-    );
+    assert_eq!(contract["x-alcomd-local-owner-only"], true);
     assert_eq!(
         contract["x-alcomd-method-permissions"],
-        json!({"diagnostics.log.read": ["diagnostics.read"]})
+        json!({"diagnostics.log.read":["diagnostics.read"],"diagnostics.log.history":["diagnostics.read"],"diagnostics.log.health":["diagnostics.read"]})
     );
-    assert_eq!(contract["x-alcomd-local-owner-only"], true);
-    assert_eq!(contract["x-alcomd-buffer-capacity"], 1024);
-    assert!(serde_json::from_value::<DiagnosticLogReadParams>(json!({"owner":"other"})).is_err());
-    assert!(
-        serde_json::from_value::<DiagnosticLogReadParams>(
-            json!({"cursor":{"instanceId":"a","sequence":1,"path":"private"}})
-        )
-        .is_err()
-    );
-    let params: DiagnosticLogReadParams =
-        serde_json::from_value(json!({"limit":200,"waitMs":20000}))
-            .expect("valid diagnostic log test fixture");
-    assert_eq!(params.limit, Some(200));
-    assert_eq!(params.wait_ms, Some(20000));
-    let fixture = json!({"items":[{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1,"occurredAtMs":1,"level":"error","message":"无法读取 Unity 安装。\npath=C:\\Unity","target":"alcomd::unity","code":"diagnostic.error","diagnosticId":"00000000-0000-4000-8000-000000000002","notify":true}],"nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1},"reset":false,"gap":false});
-    let mut leaked = fixture.clone();
-    leaked["items"][0]["secret"] = json!("secret must not be accepted");
-    assert!(serde_json::from_value::<DiagnosticLogReadResult>(leaked).is_err());
-    for required in ["message", "target"] {
-        let mut missing = fixture.clone();
-        missing["items"][0]
-            .as_object_mut()
-            .expect("entry")
-            .remove(required);
-        assert!(serde_json::from_value::<DiagnosticLogReadResult>(missing).is_err());
+    assert_eq!(contract["x-alcomd-max-record-bytes"], 524288);
+    assert_eq!(contract["x-alcomd-queue-records"], 64);
+    for invalid in [
+        json!({"owner":"other"}),
+        json!({"path":"private"}),
+        json!({"waitMs":20000}),
+        json!({"cursor":{"instanceId":"a","sequence":1}}),
+        json!({"query":{"request":"secret"}}),
+    ] {
+        assert!(serde_json::from_value::<DiagnosticLogReadParams>(invalid).is_err());
     }
+    let params: DiagnosticLogReadParams = serde_json::from_value(
+        json!({"limit":200,"follow":true,"query":{"levels":["ERROR"],"search":"项目"}}),
+    )
+    .expect("closed query");
+    assert!(params.follow);
+    assert_eq!(params.limit, Some(200));
+    let health = json!({"sourceId":"00000000-0000-4000-8000-000000000001","sessionId":"00000000-0000-4000-8000-000000000002","revision":1,"state":"degraded","queueDropped":1,"oversizeRejected":0,"writeFailed":0,"rotationFailed":0,"flushFailed":0,"hasGap":true});
+    let fixture = json!({"items":[{"sourceId":health["sourceId"],"sessionId":health["sessionId"],"segmentId":"00000000-0000-4000-8000-000000000003","offset":0,"record":{"timestamp":"2026-11-05T00:00:00Z","level":"ERROR","target":"alcomd::project","fields":{"message":"failed to inspect project","path":"C:\\项目\\Packages\\vpm-manifest.json","error":"invalid manifest\ncaused by: expected version object"}}}],"nextCursor":"opaque","baseline":false,"health":health,"issues":[],"hasMore":false,"scannedBytes":300});
     let result: DiagnosticLogReadResult =
-        serde_json::from_value(fixture.clone()).expect("valid diagnostic log test fixture");
+        serde_json::from_value(fixture.clone()).expect("standard body");
     assert_eq!(
-        serde_json::to_value(result).expect("valid diagnostic log test fixture"),
+        serde_json::to_value(result).expect("valid log result"),
         fixture
     );
+    let mut leaked = fixture.clone();
+    leaked["items"][0]["notify"] = json!(true);
+    assert!(serde_json::from_value::<DiagnosticLogReadResult>(leaked).is_err());
+    let mut health_only = fixture.clone();
+    health_only["items"] = json!([]);
+    health_only["scannedBytes"] = json!(0);
+    assert!(serde_json::from_value::<DiagnosticLogReadResult>(health_only).is_ok());
     assert_eq!(
         contract["$defs"]["readParams"]["properties"]["limit"]["maximum"],
         200
     );
-    assert_eq!(
-        contract["$defs"]["readParams"]["properties"]["waitMs"]["maximum"],
-        20000
+    assert!(
+        contract["$defs"]["readParams"]["properties"]
+            .get("waitMs")
+            .is_none()
     );
-    assert_eq!(contract["$defs"]["item"]["additionalProperties"], false);
+    assert!(
+        contract["$defs"]["item"]["properties"]
+            .get("notify")
+            .is_none()
+    );
+    assert!(
+        serde_json::from_value::<alcomd_protocol::DiagnosticLogHistoryParams>(
+            json!({"path":"arbitrary"})
+        )
+        .is_err()
+    );
+    assert_eq!(
+        contract["$defs"]["historyResult"]["properties"]["items"]["maxItems"],
+        200
+    );
 }
 
 #[test]
@@ -260,9 +268,10 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
             "project-editor-preference",
             "project-unity-launch-config",
             "template",
-            "user-package"
+            "user-package",
+            "activity"
         ]),
-        "all aggregate kinds allowed by current State18 must remain readable"
+        "all aggregate kinds allowed by current State19 must remain readable"
     );
     assert!(
         !durable_kinds
@@ -390,7 +399,10 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
 #[test]
 fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     let contract = schema("m7-official-gui");
-    assert_eq!(contract["x-alcomd-publication"], "active-additive-rpc-v1");
+    assert_eq!(
+        contract["x-alcomd-publication"],
+        "active-unreleased-breaking-replacement-rpc-v1"
+    );
     assert_eq!(contract["x-alcomd-capability"], Value::Null);
     assert_eq!(
         contract["$defs"]["methodName"]["enum"],
@@ -399,7 +411,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
             "settings.update",
             "unity.hub.open",
             "activity.list",
-            "diagnostics.list"
+            "activity.get"
         ])
     );
     assert_eq!(
@@ -409,7 +421,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
             "settings.update": ["settings.manage"],
             "unity.hub.open": ["settings.read", "unity.hub.open"],
             "activity.list": ["activity.read"],
-            "diagnostics.list": ["diagnostics.read"]
+            "activity.get": ["activity.read"]
         })
     );
     assert_eq!(contract["x-alcomd-redaction"]["rawDiagnosticExport"], false);

@@ -41,56 +41,38 @@ test("route changes discard late responses and queued invalidations from the old
     expect(await page.evaluate(() => window.workspaceReads.length)).toBe(3);
 });
 
-test("refresh failures use the shared outlet without moving loaded content and keep an explicit retry", async ({ page }) => {
+test("refresh failures stay with loaded content and keep an explicit retry", async ({ page }) => {
     const snapshot = page.getByLabel("Snapshot");
-    const before = await snapshot.boundingBox();
     await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.evaluate(() => window.workspaceReads[1]!.reject({ code: "permission_denied" }));
-    const outlet = page.locator(".reminder-floating");
-    await expect(outlet).toHaveCount(1);
-    await expect(outlet.getByRole("alert")).toContainText("Refresh failed. The last loaded result is still shown.");
+    const failure = page.locator(".utility-workspace-body").getByRole("alert");
+    await expect(failure).toContainText("Refresh failed. The last loaded result is still shown.");
     await expect(snapshot).toHaveText("Initial snapshot");
-    expect(await snapshot.boundingBox()).toEqual(before);
-    await expect(page.locator(".utility-workspace-body").getByRole("alert")).toHaveCount(0);
-    await page.clock.install();
-    await page.clock.fastForward(6000);
-    await expect(outlet.getByRole("alert")).toBeVisible();
-    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
-    await expect(outlet.getByText("permission_denied", { exact: true })).toBeVisible();
-    await outlet.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await failure.getByRole("button", { name: "Show details", exact: true }).click();
+    await expect(failure).toContainText("permission_denied");
+    await failure.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(3);
     await page.evaluate(() => window.workspaceReads[2]!.resolve("Recovered snapshot"));
     await expect(snapshot).toHaveText("Recovered snapshot");
-    await expect(outlet.locator(".reminder")).toHaveCount(0);
-    await expect(outlet).toBeHidden();
+    await expect(failure).toHaveCount(0);
 });
-
-test("one reminder outlet follows nested native dialogs and remains interactive without moving their content", async ({ page }) => {
+test("dialog errors preserve their draft and remain attached while a nested dialog opens", async ({ page }) => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     const draft = page.getByRole("textbox", { name: "Draft", exact: true });
-    await draft.click();
-    const before = await draft.boundingBox();
+    await draft.fill("Keep the draft");
     await page.getByRole("button", { name: "Report operation failure", exact: true }).click();
-    const outlet = page.locator(".reminder-floating");
-    await expect(outlet).toHaveCount(1);
-    await expect(outlet.getByRole("alert")).toBeVisible();
-    expect(await draft.boundingBox()).toEqual(before);
+    const parent = page.locator("md-dialog[open]").filter({ has: draft });
+    await expect(parent.getByRole("alert")).toBeVisible();
     await page.getByRole("button", { name: "Open nested dialog", exact: true }).click();
     const nested = page.locator("md-dialog[open]").filter({ has: page.getByRole("button", { name: "Close nested dialog", exact: true }) });
-    await expect(nested.locator(".reminder-floating")).toHaveCount(1);
-    await expect(outlet).toHaveCount(1);
-    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
-    await expect(outlet.getByText("permission_denied", { exact: true })).toBeVisible();
-    const bounds = (await outlet.boundingBox())!;
-    expect(bounds.x + bounds.width).toBe(page.viewportSize()!.width - 24);
-    expect(bounds.y + bounds.height).toBe(page.viewportSize()!.height - 24);
+    await expect(nested.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
     await nested.getByRole("button", { name: "Close nested dialog", exact: true }).click();
-    await expect(page.locator("md-dialog[open]")).toHaveCount(1);
-    await expect(page.locator("md-dialog[open] .reminder-floating")).toHaveCount(1);
-    await outlet.getByRole("button", { name: "Recover operation", exact: true }).click();
-    await expect(outlet.getByRole("alert")).toHaveCount(0);
+    await expect(draft).toHaveValue("Keep the draft");
+    await parent.getByRole("button", { name: "Recover operation", exact: true }).click();
+    await expect(parent.getByRole("alert")).toHaveCount(0);
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.locator("body > .reminder-floating")).toHaveCount(1);
-    await expect(outlet).toBeHidden();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
 });

@@ -1,6 +1,6 @@
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -428,27 +428,78 @@ pub enum M6ErrorCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M6Error {
     code: M6ErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl M6Error {
     #[must_use]
-    pub const fn new(code: M6ErrorCode) -> Self {
-        Self { code }
+    pub fn new(code: M6ErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
     pub const fn code(&self) -> M6ErrorCode {
         self.code
     }
-}
-
-impl fmt::Display for M6Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "extension request failed: {:?}", self.code)
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
     }
 }
 
-impl std::error::Error for M6Error {}
+impl std::fmt::Display for M6Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for M6Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 pub trait M6PackageAdapter: Clone + Send + Sync + 'static {
     fn inspect(
@@ -595,6 +646,7 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         &self,
         operation_id: OperationId,
         code: M6ErrorCode,
+        diagnostic_id: String,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), M6Error>> + Send;
     fn enable(
@@ -1110,22 +1162,40 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Extension operation failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     pub(crate) fn schedule_restart(&self, extension_id: String, delay_ms: u64) {
         let application = self.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            let Ok(now_ms) = m6_time_ms() else {
-                return;
-            };
-            let _ = application
-                .start_enabled(PrincipalId::local_owner(), extension_id, now_ms)
-                .await;
-        });
+        let span = tracing::info_span!("extension_restart", extension_id = %extension_id);
+        tokio::spawn(
+            (async move {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                let Ok(now_ms) = m6_time_ms() else {
+                    return;
+                };
+                if let Err(source) = application
+                    .start_enabled(PrincipalId::local_owner(), extension_id, now_ms)
+                    .await
+                    && source.diagnostic_id().is_none()
+                {
+                    crate::record_technical_failure(
+                        &source,
+                        source.path(),
+                        None,
+                        "Extension restart failed",
+                    );
+                }
+            })
+            .instrument(span),
+        );
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M6Error> {
@@ -1168,11 +1238,13 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             _ => Err(M6Error::new(M6ErrorCode::Internal)),
         };
         if let Err(error) = action_result {
+            let (error, diagnostic_id) =
+                error.record_failure(operation_id, "Extension operation failed");
             if error.code() == M6ErrorCode::RecoveryRequired {
                 return Err(error);
             }
             self.store
-                .fail_operation(operation_id, error.code(), m6_time_ms()?)
+                .fail_operation(operation_id, error.code(), diagnostic_id, m6_time_ms()?)
                 .await?;
             return Ok(());
         }

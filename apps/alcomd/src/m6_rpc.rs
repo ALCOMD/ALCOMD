@@ -440,7 +440,13 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
 }
 
 fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "execution request failed")
+        });
+    let mut error = match source.code() {
         app::M6ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M6ErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M6ErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -449,6 +455,7 @@ fn extension_error(id: String, source: app::M6Error) -> DispatchAction {
         app::M6ErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         code => rpc::RpcError::extension(error_name(code)),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }
 

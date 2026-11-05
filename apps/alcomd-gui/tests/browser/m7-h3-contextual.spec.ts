@@ -1,5 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
@@ -158,7 +158,7 @@ test("an unknown backup creation does not start a second task or label closing a
     expect(await requests(page, "operations.cancel")).toEqual([]);
 });
 
-test("Settings Unity errors stay with the action and a corrected registration uses a layout-free success reminder", async ({ page }) => {
+test("Settings Unity errors stay with the action and a corrected registration succeeds without a popup", async ({ page }) => {
     await open(page, "/settings", "h3-unity-register-error=1");
     await selectSettingsSection(page, "unity");
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();
@@ -170,9 +170,9 @@ test("Settings Unity errors stay with the action and a corrected registration us
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     const before = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     await dialog.getByRole("button", { name: "Register", exact: true }).click();
-    await expect(page.locator(".reminder-floating")).toContainText("Unity installation registered.");
-    await expect.poll(() => dialog.locator(".reminder").evaluateAll((items) => items.filter((item) => !item.closest(".reminder-floating")).length)).toBe(0);
-    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => window.h3Requests.some((r) => r.method === "unity.installations.register"))).toBe(true);
+    await expect.poll(() => dialog.locator(".reminder").count()).toBe(0);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
     const after = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     expect(after!.y).toBeCloseTo(before!.y, 0);
     expect(await requests(page, "unity.installations.register")).toHaveLength(2);
@@ -183,7 +183,7 @@ test("a successful Unity launch keeps the project row unchanged and closing an e
     const row = page.locator(".project-row-actions").first().locator("xpath=ancestor::tr");
     const before = await row.boundingBox();
     await row.getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect(page.locator(".reminder-floating")).toContainText("Unity launch opening.");
+    await expect.poll(() => page.evaluate(() => window.unityRequests.some((r) => r.method === "unity.launch"))).toBe(true);
     const after = await row.boundingBox();
     expect(after!.height).toBe(before!.height);
     await expect(row.getByRole("status")).toHaveCount(0);
@@ -191,10 +191,10 @@ test("a successful Unity launch keeps the project row unchanged and closing an e
     await page.goto("/browser-harness.html?route=/projects&unityOptionsError=1");
     const launch = page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true });
     await launch.click();
-    const outlet = page.locator(".reminder-floating");
+    const outlet = page.locator(".project-row-actions").first().locator("xpath=ancestor::tr");
     await expectRequestError(outlet.getByRole("alert"), "revision_conflict");
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await outlet.getByRole("button", { name: "Close", exact: true }).click();
     await expect(launch).toBeFocused();
     await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
@@ -205,19 +205,19 @@ for (const route of ["/projects", `/projects/${projectId}/packages`]) {
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=unity-automatic`);
         const controls = route === "/projects" ? page.locator(".project-row-actions").first() : page.getByRole("navigation", { name: "Project actions" });
         const more = controls.getByRole("button", { name: /^More actions for/ });
-        await more.click();
+        await menuTransition(controls.locator('md-menu[data-menu-kind="actions"]'), "opened", () => more.click());
         await expect(page.getByRole("menuitem", { name: "Unity launch status", exact: true })).toHaveCount(0);
-        await page.keyboard.press("Escape");
+        await menuTransition(controls.locator('md-menu[data-menu-kind="actions"]'), "closed", () => page.keyboard.press("Escape"));
         await controls.getByRole("button", { name: "Open Unity", exact: true }).click();
-        await expect(page.locator(".reminder-floating")).toContainText("Unity launch opening.");
+        await expect.poll(() => page.evaluate(() => window.unityRequests.some((r) => r.method === "unity.launch"))).toBe(true);
         expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launchStatus"))).toEqual([]);
-        await more.click();
+        await menuTransition(controls.locator('md-menu[data-menu-kind="actions"]'), "opened", () => more.click());
         await expect(page.getByRole("menuitem", { name: "Unity launch status", exact: true })).toHaveCount(0);
         await expect(page.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
         await expect(page.locator("md-dialog[open]")).toHaveCount(0);
         expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launchStatus"))).toEqual([]);
         expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
-        await page.keyboard.press("Escape");
+        await menuTransition(controls.locator('md-menu[data-menu-kind="actions"]'), "closed", () => page.keyboard.press("Escape"));
         await expect(more).toBeFocused();
     });
 }
@@ -228,6 +228,31 @@ async function open(page: Page, route: string, params = "") {
 
 async function requests(page: Page, method: string) {
     return page.evaluate((method) => window.h3Requests.filter((request) => request.method === method), method);
+}
+
+test("an old closed event cannot close an action menu that has already reopened", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&state=unity-automatic");
+    const controls = page.locator(".project-row-actions").first();
+    const more = controls.getByRole("button", { name: /^More actions for/ });
+    const menu = controls.locator("md-menu");
+    await menuTransition(menu, "opened", () => more.click());
+    await menuTransition(menu, "closed", () => page.keyboard.press("Escape"));
+    await menuTransition(menu, "opened", () => more.click());
+    await expect(page.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
+    await controls.locator("md-menu").evaluate(async (element) => {
+        element.dispatchEvent(new Event("closed"));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    await expect(page.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
+    await menuTransition(menu, "closed", () => page.keyboard.press("Escape"));
+    await expect(page.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeHidden();
+    await expect(more).toBeFocused();
+});
+
+async function menuTransition(menu: Locator, event: "opened" | "closed", action: () => Promise<void>) {
+    const pending = await menu.evaluateHandle((element, name) => ({ done: new Promise<void>((resolve) => element.addEventListener(name, () => resolve(), { once: true })) }), event);
+    try { await action(); await pending.evaluate(({ done }) => done); }
+    finally { await pending.dispose(); }
 }
 
 async function state(page: Page, state: string) {

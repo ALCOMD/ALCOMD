@@ -104,6 +104,8 @@ pub(super) fn accept_backup_create(
          VALUES (?1,'backups.create','queued',1,?2,?3,?4,?4)",
         params![operation_id.to_string(), owner.as_str(), request_json, integer(request.created_at_ms)?],
     ).map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction.execute(
         "INSERT INTO operation_journal (operation_id,step,kind,state,payload_json,updated_at_ms)
          VALUES (?1,1,'backups.create','prepared',?2,?3)",
@@ -361,7 +363,9 @@ pub(super) fn complete_backup_create(
         "operation.completed",
         now_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "backups.create", backup_id = %backup.record.backup_id, project_id = %backup.record.source_project_id, "operation completed");
+    Ok(())
 }
 
 pub(super) fn fail_backup_create(
@@ -594,15 +598,15 @@ fn transaction(connection: &mut Connection) -> Result<Transaction<'_>, M5BackupE
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(failure)
 }
-pub(super) const fn unavailable() -> M5BackupError {
+pub(super) fn unavailable() -> M5BackupError {
     error(M5BackupErrorCode::StoreUnavailable)
 }
-fn failure(_: rusqlite::Error) -> M5BackupError {
-    unavailable()
+fn failure(source: rusqlite::Error) -> M5BackupError {
+    unavailable().with_source(source)
 }
-const fn internal() -> M5BackupError {
+fn internal() -> M5BackupError {
     error(M5BackupErrorCode::Internal)
 }
-const fn error(code: M5BackupErrorCode) -> M5BackupError {
+fn error(code: M5BackupErrorCode) -> M5BackupError {
     M5BackupError::new(code)
 }

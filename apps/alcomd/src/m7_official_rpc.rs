@@ -2,8 +2,8 @@ use alcomd_application as app;
 use alcomd_protocol as rpc;
 
 use super::{
-    AccessContext, ConnectionState, DispatchAction, M7OfficialGuiApplication, OperationId,
-    error_action, invalid, require_capability, success_action,
+    AccessContext, ConnectionState, DispatchAction, M7OfficialGuiApplication, error_action,
+    invalid, require_capability, success_action,
 };
 
 pub(super) async fn dispatch(
@@ -146,92 +146,43 @@ pub(super) async fn dispatch(
             }
         }
         rpc::METHOD_ACTIVITY_LIST => {
-            let params: rpc::ActivityListParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
+            let p: rpc::ActivityListParams = match serde_json::from_value(request.params) {
+                Ok(p) => p,
                 Err(_) => return invalid(request.id),
             };
-            let cursor = params.cursor.map(|value| app::OfficialActivityCursor {
-                occurred_at_ms: value.occurred_at_ms,
-                source_rank: value.source_rank,
-                stable_id: value.stable_id,
+            let cursor = p.cursor.map(|c| app::OfficialActivityCursor {
+                started_at_ms: c.started_at_ms,
+                activity_id: c.activity_id,
             });
-            match application
-                .list_activity(access, cursor, params.limit)
-                .await
-            {
+            match application.list_activity(access, cursor, p.limit).await {
                 Ok(page) => success_action(
                     request.id,
                     rpc::ActivityListResult {
-                        items: page
-                            .items
-                            .into_iter()
-                            .map(|item| rpc::ActivityItem {
-                                occurred_at_ms: item.occurred_at_ms,
-                                item_type: match item.kind {
-                                    app::OfficialActivityKind::Operation => {
-                                        rpc::ActivityItemType::Operation
-                                    }
-                                    app::OfficialActivityKind::Event => {
-                                        rpc::ActivityItemType::Event
-                                    }
-                                },
-                                summary_code: item.summary_code,
-                                operation_id: item.operation_id,
-                                event_sequence: item.event_sequence,
-                                resource_kind: item.resource_kind,
-                                resource_id: item.resource_id,
-                                state: item.state,
-                            })
-                            .collect(),
-                        next_cursor: page.next_cursor.map(|value| rpc::ActivityCursor {
-                            occurred_at_ms: value.occurred_at_ms,
-                            source_rank: value.source_rank,
-                            stable_id: value.stable_id,
+                        items: page.items.into_iter().map(activity_item).collect(),
+                        next_cursor: page.next_cursor.map(|c| rpc::ActivityCursor {
+                            started_at_ms: c.started_at_ms,
+                            activity_id: c.activity_id,
                         }),
                     },
                     None,
                 ),
-                Err(error) => official_error(request.id, error),
+                Err(e) => official_error(request.id, e),
             }
         }
-        rpc::METHOD_DIAGNOSTICS_LIST => {
-            let params: rpc::DiagnosticsListParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
+        rpc::METHOD_ACTIVITY_GET => {
+            let p: rpc::ActivityGetParams = match serde_json::from_value(request.params) {
+                Ok(p) => p,
                 Err(_) => return invalid(request.id),
             };
-            let cursor = params.cursor.map(|value| app::OfficialDiagnosticCursor {
-                occurred_at_ms: value.occurred_at_ms,
-                operation_id: value.operation_id,
-            });
-            match application
-                .list_diagnostics(access, cursor, params.limit)
-                .await
-            {
-                Ok(page) => success_action(
+            match application.get_activity(access, p.activity_id).await {
+                Ok(item) => success_action(
                     request.id,
-                    rpc::DiagnosticsListResult {
-                        items: page
-                            .items
-                            .into_iter()
-                            .map(|item| rpc::DiagnosticItem {
-                                occurred_at_ms: item.occurred_at_ms,
-                                severity: rpc::DiagnosticSeverity::Error,
-                                subsystem: item.subsystem,
-                                code: item.code,
-                                diagnostic_id: item.diagnostic_id,
-                                operation_id: Some(item.operation_id),
-                                summary: "The operation failed. Use the diagnostic ID when requesting support."
-                                    .to_owned(),
-                            })
-                            .collect(),
-                        next_cursor: page.next_cursor.map(|value| rpc::DiagnosticCursor {
-                            occurred_at_ms: value.occurred_at_ms,
-                            operation_id: value.operation_id,
-                        }),
+                    rpc::ActivityGetResult {
+                        activity: activity_item(item),
                     },
                     None,
                 ),
-                Err(error) => official_error(request.id, error),
+                Err(e) => official_error(request.id, e),
             }
         }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
@@ -405,44 +356,108 @@ fn locale_from_rpc(value: rpc::SettingsLocale) -> app::ConfigLocale {
 }
 
 fn official_error(id: String, error: app::OfficialGuiError) -> DispatchAction {
-    let error = match error {
-        app::OfficialGuiError::InvalidInput => rpc::RpcError::invalid_request(),
-        app::OfficialGuiError::PermissionDenied => rpc::RpcError::permission_denied(),
-        app::OfficialGuiError::RevisionConflict => rpc::RpcError::revision_conflict(),
-        app::OfficialGuiError::Unavailable | app::OfficialGuiError::Corrupt => {
-            rpc::RpcError::internal(OperationId::new().to_string())
+    let diagnostic = error.diagnostic_id().map(str::to_owned);
+    let mut error = match error.kind() {
+        app::OfficialGuiErrorKind::ActivityNotFound => rpc::RpcError {
+            code: "activity_not_found".to_owned(),
+            message: "The activity was not found.".to_owned(),
+            diagnostic_id: None,
+            data: None,
+        },
+        app::OfficialGuiErrorKind::InvalidInput => rpc::RpcError::invalid_request(),
+        app::OfficialGuiErrorKind::PermissionDenied => rpc::RpcError::permission_denied(),
+        app::OfficialGuiErrorKind::RevisionConflict => rpc::RpcError::revision_conflict(),
+        app::OfficialGuiErrorKind::Unavailable | app::OfficialGuiErrorKind::Corrupt => {
+            rpc::RpcError::internal(String::new())
         }
     };
+    // The source owner already recorded the failure. Encoding never writes logs
+    // or invents an association for an unrecorded classification.
+    error.diagnostic_id = diagnostic;
     error_action(Some(id), error, false)
 }
 
 fn hub_open_error(id: String, error: app::UnityHubOpenError) -> DispatchAction {
-    let error = match error {
-        app::UnityHubOpenError::InvalidInput => rpc::RpcError::invalid_request(),
-        app::UnityHubOpenError::PermissionDenied => rpc::RpcError::permission_denied(),
-        app::UnityHubOpenError::RevisionConflict => rpc::RpcError::revision_conflict(),
-        app::UnityHubOpenError::PathChanged => {
+    let diagnostic = error.diagnostic_id().map(str::to_owned);
+    let mut error = match error.kind() {
+        app::UnityHubOpenErrorKind::InvalidInput => rpc::RpcError::invalid_request(),
+        app::UnityHubOpenErrorKind::PermissionDenied => rpc::RpcError::permission_denied(),
+        app::UnityHubOpenErrorKind::RevisionConflict => rpc::RpcError::revision_conflict(),
+        app::UnityHubOpenErrorKind::PathChanged => {
             rpc::RpcError::unity_hub(rpc::error_code::HUB_PATH_CHANGED)
         }
-        app::UnityHubOpenError::PathInvalid => {
+        app::UnityHubOpenErrorKind::PathInvalid => {
             rpc::RpcError::unity_hub(rpc::error_code::HUB_PATH_INVALID)
         }
-        app::UnityHubOpenError::Unavailable => {
+        app::UnityHubOpenErrorKind::Unavailable => {
             rpc::RpcError::unity_hub(rpc::error_code::HUB_UNAVAILABLE)
         }
-        app::UnityHubOpenError::Busy => rpc::RpcError::unity_hub(rpc::error_code::HUB_OPEN_BUSY),
-        app::UnityHubOpenError::OpenFailed => {
+        app::UnityHubOpenErrorKind::Busy => {
+            rpc::RpcError::unity_hub(rpc::error_code::HUB_OPEN_BUSY)
+        }
+        app::UnityHubOpenErrorKind::OpenFailed => {
             rpc::RpcError::unity_hub(rpc::error_code::HUB_OPEN_FAILED)
         }
-        app::UnityHubOpenError::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
+        app::UnityHubOpenErrorKind::Internal => rpc::RpcError::internal(String::new()),
     };
+    error.diagnostic_id = diagnostic;
     error_action(Some(id), error, false)
+}
+
+fn activity_item(v: app::OfficialActivityItem) -> rpc::ActivityItem {
+    rpc::ActivityItem {
+        activity_id: v.activity_id,
+        revision: v.revision,
+        action: v.action,
+        status: v.status,
+        started_at_ms: v.started_at_ms,
+        finished_at_ms: v.finished_at_ms,
+        subject: rpc::ActivitySubject {
+            kind: v.subject.kind,
+            id: v.subject.id,
+            name: v.subject.name,
+        },
+        parameters: v.parameters,
+        result: v.result.map(|r| rpc::ActivityResult { code: r.code }),
+        operation_id: v.operation_id,
+        diagnostic_id: v.diagnostic_id,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn settings_and_hub_rpc_reuse_source_diagnostic_without_technical_fields() {
+        let diagnostic = app::OperationId::new().to_string();
+        let error = app::OfficialGuiError::Unavailable
+            .with_source(std::io::Error::other("private I/O cause"))
+            .with_path("C:/真实/配置/settings.toml")
+            .with_diagnostic_id(Some(diagnostic.clone()));
+        let response = official_error("settings-error".to_owned(), error).response;
+        assert_eq!(response["error"]["diagnosticId"], diagnostic);
+        assert_eq!(response["error"]["code"], "internal_error");
+        let encoded = serde_json::to_string(&response).expect("safe settings response");
+        assert!(!encoded.contains("private I/O cause"));
+        assert!(!encoded.contains("settings.toml"));
+        let hub = app::UnityHubOpenError::OpenFailed
+            .with_source(std::io::Error::other("private spawn cause"))
+            .with_path("C:/真实/Hub.exe")
+            .with_diagnostic_id(Some(diagnostic.clone()));
+        let response = hub_open_error("hub-error".to_owned(), hub).response;
+        assert_eq!(response["error"]["diagnosticId"], diagnostic);
+        assert_eq!(response["error"]["code"], "hub_open_failed");
+        assert!(
+            !serde_json::to_string(&response)
+                .expect("safe Hub response")
+                .contains("private spawn cause")
+        );
+        let unrecorded =
+            official_error("unrecorded".to_owned(), app::OfficialGuiError::Unavailable).response;
+        assert!(unrecorded["error"].get("diagnosticId").is_none());
+    }
 
     #[test]
     fn settings_result_exposes_current_config_without_the_removed_appearance_field() {

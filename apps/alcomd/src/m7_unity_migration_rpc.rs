@@ -114,7 +114,13 @@ fn migration_plan(value: app::UnityMigrationPlanRecord) -> rpc::ProjectUnityMigr
 }
 
 fn migration_error(id: String, source: app::M7UnityMigrationError) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "execution request failed")
+        });
+    let mut error = match source.code() {
         app::M7UnityMigrationErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M7UnityMigrationErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M7UnityMigrationErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -127,6 +133,7 @@ fn migration_error(id: String, source: app::M7UnityMigrationError) -> DispatchAc
         }
         code => rpc::RpcError::unity_migration(migration_error_code(code)),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }
 

@@ -83,14 +83,13 @@ import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
-import { GlobalReminder, Reminder, RequestReminder, useReminder } from "./Reminder";
+import { Reminder, RequestReminder, useInlineError } from "./Reminder";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
-import { requestErrorMessage } from "./request-errors";
-import { useDiagnosticLog } from "./diagnostic-log-ui";
-import { diagnosticLogKey } from "./diagnostic-log";
+import { normalizeRequestError, requestErrorMessage } from "./request-errors";
+import { TechnicalLogs } from "./TechnicalLogs";
 import type { DiagnosticLogLevel } from "@alcomd/sdk";
 
 interface PageProps {
@@ -188,7 +187,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`}>
             <h2>{disconnected ? t("ALCOMD core disconnected") : t("Request failed")}</h2>
-            <RequestReminder inline error={error} title={null} />
+            <RequestReminder error={error} title={null} />
             <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">{t("Reconnect and retry")}</Button>
         </section>
     );
@@ -252,7 +251,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [restoreOpen, setRestoreOpen] = useState(false);
     const [registerPath, setRegisterPath] = useState("");
     const [selectingDirectory, setSelectingDirectory] = useState(false);
-    const reminder = useReminder();
+    const inlineError = useInlineError();
     const current = useActionScope(client);
     const addProjectMenuRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
@@ -337,14 +336,14 @@ export function ProjectsPage({ client, navigate }: PageProps) {
 
     const chooseProjectDirectory = async () => {
         setSelectingDirectory(true);
-        reminder.clear();
+        inlineError.clear();
         try {
             const selected = await client.selectDirectory();
             if (!current() || selected === undefined) return;
             setRegisterPath(selected);
             setRegisterOpen(true);
         } catch (caught: unknown) {
-            if (current()) reminder.error(safeError(t, locale, caught), t("Unable to select directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
+            if (current()) inlineError.show(safeError(t, locale, caught), t("Unable to select directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setSelectingDirectory(false);
         }
@@ -355,7 +354,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
     };
 
-    return (
+    return <>{inlineError.notice}{(
         <section className="projects-page" aria-busy={state.loading} ref={root}>
             <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
@@ -396,7 +395,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             <div className="projects-content">
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
                 {state.error === undefined ? null : state.projects.length === 0 ? <ErrorState error={state.error} retry={retryProjects} />
-                    : <GlobalReminder><RequestReminder error={state.error} title={t("Refresh failed: ")}><Button onClick={retryProjects} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
+                    : <><RequestReminder error={state.error} title={t("Refresh failed: ")}><Button onClick={retryProjects} type="button" variant="text">{t("Retry")}</Button></RequestReminder></>}
                 {!state.loading && state.error === undefined && projects.length === 0 ? (
                     <section className="projects-empty" role="status">
                         <h2>{search.length === 0 ? t("No registered projects") : t("No matching projects")}</h2>
@@ -409,7 +408,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             <RegisterProjectDialog
                 client={client}
                 onChanged={() => {
-                    reminder.success(t("Project registered"));
+
                     void refresh();
                 }}
                 onClose={closeRegisterDialog}
@@ -420,7 +419,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 client={client}
                 onChanged={refresh}
                 onCompleted={(projectId) => {
-                    reminder.success(t("Project created"));
+
                     setCreateOpen(false);
                     navigate(`/projects/${projectId}`);
                 }}
@@ -434,7 +433,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 client={client}
                 onViewOperation={(operationId) => navigate(`/operations/${operationId}`)}
                 onCompleted={(projectId) => {
-                    reminder.success(t("Project restored"));
+
                     setRestoreOpen(false);
                     void refresh().then(() => navigate(`/projects/${projectId}`));
                 }}
@@ -445,7 +444,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 open
             /> : null}
         </section>
-    );
+    )}</>;
 }
 
 function ProjectsTable({
@@ -478,7 +477,7 @@ function ProjectsTable({
         sortableColumn(t("Unity"), "unity", 0),
         sortableColumn(t("Added"), "added", 0),
         sortableColumn(t("Last modified"), "modified", 0),
-        { key: "actions", header: <span className="visually-hidden">{t("Actions")}</span>, width: 0, className: "projects-column-actions" }
+        { key: "actions", header: <span className="visually-hidden">{t("Actions")}</span>, width: 0, className: "projects-column-actions", cellFlow: "wrap" }
     ];
     return <DesktopList className="projects-list" columns={columns} label={t("Projects")} minWidth={720} rows={projects.map((project) => {
         const id = project.projectId;
@@ -505,7 +504,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     project: ProjectSnapshot;
 }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
+    const inlineError = useInlineError();
     const current = useActionScope(client);
     const [removalFailure, setRemovalFailure] = useState<{ message: string; error?: RpcError }>();
     const canReadProjects = useCapability(capabilities.projectsRead);
@@ -536,14 +535,14 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
         if (next.state === "succeeded") {
             setConfirmUnregister(false);
             setDeletePlan(undefined);
-            reminder.success(t("Project directory permanently deleted."));
+
             if (onRemoved !== undefined) onRemoved();
             else onChanged();
         } else if (["failed", "cancelled"].includes(next.state)) {
             setDeleting(false);
             setRemovalFailure({ message: t("Unable to delete project directory: {value0}", { value0: next.errorCode === undefined ? humanize(t, next.state) : t(requestErrorMessage(next.errorCode)) }), error: next.errorCode === undefined ? undefined : { code: next.errorCode, message: "", diagnosticId: next.diagnosticId } });
         }
-    }, [onChanged, onRemoved, reminder.success, t]);
+    }, [onChanged, onRemoved,  t]);
     if (projectId === undefined) return null;
 
     const unregister = async () => {
@@ -554,7 +553,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             await client.projectUnregister(projectId, revision);
             if (!current()) return;
             setConfirmUnregister(false);
-            reminder.success(t("Project unregistered. Files were not deleted."));
+
             if (onRemoved !== undefined) onRemoved();
             else onChanged();
         } catch (caught: unknown) {
@@ -565,14 +564,14 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     };
 
     const openDirectory = async () => {
-        reminder.clear();
+        inlineError.clear();
         setOpeningDirectory(true);
         setMenuOpen(false);
         try {
             await client.openProjectDirectory(projectId);
-            reminder.success(t("Project directory opened."));
+
         } catch (caught: unknown) {
-            if (current()) reminder.error(safeError(t, locale, caught), t("Unable to open project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
+            if (current()) inlineError.show(safeError(t, locale, caught), t("Unable to open project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setOpeningDirectory(false);
         }
@@ -625,7 +624,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             const operation = await client.operationGet(result.operationId);
             if (!current()) return;
             observeDeletion(operation);
-            if (!["succeeded", "failed", "cancelled"].includes(operation.state)) reminder.success(t("Project directory deletion started."));
+
         } catch (caught: unknown) {
             setDeleting(false);
             if (current()) setRemovalFailure({ error: safeError(t, locale, caught), message: t("Unable to delete project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }) });
@@ -642,10 +641,10 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             <MenuItem className="project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label={t("Delete Project Directory…")} onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete, t)} />
         </> : <MenuItem className="project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label={t("Remove Project")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />}
     </>;
-    return (
+    return <>{inlineError.notice}{(
         <>
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
-                {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} project={project} />}
+                {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} onStart={inlineError.clear} onError={inlineError.show} project={project} />}
                 {workspace ? null : <Button {...unityLaunch.action} className="project-open-unity-action" type="button">
                     {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
                     {t("Open Unity")}
@@ -661,7 +660,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label={t("Open Unity")} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
             </div>
             {workspace ? null : unityLaunch.dialogs}
-            {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }} onSaved={reminder.success} projectId={projectId} /> : null}
+            {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? t("Preparing permanent deletion…") : workspace ? t("Remove this project from the list?") : t("Remove this project?") : t("Permanently delete project directory?")}>
                 {removalFailure === undefined ? null : removalFailure.error === undefined ? <Reminder tone="error">{removalFailure.message}</Reminder>
                     : <RequestReminder error={removalFailure.error} message={removalFailure.message} />}
@@ -703,7 +702,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 onCompleted={(targetProjectId) => {
                     if (onCopyCompleted !== undefined) onCopyCompleted(targetProjectId);
                     else {
-                        reminder.success(t("Project copy completed."));
+
                         onChanged();
                     }
                 }}
@@ -712,7 +711,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 project={project}
             />
         </>
-    );
+    )}</>;
 }
 
 function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot }) {
@@ -875,9 +874,8 @@ function ProjectCard({ client, onChanged, onRefresh, project, navigate }: { clie
     );
 }
 
-function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onRefresh(): void; project: ProjectSnapshot }) {
+function ProjectFavoriteButton({ client, onChanged, onRefresh, onStart, onError, project }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onRefresh(): void; onStart(): void; onError(error: RpcError, message?: string): void; project: ProjectSnapshot }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
     const current = useActionScope(client);
     const canManageProjects = useCapability(capabilities.projectsRegistry);
     const [busy, setBusy] = useState(false);
@@ -886,17 +884,17 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { clie
     const favorite = project.favorite === true;
     const toggle = async () => {
         if (projectId === undefined || revision === undefined) return;
-        reminder.clear();
+        onStart();
         setBusy(true);
         try {
             const result = await client.projectSetFavorite(projectId, !favorite, revision);
             if (!current()) return;
             onChanged(result.project);
-            reminder.success(result.project.favorite === true ? t("Project added to favorites.") : t("Project removed from favorites."));
+
         } catch (caught: unknown) {
             if (!current()) return;
             const error = safeError(t, locale, caught);
-            reminder.error(error, t("Unable to update favorite: {value0}", { value0: t(requestErrorMessage(error.code)) }));
+            onError(error, t("Unable to update favorite: {value0}", { value0: t(requestErrorMessage(error.code)) }));
             if (error.code === "revision_conflict") onRefresh();
         } finally {
             setBusy(false);
@@ -1132,7 +1130,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     row: PackageWorkspaceRow;
 }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
+    const inlineError = useInlineError();
     const current = useActionScope(client);
     const [open, setOpen] = useState(false);
     // Keep a first-opened menu connected through Material's closed callbacks.
@@ -1141,14 +1139,14 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     const openLink = async (kind: "documentation" | "changelog") => {
         if (row.linkTarget === undefined) return;
         setOpen(false);
-        reminder.clear();
+        inlineError.clear();
         try {
             await client.openPackageLink(row.linkTarget.repositoryId, row.packageId, row.linkTarget.version, kind);
         } catch (caught: unknown) {
-            if (current()) reminder.error(safeError(t, locale, caught), t("Package link unavailable: ") + t(requestErrorMessage(safeError(t, locale, caught).code)));
+            if (current()) inlineError.show(safeError(t, locale, caught), t("Package link unavailable: ") + t(requestErrorMessage(safeError(t, locale, caught).code)));
         }
     };
-    return (
+    return <>{inlineError.notice}{(
         <>
             <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => { setContentMounted(true); setOpen(true); }} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
@@ -1160,7 +1158,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
                 <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove", anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
             </Menu> : null}
         </>
-    );
+    )}</>;
 }
 
 function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(origin: DialogOrigin): void; onReinstallAll(origin: DialogOrigin): void }) {
@@ -1259,9 +1257,9 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
                 <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
         </FilterPopover>
-        {error === undefined ? null : <GlobalReminder><RequestReminder error={error} message={error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : undefined}>
+        {error === undefined ? null : <><RequestReminder error={error} message={error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : undefined}>
             <Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button>
-        </RequestReminder></GlobalReminder>}
+        </RequestReminder></>}
         <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title={t("Show prerelease versions?")}>
             <p>{t("Prerelease packages may be unstable. Showing them does not install or update any package.")}</p>
             <div className="dialog-actions"><Button onClick={() => setConfirmPrerelease(false)} type="button" variant="text">{t("Cancel")}</Button><Button onClick={() => { setConfirmPrerelease(false); void save({ showPrerelease: true }); }} type="button">{t("Show prerelease versions")}</Button></div>
@@ -1352,7 +1350,7 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
+
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
@@ -1390,7 +1388,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
     };
     const refreshRepositories = async (reload: () => void) => {
-        reminder.clear();
+
         setRepositoryRefresh({ failures: [], results: [], running: true, successes: 0 });
         let repositories: RepositorySnapshot[];
         try {
@@ -1437,7 +1435,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         }
         if (failures.length === 0) {
             setRepositoryRefresh(undefined);
-            reminder.success(`${successes} refreshed, 0 failed.`);
+
         } else setRepositoryRefresh({ failures, results, running: false, successes });
         reload();
     };
@@ -1498,7 +1496,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         title={projectName(t, locale, project)}
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
-                            {refreshError === undefined ? null : <GlobalReminder><RequestReminder error={refreshError} title={t("Refresh failed: ")}><Button onClick={refresh} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
+                            {refreshError === undefined ? null : <><RequestReminder error={refreshError} title={t("Refresh failed: ")}><Button onClick={refresh} type="button" variant="text">{t("Retry")}</Button></RequestReminder></>}
                             <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
@@ -1527,12 +1525,12 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>
-                        {repositoryRefresh === undefined || repositoryRefresh.running ? null : <GlobalReminder><Reminder tone={repositoryRefresh.failures.length > 0 ? "warning" : "success"} onDismiss={() => setRepositoryRefresh(undefined)}>
+                        {repositoryRefresh === undefined || repositoryRefresh.running ? null : <><Reminder tone={repositoryRefresh.failures.length > 0 ? "warning" : "success"} onDismiss={() => setRepositoryRefresh(undefined)}>
                             <div>
                                 <span>{`${repositoryRefresh.successes} refreshed, ${repositoryRefresh.failures.length} failed.`}</span>
                                 {repositoryRefresh.failures.length === 0 ? null : <details><summary>{t("Show details")}</summary><ul>{repositoryRefresh.results.map((result) => result.code === undefined ? null : <li key={result.repositoryId}>{result.repositoryId}: {t(requestErrorMessage(result.code))}</li>)}</ul></details>}
                             </div>
-                        </Reminder></GlobalReminder>}
+                        </Reminder></>}
                         {bulkSelection.length === 0 ? null : (
                             <div aria-label={t("Selected package actions")} className="package-bulk-bar" role="region">
                                 <strong>{t("{count} selected", { count: bulkSelection.length })}</strong>
@@ -1691,7 +1689,7 @@ export function UserPackagesPage({ client, navigate }: PageProps) {
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
+
     const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState<string>();
@@ -1699,7 +1697,7 @@ function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChan
     const enroll = async () => {
         if (pending.current) return;
         pending.current = true;
-        reminder.clear();
+
         setBusy("enroll");
         setError(undefined);
         try {
@@ -1707,7 +1705,7 @@ function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChan
             if (current() && sourcePath !== undefined) {
                 await client.userPackageEnroll(sourcePath);
                 if (!current()) return;
-                reminder.success(t("User Package enrolled."));
+
                 onChanged();
             }
         } catch (caught: unknown) {
@@ -1718,15 +1716,15 @@ function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChan
         }
     };
     return <><Button aria-busy={busy !== undefined} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>
-        {error === undefined ? null : <GlobalReminder><RequestReminder error={error} title={t("User Package enrollment failed")} onDismiss={() => setError(undefined)}>
+        {error === undefined ? null : <><RequestReminder error={error} title={t("User Package enrollment failed")} onDismiss={() => setError(undefined)}>
             <Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Retry")}</Button>
-        </RequestReminder></GlobalReminder>}
+        </RequestReminder></>}
     </>;
 }
 
 function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
     const { t, locale } = useTranslation();
-    const reminder = useReminder();
+
     const current = useActionScope(client);
     const [busy, setBusy] = useState<string>();
     const pending = useRef(false);
@@ -1738,14 +1736,14 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     const refresh = async (item: UserPackageRecord) => {
         if (pending.current) return;
         pending.current = true;
-        reminder.clear();
+
         setBusy(`refresh:${item.userPackageId}`);
         setError(undefined);
         try {
             await client.userPackageRefresh(item.userPackageId, item.revision);
             if (!current()) return;
             setRefreshFailed(undefined);
-            reminder.success(t("User Package refreshed."));
+
             onChanged();
         } catch (caught: unknown) {
             if (current()) { setError(safeError(t, locale, caught)); setRefreshFailed(item); }
@@ -1757,14 +1755,14 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     const remove = async (item: UserPackageRecord) => {
         if (pending.current) return;
         pending.current = true;
-        reminder.clear();
+
         setBusy(`remove:${item.userPackageId}`);
         setError(undefined);
         try {
             await client.userPackageRemove(item.userPackageId, item.revision);
             if (!current()) return;
             setRemoving(undefined);
-            reminder.success(t("Enrollment removed. The source folder was not deleted."));
+
             onChanged();
         } catch (caught: unknown) {
             if (current()) setError(safeError(t, locale, caught));
@@ -1773,16 +1771,16 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             pending.current = false;
         }
     };
-    return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => { reminder.clear(); detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => { reminder.clear(); setRefreshFailed(undefined); setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
+    return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => {  detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => {  setRefreshFailed(undefined); setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
         <Dialog onClose={() => setSelected(undefined)} open={selected !== undefined} returnFocus={detailsOrigin} title={t("User Package details")}>
             {selected === undefined ? null : <UserPackageDetails client={client} userPackageId={selected} />}
             <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
         </Dialog>
-        {refreshFailed === undefined || error === undefined ? null : <GlobalReminder><RequestReminder error={error} title={t("User Package refresh failed")} onDismiss={() => { setRefreshFailed(undefined); setError(undefined); }}>
+        {refreshFailed === undefined || error === undefined ? null : <><RequestReminder error={error} title={t("User Package refresh failed")} onDismiss={() => { setRefreshFailed(undefined); setError(undefined); }}>
             <p>{refreshFailed.displayName ?? refreshFailed.packageId}</p>
             {error.code === "revision_conflict" ? <Button disabled={busy !== undefined} onClick={() => { setRefreshFailed(undefined); setError(undefined); onChanged(); }} type="button">{t("Refresh list")}</Button>
                 : <Button disabled={busy !== undefined} onClick={() => void refresh(refreshFailed)} type="button">{t("Retry")}</Button>}
-        </RequestReminder></GlobalReminder>}
+        </RequestReminder></>}
         {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
         {error === undefined ? null : <RequestReminder error={error} />}
@@ -1958,7 +1956,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.extensionsList(), [client]);
     const canManage = useCapability(capabilities.extensionsLifecycle);
     const canOpen = useCapability(capabilities.extensionsPortableUi);
-    const reminder = useReminder();
+    const inlineError = useInlineError();
     const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState(false);
@@ -1968,20 +1966,20 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
         if (!canManage || pending.current) return;
         pending.current = true;
         setBusy(true);
-        reminder.clear();
+        inlineError.clear();
         try {
             await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
             if (!current()) return;
-            reminder.success(enabled ? t("Extension enabled.") : t("Extension disabled."));
+
             refresh();
         } catch (caught: unknown) {
-            if (current()) reminder.error(safeError(t, locale, caught));
+            if (current()) inlineError.show(safeError(t, locale, caught));
         } finally {
             pending.current = false;
             if (current()) setBusy(false);
         }
     };
-    return <UtilityWorkspace changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
+    return <>{inlineError.notice}<UtilityWorkspace changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} />}
         <PagedItems initialItems={value.extensions} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.extensionsList(cursor); return { items: page.extensions, nextCursor: page.nextCursor }; }}>{(extensions) => (
         <section className="extension-management" aria-labelledby="extension-management-title">
@@ -1999,7 +1997,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
             })}</div>}
         </section>
         )}</PagedItems>
-    </>}</UtilityWorkspace>;
+    </>}</UtilityWorkspace></>;
 }
 
 export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps & { extensionId: string }) {
@@ -2045,7 +2043,6 @@ export function ActivityPage({ client, navigate }: PageProps) {
 }
 
 type LoadedActivityItem = Awaited<ReturnType<GuiRpcClient["activityList"]>>["items"][number];
-type LoadedDiagnosticItem = Awaited<ReturnType<GuiRpcClient["diagnosticsList"]>>["items"][number];
 
 function LogFilter({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange(value: string): void }) {
     const { t, locale } = useTranslation();
@@ -2062,21 +2059,21 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
     const [details, setDetails] = useViewState("activity", "details", false);
     const [selected, setSelected] = useState<string>();
     const query = search.trim().toLowerCase();
-    const shown = items.filter((item) => (status === "" || (item.state ?? "unknown") === status)
-        && (kind === "" || item.type === kind)
-        && [item.summaryCode, humanize(t, item.summaryCode), item.state, item.resourceKind, item.resourceId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
+    const shown = items.filter((item) => (status === "" || (item.status) === status)
+        && (kind === "" || item.action === kind)
+        && [item.action, humanize(t, item.action), item.status, item.subject.name, item.subject.id, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
         <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Activity filters")}>
-            <LogFilter label={t("Status")} value={status} values={items.map((item) => item.state ?? "unknown")} onChange={setStatus} />
-            <LogFilter label={t("Record type")} value={kind} values={items.map((item) => item.type)} onChange={setKind} />
+            <LogFilter label={t("Status")} value={status} values={items.map((item) => item.status)} onChange={setStatus} />
+            <LogFilter label={t("Action")} value={kind} values={items.map((item) => item.action)} onChange={setKind} />
             <Checkbox checked={details} label={t("Show details")} onChange={setDetails} />
             <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: items.length })}</p>
         </div>
         <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "status", header: t("Status"), width: 110 }, { key: "activity", header: t("Activity") }, { key: "target", header: t("Target"), width: 150 }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={items.length === 0 ? t("No activity yet") : t("No matching loaded activity. Change the filters or load more entries.")} label={t("Activity")} minWidth={760} rows={shown.map((item) => ({ key: activityItemKey(item), cells: [
-            formatTime(t, locale, item.occurredAtMs),
-            <span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? t("Unknown") : humanize(t, item.state)}</span>,
-            <span className="logs-summary"><span title={item.summaryCode}>{humanize(t, item.summaryCode)}</span><small>{humanize(t, item.type)}</small>{details ? <dl className="logs-details"><Detail label={t("Summary code")} value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label={t("Operation")} value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label={t("Event sequence")} value={String(item.eventSequence)} />}</dl> : null}</span>,
-            <>{item.resourceKind === undefined ? "—" : humanize(t, item.resourceKind)}{item.resourceId === undefined ? null : <small>{item.resourceId}</small>}</>,
+            formatTime(t, locale, item.startedAtMs),
+            <span className={`state-chip state-chip--${item.status}`}>{humanize(t, item.status)}</span>,
+            <span className="logs-summary"><span>{humanize(t, item.action)}</span>{details ? <dl className="logs-details"><Detail label={t("Action")} value={item.action} />{item.operationId === undefined ? null : <Detail label={t("Operation")} value={item.operationId} />}<Detail label={t("Parameters")} value={JSON.stringify(item.parameters)} />{item.result === undefined ? null : <Detail label={t("Result")} value={humanize(t, item.result.code)} />}{item.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={item.diagnosticId} />}</dl> : null}</span>,
+            <span>{item.subject.name ?? humanize(t, item.subject.kind)}{details && item.subject.id ? <small>{item.subject.id}</small> : null}</span>,
             item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
@@ -2099,84 +2096,37 @@ function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcCl
     </Dialog>;
 }
 
-function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedDiagnosticItem[]; search: string }) {
-    const { t, locale } = useTranslation();
-    const { snapshot, retry } = useDiagnosticLog();
-    const canReadOperations = useCapability(capabilities.operations);
-    const [severity, setSeverity] = useState("");
-    const [subsystem, setSubsystem] = useState("");
-    const [details, setDetails] = useState(false);
-    const [selected, setSelected] = useState<string>();
-    const query = search.trim().toLowerCase();
-    const records: Array<Omit<LoadedDiagnosticItem, "severity"> & { severity: DiagnosticLogLevel; key: string; message: string; target?: string }> = [
-        ...items.filter((item) => item.diagnosticId === undefined || !snapshot.items.some((entry) => entry.diagnosticId === item.diagnosticId))
-            .map((item, index) => ({ ...item, key: `operation:${item.operationId}:${index}`, message: requestErrorMessage(item.code) })),
-        ...snapshot.items.map((item) => ({ occurredAtMs: item.occurredAtMs, severity: item.level, subsystem: item.source === "gui" ? `${productFamily} GUI` : productFamily, code: item.code,
-            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: item.message, target: item.target }))
-    ].sort((left, right) => right.occurredAtMs - left.occurredAtMs);
-    const shown = records.filter((item) => (severity === "" || item.severity === severity)
-        && (subsystem === "" || item.subsystem === subsystem)
-        && [item.code, item.summary, t(item.message), item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
-    return <div className="logs-workspace">
-        {snapshot.gap ? <p role="status">{t("Some earlier log entries are no longer available.")}</p> : null}
-        {snapshot.error === undefined ? null : <RequestReminder inline error={snapshot.error} message="New logs could not be loaded. The last loaded entries are still shown.">
-            <Button onClick={retry} type="button" variant="text">{t("Retry")}</Button>
-        </RequestReminder>}
-        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Technical log filters")}>
-            <LogFilter label={t("Severity")} value={severity} values={["warning", "error", ...snapshot.items.map((item) => item.level)]} onChange={setSeverity} />
-            <LogFilter label={t("Subsystem")} value={subsystem} values={records.map((item) => item.subsystem)} onChange={setSubsystem} />
-            <Checkbox checked={details} label={t("Show details")} onChange={setDetails} />
-            <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: records.length })}</p>
-        </div>
-        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Log entry") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={records.length === 0 ? t(snapshot.error === undefined ? "No technical logs yet" : "No technical logs loaded.") : t("No matching loaded technical logs. Change the filters or load more entries.")} label={t("Technical Logs")} minWidth={760} rows={shown.map((item) => ({ key: item.key, cells: [
-            formatTime(t, locale, item.occurredAtMs),
-            <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
-            item.subsystem,
-            <span className="logs-summary" data-log-id={item.key}><span className="logs-message">{t(item.message.split("\n")[0] ?? item.message)}</span>{details ? <><span className="logs-message">{item.message.includes("\n") ? item.message.slice(item.message.indexOf("\n") + 1) : null}</span><dl className="logs-details"><Detail label={t("Error code")} value={item.code} />{item.target === undefined ? null : <Detail label={t("Subsystem")} value={item.target} />}{item.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={item.diagnosticId} />}</dl></> : null}</span>,
-            item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
-        ] }))} sizing="fixed" />
-        {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
-    </div>;
-}
-
 export function DiagnosticsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const canCheckState = useCapability(capabilities.stateCheck);
     const canReadOperations = useCapability(capabilities.operations);
     const current = useActionScope(client);
-    const load = useCallback(() => client.diagnosticsList(), [client]);
     const [operationId, setOperationId] = useState<string>();
-    const reminder = useReminder();
     const [checking, setChecking] = useState(false);
     const checkingRef = useRef(false);
-    const [search, setSearch] = useState("");
+    const inlineError = useInlineError();
     const runStateCheck = async () => {
         if (!canCheckState || !canReadOperations || checkingRef.current) return;
-        checkingRef.current = true;
-        setChecking(true);
-        reminder.clear();
-        let accepted = false;
+        checkingRef.current = true; setChecking(true); inlineError.clear();
         try {
             const result = await client.stateCheck();
-            if (!current()) return;
-            accepted = true;
-            setOperationId(result.operationId);
+            if (current()) setOperationId(result.operationId);
         } catch (caught: unknown) {
-            if (!current()) return;
-            reminder.error(safeError(t, locale, caught), t("State check failed"));
-        } finally {
-            if (!accepted) {
-                checkingRef.current = false;
-                if (current()) setChecking(false);
-            }
+            if (current()) inlineError.show(safeError(t, locale, caught), t("State check failed"));
+            checkingRef.current = false; setChecking(false);
         }
     };
-    return <UtilityWorkspace changes={["diagnostics"]} title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
-        tools={() => <><SearchField className="logs-search" label={t("Search technical logs")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState && canReadOperations, !canCheckState ? capabilities.stateCheck : capabilities.operations, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
-        {(value, refresh) => <>{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); refresh(); }} />}
-            <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
-        </>}
-    </UtilityWorkspace>;
+    return <section className="utility-workspace">
+        <PageHeader title={t(navigationLabels.logs)}>
+            <UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />
+            <Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} type="button" variant="tonal">{t("Run state check")}</Button>
+        </PageHeader>
+        <ScrollArea className="utility-workspace-body">
+            {inlineError.notice}
+            {operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); }} />}
+            <TechnicalLogs client={client} />
+        </ScrollArea>
+    </section>;
 }
 
 export function SettingsPage(props: PageProps & { settingsWriter: import("./settings-autosave").SettingsAutosave; onApplied(value: SettingsGetResult): void; }) {
@@ -2205,6 +2155,36 @@ function formatBytes(t: Translate, locale: SupportedLocale, value: number): stri
 function shortHash(value: string): string { return value.length <= 24 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`; }
 function humanize(t: Translate, value: string): string {
     const labels: Readonly<Record<string, string>> = {
+        "templates.create-project": "Create project",
+        "templates.derive": "Create template from project",
+        "templates.import": "Import template",
+        "projects.delete-directory": "Delete project directory",
+        "extensions.permission.change": "Change extension permissions",
+        "extensions.disable": "Disable extension",
+        "extensions.enable": "Enable extension",
+        "user-package.remove": "Remove user package registration",
+        "user-package.refresh": "Read user package content",
+        "user-package.add": "Add user package",
+        "template.remove": "Remove template",
+        "template.favorite": "Change template favorite",
+        "unity.launch": "Request Unity launch",
+        "unity.launch-config.change": "Change Unity launch arguments",
+        "unity.installation.remove": "Remove Unity installation",
+        "unity.installation.add": "Add Unity installation",
+        "repository.remove": "Remove repository",
+        "repository.fetch": "Fetch repository",
+        "repository.add": "Add repository",
+        "project.remove": "Remove project registration",
+        "project.favorite": "Change project favorite",
+        "project.refresh": "Read project content",
+        "project.add": "Add project",
+        "packages.bulk": "Change packages",
+        "packages.reinstall": "Reinstall packages",
+        "packages.resolve": "Resolve packages",
+        "packages.downgrade": "Downgrade packages",
+        "packages.upgrade": "Upgrade packages",
+        "packages.remove": "Remove packages",
+        "packages.install": "Install packages",
         "project.activity-recorded": "Requested opening in Unity",
         "queued": "queued",
         "running": "running",
@@ -2247,13 +2227,13 @@ function humanize(t: Translate, value: string): string {
         "builtin": "builtin",
         "local": "local",
         "remote": "remote",
-        "packages.apply": "packages apply",
-        "projects.copy": "projects copy",
+        "packages.apply": "Change packages",
+        "projects.copy": "Copy project",
         "projects.delete": "projects delete",
         "projects.create": "projects create",
-        "projects.unity-migration": "projects unity-migration",
-        "backups.create": "backups create",
-        "backups.restore": "backups restore",
+        "projects.unity-migration": "Change project Unity version",
+        "backups.create": "Create backup",
+        "backups.restore": "Restore backup",
         "state.check": "Check state",
         "extensions.install": "Install extension",
         "extensions.uninstall": "Uninstall extension"
@@ -2270,9 +2250,6 @@ function humanize(t: Translate, value: string): string {
     return english;
 }
 
-function safeError(t: Translate, locale: SupportedLocale, caught: unknown): RpcError {
-    if (typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string") {
-        return { code: caught.code, message: t("The request could not be completed."), ...("diagnosticId" in caught && typeof caught.diagnosticId === "string" ? { diagnosticId: caught.diagnosticId } : {}) };
-    }
-    return { code: "internal_error", message: t("The request could not be completed.") };
+function safeError(_t: Translate, _locale: SupportedLocale, caught: unknown): RpcError {
+    return normalizeRequestError(caught);
 }

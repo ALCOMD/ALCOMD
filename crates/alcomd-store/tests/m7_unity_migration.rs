@@ -103,6 +103,7 @@ async fn unity_migration_succeeds_only_after_cleanup_and_commits_one_project_eve
             UnityMigrationPhase::ProjectReobserved,
             reobserved.clone(),
             30,
+            None,
         )
         .await
         .expect("persist reobservation evidence");
@@ -135,6 +136,7 @@ async fn unity_migration_succeeds_only_after_cleanup_and_commits_one_project_eve
             UnityMigrationPhase::CleanupComplete,
             reobserved,
             33,
+            None,
         )
         .await
         .expect("persist cleanup completion");

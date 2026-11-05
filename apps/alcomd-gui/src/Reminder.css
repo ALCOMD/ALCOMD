@@ -34,28 +34,3 @@
 .reminder-details { max-height: 180px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }
 .reminder-details code { display: block; }
 .reminder > .alcomd-icon-button--standard { margin: -8px -8px -8px 0; }
-
-.reminder-floating {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    position: fixed;
-    z-index: 30;
-    right: 24px;
-    bottom: 24px;
-    width: min(448px, calc(100vw - 48px));
-    max-height: calc(100vh - 48px);
-    overflow: auto;
-    border-radius: var(--alcomd-shape-container);
-    box-shadow: 0 4px 16px #0003;
-}
-
-.reminder-floating:not(:has(.reminder)) { display: none; }
-.reminder-floating > :not(.reminder):not(:has(.reminder)) { display: none; }
-
-.reminder-floating .reminder {
-    color: var(--md-sys-color-on-surface);
-    background: var(--md-sys-color-surface-container-high);
-    --md-icon-button-icon-color: var(--md-sys-color-on-surface);
-    --md-text-button-label-text-color: var(--md-sys-color-on-surface);
-}

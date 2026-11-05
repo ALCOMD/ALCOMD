@@ -195,7 +195,10 @@ fn write_result(value: app::UserPackageWriteResult) -> rpc::UserPackageWriteResu
 }
 
 fn user_package_error(id: String, error: app::UserPackageError) -> DispatchAction {
-    let rpc_error = match error.code() {
+    let diagnostic_id = error.diagnostic_id().map(str::to_owned).unwrap_or_else(|| {
+        super::failure_report::report(&error, error.path(), "execution request failed")
+    });
+    let mut rpc_error = match error.code() {
         app::UserPackageErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::UserPackageErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::UserPackageErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -206,6 +209,7 @@ fn user_package_error(id: String, error: app::UserPackageError) -> DispatchActio
         }
         code => rpc::RpcError::m4_resource(code.as_str(), None),
     };
+    rpc_error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), rpc_error, false)
 }
 

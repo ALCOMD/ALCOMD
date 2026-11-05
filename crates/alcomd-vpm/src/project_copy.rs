@@ -74,14 +74,14 @@ impl M7CopyAdapter for ProjectCopyEngine {
         validate_leaf(&target_leaf)?;
         let source_root =
             canonical_directory(Path::new(&source.observation.root_path), source_error())?;
-        let source_identity =
-            alcomd_platform::file_identity_key(&source_root).map_err(|_| source_error())?;
+        let source_identity = alcomd_platform::file_identity_key(&source_root)
+            .map_err(|cause| source_error().with_source(cause))?;
         if source_identity != source.observation.path_identity_key {
             return Err(source_error());
         }
         let target_parent = canonical_directory(&target_parent, target_error())?;
-        let target_parent_identity =
-            alcomd_platform::file_identity_key(&target_parent).map_err(|_| target_error())?;
+        let target_parent_identity = alcomd_platform::file_identity_key(&target_parent)
+            .map_err(|cause| target_error().with_source(cause))?;
         let target = target_parent.join(&target_leaf);
         if target.exists() {
             return Err(error(M7CopyErrorCode::ProjectCopyTargetExists));
@@ -108,7 +108,8 @@ impl M7CopyAdapter for ProjectCopyEngine {
             "createdAtMs": now_ms,
             "expiresAtMs": expires_at_ms
         });
-        let plan_json = serde_json::to_string(&authority).map_err(|_| internal())?;
+        let plan_json =
+            serde_json::to_string(&authority).map_err(|cause| internal().with_source(cause))?;
         let plan_fingerprint = digest(plan_json.as_bytes());
         Ok(ProjectCopyPlanDraft {
             plan_id,
@@ -149,9 +150,11 @@ impl M7CopyAdapter for ProjectCopyEngine {
         )?;
         let parent =
             canonical_directory(Path::new(&plan.draft.target_parent_path), target_error())?;
-        if alcomd_platform::file_identity_key(&source).map_err(|_| source_error())?
+        if alcomd_platform::file_identity_key(&source)
+            .map_err(|cause| source_error().with_source(cause))?
             != plan.draft.source_root_identity
-            || alcomd_platform::file_identity_key(&parent).map_err(|_| target_error())?
+            || alcomd_platform::file_identity_key(&parent)
+                .map_err(|cause| target_error().with_source(cause))?
                 != plan.draft.target_parent_identity
         {
             return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
@@ -173,11 +176,11 @@ impl M7CopyAdapter for ProjectCopyEngine {
         if shell.exists() {
             verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         } else {
-            fs::create_dir(&shell).map_err(|_| recovery_error())?;
+            fs::create_dir(&shell).map_err(|cause| recovery_error().with_source(cause))?;
             write_owner(&owner, operation_id, plan.draft.plan_id)?;
         }
         if !payload.exists() {
-            fs::create_dir(&payload).map_err(|_| recovery_error())?;
+            fs::create_dir(&payload).map_err(|cause| recovery_error().with_source(cause))?;
         }
         let entries = scan(&source, false)?;
         let total = regular_bytes(&entries);
@@ -206,9 +209,9 @@ impl M7CopyAdapter for ProjectCopyEngine {
         let (_, payload, owner, inventory_path) = workspace(operation_id, &plan);
         verify_owner(&owner, operation_id, plan.draft.plan_id)?;
         if payload.exists() {
-            fs::remove_dir_all(&payload).map_err(|_| recovery_error())?;
+            fs::remove_dir_all(&payload).map_err(|cause| recovery_error().with_source(cause))?;
         }
-        fs::create_dir(&payload).map_err(|_| recovery_error())?;
+        fs::create_dir(&payload).map_err(|cause| recovery_error().with_source(cause))?;
         let (header, mut entries) = read_inventory(Path::new(&inventory.private_locator))?;
         for entry in &mut entries {
             let relative = path_from_normalized(&entry.normalized_relative_path)?;
@@ -216,11 +219,13 @@ impl M7CopyAdapter for ProjectCopyEngine {
             let target_path = payload.join(relative);
             match entry.entry_kind {
                 EntryKind::Directory => {
-                    fs::create_dir_all(&target_path).map_err(|_| recovery_error())?;
+                    fs::create_dir_all(&target_path)
+                        .map_err(|cause| recovery_error().with_source(cause))?;
                 }
                 EntryKind::RegularFile => {
                     if let Some(parent) = target_path.parent() {
-                        fs::create_dir_all(parent).map_err(|_| recovery_error())?;
+                        fs::create_dir_all(parent)
+                            .map_err(|cause| recovery_error().with_source(cause))?;
                     }
                     verify_entry_metadata(&source_path, entry)?;
                     entry.content_sha256 = Some(copy_and_hash(&source_path, &target_path)?);
@@ -229,7 +234,8 @@ impl M7CopyAdapter for ProjectCopyEngine {
             }
         }
         write_inventory(&inventory_path, &header, &entries)?;
-        alcomd_platform::sync_directory(&payload).map_err(|_| recovery_error())?;
+        alcomd_platform::sync_directory(&payload)
+            .map_err(|cause| recovery_error().with_source(cause))?;
         evidence(
             &inventory_path,
             &owner,
@@ -264,9 +270,9 @@ impl M7CopyAdapter for ProjectCopyEngine {
         if target.exists() {
             return Err(error(M7CopyErrorCode::ProjectCopyTargetExists));
         }
-        fs::rename(&payload, &target).map_err(|_| recovery_error())?;
+        fs::rename(&payload, &target).map_err(|cause| recovery_error().with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
-            .map_err(|_| recovery_error())?;
+            .map_err(|cause| recovery_error().with_source(cause))?;
         published(&plan, &target)
     }
 
@@ -282,9 +288,9 @@ impl M7CopyAdapter for ProjectCopyEngine {
         let target = PathBuf::from(&plan.draft.target_parent_path).join(&plan.draft.target_leaf);
         let was_unpublished = payload.is_dir() && !target.exists();
         if was_unpublished {
-            fs::rename(&payload, &target).map_err(|_| recovery_error())?;
+            fs::rename(&payload, &target).map_err(|cause| recovery_error().with_source(cause))?;
             alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
-                .map_err(|_| recovery_error())?;
+                .map_err(|cause| recovery_error().with_source(cause))?;
         } else if payload.exists() || !target.is_dir() {
             return Err(recovery_error());
         }
@@ -295,7 +301,8 @@ impl M7CopyAdapter for ProjectCopyEngine {
             return Err(recovery_error());
         }
         let (_, expected_entries) = read_inventory(Path::new(&inventory.private_locator))?;
-        let actual_entries = scan(&target, true).map_err(|_| recovery_error())?;
+        let actual_entries =
+            scan(&target, true).map_err(|cause| recovery_error().with_source(cause))?;
         if !published_matches_inventory(&actual_entries, &expected_entries) {
             return Err(recovery_error());
         }
@@ -312,9 +319,9 @@ impl M7CopyAdapter for ProjectCopyEngine {
         if payload.exists() {
             return Err(recovery_error());
         }
-        fs::remove_dir_all(&shell).map_err(|_| recovery_error())?;
+        fs::remove_dir_all(&shell).map_err(|cause| recovery_error().with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
-            .map_err(|_| recovery_error())
+            .map_err(|cause| recovery_error().with_source(cause))
     }
 
     async fn discard(
@@ -328,9 +335,9 @@ impl M7CopyAdapter for ProjectCopyEngine {
         if target.exists() {
             return Err(recovery_error());
         }
-        fs::remove_dir_all(&shell).map_err(|_| recovery_error())?;
+        fs::remove_dir_all(&shell).map_err(|cause| recovery_error().with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.target_parent_path))
-            .map_err(|_| recovery_error())
+            .map_err(|cause| recovery_error().with_source(cause))
     }
 }
 
@@ -354,15 +361,15 @@ fn walk(
         return Err(limit_error());
     }
     let mut children = fs::read_dir(directory)
-        .map_err(|_| source_error())?
+        .map_err(|cause| source_error().with_source(cause))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| source_error())?;
+        .map_err(|cause| source_error().with_source(cause))?;
     children.sort_by_key(std::fs::DirEntry::file_name);
     for child in children {
         let relative = child
             .path()
             .strip_prefix(root)
-            .map_err(|_| source_error())?
+            .map_err(|cause| source_error().with_source(cause))?
             .to_path_buf();
         let normalized = normalize_relative(&relative)?;
         if excluded(&normalized, depth) {
@@ -372,7 +379,8 @@ fn walk(
         if result.len() as u64 >= MAX_ENTRIES {
             return Err(limit_error());
         }
-        let metadata = fs::symlink_metadata(child.path()).map_err(|_| source_error())?;
+        let metadata = fs::symlink_metadata(child.path())
+            .map_err(|cause| source_error().with_source(cause))?;
         if is_link_or_reparse(&metadata) {
             return Err(source_error());
         }
@@ -408,7 +416,7 @@ fn walk(
                 0
             },
             source_filesystem_identity_evidence: alcomd_platform::file_identity_key(&child.path())
-                .map_err(|_| source_error())?,
+                .map_err(|cause| source_error().with_source(cause))?,
             executable_bit: executable(&metadata),
             content_sha256,
         });
@@ -437,44 +445,81 @@ fn write_inventory(
         .truncate(true)
         .write(true)
         .open(&temporary)
-        .map_err(|_| recovery_error())?;
+        .map_err(|cause| {
+            recovery_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     let mut writer = BufWriter::new(file);
     write_line(&mut writer, &InventoryLine::Header(header.clone()))?;
     for entry in entries {
         write_line(&mut writer, &InventoryLine::Entry(entry.clone()))?;
     }
-    writer.flush().map_err(|_| recovery_error())?;
-    writer.get_ref().sync_all().map_err(|_| recovery_error())?;
+    writer.flush().map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    writer.get_ref().sync_all().map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     drop(writer);
-    fs::rename(&temporary, path).map_err(|_| recovery_error())?;
+    fs::rename(&temporary, path).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if let Some(parent) = path.parent() {
-        alcomd_platform::sync_directory(parent).map_err(|_| recovery_error())?;
+        alcomd_platform::sync_directory(parent).map_err(|cause| {
+            recovery_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     }
     Ok(())
 }
 
 fn write_line(writer: &mut BufWriter<File>, line: &InventoryLine) -> Result<(), M7CopyError> {
-    serde_json::to_writer(&mut *writer, line).map_err(|_| internal())?;
-    writer.write_all(b"\n").map_err(|_| recovery_error())
+    serde_json::to_writer(&mut *writer, line).map_err(|cause| internal().with_source(cause))?;
+    writer
+        .write_all(b"\n")
+        .map_err(|cause| recovery_error().with_source(cause))
 }
 
 fn read_inventory(path: &Path) -> Result<(InventoryHeader, Vec<InventoryEntry>), M7CopyError> {
-    let file = File::open(path).map_err(|_| recovery_error())?;
+    let file = File::open(path).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut lines = BufReader::new(file).lines();
-    let first = lines
-        .next()
-        .ok_or_else(recovery_error)?
-        .map_err(|_| recovery_error())?;
-    let InventoryLine::Header(header) =
-        serde_json::from_str(&first).map_err(|_| recovery_error())?
+    let first = lines.next().ok_or_else(recovery_error)?.map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    let InventoryLine::Header(header) = serde_json::from_str(&first).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?
     else {
         return Err(recovery_error());
     };
     let mut entries = Vec::new();
     for line in lines {
-        let InventoryLine::Entry(entry) =
-            serde_json::from_str(&line.map_err(|_| recovery_error())?)
-                .map_err(|_| recovery_error())?
+        let InventoryLine::Entry(entry) = serde_json::from_str(&line.map_err(|cause| {
+            recovery_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?)
+        .map_err(|cause| {
+            recovery_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?
         else {
             return Err(recovery_error());
         };
@@ -495,7 +540,7 @@ fn evidence(
     entry_count: u64,
     total: u64,
 ) -> Result<ProjectCopyInventoryEvidence, M7CopyError> {
-    let bytes = fs::read(path).map_err(|_| recovery_error())?;
+    let bytes = fs::read(path).map_err(|cause| recovery_error().with_source(cause))?;
     Ok(ProjectCopyInventoryEvidence {
         private_locator: path.to_string_lossy().into_owned(),
         sha256: digest(&bytes),
@@ -526,20 +571,43 @@ fn write_owner(path: &Path, operation: OperationId, plan: PlanId) -> Result<(), 
         "operationId": operation,
         "planId": plan
     }))
-    .map_err(|_| internal())?;
+    .map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut file = OpenOptions::new()
         .create_new(true)
         .write(true)
         .open(path)
-        .map_err(|_| recovery_error())?;
-    file.write_all(&bytes).map_err(|_| recovery_error())?;
-    file.sync_all().map_err(|_| recovery_error())
+        .map_err(|cause| {
+            recovery_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
+    file.write_all(&bytes).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    file.sync_all().map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn verify_owner(path: &Path, operation: OperationId, plan: PlanId) -> Result<(), M7CopyError> {
-    let value: serde_json::Value =
-        serde_json::from_slice(&fs::read(path).map_err(|_| recovery_error())?)
-            .map_err(|_| recovery_error())?;
+    let value: serde_json::Value = serde_json::from_slice(&fs::read(path).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?)
+    .map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if value["operationId"] != operation.to_string() || value["planId"] != plan.to_string() {
         return Err(recovery_error());
     }
@@ -550,7 +618,11 @@ fn published(
     plan: &ProjectCopyPlanRecord,
     target: &Path,
 ) -> Result<PublishedProjectCopy, M7CopyError> {
-    let identity = alcomd_platform::file_identity_key(target).map_err(|_| recovery_error())?;
+    let identity = alcomd_platform::file_identity_key(target).map_err(|cause| {
+        recovery_error()
+            .with_source(cause)
+            .with_path(target.display().to_string())
+    })?;
     let mut observation = plan.draft.source_project.observation.clone();
     observation.root_path = target.to_string_lossy().into_owned();
     observation.path_identity_key = identity.clone();
@@ -561,36 +633,52 @@ fn published(
 }
 
 fn copy_and_hash(source: &Path, target: &Path) -> Result<[u8; 32], M7CopyError> {
-    let mut input = BufReader::new(File::open(source).map_err(|_| source_error())?);
+    let mut input =
+        BufReader::new(File::open(source).map_err(|cause| source_error().with_source(cause))?);
     let output = OpenOptions::new()
         .create_new(true)
         .write(true)
         .open(target)
-        .map_err(|_| recovery_error())?;
+        .map_err(|cause| recovery_error().with_source(cause))?;
     let mut output = BufWriter::new(output);
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = input.read(&mut buffer).map_err(|_| source_error())?;
+        let read = input
+            .read(&mut buffer)
+            .map_err(|cause| source_error().with_source(cause))?;
         if read == 0 {
             break;
         }
         hasher.update(&buffer[..read]);
         output
             .write_all(&buffer[..read])
-            .map_err(|_| recovery_error())?;
+            .map_err(|cause| recovery_error().with_source(cause))?;
     }
-    output.flush().map_err(|_| recovery_error())?;
-    output.get_ref().sync_all().map_err(|_| recovery_error())?;
+    output
+        .flush()
+        .map_err(|cause| recovery_error().with_source(cause))?;
+    output
+        .get_ref()
+        .sync_all()
+        .map_err(|cause| recovery_error().with_source(cause))?;
     Ok(hasher.finalize().into())
 }
 
 fn hash_file(path: &Path) -> Result<[u8; 32], M7CopyError> {
-    let mut input = BufReader::new(File::open(path).map_err(|_| source_error())?);
+    let mut input = BufReader::new(File::open(path).map_err(|cause| {
+        source_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?);
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {
-        let read = input.read(&mut buffer).map_err(|_| source_error())?;
+        let read = input.read(&mut buffer).map_err(|cause| {
+            source_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
         if read == 0 {
             break;
         }
@@ -600,17 +688,28 @@ fn hash_file(path: &Path) -> Result<[u8; 32], M7CopyError> {
 }
 
 fn verify_entry_metadata(path: &Path, expected: &InventoryEntry) -> Result<(), M7CopyError> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| changed_error())?;
+    let metadata = fs::symlink_metadata(path).map_err(|cause| {
+        changed_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file()
         || is_link_or_reparse(&metadata)
         || metadata.len() != expected.size
-        || alcomd_platform::file_identity_key(path).map_err(|_| changed_error())?
-            != expected.source_filesystem_identity_evidence
+        || alcomd_platform::file_identity_key(path).map_err(|cause| {
+            changed_error()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })? != expected.source_filesystem_identity_evidence
         || executable(&metadata) != expected.executable_bit
     {
         return Err(changed_error());
     }
-    reject_hard_link(path, &metadata).map_err(|_| changed_error())
+    reject_hard_link(path, &metadata).map_err(|cause| {
+        changed_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 #[cfg(unix)]
@@ -628,14 +727,14 @@ fn executable(_: &fs::Metadata) -> bool {
 fn preserve_executable(source: &Path, target: &Path) -> Result<(), M7CopyError> {
     use std::os::unix::fs::PermissionsExt;
     let mode = fs::metadata(source)
-        .map_err(|_| source_error())?
+        .map_err(|cause| source_error().with_source(cause))?
         .permissions()
         .mode();
     fs::set_permissions(
         target,
         fs::Permissions::from_mode(if mode & 0o111 != 0 { 0o755 } else { 0o644 }),
     )
-    .map_err(|_| recovery_error())
+    .map_err(|cause| recovery_error().with_source(cause))
 }
 
 #[cfg(not(unix))]
@@ -666,7 +765,12 @@ fn reject_hard_link(_: &Path, metadata: &fs::Metadata) -> Result<(), M7CopyError
 
 #[cfg(windows)]
 fn reject_hard_link(path: &Path, _: &fs::Metadata) -> Result<(), M7CopyError> {
-    if alcomd_platform::file_link_count(path).map_err(|_| source_error())? != 1 {
+    if alcomd_platform::file_link_count(path).map_err(|cause| {
+        source_error()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })? != 1
+    {
         Err(source_error())
     } else {
         Ok(())
@@ -756,7 +860,12 @@ fn canonical_directory(path: &Path, kind: M7CopyError) -> Result<PathBuf, M7Copy
     if !path.is_absolute() {
         return Err(kind);
     }
-    let value = fs::canonicalize(path).map_err(|_| kind)?;
+    let value = fs::canonicalize(path).map_err(|cause| {
+        kind.clone()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+            .with_path(path.display().to_string())
+    })?;
     if value.to_str().is_none() || !value.is_dir() {
         return Err(kind);
     }
@@ -808,7 +917,7 @@ fn now_ms() -> Result<u64, M7CopyError> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|value| u64::try_from(value.as_millis()).unwrap_or(u64::MAX))
-        .map_err(|_| internal())
+        .map_err(|cause| internal().with_source(cause))
 }
 
 fn error(code: M7CopyErrorCode) -> M7CopyError {
@@ -1129,6 +1238,24 @@ mod tests {
                 .expect_err("Unicode collision must fail")
                 .code(),
             M7CopyErrorCode::ProjectCopySourceUnsafe
+        );
+    }
+}
+
+#[cfg(test)]
+mod technical_cause_tests {
+    use super::*;
+    #[test]
+    fn missing_file_keeps_actual_path_and_io_cause() {
+        let path = std::env::temp_dir()
+            .join(format!("alcomd-missing-copy-{}", OperationId::new()))
+            .join("中文 source.txt");
+        let error = hash_file(&path).expect_err("isolated nonexistent source");
+        assert_eq!(error.path(), Some(path.to_string_lossy().as_ref()));
+        assert!(std::error::Error::source(&error).is_some());
+        assert!(
+            alcomd_application::technical_error_chain(&error)
+                .contains(&path.to_string_lossy().to_string())
         );
     }
 }

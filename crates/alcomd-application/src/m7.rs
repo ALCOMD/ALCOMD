@@ -55,27 +55,69 @@ pub enum M7ErrorCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M7Error {
     code: M7ErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl M7Error {
     #[must_use]
-    pub const fn new(code: M7ErrorCode) -> Self {
-        Self { code }
+    pub fn new(code: M7ErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
 
     #[must_use]
     pub const fn code(&self) -> M7ErrorCode {
         self.code
     }
+
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
 }
 
 impl fmt::Display for M7Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "Portable UI request failed: {:?}", self.code)
+        write!(formatter, "Portable UI request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
 
-impl std::error::Error for M7Error {}
+impl std::error::Error for M7Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionInvocationKind {
@@ -1583,7 +1625,14 @@ fn map_m6(error: M6Error) -> M7Error {
         | M6ErrorCode::IdempotencyConflict
         | M6ErrorCode::Internal => M7ErrorCode::Internal,
     };
-    M7Error::new(code)
+    let mut mapped = M7Error::new(code);
+    if let Some(path) = error.path() {
+        mapped = mapped.with_path(path);
+    }
+    if let Some(id) = error.diagnostic_id() {
+        mapped = mapped.with_diagnostic_id(id.to_owned());
+    }
+    mapped.with_source(error)
 }
 
 fn internal() -> M7Error {
@@ -1593,6 +1642,31 @@ fn internal() -> M7Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_error_mapping_keeps_original_cause_path_and_diagnostic_identity() {
+        let path = std::env::temp_dir()
+            .join("ALCOMD 日志测试")
+            .join("extension.wasm")
+            .display()
+            .to_string();
+        let id = OperationId::new().to_string();
+        let error = map_m6(
+            M6Error::new(M6ErrorCode::Crashed)
+                .with_source(std::io::Error::new(
+                    std::io::ErrorKind::BrokenPipe,
+                    "controlled host pipe failure",
+                ))
+                .with_path(path.clone())
+                .with_diagnostic_id(id.clone()),
+        );
+        assert_eq!(error.code(), M7ErrorCode::Crashed);
+        assert_eq!(error.path(), Some(path.as_str()));
+        assert_eq!(error.diagnostic_id(), Some(id.as_str()));
+        let chain = crate::technical_error_chain(&error);
+        assert!(chain.contains(&path));
+        assert!(chain.contains("controlled host pipe failure"));
+    }
 
     #[test]
     fn locale_subset_is_canonical_and_bounded() {

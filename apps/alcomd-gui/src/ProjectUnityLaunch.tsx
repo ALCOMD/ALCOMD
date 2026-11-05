@@ -6,7 +6,7 @@ import { Button, Dialog, Select } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
-import { RequestReminder, useReminder } from "./Reminder";
+import { RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 
 export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaunchSettled, project }: {
@@ -17,7 +17,6 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     project: ProjectSnapshot;
 }) {
     const { t } = useTranslation();
-    const { success, error: showError, clear } = useReminder();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [busy, setBusy] = useState(false);
@@ -35,17 +34,15 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
         setBusy(false); setDialog(undefined); setInstallationId(""); setError(undefined);
         return () => { generation.current += 1; pending.current = false; };
     }, [client, projectId, revision]);
-    const run = async (task: (current: number) => Promise<void>, errorContext?: "choose") => {
+    const run = async (task: (current: number) => Promise<void>) => {
         if (!canLaunch || projectId === undefined || revision === undefined || pending.current) return;
         const current = generation.current;
         pending.current = true; setBusy(true); setError(undefined);
-        clear();
         try { await task(current); }
         catch (caught: unknown) {
             if (current !== generation.current) return;
             const failure = normalizeRpcError(caught);
-            if (errorContext === undefined) showError(failure, undefined, trigger.current ?? undefined);
-            else setError(failure);
+            setError(failure);
         } finally {
             if (current === generation.current) { pending.current = false; setBusy(false); }
         }
@@ -53,10 +50,9 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     const launch = async (snapshot: UnityLaunchOptionsResult, selected: string, current: number) => {
         if (projectId === undefined) return;
         try {
-            const result = await client.unityLaunch(projectId, selected, snapshot.projectRevision);
+            await client.unityLaunch(projectId, selected, snapshot.projectRevision);
             if (current !== generation.current) return;
             setDialog(undefined); setInstallationId("");
-            success(t("Unity launch {state}.", { state: t(result.launch.state) }));
         } finally {
             if (current === generation.current) onLaunchSettled?.();
         }
@@ -80,9 +76,9 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     };
     const confirm = () => {
         if (options === undefined || !options.exactMatchingInstallations.some((item) => item.installationId === installationId)) return;
-        void run((current) => launch(options, installationId, current), "choose");
+        void run((current) => launch(options, installationId, current));
     };
-    const close = () => { if (!pending.current) { setDialog(undefined); setInstallationId(""); setError(undefined); if (dialog !== undefined) clear(); } };
+    const close = () => { if (!pending.current) { setDialog(undefined); setInstallationId(""); setError(undefined); } };
     const closed = (kind: NonNullable<typeof dialog>) => {
         if (dialog !== undefined && dialog !== kind) return;
         close();
@@ -97,6 +93,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t)
         },
         dialogs: <>
+            {dialog !== undefined || error === undefined ? null : <RequestReminder error={error} onDismiss={() => { setError(undefined); window.requestAnimationFrame(() => trigger.current?.focus()); }} />}
             <Dialog onClose={() => closed("missing")} open={dialog === "missing"} title={t("Unity installation required")}>
                 <p>{t("This project requires Unity {version}. No exact matching Unity installation was found.", { version: options?.projectUnityVersion ?? project.unityVersion })}</p>
                 <div className="dialog-actions">

@@ -22,6 +22,7 @@ test("Projects last-modified order uses authoritative timestamps, stable ties an
 
     const before = await page.evaluate(() => ({ count: window.projectSnapshots.length, snapshot: window.projectSnapshots.at(-1)! }));
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
+    await page.evaluate(() => window.coreEvents.emit("project", "00000000-0000-4000-8000-000000000102", "project.refreshed", 2));
     await expect.poll(() => page.evaluate(() => window.projectSnapshots.length)).toBeGreaterThan(before.count);
     const after = await page.evaluate(() => window.projectSnapshots.at(-1)!);
     expect([...before.snapshot, ...after].every((item) => !Object.hasOwn(item, "observedAtMs"))).toBe(true);
@@ -76,10 +77,10 @@ for (const view of ["list", "grid"] as const) {
             await target.getByRole("button", { name: "Open Unity", exact: true }).click();
             await expect(date).toContainText("12 hours ago");
             if (failed) {
-                await expect(page.locator(".reminder-floating")).toHaveCount(1);
-                await expectRequestError(page.locator(".reminder-floating").getByRole("alert"), "unity_launch_failed");
+                await expect(page.locator(".reminder-floating")).toHaveCount(0);
+                await expectRequestError(page.getByRole("alert"), "unity_launch_failed");
                 await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-            } else await expect(page.getByRole("status").filter({ hasText: "Unity launch opening." })).toBeVisible();
+            } else await expect(page.locator(".reminder-floating")).toHaveCount(0);
             const names = view === "grid" ? page.locator(".project-card h2") : listNames(page);
             await expect(names).toHaveText(["Favorite", "Equal B", "Newest", "Equal A", "Unknown history"]);
             expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
@@ -94,8 +95,8 @@ for (const view of ["list", "grid"] as const) {
         const count = await page.evaluate(() => window.projectSnapshots.length);
         const target = view === "grid" ? page.getByRole("article", { name: "Equal B", exact: true }) : page.locator(".projects-list tbody tr").filter({ hasText: "Equal B" });
         await target.getByRole("button", { name: "Open Unity", exact: true }).click();
-        await expect(page.locator(".reminder-floating")).toHaveCount(1);
-        await expectRequestError(page.locator(".reminder-floating").getByRole("alert"), "revision_conflict");
+        await expect(page.locator(".reminder-floating")).toHaveCount(0);
+        await expectRequestError(page.getByRole("alert"), "revision_conflict");
         await expect(page.locator("md-dialog[open]")).toHaveCount(0);
         const date = view === "grid" ? target.locator(".project-card-dates") : target.locator("td").nth(4);
         await expect(date).toContainText("2 days ago");
@@ -105,7 +106,7 @@ for (const view of ["list", "grid"] as const) {
 }
 
 async function openProjects(page: Page, extraQuery = "") {
-    await page.addInitScript(() => { Date.now = () => 1_700_259_200_000; });
+    await page.clock.install({ time: new Date(1_700_259_200_000) });
     await page.goto(`/browser-harness.html?route=%2Fprojects&state=ready&projectModified=1&${extraQuery}`);
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
 }

@@ -60,8 +60,9 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
             let page = subscription.next_page().await.expect("uninstall signal");
             assert_eq!(page.invalidated_scopes, [EventInvalidation::Extensions]);
             assert_eq!(page.resources_revision, 1);
-            assert_eq!(page.events.len(), 1);
-            assert_eq!(page.events[0].kind, "operation.state_changed");
+            assert_eq!(page.events.len(), 2);
+            assert_eq!(page.events[0].kind, "activity.changed");
+            assert_eq!(page.events[1].kind, "operation.state_changed");
         } else {
             assert_eq!(
                 commits.borrow().resources_revision,
@@ -80,7 +81,7 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
     }
 }
 
-fn project_observation() -> ProjectObservation {
+pub(super) fn project_observation() -> ProjectObservation {
     ProjectObservation {
         root_path: "<FIXTURE>/Project".to_owned(),
         path_identity_key: vec![1],
@@ -316,10 +317,180 @@ fn checkpoint_staged(
                 ..Default::default()
             },
             time,
+            None,
         )
         .is_ok(),
         _ => unreachable!("known staged kind"),
     }
+}
+
+#[test]
+fn migration_checkpoint_diagnostic_updates_task_and_activity_atomically_without_duplicate_replay() {
+    let directory = Directory::new();
+    let mut connection =
+        sqlite::initialize_connection(&directory.database()).expect("isolated database");
+    let owner = PrincipalId::local_owner();
+    let operation = staged_operation(&mut connection, "migration");
+    begin_staged(&mut connection, "migration", operation, 3);
+    m7_unity_migration::checkpoint(
+        &mut connection,
+        operation,
+        UnityMigrationPhase::LaunchIntent,
+        UnityMigrationEvidence::default(),
+        4,
+        None,
+    )
+    .expect("persist public launch intent");
+    let before = sqlite::load_owned_operation(&connection, &owner, operation)
+        .expect("task before real spawn error");
+    let activity_before =
+        activity::get(&connection, &owner, &operation.to_string()).expect("matching task activity");
+    let diagnostic = uuid::Uuid::new_v4().to_string();
+    connection
+        .execute_batch("CREATE TEMP TRIGGER reject_activity_diagnostic BEFORE INSERT ON events WHEN NEW.kind='activity.changed' BEGIN SELECT RAISE(ABORT,'controlled activity event failure'); END;")
+        .expect("inject activity event failure");
+    assert!(
+        m7_unity_migration::checkpoint(
+            &mut connection,
+            operation,
+            UnityMigrationPhase::LaunchIntent,
+            UnityMigrationEvidence::default(),
+            5,
+            Some(diagnostic.clone()),
+        )
+        .is_err()
+    );
+    assert_eq!(
+        sqlite::load_owned_operation(&connection, &owner, operation)
+            .expect("task rollback")
+            .revision,
+        before.revision
+    );
+    assert_eq!(
+        activity::get(&connection, &owner, &operation.to_string()).expect("activity rollback"),
+        activity_before
+    );
+    connection
+        .execute_batch("DROP TRIGGER reject_activity_diagnostic")
+        .expect("release injected failure");
+    m7_unity_migration::checkpoint(
+        &mut connection,
+        operation,
+        UnityMigrationPhase::LaunchIntent,
+        UnityMigrationEvidence::default(),
+        6,
+        Some(diagnostic.clone()),
+    )
+    .expect("commit real error association without changing launch phase");
+    let task = sqlite::load_owned_operation(&connection, &owner, operation)
+        .expect("committed diagnostic task");
+    let activity = activity::get(&connection, &owner, &operation.to_string())
+        .expect("committed diagnostic activity");
+    assert_eq!(task.revision.get(), before.revision.get() + 1);
+    assert_eq!(task.diagnostic_id.as_deref(), Some(diagnostic.as_str()));
+    assert_eq!(activity.diagnostic_id, task.diagnostic_id);
+    assert_eq!(activity.revision, activity_before.revision + 1);
+    let events_before_replay =
+        sqlite::list_events(&connection, &owner, 0, 100).expect("diagnostic commit events");
+    for diagnostic_id in [None, Some(diagnostic)] {
+        m7_unity_migration::checkpoint(
+            &mut connection,
+            operation,
+            UnityMigrationPhase::LaunchIntent,
+            UnityMigrationEvidence::default(),
+            7,
+            diagnostic_id,
+        )
+        .expect("same phase and same diagnostic are publicly quiet");
+    }
+    assert_eq!(
+        sqlite::load_owned_operation(&connection, &owner, operation)
+            .expect("replayed task")
+            .revision,
+        task.revision
+    );
+    assert_eq!(
+        activity::get(&connection, &owner, &operation.to_string()).expect("replayed activity"),
+        activity
+    );
+    assert_eq!(
+        sqlite::list_events(&connection, &owner, 0, 100)
+            .expect("replay events")
+            .events,
+        events_before_replay.events
+    );
+}
+
+#[test]
+fn successful_task_logs_only_after_commit_and_not_on_replay() {
+    struct CountSuccess(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+    impl tracing::Subscriber for CountSuccess {
+        fn enabled(&self, metadata: &tracing::Metadata<'_>) -> bool {
+            *metadata.level() == tracing::Level::INFO
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            struct SuccessMessage(bool);
+            impl tracing::field::Visit for SuccessMessage {
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    if field.name() == "message" && format!("{value:?}") == "operation completed" {
+                        self.0 = true;
+                    }
+                }
+            }
+            let mut message = SuccessMessage(false);
+            event.record(&mut message);
+            if message.0 {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+    let directory = Directory::new();
+    let mut connection =
+        sqlite::initialize_connection(&directory.database()).expect("isolated database");
+    let operation = staged_operation(&mut connection, "migration");
+    begin_staged(&mut connection, "migration", operation, 3);
+    m7_unity_migration::checkpoint(
+        &mut connection,
+        operation,
+        UnityMigrationPhase::CleanupComplete,
+        UnityMigrationEvidence::default(),
+        4,
+        None,
+    )
+    .expect("cleanup ready");
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    tracing::subscriber::with_default(CountSuccess(std::sync::Arc::clone(&count)), || {
+        connection.execute_batch("CREATE TEMP TRIGGER reject_success BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT,'controlled commit failure'); END;").expect("inject failed transaction");
+        assert!(m7_unity_migration::finish_success(&mut connection, operation, 5).is_err());
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "rollback is not successful execution"
+        );
+        connection
+            .execute_batch("DROP TRIGGER reject_success")
+            .expect("release failure");
+        m7_unity_migration::finish_success(&mut connection, operation, 6)
+            .expect("real success commit");
+        assert_eq!(count.load(std::sync::atomic::Ordering::Relaxed), 1);
+        m7_unity_migration::finish_success(&mut connection, operation, 7).expect("terminal replay");
+        assert_eq!(
+            count.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "terminal replay does not make another technical record"
+        );
+    });
 }
 
 #[test]
@@ -544,6 +715,9 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
             .collect::<Vec<_>>(),
         [
             "project.activity-recorded",
+            "activity.changed",
+            "activity.changed",
+            "activity.changed",
             "repository.observed",
             "repository.observed"
         ]
@@ -574,24 +748,29 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
         .expect("activity");
     assert_eq!(
         before_activity.items.len(),
-        3,
+        5,
         "accepted launch and original registrations remain visible"
     );
     let launch_activity = before_activity
         .items
         .iter()
-        .filter(|item| item.summary_code == "project.activity-recorded")
+        .filter(|item| item.action == "unity.launch")
         .collect::<Vec<_>>();
     assert_eq!(
         launch_activity.len(),
-        1,
-        "replay and unchanged metadata add no duplicate"
+        3,
+        "three distinct accepted requests, with same-key replay excluded"
     );
     assert_eq!(
-        launch_activity[0].resource_id.as_deref(),
+        launch_activity[0].subject.id.as_deref(),
         Some(project.project_id.to_string().as_str())
     );
-    assert_eq!(launch_activity[0].occurred_at_ms, 10);
+    assert_eq!(launch_activity[0].started_at_ms, 10);
+    assert_eq!(launch_activity[0].status, "running");
+    assert!(
+        launch_activity[0].result.is_none(),
+        "accepting a request is not spawning Unity"
+    );
     assert!(
         store
             .list_official_activity(PrincipalId::parse("test:other").expect("owner"), None, 100)
@@ -618,33 +797,33 @@ async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noi
         .next_page()
         .await
         .expect("content invalidation");
-    assert_eq!(page.events.len(), 1);
+    assert_eq!(page.events.len(), 2);
     assert_eq!(page.events[0].kind, "repository.refreshed");
     assert_eq!(page.events[0].aggregate_revision.get(), 2);
-    // Terminal events remain visible; only exact progress/observation kinds are excluded.
+    assert_eq!(page.events[1].kind, "activity.changed");
+    // Raw task/progress events are no longer manufactured into user history.
     store.request_worker(|connection| {
         for kind in ["operation.progress", "operation.succeeded"] {
-            connection.execute("INSERT INTO events(event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json)
-                VALUES(?1,?2,'operation',?3,1,?4,5,'{}')",
-                params![OperationId::new().to_string(), kind, OperationId::new().to_string(), PrincipalId::LOCAL_OWNER])
-                .map_err(|_| sqlite::unavailable())?;
+            connection.execute("INSERT INTO events(event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json) VALUES(?1,?2,'operation',?3,1,?4,5,'{}')",
+                params![OperationId::new().to_string(),kind,OperationId::new().to_string(),PrincipalId::LOCAL_OWNER]).map_err(|_|sqlite::unavailable())?;
         }
         Ok(())
-    }, sqlite::unavailable).await.expect("activity fixture");
+    },sqlite::unavailable).await.expect("internal event fixture");
     let activity = store
         .list_official_activity(owner, None, 100)
         .await
-        .expect("terminal retained");
+        .expect("durable user activity");
+    assert_eq!(
+        activity.items.len(),
+        6,
+        "registrations, accepted launch and real repository change only"
+    );
     assert!(
         activity
             .items
             .iter()
-            .any(|item| item.summary_code == "operation.succeeded")
+            .all(|item| !item.action.starts_with("operation."))
     );
-    assert!(activity.items.iter().all(|item| !matches!(
-        item.summary_code.as_str(),
-        "operation.progress" | "repository.observed"
-    )));
 }
 
 #[test]
@@ -882,4 +1061,76 @@ fn each_existing_recovery_commits_state_revision_and_event_atomically_and_repeat
             "{kind}"
         );
     }
+}
+
+#[tokio::test]
+async fn extension_worker_failure_and_activity_share_the_reported_diagnostic() {
+    use alcomd_application::{M6ErrorCode, OfficialGuiStore};
+    let directory = Directory::new();
+    let store =
+        StateStoreHandle::open(directory.database()).expect("valid isolated activity fixture");
+    let owner = PrincipalId::local_owner();
+    let extension = installed_extension_for(&store, owner.clone()).await;
+    let plan = M6Store::create_uninstall_plan(
+        &store,
+        owner.clone(),
+        ExtensionUninstallPlanDraft {
+            extension,
+            data_disposition: ExtensionDataDisposition::RetainData,
+            plan_fingerprint: [8; 32],
+        },
+        10,
+    )
+    .await
+    .expect("valid isolated activity fixture");
+    let accepted = M6Store::accept_plan(
+        &store,
+        owner.clone(),
+        plan.plan_id,
+        key("failed-uninstall"),
+        11,
+    )
+    .await
+    .expect("valid isolated activity fixture");
+    M6Store::begin_apply(&store, accepted.operation_id, 12)
+        .await
+        .expect("valid isolated activity fixture");
+    let diagnostic = OperationId::new().to_string();
+    M6Store::fail_operation(
+        &store,
+        accepted.operation_id,
+        M6ErrorCode::PackageInvalid,
+        diagnostic.clone(),
+        13,
+    )
+    .await
+    .expect("valid isolated activity fixture");
+    let task = StateStore::get_operation(&store, owner.clone(), accepted.operation_id)
+        .await
+        .expect("valid isolated activity fixture");
+    let activity = store
+        .get_official_activity(owner.clone(), accepted.operation_id.to_string())
+        .await
+        .expect("valid isolated activity fixture");
+    assert_eq!(task.diagnostic_id.as_deref(), Some(diagnostic.as_str()));
+    assert_eq!(activity.diagnostic_id, task.diagnostic_id);
+    assert_eq!(activity.status, "failed");
+    let revision = activity.revision;
+    M6Store::fail_operation(
+        &store,
+        accepted.operation_id,
+        M6ErrorCode::PackageInvalid,
+        diagnostic,
+        14,
+    )
+    .await
+    .expect("valid isolated activity fixture");
+    assert_eq!(
+        store
+            .get_official_activity(owner, accepted.operation_id.to_string())
+            .await
+            .expect("valid isolated activity fixture")
+            .revision,
+        revision
+    );
 }

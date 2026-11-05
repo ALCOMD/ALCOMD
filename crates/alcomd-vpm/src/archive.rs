@@ -83,9 +83,25 @@ pub enum ArchiveErrorCode {
 #[derive(Debug)]
 pub struct ArchiveError {
     code: ArchiveErrorCode,
+    context: alcomd_application::TechnicalErrorContext,
 }
 
 impl ArchiveError {
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+
     #[must_use]
     pub const fn code(&self) -> ArchiveErrorCode {
         self.code
@@ -94,11 +110,19 @@ impl ArchiveError {
 
 impl fmt::Display for ArchiveError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "package archive rejected: {:?}", self.code)
+        write!(formatter, "package archive rejected: {:?}", self.code)?;
+        if let Some(path) = self.context.path.as_deref() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
 
-impl std::error::Error for ArchiveError {}
+impl std::error::Error for ArchiveError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ArchiveEntry {
@@ -123,11 +147,19 @@ pub fn preflight_archive_with_limits(
     path: &Path,
     limits: ArchiveLimits,
 ) -> Result<ArchivePreflight, ArchiveError> {
-    let metadata = std::fs::metadata(path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+    let metadata = std::fs::metadata(path).map_err(|cause| {
+        archive_error(ArchiveErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || metadata.len() > limits.archive_bytes {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
-    let file = File::open(path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+    let file = File::open(path).map_err(|cause| {
+        archive_error(ArchiveErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     preflight_reader(file, limits)
 }
 
@@ -145,14 +177,15 @@ pub fn extract_archive_with_limits(
 ) -> Result<ArchivePreflight, ArchiveError> {
     validate_empty_destination(destination)?;
     let preflight = preflight_archive_with_limits(archive_path, limits)?;
-    let file = File::open(archive_path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
-    let mut archive =
-        ZipArchive::new(file).map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
+    let file = File::open(archive_path)
+        .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
     let mut streamed_total = 0_u64;
     for planned in &preflight.entries {
         let mut entry = archive
             .by_index(planned.index)
-            .map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
         if entry.name_raw() != normalized_archive_name(&entry)?.as_bytes()
             && std::str::from_utf8(entry.name_raw()).is_err()
         {
@@ -172,7 +205,7 @@ pub fn extract_archive_with_limits(
             .write(true)
             .create_new(true)
             .open(&target)
-            .map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
         let copied = copy_bounded(
             &mut entry,
             &mut output,
@@ -189,7 +222,7 @@ pub fn extract_archive_with_limits(
         output
             .flush()
             .and_then(|()| output.sync_all())
-            .map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
     }
     if streamed_total
         != preflight
@@ -209,8 +242,8 @@ fn preflight_reader<R: Read + Seek>(
     reader: R,
     limits: ArchiveLimits,
 ) -> Result<ArchivePreflight, ArchiveError> {
-    let mut archive =
-        ZipArchive::new(reader).map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
+    let mut archive = ZipArchive::new(reader)
+        .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
     if archive.len() > limits.entries {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
@@ -221,13 +254,13 @@ fn preflight_reader<R: Read + Seek>(
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
-            .map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
         validate_entry_type(&entry)?;
         let raw_name = std::str::from_utf8(entry.name_raw())
-            .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::UnsafePath).with_source(cause))?;
         let decoded_name = entry
             .name()
-            .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))?;
+            .map_err(|cause| archive_error(ArchiveErrorCode::UnsafePath).with_source(cause))?;
         if raw_name != decoded_name.as_ref() {
             return Err(archive_error(ArchiveErrorCode::UnsafePath));
         }
@@ -295,7 +328,7 @@ fn normalized_archive_name<R: Read>(
 ) -> Result<String, ArchiveError> {
     std::str::from_utf8(entry.name_raw())
         .map(str::to_owned)
-        .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))
+        .map_err(|cause| archive_error(ArchiveErrorCode::UnsafePath).with_source(cause))
 }
 
 pub(crate) fn normalize_path(
@@ -407,13 +440,20 @@ fn expansion_ratio_exceeded(uncompressed: u64, compressed: u64, limit: u64) -> b
 }
 
 fn validate_empty_destination(destination: &Path) -> Result<(), ArchiveError> {
-    let metadata =
-        std::fs::symlink_metadata(destination).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+    let metadata = std::fs::symlink_metadata(destination).map_err(|cause| {
+        archive_error(ArchiveErrorCode::Io)
+            .with_source(cause)
+            .with_path(destination.display().to_string())
+    })?;
     if !metadata.is_dir() || is_link_or_reparse(&metadata) {
         return Err(archive_error(ArchiveErrorCode::UnsafePath));
     }
     if std::fs::read_dir(destination)
-        .map_err(|_| archive_error(ArchiveErrorCode::Io))?
+        .map_err(|cause| {
+            archive_error(ArchiveErrorCode::Io)
+                .with_source(cause)
+                .with_path(destination.display().to_string())
+        })?
         .next()
         .is_some()
     {
@@ -430,9 +470,10 @@ fn create_directory_path(root: &Path, relative: &Path) -> Result<(), ArchiveErro
             Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {}
             Ok(_) => return Err(archive_error(ArchiveErrorCode::UnsafePath)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                std::fs::create_dir(&current).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+                std::fs::create_dir(&current)
+                    .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
                 let metadata = std::fs::symlink_metadata(&current)
-                    .map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+                    .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
                 if !metadata.is_dir() || is_link_or_reparse(&metadata) {
                     return Err(archive_error(ArchiveErrorCode::UnsafePath));
                 }
@@ -450,7 +491,8 @@ fn copy_bounded<R: Read, W: Write>(
     maximum: u64,
 ) -> Result<u64, ArchiveError> {
     let mut limited = reader.take(expected.saturating_add(1));
-    let copied = io::copy(&mut limited, writer).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+    let copied = io::copy(&mut limited, writer)
+        .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
     if copied > expected || copied > maximum {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
@@ -465,8 +507,11 @@ fn sync_tree_directories(root: &Path, entries: &[ArchiveEntry]) -> Result<(), Ar
         .collect::<BTreeSet<_>>();
     directories.insert(root.to_path_buf());
     for directory in directories.into_iter().rev() {
-        alcomd_platform::sync_directory(&directory)
-            .map_err(|_| archive_error(ArchiveErrorCode::Io))?;
+        alcomd_platform::sync_directory(&directory).map_err(|cause| {
+            archive_error(ArchiveErrorCode::Io)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     }
     Ok(())
 }
@@ -482,8 +527,11 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-const fn archive_error(code: ArchiveErrorCode) -> ArchiveError {
-    ArchiveError { code }
+fn archive_error(code: ArchiveErrorCode) -> ArchiveError {
+    ArchiveError {
+        code,
+        context: alcomd_application::TechnicalErrorContext::default(),
+    }
 }
 
 #[cfg(test)]

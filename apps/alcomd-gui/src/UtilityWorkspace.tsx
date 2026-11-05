@@ -9,7 +9,7 @@ import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 import { useReconnect } from "./capabilities";
 import type { RpcError } from "@alcomd/sdk";
-import { GlobalReminder, RequestReminder } from "./Reminder";
+import { RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { useCoreEvents, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
@@ -125,7 +125,7 @@ export function UtilityWorkspace<T>({
         if (events) retryRead(); else refresh();
     };
 
-    const failure = error === undefined ? null : <RequestReminder inline={value === undefined} error={error}>
+    const failure = error === undefined ? null : <RequestReminder error={error}>
         <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")}</p>
         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
     </RequestReminder>;
@@ -149,7 +149,7 @@ export function UtilityWorkspace<T>({
                 </div>
             </PageHeader>
             <ScrollArea className="utility-workspace-body">
-                {value === undefined ? failure : <GlobalReminder>{failure}</GlobalReminder>}
+                {value === undefined ? failure : <>{failure}</>}
                 {value === undefined ? (
                     pending ? <LoadingState title={t("Loading…")} /> : null
                 ) : (

@@ -764,7 +764,7 @@ State v18，并只在 client 请求时回显已实现的 `extensions.ui.portable
 
 ## 24. M7 兼容增加：Official GUI settings/activity/diagnostics
 
-M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；另有已批准的
+M7 在 RPC major 1 上提供设置和独立活动 base methods，无独立 capability；技术日志使用 `diagnostics.log.v1`，另有已批准的
 `unity.hub.open`，使用独立 `unity.hub.open.v1` capability：
 
 | method | params | result | permission |
@@ -772,76 +772,34 @@ M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；
 | `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
 | `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
-| `activity.list` | optional tuple `cursor`, optional `limit` | closed Event/Operation projection and next cursor | `activity.read` |
-| `diagnostics.list` | optional tuple `cursor`, optional `limit` | closed redacted diagnostics and next cursor | `diagnostics.read` |
-| `diagnostics.log.read` | optional instance/sequence `cursor`, `limit` 1–200, `waitMs` 0–20000 | bounded safe Core log records, `nextCursor`, `reset`, `gap` | `diagnostics.read`, authenticated local-owner only |
+| `activity.list` | optional stable start-time/ID `cursor`, optional `limit` | independent activity items and next cursor | `activity.read` |
+| `activity.get` | `activityId` | one owner-visible activity | `activity.read` |
+| `diagnostics.log.read` | opaque `cursor`, `limit` 1–200, `follow`, closed `query` | standard JSON records, readable cursor and independent health | `diagnostics.read`, authenticated local-owner only |
+| `diagnostics.log.history` | opaque `cursor`, optional baseline `before`, bounded `query`, `limit` 1–200 | retained records, scan progress, issues and health | `diagnostics.read`, authenticated local-owner only |
+| `diagnostics.log.health` | `{}` | independent process-local source health | `diagnostics.read`, authenticated local-owner only |
 
-The owner-approved `diagnostics.log.read` addition negotiates `diagnostics.log.v1` separately.
-Its complete closed wire contract is [m7-diagnostic-log.schema.json](m7-diagnostic-log.schema.json).
-Core retains at most 1024 live records. Fields are instance/sequence, time, level, safe code,
-required `message` (reviewed technical text, at most 4096 UTF-8 bytes), required `target` (source,
-at most 128 ASCII characters), optional diagnostic ID and `notify`. Actual tracing text and
-reviewed filesystem path/error details are retained. Secrets, credentials, argv, environment,
-request parameters, arbitrary result values and Portable UI payloads are excluded. Core writes
-the same accepted records as UTF-8 JSON lines under its data directory's `logs`, bounded to five
-5MiB files. The nonblocking file queue holds at most 1024 records; file failure/overflow is reported
-in memory without recursively writing the failure. The read RPC covers the live buffer, not old
-files. Existing `diagnostics.list` remains the failed-task projection. This owner-approved,
-pre-release required-field change replaces the code-only contract; clients are updated together.
-
-An initial read, changed Core instance or lost cursor window returns recent records and a tail
-cursor; `reset` and `gap` distinguish these conditions. The GUI displays the retained records but
-does not replay them as notifications. Normal incremental reads advance by sequence. Error records
-notify by default, warnings remain silent by default, and explicit source `gui_toast` overrides
-apply to those two levels. Lower levels remain silent. Foreground RPC spans default to silent
-because the calling page already handles their errors; an explicit event override takes precedence.
-The GUI uses one dedicated cancellable read connection, so a bounded wait cannot block ordinary RPC.
-The log read is serial: disconnect cancels its wait, and sending another request before its response
-closes that connection. This cancellation rule does not abandon mutations on other connections.
-
-Authenticated business request failures are recorded before delivery and share the response's
-existing optional diagnostic ID. Successful requests do not manufacture log entries; log reads, event
-transport and negotiation do not create recursive records. Committed task terminal events feed
-the same Core log independently of a waiting command caller; progress does not create log traffic.
-The GUI also retains bounded, explicitly GUI-sourced session feedback. Floating feedback is
-rendered only after its record exists, and matching Core/GUI errors merge by diagnostic ID.
-GUI-specific contextual presentation is local view metadata. It does not replace Core technical
-text or claim that GUI-only session records were saved to the Core file. The page shows the actual
-message first; auxiliary code, source and diagnostic ID remain available through Show details.
-
-`settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
-`revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
-optional field 广告当前 production `configSchema: 10`；Hub 打开能力按其独立就绪和协商条件广告。Config10 保持 Config4 对 `appearance.density` 的删除；显式旧值或 null 均以未知字段拒绝，
-不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3／4／5／6／7／8／9
-仅作为有效启动迁移输入：移除 density，保留原 revision 和其余有效设置，v1/v2 仅补既有默认值。
-这是已批准的发布前破坏性字段删除；严格客户端须同步，不改变 RPC major、methods、capabilities、permissions 或 State Schema。
-
-2026-11-03 已批准的 Config8 增加 `projects.autoDiscover`（默认 true），以及 `backups.compressionMode`（默认 fast）、
-`backups.includeVpmPackages`（默认 true）、`backups.includeLibrary`（默认 false）。四项非 nullable，PATCH 可独立省略，
-闭合非空容器、严格枚举/类型和原 CAS 保持。有效 Config1–7 迁移保留全部既有值和 revision，只补新默认。
-修改自动发现字段，或在更新后的自动发现开启时修改项目默认路径，除 settings.manage 外还要求既有 projects.manage。
-Core 在启动、配置通知及30秒周期单任务扫描直属安全子目录，最多4096项；登记前重验配置及文件身份，复用项目创建资源锁，
-不把 projects.list 改为写操作，不新增公开方法/权限或 State Schema。默认目录内仅移出列表的项目可再次加入。
-
-Config10 在保留 Config7 的 `settings.window.rememberState: boolean` 基础上，增加 `settings.window.fullscreen: boolean`，两者默认 false。
-完整 window 必含两个 bool；PATCH 为闭合非空对象，可独立省略字段表示保持，false 显式保存，null/错误类型/未知字段整次拒绝。
-Config1–9 有效迁移为新增 fullscreen 补 false，保留 revision 与全部其他设置；Config7–9 的 rememberState 原值保留。
-沿用 settings.read/manage、串行 CAS 与16 KiB总限。全屏是 Core 权威偏好，GUI 按已接受值控制自身主窗口并跨启动恢复。
-几何仍仅为 GUI 可丢弃视图缓存，Core 不接受窗口宽高/位置/最大化等字段；State18、RPC method、权限名和依赖不变。
-
-2026-11-03 已批准的 Config6 增加 `settings.unity.defaultLaunchArguments: string[] | null`。
-null 使用内置默认（当前 `[]`），`[]` 为显式空覆盖；PATCH 缺省不变，null 清除。更改该字段同时要求
-`settings.manage` 与既有 `unity.manage`，Hub-only 更新的权限保持。最多 64 项、每项 4096 UTF-8 bytes、
-JSON 数组 65536 bytes，并保持 16 KiB 配置总限；NUL 和 Core 项目选择器（含 `-createProject`、`-openfile`）拒绝。
-Config5→6 保留 revision 及全部现有设置，为新字段补 null。项目显式空覆盖由另行批准的
-[State17 最小迁移](../storage/state-v17-empty-unity-override.md) 保存；没有项目记录继续继承，不补造覆盖。完整 argv 仅由授权配置/项目读取返回，不进入 Activity 或诊断摘要。
-
-2026-11-03 已批准的 Config5 补齐默认保存目录：`settings.paths` 必含 `projectDirectory`、`backupDirectory`，
-各为 `string | null`；null 采用平台 Documents 下由产品身份派生的默认目录。`directories` 必含同名的两个有效绝对路径 string。
-paths PATCH 字段省略不变、null 清除覆盖；容器 null/空对象、未知字段整次拒绝。显式目录由 Core 校验绝对、已存在、安全及
-4096 UTF-8 bytes 界限，系统默认目录在写入前完成只读解析；读取无关设置不重新校验已保存目录的即时可用性。
-修改目录仅影响后续操作；旧备份/已接受任务的定位及恢复证据不随设置重定向。此发布前必需字段扩展须同步严格消费者，
-不新增 method、capability、permission 或 State Schema。目录路径仅由授权 settings 响应返回，不进入 Activity 或诊断摘要。
+These are owner-approved unpublished breaking replacements. The complete log contract is
+`m7-diagnostic-log.schema.json`. Records retain standard tracing JSON, wrapped only with
+source/session/segment/offset identities. No notification or GUI-authored business log exists.
+Core and GUI own separate controlled sources; native GUI reads its own files while Core is offline.
+The file worker publishes only complete readable lines, never enqueue acknowledgements. Each
+source retains five 5MiB segments across sessions, with a 512KiB record and 64-record lossy queue.
+Health revisions independently wake readers on rejection and I/O failure; they do not require a
+successful log line. Reads register the latest-state signal before checking data/health. The initial
+baseline B joins forward live reads to history before B. Idle follow has no periodic timeout or
+empty heartbeat. Search matches decoded JSON field names/values, including spans and actual paths, case-insensitively; search is bounded to 4096 UTF-8 bytes. Closed filters apply at the source over retained files, with 1MiB scan, 100 default /
+200 maximum items and the existing 4MiB encoded frame limit. No-match scans still advance.
+Corruption, partial sealed tails, source replacement and expired cursors are explicit; no arbitrary
+path is accepted. Read issues are capped at 32, with further issues aggregated as additional_issues; health lastFailure.message is at most 4096 characters. Request writes and partially arriving follow frames have five-second bounds; healthy idle waits do not. JSON and ordinary business errors have
+different boundaries: full technical paths/causes are local-owner-only, ordinary errors stay stable.
+Activity uses independent State19 records, snapshot subjects and closed action parameters. Task
+creation/status/recovery/terminal changes and activity.changed commit together; progress, replay
+and repeated state do not change activity revision. Explicit authorized execution precheck failures
+may record a separate failure activity without changing business/Operation/idempotency state;
+if that write fails, error.data.activityRecordingUnavailable=true preserves the original error.
+Protocol/authorization rejection and queries/previews do not create activity. No old data conversion
+or old-format compatibility is implemented. See the current approved M7 ExecPlan for bounds,
+shutdown, health, source ownership and isolated fault tests.
 
 已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
 偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
@@ -882,10 +840,9 @@ Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程�
 传输结果不明不能自动重试，GUI 保留明确错误并要求确认 Hub 是否已经打开，再由所有者再次
 点击形成新意图。完整请求、结果及新增错误枚举由当前 RPC Schema 冻结。
 
-Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
-或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
-table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
-`../config/settings-v8.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+Activity page size defaults to 100 (maximum 200), ordered by fixed (startedAtMs,activityId).
+Owner isolation, immutable subject snapshots and no cascade deletion apply. Technical log paging
+and source health are governed by the dedicated local-owner contract, not the removed diagnostics.list projection.
 
 ## 25. M7 兼容增加：Project Copy
 

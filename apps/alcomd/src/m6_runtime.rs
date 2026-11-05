@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,8 @@ struct RuntimeInvocation {
 
 impl PlatformExtensionRuntime {
     pub(super) fn new(store: StateStoreHandle) -> Result<Self, M6Error> {
-        let executable = std::env::current_exe().map_err(|_| internal())?;
+        let executable =
+            std::env::current_exe().map_err(|source| internal().with_source(source))?;
         let default_host = executable.with_file_name(format!(
             "alcomd-extension-host{}",
             std::env::consts::EXE_SUFFIX
@@ -103,21 +104,26 @@ impl M6RuntimeAdapter for PlatformExtensionRuntime {
 
     async fn start(&self, context: ExtensionStartContext) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || start_host(&inner, context, None))
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || span.in_scope(|| start_host(&inner, context, None)))
             .await
             .map_err(|_| internal())?
     }
 
     async fn stop(&self, extension_id: String, reason: ExtensionStopReason) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || stop_host(&inner, &extension_id, reason))
-            .await
-            .map_err(|_| internal())?
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            span.in_scope(|| stop_host(&inner, &extension_id, reason))
+        })
+        .await
+        .map_err(|_| internal())?
     }
 
     async fn poll(&self) -> Result<ExtensionRuntimePoll, M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || poll_hosts(&inner))
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || span.in_scope(|| poll_hosts(&inner)))
             .await
             .map_err(|_| internal())?
     }
@@ -156,9 +162,12 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
         authority: ExtensionUiInvocationAuthority,
     ) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || start_host(&inner, context, Some(authority)))
-            .await
-            .map_err(|_| internal())?
+        let span = tracing::Span::current();
+        tokio::task::spawn_blocking(move || {
+            span.in_scope(|| start_host(&inner, context, Some(authority)))
+        })
+        .await
+        .map_err(|_| internal())?
     }
 
     async fn active_lease(
@@ -196,52 +205,55 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
         }
         let timeout = Duration::from_millis(remaining_ms.min(2_000));
         let inner = Arc::clone(&self.inner);
+        let span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
-            let mut processes = inner.processes.lock().map_err(|_| internal())?;
-            let process = processes
-                .get_mut(&lease.extension_id)
-                .filter(|process| process.lease == lease)
-                .ok_or_else(|| error(M6ErrorCode::InstanceStale))?;
-            let (name, input, expects_document) = match export {
-                ExtensionUiExport::Open { session_id, locale } => (
-                    "ui.open",
-                    json!({"sessionId": session_id, "locale": locale}),
-                    true,
-                ),
-                ExtensionUiExport::Refresh { session_id } => {
-                    ("ui.refresh", json!({"sessionId": session_id}), true)
-                }
-                ExtensionUiExport::Dispatch { session_id, action } => {
-                    let action = serde_json::from_slice::<Value>(&action)
-                        .map_err(|_| error(M6ErrorCode::InvalidInput))?;
-                    (
-                        "ui.dispatch",
-                        json!({"sessionId": session_id, "action": action}),
+            span.in_scope(|| {
+                let mut processes = inner.processes.lock().map_err(|_| internal())?;
+                let process = processes
+                    .get_mut(&lease.extension_id)
+                    .filter(|process| process.lease == lease)
+                    .ok_or_else(|| error(M6ErrorCode::InstanceStale))?;
+                let (name, input, expects_document) = match export {
+                    ExtensionUiExport::Open { session_id, locale } => (
+                        "ui.open",
+                        json!({"sessionId": session_id, "locale": locale}),
                         true,
-                    )
+                    ),
+                    ExtensionUiExport::Refresh { session_id } => {
+                        ("ui.refresh", json!({"sessionId": session_id}), true)
+                    }
+                    ExtensionUiExport::Dispatch { session_id, action } => {
+                        let action = serde_json::from_slice::<Value>(&action)
+                            .map_err(|_| error(M6ErrorCode::InvalidInput))?;
+                        (
+                            "ui.dispatch",
+                            json!({"sessionId": session_id, "action": action}),
+                            true,
+                        )
+                    }
+                    ExtensionUiExport::Close { session_id } => {
+                        ("ui.close", json!({"sessionId": session_id}), false)
+                    }
+                };
+                let result = invoke(
+                    &inner,
+                    process,
+                    name,
+                    input,
+                    timeout,
+                    RuntimeInvocation {
+                        kind: authority.kind,
+                        ui_authority: Some(authority),
+                    },
+                )?;
+                if expects_document {
+                    serde_json::to_vec(&result)
+                        .map(Some)
+                        .map_err(|_| internal())
+                } else {
+                    Ok(None)
                 }
-                ExtensionUiExport::Close { session_id } => {
-                    ("ui.close", json!({"sessionId": session_id}), false)
-                }
-            };
-            let result = invoke(
-                &inner,
-                process,
-                name,
-                input,
-                timeout,
-                RuntimeInvocation {
-                    kind: authority.kind,
-                    ui_authority: Some(authority),
-                },
-            )?;
-            if expects_document {
-                serde_json::to_vec(&result)
-                    .map(Some)
-                    .map_err(|_| internal())
-            } else {
-                Ok(None)
-            }
+            })
         })
         .await
         .map_err(|_| internal())?
@@ -296,17 +308,11 @@ fn start_host(
     if let Some(mut existing) = processes.remove(&context.lease.extension_id) {
         terminate(&mut existing.child);
     }
-    let mut child = Command::new(&inner.host_executable)
-        .arg("--extension")
-        .arg(&context.lease.extension_id)
-        .arg("--component")
-        .arg(&component)
-        .env_clear()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| error(M6ErrorCode::Crashed))?;
+    let mut child = spawn_host_process(
+        &inner.host_executable,
+        &context.lease.extension_id,
+        &component,
+    )?;
     let mut input = child.stdin.take().ok_or_else(internal)?;
     let output = child.stdout.take().ok_or_else(internal)?;
     let nonce = bootstrap_nonce();
@@ -324,9 +330,9 @@ fn start_host(
             limits: RuntimeLimits::default(),
         },
     };
-    if write_host_message(&mut input, &bootstrap).is_err() {
+    if let Err(source) = write_host_message(&mut input, &bootstrap) {
         terminate(&mut child);
-        return Err(error(M6ErrorCode::Crashed));
+        return Err(error(M6ErrorCode::Crashed).with_source(source));
     }
     let (ready, output) = read_with_timeout(output, Duration::from_millis(5_000), &mut child)?;
     if !bound(&ready, &context.lease, 1)
@@ -376,6 +382,28 @@ fn start_host(
     }
     processes.insert(process.lease.extension_id.clone(), process);
     Ok(())
+}
+
+fn spawn_host_process(
+    executable: &Path,
+    extension_id: &str,
+    component: &Path,
+) -> Result<Child, M6Error> {
+    Command::new(executable)
+        .arg("--extension")
+        .arg(extension_id)
+        .arg("--component")
+        .arg(component)
+        .env_clear()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|source| {
+            error(M6ErrorCode::Crashed)
+                .with_path(executable.display().to_string())
+                .with_source(source)
+        })
 }
 
 fn stop_host(
@@ -479,8 +507,12 @@ fn invoke(
             },
         },
     )
-    .map_err(|_| error(M6ErrorCode::Crashed))?;
+    .map_err(|source| error(M6ErrorCode::Crashed).with_source(source))?;
     let deadline = Instant::now() + timeout;
+    // Only IDs generated while handling this invocation may suppress a second report.
+    // Keep UUID text only, never capability input, response data, or error objects.
+    // The set is released with the existing invocation deadline, including failed calls.
+    let mut reported_failures = HashSet::new();
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
@@ -522,7 +554,13 @@ fn invoke(
                         input,
                     ) {
                         Ok(result) => (Some(result), None),
-                        Err(error) => (None, Some(stable_error(error))),
+                        Err(error) => {
+                            let response = stable_error(error);
+                            if let Some(id) = response.diagnostic_id.as_ref() {
+                                reported_failures.insert(id.clone());
+                            }
+                            (None, Some(response))
+                        }
                     }
                 };
                 write_host_message(
@@ -540,7 +578,7 @@ fn invoke(
                         },
                     },
                 )
-                .map_err(|_| error(M6ErrorCode::Crashed))?;
+                .map_err(|source| error(M6ErrorCode::Crashed).with_source(source))?;
             }
             HostMessageBody::ExportResult {
                 request_id: response_id,
@@ -551,7 +589,7 @@ fn invoke(
                 request_id: response_id,
                 result: None,
                 error: Some(error),
-            } if response_id == request_id => return Err(host_error(error)),
+            } if response_id == request_id => return Err(host_error(error, &reported_failures)),
             _ => {
                 terminate(&mut process.child);
                 return Err(error(M6ErrorCode::Crashed));
@@ -690,13 +728,13 @@ fn read_with_timeout(
     });
     match receiver.recv_timeout(timeout) {
         Ok((Ok(message), output)) => Ok((message, output)),
-        Ok((Err(_), _)) => {
+        Ok((Err(source), _)) => {
             terminate(child);
-            Err(error(M6ErrorCode::Crashed))
+            Err(error(M6ErrorCode::Crashed).with_source(source))
         }
-        Err(_) => {
+        Err(source) => {
             terminate(child);
-            Err(error(M6ErrorCode::ResourceLimit))
+            Err(error(M6ErrorCode::ResourceLimit).with_source(source))
         }
     }
 }
@@ -722,7 +760,16 @@ fn stable_error(error: M6Error) -> HostStableError {
     };
     HostStableError {
         code: code.to_owned(),
-        diagnostic_id: (code == "internal_error").then(|| OperationId::new().to_string()),
+        diagnostic_id: (code == "internal_error").then(|| {
+            error.diagnostic_id().map(str::to_owned).unwrap_or_else(|| {
+                alcomd_application::record_technical_failure(
+                    &error,
+                    error.path(),
+                    None,
+                    "extension capability execution failed",
+                )
+            })
+        }),
     }
 }
 
@@ -733,8 +780,8 @@ fn cancelled_error() -> HostStableError {
     }
 }
 
-fn host_error(source: HostStableError) -> M6Error {
-    error(match source.code.as_str() {
+fn host_error(source: HostStableError, reported_failures: &HashSet<String>) -> M6Error {
+    let code = match source.code.as_str() {
         "extension_permission_denied" => M6ErrorCode::PermissionDenied,
         "extension_scope_denied" => M6ErrorCode::ScopeDenied,
         "extension_instance_stale" => M6ErrorCode::InstanceStale,
@@ -743,7 +790,25 @@ fn host_error(source: HostStableError) -> M6Error {
         "revision_conflict" => M6ErrorCode::RevisionConflict,
         "extension_data_quota_exceeded" => M6ErrorCode::DataQuotaExceeded,
         _ => M6ErrorCode::Crashed,
-    })
+    };
+    let mut failure = error(code).with_reason(match source.code.as_str() {
+        "extension_permission_denied" => "extension host reported permission denied",
+        "extension_scope_denied" => "extension host reported a scope denial",
+        "extension_instance_stale" => "extension host reported a stale instance",
+        "extension_resource_limit" => "extension host reported a resource limit",
+        "project_not_found" => "extension host reported a missing project",
+        "revision_conflict" => "extension host reported a revision conflict",
+        "extension_data_quota_exceeded" => "extension host reported a data quota limit",
+        "internal_error" => "extension host reported an internal failure",
+        _ => "extension host reported an execution failure",
+    });
+    if let Some(id) = source
+        .diagnostic_id
+        .filter(|id| reported_failures.contains(id))
+    {
+        failure = failure.with_diagnostic_id(id);
+    }
+    failure
 }
 
 fn project_summary(value: ExtensionProjectSummary) -> Value {
@@ -785,8 +850,11 @@ fn validate_component(path: &Path) -> Result<(), M6Error> {
     {
         return Err(error(M6ErrorCode::PackageInvalid));
     }
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|_| error(M6ErrorCode::PackageInvalid))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|source| {
+        error(M6ErrorCode::PackageInvalid)
+            .with_path(path.display().to_string())
+            .with_source(source)
+    })?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err(error(M6ErrorCode::PackageInvalid));
     }
@@ -827,6 +895,114 @@ fn internal() -> M6Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("capture lock")
+                .extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn capability_failure_reports_original_source_and_only_accepts_core_issued_identity() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let output = bytes.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_writer(move || Capture(output.clone()))
+            .finish();
+        let path = std::env::temp_dir()
+            .join("ALCOMD 原始路径")
+            .join("host-data.json")
+            .display()
+            .to_string();
+        let failure = || {
+            M6Error::new(M6ErrorCode::Internal)
+                .with_path(path.clone())
+                .with_source(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "controlled host-data write failure",
+                ))
+        };
+        let response = tracing::subscriber::with_default(subscriber, || {
+            let response = stable_error(failure());
+            let repeated = stable_error(
+                failure().with_diagnostic_id(response.diagnostic_id.clone().expect("recorded ID")),
+            );
+            assert_eq!(response, repeated);
+            response
+        });
+        let id = response.diagnostic_id.clone().expect("recorded ID");
+        let known = HashSet::from([id.clone()]);
+        let propagated = host_error(response, &known);
+        assert_eq!(propagated.diagnostic_id(), Some(id.as_str()));
+        let forged = host_error(
+            HostStableError {
+                code: "internal_error".into(),
+                diagnostic_id: Some(OperationId::new().to_string()),
+            },
+            &known,
+        );
+        assert!(forged.diagnostic_id().is_none());
+        let captured =
+            String::from_utf8(bytes.lock().expect("capture").clone()).expect("UTF-8 logs");
+        let records = captured
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).expect("standard JSON"))
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["fields"]["diagnostic_id"], id);
+        assert_eq!(records[0]["fields"]["path"], path);
+        assert!(
+            records[0]["fields"]["error"]
+                .as_str()
+                .expect("original cause")
+                .contains("controlled host-data write failure")
+        );
+    }
+
+    #[test]
+    fn missing_host_and_component_keep_actual_io_cause_and_path() {
+        use std::error::Error;
+        let parent = std::env::temp_dir().join(OperationId::new().to_string());
+        let component = parent.join("extension.wasm");
+        let failure = validate_component(&component).expect_err("missing component");
+        assert_eq!(failure.path(), Some(component.to_string_lossy().as_ref()));
+        assert_eq!(
+            failure
+                .source()
+                .expect("I/O cause")
+                .downcast_ref::<std::io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        let executable = parent.join(format!(
+            "alcomd-extension-host{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        let failure = spawn_host_process(&executable, "dev.example.fixture", &component)
+            .expect_err("missing executable");
+        assert_eq!(failure.path(), Some(executable.to_string_lossy().as_ref()));
+        assert_eq!(
+            failure
+                .source()
+                .expect("I/O cause")
+                .downcast_ref::<std::io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
 
     #[test]
     fn host_message_binding_rejects_forged_or_stale_authority() {

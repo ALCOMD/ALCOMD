@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { Button, Dialog, TextField } from "../../src/Material";
 import { UtilityWorkspace } from "../../src/UtilityWorkspace";
 import { OperationFollow } from "../../src/CoreActions";
-import { ReminderProvider, RequestReminder } from "../../src/Reminder";
+import { RequestReminder } from "../../src/Reminder";
 import type { Operation } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 import { CoreEvents } from "../../src/core-events";
@@ -72,5 +72,5 @@ if (evidenceQuery.has("eventLimits")) {
     createRoot(document.getElementById("root")!).render(<h1>Event coordinator limits evidence</h1>);
     void import("./event-limits-evidence");
 } else {
-    createRoot(document.getElementById("root")!).render(<ReminderProvider visit={0}>{evidenceQuery.has("operationFollow") ? <FollowEvidence /> : <Evidence />}</ReminderProvider>);
+    createRoot(document.getElementById("root")!).render(<>{evidenceQuery.has("operationFollow") ? <FollowEvidence /> : <Evidence />}</>);
 }

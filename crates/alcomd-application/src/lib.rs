@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
 mod diagnostic_log;
+mod error_context;
 mod events;
 mod m4;
 mod m5;
@@ -37,6 +38,7 @@ mod project_discovery;
 mod repository_list;
 
 pub use diagnostic_log::*;
+pub use error_context::*;
 pub use events::*;
 pub use m4::*;
 pub use m5::*;
@@ -327,12 +329,16 @@ pub enum M3ErrorCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M3Error {
     code: M3ErrorCode,
+    context: Option<TechnicalErrorContext>,
 }
 
 impl M3Error {
     #[must_use]
     pub const fn new(code: M3ErrorCode) -> Self {
-        Self { code }
+        Self {
+            code,
+            context: None,
+        }
     }
 
     #[must_use]
@@ -347,7 +353,30 @@ impl fmt::Display for M3Error {
     }
 }
 
-impl std::error::Error for M3Error {}
+impl M3Error {
+    pub fn with_source(mut self, error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_source(error));
+        self
+    }
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_path(path));
+        self
+    }
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_reason(reason));
+        self
+    }
+    pub fn technical_path(&self) -> Option<&str> {
+        self.context.as_ref().and_then(|c| c.path.as_deref())
+    }
+}
+impl std::error::Error for M3Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context
+            .as_ref()
+            .and_then(TechnicalErrorContext::source_error)
+    }
+}
 
 /// External read adapter. Implementations perform bounded I/O but never mutate sources.
 pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
@@ -637,32 +666,48 @@ pub enum StoreErrorKind {
 }
 
 /// Safe persistence-port error without SQLite text or local paths.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StoreError {
     kind: StoreErrorKind,
+    context: Option<TechnicalErrorContext>,
 }
 
 impl StoreError {
     /// Creates a safe store error category.
     #[must_use]
     pub const fn new(kind: StoreErrorKind) -> Self {
-        Self { kind }
+        Self {
+            kind,
+            context: None,
+        }
     }
 
     /// Returns the stable application-visible category.
     #[must_use]
-    pub const fn kind(self) -> StoreErrorKind {
+    pub const fn kind(&self) -> StoreErrorKind {
         self.kind
     }
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("state store request failed")
+        write!(formatter, "state store request failed ({:?})", self.kind)
     }
 }
 
-impl std::error::Error for StoreError {}
+impl StoreError {
+    pub fn with_source(mut self, error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_source(error));
+        self
+    }
+}
+impl std::error::Error for StoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context
+            .as_ref()
+            .and_then(TechnicalErrorContext::source_error)
+    }
+}
 
 /// Narrow asynchronous persistence port required by the M2 vertical slice.
 pub trait StateStore: Clone + Send + Sync + 'static {
@@ -893,19 +938,37 @@ fn require_scope(scopes: &AccessScopes, resource_id: &str) -> Result<(), Applica
 }
 
 /// Stable application error categories mapped to public RPC errors by adapters.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApplicationError {
     /// Permission or owner visibility was denied.
     PermissionDenied,
     /// Input was outside a frozen bound.
     InvalidInput,
     /// The persistence adapter returned a safe error category.
-    Store(StoreErrorKind),
+    Store(StoreError),
 }
 
 impl From<StoreError> for ApplicationError {
     fn from(error: StoreError) -> Self {
-        Self::Store(error.kind())
+        Self::Store(error)
+    }
+}
+
+impl fmt::Display for ApplicationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PermissionDenied => f.write_str("permission denied"),
+            Self::InvalidInput => f.write_str("invalid input"),
+            Self::Store(_) => f.write_str("persistence request failed"),
+        }
+    }
+}
+impl std::error::Error for ApplicationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Store(e) => Some(e),
+            _ => None,
+        }
     }
 }
 
@@ -1118,9 +1181,12 @@ impl<S: StateStore> Application<S> {
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run_state_check(operation_id).await;
-        });
+        tokio::spawn(tracing::Instrument::instrument(
+            async move {
+                let _ = application.run_state_check(operation_id).await;
+            },
+            tracing::info_span!("operation",operation_id=%operation_id),
+        ));
     }
 
     async fn run_state_check(&self, operation_id: OperationId) -> Result<(), ApplicationError> {
@@ -1158,7 +1224,7 @@ impl<S: StateStore> Application<S> {
                 .await?;
             return Ok(());
         }
-        let _ = self
+        let operation = self
             .store
             .finish_state_check(
                 operation_id,
@@ -1169,6 +1235,11 @@ impl<S: StateStore> Application<S> {
                 unix_time_ms()?,
             )
             .await?;
+        if integrity == CheckClassification::Ok && foreign_keys == CheckClassification::Ok {
+            tracing::info!(operation_id=%operation_id, "database integrity and foreign key checks passed");
+        } else {
+            tracing::warn!(operation_id=%operation_id, ?integrity, ?foreign_keys, diagnostic_id=operation.diagnostic_id.as_deref(), "database checks detected integrity issues");
+        }
         Ok(())
     }
 
@@ -1181,7 +1252,12 @@ impl<S: StateStore> Application<S> {
             StoreErrorKind::Unavailable => "store_unavailable",
             _ => "internal_error",
         };
-        let diagnostic_id = OperationId::new().to_string();
+        let diagnostic_id = record_technical_failure(
+            &error,
+            None,
+            Some(operation_id),
+            "state integrity check failed",
+        );
         let _ = self
             .store
             .finish_failed(
@@ -1256,9 +1332,14 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .reader
             .inspect_project(path, ProjectDiscoveryMode::ExactRoot)
             .await?;
-        self.store
+        let result = self
+            .store
             .register_project(access.principal().clone(), observation, key, m3_time_ms()?)
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(project_id=%result.value.project_id,path=%result.value.observation.root_path,"project registration completed");
+        }
+        Ok(result)
     }
 
     pub async fn refresh_project(
@@ -1281,7 +1362,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 ProjectDiscoveryMode::ExactRoot,
             )
             .await?;
-        self.store
+        let result = self
+            .store
             .refresh_project(
                 access.principal().clone(),
                 id,
@@ -1290,7 +1372,11 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 key,
                 m3_time_ms()?,
             )
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(project_id=%result.value.project_id,path=%result.value.observation.root_path,"project snapshot refresh completed");
+        }
+        Ok(result)
     }
 
     pub async fn set_project_favorite(
@@ -1303,7 +1389,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         require_m3(access, Permission::ProjectsManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Project(id)]).await;
-        self.store
+        let result = self
+            .store
             .set_project_favorite(
                 access.principal().clone(),
                 id,
@@ -1312,7 +1399,11 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 key,
                 m3_time_ms()?,
             )
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(project_id=%result.value.project_id,"project favorite request completed");
+        }
+        Ok(result)
     }
 
     pub async fn unregister_project(
@@ -1324,9 +1415,14 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<UnregisterResult<ProjectId>, M3Error> {
         require_m3(access, Permission::ProjectsManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Project(id)]).await;
-        self.store
+        let result = self
+            .store
             .unregister_project(access.principal().clone(), id, expected, key, m3_time_ms()?)
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(project_id=%result.id,"project removal completed");
+        }
+        Ok(result)
     }
 
     pub async fn inspect_repository(
@@ -1394,9 +1490,14 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
             }
         };
-        self.store
+        let result = self
+            .store
             .register_repository(access.principal().clone(), observation, key, m3_time_ms()?)
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(repository_id=%result.value.repository_id,"repository registration completed");
+        }
+        Ok(result)
     }
 
     pub async fn refresh_repository(
@@ -1461,9 +1562,14 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
-        self.store
+        let result = self
+            .store
             .unregister_repository(access.principal().clone(), id, expected, key, m3_time_ms()?)
-            .await
+            .await?;
+        if !result.replayed {
+            tracing::info!(repository_id=%result.id,"repository removal completed");
+        }
+        Ok(result)
     }
 }
 

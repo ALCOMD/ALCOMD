@@ -73,6 +73,21 @@ impl CandidateStore for PausedReadStore {
 
 // This fixture deliberately implements no Plan, Operation, Event or write store port.
 impl OfficialGuiStore for PausedReadStore {
+    async fn get_official_activity(
+        &self,
+        _: PrincipalId,
+        _: String,
+    ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
+        panic!("this fixture must not read Activity")
+    }
+    async fn record_failed_activity(
+        &self,
+        _: PrincipalId,
+        _: alcomd_application::NewFailedActivity,
+    ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
+        panic!("this fixture must not write Activity")
+    }
+
     async fn list_official_activity(
         &self,
         _: PrincipalId,
@@ -80,14 +95,6 @@ impl OfficialGuiStore for PausedReadStore {
         _: u32,
     ) -> Result<OfficialActivityPage, StoreError> {
         panic!("candidate query must not read Activity")
-    }
-    async fn list_official_diagnostics(
-        &self,
-        _: PrincipalId,
-        _: Option<OfficialDiagnosticCursor>,
-        _: u32,
-    ) -> Result<OfficialDiagnosticPage, StoreError> {
-        panic!("candidate query must not read Diagnostics")
     }
 }
 

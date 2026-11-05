@@ -507,20 +507,27 @@ mod tests {
         }
     }
     impl OfficialGuiStore for NeverRead {
+        async fn get_official_activity(
+            &self,
+            _: PrincipalId,
+            _: String,
+        ) -> Result<crate::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not read Activity")
+        }
+        async fn record_failed_activity(
+            &self,
+            _: PrincipalId,
+            _: crate::NewFailedActivity,
+        ) -> Result<crate::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not write Activity")
+        }
+
         async fn list_official_activity(
             &self,
             _: PrincipalId,
             _: Option<OfficialActivityCursor>,
             _: u32,
         ) -> Result<OfficialActivityPage, StoreError> {
-            panic!()
-        }
-        async fn list_official_diagnostics(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialDiagnosticCursor>,
-            _: u32,
-        ) -> Result<OfficialDiagnosticPage, StoreError> {
             panic!()
         }
     }

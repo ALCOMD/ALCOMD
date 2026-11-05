@@ -488,7 +488,7 @@ md-linear-progress {
 .project-card-unity { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; color: var(--on-surface-variant); }
 .project-card-unity::before { content: "·"; }
 .project-card-dates { margin: 0; color: var(--on-surface-variant); font-size: 12px; line-height: 18px; }
-.project-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: var(--alcomd-button-height); margin-top: auto; }
+.project-card-actions { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 8px; min-height: var(--alcomd-button-height); margin-top: auto; }
 .project-card-actions > .project-unregistered { margin-right: auto; }
 .project-row-actions--card { display: flex; width: 100%; min-width: 0; gap: 8px; }
 .project-row-actions--card > .project-favorite-action { position: absolute; top: 8px; right: 48px; }

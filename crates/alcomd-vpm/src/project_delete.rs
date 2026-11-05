@@ -49,7 +49,8 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             .ok_or_else(|| unsafe_reason("missing_parent"))?
             .to_path_buf();
         require_ordinary_directory(&parent)?;
-        let parent = fs::canonicalize(parent).map_err(|_| source_changed())?;
+        let parent =
+            fs::canonicalize(parent).map_err(|cause| source_changed().with_source(cause))?;
         let parent_identity = identity(&parent, source_changed())?;
         let normalized_leaf = root
             .file_name()
@@ -83,7 +84,8 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             "createdAtMs": now_ms,
             "expiresAtMs": expires_at_ms
         });
-        let plan_json = serde_json::to_string(&authority).map_err(|_| internal())?;
+        let plan_json =
+            serde_json::to_string(&authority).map_err(|cause| internal().with_source(cause))?;
         Ok(ProjectDeletePlanDraft {
             plan_id,
             project,
@@ -123,7 +125,7 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             root.parent()
                 .ok_or_else(|| unsafe_reason("missing_parent"))?,
         )
-        .map_err(|_| source_changed())?;
+        .map_err(|cause| source_changed().with_source(cause))?;
         if identity(&root, source_changed())? != plan.draft.root_identity
             || identity(&parent, source_changed())? != plan.draft.parent_identity
             || root.file_name().and_then(std::ffi::OsStr::to_str)
@@ -148,11 +150,12 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         if wrapper.exists() {
             verify_wrapper(&wrapper, &owner)?;
         } else {
-            fs::create_dir(&wrapper).map_err(|_| recovery())?;
+            fs::create_dir(&wrapper).map_err(|cause| recovery().with_source(cause))?;
             write_owner(&owner_path, &owner)?;
-            alcomd_platform::sync_directory(&wrapper).map_err(|_| recovery())?;
+            alcomd_platform::sync_directory(&wrapper)
+                .map_err(|cause| recovery().with_source(cause))?;
             alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
-                .map_err(|_| recovery())?;
+                .map_err(|cause| recovery().with_source(cause))?;
         }
         if payload.exists() {
             return Err(recovery());
@@ -161,7 +164,7 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         let count =
             tokio::task::spawn_blocking(move || alcomd_platform::project_delete_preflight(&root))
                 .await
-                .map_err(|_| internal())?
+                .map_err(|cause| internal().with_source(cause))?
                 .map_err(map_filesystem)?;
         Ok(ProjectDeleteFilesystemEvidence {
             quarantine_locator: wrapper.to_string_lossy().into_owned(),
@@ -183,10 +186,10 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         if payload.exists() || !root.exists() {
             return Err(recovery());
         }
-        fs::rename(&root, &payload).map_err(|_| recovery())?;
+        fs::rename(&root, &payload).map_err(|cause| recovery().with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
-            .map_err(|_| recovery())?;
-        alcomd_platform::sync_directory(&wrapper).map_err(|_| recovery())?;
+            .map_err(|cause| recovery().with_source(cause))?;
+        alcomd_platform::sync_directory(&wrapper).map_err(|cause| recovery().with_source(cause))?;
         let payload_identity = identity(&payload, recovery())?;
         if payload_identity != plan.draft.root_identity || root.exists() {
             return Err(recovery());
@@ -212,10 +215,11 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             if identity(&root, recovery())? != plan.draft.root_identity {
                 return Err(recovery());
             }
-            fs::rename(&root, &payload).map_err(|_| recovery())?;
+            fs::rename(&root, &payload).map_err(|cause| recovery().with_source(cause))?;
             alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
-                .map_err(|_| recovery())?;
-            alcomd_platform::sync_directory(&wrapper).map_err(|_| recovery())?;
+                .map_err(|cause| recovery().with_source(cause))?;
+            alcomd_platform::sync_directory(&wrapper)
+                .map_err(|cause| recovery().with_source(cause))?;
         } else if !payload.is_dir() {
             return Err(recovery());
         }
@@ -246,20 +250,20 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         let count =
             tokio::task::spawn_blocking(move || alcomd_platform::project_delete_cleanup(&payload))
                 .await
-                .map_err(|_| internal())?
+                .map_err(|cause| internal().with_source(cause))?
                 .map_err(map_filesystem)?;
         let owner = wrapper.join("owner.json");
-        fs::remove_file(owner).map_err(|_| recovery())?;
+        fs::remove_file(owner).map_err(|cause| recovery().with_source(cause))?;
         if fs::read_dir(&wrapper)
-            .map_err(|_| recovery())?
+            .map_err(|cause| recovery().with_source(cause))?
             .next()
             .is_some()
         {
             return Err(recovery());
         }
-        fs::remove_dir(&wrapper).map_err(|_| recovery())?;
+        fs::remove_dir(&wrapper).map_err(|cause| recovery().with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
-            .map_err(|_| recovery())?;
+            .map_err(|cause| recovery().with_source(cause))?;
         evidence.entry_count = Some(count);
         evidence.safe_evidence.push("cleanup_complete".to_owned());
         Ok(evidence)
@@ -276,15 +280,15 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             return Err(recovery());
         }
         let owner = wrapper.join("owner.json");
-        fs::remove_file(owner).map_err(|_| recovery())?;
+        fs::remove_file(owner).map_err(|cause| recovery().with_source(cause))?;
         if fs::read_dir(&wrapper)
-            .map_err(|_| recovery())?
+            .map_err(|cause| recovery().with_source(cause))?
             .next()
             .is_some()
         {
             return Err(recovery());
         }
-        fs::remove_dir(wrapper).map_err(|_| recovery())?;
+        fs::remove_dir(wrapper).map_err(|cause| recovery().with_source(cause))?;
         Ok(())
     }
 }
@@ -295,7 +299,7 @@ fn exact_root(project: &alcomd_application::ProjectRecord) -> Result<PathBuf, M7
         return Err(error(M7DeleteErrorCode::ProjectDeleteSourceMissing));
     }
     require_ordinary_directory(stored)?;
-    let root = fs::canonicalize(stored).map_err(|_| source_changed())?;
+    let root = fs::canonicalize(stored).map_err(|cause| source_changed().with_source(cause))?;
     if root.to_str().is_none() {
         return Err(unsafe_reason("non_unicode_root"));
     }
@@ -303,7 +307,8 @@ fn exact_root(project: &alcomd_application::ProjectRecord) -> Result<PathBuf, M7
 }
 
 fn require_ordinary_directory(path: &Path) -> Result<(), M7DeleteError> {
-    let metadata = fs::symlink_metadata(path).map_err(|_| source_changed())?;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|cause| source_changed().with_source(cause))?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() || reparse(&metadata) {
         return Err(unsafe_reason("root_link_or_reparse"));
     }
@@ -335,7 +340,8 @@ fn protected_root_check(candidate: &Path) -> Result<(), M7DeleteError> {
     {
         reject_overlap(
             candidate,
-            &fs::canonicalize(parent).map_err(|_| unsafe_reason("executable_unavailable"))?,
+            &fs::canonicalize(parent)
+                .map_err(|cause| unsafe_reason("executable_unavailable").with_source(cause))?,
         )?;
     }
     if let Ok(database) =
@@ -345,7 +351,8 @@ fn protected_root_check(candidate: &Path) -> Result<(), M7DeleteError> {
     {
         reject_overlap(
             candidate,
-            &fs::canonicalize(data_root).map_err(|_| unsafe_reason("data_root_unavailable"))?,
+            &fs::canonicalize(data_root)
+                .map_err(|cause| unsafe_reason("data_root_unavailable").with_source(cause))?,
         )?;
     }
     Ok(())
@@ -354,7 +361,7 @@ fn protected_root_check(candidate: &Path) -> Result<(), M7DeleteError> {
 #[cfg(windows)]
 fn home_directory() -> Result<Option<PathBuf>, M7DeleteError> {
     let local = alcomd_platform::local_app_data_directory()
-        .map_err(|_| unsafe_reason("home_unavailable"))?;
+        .map_err(|cause| unsafe_reason("home_unavailable").with_source(cause))?;
     let home = local
         .parent()
         .and_then(Path::parent)
@@ -373,7 +380,7 @@ fn home_directory() -> Result<Option<PathBuf>, M7DeleteError> {
     };
     fs::canonicalize(home)
         .map(Some)
-        .map_err(|_| unsafe_reason("home_unavailable"))
+        .map_err(|cause| unsafe_reason("home_unavailable").with_source(cause))
 }
 
 fn reject_overlap(candidate: &Path, protected: &Path) -> Result<(), M7DeleteError> {
@@ -388,7 +395,8 @@ fn reject_overlap(candidate: &Path, protected: &Path) -> Result<(), M7DeleteErro
 
 fn marker_digest(root: &Path) -> Result<[u8; 32], M7DeleteError> {
     let path = root.join("ProjectSettings").join("ProjectVersion.txt");
-    let metadata = fs::symlink_metadata(&path).map_err(|_| source_changed())?;
+    let metadata =
+        fs::symlink_metadata(&path).map_err(|cause| source_changed().with_source(cause))?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
         || reparse(&metadata)
@@ -396,11 +404,11 @@ fn marker_digest(root: &Path) -> Result<[u8; 32], M7DeleteError> {
     {
         return Err(source_changed());
     }
-    let file = fs::File::open(path).map_err(|_| source_changed())?;
+    let file = fs::File::open(path).map_err(|cause| source_changed().with_source(cause))?;
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
     file.take(MARKER_LIMIT + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| source_changed())?;
+        .map_err(|cause| source_changed().with_source(cause))?;
     if bytes.len() as u64 > MARKER_LIMIT || bytes.is_empty() {
         return Err(source_changed());
     }
@@ -425,26 +433,33 @@ fn expected_owner(operation_id: OperationId, plan: &ProjectDeletePlanRecord) -> 
 }
 
 fn write_owner(path: &Path, owner: &QuarantineOwner) -> Result<(), M7DeleteError> {
-    let bytes = serde_json::to_vec(owner).map_err(|_| internal())?;
+    let bytes = serde_json::to_vec(owner).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| recovery())?;
-    file.write_all(&bytes).map_err(|_| recovery())?;
-    file.sync_all().map_err(|_| recovery())
+        .map_err(|cause| recovery().with_source(cause))?;
+    file.write_all(&bytes)
+        .map_err(|cause| recovery().with_source(cause))?;
+    file.sync_all()
+        .map_err(|cause| recovery().with_source(cause))
 }
 
 fn verify_wrapper(path: &Path, expected: &QuarantineOwner) -> Result<(), M7DeleteError> {
-    require_ordinary_directory(path).map_err(|_| recovery())?;
-    let bytes = fs::read(path.join("owner.json")).map_err(|_| recovery())?;
-    let actual: QuarantineOwner = serde_json::from_slice(&bytes).map_err(|_| recovery())?;
+    require_ordinary_directory(path).map_err(|cause| recovery().with_source(cause))?;
+    let bytes = fs::read(path.join("owner.json")).map_err(|cause| recovery().with_source(cause))?;
+    let actual: QuarantineOwner =
+        serde_json::from_slice(&bytes).map_err(|cause| recovery().with_source(cause))?;
     if actual != *expected {
         return Err(recovery());
     }
-    for entry in fs::read_dir(path).map_err(|_| recovery())? {
+    for entry in fs::read_dir(path).map_err(|cause| recovery().with_source(cause))? {
         let name = entry
-            .map_err(|_| recovery())?
+            .map_err(|cause| recovery().with_source(cause))?
             .file_name()
             .to_string_lossy()
             .into_owned();
@@ -469,15 +484,19 @@ fn verified_locator(
 }
 
 fn identity(path: &Path, kind: M7DeleteError) -> Result<Vec<u8>, M7DeleteError> {
-    alcomd_platform::file_identity_key(path).map_err(|_| kind)
+    alcomd_platform::file_identity_key(path).map_err(|cause| {
+        kind.with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn map_filesystem(source: alcomd_platform::ProjectDeleteFilesystemError) -> M7DeleteError {
     use alcomd_platform::ProjectDeleteFilesystemErrorKind as Kind;
-    match source.kind() {
+    (match source.kind() {
         Kind::MountBoundary | Kind::MountGuardUnavailable | Kind::UnsafeEntry => source_unsafe(),
         Kind::Io => recovery(),
-    }
+    })
+    .with_source(source)
 }
 
 fn digest(value: &[u8]) -> [u8; 32] {
@@ -492,7 +511,7 @@ fn now_ms() -> Result<u64, M7DeleteError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| u64::try_from(value.as_millis()).unwrap_or(u64::MAX))
-        .map_err(|_| internal())
+        .map_err(|cause| internal().with_source(cause))
 }
 
 fn error(code: M7DeleteErrorCode) -> M7DeleteError {
@@ -512,7 +531,7 @@ fn unsafe_reason(reason: &str) -> M7DeleteError {
     eprintln!("M7 Project Delete test-only unsafe classification: {reason}");
     #[cfg(not(feature = "test-kill-gates"))]
     let _ = reason;
-    source_unsafe()
+    source_unsafe().with_reason(reason)
 }
 
 fn recovery() -> M7DeleteError {

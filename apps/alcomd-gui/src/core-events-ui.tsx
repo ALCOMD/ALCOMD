@@ -26,7 +26,7 @@ export function CoreEventsStatus() {
     const state = useSyncExternalStore(events?.subscribe ?? emptySubscribe, events?.getSnapshot ?? emptySnapshot);
     if (!events || !state.retained || state.kind === "ready" || state.kind === "connecting") return null;
     if (state.kind === "resyncing") return <p role="status">{t("Updates are being restored. The displayed data may be out of date.")}</p>;
-    return <RequestReminder inline error={state.error ?? { code: "daemon_unavailable", message: "" }} message="Updates are temporarily unavailable. The displayed data may be out of date.">
+    return <RequestReminder error={state.error ?? { code: "daemon_unavailable", message: "" }} message="Updates are temporarily unavailable. The displayed data may be out of date.">
         <Button type="button" variant="text" onClick={events.retry}>{t("Retry")}</Button>
     </RequestReminder>;
 }

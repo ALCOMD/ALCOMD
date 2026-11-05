@@ -15,7 +15,9 @@ impl app::ProjectDiscoveryPlatform for PlatformProjectDiscovery {
         let leaf = Path::new(&candidate.path)
             .file_name()
             .and_then(|leaf| leaf.to_str())
-            .ok_or(app::ProjectDiscoveryError::DirectoryUnavailable)?;
+            .ok_or_else(|| {
+                app::ProjectDiscoveryError::DirectoryUnavailable.with_path(&candidate.path)
+            })?;
         Ok(alcomd_vpm::project_creation_resource(
             &root.identity,
             leaf.to_owned(),
@@ -26,37 +28,46 @@ impl app::ProjectDiscoveryPlatform for PlatformProjectDiscovery {
         &self,
         root: String,
     ) -> Result<app::ProjectDiscoveryEntries, app::ProjectDiscoveryError> {
+        let failure_path = root.clone();
+        let span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
-            let discovered = platform::discover_directories(
-                Path::new(&root),
-                app::PROJECT_DISCOVERY_ENTRY_LIMIT,
-            )
-            .map_err(|error| {
-                tracing::warn!(%error, "Default project directory enumeration failed");
-                app::ProjectDiscoveryError::DirectoryUnavailable
-            })?;
-            let path = path_text(discovered.root.path)?;
-            let candidates = discovered
-                .children
-                .into_iter()
-                .filter_map(|entry| {
-                    Some(app::ProjectDiscoveryCandidate {
-                        path: path_text(entry.path).ok()?,
-                        identity: entry.identity,
+            span.in_scope(|| {
+                let discovered = platform::discover_directories(
+                    Path::new(&root),
+                    app::PROJECT_DISCOVERY_ENTRY_LIMIT,
+                )
+                .map_err(|error| {
+                    app::ProjectDiscoveryError::DirectoryUnavailable
+                        .with_path(&root)
+                        .with_source(error)
+                })?;
+                let path = path_text(discovered.root.path)?;
+                let candidates = discovered
+                    .children
+                    .into_iter()
+                    .filter_map(|entry| {
+                        Some(app::ProjectDiscoveryCandidate {
+                            path: path_text(entry.path).ok()?,
+                            identity: entry.identity,
+                        })
                     })
+                    .collect();
+                Ok(app::ProjectDiscoveryEntries {
+                    root: app::ProjectDiscoveryRoot {
+                        path,
+                        identity: discovered.root.identity,
+                    },
+                    candidates,
+                    reached_limit: discovered.reached_limit,
                 })
-                .collect();
-            Ok(app::ProjectDiscoveryEntries {
-                root: app::ProjectDiscoveryRoot {
-                    path,
-                    identity: discovered.root.identity,
-                },
-                candidates,
-                reached_limit: discovered.reached_limit,
             })
         })
         .await
-        .map_err(|_| app::ProjectDiscoveryError::DirectoryUnavailable)?
+        .map_err(|source| {
+            app::ProjectDiscoveryError::DirectoryUnavailable
+                .with_path(failure_path)
+                .with_source(source)
+        })?
     }
 
     async fn still_current(
@@ -64,37 +75,57 @@ impl app::ProjectDiscoveryPlatform for PlatformProjectDiscovery {
         root: app::ProjectDiscoveryRoot,
         candidate: app::ProjectDiscoveryCandidate,
     ) -> Result<bool, app::ProjectDiscoveryError> {
+        let failure_path = candidate.path.clone();
+        let span = tracing::Span::current();
         tokio::task::spawn_blocking(move || {
-            platform::discovered_directory_is_current(
-                &platform::DiscoveredDirectory {
-                    path: PathBuf::from(root.path),
-                    identity: root.identity,
-                },
-                &platform::DiscoveredDirectory {
-                    path: PathBuf::from(candidate.path),
-                    identity: candidate.identity,
-                },
-            )
-            .map_err(|error| {
-                tracing::warn!(%error, "Default project directory identity check failed");
-                app::ProjectDiscoveryError::DirectoryUnavailable
+            span.in_scope(|| {
+                let candidate_path = candidate.path.clone();
+                let root_path = root.path.clone();
+                platform::discovered_directory_is_current(
+                    &platform::DiscoveredDirectory {
+                        path: PathBuf::from(root.path),
+                        identity: root.identity,
+                    },
+                    &platform::DiscoveredDirectory {
+                        path: PathBuf::from(candidate.path),
+                        identity: candidate.identity,
+                    },
+                )
+                .map_err(|error| {
+                    app::ProjectDiscoveryError::DirectoryUnavailable
+                        .with_path(&candidate_path)
+                        .with_source(error)
+                        .with_reason(format!("failed to recheck discovery root {root_path} and candidate {candidate_path}"))
+                })
             })
         })
         .await
-        .map_err(|_| app::ProjectDiscoveryError::DirectoryUnavailable)?
+        .map_err(|source| {
+            app::ProjectDiscoveryError::DirectoryUnavailable
+                .with_path(failure_path)
+                .with_source(source)
+        })?
     }
 }
 
 fn path_text(path: PathBuf) -> Result<String, app::ProjectDiscoveryError> {
-    path.into_os_string()
-        .into_string()
-        .map_err(|_| app::ProjectDiscoveryError::DirectoryUnavailable)
+    let failure_path = path.to_string_lossy().into_owned();
+    path.into_os_string().into_string().map_err(|_| {
+        app::ProjectDiscoveryError::DirectoryUnavailable
+            .with_path(failure_path)
+            .with_source(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "project discovery path is not valid UTF-8",
+            ))
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::io::Write;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
@@ -104,8 +135,24 @@ mod tests {
     };
     use alcomd_store::{FileConfigStore, StateStoreHandle};
     use tokio::sync::Notify;
+    use tracing::instrument::WithSubscriber;
 
     use super::*;
+
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("capture lock")
+                .extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
 
     struct Fixture(PathBuf);
 
@@ -239,6 +286,76 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn missing_directory_failure_logs_the_original_path_and_cause_once_per_scan() {
+        use std::error::Error;
+        let fixture = Fixture::new();
+        let (store, settings) = fixture.applications().await;
+        let root = fixture.0.join("Projects");
+        fs::remove_dir(&root).expect("remove empty owned fixture root");
+        let root = root.to_string_lossy().into_owned();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let output = bytes.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_writer(move || Capture(output.clone()))
+            .finish();
+        let dispatch = tracing::Dispatch::new(subscriber);
+        let source = PlatformProjectDiscovery
+            .entries(root.clone())
+            .with_subscriber(dispatch.clone())
+            .await
+            .expect_err("missing root");
+        assert_eq!(source.path(), Some(root.as_str()));
+        assert!(source.diagnostic_id().is_none());
+        assert_eq!(
+            source
+                .source()
+                .expect("original cause")
+                .downcast_ref::<std::io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        assert!(bytes.lock().expect("no source-side logging").is_empty());
+        let discovery = app::ProjectDiscoveryApplication::new(
+            store,
+            reader(),
+            PlatformProjectDiscovery,
+            settings,
+        );
+        let first = discovery
+            .scan()
+            .with_subscriber(dispatch.clone())
+            .await
+            .expect_err("first failed scan");
+        let retry = discovery
+            .scan()
+            .with_subscriber(dispatch)
+            .await
+            .expect_err("genuine retry");
+        assert!(first.diagnostic_id().is_some());
+        assert_ne!(first.diagnostic_id(), retry.diagnostic_id());
+        let captured =
+            String::from_utf8(bytes.lock().expect("capture").clone()).expect("UTF-8 logs");
+        let records = captured
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("standard JSON"))
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[0]["fields"]["diagnostic_id"],
+            first.diagnostic_id().expect("diagnostic ID")
+        );
+        assert_eq!(records[0]["fields"]["path"], root);
+        assert!(
+            records[0]["fields"]["error"]
+                .as_str()
+                .expect("explicit cause chain")
+                .contains(&source.source().expect("original source").to_string())
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn discovery_registers_only_direct_projects_and_duplicate_scans_do_not_write_events() {
         let fixture = Fixture::new();
@@ -366,13 +483,24 @@ mod tests {
             .await
             .expect("registered project");
         assert_eq!(projects.projects, [published.value]);
+        let events = store
+            .list_events(app::PrincipalId::local_owner(), 0, 100)
+            .await
+            .expect("registration and its atomic activity")
+            .events;
+        assert_eq!(events.len(), 2);
         assert_eq!(
-            store
-                .list_events(app::PrincipalId::local_owner(), 0, 100)
-                .await
-                .expect("one event")
-                .events
-                .len(),
+            events
+                .iter()
+                .filter(|event| event.kind == "project.registered")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "activity.changed")
+                .count(),
             1
         );
     }
@@ -467,13 +595,24 @@ mod tests {
             .await
             .expect("recovered identity retained");
         assert_eq!(projects.projects, [recovered.value]);
+        let events = store
+            .list_events(app::PrincipalId::local_owner(), 0, 100)
+            .await
+            .expect("recovery registration and its atomic activity")
+            .events;
+        assert_eq!(events.len(), 2);
         assert_eq!(
-            store
-                .list_events(app::PrincipalId::local_owner(), 0, 100)
-                .await
-                .expect("one registration")
-                .events
-                .len(),
+            events
+                .iter()
+                .filter(|event| event.kind == "project.registered")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.kind == "activity.changed")
+                .count(),
             1
         );
     }

@@ -37,7 +37,6 @@ async function selectMotion(page: Page, value: "full") {
 test("H5 autosave retains a definitive cause and safe details across navigation before explicit Retry", async ({ page }) => {
     await openSettings(page);
     await page.setViewportSize({ width: 1280, height: 800 });
-    const headerTop = (await page.locator(".utility-workspace-toolbar").boundingBox())!.y;
     await fail(page, "settings.update", "permission_denied");
     await selectMotion(page, "full");
     const feedback = page.locator(".settings-save-error").getByRole("alert");
@@ -45,18 +44,18 @@ test("H5 autosave retains a definitive cause and safe details across navigation 
     await expect(feedback).toContainText("You do not have permission for this action.");
     await expect(feedback.locator("code")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
-    const outlet = page.locator(".reminder-floating");
+    const outlet = page.locator(".settings-save-error");
     await expect(outlet).toHaveCount(1);
-    await expect(outlet.locator(".settings-save-error")).toHaveCount(1);
     const errorBounds = (await outlet.boundingBox())!;
-    expect(errorBounds.x + errorBounds.width).toBe(1280 - 24);
-    expect(errorBounds.y + errorBounds.height).toBe(800 - 24);
+    expect(errorBounds.x).toBeGreaterThanOrEqual(0);
+    expect(errorBounds.x + errorBounds.width).toBeLessThanOrEqual(1280);
+    expect(await outlet.evaluate((node) => getComputedStyle(node).position)).not.toBe("fixed");
     await page.clock.install();
     await page.clock.fastForward(6000);
     await expect(feedback).toBeVisible();
     await selectSettingsSection(page, "unity");
     await selectSettingsSection(page, "appearance");
-    expect((await page.locator(".utility-workspace-toolbar").boundingBox())!.y).toBe(headerTop);
+    await expect(page.locator(".utility-workspace-toolbar")).toBeVisible();
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(feedback).toBeVisible();
@@ -76,10 +75,9 @@ test("closing a save notification retains the failure and an explicit Settings r
     await openSettings(page);
     await fail(page, "settings.update", "daemon_unavailable", true);
     await selectMotion(page, "full");
-    const outlet = page.locator(".reminder-floating");
+    const outlet = page.locator(".settings-save-error");
     await expect(outlet).toContainText("Settings save result is unknown");
-    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(outlet).toBeHidden();
+    await expect(outlet.getByRole("alert")).toBeVisible();
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
@@ -113,19 +111,20 @@ test("H5 unknown autosave reports uncertainty and checks Core before avoiding a 
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
 });
 
-test("H5 theme autosave uses shared unknown feedback and reconciles to one write without shifting rows", async ({ page }) => {
+test("H5 theme autosave uses shared unknown feedback and reconciles to one write with readable inline feedback", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "internal_error", true);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
-    const rowsBefore = await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()));
+    const rowsBefore = await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => ({ width: row.getBoundingClientRect().width, height: row.getBoundingClientRect().height })));
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
-    const feedback = page.locator(".reminder-floating").getByRole("alert");
+    const feedback = page.getByRole("alert");
     await expect(feedback).toContainText("Settings save result is unknown");
-    expect(await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()))).toEqual(rowsBefore);
+    expect(await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => ({ width: row.getBoundingClientRect().width, height: row.getBoundingClientRect().height })))).toEqual(rowsBefore);
     await expect(theme.getByRole("alert")).toHaveCount(0);
-    const failureBounds = (await page.locator(".reminder-floating").boundingBox())!;
-    expect(failureBounds.x + failureBounds.width).toBe(1400 - 24);
-    expect(failureBounds.y + failureBounds.height).toBe(900 - 24);
+    const failureBounds = (await feedback.boundingBox())!;
+    expect(failureBounds.x).toBeGreaterThanOrEqual(0);
+    expect(failureBounds.x + failureBounds.width).toBeLessThanOrEqual(1400);
+    expect(await feedback.evaluate((node) => getComputedStyle(node).position)).not.toBe("fixed");
     await expect(feedback).toContainText("Retry checks the current settings before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
@@ -143,10 +142,9 @@ test("dismissing an unknown theme result still permits shared settings Retry", a
     await fail(page, "settings.update", "internal_error", true);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
-    const outlet = page.locator(".reminder-floating");
+    const outlet = page.locator(".settings-save-error");
     await expect(outlet.getByRole("alert")).toContainText("Settings save result is unknown");
-    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(outlet).toBeHidden();
+    await expect(outlet.getByRole("alert")).toBeVisible();
     await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
     await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
     expect(await changes(page)).toHaveLength(1);
@@ -158,7 +156,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await fail(page, "settings.update", "internal_error", true);
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
-    const feedback = page.locator(".reminder-floating").getByRole("alert");
+    const feedback = page.getByRole("alert");
     await expect(feedback).toContainText("Unity Hub save result is unknown");
     await expect(feedback).toContainText("Retry checks the current path before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
@@ -167,7 +165,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await expect(feedback.locator("code")).toHaveText(["internal_error", H5_SETTINGS_DIAGNOSTIC]);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_PATH);
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
@@ -178,7 +176,7 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
     await fail(page, "unity.installations.refresh", "internal_error");
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
-    const feedback = page.locator(".reminder-floating").getByRole("alert");
+    const feedback = page.getByRole("alert");
     await expect(feedback).toContainText("Unity Hub path was saved, but Unity installations could not be refreshed.");
     await expect(feedback).not.toContainText("Check Tasks");
     await feedback.getByRole("button", { name: "Show details", exact: true }).click();
@@ -197,13 +195,13 @@ test("H5 Auto detect read failure does not claim an unknown save or submit a set
     await fail(page, "settings.get", "daemon_unavailable");
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Auto detect", exact: true }).click();
-    const feedback = page.locator(".reminder-floating").getByRole("alert");
+    const feedback = page.getByRole("alert");
     await expect(feedback).toContainText("Unity Hub location could not be detected. Retry the operation.");
     await expect(feedback).not.toContainText("save result is unknown");
     await expect(feedback).not.toContainText("Check Tasks");
     expect(await changes(page)).toEqual([]);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await changes(page)).toEqual([]);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh"))).toEqual([]);
 });

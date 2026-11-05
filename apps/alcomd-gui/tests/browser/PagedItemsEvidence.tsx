@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 
 import { Button } from "../../src/Material";
 import { PagedItems, type ItemPage } from "../../src/PagedItems";
-import { ReminderProvider } from "../../src/Reminder";
 import "../../src/styles.css";
 
 interface PendingPage {
@@ -36,4 +35,4 @@ function Evidence() {
     );
 }
 
-createRoot(document.getElementById("root")!).render(<ReminderProvider visit={0}><Evidence /></ReminderProvider>);
+createRoot(document.getElementById("root")!).render(<><Evidence /></>);

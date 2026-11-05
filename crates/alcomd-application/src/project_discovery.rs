@@ -31,10 +31,122 @@ pub struct ProjectDiscoveryEntries {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ProjectDiscoveryError {
-    ConfigurationUnavailable,
-    DirectoryUnavailable,
-    RegistrationUnavailable,
+enum ProjectDiscoveryErrorKind {
+    Configuration,
+    Directory,
+    Registration,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectDiscoveryError {
+    kind: ProjectDiscoveryErrorKind,
+    context: Option<crate::TechnicalErrorContext>,
+}
+
+impl PartialEq for ProjectDiscoveryError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+impl Eq for ProjectDiscoveryError {}
+
+#[allow(non_upper_case_globals)]
+impl ProjectDiscoveryError {
+    pub const ConfigurationUnavailable: Self = Self {
+        kind: ProjectDiscoveryErrorKind::Configuration,
+        context: None,
+    };
+    pub const DirectoryUnavailable: Self = Self {
+        kind: ProjectDiscoveryErrorKind::Directory,
+        context: None,
+    };
+    pub const RegistrationUnavailable: Self = Self {
+        kind: ProjectDiscoveryErrorKind::Registration,
+        context: None,
+    };
+
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_source(source));
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_path(path));
+        self
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_reason(reason));
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context
+            .as_ref()
+            .and_then(|context| context.path.as_deref())
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.context
+            .as_ref()
+            .and_then(|context| context.diagnostic_id.as_deref())
+    }
+    fn record(mut self) -> Self {
+        if self.diagnostic_id().is_none() {
+            let id = crate::record_technical_failure(
+                &self,
+                self.path(),
+                None,
+                "default project discovery failed",
+            );
+            self.context
+                .get_or_insert_with(Default::default)
+                .diagnostic_id = Some(id);
+        }
+        self
+    }
+}
+
+impl std::fmt::Display for ProjectDiscoveryError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self.kind {
+            ProjectDiscoveryErrorKind::Configuration => {
+                "project discovery configuration is unavailable"
+            }
+            ProjectDiscoveryErrorKind::Directory => "project discovery directory is unavailable",
+            ProjectDiscoveryErrorKind::Registration => "project discovery registration failed",
+        })
+    }
+}
+impl std::error::Error for ProjectDiscoveryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context
+            .as_ref()
+            .and_then(crate::TechnicalErrorContext::source_error)
+    }
+}
+
+fn configuration_error(source: crate::OfficialGuiError) -> ProjectDiscoveryError {
+    let mut error = ProjectDiscoveryError::ConfigurationUnavailable;
+    if let Some(path) = source.path() {
+        error = error.with_path(path);
+    }
+    let id = source.diagnostic_id().map(str::to_owned);
+    error = error.with_source(source);
+    error
+        .context
+        .get_or_insert_with(Default::default)
+        .diagnostic_id = id;
+    error
+}
+
+fn registration_error(source: crate::M3Error) -> ProjectDiscoveryError {
+    let mut error = ProjectDiscoveryError::RegistrationUnavailable;
+    if let Some(path) = source.technical_path() {
+        error = error.with_path(path);
+    }
+    error.with_source(source)
 }
 
 /// The OS adapter enumerates only plain immediate child directories and never writes sources.
@@ -118,6 +230,12 @@ where
 
     /// One bounded scan. Scheduling and the single-in-flight task belong to the daemon lifecycle.
     pub async fn scan(&self) -> Result<ProjectDiscoveryReport, ProjectDiscoveryError> {
+        self.scan_inner()
+            .await
+            .map_err(ProjectDiscoveryError::record)
+    }
+
+    async fn scan_inner(&self) -> Result<ProjectDiscoveryReport, ProjectDiscoveryError> {
         let mut report = ProjectDiscoveryReport::default();
         if self.locks.project_recovery_pending() {
             report.startup_recovery_pending = true;
@@ -129,7 +247,7 @@ where
                 .settings
                 .get_settings(&AccessContext::local_owner())
                 .await
-                .map_err(|_| ProjectDiscoveryError::ConfigurationUnavailable)?,
+                .map_err(configuration_error)?,
         };
         if !snapshot.settings.projects.auto_discover {
             return Ok(report);
@@ -138,7 +256,7 @@ where
             .settings
             .observe_storage_directories(&snapshot)
             .await
-            .map_err(|_| ProjectDiscoveryError::ConfigurationUnavailable)?;
+            .map_err(configuration_error)?;
         let entries = self.platform.entries(directories.project_directory).await?;
         report.reached_limit =
             entries.reached_limit || entries.candidates.len() >= PROJECT_DISCOVERY_ENTRY_LIMIT;
@@ -156,7 +274,7 @@ where
                 .settings
                 .project_discovery_fence(snapshot.revision)
                 .await
-                .map_err(|_| ProjectDiscoveryError::ConfigurationUnavailable)?
+                .map_err(configuration_error)?
             else {
                 report.configuration_changed = true;
                 break;
@@ -200,14 +318,16 @@ where
                 .settings
                 .project_discovery_fence(snapshot.revision)
                 .await
-                .map_err(|_| ProjectDiscoveryError::ConfigurationUnavailable)?
+                .map_err(configuration_error)?
             else {
                 report.configuration_changed = true;
                 break;
             };
             let key = IdempotencyKey::parse(format!("project-discovery:{}", ProjectId::new()))
-                .map_err(|_| ProjectDiscoveryError::RegistrationUnavailable)?;
-            let now = m3_time_ms().map_err(|_| ProjectDiscoveryError::RegistrationUnavailable)?;
+                .map_err(|source| {
+                    ProjectDiscoveryError::RegistrationUnavailable.with_source(source)
+                })?;
+            let now = m3_time_ms().map_err(registration_error)?;
             // Share the exact registry identity/transaction/event rules of explicit registration.
             // The short configuration fence orders acceptance before any disabling/path update.
             match self
@@ -219,9 +339,39 @@ where
                 Err(error) if error.code() == M3ErrorCode::ProjectAlreadyRegistered => {
                     report.already_registered += 1;
                 }
-                Err(_) => return Err(ProjectDiscoveryError::RegistrationUnavailable),
+                Err(error) => return Err(registration_error(error)),
             }
         }
         Ok(report)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previously_reported_configuration_failure_keeps_its_cause_path_and_identity() {
+        let id = crate::OperationId::new().to_string();
+        let path = std::env::temp_dir()
+            .join("ALCOMD 设置")
+            .join("settings.toml")
+            .display()
+            .to_string();
+        let source = crate::OfficialGuiError::Unavailable
+            .with_path(path.clone())
+            .with_source(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "controlled configuration read failure",
+            ))
+            .with_diagnostic_id(Some(id.clone()));
+        let failure = configuration_error(source).record();
+        assert_eq!(failure.diagnostic_id(), Some(id.as_str()));
+        assert_eq!(failure.path(), Some(path.as_str()));
+        assert!(
+            crate::technical_error_chain(&failure)
+                .contains("controlled configuration read failure")
+        );
+        assert_eq!(failure.record().diagnostic_id(), Some(id.as_str()));
     }
 }

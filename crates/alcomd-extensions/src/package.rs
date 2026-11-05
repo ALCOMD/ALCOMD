@@ -35,13 +35,36 @@ pub enum PackageErrorCode {
     SignatureInvalid,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("extension package rejected: {code:?}")]
+#[derive(Debug)]
 pub struct PackageError {
     code: PackageErrorCode,
+    context: alcomd_application::TechnicalErrorContext,
 }
 
+impl std::fmt::Display for PackageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "extension package rejected: {:?}", self.code)?;
+        if let Some(path) = self.context.path.as_deref() {
+            write!(f, " at {path}")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for PackageError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 impl PackageError {
+    fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+
     #[must_use]
     pub const fn code(&self) -> PackageErrorCode {
         self.code
@@ -112,12 +135,24 @@ struct EntryPlan {
 }
 
 pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage, PackageError> {
-    let metadata = std::fs::metadata(path).map_err(|_| error(PackageErrorCode::Io))?;
+    let metadata = std::fs::metadata(path).map_err(|cause| {
+        error(PackageErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_ARCHIVE_BYTES {
         return Err(error(PackageErrorCode::ArchiveLimitExceeded));
     }
-    let file = File::open(path).map_err(|_| error(PackageErrorCode::Io))?;
-    let mut archive = ZipArchive::new(file).map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+    let file = File::open(path).map_err(|cause| {
+        error(PackageErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    let mut archive = ZipArchive::new(file).map_err(|cause| {
+        error(PackageErrorCode::InvalidArchive)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let plans = preflight(&mut archive)?;
     let manifest_bytes = read_named(&mut archive, &plans, MANIFEST_PATH, MAX_MANIFEST_BYTES)?;
     let signature_bytes = read_named(&mut archive, &plans, SIGNATURE_PATH, MAX_SIGNATURE_BYTES)?;
@@ -126,8 +161,12 @@ pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage
     let manifest_digest = Sha256::digest(&manifest_bytes).into();
     let component_bytes = read_named(&mut archive, &plans, COMPONENT_PATH, MAX_ENTRY_BYTES)?;
     let component_digest = Sha256::digest(&component_bytes).into();
-    let envelope: SignatureEnvelope = serde_json::from_slice(&signature_bytes)
-        .map_err(|_| error(PackageErrorCode::SignatureInvalid))?;
+    let envelope: SignatureEnvelope =
+        serde_json::from_slice(&signature_bytes).map_err(|cause| {
+            error(PackageErrorCode::SignatureInvalid)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     verify_signature(&manifest, package_digest, &envelope)?;
     Ok(VerifiedExtensionPackage {
         manifest,
@@ -146,7 +185,8 @@ pub fn extract_extension_package(
     if destination.exists() {
         return Err(error(PackageErrorCode::UnsafePath));
     }
-    std::fs::create_dir(destination).map_err(|_| error(PackageErrorCode::Io))?;
+    std::fs::create_dir(destination)
+        .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
     let result = extract_into(source, destination);
     if result.is_err() {
         let _ = std::fs::remove_dir_all(destination);
@@ -180,8 +220,12 @@ pub fn inspect_extension_directory(root: &Path) -> Result<VerifiedExtensionPacka
     )?;
     let manifest = parse_manifest(&manifest_bytes)?;
     let package_digest = directory_digest(&files)?;
-    let envelope: SignatureEnvelope = serde_json::from_slice(&signature_bytes)
-        .map_err(|_| error(PackageErrorCode::SignatureInvalid))?;
+    let envelope: SignatureEnvelope =
+        serde_json::from_slice(&signature_bytes).map_err(|cause| {
+            error(PackageErrorCode::SignatureInvalid)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     verify_signature(&manifest, package_digest, &envelope)?;
     Ok(VerifiedExtensionPackage {
         manifest,
@@ -201,18 +245,19 @@ fn collect_directory(
     if depth > MAX_PATH_DEPTH {
         return Err(error(PackageErrorCode::ArchiveLimitExceeded));
     }
-    let entries = std::fs::read_dir(directory).map_err(|_| error(PackageErrorCode::Io))?;
+    let entries = std::fs::read_dir(directory)
+        .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
     for entry in entries {
-        let entry = entry.map_err(|_| error(PackageErrorCode::Io))?;
-        let metadata =
-            std::fs::symlink_metadata(entry.path()).map_err(|_| error(PackageErrorCode::Io))?;
+        let entry = entry.map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
+        let metadata = std::fs::symlink_metadata(entry.path())
+            .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
         if metadata.file_type().is_symlink() {
             return Err(error(PackageErrorCode::UnsupportedEntry));
         }
         let relative = entry
             .path()
             .strip_prefix(root)
-            .map_err(|_| error(PackageErrorCode::UnsafePath))?
+            .map_err(|cause| error(PackageErrorCode::UnsafePath).with_source(cause))?
             .components()
             .map(|component| {
                 component
@@ -246,11 +291,19 @@ fn collision_key(path: &str) -> String {
 }
 
 fn read_bounded_file(path: &Path, maximum: u64) -> Result<Vec<u8>, PackageError> {
-    let metadata = std::fs::symlink_metadata(path).map_err(|_| error(PackageErrorCode::Io))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        error(PackageErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > maximum {
         return Err(error(PackageErrorCode::ArchiveLimitExceeded));
     }
-    std::fs::read(path).map_err(|_| error(PackageErrorCode::Io))
+    std::fs::read(path).map_err(|cause| {
+        error(PackageErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn directory_digest(files: &BTreeMap<String, PathBuf>) -> Result<[u8; 32], PackageError> {
@@ -263,7 +316,7 @@ fn directory_digest(files: &BTreeMap<String, PathBuf>) -> Result<[u8; 32], Packa
             continue;
         }
         let size = std::fs::metadata(source)
-            .map_err(|_| error(PackageErrorCode::Io))?
+            .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?
             .len();
         total = total
             .checked_add(size)
@@ -271,17 +324,18 @@ fn directory_digest(files: &BTreeMap<String, PathBuf>) -> Result<[u8; 32], Packa
             .ok_or_else(|| error(PackageErrorCode::ArchiveLimitExceeded))?;
         digest.update(
             u32::try_from(path.len())
-                .map_err(|_| error(PackageErrorCode::ArchiveLimitExceeded))?
+                .map_err(|cause| error(PackageErrorCode::ArchiveLimitExceeded).with_source(cause))?
                 .to_le_bytes(),
         );
         digest.update(path.as_bytes());
         digest.update(size.to_le_bytes());
-        let mut file = File::open(source).map_err(|_| error(PackageErrorCode::Io))?;
+        let mut file =
+            File::open(source).map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
         let mut read = 0_u64;
         loop {
             let count = file
                 .read(&mut buffer)
-                .map_err(|_| error(PackageErrorCode::Io))?;
+                .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
             if count == 0 {
                 break;
             }
@@ -299,28 +353,31 @@ fn directory_digest(files: &BTreeMap<String, PathBuf>) -> Result<[u8; 32], Packa
 }
 
 fn extract_into(source: &Path, destination: &Path) -> Result<(), PackageError> {
-    let file = File::open(source).map_err(|_| error(PackageErrorCode::Io))?;
-    let mut archive = ZipArchive::new(file).map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+    let file =
+        File::open(source).map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|cause| error(PackageErrorCode::InvalidArchive).with_source(cause))?;
     let plans = preflight(&mut archive)?;
     let mut buffer = [0_u8; 64 * 1024];
     for plan in plans {
         let target = safe_target(destination, &plan.path)?;
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|_| error(PackageErrorCode::Io))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
         }
         let mut output = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&target)
-            .map_err(|_| error(PackageErrorCode::Io))?;
+            .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
         let mut entry = archive
             .by_index(plan.index)
-            .map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+            .map_err(|cause| error(PackageErrorCode::InvalidArchive).with_source(cause))?;
         let mut written = 0_u64;
         loop {
             let count = entry
                 .read(&mut buffer)
-                .map_err(|_| error(PackageErrorCode::Io))?;
+                .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
             if count == 0 {
                 break;
             }
@@ -330,14 +387,17 @@ fn extract_into(source: &Path, destination: &Path) -> Result<(), PackageError> {
                 .ok_or_else(|| error(PackageErrorCode::ArchiveLimitExceeded))?;
             output
                 .write_all(&buffer[..count])
-                .map_err(|_| error(PackageErrorCode::Io))?;
+                .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
         }
         if written != plan.size {
             return Err(error(PackageErrorCode::InvalidArchive));
         }
-        output.sync_all().map_err(|_| error(PackageErrorCode::Io))?;
+        output
+            .sync_all()
+            .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
     }
-    alcomd_platform::sync_directory(destination).map_err(|_| error(PackageErrorCode::Io))
+    alcomd_platform::sync_directory(destination)
+        .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))
 }
 
 fn safe_target(root: &Path, relative: &str) -> Result<PathBuf, PackageError> {
@@ -361,7 +421,7 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
-            .map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+            .map_err(|cause| error(PackageErrorCode::InvalidArchive).with_source(cause))?;
         if entry.encrypted()
             || !matches!(
                 entry.compression(),
@@ -382,10 +442,10 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
             }
         }
         let raw = std::str::from_utf8(entry.name_raw())
-            .map_err(|_| error(PackageErrorCode::UnsafePath))?;
+            .map_err(|cause| error(PackageErrorCode::UnsafePath).with_source(cause))?;
         let decoded_name = entry
             .name()
-            .map_err(|_| error(PackageErrorCode::UnsafePath))?;
+            .map_err(|cause| error(PackageErrorCode::UnsafePath).with_source(cause))?;
         if raw != decoded_name.as_ref() {
             return Err(error(PackageErrorCode::UnsafePath));
         }
@@ -536,14 +596,15 @@ fn read_named<R: Read + Seek>(
     }
     let entry = archive
         .by_index(plan.index)
-        .map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+        .map_err(|cause| error(PackageErrorCode::InvalidArchive).with_source(cause))?;
     let mut bytes = Vec::with_capacity(
-        usize::try_from(plan.size).map_err(|_| error(PackageErrorCode::ArchiveLimitExceeded))?,
+        usize::try_from(plan.size)
+            .map_err(|cause| error(PackageErrorCode::ArchiveLimitExceeded).with_source(cause))?,
     );
     entry
         .take(maximum.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|_| error(PackageErrorCode::Io))?;
+        .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
     if u64::try_from(bytes.len()).ok() != Some(plan.size) {
         return Err(error(PackageErrorCode::InvalidArchive));
     }
@@ -565,19 +626,19 @@ fn canonical_digest<R: Read + Seek>(
     for plan in sorted {
         digest.update(
             u32::try_from(plan.path.len())
-                .map_err(|_| error(PackageErrorCode::ArchiveLimitExceeded))?
+                .map_err(|cause| error(PackageErrorCode::ArchiveLimitExceeded).with_source(cause))?
                 .to_le_bytes(),
         );
         digest.update(plan.path.as_bytes());
         digest.update(plan.size.to_le_bytes());
         let mut entry = archive
             .by_index(plan.index)
-            .map_err(|_| error(PackageErrorCode::InvalidArchive))?;
+            .map_err(|cause| error(PackageErrorCode::InvalidArchive).with_source(cause))?;
         let mut read = 0_u64;
         loop {
             let count = entry
                 .read(&mut buffer)
-                .map_err(|_| error(PackageErrorCode::Io))?;
+                .map_err(|cause| error(PackageErrorCode::Io).with_source(cause))?;
             if count == 0 {
                 break;
             }
@@ -597,12 +658,13 @@ fn canonical_digest<R: Read + Seek>(
 }
 
 fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
-    let text = std::str::from_utf8(bytes).map_err(|_| error(PackageErrorCode::ManifestInvalid))?;
+    let text = std::str::from_utf8(bytes)
+        .map_err(|cause| error(PackageErrorCode::ManifestInvalid).with_source(cause))?;
     if text.starts_with('\u{feff}') || text.bytes().any(|byte| byte == 0) {
         return Err(error(PackageErrorCode::ManifestInvalid));
     }
-    let manifest: ExtensionManifest =
-        toml::from_str(text).map_err(|_| error(PackageErrorCode::ManifestInvalid))?;
+    let manifest: ExtensionManifest = toml::from_str(text)
+        .map_err(|cause| error(PackageErrorCode::ManifestInvalid).with_source(cause))?;
     if manifest.schema != 1
         || manifest.api != 1
         || !valid_extension_id(&manifest.id)
@@ -695,13 +757,13 @@ fn verify_signature(
         return Err(error(PackageErrorCode::SignatureInvalid));
     }
     let key = VerifyingKey::from_bytes(&public_key)
-        .map_err(|_| error(PackageErrorCode::SignatureInvalid))?;
+        .map_err(|cause| error(PackageErrorCode::SignatureInvalid).with_source(cause))?;
     let signature = Signature::from_bytes(&signature);
     let mut message = Vec::with_capacity(29 + package_digest.len());
     message.extend_from_slice(b"ALCOMD-EXT-SIGNATURE-V1\0");
     message.extend_from_slice(&package_digest);
     key.verify_strict(&message, &signature)
-        .map_err(|_| error(PackageErrorCode::SignatureInvalid))
+        .map_err(|cause| error(PackageErrorCode::SignatureInvalid).with_source(cause))
 }
 
 fn valid_fingerprint(value: &str) -> bool {
@@ -718,10 +780,10 @@ fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N], PackageError> {
     }
     let mut output = [0_u8; N];
     for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let pair =
-            std::str::from_utf8(pair).map_err(|_| error(PackageErrorCode::SignatureInvalid))?;
-        output[index] =
-            u8::from_str_radix(pair, 16).map_err(|_| error(PackageErrorCode::SignatureInvalid))?;
+        let pair = std::str::from_utf8(pair)
+            .map_err(|cause| error(PackageErrorCode::SignatureInvalid).with_source(cause))?;
+        output[index] = u8::from_str_radix(pair, 16)
+            .map_err(|cause| error(PackageErrorCode::SignatureInvalid).with_source(cause))?;
     }
     Ok(output)
 }
@@ -736,8 +798,11 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
-const fn error(code: PackageErrorCode) -> PackageError {
-    PackageError { code }
+fn error(code: PackageErrorCode) -> PackageError {
+    PackageError {
+        code,
+        context: alcomd_application::TechnicalErrorContext::default(),
+    }
 }
 
 #[cfg(test)]

@@ -15,8 +15,8 @@ interface ViewRecord { data?: unknown; rows: number; bytes: number; visit: numbe
 
 const terminal = (value: Operation) => ["succeeded", "failed", "cancelled"].includes(value.state);
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
-const READS = new Set(["operationsList", "operationGet", "activityList", "diagnosticsList", "projectsList", "projectGet", "repositoriesList",
+const aggregateKinds = new Set(["activity", "operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
+const READS = new Set(["operationsList", "operationGet", "activityList", "activityGet", "projectsList", "projectGet", "repositoriesList",
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
     "unityWriterState", "unityLaunchOptions", "templatesList", "templateGet", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
@@ -256,12 +256,10 @@ export class CoreEvents {
                 this.invalidate("operations-resync");
             }
             if (!progress) {
-                this.invalidate("operations", urgent); this.invalidate("activity");
+                this.invalidate("operations", urgent);
                 if (urgent) this.urgentCollections.set("operationsList", this.categoryVersions.get("operations") ?? 0);
                 this.lookupResourceImpact(id);
             }
-            // A failed-task diagnostic is another projection, not another notification.
-            if (event.kind.includes("failed") || event.kind.includes("completed")) this.invalidate("diagnostics");
             this.pumpReads();
             return;
         }
@@ -269,7 +267,7 @@ export class CoreEvents {
             "user-package": "user-packages", "unity-installation": "unity", "project-editor-preference": "projects", "project-unity-launch-config": "projects" };
         const scope = scopes[event.aggregateKind];
         if (scope !== undefined) this.invalidate(scope, /registered|removed|unregistered|deleted/.test(event.kind));
-        if (event.kind !== "repository.observed") this.invalidate("activity");
+        if (event.kind === "activity.changed") this.invalidate("activity");
     }
     private lookupResourceImpact(id: string) {
         if (this.jobs.has(`operation:${id}`) || this.lookups.has(id)) return;
@@ -515,7 +513,6 @@ export class CoreEvents {
             if (value.kind.startsWith("extensions.")) this.invalidate("extensions", terminal(value));
             if (value.kind.startsWith("backups.")) this.invalidate("backups", terminal(value));
             if (value.kind.startsWith("templates.")) this.invalidate("templates", terminal(value));
-            if (value.state === "failed") this.invalidate("diagnostics");
         }
         if (terminal(value)) {
             this.urgentOperations.delete(value.operationId);

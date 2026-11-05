@@ -3,7 +3,7 @@ import type { ExtensionPermissionGrant, ExtensionPermissionsListResult, RpcError
 import type { ProjectSnapshot } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Select } from "./Material";
-import { Reminder, RequestReminder, useReminder } from "./Reminder";
+import { Reminder, RequestReminder } from "./Reminder";
 import { LoadingState } from "./LoadingState";
 import { capabilities, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
@@ -43,7 +43,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const canRead = useCapability(capabilities.extensionsPermissionsRead);
     const canWrite = useCapability(capabilities.extensionsPermissions);
     const canReadProjects = useCapability(capabilities.projectsRead);
-    const reminder = useReminder();
+
     const events = useCoreEvents();
     const readVersion = useRef(0);
     const projectReadVersion = useRef(0);
@@ -144,13 +144,13 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     const write = async (grant: ExtensionPermissionGrant, revoke: boolean) => {
         if (!canWrite || !current() || scope.pending || value === undefined) return;
-        scope.pending = true; setWriting(true); setError(undefined); reminder.clear(); onBusyChange(true);
+        scope.pending = true; setWriting(true); setError(undefined);  onBusyChange(true);
         try {
             await (revoke
                 ? client.extensionRevokeGrant(extensionId, grant.permission, grant.resourceKind, grant.resourceId, value.grantRevision)
                 : client.extensionSetGrant(extensionId, grant.permission, grant.resourceKind, grant.resourceId, value.grantRevision));
             if (!current()) return;
-            reminder.success(revoke ? t("Permission revoked.") : t("Permission granted."));
+
             onChanged?.(); reload();
         } catch (caught: unknown) {
             if (current()) {

@@ -133,6 +133,8 @@ pub(super) fn accept(
          VALUES (?1,'projects.unity-migration','queued',1,?2,?3,?4,?4)",
         params![operation_id.to_string(), owner.as_str(), request, integer(now_ms)?],
     ).map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     if transaction
         .execute(
             "UPDATE project_unity_migration_plans SET state='applied',operation_id=?1
@@ -225,13 +227,30 @@ pub(super) fn checkpoint(
     phase: UnityMigrationPhase,
     evidence: UnityMigrationEvidence,
     now_ms: u64,
+    diagnostic_id: Option<String>,
 ) -> Result<(), M7UnityMigrationError> {
+    if diagnostic_id
+        .as_ref()
+        .is_some_and(|value| Uuid::parse_str(value).is_err())
+    {
+        return Err(internal());
+    }
     let transaction = begin(connection)?;
     let (owner, state, current, _) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "running" | "cancelling" | "recovering") {
         return Err(internal());
     }
     let public_phase_changed = latest(&transaction, operation_id)?.0 != phase;
+    let current_diagnostic: Option<String> = transaction
+        .query_row(
+            "SELECT diagnostic_id FROM operations WHERE operation_id=?1",
+            [operation_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(failure)?;
+    let diagnostic_changed = diagnostic_id
+        .as_ref()
+        .is_some_and(|value| Some(value) != current_diagnostic.as_ref());
     insert_journal(
         &transaction,
         operation_id,
@@ -240,14 +259,20 @@ pub(super) fn checkpoint(
         &evidence,
         now_ms,
     )?;
-    if !public_phase_changed {
+    if !public_phase_changed && !diagnostic_changed {
         return transaction.commit().map_err(failure);
     }
     let next = current.checked_add(1).ok_or_else(internal)?;
     transaction
         .execute(
-            "UPDATE operations SET revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
-            params![integer(next)?, integer(now_ms)?, operation_id.to_string()],
+            "UPDATE operations SET revision=?1,updated_at_ms=?2,
+                diagnostic_id=coalesce(?3,diagnostic_id) WHERE operation_id=?4",
+            params![
+                integer(next)?,
+                integer(now_ms)?,
+                diagnostic_id,
+                operation_id.to_string()
+            ],
         )
         .map_err(failure)?;
     operation_event(
@@ -513,7 +538,11 @@ fn finish_terminal(
         event,
         now_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    if state_target == "succeeded" {
+        tracing::info!(operation_id = %operation_id, operation_kind = "projects.unity-migration", "operation completed");
+    }
+    Ok(())
 }
 
 fn load_plan(
@@ -723,8 +752,8 @@ fn error(code: M7UnityMigrationErrorCode) -> M7UnityMigrationError {
 fn internal() -> M7UnityMigrationError {
     error(M7UnityMigrationErrorCode::Internal)
 }
-fn failure(_: rusqlite::Error) -> M7UnityMigrationError {
-    error(M7UnityMigrationErrorCode::StoreUnavailable)
+fn failure(source: rusqlite::Error) -> M7UnityMigrationError {
+    error(M7UnityMigrationErrorCode::StoreUnavailable).with_source(source)
 }
 pub(super) fn unavailable() -> M7UnityMigrationError {
     error(M7UnityMigrationErrorCode::StoreUnavailable)

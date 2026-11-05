@@ -13,6 +13,7 @@ export const RPC_CAPABILITIES = {
 
 export * from "./portable-ui";
 export * from "./diagnostic-log";
+export * from "./activity";
 export * from "./events";
 export * from "./package-candidates";
 export * from "./unity-hub";

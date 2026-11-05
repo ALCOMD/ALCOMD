@@ -1,4 +1,4 @@
-import type { ActivityCursor, ActivityItem, DiagnosticCursor, DiagnosticItem, Operation } from "../../src/core-models";
+import type { ActivityCursor, ActivityItem, Operation } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 import { browserCoreEvents } from "./core-events-client";
 
@@ -9,8 +9,7 @@ export const H5_FAILED_ID = "00000000-0000-4000-8000-000000000704";
 export const H5_DIAGNOSTIC_ID = "h5-diagnostic-".padEnd(255, "x");
 export const H5_CORE_VERSION = "9.8.7-h5-core";
 export const H5_SECRET = "h5-secret-response-value";
-export const H5_ACTIVITY_CURSOR: ActivityCursor = { occurredAtMs: 1_700_000_001_000, sourceRank: 0, stableId: H5_CHECK_ID };
-export const H5_DIAGNOSTIC_CURSOR: DiagnosticCursor = { occurredAtMs: 1_700_000_002_500, operationId: H5_FAILED_ID };
+export const H5_ACTIVITY_CURSOR: ActivityCursor = { startedAtMs: 1_700_000_000_000, activityId: H5_CHECK_ID };
 
 interface UtilityRequest { method: string; params: Record<string, unknown> }
 interface PendingUtilityRequest { method: string; resolve(): void; reject(code: string): void }
@@ -40,19 +39,28 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
     const denied = new Map<string, string>();
     const failures = new Map<string, string[]>();
     const pending: PendingUtilityRequest[] = [];
-    const activityEntries: ActivityItem[] = [];
+    const activityEntries = new Map<string, ActivityItem>();
+    const activityForTask = (task: Operation): ActivityItem => ({ activityId: task.operationId, revision: task.revision, action: task.kind, status: task.state,
+        startedAtMs: task.createdAtMs, finishedAtMs: ["succeeded", "failed", "cancelled"].includes(task.state) ? task.updatedAtMs : undefined,
+        subject: { kind: "extension", name: "Discord" }, parameters: {}, operationId: task.operationId,
+        diagnosticId: task.diagnosticId, result: task.errorCode ? { code: task.errorCode } : undefined });
+    for (const id of [H5_INSTALL_ID, H5_CHECK_ID, H5_UNINSTALL_ID]) activityEntries.set(id, activityForTask(tasks.get(id)!));
     if (query.has("h5-operations-slow")) held.add("operations.list");
     if (query.has("h5-status-offline")) denied.set("system.status", "daemon_unavailable");
     const fixture: H5UtilitiesFixture = {
         requests: [],
         recordActivity(item) {
-            activityEntries.push(structuredClone(item));
-            const id = item.resourceId && /^[0-9a-f-]{36}$/i.test(item.resourceId) ? item.resourceId : "00000000-0000-4000-8000-000000000101";
-            browserCoreEvents.emit("project", id, item.summaryCode);
+            activityEntries.set(item.activityId, structuredClone(item));
+            browserCoreEvents.emit("activity", item.activityId, "activity.changed", item.revision);
         },
         recordOperation(item) {
             const previous = tasks.get(item.operationId);
             tasks.set(item.operationId, structuredClone(item));
+            if (previous === undefined || previous.state !== item.state) {
+                const activity = { ...activityForTask(item), revision: (activityEntries.get(item.operationId)?.revision ?? 0) + 1 };
+                activityEntries.set(item.operationId, activity);
+                browserCoreEvents.emit("activity", item.operationId, "activity.changed", activity.revision);
+            }
             browserCoreEvents.emit("operation", item.operationId, previous === undefined ? "operation.created"
                 : previous.state === item.state ? "operation.progress" : `operation.${item.state}`, item.revision);
         },
@@ -71,9 +79,13 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
         complete(operationId, state, errorCode) {
             const previous = tasks.get(operationId);
             if (previous === undefined) throw new Error("Unknown H5 fixture operation");
+            if (previous.state === state) return;
             tasks.set(operationId, { ...previous, state, revision: previous.revision + 1,
                 updatedAtMs: previous.updatedAtMs + 1_000, completedAtMs: previous.updatedAtMs + 1_000,
                 ...(errorCode === undefined ? {} : { errorCode }) });
+            const activity = { ...activityForTask(tasks.get(operationId)!), revision: (activityEntries.get(operationId)?.revision ?? 0) + 1 };
+            activityEntries.set(operationId, activity);
+            browserCoreEvents.emit("activity", operationId, "activity.changed", activity.revision);
             browserCoreEvents.emit("operation", operationId, `operation.${state}`, previous.revision + 1);
         }
     };
@@ -94,18 +106,9 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
         if (!held.has(method)) return value;
         return new Promise((resolve, reject) => pending.push({ method, resolve: () => resolve(value), reject: (failure) => reject(error(failure)) }));
     }
-    function activity(operationId: string): ActivityItem {
-        const task = tasks.get(operationId)!;
-        return { occurredAtMs: task.updatedAtMs, type: "operation", summaryCode: `operation.${task.kind}.${task.state}`,
-            operationId, state: task.state };
-    }
-    function diagnostic(operationId: string): DiagnosticItem {
-        const task = tasks.get(operationId)!;
-        return { occurredAtMs: task.updatedAtMs, severity: "error", subsystem: "extensions", code: task.errorCode!,
-            diagnosticId: task.diagnosticId ?? "h5-uninstall-diagnostic", operationId,
-            summary: "The operation failed. Use the diagnostic ID when requesting support." };
-    }
     const methods: Partial<GuiRpcClient> = {
+        diagnosticLogRead(params) { return response("diagnostics.log.read", { params }, () => base.diagnosticLogRead(params)); },
+        diagnosticLogHistory(params) { return response("diagnostics.log.history", { params }, () => base.diagnosticLogHistory(params)); },
         systemStatus() {
             return response("system.status", {}, async () => {
                 const status = await base.systemStatus();
@@ -121,25 +124,19 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
             });
         },
         activityList(cursor) {
-            if (query.has("h5-activity-live")) return response("activity.list", cursor === undefined ? {} : { cursor }, () => {
-                const position = (item: ActivityItem): ActivityCursor => ({ occurredAtMs: item.occurredAtMs, sourceRank: item.type === "event" ? 1 : 0,
-                    stableId: item.type === "event" ? String(item.eventSequence).padStart(20, "0") : item.operationId! });
-                const compare = (left: ActivityCursor, right: ActivityCursor) => left.occurredAtMs - right.occurredAtMs
-                    || left.sourceRank - right.sourceRank || left.stableId.localeCompare(right.stableId);
-                const all = [activity(H5_INSTALL_ID), activity(H5_CHECK_ID), activity(H5_UNINSTALL_ID), ...activityEntries]
-                    .filter((item) => cursor === undefined || compare(position(item), cursor) < 0)
-                    .sort((left, right) => compare(position(right), position(left)));
-                const items = all.slice(0, 2);
-                return { items, ...(all.length <= 2 ? {} : { nextCursor: position(items.at(-1)!) }) };
+            return response("activity.list", cursor === undefined ? {} : { cursor }, () => {
+                const compare = (a: ActivityCursor, b: ActivityCursor) => a.startedAtMs - b.startedAtMs || a.activityId.localeCompare(b.activityId);
+                const rows = [...activityEntries.values()].sort((a, b) => -compare(a, b)).filter((item) => cursor === undefined || compare(item, cursor) < 0);
+                const items = rows.slice(0, 2);
+                return { items, ...(rows.length > 2 ? { nextCursor: { startedAtMs: items.at(-1)!.startedAtMs, activityId: items.at(-1)!.activityId } } : {}) };
             });
-            return response("activity.list", cursor === undefined ? {} : { cursor }, () => cursor === undefined
-                ? { items: [activity(H5_INSTALL_ID), activity(H5_CHECK_ID)], nextCursor: H5_ACTIVITY_CURSOR }
-                : { items: [activity(H5_UNINSTALL_ID)] });
         },
-        diagnosticsList(cursor) {
-            return response("diagnostics.list", cursor === undefined ? {} : { cursor }, () => cursor === undefined
-                ? { items: [diagnostic(H5_FAILED_ID)], nextCursor: H5_DIAGNOSTIC_CURSOR }
-                : { items: [diagnostic(H5_UNINSTALL_ID)] });
+        activityGet(activityId) {
+            return response("activity.get", { activityId }, () => {
+                const activity = activityEntries.get(activityId);
+                if (activity === undefined) throw error("activity_not_found");
+                return { activity };
+            });
         },
         operationsList(cursor, activeOnly = false) {
             const activeCount = [...tasks.values()].filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state)).length;

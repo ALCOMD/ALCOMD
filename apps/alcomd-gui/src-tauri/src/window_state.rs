@@ -97,10 +97,15 @@ pub(crate) struct WindowStateController {
 }
 
 fn unavailable() -> RpcError {
+    window_failure(std::io::Error::other("window geometry is unavailable"))
+}
+fn window_failure(error: impl std::error::Error) -> RpcError {
+    let id =
+        super::local_log::record_native_error(&error, "window state could not be read or restored");
     RpcError {
         code: "window_state_unavailable".to_owned(),
         message: "The window state could not be read or restored.".to_owned(),
-        diagnostic_id: None,
+        diagnostic_id: Some(id),
         data: None,
     }
 }
@@ -124,14 +129,14 @@ fn cached_geometry(
 }
 
 fn read_snapshot(window: &Window) -> Result<Snapshot, RpcError> {
-    let scale = window.scale_factor().map_err(|_| unavailable())?;
+    let scale = window.scale_factor().map_err(window_failure)?;
     if !scale.is_finite() || scale <= 0.0 {
         return Err(unavailable());
     }
-    let physical = window.inner_size().map_err(|_| unavailable())?;
-    let minimized = window.is_minimized().map_err(|_| unavailable())?;
-    let maximized = window.is_maximized().map_err(|_| unavailable())?;
-    let fullscreen = window.is_fullscreen().map_err(|_| unavailable())?;
+    let physical = window.inner_size().map_err(window_failure)?;
+    let minimized = window.is_minimized().map_err(window_failure)?;
+    let maximized = window.is_maximized().map_err(window_failure)?;
+    let fullscreen = window.is_fullscreen().map_err(window_failure)?;
     // Minimized windows may report a zero client area; that size is never recorded.
     let size = if minimized {
         NormalSize {
@@ -190,10 +195,10 @@ impl RestoreBounds {
 fn restore_plan(window: &Window, geometry: Geometry) -> Result<RestorePlan, RpcError> {
     let monitor = window
         .current_monitor()
-        .map_err(|_| unavailable())?
+        .map_err(window_failure)?
         .ok_or_else(unavailable)?;
-    let inner = window.inner_size().map_err(|_| unavailable())?;
-    let outer = window.outer_size().map_err(|_| unavailable())?;
+    let inner = window.inner_size().map_err(window_failure)?;
+    let outer = window.outer_size().map_err(window_failure)?;
     let area = monitor.work_area();
     RestoreBounds {
         x: f64::from(area.position.x),
@@ -209,16 +214,16 @@ fn restore_plan(window: &Window, geometry: Geometry) -> Result<RestorePlan, RpcE
 
 fn apply_restore(window: &Window, plan: &RestorePlan, maximized: bool) -> Result<(), RpcError> {
     if maximized {
-        window.unmaximize().map_err(|_| unavailable())?;
+        window.unmaximize().map_err(window_failure)?;
     }
     window
         .set_size(tauri::LogicalSize::new(plan.geometry.0, plan.geometry.1))
-        .map_err(|_| unavailable())?;
+        .map_err(window_failure)?;
     window
         .set_position(tauri::PhysicalPosition::new(plan.x, plan.y))
-        .map_err(|_| unavailable())?;
+        .map_err(window_failure)?;
     if plan.geometry.2 {
-        window.maximize().map_err(|_| unavailable())?;
+        window.maximize().map_err(window_failure)?;
     }
     Ok(())
 }
@@ -240,7 +245,7 @@ pub(crate) fn gui_window_state_configure(
     let first_enable = state
         .memory
         .lock()
-        .map_err(|_| unavailable())?
+        .map_err(window_failure)?
         .configure(enabled);
     let result = (|| {
         if enabled {
@@ -248,7 +253,7 @@ pub(crate) fn gui_window_state_configure(
         }
         configure_fullscreen(&window, &state, fullscreen)?;
         Ok(if enabled {
-            state.memory.lock().map_err(|_| unavailable())?.geometry()
+            state.memory.lock().map_err(window_failure)?.geometry()
         } else {
             None
         })
@@ -271,14 +276,14 @@ fn configure_fullscreen(
         return Ok(());
     }
     {
-        let mut memory = state.memory.lock().map_err(|_| unavailable())?;
+        let mut memory = state.memory.lock().map_err(window_failure)?;
         let _ = memory.observe(snapshot);
         // Ignore transition sizes; fullscreen must never replace normal geometry.
         memory.restoring = true;
     }
-    let result = window.set_fullscreen(fullscreen).map_err(|_| unavailable());
+    let result = window.set_fullscreen(fullscreen).map_err(window_failure);
     let observed = read_snapshot(window);
-    let mut memory = state.memory.lock().map_err(|_| unavailable())?;
+    let mut memory = state.memory.lock().map_err(window_failure)?;
     memory.restoring = false;
     if let Ok(snapshot) = observed.as_ref() {
         let _ = memory.observe(*snapshot);
@@ -299,7 +304,7 @@ fn configure_enabled(
         state
             .memory
             .lock()
-            .map_err(|_| unavailable())?
+            .map_err(window_failure)?
             .prepare_restore(plan.geometry);
         apply_restore(window, &plan, snapshot.maximized)?;
         // Dispatcher getters follow the restore requests. Release protection using the
@@ -308,7 +313,7 @@ fn configure_enabled(
         return Ok(state
             .memory
             .lock()
-            .map_err(|_| unavailable())?
+            .map_err(window_failure)?
             .finish_restore(restored));
     }
     let fallback = window
@@ -320,7 +325,7 @@ fn configure_enabled(
         .find(|config| config.label == MAIN_WINDOW)
         .and_then(|config| NormalSize::new(config.width, config.height))
         .ok_or_else(unavailable)?;
-    let mut memory = state.memory.lock().map_err(|_| unavailable())?;
+    let mut memory = state.memory.lock().map_err(window_failure)?;
     memory.normal.get_or_insert(fallback);
     let _ = memory.observe(snapshot);
     Ok(memory.geometry())
@@ -351,12 +356,12 @@ fn record_window_event(window: &Window) -> Result<(), RpcError> {
     let geometry = state
         .memory
         .lock()
-        .map_err(|_| unavailable())?
+        .map_err(window_failure)?
         .observe(snapshot);
     if let Some(geometry) = geometry {
         window
             .emit_to(EventTarget::window(MAIN_WINDOW), STATE_EVENT, geometry)
-            .map_err(|_| unavailable())?;
+            .map_err(window_failure)?;
     }
     Ok(())
 }

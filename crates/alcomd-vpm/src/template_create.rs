@@ -78,11 +78,11 @@ pub(super) async fn plan_create_project(
     unity_version: String,
 ) -> Result<TemplatePlanDraft, M5TemplateError> {
     alcomd_application::canonical_unity_version(&unity_version)
-        .map_err(|_| error(M5TemplateErrorCode::InvalidInput))?;
+        .map_err(|cause| error(M5TemplateErrorCode::InvalidInput).with_source(cause))?;
     validate_target_leaf(&target_leaf)?;
     let requested_parent = PathBuf::from(&target_parent);
     let (parent, parent_identity) = alcomd_platform::resolve_directory_identity(&requested_parent)
-        .map_err(|_| error(M5TemplateErrorCode::InvalidInput))?;
+        .map_err(|cause| error(M5TemplateErrorCode::InvalidInput).with_source(cause))?;
     let target = parent.join(&target_leaf);
     ensure_absent(&target)?;
     let object = engine
@@ -90,7 +90,7 @@ pub(super) async fn plan_create_project(
         .open_verified(template.bundle_sha256)
         .map_err(super::template_engine::map_object_error)?;
     let inspection = inspect_template_bundle(object.path())
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        .map_err(|cause| error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause))?;
     if inspection.normalized_manifest_json != template.manifest_json
         || inspection.manifest.template_id != template.template_id.to_string()
         || inspection.manifest.template_version != template.template_version
@@ -112,18 +112,23 @@ pub(super) async fn plan_create_project(
     let scratch = engine
         .staging
         .join(format!("create-plan-{}", OperationId::new()));
-    std::fs::create_dir(&scratch).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    std::fs::create_dir(&scratch)
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     let result = async {
-        crate::template::materialize_template_bundle(object.path(), &scratch)
-            .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        crate::template::materialize_template_bundle(object.path(), &scratch).map_err(|cause| {
+            error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause)
+        })?;
         write_project_version(&scratch, &project_version_contents)?;
         let (_, scratch_identity) = alcomd_platform::resolve_directory_identity(&scratch)
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?;
-        let reader = VpmReader::new().map_err(|_| error(M5TemplateErrorCode::Internal))?;
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
+        let reader = VpmReader::new()
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         let observation = reader
             .inspect_project_root(scratch.clone(), scratch_identity)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+            .map_err(|cause| {
+                error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause)
+            })?;
         let project = ProjectRecord {
             project_id,
             observation,
@@ -132,10 +137,11 @@ pub(super) async fn plan_create_project(
             last_modified_at_ms: None,
             favorite: false,
         };
-        let snapshot = inspect_package_project(&project)
-            .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        let snapshot = inspect_package_project(&project).map_err(|cause| {
+            error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause)
+        })?;
         let candidates = candidates_from_catalog(&catalog)
-            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+            .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
         let requests = inspection
             .manifest
             .dependencies
@@ -161,7 +167,7 @@ pub(super) async fn plan_create_project(
                 &requests,
             )
             .await
-            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?
+            .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?
         };
         let package_plan = build_resolution_plan(&snapshot, PlanAction::Install, &resolution)
             .map_err(map_m4_error)?;
@@ -174,7 +180,7 @@ pub(super) async fn plan_create_project(
         }
         let change_set_fingerprint = digest(
             &serde_json::to_vec(&package_plan.change_set)
-                .map_err(|_| error(M5TemplateErrorCode::Internal))?,
+                .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?,
         );
         let mut resource_digests = inspection
             .manifest
@@ -224,8 +230,8 @@ pub(super) async fn plan_create_project(
             project_version_contents: Some(project_version_contents),
             project_version_sha256: Some(project_version_sha256),
         };
-        let plan_json =
-            serde_json::to_string(&authority).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        let plan_json = serde_json::to_string(&authority)
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         Ok(TemplatePlanDraft {
             kind: TemplatePlanKind::CreateProject,
             plan_fingerprint: digest(plan_json.as_bytes()),
@@ -262,7 +268,7 @@ pub(super) async fn prepare_create_project(
         .open_verified(parse_digest(&authority.bundle_sha256)?)
         .map_err(super::template_engine::map_object_error)?;
     let inspection = inspect_template_bundle(object.path())
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        .map_err(|cause| error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause))?;
     if inspection.normalized_manifest_json != authority.manifest_json
         || hex(&inspection.manifest_fingerprint) != authority.manifest_fingerprint
         || hex(&inspection.payload_tree_sha256) != authority.payload_tree_sha256
@@ -309,7 +315,8 @@ pub(super) async fn stage_create_project(
         });
     }
     remove_owned_staging(&staging_root, &owner_sidecar, operation_id, &authority)?;
-    std::fs::create_dir(&staging_root).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    std::fs::create_dir(&staging_root)
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     write_owner_marker(&owner_sidecar, operation_id, &authority)?;
     test_template_kill_gate("prepared")?;
     let object = engine
@@ -317,7 +324,7 @@ pub(super) async fn stage_create_project(
         .open_verified(parse_digest(&authority.bundle_sha256)?)
         .map_err(super::template_engine::map_object_error)?;
     crate::template::materialize_template_bundle(object.path(), &staging_root)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        .map_err(|cause| error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause))?;
     if let Some(contents) = &authority.project_version_contents {
         write_project_version(&staging_root, contents)?;
     }
@@ -329,7 +336,7 @@ pub(super) async fn stage_create_project(
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
     let (_, root_identity) = alcomd_platform::resolve_directory_identity(&staging_root)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     let package_evidence = engine
         .package_materializer
         .materialize(
@@ -353,7 +360,7 @@ pub(super) async fn stage_create_project(
     }
     write_marker(&staging_root, operation_id, &authority, "staging_complete")?;
     alcomd_platform::sync_directory(&staging_root)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     test_template_kill_gate("staging_complete")?;
     Ok(StagedTemplateProject {
         authority,
@@ -369,8 +376,9 @@ pub(super) fn discard_staged_create(staged: StagedTemplateProject) -> Result<(),
         return Err(error(M5TemplateErrorCode::Internal));
     }
     std::fs::remove_dir_all(staged.staging_root)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
-    std::fs::remove_file(staged.owner_sidecar).map_err(|_| error(M5TemplateErrorCode::Internal))
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
+    std::fs::remove_file(staged.owner_sidecar)
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))
 }
 
 pub(super) async fn publish_create_project(
@@ -381,11 +389,11 @@ pub(super) async fn publish_create_project(
         ensure_absent(&staged.target_root)?;
         test_template_kill_gate("target_publish_intent")?;
         std::fs::rename(&staged.staging_root, &staged.target_root)
-            .map_err(|_| error(M5TemplateErrorCode::TemplateTargetExists))?;
+            .map_err(|cause| error(M5TemplateErrorCode::TemplateTargetExists).with_source(cause))?;
         std::fs::remove_file(&staged.owner_sidecar)
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         alcomd_platform::sync_directory(Path::new(&staged.authority.parent_path))
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         test_template_kill_gate("target_published")?;
     }
     let project = validate_published_target(&staged.authority, &staged.target_root).await?;
@@ -401,13 +409,13 @@ fn test_template_kill_gate(checkpoint: &str) -> Result<(), M5TemplateError> {
         .ok_or_else(|| error(M5TemplateErrorCode::Internal))?;
     let path = PathBuf::from(signal);
     std::fs::write(&path, checkpoint.as_bytes())
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     let file = std::fs::OpenOptions::new()
         .write(true)
         .open(&path)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     file.sync_all()
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
@@ -423,7 +431,11 @@ async fn validate_published_target(
     target: &Path,
 ) -> Result<CreatedTemplateProject, M5TemplateError> {
     let marker: CreateMarker = serde_json::from_slice(&read_bounded(&marker_path(target))?)
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
     if marker.version != 1
         || marker.project_id != authority.project_id
         || marker.plan_fingerprint != authority.project_summary_fingerprint
@@ -433,13 +445,25 @@ async fn validate_published_target(
             M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
         ));
     }
-    let (root, identity) = alcomd_platform::resolve_directory_identity(target)
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
-    let reader = VpmReader::new().map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    let (root, identity) =
+        alcomd_platform::resolve_directory_identity(target).map_err(|cause| {
+            error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
+    let reader = VpmReader::new().map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(target.display().to_string())
+    })?;
     let observation = reader
         .inspect_project_root(root, identity)
         .await
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
     if let Some(expected_version) = &authority.unity_version
         && (&observation.unity_version != expected_version
             || authority.project_version_sha256.as_deref()
@@ -466,8 +490,11 @@ async fn validate_published_target(
         ));
     }
     Ok(CreatedTemplateProject {
-        project_id: ProjectId::parse(&authority.project_id)
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?,
+        project_id: ProjectId::parse(&authority.project_id).map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?,
         observation,
     })
 }
@@ -479,7 +506,7 @@ fn authority(plan: &TemplatePlanRecord) -> Result<CreateProjectAuthority, M5Temp
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
     let authority: CreateProjectAuthority = serde_json::from_str(&plan.plan_json)
-        .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+        .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
     let current_basis = authority.creation_basis_version == Some(2);
     let legacy_accepted = authority.creation_basis_version.is_none()
         && plan.state == alcomd_application::TemplatePlanState::Applied;
@@ -490,7 +517,7 @@ fn authority(plan: &TemplatePlanRecord) -> Result<CreateProjectAuthority, M5Temp
         || ProjectId::parse(&authority.project_id).is_err()
         || hex(&digest(
             &serde_json::to_vec(&authority.package_change_set)
-                .map_err(|_| error(M5TemplateErrorCode::Internal))?,
+                .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?,
         )) != authority.package_change_set_fingerprint
         || authority.package_change_set.vpm_manifest_sha256
             != parse_digest(&authority.final_vpm_manifest_sha256)?
@@ -525,18 +552,29 @@ fn write_project_version(root: &Path, contents: &str) -> Result<(), M5TemplateEr
         .write(true)
         .truncate(true)
         .open(path)
-        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::TemplateBundleInvalid)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     file.write_all(contents.as_bytes())
         .and_then(|()| file.sync_all())
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
-    alcomd_platform::sync_directory(&root.join("ProjectSettings"))
-        .map_err(|_| error(M5TemplateErrorCode::Internal))
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
+    alcomd_platform::sync_directory(&root.join("ProjectSettings")).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })
 }
 
 fn verify_parent(authority: &CreateProjectAuthority) -> Result<(), M5TemplateError> {
     let parent = PathBuf::from(&authority.parent_path);
     let (canonical, identity) = alcomd_platform::resolve_directory_identity(&parent)
-        .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+        .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
     if path_text(&canonical)? != authority.parent_path
         || hex_slice(&identity) != authority.parent_filesystem_identity
         || hex(&digest(&identity)) != authority.parent_identity_sha256
@@ -598,7 +636,7 @@ fn ensure_absent(path: &Path) -> Result<(), M5TemplateError> {
     match std::fs::symlink_metadata(path) {
         Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Ok(_) => Err(error(M5TemplateErrorCode::TemplateTargetExists)),
-        Err(_) => Err(error(M5TemplateErrorCode::InvalidInput)),
+        Err(cause) => Err(error(M5TemplateErrorCode::InvalidInput).with_source(cause)),
     }
 }
 
@@ -622,14 +660,22 @@ fn write_marker(
     phase: &str,
 ) -> Result<(), M5TemplateError> {
     let directory = root.join("Library/ALCOMD");
-    std::fs::create_dir_all(&directory).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    std::fs::create_dir_all(&directory).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     let marker = CreateMarker {
         version: 1,
         project_id: authority.project_id.clone(),
         plan_fingerprint: authority.project_summary_fingerprint.clone(),
         phase: phase.to_owned(),
     };
-    let bytes = serde_json::to_vec(&marker).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    let bytes = serde_json::to_vec(&marker).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     let path = marker_path(root);
     let temporary = directory.join(format!("create-project-{operation_id}.new"));
     use std::io::Write;
@@ -637,17 +683,37 @@ fn write_marker(
         .write(true)
         .create_new(true)
         .open(&temporary)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     temporary_file
         .write_all(&bytes)
         .and_then(|()| temporary_file.sync_all())
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     drop(temporary_file);
     if path.exists() {
-        std::fs::remove_file(&path).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        std::fs::remove_file(&path).map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     }
-    std::fs::rename(temporary, path).map_err(|_| error(M5TemplateErrorCode::Internal))?;
-    alcomd_platform::sync_directory(&directory).map_err(|_| error(M5TemplateErrorCode::Internal))
+    std::fs::rename(temporary, path).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
+    alcomd_platform::sync_directory(&directory).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })
 }
 
 fn write_owner_marker(
@@ -661,23 +727,39 @@ fn write_owner_marker(
         project_id: authority.project_id.clone(),
         plan_fingerprint: authority.project_summary_fingerprint.clone(),
     };
-    let bytes = serde_json::to_vec(&marker).map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    let bytes = serde_json::to_vec(&marker).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut options = std::fs::OpenOptions::new();
     let file = options
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     use std::io::Write;
     let mut file = file;
     file.write_all(&bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+        .map_err(|cause| {
+            error(M5TemplateErrorCode::Internal)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     alcomd_platform::sync_directory(
         path.parent()
             .ok_or_else(|| error(M5TemplateErrorCode::Internal))?,
     )
-    .map_err(|_| error(M5TemplateErrorCode::Internal))
+    .map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 #[derive(Serialize, Deserialize)]
@@ -706,8 +788,10 @@ fn remove_owned_staging(
             ));
         }
     }
-    let marker: CreateOwnerMarker = serde_json::from_slice(&read_bounded(owner_sidecar)?)
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+    let marker: CreateOwnerMarker =
+        serde_json::from_slice(&read_bounded(owner_sidecar)?).map_err(|cause| {
+            error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate).with_source(cause)
+        })?;
     if marker.version != 1
         || marker.operation_id != operation_id.to_string()
         || marker.project_id != authority.project_id
@@ -717,8 +801,10 @@ fn remove_owned_staging(
             M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
         ));
     }
-    std::fs::remove_dir_all(staging).map_err(|_| error(M5TemplateErrorCode::Internal))?;
-    std::fs::remove_file(owner_sidecar).map_err(|_| error(M5TemplateErrorCode::Internal))
+    std::fs::remove_dir_all(staging)
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
+    std::fs::remove_file(owner_sidecar)
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))
 }
 
 fn remove_owned_sidecar(
@@ -735,8 +821,12 @@ fn remove_owned_sidecar(
             ));
         }
     }
-    let marker: CreateOwnerMarker = serde_json::from_slice(&read_bounded(path)?)
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+    let marker: CreateOwnerMarker =
+        serde_json::from_slice(&read_bounded(path)?).map_err(|cause| {
+            error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     if marker.version != 1
         || marker.operation_id != operation_id.to_string()
         || marker.project_id != authority.project_id
@@ -746,18 +836,29 @@ fn remove_owned_sidecar(
             M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
         ));
     }
-    std::fs::remove_file(path).map_err(|_| error(M5TemplateErrorCode::Internal))
+    std::fs::remove_file(path).map_err(|cause| {
+        error(M5TemplateErrorCode::Internal)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn read_bounded(path: &Path) -> Result<Vec<u8>, M5TemplateError> {
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > 4 * 1024 * 1024 {
         return Err(error(
             M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
         ));
     }
-    std::fs::read(path).map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))
+    std::fs::read(path).map_err(|cause| {
+        error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn path_text(path: &Path) -> Result<String, M5TemplateError> {
@@ -795,15 +896,15 @@ fn parse_digest(value: &str) -> Result<[u8; 32], M5TemplateError> {
     let mut digest = [0_u8; 32];
     for (index, chunk) in value.as_bytes().chunks_exact(2).enumerate() {
         let text = std::str::from_utf8(chunk)
-            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+            .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
         digest[index] = u8::from_str_radix(text, 16)
-            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+            .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
     }
     Ok(digest)
 }
 
-fn map_m4_error(_: alcomd_application::M4Error) -> M5TemplateError {
-    error(M5TemplateErrorCode::TemplatePlanStale)
+fn map_m4_error(source: alcomd_application::M4Error) -> M5TemplateError {
+    error(M5TemplateErrorCode::TemplatePlanStale).with_source(source)
 }
 
 #[cfg(windows)]
@@ -817,7 +918,7 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
+fn error(code: M5TemplateErrorCode) -> M5TemplateError {
     M5TemplateError::new(code)
 }
 

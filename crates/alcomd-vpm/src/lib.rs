@@ -191,21 +191,37 @@ impl VpmReader {
         .await?;
         let (vpm_manifest, direct_dependencies, locked_dependencies) = match vpm_bytes {
             Some(bytes) => {
-                let value = parse_bounded_json(&bytes, M3ErrorCode::ProjectManifestInvalid)?;
+                let value = parse_bounded_json(&bytes, M3ErrorCode::ProjectManifestInvalid)
+                    .map_err(|error| {
+                        error.with_path(
+                            root.join("Packages")
+                                .join("vpm-manifest.json")
+                                .display()
+                                .to_string(),
+                        )
+                    })?;
                 let object = value
                     .as_object()
                     .ok_or_else(|| M3Error::new(M3ErrorCode::ProjectManifestInvalid))?;
                 (
                     ManifestState::Valid,
-                    parse_vpm_dependencies(object.get("dependencies"))?,
-                    parse_vpm_dependencies(object.get("locked"))?,
+                    parse_vpm_dependencies(object.get("dependencies")).map_err(|error|error.with_path(root.join("Packages").join("vpm-manifest.json").display().to_string()).with_reason("VPM dependencies require version objects with valid versions"))?,
+                    parse_vpm_dependencies(object.get("locked")).map_err(|error|error.with_path(root.join("Packages").join("vpm-manifest.json").display().to_string()).with_reason("VPM locked dependencies require version objects with valid versions"))?,
                 )
             }
             None => (ManifestState::Missing, Vec::new(), Vec::new()),
         };
         let (upm_manifest, upm_dependencies) = match upm_bytes {
             Some(bytes) => {
-                let value = parse_bounded_json(&bytes, M3ErrorCode::ProjectManifestInvalid)?;
+                let value = parse_bounded_json(&bytes, M3ErrorCode::ProjectManifestInvalid)
+                    .map_err(|error| {
+                        error.with_path(
+                            root.join("Packages")
+                                .join("manifest.json")
+                                .display()
+                                .to_string(),
+                        )
+                    })?;
                 let object = value
                     .as_object()
                     .ok_or_else(|| M3Error::new(M3ErrorCode::ProjectManifestInvalid))?;
@@ -268,10 +284,9 @@ impl VpmReader {
                 request = request.header(IF_MODIFIED_SINCE, last_modified);
             }
         }
-        let mut response = request
-            .send()
-            .await
-            .map_err(|_| M3Error::new(M3ErrorCode::RepositoryUnavailable))?;
+        let mut response = request.send().await.map_err(|error| {
+            M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(error.without_url())
+        })?;
         let response_validators = RepositoryValidators {
             etag: bounded_header(response.headers().get(ETAG)),
             last_modified: bounded_header(response.headers().get(LAST_MODIFIED)),
@@ -297,11 +312,9 @@ impl VpmReader {
             return Err(M3Error::new(M3ErrorCode::RepositoryDocumentTooLarge));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| M3Error::new(M3ErrorCode::RepositoryUnavailable))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(error.without_url())
+        })? {
             if bytes.len().saturating_add(chunk.len()) > REPOSITORY_DOCUMENT_LIMIT {
                 return Err(M3Error::new(M3ErrorCode::RepositoryDocumentTooLarge));
             }
@@ -326,13 +339,18 @@ impl M3ReadAdapter for VpmReader {
         path: String,
         mode: ProjectDiscoveryMode,
     ) -> Result<ProjectObservation, M3Error> {
-        let root = self.find_project_root(Path::new(&path), mode).await?;
+        let root = self
+            .find_project_root(Path::new(&path), mode)
+            .await
+            .map_err(|error| error.with_path(path.clone()))?;
         let (root, identity) =
             tokio::task::spawn_blocking(move || alcomd_platform::resolve_directory_identity(&root))
                 .await
                 .map_err(|_| M3Error::new(M3ErrorCode::Internal))?
                 .map_err(platform_project_error)?;
-        self.inspect_project_root(root, identity).await
+        self.inspect_project_root(root, identity)
+            .await
+            .map_err(|error| error.with_path(path))
     }
 
     async fn inspect_repository(
@@ -438,10 +456,17 @@ async fn read_component(
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)),
+            Err(error) => {
+                return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)
+                    .with_path(path.display().to_string())
+                    .with_source(error));
+            }
         }
     }
-    read_bounded_file(&path, limit, true).await.map(Some)
+    read_bounded_file(&path, limit, true)
+        .await
+        .map(Some)
+        .map_err(|error| error.with_path(path.display().to_string()))
 }
 
 async fn component_exists(root: &Path, components: &[&str]) -> Result<bool, M3Error> {
@@ -454,7 +479,11 @@ async fn component_exists(root: &Path, components: &[&str]) -> Result<bool, M3Er
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(_) => return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)),
+            Err(error) => {
+                return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)
+                    .with_path(path.display().to_string())
+                    .with_source(error));
+            }
         }
     }
     Ok(tokio::fs::metadata(path)
@@ -489,15 +518,21 @@ async fn read_bounded_file(path: &Path, limit: usize, project: bool) -> Result<V
             M3ErrorCode::RepositoryDocumentTooLarge
         }));
     }
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|_| M3Error::new(inaccessible))?;
+    let mut file = tokio::fs::File::open(path).await.map_err(|error| {
+        M3Error::new(inaccessible)
+            .with_path(path.display().to_string())
+            .with_source(error)
+    })?;
     let mut bytes = Vec::with_capacity((metadata_before.len() as usize).min(limit));
     (&mut file)
         .take(limit as u64 + 1)
         .read_to_end(&mut bytes)
         .await
-        .map_err(|_| M3Error::new(inaccessible))?;
+        .map_err(|error| {
+            M3Error::new(inaccessible)
+                .with_path(path.display().to_string())
+                .with_source(error)
+        })?;
     if bytes.len() > limit {
         return Err(M3Error::new(if project {
             M3ErrorCode::ProjectManifestInvalid
@@ -505,9 +540,11 @@ async fn read_bounded_file(path: &Path, limit: usize, project: bool) -> Result<V
             M3ErrorCode::RepositoryDocumentTooLarge
         }));
     }
-    let metadata_after = tokio::fs::metadata(path)
-        .await
-        .map_err(|_| M3Error::new(inaccessible))?;
+    let metadata_after = tokio::fs::metadata(path).await.map_err(|error| {
+        M3Error::new(inaccessible)
+            .with_path(path.display().to_string())
+            .with_source(error)
+    })?;
     if metadata_before.len() != metadata_after.len()
         || metadata_before.modified().ok() != metadata_after.modified().ok()
     {
@@ -558,7 +595,7 @@ fn parse_project_version(bytes: &[u8]) -> Result<(String, Option<String>), M3Err
 
 fn parse_bounded_json(bytes: &[u8], code: M3ErrorCode) -> Result<Value, M3Error> {
     let value: Value = serde_json::from_slice(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes))
-        .map_err(|_| M3Error::new(code))?;
+        .map_err(|error| M3Error::new(code).with_source(error))?;
     validate_json_value(&value, 0, code)?;
     Ok(value)
 }

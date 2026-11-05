@@ -1,4 +1,5 @@
 use std::io::{self, Read, Write};
+use std::sync::Arc;
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
@@ -338,24 +339,55 @@ impl HostMessage {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum HostProtocolError {
-    Io,
-    Truncated,
+    Io(Arc<io::Error>),
+    Truncated(Arc<io::Error>),
     FrameLimit,
     InvalidEnvelope,
 }
 
+impl PartialEq for HostProtocolError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Io(left), Self::Io(right)) | (Self::Truncated(left), Self::Truncated(right)) => {
+                left.kind() == right.kind() && left.raw_os_error() == right.raw_os_error()
+            }
+            (Self::FrameLimit, Self::FrameLimit)
+            | (Self::InvalidEnvelope, Self::InvalidEnvelope) => true,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for HostProtocolError {}
+
+impl std::fmt::Display for HostProtocolError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Io(_) => "extension host pipe I/O failed",
+            Self::Truncated(_) => "extension host frame ended before completion",
+            Self::FrameLimit => "extension host frame exceeds the permitted size",
+            Self::InvalidEnvelope => "extension host envelope is invalid",
+        })
+    }
+}
+
+impl std::error::Error for HostProtocolError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(source) | Self::Truncated(source) => Some(source.as_ref()),
+            Self::FrameLimit | Self::InvalidEnvelope => None,
+        }
+    }
+}
+
 pub fn read_host_message(reader: &mut impl Read) -> Result<HostMessage, HostProtocolError> {
     let mut prefix = [0_u8; 4];
-    reader
-        .read_exact(&mut prefix)
-        .map_err(|error| map_read_error(&error))?;
+    reader.read_exact(&mut prefix).map_err(map_read_error)?;
     let length = frame_length(prefix)?;
     let mut payload = vec![0_u8; length];
-    reader
-        .read_exact(&mut payload)
-        .map_err(|error| map_read_error(&error))?;
+    reader.read_exact(&mut payload).map_err(map_read_error)?;
     decode_message(&payload)
 }
 
@@ -366,8 +398,10 @@ pub fn write_host_message(
     let frame = encode_message(message)?;
     writer
         .write_all(&frame)
-        .map_err(|_| HostProtocolError::Io)?;
-    writer.flush().map_err(|_| HostProtocolError::Io)
+        .map_err(|error| HostProtocolError::Io(Arc::new(error)))?;
+    writer
+        .flush()
+        .map_err(|error| HostProtocolError::Io(Arc::new(error)))
 }
 
 pub async fn read_host_message_async(
@@ -377,13 +411,13 @@ pub async fn read_host_message_async(
     reader
         .read_exact(&mut prefix)
         .await
-        .map_err(|error| map_read_error(&error))?;
+        .map_err(map_read_error)?;
     let length = frame_length(prefix)?;
     let mut payload = vec![0_u8; length];
     reader
         .read_exact(&mut payload)
         .await
-        .map_err(|error| map_read_error(&error))?;
+        .map_err(map_read_error)?;
     decode_message(&payload)
 }
 
@@ -395,8 +429,11 @@ pub async fn write_host_message_async(
     writer
         .write_all(&frame)
         .await
-        .map_err(|_| HostProtocolError::Io)?;
-    writer.flush().await.map_err(|_| HostProtocolError::Io)
+        .map_err(|error| HostProtocolError::Io(Arc::new(error)))?;
+    writer
+        .flush()
+        .await
+        .map_err(|error| HostProtocolError::Io(Arc::new(error)))
 }
 
 fn encode_message(message: &HostMessage) -> Result<Vec<u8>, HostProtocolError> {
@@ -498,17 +535,102 @@ fn validate_error(error: &HostStableError) -> Result<(), HostProtocolError> {
     }
 }
 
-fn map_read_error(error: &io::Error) -> HostProtocolError {
+fn map_read_error(error: io::Error) -> HostProtocolError {
     if error.kind() == io::ErrorKind::UnexpectedEof {
-        HostProtocolError::Truncated
+        HostProtocolError::Truncated(Arc::new(error))
     } else {
-        HostProtocolError::Io
+        HostProtocolError::Io(Arc::new(error))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
+
+    struct BrokenPipe;
+
+    impl Read for BrokenPipe {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "controlled pipe read failure",
+            ))
+        }
+    }
+
+    impl Write for BrokenPipe {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "controlled pipe write failure",
+            ))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pipe_errors_keep_original_io_causes_without_message_payloads() {
+        let read = read_host_message(&mut BrokenPipe).expect_err("injected read failure");
+        assert_eq!(
+            read.source().expect("I/O cause").to_string(),
+            "controlled pipe read failure"
+        );
+        let outgoing = message(HostMessageBody::Ready {
+            nonce: "s".repeat(64),
+        });
+        let write =
+            write_host_message(&mut BrokenPipe, &outgoing).expect_err("injected write failure");
+        assert_eq!(
+            write.source().expect("I/O cause").to_string(),
+            "controlled pipe write failure"
+        );
+        assert!(!alcomd_application::technical_error_chain(&write).contains(&"s".repeat(64)));
+        let truncated = read_host_message(&mut &[0_u8; 2][..]).expect_err("truncated prefix");
+        assert_eq!(
+            truncated
+                .source()
+                .expect("EOF cause")
+                .downcast_ref::<io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    }
+
+    #[tokio::test]
+    async fn async_pipe_errors_keep_original_io_causes() {
+        let (mut endpoint, remote) = tokio::io::duplex(64);
+        drop(remote);
+        let outgoing = message(HostMessageBody::Ready {
+            nonce: "s".repeat(64),
+        });
+        let write = write_host_message_async(&mut endpoint, &outgoing)
+            .await
+            .expect_err("closed pipe");
+        assert_eq!(
+            write
+                .source()
+                .expect("write cause")
+                .downcast_ref::<io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        let read = read_host_message_async(&mut endpoint)
+            .await
+            .expect_err("closed pipe");
+        assert_eq!(
+            read.source()
+                .expect("read cause")
+                .downcast_ref::<io::Error>()
+                .expect("original I/O error")
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    }
 
     fn message(body: HostMessageBody) -> HostMessage {
         HostMessage {

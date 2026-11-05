@@ -390,7 +390,11 @@ fn format_cursor(value: app::UnityInstallationCursor) -> String {
 }
 
 fn m5_error(id: String, error: app::M5UnityError) -> DispatchAction {
-    let rpc_error = match error.code() {
+    let diagnostic_id = error.diagnostic_id().map(str::to_owned).or_else(|| {
+        (error.code() != app::M5UnityErrorCode::LaunchFailed)
+            .then(|| super::failure_report::report(&error, error.path(), "Unity request failed"))
+    });
+    let mut rpc_error = match error.code() {
         app::M5UnityErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M5UnityErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M5UnityErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -434,6 +438,7 @@ fn m5_error(id: String, error: app::M5UnityError) -> DispatchAction {
         app::M5UnityErrorCode::StoreUnavailable => rpc::RpcError::store_unavailable(),
         app::M5UnityErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
     };
+    rpc_error.diagnostic_id = diagnostic_id;
     error_action(Some(id), rpc_error, false)
 }
 
@@ -445,4 +450,73 @@ fn hex(bytes: &[u8]) -> String {
         value.push(char::from(HEX[(byte & 0x0f) as usize]));
     }
     value
+}
+
+#[cfg(all(test, windows))]
+mod logging_tests {
+    use super::*;
+    use app::M5UnityPlatform;
+    use tracing::instrument::WithSubscriber;
+    use tracing_subscriber::prelude::*;
+    #[tokio::test]
+    async fn installation_failure_keeps_source_path_and_is_recorded_only_at_the_request_boundary() {
+        let parent = std::env::temp_dir()
+            .canonicalize()
+            .expect("temporary parent");
+        let directory = parent.join(format!("alcomd-editor-log-{}", app::OperationId::new()));
+        std::fs::create_dir(&directory).expect("isolated log source");
+        let path = directory
+            .join("不存在的 Unity Editor.exe")
+            .to_string_lossy()
+            .into_owned();
+        let runtime = alcomd_logging::LoggingRuntime::start(&directory, "core");
+        let source = runtime.source();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .json()
+                .with_writer(source.writer()),
+        );
+        let action = async {
+            let error = crate::m5_platform::PlatformUnityAdapter
+                .validate_installation(path.clone(), app::UnitySourceKind::Manual)
+                .await
+                .expect_err("missing editor");
+            assert_eq!(error.path(), Some(path.as_str()));
+            assert!(std::error::Error::source(&error).is_some());
+            m5_error("test".into(), error)
+        }
+        .with_subscriber(subscriber)
+        .await;
+        let report = runtime.shutdown();
+        assert!(report.drained && report.flushed);
+        let page = source
+            .history(None, None, 100, Default::default())
+            .await
+            .expect("real file history");
+        assert_eq!(
+            page.items.len(),
+            1,
+            "the source adapter does not duplicate the boundary record"
+        );
+        assert_eq!(page.items[0].record["fields"]["path"], path);
+        assert!(
+            page.items[0].record["fields"]["error"]
+                .as_str()
+                .expect("cause")
+                .contains("os error")
+        );
+        assert_eq!(
+            page.items[0].record["fields"]["diagnostic_id"],
+            action.response["error"]["diagnosticId"]
+        );
+        assert!(!action.response.to_string().contains(&path));
+        assert!(
+            directory
+                .canonicalize()
+                .expect("owned source")
+                .starts_with(&parent)
+        );
+        drop(source);
+        std::fs::remove_dir_all(directory).expect("remove isolated logs");
+    }
 }

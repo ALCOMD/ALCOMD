@@ -415,8 +415,11 @@ fn format_cursor(value: app::TemplateCursor) -> String {
 }
 
 fn template_error(id: String, error: app::M5TemplateError) -> DispatchAction {
+    let diagnostic_id = error.diagnostic_id().map(str::to_owned).unwrap_or_else(|| {
+        super::failure_report::report(&error, error.path(), "execution request failed")
+    });
     let code = app::template_error_name(error.code());
-    let rpc_error = match error.code() {
+    let mut rpc_error = match error.code() {
         app::M5TemplateErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M5TemplateErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M5TemplateErrorCode::TemplateRevisionConflict => rpc::RpcError::revision_conflict(),
@@ -426,6 +429,7 @@ fn template_error(id: String, error: app::M5TemplateError) -> DispatchAction {
         }
         _ => rpc::RpcError::template(code),
     };
+    rpc_error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), rpc_error, false)
 }
 

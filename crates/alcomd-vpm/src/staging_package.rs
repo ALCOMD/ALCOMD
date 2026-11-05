@@ -52,8 +52,9 @@ impl FrozenPackageMaterializer {
 
     pub fn new(cache_root: PathBuf) -> Result<Self, M4Error> {
         Ok(Self {
-            cache: PackageCache::new(cache_root)
-                .map_err(|_| M4Error::new(M4ErrorCode::PackageCacheCorrupt))?,
+            cache: PackageCache::new(cache_root).map_err(|cause| {
+                M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause)
+            })?,
         })
     }
 
@@ -78,7 +79,9 @@ impl FrozenPackageMaterializer {
                     source.is_user_package(),
                 )
                 .await
-                .map_err(|_| M4Error::new(M4ErrorCode::PackageCacheCorrupt))?;
+                .map_err(|cause| {
+                    M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause)
+                })?;
             drop(guard);
             objects.insert(source.package_id().to_owned(), object);
         }
@@ -96,7 +99,7 @@ impl FrozenPackageMaterializer {
     ) -> Result<StagingPackageEvidence, M4Error> {
         tokio::task::spawn_blocking(move || materialize_blocking(prepared, evidence))
             .await
-            .map_err(|_| M4Error::new(M4ErrorCode::Internal))?
+            .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
     }
 
     #[cfg(test)]
@@ -144,7 +147,8 @@ fn materialize_blocking(
         &evidence.root.join("ProjectSettings/ProjectVersion.txt"),
         crate::PROJECT_VERSION_LIMIT,
     )?;
-    parse_project_version(&project_version).map_err(|_| M4Error::new(M4ErrorCode::PlanStale))?;
+    parse_project_version(&project_version)
+        .map_err(|cause| M4Error::new(M4ErrorCode::PlanStale).with_source(cause))?;
     let initial_vpm = read_regular_file(&vpm, PROJECT_MANIFEST_LIMIT)?;
     let initial_upm = read_regular_file(&upm, PROJECT_MANIFEST_LIMIT)?;
     if digest(&initial_vpm) != evidence.initial_vpm_manifest_sha256
@@ -167,7 +171,8 @@ fn materialize_blocking(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
     }
-    std::fs::create_dir(&work).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    std::fs::create_dir(&work)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     for mutation in &prepared.change_set.mutations {
         validate_existing_state(&packages, mutation)?;
         let Some(object) = prepared.objects.get(&mutation.package_id) else {
@@ -178,9 +183,9 @@ fn materialize_blocking(
         };
         let destination = work.join(&mutation.package_id);
         std::fs::create_dir(&destination)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         extract_archive(object, &destination)
-            .map_err(|_| M4Error::new(M4ErrorCode::PackageArchiveInvalid))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::PackageArchiveInvalid).with_source(cause))?;
         validate_extracted_package(
             &destination,
             &mutation.package_id,
@@ -189,38 +194,41 @@ fn materialize_blocking(
                 .as_deref()
                 .ok_or_else(|| M4Error::new(M4ErrorCode::PlanStale))?,
         )
-        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
     }
     alcomd_platform::sync_directory(&work)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
 
     for mutation in &prepared.change_set.mutations {
         let target = packages.join(&mutation.package_id);
         if target.exists() {
             std::fs::remove_dir_all(&target)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         }
         if mutation.kind != PackageMutationKind::Remove {
             std::fs::rename(work.join(&mutation.package_id), &target)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         }
     }
     let vpm_new = work.join("vpm-manifest.new");
     write_new_file(&vpm_new, &final_vpm)?;
     let vpm_old = work.join("vpm-manifest.old");
-    std::fs::rename(&vpm, &vpm_old).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    std::fs::rename(&vpm, &vpm_old)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     if std::fs::rename(&vpm_new, &vpm).is_err() {
         let _ = std::fs::rename(&vpm_old, &vpm);
         return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
     }
     alcomd_platform::sync_directory(&packages)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     verify_final_state(&packages, &prepared.change_set, &initial_upm)?;
-    std::fs::remove_file(&vpm_old).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
-    std::fs::remove_dir(&work).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    std::fs::remove_file(&vpm_old)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+    std::fs::remove_dir(&work)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     Ok(StagingPackageEvidence {
         package_count: u32::try_from(prepared.change_set.mutations.len())
-            .map_err(|_| M4Error::new(M4ErrorCode::Internal))?,
+            .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?,
         vpm_manifest_sha256: digest(&read_regular_file(&vpm, PROJECT_MANIFEST_LIMIT)?),
         upm_manifest_sha256: digest(&read_regular_file(&upm, PROJECT_MANIFEST_LIMIT)?),
     })
@@ -231,12 +239,12 @@ fn validate_staging_root(evidence: &StagingProjectEvidence) -> Result<(), M4Erro
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }
     let metadata = std::fs::symlink_metadata(&evidence.root)
-        .map_err(|_| M4Error::new(M4ErrorCode::PlanStale))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PlanStale).with_source(cause))?;
     if !metadata.is_dir() || is_link_or_reparse(&metadata) {
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }
     let (_, identity) = alcomd_platform::resolve_directory_identity(&evidence.root)
-        .map_err(|_| M4Error::new(M4ErrorCode::PlanStale))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PlanStale).with_source(cause))?;
     if identity != evidence.root_identity {
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }
@@ -254,8 +262,11 @@ fn validate_existing_state(
             _ => Err(M4Error::new(M4ErrorCode::PlanStale)),
         },
         PackageMutationKind::Remove | PackageMutationKind::Replace => {
-            let metadata = std::fs::symlink_metadata(&target)
-                .map_err(|_| M4Error::new(M4ErrorCode::PlanStale))?;
+            let metadata = std::fs::symlink_metadata(&target).map_err(|cause| {
+                M4Error::new(M4ErrorCode::PlanStale)
+                    .with_source(cause)
+                    .with_path(packages.display().to_string())
+            })?;
             if !metadata.is_dir() || is_link_or_reparse(&metadata) {
                 return Err(M4Error::new(M4ErrorCode::PlanStale));
             }
@@ -267,7 +278,11 @@ fn validate_existing_state(
                     .as_deref()
                     .ok_or_else(|| M4Error::new(M4ErrorCode::PlanStale))?,
             )
-            .map_err(|_| M4Error::new(M4ErrorCode::PlanStale))
+            .map_err(|cause| {
+                M4Error::new(M4ErrorCode::PlanStale)
+                    .with_source(cause)
+                    .with_path(packages.display().to_string())
+            })
         }
     }
 }
@@ -299,7 +314,11 @@ fn verify_final_state(
                     .as_deref()
                     .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?,
             )
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| {
+                M4Error::new(M4ErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(packages.display().to_string())
+            })?;
         }
     }
     Ok(())
@@ -313,8 +332,9 @@ fn ensure_new_directory_chain(root: &Path, relative: &Path) -> Result<(), M4Erro
             Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {}
             Ok(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::create_dir(&current)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                std::fs::create_dir(&current).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
             }
             Err(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
         }
@@ -323,12 +343,19 @@ fn ensure_new_directory_chain(root: &Path, relative: &Path) -> Result<(), M4Erro
 }
 
 fn read_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, M4Error> {
-    let metadata =
-        std::fs::symlink_metadata(path).map_err(|_| M4Error::new(M4ErrorCode::PlanStale))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        M4Error::new(M4ErrorCode::PlanStale)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > limit as u64 {
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }
-    std::fs::read(path).map_err(|_| M4Error::new(M4ErrorCode::PlanStale))
+    std::fs::read(path).map_err(|cause| {
+        M4Error::new(M4ErrorCode::PlanStale)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), M4Error> {
@@ -337,10 +364,18 @@ fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), M4Error> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     file.write_all(bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })
 }
 
 fn digest(bytes: &[u8]) -> [u8; 32] {

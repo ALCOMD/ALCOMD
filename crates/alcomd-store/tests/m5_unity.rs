@@ -2,9 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use alcomd_application::{
-    IdempotencyKey, M3RegistryStore, M5UnityErrorCode, M5UnityStore, ManifestState, PrincipalId,
-    ProjectObservation, ProjectType, Revision, StateStore, UnityArchitecture,
-    UnityInstallationObservation, UnityLaunchState, UnitySourceKind,
+    IdempotencyKey, M3RegistryStore, M5UnityErrorCode, M5UnityStore, ManifestState,
+    OfficialGuiStore, PrincipalId, ProjectObservation, ProjectType, Revision, StateStore,
+    UnityArchitecture, UnityInstallationObservation, UnityLaunchState, UnitySourceKind,
 };
 use alcomd_store::StateStoreHandle;
 use uuid::Uuid;
@@ -189,9 +189,39 @@ async fn project_modified_time_tracks_first_launch_acceptance_without_changing_c
             launch.launch_id,
             UnityLaunchState::Failed,
             false,
+            Some("00000000-0000-4000-8000-000000000777".to_owned()),
         )
         .await
         .expect("record subsequent spawn failure");
+    let activity = store
+        .get_official_activity(owner.clone(), launch.launch_id.to_string())
+        .await
+        .expect("same launch activity");
+    assert_eq!(activity.status, "failed");
+    assert_eq!(activity.revision, 2);
+    assert_eq!(
+        activity.diagnostic_id.as_deref(),
+        Some("00000000-0000-4000-8000-000000000777")
+    );
+    assert_eq!(
+        activity
+            .result
+            .as_ref()
+            .expect("valid isolated activity fixture")
+            .code,
+        "unity_launch_failed"
+    );
+    assert_eq!(
+        store
+            .list_official_activity(owner.clone(), None, 100)
+            .await
+            .expect("valid isolated activity fixture")
+            .items
+            .iter()
+            .filter(|a| a.action == "unity.launch")
+            .count(),
+        1
+    );
     let (replayed_launch, replayed) = store
         .accept_launch(
             owner.clone(),

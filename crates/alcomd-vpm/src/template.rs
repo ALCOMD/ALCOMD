@@ -30,9 +30,21 @@ pub enum TemplateErrorCode {
 #[derive(Debug)]
 pub struct TemplateError {
     code: TemplateErrorCode,
+    context: alcomd_application::TechnicalErrorContext,
 }
 
 impl TemplateError {
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+
     #[must_use]
     pub const fn code(&self) -> TemplateErrorCode {
         self.code
@@ -41,11 +53,19 @@ impl TemplateError {
 
 impl fmt::Display for TemplateError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Template bundle rejected")
+        formatter.write_str("Template bundle rejected")?;
+        if let Some(path) = self.context.path.as_deref() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
 
-impl std::error::Error for TemplateError {}
+impl std::error::Error for TemplateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -136,15 +156,16 @@ pub fn inspect_template_bundle_with_limits(
 ) -> Result<TemplateInspection, TemplateError> {
     let preflight = preflight_archive_with_limits(path, limits).map_err(map_archive_error)?;
     let layout = validate_layout(&preflight.entries)?;
-    let file = File::open(path).map_err(|_| error(TemplateErrorCode::Io))?;
-    let mut archive = ZipArchive::new(file).map_err(|_| error(TemplateErrorCode::BundleInvalid))?;
+    let file = File::open(path).map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?;
     let manifest_bytes =
         read_entry_bounded(&mut archive, layout.manifest_index, TEMPLATE_MANIFEST_BYTES)?;
     if manifest_bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
         return Err(error(TemplateErrorCode::ManifestInvalid));
     }
     let manifest: TemplateManifest = serde_json::from_slice(&manifest_bytes)
-        .map_err(|_| error(TemplateErrorCode::ManifestInvalid))?;
+        .map_err(|cause| error(TemplateErrorCode::ManifestInvalid).with_source(cause))?;
     validate_manifest(&manifest)?;
     let normalized_manifest_json = canonical_manifest(&manifest)?;
     let manifest_fingerprint = sha256(normalized_manifest_json.as_bytes());
@@ -165,7 +186,7 @@ pub fn inspect_template_bundle_with_limits(
         manifest_fingerprint,
         payload_tree_sha256,
         entry_count: u64::try_from(preflight.entries.len())
-            .map_err(|_| error(TemplateErrorCode::BundleInvalid))?,
+            .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?,
         total_uncompressed_bytes: preflight.total_uncompressed_bytes,
     })
 }
@@ -176,19 +197,20 @@ pub(crate) fn materialize_template_bundle(
     destination: &Path,
 ) -> Result<TemplateInspection, TemplateError> {
     let inspection = inspect_template_bundle(bundle)?;
-    let destination_metadata =
-        std::fs::symlink_metadata(destination).map_err(|_| error(TemplateErrorCode::Io))?;
+    let destination_metadata = std::fs::symlink_metadata(destination)
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     if !destination_metadata.is_dir()
         || template_path_is_link(&destination_metadata)
         || std::fs::read_dir(destination)
-            .map_err(|_| error(TemplateErrorCode::Io))?
+            .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?
             .next()
             .is_some()
     {
         return Err(error(TemplateErrorCode::Io));
     }
     let source = destination.join(".alcomd-template-source");
-    std::fs::create_dir(&source).map_err(|_| error(TemplateErrorCode::Io))?;
+    std::fs::create_dir(&source)
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     if let Err(source_error) =
         extract_archive_with_limits(bundle, &source, ArchiveLimits::template())
     {
@@ -196,16 +218,19 @@ pub(crate) fn materialize_template_bundle(
         return Err(map_archive_error(source_error));
     }
     let payload = source.join("payload");
-    let entries = std::fs::read_dir(&payload).map_err(|_| error(TemplateErrorCode::Io))?;
+    let entries = std::fs::read_dir(&payload)
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     for entry in entries {
-        let entry = entry.map_err(|_| error(TemplateErrorCode::Io))?;
+        let entry = entry.map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
         let target = destination.join(entry.file_name());
         if std::fs::symlink_metadata(&target).is_ok() {
             return Err(error(TemplateErrorCode::ResourceInvalid));
         }
-        std::fs::rename(entry.path(), target).map_err(|_| error(TemplateErrorCode::Io))?;
+        std::fs::rename(entry.path(), target)
+            .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     }
-    std::fs::remove_dir(&payload).map_err(|_| error(TemplateErrorCode::Io))?;
+    std::fs::remove_dir(&payload)
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     for resource in &inspection.manifest.additional_resources {
         let input = source.join(&resource.bundle_path);
         let output = destination.join(&resource.target_path);
@@ -216,16 +241,18 @@ pub(crate) fn materialize_template_bundle(
         if std::fs::symlink_metadata(&output).is_ok() {
             return Err(error(TemplateErrorCode::ResourceInvalid));
         }
-        std::fs::rename(input, output).map_err(|_| error(TemplateErrorCode::Io))?;
+        std::fs::rename(input, output)
+            .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     }
-    std::fs::remove_dir_all(&source).map_err(|_| error(TemplateErrorCode::Io))?;
+    std::fs::remove_dir_all(&source)
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     Ok(inspection)
 }
 
 fn ensure_safe_directory_chain(root: &Path, target: &Path) -> Result<(), TemplateError> {
     let relative = target
         .strip_prefix(root)
-        .map_err(|_| error(TemplateErrorCode::ResourceInvalid))?;
+        .map_err(|cause| error(TemplateErrorCode::ResourceInvalid).with_source(cause))?;
     let mut current = root.to_path_buf();
     for component in relative.components() {
         current.push(component);
@@ -233,7 +260,8 @@ fn ensure_safe_directory_chain(root: &Path, target: &Path) -> Result<(), Templat
             Ok(metadata) if metadata.is_dir() && !template_path_is_link(&metadata) => {}
             Ok(_) => return Err(error(TemplateErrorCode::ResourceInvalid)),
             Err(source) if source.kind() == io::ErrorKind::NotFound => {
-                std::fs::create_dir(&current).map_err(|_| error(TemplateErrorCode::Io))?;
+                std::fs::create_dir(&current)
+                    .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
             }
             Err(_) => return Err(error(TemplateErrorCode::Io)),
         }
@@ -400,7 +428,7 @@ fn validate_resources<R: Read + io::Seek>(
         }
         let mut entry = archive
             .by_index(*index)
-            .map_err(|_| error(TemplateErrorCode::BundleInvalid))?;
+            .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?;
         let digest = hash_reader(&mut entry, *size)?;
         if digest != parse_digest(&resource.sha256)? {
             return Err(error(TemplateErrorCode::ResourceInvalid));
@@ -419,14 +447,14 @@ fn hash_payload_tree<R: Read + io::Seek>(
         let path = path.as_bytes();
         digest.update(
             u32::try_from(path.len())
-                .map_err(|_| error(TemplateErrorCode::BundleInvalid))?
+                .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?
                 .to_le_bytes(),
         );
         digest.update(path);
         digest.update(size.to_le_bytes());
         let mut entry = archive
             .by_index(*index)
-            .map_err(|_| error(TemplateErrorCode::BundleInvalid))?;
+            .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?;
         copy_into_digest(&mut entry, *size, &mut digest)?;
         total = total
             .checked_add(*size)
@@ -442,15 +470,15 @@ fn read_entry_bounded<R: Read + io::Seek>(
 ) -> Result<Vec<u8>, TemplateError> {
     let mut entry = archive
         .by_index(index)
-        .map_err(|_| error(TemplateErrorCode::BundleInvalid))?;
+        .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?;
     let capacity = usize::try_from(entry.size().min(maximum))
-        .map_err(|_| error(TemplateErrorCode::ManifestInvalid))?;
+        .map_err(|cause| error(TemplateErrorCode::ManifestInvalid).with_source(cause))?;
     let mut bytes = Vec::with_capacity(capacity);
     entry
         .by_ref()
         .take(maximum.saturating_add(1))
         .read_to_end(&mut bytes)
-        .map_err(|_| error(TemplateErrorCode::Io))?;
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     if bytes.len() as u64 > maximum || bytes.len() as u64 != entry.size() {
         return Err(error(TemplateErrorCode::ManifestInvalid));
     }
@@ -458,10 +486,11 @@ fn read_entry_bounded<R: Read + io::Seek>(
 }
 
 fn canonical_manifest(manifest: &TemplateManifest) -> Result<String, TemplateError> {
-    let mut value =
-        serde_json::to_value(manifest).map_err(|_| error(TemplateErrorCode::ManifestInvalid))?;
+    let mut value = serde_json::to_value(manifest)
+        .map_err(|cause| error(TemplateErrorCode::ManifestInvalid).with_source(cause))?;
     sort_json(&mut value);
-    serde_json::to_string(&value).map_err(|_| error(TemplateErrorCode::ManifestInvalid))
+    serde_json::to_string(&value)
+        .map_err(|cause| error(TemplateErrorCode::ManifestInvalid).with_source(cause))
 }
 
 fn sort_json(value: &mut Value) {
@@ -480,10 +509,11 @@ fn sort_json(value: &mut Value) {
 }
 
 fn hash_file(path: &Path) -> Result<[u8; 32], TemplateError> {
-    let mut file = File::open(path).map_err(|_| error(TemplateErrorCode::Io))?;
+    let mut file =
+        File::open(path).map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
     let size = file
         .metadata()
-        .map_err(|_| error(TemplateErrorCode::Io))?
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?
         .len();
     hash_reader(&mut file, size)
 }
@@ -503,10 +533,10 @@ fn copy_into_digest(
     let mut buffer = [0_u8; 64 * 1024];
     while remaining > 0 {
         let maximum = usize::try_from(remaining.min(buffer.len() as u64))
-            .map_err(|_| error(TemplateErrorCode::BundleInvalid))?;
+            .map_err(|cause| error(TemplateErrorCode::BundleInvalid).with_source(cause))?;
         let read = reader
             .read(&mut buffer[..maximum])
-            .map_err(|_| error(TemplateErrorCode::Io))?;
+            .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?;
         if read == 0 {
             return Err(error(TemplateErrorCode::BundleInvalid));
         }
@@ -516,7 +546,7 @@ fn copy_into_digest(
     let mut extra = [0_u8; 1];
     if reader
         .read(&mut extra)
-        .map_err(|_| error(TemplateErrorCode::Io))?
+        .map_err(|cause| error(TemplateErrorCode::Io).with_source(cause))?
         != 0
     {
         return Err(error(TemplateErrorCode::BundleInvalid));
@@ -590,14 +620,18 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
 }
 
 fn map_archive_error(source: crate::archive::ArchiveError) -> TemplateError {
-    match source.code() {
+    (match source.code() {
         ArchiveErrorCode::Io => error(TemplateErrorCode::Io),
         _ => error(TemplateErrorCode::BundleInvalid),
-    }
+    })
+    .with_source(source)
 }
 
-const fn error(code: TemplateErrorCode) -> TemplateError {
-    TemplateError { code }
+fn error(code: TemplateErrorCode) -> TemplateError {
+    TemplateError {
+        code,
+        context: alcomd_application::TechnicalErrorContext::default(),
+    }
 }
 
 #[cfg(test)]

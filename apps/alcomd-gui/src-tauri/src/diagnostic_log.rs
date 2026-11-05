@@ -7,6 +7,32 @@ use tauri::async_runtime::Mutex;
 
 type AbortRead = Box<dyn Fn() + Send>;
 
+#[tauri::command]
+pub(crate) async fn gui_diagnostic_log_history(
+    params: alcomd_protocol::DiagnosticLogHistoryParams,
+) -> Result<alcomd_protocol::DiagnosticLogHistoryResult, RpcError> {
+    // Saved-file paging must never wait behind the live log long read or the
+    // normal command connection. This connection is disposable and read-only.
+    let mut client = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .map_err(super::client_error)?;
+    client
+        .diagnostic_log_history(params)
+        .await
+        .map_err(super::client_error)
+}
+
+#[tauri::command]
+pub(crate) async fn gui_diagnostic_log_health()
+-> Result<alcomd_protocol::DiagnosticLogHealth, RpcError> {
+    let mut client = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .map_err(super::client_error)?;
+    client
+        .diagnostic_log_health()
+        .await
+        .map_err(super::client_error)
+}
 #[derive(Default)]
 struct PendingRead {
     sequence: u64,
@@ -21,7 +47,7 @@ pub(crate) struct DiagnosticLogClient {
 }
 
 impl DiagnosticLogClient {
-    async fn cancel(&self) {
+    pub(crate) async fn cancel(&self) {
         let abort = {
             let mut pending = self
                 .pending

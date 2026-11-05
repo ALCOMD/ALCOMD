@@ -2,8 +2,8 @@ use alcomd_application as app;
 use alcomd_protocol as rpc;
 
 use super::{
-    AccessContext, ConnectionState, DispatchAction, M7ExtensionApplication, OperationId,
-    error_action, invalid, require_capability, success_action,
+    AccessContext, ConnectionState, DispatchAction, M7ExtensionApplication, error_action, invalid,
+    require_capability, success_action,
 };
 
 #[derive(Clone, Copy)]
@@ -195,12 +195,19 @@ fn rpc_snapshot(value: app::M7UiSnapshot) -> Result<rpc::UiSnapshot, app::M7Erro
 }
 
 fn m7_error(id: String, source: app::M7Error) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "Portable UI request failed")
+        });
+    let mut error = match source.code() {
         app::M7ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M7ErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
-        app::M7ErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
+        app::M7ErrorCode::Internal => rpc::RpcError::internal(diagnostic_id.clone()),
         code => rpc::RpcError::extension(error_name(code)),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }
 
@@ -242,4 +249,94 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .expect("capture lock")
+                .extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn original_failure_is_logged_once_and_rpc_preserves_its_identity() {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let output = bytes.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_writer(move || Capture(output.clone()))
+            .finish();
+        let path = std::env::temp_dir()
+            .join("ALCOMD 项目")
+            .join("extension.wasm")
+            .display()
+            .to_string();
+        let failure = || {
+            app::M7Error::new(app::M7ErrorCode::Crashed)
+                .with_path(path.clone())
+                .with_source(app::M6Error::new(app::M6ErrorCode::Crashed).with_source(
+                    std::io::Error::new(
+                        std::io::ErrorKind::BrokenPipe,
+                        "controlled original pipe failure",
+                    ),
+                ))
+        };
+        let (first, propagated, retry) = tracing::subscriber::with_default(subscriber, || {
+            let first = m7_error("first".into(), failure());
+            let id = first.response["error"]["diagnosticId"]
+                .as_str()
+                .expect("diagnostic ID")
+                .to_owned();
+            let propagated = m7_error("propagated".into(), failure().with_diagnostic_id(id));
+            let retry = m7_error("retry".into(), failure());
+            (first, propagated, retry)
+        });
+        assert_eq!(
+            first.response["error"]["diagnosticId"],
+            propagated.response["error"]["diagnosticId"]
+        );
+        assert_ne!(
+            first.response["error"]["diagnosticId"],
+            retry.response["error"]["diagnosticId"]
+        );
+        assert_eq!(
+            first.response["error"]["code"],
+            rpc::error_code::EXTENSION_CRASHED
+        );
+        let encoded = serde_json::to_string(&first.response).expect("RPC response");
+        assert!(!encoded.contains("controlled original pipe failure"));
+        assert!(!encoded.contains("extension.wasm"));
+        let captured =
+            String::from_utf8(bytes.lock().expect("capture").clone()).expect("UTF-8 logs");
+        let records = captured
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("standard JSON"))
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[0]["fields"]["diagnostic_id"],
+            first.response["error"]["diagnosticId"]
+        );
+        assert_eq!(records[0]["fields"]["path"], path);
+        assert!(
+            records[0]["fields"]["error"]
+                .as_str()
+                .expect("cause chain")
+                .contains("controlled original pipe failure")
+        );
+    }
 }

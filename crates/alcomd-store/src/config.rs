@@ -29,28 +29,50 @@ impl FileConfigStore {
 
 impl ConfigStore for FileConfigStore {
     fn initialize(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
-        initialize_settings_file(&self.path)?;
-        read_settings(&self.path)
+        (|| {
+            initialize_settings_file(&self.path)?;
+            read_settings(&self.path)
+        })()
+        .map_err(|error| report_config_failure(error, &self.path, "failed to initialize settings"))
     }
 
     fn load(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
         read_settings(&self.path)
+            .map_err(|error| report_config_failure(error, &self.path, "failed to read settings"))
     }
 
     fn publish(&self, snapshot: &ConfigSnapshot) -> Result<(), ConfigStoreError> {
-        snapshot
-            .settings
-            .validate()
-            .map_err(|_| ConfigStoreError::Corrupt)?;
-        let contents = serialize_settings(snapshot);
-        if snapshot.revision == 0 {
-            return Err(ConfigStoreError::Corrupt);
-        }
-        if contents.len() as u64 > MAX_SETTINGS_BYTES {
-            return Err(ConfigStoreError::TooLarge);
-        }
-        publish_settings(&self.path, &contents)
+        (|| {
+            snapshot
+                .settings
+                .validate()
+                .map_err(|error| ConfigStoreError::Corrupt.with_source(error))?;
+            let contents = serialize_settings(snapshot);
+            if snapshot.revision == 0 {
+                return Err(ConfigStoreError::Corrupt);
+            }
+            if contents.len() as u64 > MAX_SETTINGS_BYTES {
+                return Err(ConfigStoreError::TooLarge);
+            }
+            publish_settings(&self.path, &contents)
+        })()
+        .map_err(|error| report_config_failure(error, &self.path, "failed to publish settings"))
     }
+}
+
+fn report_config_failure(
+    error: ConfigStoreError,
+    path: &Path,
+    message: &'static str,
+) -> ConfigStoreError {
+    let error = if std::error::Error::source(&error).is_none() {
+        error.with_reason("the settings document or publication state violates the bounded configuration contract")
+    } else {
+        error
+    };
+    error
+        .with_path(path.to_string_lossy().into_owned())
+        .record(message)
 }
 
 fn initialize_settings_file(path: &Path) -> Result<(), ConfigStoreError> {
@@ -76,8 +98,11 @@ fn read_settings(path: &Path) -> Result<ConfigSnapshot, ConfigStoreError> {
 
 fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), ConfigStoreError> {
     let metadata = fs::symlink_metadata(path).map_err(map_io)?;
-    if !metadata.file_type().is_file() || metadata.len() > MAX_SETTINGS_BYTES {
-        return Err(ConfigStoreError::Corrupt);
+    if !metadata.file_type().is_file() {
+        return Err(ConfigStoreError::Corrupt.with_reason("settings path is not a regular file"));
+    }
+    if metadata.len() > MAX_SETTINGS_BYTES {
+        return Err(ConfigStoreError::Corrupt.with_reason("settings file exceeds the 16 KiB limit"));
     }
     let mut bytes =
         Vec::with_capacity(usize::try_from(metadata.len()).map_err(|_| ConfigStoreError::Corrupt)?);
@@ -86,10 +111,17 @@ fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), Confi
         .take(MAX_SETTINGS_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(map_io)?;
-    if bytes.len() as u64 > MAX_SETTINGS_BYTES || bytes.contains(&0) {
-        return Err(ConfigStoreError::Corrupt);
+    if bytes.len() as u64 > MAX_SETTINGS_BYTES {
+        return Err(ConfigStoreError::Corrupt
+            .with_reason("settings file grew beyond the 16 KiB limit while reading"));
     }
-    parse_settings_with_schema(std::str::from_utf8(&bytes).map_err(|_| ConfigStoreError::Corrupt)?)
+    if bytes.contains(&0) {
+        return Err(ConfigStoreError::Corrupt.with_reason("settings document contains a NUL byte"));
+    }
+    parse_settings_with_schema(
+        std::str::from_utf8(&bytes)
+            .map_err(|error| ConfigStoreError::Corrupt.with_source(error))?,
+    )
 }
 
 #[cfg(test)]
@@ -171,7 +203,17 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     if text.len() as u64 > MAX_SETTINGS_BYTES {
         return Err(ConfigStoreError::TooLarge);
     }
-    let raw: RawSettings = toml::from_str(text).map_err(|_| ConfigStoreError::Corrupt)?;
+    let raw: RawSettings = toml::from_str(text).map_err(|error: toml::de::Error| {
+        // TOML Display and message may quote argv or arbitrary configuration values.
+        // Retain the real parser location, never its document or interpolated values.
+        let location = error
+            .span()
+            .map(|span| format!(" at bytes {}..{}", span.start, span.end))
+            .unwrap_or_default();
+        ConfigStoreError::Corrupt.with_reason(format!(
+            "settings TOML does not match the typed document contract{location}"
+        ))
+    })?;
     let schema = raw.schema;
     let revision = Some(raw.revision);
     let locale = Some(parse_locale(&raw.locale)?);
@@ -629,8 +671,8 @@ fn locale_str(value: ConfigLocale) -> &'static str {
         ConfigLocale::JaJp => "ja-JP",
     }
 }
-fn map_io(_: io::Error) -> ConfigStoreError {
-    ConfigStoreError::Unavailable
+fn map_io(error: io::Error) -> ConfigStoreError {
+    ConfigStoreError::Unavailable.with_source(error)
 }
 
 #[cfg(test)]
@@ -639,8 +681,7 @@ mod tests {
     use alcomd_application::{
         AccessContext, ConfigAppearanceUpdate, ConfigNullableUpdate, ConfigPackageSettingsUpdate,
         ConfigUpdate, M7OfficialApplication, OfficialActivityCursor, OfficialActivityPage,
-        OfficialDiagnosticCursor, OfficialDiagnosticPage, OfficialGuiError, OfficialGuiStore,
-        PrincipalId, StoreError,
+        OfficialGuiError, OfficialGuiStore, PrincipalId, StoreError,
     };
     use std::sync::Arc;
 
@@ -704,6 +745,59 @@ mod tests {
 
     fn temporary_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("alcomd-m7-settings-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn config_failure_preserves_path_parser_position_and_diagnostic_without_configuration_secrets()
+    {
+        let path = temporary_path("真实日志路径-configuration-secret.toml");
+        let mut snapshot = default_snapshot();
+        snapshot.settings.unity.default_launch_arguments =
+            Some(vec!["sensitive-argv-marker".to_owned()]);
+        let text = String::from_utf8(serialize_settings(&snapshot))
+            .expect("settings UTF-8")
+            .replace("schema = 10", "schema = 'sensitive-schema-marker'");
+        fs::write(&path, text).expect("isolated malformed settings");
+        let error = FileConfigStore::new(path.clone())
+            .load()
+            .expect_err("typed TOML rejects string schema");
+        assert_eq!(
+            error.kind(),
+            alcomd_application::ConfigStoreErrorKind::Corrupt
+        );
+        assert_eq!(error.path(), Some(path.to_string_lossy().as_ref()));
+        let chain = alcomd_application::technical_error_chain(&error);
+        assert!(chain.contains("typed document contract at bytes"));
+        assert!(!chain.contains("sensitive-schema-marker"));
+        assert!(!chain.contains("sensitive-argv-marker"));
+        let diagnostic = error
+            .diagnostic_id()
+            .expect("source boundary assigned diagnostic")
+            .to_owned();
+        assert!(uuid::Uuid::parse_str(&diagnostic).is_ok());
+        let propagated = OfficialGuiError::from(error);
+        assert_eq!(propagated.diagnostic_id(), Some(diagnostic.as_str()));
+        assert_eq!(propagated.path(), Some(path.to_string_lossy().as_ref()));
+        assert!(
+            alcomd_application::technical_error_chain(&propagated)
+                .contains("typed document contract at bytes")
+        );
+        fs::remove_file(path).expect("remove isolated invalid settings");
+    }
+
+    #[test]
+    fn config_io_failure_retains_original_cause_and_real_path() {
+        let blocked_parent = temporary_path("真实-I-O-settings-parent");
+        fs::write(&blocked_parent, b"private parent is a regular file")
+            .expect("isolated blocked parent");
+        let path = blocked_parent.join("settings.toml");
+        let error = FileConfigStore::new(path.clone())
+            .publish(&default_snapshot())
+            .expect_err("cannot publish over a directory");
+        assert_eq!(error.path(), Some(path.to_string_lossy().as_ref()));
+        assert!(std::error::Error::source(&error).is_some());
+        assert!(error.diagnostic_id().is_some());
+        fs::remove_file(blocked_parent).expect("remove private parent fixture");
     }
 
     #[test]
@@ -2554,20 +2648,27 @@ mod tests {
     #[derive(Clone)]
     struct NoStore;
     impl OfficialGuiStore for NoStore {
+        async fn get_official_activity(
+            &self,
+            _: PrincipalId,
+            _: String,
+        ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not read Activity")
+        }
+        async fn record_failed_activity(
+            &self,
+            _: PrincipalId,
+            _: alcomd_application::NewFailedActivity,
+        ) -> Result<alcomd_application::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not write Activity")
+        }
+
         async fn list_official_activity(
             &self,
             _: PrincipalId,
             _: Option<OfficialActivityCursor>,
             _: u32,
         ) -> Result<OfficialActivityPage, StoreError> {
-            unreachable!()
-        }
-        async fn list_official_diagnostics(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialDiagnosticCursor>,
-            _: u32,
-        ) -> Result<OfficialDiagnosticPage, StoreError> {
             unreachable!()
         }
     }

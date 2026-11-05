@@ -1,6 +1,7 @@
 //! M5 native Template registry and immutable import/derive Plan use cases.
 
 use std::future::Future;
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -169,31 +170,82 @@ pub enum M5TemplateErrorCode {
     Internal,
 }
 
-/// Safe Template error with no path, archive entry, or SQL detail.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Private technical error; only its stable code and diagnostic identity cross business RPC.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M5TemplateError {
     code: M5TemplateErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl M5TemplateError {
     #[must_use]
-    pub const fn new(code: M5TemplateErrorCode) -> Self {
-        Self { code }
+    pub fn new(code: M5TemplateErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
-    pub const fn code(self) -> M5TemplateErrorCode {
+    pub const fn code(&self) -> M5TemplateErrorCode {
         self.code
+    }
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
     }
 }
 
 impl std::fmt::Display for M5TemplateError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Template request failed")
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
-
-impl std::error::Error for M5TemplateError {}
+impl std::error::Error for M5TemplateError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 /// Authoritative State Schema v5 persistence port.
 pub trait M5TemplateStore: Clone + Send + Sync + 'static {
@@ -385,7 +437,7 @@ where
     ) -> Result<UnityWriterState, M5TemplateError> {
         self.writer_state_unchecked(access, project_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::Internal))
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))
     }
 }
 
@@ -444,10 +496,15 @@ where
         for operation_id in operations {
             let recovery = self.locks.project_recovery_guard();
             let application = self.clone();
-            tokio::spawn(async move {
-                let _recovery = recovery;
-                let _ = application.run_operation(operation_id).await;
-            });
+            tokio::spawn(
+                (async move {
+                    let _recovery = recovery;
+                    if let Err(source) = application.run_operation(operation_id).await {
+                        let _ = source.record_failure(operation_id, "Template operation failed");
+                    }
+                })
+                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+            );
         }
         Ok(())
     }
@@ -603,7 +660,7 @@ where
             .store
             .get_project(access.principal().clone(), project_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::ProjectNotRegistered))?;
+            .map_err(|cause| error(M5TemplateErrorCode::ProjectNotRegistered).with_source(cause))?;
         if project.revision != expected_project_revision {
             return Err(error(M5TemplateErrorCode::TemplateRevisionConflict));
         }
@@ -626,7 +683,7 @@ where
             .store
             .resolver_catalog(access.principal().clone(), false)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+            .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))?;
         if !catalog.complete {
             return Err(error(M5TemplateErrorCode::TemplatePlanStale));
         }
@@ -696,7 +753,7 @@ where
             .store
             .resolver_catalog(access.principal().clone(), false)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
+            .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?;
         if !catalog.complete {
             return Err(error(M5TemplateErrorCode::TemplatePlanStale));
         }
@@ -786,9 +843,14 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run_operation(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run_operation(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Template operation failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     async fn run_operation(&self, operation_id: OperationId) -> Result<(), M5TemplateError> {
@@ -796,12 +858,12 @@ where
             .store
             .cancellation_requested(operation_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?
+            .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?
         {
             self.store
                 .finish_cancelled(operation_id, now_ms()?)
                 .await
-                .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
+                .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?;
             return Ok(());
         }
         let plan = self
@@ -821,12 +883,16 @@ where
                     .store
                     .cancellation_requested(operation_id)
                     .await
-                    .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?
+                    .map_err(|cause| {
+                        error(M5TemplateErrorCode::StoreUnavailable).with_source(cause)
+                    })?
                 {
                     self.store
                         .finish_cancelled(operation_id, now_ms()?)
                         .await
-                        .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
+                        .map_err(|cause| {
+                            error(M5TemplateErrorCode::StoreUnavailable).with_source(cause)
+                        })?;
                     return Ok(());
                 }
                 self.store
@@ -835,7 +901,8 @@ where
             }
             Err(source) => {
                 let code = template_error_name(source.code()).to_owned();
-                let diagnostic_id = OperationId::new().to_string();
+                let (source, diagnostic_id) =
+                    source.record_failure(operation_id, "Template operation failed");
                 self.store
                     .fail_template_apply(operation_id, code, diagnostic_id, now_ms()?)
                     .await?;
@@ -851,8 +918,9 @@ where
     ) -> Result<(), M5TemplateError> {
         let result = self.run_create_project_inner(operation_id, plan).await;
         if let Err(source) = result {
+            let (source, diagnostic_id) =
+                source.record_failure(operation_id, "Template operation failed");
             let code = template_error_name(source.code()).to_owned();
-            let diagnostic_id = OperationId::new().to_string();
             self.store
                 .fail_template_apply(operation_id, code, diagnostic_id, now_ms()?)
                 .await?;
@@ -875,12 +943,12 @@ where
             .store
             .cancellation_requested(operation_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?
+            .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?
         {
             self.store
                 .finish_cancelled(operation_id, now_ms()?)
                 .await
-                .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
+                .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?;
             return Ok(());
         }
         let _guard = self.locks.acquire(vec![resource]).await;
@@ -895,13 +963,13 @@ where
             .store
             .cancellation_requested(operation_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?
+            .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?
         {
             self.adapter.discard_staged_create(staged).await?;
             self.store
                 .finish_cancelled(operation_id, now_ms()?)
                 .await
-                .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
+                .map_err(|cause| error(M5TemplateErrorCode::StoreUnavailable).with_source(cause))?;
             return Ok(());
         }
         self.store
@@ -942,7 +1010,7 @@ where
             .store
             .get_project(plan.owner.clone(), project_id)
             .await
-            .map_err(|_| error(M5TemplateErrorCode::ProjectNotRegistered))?;
+            .map_err(|cause| error(M5TemplateErrorCode::ProjectNotRegistered).with_source(cause))?;
         let access = AccessContext::new(plan.owner.clone(), [crate::Permission::ProjectsRead]);
         let writer = self
             .writer
@@ -958,7 +1026,7 @@ where
 fn require(access: &AccessContext, permission: crate::Permission) -> Result<(), M5TemplateError> {
     access
         .require(permission)
-        .map_err(|_| error(M5TemplateErrorCode::PermissionDenied))
+        .map_err(|cause| error(M5TemplateErrorCode::PermissionDenied).with_source(cause))
 }
 
 fn require_local_owner(
@@ -975,9 +1043,10 @@ fn require_local_owner(
 fn now_ms() -> Result<u64, M5TemplateError> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))
+        .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))
         .and_then(|duration| {
-            u64::try_from(duration.as_millis()).map_err(|_| error(M5TemplateErrorCode::Internal))
+            u64::try_from(duration.as_millis())
+                .map_err(|cause| error(M5TemplateErrorCode::Internal).with_source(cause))
         })
 }
 
@@ -1008,6 +1077,6 @@ pub const fn template_error_name(code: M5TemplateErrorCode) -> &'static str {
     }
 }
 
-const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
+fn error(code: M5TemplateErrorCode) -> M5TemplateError {
     M5TemplateError::new(code)
 }

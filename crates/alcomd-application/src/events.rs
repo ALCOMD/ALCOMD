@@ -167,6 +167,15 @@ where
             return Err(unavailable());
         }
         let page = read().await?;
+        // A read may include a commit that happened after the pre-read sample.
+        // Take its resource invalidation watermark too; this is invalidation,
+        // not a claim that different resources form one atomic snapshot.
+        // Do not mark this sample seen: an empty owner-filtered page must still
+        // retain the wakeup when it reaches changed().
+        let watermark = commits.borrow().clone();
+        if !watermark.available || watermark.instance_id != instance_id {
+            return Err(unavailable());
+        }
         if !page.events.is_empty() || watermark.resources_revision != resources_revision {
             return Ok(LiveEventPage {
                 events: page.events,
@@ -266,7 +275,68 @@ mod tests {
         assert!(page.events.is_empty());
         assert_eq!(page.resources_revision, 1);
         assert_eq!(page.invalidated_scopes, vec![EventInvalidation::Extensions]);
-        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn event_page_includes_resource_commit_observed_during_its_read() {
+        let identity = OperationId::new().to_string();
+        let (sender, mut receiver) = watch::channel(EventCommitWatermark {
+            instance_id: identity.clone(),
+            sequence: 0,
+            resources_revision: 0,
+            available: true,
+        });
+        let page = read_committed_page(&mut receiver, &identity, 0, || {
+            sender.send_modify(|watermark| {
+                watermark.sequence = 1;
+                watermark.resources_revision = 1;
+            });
+            ready(Ok(EventPage {
+                events: vec![event(1)],
+                next_sequence: 1,
+            }))
+        })
+        .await
+        .expect("event and its committed resource invalidation");
+        assert_eq!(page.events.len(), 1);
+        assert_eq!(page.resources_revision, 1);
+        assert_eq!(page.invalidated_scopes, vec![EventInvalidation::Extensions]);
+    }
+
+    #[tokio::test]
+    async fn newer_resource_watermark_never_advances_an_unread_event_sequence() {
+        let identity = OperationId::new().to_string();
+        let (sender, mut receiver) = watch::channel(EventCommitWatermark {
+            instance_id: identity.clone(),
+            sequence: 0,
+            resources_revision: 0,
+            available: true,
+        });
+        let first = read_committed_page(&mut receiver, &identity, 0, || {
+            sender.send_modify(|watermark| {
+                watermark.sequence = 2;
+                watermark.resources_revision = 1;
+            });
+            ready(Ok(EventPage {
+                events: vec![event(1)],
+                next_sequence: 1,
+            }))
+        })
+        .await
+        .expect("committed event page");
+        assert_eq!(first.next_sequence, 1);
+        assert_eq!(first.resources_revision, 1);
+        let second = read_committed_page(&mut receiver, &identity, 1, || {
+            ready(Ok(EventPage {
+                events: vec![event(2)],
+                next_sequence: 2,
+            }))
+        })
+        .await
+        .expect("committed event page");
+        assert_eq!(second.events[0].sequence, 2);
+        assert_eq!(second.next_sequence, 2);
     }
 
     #[tokio::test]

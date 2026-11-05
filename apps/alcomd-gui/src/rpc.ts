@@ -14,6 +14,10 @@ import type {
     ExtensionUiSnapshotResult,
     RpcError,
     DiagnosticLogReadParams,
+    DiagnosticLogHealth,
+    FrontendException,
+    DiagnosticLogHistoryParams,
+    DiagnosticLogHistoryResult,
     DiagnosticLogReadResult
 } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
@@ -24,13 +28,12 @@ import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./
 import type {
     ActivityCursor,
     ActivityListResult,
+    ActivityGetResult,
     BackupApplyRestoreResult,
     BackupCreateResult,
     BackupRecord,
     BackupRestorePlan,
     BackupsListResult,
-    DiagnosticCursor,
-    DiagnosticsListResult,
     ExtensionGrantResult,
     ExtensionOperationResult,
     ExtensionPlanResult,
@@ -101,8 +104,15 @@ export interface GuiRpcClient {
     settingsGet(): Promise<SettingsGetResult>;
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult>;
     activityList(cursor?: ActivityCursor): Promise<ActivityListResult>;
-    diagnosticsList(cursor?: DiagnosticCursor): Promise<DiagnosticsListResult>;
+    activityGet(activityId: string): Promise<ActivityGetResult>;
+    diagnosticLogHealth(): Promise<DiagnosticLogHealth>;
+    localLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
+    localLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult>;
+    localLogHealth(): Promise<DiagnosticLogHealth>;
+    localLogCancel(): Promise<void>;
+    reportFrontendError(error: FrontendException): Promise<void>;
     diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
+    diagnosticLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult>;
     diagnosticLogCancel(): Promise<void>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
     projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult>;
@@ -250,9 +260,13 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_activity_list", { params: { cursor, limit: 100 } });
     }
 
-    diagnosticsList(cursor?: DiagnosticCursor): Promise<DiagnosticsListResult> {
-        return invokeTyped("gui_diagnostics_list", { params: { cursor, limit: 100 } });
-    }
+    activityGet(activityId: string): Promise<ActivityGetResult> { return invokeTyped("gui_activity_get", { activityId }); }
+    diagnosticLogHealth(): Promise<DiagnosticLogHealth> { return invokeTyped("gui_diagnostic_log_health", {}); }
+    localLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult> { return invokeTyped("gui_local_log_read", { params }); }
+    localLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult> { return invokeTyped("gui_local_log_history", { params }); }
+    localLogHealth(): Promise<DiagnosticLogHealth> { return invokeTyped("gui_local_log_health", {}); }
+    localLogCancel(): Promise<void> { return invokeTyped("gui_local_log_cancel", {}); }
+    reportFrontendError(error: FrontendException): Promise<void> { return invokeTyped("gui_report_frontend_error", { error }); }
 
     diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult> {
         return invokeTyped("gui_diagnostic_log_read", { params });
@@ -260,6 +274,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     diagnosticLogCancel(): Promise<void> {
         return invokeTyped("gui_diagnostic_log_cancel", {});
+    }
+
+    diagnosticLogHistory(params: DiagnosticLogHistoryParams): Promise<DiagnosticLogHistoryResult> {
+        return invokeTyped("gui_diagnostic_log_history", { params });
     }
 
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult> {

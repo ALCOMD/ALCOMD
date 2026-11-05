@@ -214,18 +214,9 @@ pub enum UnityHubOpenOutcome {
     DownloadRequired,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnityHubOpenError {
-    InvalidInput,
-    PermissionDenied,
-    RevisionConflict,
-    PathChanged,
-    PathInvalid,
-    Unavailable,
-    Busy,
-    OpenFailed,
-    Internal,
-}
+#[path = "m7_official_error.rs"]
+mod errors;
+pub use errors::*;
 
 /// Command port separate from read-only location inspection. Implementations revalidate
 /// the Core-resolved target, start it without arguments and retain child-reaping ownership.
@@ -255,19 +246,19 @@ pub trait ConfigStore: Send + Sync + 'static {
     fn publish(&self, snapshot: &ConfigSnapshot) -> Result<(), ConfigStoreError>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigStoreError {
-    Unavailable,
-    Corrupt,
-    TooLarge,
-}
-
 impl From<ConfigStoreError> for OfficialGuiError {
     fn from(error: ConfigStoreError) -> Self {
-        match error {
-            ConfigStoreError::Unavailable => Self::Unavailable,
-            ConfigStoreError::Corrupt => Self::Corrupt,
-            ConfigStoreError::TooLarge => Self::InvalidInput,
+        let value = match error.kind() {
+            ConfigStoreErrorKind::Unavailable => Self::Unavailable,
+            ConfigStoreErrorKind::Corrupt => Self::Corrupt,
+            ConfigStoreErrorKind::TooLarge => Self::InvalidInput,
+        };
+        let id = error.diagnostic_id().map(str::to_owned);
+        let path = error.path().map(str::to_owned);
+        let value = value.with_source(error).with_diagnostic_id(id);
+        match path {
+            Some(path) => value.with_path(path),
+            None => value,
         }
     }
 }
@@ -343,54 +334,58 @@ pub struct ConfigPackageSettingsUpdate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OfficialActivityCursor {
-    pub occurred_at_ms: u64,
-    pub source_rank: u8,
-    pub stable_id: String,
+    pub started_at_ms: u64,
+    pub activity_id: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum OfficialActivityKind {
-    Operation,
-    Event,
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfficialActivitySubject {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OfficialActivityItem {
-    pub occurred_at_ms: u64,
-    pub kind: OfficialActivityKind,
-    pub summary_code: String,
+    pub activity_id: String,
+    pub revision: u64,
+    pub action: String,
+    pub status: String,
+    pub started_at_ms: u64,
+    pub finished_at_ms: Option<u64>,
+    pub subject: OfficialActivitySubject,
+    pub parameters: serde_json::Value,
+    pub result: Option<OfficialActivityResult>,
     pub operation_id: Option<String>,
-    pub event_sequence: Option<u64>,
-    pub resource_kind: Option<String>,
-    pub resource_id: Option<String>,
-    pub state: Option<String>,
+    pub diagnostic_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OfficialActivityResult {
+    pub code: String,
+}
+
+/// Accepted command context only. Ordinary queries and rejected authorization
+/// must never call the failure-history write use case.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NewFailedActivity {
+    pub activity_id: String,
+    pub action: String,
+    pub subject: OfficialActivitySubject,
+    pub parameters: serde_json::Value,
+    pub diagnostic_id: Option<String>,
+    pub occurred_at_ms: u64,
+    pub error_code: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OfficialActivityPage {
     pub items: Vec<OfficialActivityItem>,
     pub next_cursor: Option<OfficialActivityCursor>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialDiagnosticCursor {
-    pub occurred_at_ms: u64,
-    pub operation_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialDiagnosticItem {
-    pub occurred_at_ms: u64,
-    pub subsystem: String,
-    pub code: String,
-    pub diagnostic_id: Option<String>,
-    pub operation_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OfficialDiagnosticPage {
-    pub items: Vec<OfficialDiagnosticItem>,
-    pub next_cursor: Option<OfficialDiagnosticCursor>,
 }
 
 pub trait OfficialGuiStore: Clone + Send + Sync + 'static {
@@ -401,12 +396,16 @@ pub trait OfficialGuiStore: Clone + Send + Sync + 'static {
         limit: u32,
     ) -> impl std::future::Future<Output = Result<OfficialActivityPage, StoreError>> + Send;
 
-    fn list_official_diagnostics(
+    fn get_official_activity(
         &self,
         owner: PrincipalId,
-        cursor: Option<OfficialDiagnosticCursor>,
-        limit: u32,
-    ) -> impl std::future::Future<Output = Result<OfficialDiagnosticPage, StoreError>> + Send;
+        activity_id: String,
+    ) -> impl std::future::Future<Output = Result<OfficialActivityItem, StoreError>> + Send;
+    fn record_failed_activity(
+        &self,
+        owner: PrincipalId,
+        activity: NewFailedActivity,
+    ) -> impl std::future::Future<Output = Result<OfficialActivityItem, StoreError>> + Send;
 }
 
 #[derive(Clone)]
@@ -474,7 +473,11 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             Ok(snapshot)
         })
         .await
-        .map_err(|_| OfficialGuiError::Unavailable)?
+        .map_err(|error| {
+            OfficialGuiError::Unavailable
+                .with_source(error)
+                .record("settings read worker did not complete")
+        })?
     }
 
     pub async fn initialize_settings(&self) -> Result<(), OfficialGuiError> {
@@ -490,7 +493,11 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             Ok(())
         })
         .await
-        .map_err(|_| OfficialGuiError::Unavailable)?
+        .map_err(|error| {
+            OfficialGuiError::Unavailable
+                .with_source(error)
+                .record("settings initialization worker did not complete")
+        })?
     }
 
     /// Immutable initialized configuration for read-only evidence; never opens a file.
@@ -541,7 +548,11 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             resolve_storage_directories(&paths, platform.as_ref(), &defaults)
         })
         .await
-        .map_err(|_| OfficialGuiError::Unavailable)?
+        .map_err(|error| {
+            OfficialGuiError::Unavailable
+                .with_source(error)
+                .record("storage directory worker did not complete")
+        })?
     }
 
     pub async fn effective_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
@@ -589,7 +600,17 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         // process-creation acknowledgement. Child lifetime belongs to the launcher.
         tokio::task::spawn_blocking(move || {
             *guard = None;
-            let snapshot = config.load().map_err(|_| UnityHubOpenError::Unavailable)?;
+            let snapshot = config.load().map_err(|error| {
+                let diagnostic = error.diagnostic_id().map(str::to_owned);
+                let path = error.path().map(str::to_owned);
+                let value = UnityHubOpenError::Unavailable
+                    .with_source(error)
+                    .with_diagnostic_id(diagnostic);
+                match path {
+                    Some(path) => value.with_path(path),
+                    None => value,
+                }
+            })?;
             *guard = Some(snapshot.clone());
             if snapshot.revision != expected_revision {
                 return Err(UnityHubOpenError::RevisionConflict);
@@ -615,7 +636,11 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             }
         })
         .await
-        .map_err(|_| UnityHubOpenError::Internal)?
+        .map_err(|error| {
+            UnityHubOpenError::Internal
+                .with_source(error)
+                .record("Unity Hub dispatch worker did not complete")
+        })?
     }
 
     pub async fn update_settings(
@@ -718,7 +743,11 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             Ok(snapshot)
         })
         .await
-        .map_err(|_| OfficialGuiError::Unavailable)?
+        .map_err(|error| {
+            OfficialGuiError::Unavailable
+                .with_source(error)
+                .record("settings publication worker did not complete")
+        })?
     }
 
     pub async fn list_activity(
@@ -735,43 +764,83 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         self.store
             .list_official_activity(access.principal().clone(), cursor, limit)
             .await
-            .map_err(Into::into)
+            .map_err(|error| {
+                OfficialGuiError::from(error).record("failed to read activity history")
+            })
     }
 
-    pub async fn list_diagnostics(
+    pub async fn get_activity(
         &self,
         access: &AccessContext,
-        cursor: Option<OfficialDiagnosticCursor>,
-        limit: Option<u32>,
-    ) -> Result<OfficialDiagnosticPage, OfficialGuiError> {
+        activity_id: String,
+    ) -> Result<OfficialActivityItem, OfficialGuiError> {
         access
-            .require(Permission::DiagnosticsRead)
+            .require(Permission::ActivityRead)
             .map_err(|_| OfficialGuiError::PermissionDenied)?;
-        let limit = validate_limit(limit)?;
-        if cursor.as_ref().is_some_and(|value| {
-            value.occurred_at_ms > i64::MAX as u64 || !safe_identity(&value.operation_id)
-        }) {
+        if !canonical_uuid(&activity_id) {
             return Err(OfficialGuiError::InvalidInput);
         }
         self.store
-            .list_official_diagnostics(access.principal().clone(), cursor, limit)
+            .get_official_activity(access.principal().clone(), activity_id)
             .await
-            .map_err(Into::into)
+            .map_err(|error| {
+                if error.kind() == crate::StoreErrorKind::OperationNotFound {
+                    OfficialGuiError::ActivityNotFound
+                } else {
+                    OfficialGuiError::Unavailable
+                        .with_source(error)
+                        .record("failed to read activity")
+                }
+            })
+    }
+
+    /// The transport supplies the already authenticated command permission,
+    /// never a client-supplied history-write capability.
+    pub async fn record_failed_activity(
+        &self,
+        access: &AccessContext,
+        command_permission: Permission,
+        activity: NewFailedActivity,
+    ) -> Result<OfficialActivityItem, OfficialGuiError> {
+        if !matches!(
+            command_permission,
+            Permission::ProjectsManage
+                | Permission::ProjectsCreate
+                | Permission::ProjectsDelete
+                | Permission::ProjectsUnityMigrate
+                | Permission::RepositoriesManage
+                | Permission::PackagesManage
+                | Permission::UnityManage
+                | Permission::UnityLaunch
+                | Permission::UnityHubOpen
+                | Permission::TemplatesManage
+                | Permission::BackupsManage
+                | Permission::ExtensionsManage
+                | Permission::ExtensionsPermissionsManage
+                | Permission::StateCheck
+                | Permission::OperationsCancel
+        ) {
+            return Err(OfficialGuiError::PermissionDenied);
+        }
+        access
+            .require(command_permission)
+            .map_err(|_| OfficialGuiError::PermissionDenied)?;
+        if !valid_failed_activity(&activity) {
+            return Err(OfficialGuiError::InvalidInput);
+        }
+        self.store
+            .record_failed_activity(access.principal().clone(), activity)
+            .await
+            .map_err(|error| {
+                OfficialGuiError::from(error)
+                    .record("failed to persist rejected execution activity")
+            })
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum OfficialGuiError {
-    InvalidInput,
-    PermissionDenied,
-    RevisionConflict,
-    Unavailable,
-    Corrupt,
-}
-
 impl From<StoreError> for OfficialGuiError {
-    fn from(_: StoreError) -> Self {
-        Self::Unavailable
+    fn from(error: StoreError) -> Self {
+        Self::Unavailable.with_source(error)
     }
 }
 
@@ -983,14 +1052,87 @@ fn validate_activity_cursor(
     cursor: Option<&OfficialActivityCursor>,
 ) -> Result<(), OfficialGuiError> {
     if cursor.is_some_and(|value| {
-        value.occurred_at_ms > i64::MAX as u64
-            || value.source_rank > 1
-            || !safe_identity(&value.stable_id)
+        value.started_at_ms > i64::MAX as u64 || !canonical_uuid(&value.activity_id)
     }) {
         Err(OfficialGuiError::InvalidInput)
     } else {
         Ok(())
     }
+}
+
+fn valid_failed_activity(value: &NewFailedActivity) -> bool {
+    canonical_uuid(&value.activity_id)
+        && value.occurred_at_ms <= i64::MAX as u64
+        && value.action.len() <= 128
+        && safe_identity(&value.action)
+        && value.subject.kind.len() <= 64
+        && safe_identity(&value.subject.kind)
+        && value
+            .subject
+            .id
+            .as_deref()
+            .is_none_or(|id| id.len() <= 255 && safe_identity(id))
+        && value
+            .subject
+            .name
+            .as_deref()
+            .is_none_or(|name| name.chars().count() <= 512 && !name.chars().any(char::is_control))
+        && value.diagnostic_id.as_deref().is_none_or(canonical_uuid)
+        && value.error_code.len() <= 128
+        && safe_identity(&value.error_code)
+        && valid_activity_parameters(&value.action, &value.parameters)
+}
+
+pub fn valid_activity_parameters(action: &str, value: &serde_json::Value) -> bool {
+    let allowed: &[&str] = match action {
+        "project.favorite" | "template.favorite" => &["favorite"],
+        "extensions.permission.change" => &["permission", "granted"],
+        "packages.install" | "packages.remove" | "packages.upgrade" | "packages.downgrade"
+        | "packages.resolve" | "packages.reinstall" | "packages.bulk" => &["planId", "changeCount"],
+        "packages.apply"
+        | "projects.copy"
+        | "projects.delete-directory"
+        | "backups.restore"
+        | "templates.import"
+        | "templates.derive"
+        | "templates.create-project"
+        | "extensions.install"
+        | "extensions.uninstall" => &["planId"],
+        "projects.unity-migration" => &["planId", "unityVersion"],
+        "backups.create" => &["compression", "excludeVpmPackages", "includeLibrary"],
+        "state.check"
+        | "project.add"
+        | "project.refresh"
+        | "project.remove"
+        | "repository.add"
+        | "repository.fetch"
+        | "repository.remove"
+        | "unity.installation.add"
+        | "unity.installation.remove"
+        | "unity.launch-config.change"
+        | "unity.launch"
+        | "template.remove"
+        | "user-package.add"
+        | "user-package.refresh"
+        | "user-package.remove"
+        | "extensions.enable"
+        | "extensions.disable" => &[],
+        _ => return false,
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    serde_json::to_vec(value).is_ok_and(|bytes| bytes.len() <= 8192)
+        && object.keys().all(|key| allowed.contains(&key.as_str()))
+        && object.iter().all(|(key, value)| match key.as_str() {
+            "planId" => value.as_str().is_some_and(canonical_uuid),
+            "compression" | "unityVersion" | "permission" => value
+                .as_str()
+                .is_some_and(|text| text.len() <= 128 && !text.chars().any(char::is_control)),
+            "favorite" | "includeLibrary" | "excludeVpmPackages" | "granted" => value.is_boolean(),
+            "changeCount" => value.as_u64().is_some_and(|count| count <= 100_000),
+            _ => false,
+        })
 }
 
 fn safe_identity(value: &str) -> bool {
@@ -1052,6 +1194,88 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn activity_parameter_contract_rejects_cross_action_fields_and_secrets() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../specs/rpc/m7-official-gui.schema.json"
+        ))
+        .expect("activity contract JSON");
+        let item = &contract["$defs"]["activityItem"];
+        let samples = serde_json::json!({
+            "planId": "11111111-1111-4111-8111-111111111111", "changeCount": 1,
+            "favorite": true, "permission": "network", "granted": false,
+            "unityVersion": "2022.3.22f1", "compression": "fast",
+            "excludeVpmPackages": false, "includeLibrary": true
+        });
+        for action in item["properties"]["action"]["enum"]
+            .as_array()
+            .expect("closed action list")
+        {
+            let action = action.as_str().expect("action name");
+            assert!(
+                valid_activity_parameters(action, &serde_json::json!({})),
+                "{action}"
+            );
+            let branches = item["oneOf"]
+                .as_array()
+                .expect("action-specific parameter contracts");
+            let matches = branches
+                .iter()
+                .filter(|branch| {
+                    let selector = &branch["properties"]["action"];
+                    selector["const"].as_str() == Some(action)
+                        || selector["enum"].as_array().is_some_and(|values| {
+                            values.iter().any(|value| value.as_str() == Some(action))
+                        })
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(matches.len(), 1, "one unambiguous contract for {action}");
+            let parameters = &matches[0]["properties"]["parameters"];
+            assert_eq!(parameters["additionalProperties"], false);
+            let keys = parameters["properties"]
+                .as_object()
+                .expect("closed parameter keys");
+            for (key, value) in samples.as_object().expect("field samples") {
+                let sample = serde_json::json!({key: value});
+                assert_eq!(
+                    valid_activity_parameters(action, &sample),
+                    keys.contains_key(key),
+                    "{action}: {key}"
+                );
+            }
+            for secret in ["argv", "token", "authorization", "environment", "request"] {
+                assert!(
+                    !valid_activity_parameters(action, &serde_json::json!({secret: "private"})),
+                    "{action}: {secret}"
+                );
+            }
+        }
+        assert!(!valid_activity_parameters(
+            "unknown.execute",
+            &serde_json::json!({})
+        ));
+        assert!(!valid_activity_parameters(
+            "project.favorite",
+            &serde_json::json!({"favorite": "true"})
+        ));
+        assert!(!valid_activity_parameters(
+            "packages.install",
+            &serde_json::json!({"changeCount": 100001})
+        ));
+        assert!(!valid_activity_parameters(
+            "packages.install",
+            &serde_json::json!({"planId": "invalid"})
+        ));
+        assert!(!valid_activity_parameters(
+            "projects.unity-migration",
+            &serde_json::json!({"unityVersion": "invalid\nversion"})
+        ));
+        assert!(!valid_activity_parameters(
+            "backups.create",
+            &serde_json::json!({"compression": "x".repeat(129)})
+        ));
+    }
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Condvar, Mutex as StdMutex};
     use tokio::sync::Notify;
@@ -1084,6 +1308,7 @@ mod tests {
             self.failure
                 .lock()
                 .expect("launch error")
+                .clone()
                 .map_or(Ok(()), Err)
         }
     }
@@ -1309,7 +1534,7 @@ mod tests {
             UnityHubOpenError::Unavailable,
         ] {
             let previous_calls = launcher.calls.lock().expect("calls").len();
-            *launcher.failure.lock().expect("failure") = Some(error);
+            *launcher.failure.lock().expect("failure") = Some(error.clone());
             assert_eq!(
                 app.open_unity_hub(
                     &AccessContext::local_owner(),
@@ -1475,20 +1700,27 @@ mod tests {
     #[derive(Clone)]
     struct NoStore;
     impl OfficialGuiStore for NoStore {
+        async fn get_official_activity(
+            &self,
+            _: PrincipalId,
+            _: String,
+        ) -> Result<crate::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not read Activity")
+        }
+        async fn record_failed_activity(
+            &self,
+            _: PrincipalId,
+            _: crate::NewFailedActivity,
+        ) -> Result<crate::OfficialActivityItem, StoreError> {
+            panic!("this fixture must not write Activity")
+        }
+
         async fn list_official_activity(
             &self,
             _: PrincipalId,
             _: Option<OfficialActivityCursor>,
             _: u32,
         ) -> Result<OfficialActivityPage, StoreError> {
-            unreachable!()
-        }
-        async fn list_official_diagnostics(
-            &self,
-            _: PrincipalId,
-            _: Option<OfficialDiagnosticCursor>,
-            _: u32,
-        ) -> Result<OfficialDiagnosticPage, StoreError> {
             unreachable!()
         }
     }
@@ -2499,8 +2731,11 @@ mod tests {
             app.update_settings(&access, 1, locale_update(ConfigLocale::ZhCn))
         );
         let accepted = match (first, second) {
-            (Ok(value), Err(OfficialGuiError::RevisionConflict))
-            | (Err(OfficialGuiError::RevisionConflict), Ok(value)) => value,
+            (Ok(value), Err(error)) | (Err(error), Ok(value))
+                if error.kind() == OfficialGuiErrorKind::RevisionConflict =>
+            {
+                value
+            }
             outcomes => panic!("expected one accepted CAS: {outcomes:?}"),
         };
         assert_eq!(accepted.revision, 2);

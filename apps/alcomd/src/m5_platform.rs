@@ -19,14 +19,18 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
             alcomd_platform::inspect_unity_installation(&inspected_path)
         })
         .await
-        .map_err(|_| invalid_installation())?
         .map_err(|error| {
-            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor installation could not be verified");
+            invalid_installation()
+                .with_path(executable_path.to_string_lossy())
+                .with_source(error)
+        })?
+        .map_err(|error| {
             installation_validation_error(error.kind())
+                .with_path(executable_path.to_string_lossy())
+                .with_source(error)
         })?;
-        observation(value, source_kind).inspect_err(|error| {
-            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor version could not be verified");
-        })
+        observation(value, source_kind)
+            .map_err(|error| error.with_path(executable_path.to_string_lossy()))
     }
 
     async fn discover_installations(
@@ -34,17 +38,13 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
     ) -> Result<Vec<app::UnityInstallationObservation>, app::M5UnityError> {
         tokio::task::spawn_blocking(alcomd_platform::discover_unity_executables)
             .await
-            .map_err(|_| invalid_installation())?
-            .map_err(|error| {
-                tracing::warn!(reason = %error, "Unity Editor discovery failed");
-                installation_validation_error(error.kind())
-            })?
+            .map_err(|error| invalid_installation().with_source(error))?
+            .map_err(|error| installation_validation_error(error.kind()).with_source(error))?
             .into_iter()
             .map(|value| {
                 let path = value.executable_path().to_path_buf();
-                observation(value, app::UnitySourceKind::KnownInstallRoot).inspect_err(|error| {
-                    tracing::warn!(path = %path.display(), reason = %error, "Discovered Unity Editor version could not be verified");
-                })
+                observation(value, app::UnitySourceKind::KnownInstallRoot)
+                    .map_err(|error| error.with_path(path.to_string_lossy()))
             })
             .collect()
     }
@@ -84,9 +84,13 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
     }
 
     async fn path_identity(&self, path: String) -> Result<Vec<u8>, app::M5UnityError> {
-        alcomd_platform::resolve_directory_identity(&PathBuf::from(path))
+        alcomd_platform::resolve_directory_identity(&PathBuf::from(&path))
             .map(|(_, identity)| identity)
-            .map_err(|_| app::M5UnityError::new(app::M5UnityErrorCode::Internal))
+            .map_err(|error| {
+                app::M5UnityError::new(app::M5UnityErrorCode::Internal)
+                    .with_path(path)
+                    .with_source(error)
+            })
     }
 
     async fn launch(
@@ -100,11 +104,15 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
             .map(OsString::from)
             .collect::<Vec<_>>();
         alcomd_platform::launch_unity_editor(
-            &PathBuf::from(executable_path),
-            &PathBuf::from(project_root),
+            &PathBuf::from(&executable_path),
+            &PathBuf::from(&project_root),
             &arguments,
         )
-        .map_err(|_| app::M5UnityError::new(app::M5UnityErrorCode::LaunchFailed))
+        .map_err(|error| {
+            app::M5UnityError::new(app::M5UnityErrorCode::LaunchFailed)
+                .with_path(executable_path)
+                .with_source(error)
+        })
     }
 }
 

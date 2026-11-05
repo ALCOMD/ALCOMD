@@ -8,9 +8,54 @@ const MAX_PATH_BYTES: usize = 4096;
 const MAX_DEFAULT_CANDIDATES: usize = 8;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnityHubPathError {
+pub enum UnityHubPathErrorKind {
     Invalid,
     Unavailable,
+}
+
+#[derive(Clone, Debug)]
+pub struct UnityHubPathError {
+    kind: UnityHubPathErrorKind,
+    source: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
+}
+impl PartialEq for UnityHubPathError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+impl Eq for UnityHubPathError {}
+#[allow(non_upper_case_globals)]
+impl UnityHubPathError {
+    pub const Invalid: Self = Self {
+        kind: UnityHubPathErrorKind::Invalid,
+        source: None,
+    };
+    pub const Unavailable: Self = Self {
+        kind: UnityHubPathErrorKind::Unavailable,
+        source: None,
+    };
+    pub fn kind(&self) -> UnityHubPathErrorKind {
+        self.kind
+    }
+    fn with_source(mut self, error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.source = Some(std::sync::Arc::new(error));
+        self
+    }
+}
+impl std::fmt::Display for UnityHubPathError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self.kind {
+            UnityHubPathErrorKind::Invalid => "Unity Hub executable path is invalid",
+            UnityHubPathErrorKind::Unavailable => "Unity Hub executable cannot be inspected",
+        })
+    }
+}
+impl std::error::Error for UnityHubPathError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|value| value as &(dyn std::error::Error + 'static))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,10 +177,10 @@ fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> 
                     configured_path_status: ConfiguredUnityHubStatus::Available,
                 };
             }
-            Err(UnityHubPathError::Invalid) => {
+            Err(error) if error.kind() == UnityHubPathErrorKind::Invalid => {
                 configured_path_status = ConfiguredUnityHubStatus::Invalid;
             }
-            Err(UnityHubPathError::Unavailable) => {
+            Err(_) => {
                 return missing(
                     UnityHubAvailability::Unavailable,
                     ConfiguredUnityHubStatus::Unavailable,
@@ -161,8 +206,8 @@ fn inspect_candidates(configured_path: Option<&str>, defaults: Vec<PathBuf>) -> 
                     configured_path_status,
                 };
             }
-            Err(UnityHubPathError::Invalid) => {}
-            Err(UnityHubPathError::Unavailable) => {
+            Err(error) if error.kind() == UnityHubPathErrorKind::Invalid => {}
+            Err(_) => {
                 return missing(UnityHubAvailability::Unavailable, configured_path_status);
             }
         }
@@ -189,13 +234,14 @@ fn valid_text(value: &str) -> bool {
 }
 
 fn classify_io(error: io::Error) -> UnityHubPathError {
-    match error.kind() {
+    let classified = match error.kind() {
         io::ErrorKind::NotFound
         | io::ErrorKind::NotADirectory
         | io::ErrorKind::InvalidInput
         | io::ErrorKind::InvalidData => UnityHubPathError::Invalid,
         _ => UnityHubPathError::Unavailable,
-    }
+    };
+    classified.with_source(error)
 }
 
 #[cfg(windows)]
@@ -362,6 +408,16 @@ mod tests {
 
     #[test]
     fn unreadable_metadata_is_not_classified_as_an_absent_or_invalid_path() {
+        let source = classify_io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "isolated metadata denial",
+        ));
+        assert_eq!(
+            std::error::Error::source(&source)
+                .expect("actual metadata cause")
+                .to_string(),
+            "isolated metadata denial"
+        );
         assert_eq!(
             classify_io(io::Error::from(io::ErrorKind::PermissionDenied)),
             UnityHubPathError::Unavailable

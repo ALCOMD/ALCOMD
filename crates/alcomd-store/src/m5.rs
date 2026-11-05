@@ -181,6 +181,15 @@ pub(super) fn remove_installation(
     if record.revision != expected {
         return Err(error(M5UnityErrorCode::RevisionConflict));
     }
+    super::activity::resource(
+        &transaction,
+        owner,
+        "unity.installation.remove",
+        "unity-installation",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(failure)?;
     transaction
         .execute(
             "DELETE FROM unity_installations WHERE installation_id=?1 AND owner_principal_id=?2",
@@ -570,6 +579,14 @@ pub(super) fn accept_launch(
             now_ms,
         )?;
     }
+    super::activity::launch_created(
+        &transaction,
+        owner,
+        &record.launch_id.to_string(),
+        &project.project_id.to_string(),
+        now_ms,
+    )
+    .map_err(failure)?;
     save_response(
         &transaction,
         owner,
@@ -672,6 +689,7 @@ pub(super) fn set_launch_state(
     launch_id: UnityLaunchId,
     state: UnityLaunchState,
     spawn_accepted: bool,
+    diagnostic_id: Option<String>,
 ) -> Result<UnityLaunchRecord, M5UnityError> {
     let transaction = transaction(connection)?;
     let mut stored = load_launch(&transaction, owner, launch_id)?;
@@ -686,6 +704,16 @@ pub(super) fn set_launch_state(
             params![response, owner.as_str(), launch_id.to_string()],
         )
         .map_err(failure)?;
+    super::activity::launch_updated(
+        &transaction,
+        owner,
+        &launch_id.to_string(),
+        stored.record.created_at_ms,
+        state == UnityLaunchState::Failed,
+        spawn_accepted,
+        diagnostic_id.as_deref(),
+    )
+    .map_err(failure)?;
     transaction.commit().map_err(failure)?;
     Ok(stored.record)
 }
@@ -838,6 +866,15 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
+    super::activity::resource_event(
+        transaction,
+        owner,
+        kind,
+        aggregate_kind,
+        aggregate_id,
+        now_ms,
+    )
+    .map_err(failure)?;
     Ok(())
 }
 
@@ -930,8 +967,8 @@ fn transaction(connection: &mut Connection) -> Result<Transaction<'_>, M5UnityEr
         .map_err(failure)
 }
 
-fn failure(_: rusqlite::Error) -> M5UnityError {
-    unavailable()
+fn failure(source: rusqlite::Error) -> M5UnityError {
+    unavailable().with_source(source)
 }
 
 pub(super) fn unavailable() -> M5UnityError {

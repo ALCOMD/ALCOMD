@@ -30,7 +30,7 @@ pub struct PackageEngine<S: M4Store + StateStore> {
 impl<S: M4Store + StateStore> PackageEngine<S> {
     pub fn new(store: S, reader: VpmReader, cache_root: PathBuf) -> Result<Self, M4Error> {
         let cache = PackageCache::new(cache_root)
-            .map_err(|_| M4Error::new(M4ErrorCode::PackageCacheCorrupt))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause))?;
         Ok(Self {
             store,
             reader,
@@ -51,7 +51,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             move || inspect_package_project(&project)
         })
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::Internal))??;
+        .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
         if request.action == PlanAction::Reinstall {
             return prepare_reinstall(&self.cache, &snapshot, &project, &catalog, &request).await;
         }
@@ -74,7 +74,9 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                     Ok(ResolveRequest {
                         package_id: dependency.package_id.clone(),
                         range: crate::range::ProjectDependencyRange::parse(&dependency.value)
-                            .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?
+                            .map_err(|cause| {
+                                M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                            })?
                             .canonical(),
                         source: None,
                         include_prerelease: request.include_prerelease,
@@ -122,7 +124,10 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         plan: PackagePlanRecord,
         locks: Arc<ResourceLockCoordinator>,
     ) -> Result<PackageApplyCompletion, M4Error> {
-        self.execute(operation_id, project, plan, locks).await
+        let path = project.observation.root_path.clone();
+        self.execute(operation_id, project, plan, locks)
+            .await
+            .map_err(|source| source.with_path(path))
     }
 }
 
@@ -230,7 +235,9 @@ async fn prepare_bulk(
                 (
                     crate::range::ProjectDependencyRange::parse(&dependency.value)
                         .map(|range| range.canonical())
-                        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
+                        .map_err(|cause| {
+                            M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                        })?,
                     None,
                     false,
                 ),
@@ -371,7 +378,7 @@ async fn prepare_bulk(
                 .get(&package_id)
                 .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?,
         )
-        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
         let selected = resolution
             .packages
             .iter()
@@ -452,7 +459,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
     ) -> Result<PackageApplyCompletion, M4Error> {
         let root = PathBuf::from(&project.observation.root_path);
         let (_, actual_identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         if actual_identity != project.observation.path_identity_key {
             return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
         }
@@ -470,12 +477,13 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             .next_filesystem_journal_step(operation_id)
             .await?;
         let attempt = transaction_root.join(format!("attempt-{next_step:020}"));
-        std::fs::create_dir(&attempt).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        std::fs::create_dir(&attempt)
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         let staging = attempt.join("staging");
         let backup = attempt.join("backup");
         std::fs::create_dir(&staging)
             .and_then(|()| std::fs::create_dir(&backup))
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         sync_directories(&[&attempt, &transaction_root])?;
 
         let mut archives = BTreeMap::<String, PathBuf>::new();
@@ -507,7 +515,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             format!("{{\"objects\":{}}}", archives.len()),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(
@@ -522,11 +530,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         for (package_id, archive) in archives {
             let destination = staging.join(&package_id);
             std::fs::create_dir(&destination)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
             let extraction_destination = destination.clone();
             tokio::task::spawn_blocking(move || extract_archive(&archive, &extraction_destination))
                 .await
-                .map_err(|_| M4Error::new(M4ErrorCode::Internal))?
+                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
                 .map_err(map_archive_error)?;
             let expected_version = plan
                 .change_set
@@ -535,8 +543,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 .find(|mutation| mutation.package_id == package_id)
                 .and_then(|mutation| mutation.to_version.as_deref())
                 .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
-            validate_extracted_package(&destination, &package_id, expected_version)
-                .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+            validate_extracted_package(&destination, &package_id, expected_version).map_err(
+                |cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause),
+            )?;
             if plan.change_set.format_version >= 3 {
                 verify_extracted_legacy(&root, &destination)?;
             }
@@ -559,7 +568,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(&plan, FilesystemPhase::Extracted, JournalState::Completed),
@@ -631,7 +640,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(&plan, FilesystemPhase::Prepared, JournalState::Completed),
@@ -674,7 +683,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 "{}".to_owned(),
             )
             .await
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
             return Err(error);
         }
         append_phase(
@@ -688,7 +697,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(
@@ -710,7 +719,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(
@@ -737,7 +746,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 "{}".to_owned(),
             )
             .await
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
             return Err(error);
         }
         append_phase(
@@ -751,7 +760,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(
@@ -778,7 +787,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 "{}".to_owned(),
             )
             .await
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
             return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
         }
         verify_final_state(&root, &attempt, &plan)?;
@@ -793,7 +802,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         write_marker(
             &attempt,
             &AttemptMarker::new(
@@ -815,7 +824,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             "{}".to_owned(),
         )
         .await
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         self.completion(&root, &plan).await
     }
 
@@ -828,7 +837,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         locks: &Arc<ResourceLockCoordinator>,
     ) -> Result<Option<PackageApplyCompletion>, M4Error> {
         let mut attempts = std::fs::read_dir(transaction_root)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?
+            .map_err(|cause| {
+                M4Error::new(M4ErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(transaction_root.display().to_string())
+            })?
             .filter_map(Result::ok)
             .filter(|entry| entry.file_name().to_string_lossy().starts_with("attempt-"))
             .map(|entry| entry.path())
@@ -837,7 +850,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         for attempt in attempts {
             let marker = match read_marker(&attempt) {
                 Ok(marker) => marker,
-                Err(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
+                Err(cause) => {
+                    return Err(M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause));
+                }
             };
             if marker.plan_id != plan.plan_id.to_string()
                 || marker.change_set_fingerprint != hex(&plan.change_set_fingerprint)
@@ -896,7 +911,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 ProjectDiscoveryMode::ExactRoot,
             )
             .await
-            .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+            .map_err(|cause| {
+                M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            })?;
         Ok(PackageApplyCompletion {
             project_observation: observation,
             result_json: format!(
@@ -928,7 +947,7 @@ async fn revalidate(
         move || inspect_package_project(&project)
     })
     .await
-    .map_err(|_| M4Error::new(M4ErrorCode::Internal))??;
+    .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
     if snapshot.fingerprint != plan.project_snapshot_fingerprint {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
@@ -1032,7 +1051,9 @@ fn resolution_requests(
                 Ok(ResolveRequest {
                     package_id: dependency.package_id.clone(),
                     range: crate::range::ProjectDependencyRange::parse(&dependency.value)
-                        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?
+                        .map_err(|cause| {
+                            M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                        })?
                         .canonical(),
                     source: None,
                     include_prerelease: request.include_prerelease,
@@ -1084,7 +1105,7 @@ fn validate_action_direction(
         .find(|dependency| dependency.package_id == package_id)
         .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
     let installed = Version::parse(&installed.value)
-        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
     let selected = resolution
         .packages
         .iter()
@@ -1107,6 +1128,8 @@ pub(crate) fn parse_unity_editor_version(
     Ok(crate::UnityVersion::parse_editor(value))
 }
 
+/// Solving collects metadata first; only a read-only target proof can discharge
+/// its cleanup obligations. The package archive is pinned by its approved hash.
 pub(crate) async fn resolve_project_packages(
     cache: &PackageCache,
     root: &Path,
@@ -1155,13 +1178,13 @@ pub(crate) async fn resolve_project_packages(
 fn verify_extracted_legacy(root: &Path, extracted: &Path) -> Result<(), M4Error> {
     let bytes = read_regular_file(&extracted.join("package.json"), 4 * 1024 * 1024)?;
     let manifest: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
     let metadata = crate::package::LegacyMetadata::parse(
         manifest
             .as_object()
             .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
     )
-    .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+    .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
     crate::legacy::verify_absent(root, &metadata)
 }
 
@@ -1231,15 +1254,19 @@ fn ensure_directory_chain(root: &Path, relative: &Path) -> Result<(), M4Error> {
             Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {}
             Ok(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                std::fs::create_dir(&current)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
-                let metadata = std::fs::symlink_metadata(&current)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                std::fs::create_dir(&current).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
+                let metadata = std::fs::symlink_metadata(&current).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
                 if !metadata.is_dir() || is_link_or_reparse(&metadata) {
                     return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
                 }
             }
-            Err(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),
+            Err(cause) => {
+                return Err(M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause));
+            }
         }
     }
     Ok(())
@@ -1260,8 +1287,9 @@ fn replace_packages(
                 return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
             }
             Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {
-                std::fs::rename(&target, &backup_target)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                std::fs::rename(&target, &backup_target).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
                 sync_directories(&[packages_root, backup])?;
                 test_kill_gate(attempt, "old_package_backed_up")?;
             }
@@ -1271,16 +1299,18 @@ fn replace_packages(
                     return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
                 }
             }
-            Err(_) => return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply)),
+            Err(cause) => {
+                return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply).with_source(cause));
+            }
         }
         if mutation.kind != PackageMutationKind::Remove {
             std::fs::rename(staging.join(&mutation.package_id), &target)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
             sync_directories(&[packages_root, staging])?;
             test_kill_gate(attempt, "new_package_published")?;
         }
         alcomd_platform::sync_directory(packages_root)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     }
     Ok(())
 }
@@ -1294,8 +1324,11 @@ fn test_kill_gate(attempt: &Path, checkpoint: &str) -> Result<(), M4Error> {
         &attempt.join(format!("test-kill-gate-{checkpoint}.json")),
         format!("{{\"checkpoint\":\"{checkpoint}\"}}\n").as_bytes(),
     )?;
-    alcomd_platform::sync_directory(attempt)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    alcomd_platform::sync_directory(attempt).map_err(|cause| {
+        M4Error::new(M4ErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(attempt.display().to_string())
+    })?;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
@@ -1309,7 +1342,7 @@ fn test_kill_gate(_attempt: &Path, _checkpoint: &str) -> Result<(), M4Error> {
 fn commit_manifest(manifest_path: &Path, attempt: &Path) -> Result<(), M4Error> {
     let committed_old = attempt.join("vpm-manifest.commit-old");
     std::fs::rename(manifest_path, &committed_old)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     if std::fs::rename(attempt.join("vpm-manifest.new"), manifest_path).is_err() {
         let _ = std::fs::rename(&committed_old, manifest_path);
         return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
@@ -1319,7 +1352,7 @@ fn commit_manifest(manifest_path: &Path, attempt: &Path) -> Result<(), M4Error> 
             .parent()
             .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?,
     )
-    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))
+    .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))
 }
 
 fn verify_final_state(
@@ -1344,7 +1377,7 @@ fn verify_final_state(
             continue;
         }
         let metadata = std::fs::symlink_metadata(&target)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         if !metadata.is_dir() || is_link_or_reparse(&metadata) {
             return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
         }
@@ -1356,7 +1389,7 @@ fn verify_final_state(
                 .as_deref()
                 .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?,
         )
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     }
     Ok(())
 }
@@ -1369,20 +1402,21 @@ fn rollback_attempt(
 ) -> Result<(), M4Error> {
     let rolled = attempt.join("rolled-forward-content");
     if !rolled.exists() {
-        std::fs::create_dir(&rolled).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        std::fs::create_dir(&rolled)
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     }
     let committed_old = attempt.join("vpm-manifest.commit-old");
     if committed_old.exists() {
         let rolled_manifest = rolled.join("vpm-manifest.new");
         if manifest_path.exists() && !rolled_manifest.exists() {
             std::fs::rename(manifest_path, &rolled_manifest)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         }
         if manifest_path.exists() {
             return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
         }
         std::fs::rename(&committed_old, manifest_path)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     }
     let backup = attempt.join("backup");
     for mutation in plan.change_set.mutations.iter().rev() {
@@ -1392,19 +1426,21 @@ fn rollback_attempt(
         if mutation.kind == PackageMutationKind::Install {
             let staged = attempt.join("staging").join(&mutation.package_id);
             if !staged.exists() && target.exists() && !rolled_target.exists() {
-                std::fs::rename(&target, &rolled_target)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                std::fs::rename(&target, &rolled_target).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
             }
         } else if old.exists() {
             if target.exists() && !rolled_target.exists() {
-                std::fs::rename(&target, &rolled_target)
-                    .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                std::fs::rename(&target, &rolled_target).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
             }
             if target.exists() {
                 return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
             }
             std::fs::rename(&old, &target)
-                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         }
     }
     sync_directories(&[packages_root, attempt])
@@ -1433,16 +1469,27 @@ impl AttemptMarker {
 }
 
 fn write_marker(attempt: &Path, marker: &AttemptMarker, step: u64) -> Result<(), M4Error> {
-    let bytes = serde_json::to_vec(marker).map_err(|_| M4Error::new(M4ErrorCode::Internal))?;
+    let bytes = serde_json::to_vec(marker).map_err(|cause| {
+        M4Error::new(M4ErrorCode::Internal)
+            .with_source(cause)
+            .with_path(attempt.display().to_string())
+    })?;
     let marker_path = attempt.join(format!("marker-{step:020}.json"));
     write_new_file(&marker_path, &bytes)?;
-    alcomd_platform::sync_directory(attempt)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))
+    alcomd_platform::sync_directory(attempt).map_err(|cause| {
+        M4Error::new(M4ErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(attempt.display().to_string())
+    })
 }
 
 fn read_marker(attempt: &Path) -> Result<AttemptMarker, M4Error> {
     let marker_path = std::fs::read_dir(attempt)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(attempt.display().to_string())
+        })?
         .filter_map(Result::ok)
         .filter(|entry| {
             let name = entry.file_name();
@@ -1453,8 +1500,11 @@ fn read_marker(attempt: &Path) -> Result<AttemptMarker, M4Error> {
         .max()
         .ok_or_else(|| M4Error::new(M4ErrorCode::RecoveryRequired))?;
     let bytes = read_regular_file(&marker_path, 65_536)?;
-    let marker: AttemptMarker =
-        serde_json::from_slice(&bytes).map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    let marker: AttemptMarker = serde_json::from_slice(&bytes).map_err(|cause| {
+        M4Error::new(M4ErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(attempt.display().to_string())
+    })?;
     if marker.version != 1 {
         return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
     }
@@ -1501,16 +1551,27 @@ fn write_new_file(path: &Path, bytes: &[u8]) -> Result<(), M4Error> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     file.write_all(bytes)
         .and_then(|()| file.flush())
         .and_then(|()| file.sync_all())
-        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })
 }
 
 fn read_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, M4Error> {
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > limit as u64 {
         return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
     }
@@ -1518,7 +1579,11 @@ fn read_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, M4Error> {
     let mut bytes = Vec::new();
     std::fs::File::open(path)
         .and_then(|file| file.take(limit as u64 + 1).read_to_end(&mut bytes))
-        .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+        .map_err(|cause| {
+            M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     if bytes.len() > limit {
         return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
     }
@@ -1532,7 +1597,7 @@ fn hash_file(path: &Path) -> Result<[u8; 32], M4Error> {
 fn sync_directories(paths: &[&Path]) -> Result<(), M4Error> {
     for path in paths {
         alcomd_platform::sync_directory(path)
-            .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     }
     Ok(())
 }
@@ -1575,7 +1640,7 @@ fn stale(reason: &str) -> Result<(), M4Error> {
 }
 
 fn map_resolve_error(error: ResolveError) -> M4Error {
-    match error {
+    (match error {
         ResolveError::SourceAmbiguous { .. } => M4Error::new(M4ErrorCode::PackageSourceAmbiguous),
         ResolveError::LegacyCleanupRequired { .. } => {
             M4Error::new(M4ErrorCode::PackageLegacyCleanupRequired)
@@ -1595,12 +1660,13 @@ fn map_resolve_error(error: ResolveError) -> M4Error {
         }
         ResolveError::VersionYanked { .. } => M4Error::new(M4ErrorCode::PackageVersionYanked),
         ResolveError::TooManyRequirements => M4Error::new(M4ErrorCode::PlanTooLarge),
-    }
+    })
+    .with_source(error)
 }
 
 fn map_cache_error(error: crate::CacheError) -> M4Error {
     use crate::CacheErrorCode as C;
-    match error.code() {
+    (match error.code() {
         C::Corrupt => M4Error::new(M4ErrorCode::PackageCacheCorrupt),
         C::IntegrityMismatch => M4Error::new(M4ErrorCode::PackageIntegrityMismatch),
         C::DownloadTooLarge => M4Error::new(M4ErrorCode::PackageDownloadTooLarge),
@@ -1609,12 +1675,13 @@ fn map_cache_error(error: crate::CacheError) -> M4Error {
         C::InvalidDigest => M4Error::new(M4ErrorCode::PackageHashRequired),
         C::InvalidUrl => M4Error::new(M4ErrorCode::PackageManifestInvalid),
         C::DownloadFailed | C::Io => M4Error::new(M4ErrorCode::Internal),
-    }
+    })
+    .with_source(error)
 }
 
 fn map_archive_error(error: crate::ArchiveError) -> M4Error {
     use crate::ArchiveErrorCode as C;
-    match error.code() {
+    (match error.code() {
         C::UnsupportedCompression => {
             M4Error::new(M4ErrorCode::PackageArchiveUnsupportedCompression)
         }
@@ -1623,15 +1690,17 @@ fn map_archive_error(error: crate::ArchiveError) -> M4Error {
         C::QuotaExceeded => M4Error::new(M4ErrorCode::PackageArchiveLimitExceeded),
         C::Invalid | C::Encrypted => M4Error::new(M4ErrorCode::PackageArchiveInvalid),
         C::Io => M4Error::new(M4ErrorCode::Internal),
-    }
+    })
+    .with_source(error)
 }
 
 fn time_ms() -> Result<u64, M4Error> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| M4Error::new(M4ErrorCode::Internal))
+        .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))
         .and_then(|duration| {
-            u64::try_from(duration.as_millis()).map_err(|_| M4Error::new(M4ErrorCode::Internal))
+            u64::try_from(duration.as_millis())
+                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))
         })
 }
 

@@ -190,7 +190,13 @@ fn writer_state(value: app::UnityWriterStateKind) -> &'static str {
 }
 
 fn copy_error(id: String, source: app::M7CopyError) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "execution request failed")
+        });
+    let mut error = match source.code() {
         app::M7CopyErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M7CopyErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M7CopyErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -199,6 +205,7 @@ fn copy_error(id: String, source: app::M7CopyError) -> DispatchAction {
         app::M7CopyErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         _ => rpc::RpcError::project_copy(app::project_copy_error_name(source.code())),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }
 

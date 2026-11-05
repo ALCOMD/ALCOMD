@@ -47,6 +47,7 @@ mod events_sources_tests;
 #[cfg(test)]
 mod events_tests;
 
+mod activity;
 mod config;
 mod m3;
 mod m4;
@@ -69,7 +70,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 18;
+pub const CURRENT_DATA_SCHEMA: u32 = 19;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -920,10 +921,13 @@ impl M6Store for StateStoreHandle {
         &self,
         operation_id: OperationId,
         code: alcomd_application::M6ErrorCode,
+        diagnostic_id: String,
         now_ms: u64,
     ) -> Result<(), M6Error> {
         self.request_worker(
-            move |connection| m6::fail_operation(connection, operation_id, code, now_ms),
+            move |connection| {
+                m6::fail_operation(connection, operation_id, code, diagnostic_id, now_ms)
+            },
             m6::unavailable,
         )
         .await
@@ -1298,10 +1302,18 @@ impl M5UnityStore for StateStoreHandle {
         launch_id: UnityLaunchId,
         state: UnityLaunchState,
         spawn_accepted: bool,
+        diagnostic_id: Option<String>,
     ) -> Result<UnityLaunchRecord, M5UnityError> {
         self.request_worker(
             move |connection| {
-                m5::set_launch_state(connection, &owner, launch_id, state, spawn_accepted)
+                m5::set_launch_state(
+                    connection,
+                    &owner,
+                    launch_id,
+                    state,
+                    spawn_accepted,
+                    diagnostic_id,
+                )
             },
             m5::unavailable,
         )
@@ -2021,10 +2033,18 @@ impl M7UnityMigrationStore for StateStoreHandle {
         phase: UnityMigrationPhase,
         evidence: UnityMigrationEvidence,
         now_ms: u64,
+        diagnostic_id: Option<String>,
     ) -> Result<(), M7UnityMigrationError> {
         self.request_worker(
             move |connection| {
-                m7_unity_migration::checkpoint(connection, operation_id, phase, evidence, now_ms)
+                m7_unity_migration::checkpoint(
+                    connection,
+                    operation_id,
+                    phase,
+                    evidence,
+                    now_ms,
+                    diagnostic_id,
+                )
             },
             m7_unity_migration::unavailable,
         )

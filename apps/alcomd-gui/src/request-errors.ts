@@ -10,7 +10,10 @@ export function normalizeRequestError(caught: unknown): RpcError {
         const diagnosticId = typeof value.diagnosticId === "string" && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,4095}$/.test(value.diagnosticId)
             ? value.diagnosticId : undefined;
         // RpcError requires a message field; discard its original contents.
-        return { code, message: "", ...(diagnosticId === undefined ? {} : { diagnosticId }) };
+        const data = typeof value.data === "object" && value.data !== null
+            && (value.data as Record<string, unknown>).activityRecordingUnavailable === true
+            ? { activityRecordingUnavailable: true } : undefined;
+        return { code, message: "", ...(diagnosticId === undefined ? {} : { diagnosticId }), ...(data === undefined ? {} : { data }) };
     } catch {
         return fallback;
     }
@@ -203,7 +206,7 @@ export function requestErrorMessage(code: string): string {
         case "project_version_invalid":
             return "The project's Unity version cannot be read. Check its version file before choosing an Editor.";
         case "project_manifest_invalid":
-            return "The project contains an invalid package manifest. Review it before changing packages.";
+            return "A package manifest in the project could not be read. Check its format and contents.";
         case "project_changed_during_apply":
         case "project_changed_during_template_create":
         case "project_copy_source_changed":

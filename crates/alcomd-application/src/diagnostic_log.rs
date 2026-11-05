@@ -1,738 +1,184 @@
-//! Bounded Core technical-log records and their cancellable read cursor.
+//! Authorization and bounded use cases for technical-log adapters.
+use crate::{AccessContext, Permission, PrincipalId};
 
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use tokio::sync::Notify;
-use tokio::time::Instant;
-
-use crate::{AccessContext, OperationId, Permission, PrincipalId};
-
-pub const DIAGNOSTIC_LOG_CAPACITY: usize = 1024;
-const MAX_SAFE_SEQUENCE: u64 = 9_007_199_254_740_991;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DiagnosticLogLevel {
-    Trace,
-    Debug,
-    Info,
-    Warning,
-    Error,
-}
-
-impl DiagnosticLogLevel {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Trace => "trace",
-            Self::Debug => "debug",
-            Self::Info => "info",
-            Self::Warning => "warning",
-            Self::Error => "error",
-        }
-    }
-
-    const fn fallback_code(self) -> &'static str {
-        match self {
-            Self::Trace => "diagnostic.trace",
-            Self::Debug => "diagnostic.debug",
-            Self::Info => "diagnostic.info",
-            Self::Warning => "diagnostic.warning",
-            Self::Error => "diagnostic.error",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DiagnosticLogCursor {
-    pub instance_id: String,
-    pub sequence: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DiagnosticLogItem {
-    pub instance_id: String,
-    pub sequence: u64,
-    pub occurred_at_ms: u64,
-    pub level: DiagnosticLogLevel,
-    pub code: String,
-    pub message: String,
-    pub target: String,
+#[derive(Clone, Debug, Default)]
+pub struct TechnicalLogQuery {
+    pub search: Option<String>,
+    pub levels: Option<Vec<String>>,
+    pub target: Option<String>,
     pub diagnostic_id: Option<String>,
-    pub notify: bool,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DiagnosticLogPage {
-    pub items: Vec<DiagnosticLogItem>,
-    pub next_cursor: DiagnosticLogCursor,
-    pub reset: bool,
-    pub gap: bool,
+#[derive(Clone, Debug)]
+pub struct TechnicalLogRead {
+    pub cursor: Option<String>,
+    pub limit: u32,
+    pub follow: bool,
+    pub query: TechnicalLogQuery,
 }
-
+#[derive(Clone, Debug)]
+pub struct TechnicalLogHistory {
+    pub cursor: Option<String>,
+    pub before: Option<String>,
+    pub limit: u32,
+    pub query: TechnicalLogQuery,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DiagnosticLogError {
+pub enum TechnicalLogError {
     InvalidInput,
     PermissionDenied,
+    CursorExpired,
+    Unavailable,
 }
 
-struct LogState {
-    instance_id: String,
-    sequence: u64,
-    items: VecDeque<DiagnosticLogItem>,
-    sink: Option<Arc<dyn DiagnosticLogSink>>,
-}
-
-/// A process-owned nonblocking file queue. It must never call back into the log.
-pub trait DiagnosticLogSink: Send + Sync {
-    fn accept(&self, item: &DiagnosticLogItem);
-}
-
-struct LogInner {
-    state: Mutex<LogState>,
-    changed: Notify,
-}
-
-/// One shared in-memory stream for a Core lifetime, independent of GUI visits.
-#[derive(Clone)]
-pub struct DiagnosticLog(Arc<LogInner>);
-
-impl Default for DiagnosticLog {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DiagnosticLog {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(Arc::new(LogInner {
-            state: Mutex::new(LogState {
-                instance_id: new_identity(),
-                sequence: 0,
-                items: VecDeque::with_capacity(DIAGNOSTIC_LOG_CAPACITY),
-                sink: None,
-            }),
-            changed: Notify::new(),
-        }))
-    }
-
-    pub fn attach_sink(&self, sink: Arc<dyn DiagnosticLogSink>) {
-        let mut state = self
-            .0
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        for item in &state.items {
-            sink.accept(item);
-        }
-        state.sink = Some(sink);
-    }
-
-    /// Producers must provide reviewed technical text, never secrets or request payloads.
-    pub fn record(
+pub trait TechnicalLogPort: Clone + Send + Sync + 'static {
+    type ReadPage: Send;
+    type HistoryPage: Send;
+    type Health: Send;
+    fn read(
         &self,
-        level: DiagnosticLogLevel,
-        code: Option<&str>,
-        diagnostic_id: Option<&str>,
-        notify: Option<bool>,
-        message: &str,
-        target: &str,
-    ) -> DiagnosticLogItem {
-        let code = code
-            .filter(|value| safe_code(value))
-            .unwrap_or(level.fallback_code());
-        let diagnostic_id = diagnostic_id
-            .filter(|value| safe_identity(value))
-            .map(str::to_owned)
-            .or_else(|| (level == DiagnosticLogLevel::Error).then(new_identity));
-        let notify = match level {
-            DiagnosticLogLevel::Error => notify.unwrap_or(true),
-            DiagnosticLogLevel::Warning => notify.unwrap_or(false),
-            DiagnosticLogLevel::Trace | DiagnosticLogLevel::Debug | DiagnosticLogLevel::Info => {
-                false
-            }
-        };
-        let mut state = self
-            .0
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        // Never alias a cursor or expose an integer JavaScript cannot represent.
-        if state.sequence == MAX_SAFE_SEQUENCE {
-            state.instance_id = new_identity();
-            state.sequence = 0;
-            state.items.clear();
-        }
-        state.sequence += 1;
-        let item = DiagnosticLogItem {
-            instance_id: state.instance_id.clone(),
-            sequence: state.sequence,
-            occurred_at_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .min(u128::from(MAX_SAFE_SEQUENCE)) as u64,
-            level,
-            code: code.to_owned(),
-            message: bounded_log_message(message),
-            target: if !target.is_empty()
-                && target.len() <= 128
-                && target
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"_:.-".contains(&byte))
-            {
-                target.to_owned()
-            } else {
-                "alcomd".to_owned()
-            },
-            diagnostic_id,
-            notify,
-        };
-        if state.items.len() == DIAGNOSTIC_LOG_CAPACITY {
-            state.items.pop_front();
-        }
-        state.items.push_back(item.clone());
-        if let Some(sink) = &state.sink {
-            sink.accept(&item);
-        }
-        drop(state);
-        self.0.changed.notify_waiters();
-        item
+        request: TechnicalLogRead,
+    ) -> impl std::future::Future<Output = Result<Self::ReadPage, TechnicalLogError>> + Send;
+    fn history(
+        &self,
+        request: TechnicalLogHistory,
+    ) -> impl std::future::Future<Output = Result<Self::HistoryPage, TechnicalLogError>> + Send;
+    fn health(&self) -> Self::Health;
+}
+#[derive(Clone)]
+pub struct TechnicalLogApplication<P> {
+    port: P,
+}
+impl<P: TechnicalLogPort> TechnicalLogApplication<P> {
+    pub fn new(port: P) -> Self {
+        Self { port }
     }
-
-    /// Initial/reset/gap reads return recent history and a tail cursor. Normal
-    /// incremental reads page in order; a gap never pretends continuity.
     pub async fn read(
         &self,
         access: &AccessContext,
-        cursor: Option<DiagnosticLogCursor>,
-        limit: Option<u32>,
-        wait_ms: Option<u32>,
-    ) -> Result<DiagnosticLogPage, DiagnosticLogError> {
-        if access.principal() != &PrincipalId::local_owner()
-            || access.require(Permission::DiagnosticsRead).is_err()
-        {
-            return Err(DiagnosticLogError::PermissionDenied);
-        }
-        let limit = limit.unwrap_or(100);
-        let wait_ms = wait_ms.unwrap_or(0);
-        if !(1..=200).contains(&limit)
-            || wait_ms > 20_000
-            || cursor.as_ref().is_some_and(|value| {
-                !safe_identity(&value.instance_id) || value.sequence > MAX_SAFE_SEQUENCE
-            })
-        {
-            return Err(DiagnosticLogError::InvalidInput);
-        }
-        let deadline = Instant::now() + Duration::from_millis(u64::from(wait_ms));
-        loop {
-            // Register before inspecting the buffer; a record between inspection
-            // and awaiting must wake this read, including concurrent readers.
-            let changed = self.0.changed.notified();
-            tokio::pin!(changed);
-            changed.as_mut().enable();
-            let page = self.snapshot(cursor.as_ref(), limit as usize)?;
-            if cursor.is_none() || page.reset || page.gap || !page.items.is_empty() || wait_ms == 0
-            {
-                return Ok(page);
-            }
-            if tokio::time::timeout_at(deadline, changed).await.is_err() {
-                return self.snapshot(cursor.as_ref(), limit as usize);
-            }
-        }
+        request: TechnicalLogRead,
+    ) -> Result<P::ReadPage, TechnicalLogError> {
+        authorize(access)?;
+        validate(&request.query, request.limit, request.cursor.as_deref())?;
+        self.port.read(request).await
     }
-
-    fn snapshot(
+    pub async fn history(
         &self,
-        cursor: Option<&DiagnosticLogCursor>,
-        limit: usize,
-    ) -> Result<DiagnosticLogPage, DiagnosticLogError> {
-        let state = self
-            .0
-            .state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let reset = cursor.is_some_and(|value| value.instance_id != state.instance_id);
-        let tail = DiagnosticLogCursor {
-            instance_id: state.instance_id.clone(),
-            sequence: state.sequence,
-        };
-        if !reset && cursor.is_some_and(|value| value.sequence > state.sequence) {
-            return Err(DiagnosticLogError::InvalidInput);
+        access: &AccessContext,
+        request: TechnicalLogHistory,
+    ) -> Result<P::HistoryPage, TechnicalLogError> {
+        authorize(access)?;
+        validate(&request.query, request.limit, request.cursor.as_deref())?;
+        if request
+            .before
+            .as_ref()
+            .is_some_and(|v| v.is_empty() || v.len() > 1024)
+        {
+            return Err(TechnicalLogError::InvalidInput);
         }
-        let gap = !reset
-            && cursor.is_some_and(|cursor| {
-                state
-                    .items
-                    .front()
-                    .is_some_and(|first| cursor.sequence < first.sequence.saturating_sub(1))
-            });
-        if cursor.is_none() || reset || gap {
-            return Ok(DiagnosticLogPage {
-                items: state
-                    .items
-                    .iter()
-                    .skip(state.items.len().saturating_sub(limit))
-                    .cloned()
-                    .collect(),
-                next_cursor: tail,
-                reset,
-                gap,
-            });
-        }
-        let cursor = cursor.expect("initial reads returned above");
-        let items: Vec<_> = state
-            .items
-            .iter()
-            .filter(|item| item.sequence > cursor.sequence)
-            .take(limit)
-            .cloned()
-            .collect();
-        let sequence = items.last().map_or(cursor.sequence, |item| item.sequence);
-        Ok(DiagnosticLogPage {
-            items,
-            next_cursor: DiagnosticLogCursor {
-                instance_id: state.instance_id.clone(),
-                sequence,
-            },
-            reset: false,
-            gap: false,
-        })
+        self.port.history(request).await
+    }
+    pub fn health(&self, access: &AccessContext) -> Result<P::Health, TechnicalLogError> {
+        authorize(access)?;
+        Ok(self.port.health())
     }
 }
-
-fn new_identity() -> String {
-    OperationId::new().to_string()
-}
-
-fn bounded_log_message(value: &str) -> String {
-    let mut text = String::with_capacity(value.len().min(4096));
-    for character in value
-        .chars()
-        .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
+fn authorize(access: &AccessContext) -> Result<(), TechnicalLogError> {
+    if access.principal() != &PrincipalId::local_owner()
+        || access.require(Permission::DiagnosticsRead).is_err()
     {
-        if text.len() + character.len_utf8() > 4096 {
-            while text.len() > 4093 {
-                text.pop();
-            }
-            text.push('…');
-            break;
-        }
-        text.push(character);
+        return Err(TechnicalLogError::PermissionDenied);
     }
-    if text.trim().is_empty() {
-        "The log producer supplied an empty message.".to_owned()
-    } else {
-        text
-    }
+    Ok(())
 }
-
-fn safe_code(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    !bytes.is_empty()
-        && bytes.len() <= 96
-        && bytes[0].is_ascii_lowercase()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(byte))
-}
-
-fn safe_identity(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            if [8, 13, 18, 23].contains(&index) {
-                byte == b'-'
-            } else {
-                byte.is_ascii_hexdigit()
-            }
+fn validate(
+    query: &TechnicalLogQuery,
+    limit: u32,
+    cursor: Option<&str>,
+) -> Result<(), TechnicalLogError> {
+    if !(1..=200).contains(&limit)
+        || cursor.is_some_and(|v| v.is_empty() || v.len() > 1024)
+        || query.search.as_ref().is_some_and(|v| v.len() > 4096)
+        || query.target.as_ref().is_some_and(|v| v.len() > 128)
+        || query.diagnostic_id.as_ref().is_some_and(|v| v.len() != 36)
+        || query.levels.as_ref().is_some_and(|v| {
+            v.len() > 5
+                || v.iter().any(|level| {
+                    !matches!(
+                        level.as_str(),
+                        "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR"
+                    )
+                })
         })
+    {
+        return Err(TechnicalLogError::InvalidInput);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::future::Future;
-    use std::task::Poll;
-
-    #[test]
-    fn real_unicode_text_is_bounded_without_splitting_utf8_or_retaining_terminal_controls() {
-        let log = DiagnosticLog::new();
-        let text = format!("已找到编辑器。\n{}\u{1b}\u{0}", "🦀路径".repeat(1000));
-        let item = log.record(
-            DiagnosticLogLevel::Info,
-            None,
-            None,
-            None,
-            &text,
-            "alcomd::unity",
-        );
-        assert!(item.message.starts_with("已找到编辑器。\n"));
-        assert!(item.message.ends_with('…'));
-        assert!(item.message.len() <= 4096);
-        assert_eq!(item.target, "alcomd::unity");
-        let item = log.record(
-            DiagnosticLogLevel::Info,
-            None,
-            None,
-            None,
-            "正文\u{1b}\u{0}\n详情",
-            "C:\\private",
-        );
-        assert_eq!(item.message, "正文\n详情");
-        assert_eq!(item.target, "alcomd");
-    }
-
-    #[tokio::test]
-    async fn history_is_bounded_and_incremental_reads_do_not_skip_pages() {
-        let log = DiagnosticLog::new();
-        for _ in 0..250 {
-            log.record(
-                DiagnosticLogLevel::Info,
-                Some("core.ready"),
-                None,
-                None,
-                "Test log entry.",
-                "alcomd::test",
-            );
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    #[derive(Clone)]
+    struct Reader(Arc<AtomicUsize>);
+    impl TechnicalLogPort for Reader {
+        type ReadPage = ();
+        type HistoryPage = ();
+        type Health = ();
+        async fn read(&self, _: TechnicalLogRead) -> Result<(), TechnicalLogError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
-        let initial = log
-            .read(&AccessContext::local_owner(), None, Some(2), None)
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert_eq!(
-            initial
-                .items
-                .iter()
-                .map(|item| item.sequence)
-                .collect::<Vec<_>>(),
-            [249, 250]
-        );
-        assert_eq!(initial.next_cursor.sequence, 250);
-        assert!(!initial.reset && !initial.gap);
-        for _ in 0..5 {
-            log.record(
-                DiagnosticLogLevel::Info,
-                None,
-                None,
-                None,
-                "Test log entry.",
-                "alcomd::test",
-            );
+        async fn history(&self, _: TechnicalLogHistory) -> Result<(), TechnicalLogError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
-        let first = log
-            .read(
-                &AccessContext::local_owner(),
-                Some(initial.next_cursor),
-                Some(2),
-                None,
-            )
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert_eq!(
-            first
-                .items
-                .iter()
-                .map(|item| item.sequence)
-                .collect::<Vec<_>>(),
-            [251, 252]
-        );
-        let second = log
-            .read(
-                &AccessContext::local_owner(),
-                Some(first.next_cursor),
-                Some(2),
-                None,
-            )
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert_eq!(
-            second
-                .items
-                .iter()
-                .map(|item| item.sequence)
-                .collect::<Vec<_>>(),
-            [253, 254]
-        );
-        assert_eq!(second.next_cursor.sequence, 254);
-    }
-
-    #[tokio::test]
-    async fn overflow_and_new_core_have_distinct_gap_and_reset_results() {
-        let log = DiagnosticLog::new();
-        let cursor = log
-            .read(&AccessContext::local_owner(), None, None, None)
-            .await
-            .expect("local owner can read the bounded diagnostic log")
-            .next_cursor;
-        for _ in 0..1027 {
-            log.record(
-                DiagnosticLogLevel::Info,
-                None,
-                None,
-                None,
-                "Test log entry.",
-                "alcomd::test",
-            );
+        fn health(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
         }
-        assert_eq!(
-            log.0
-                .state
-                .lock()
-                .expect("log mutex remains unpoisoned")
-                .items
-                .len(),
-            DIAGNOSTIC_LOG_CAPACITY
-        );
-        let page = log
-            .read(&AccessContext::local_owner(), Some(cursor), Some(2), None)
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert!(page.gap && !page.reset);
-        assert_eq!(
-            page.items
-                .iter()
-                .map(|item| item.sequence)
-                .collect::<Vec<_>>(),
-            [1026, 1027]
-        );
-        assert_eq!(page.next_cursor.sequence, 1027);
-        let next = log
-            .read(
-                &AccessContext::local_owner(),
-                Some(page.next_cursor.clone()),
-                Some(2),
-                None,
-            )
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert!(!next.gap && !next.reset);
-        assert!(next.items.is_empty());
-        let restarted = DiagnosticLog::new();
-        restarted.record(
-            DiagnosticLogLevel::Warning,
-            None,
-            None,
-            None,
-            "Test log entry.",
-            "alcomd::test",
-        );
-        let reset = restarted
-            .read(
-                &AccessContext::local_owner(),
-                Some(page.next_cursor),
-                Some(1),
-                Some(20_000),
-            )
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert!(reset.reset && !reset.gap);
-        assert_eq!(reset.items.len(), 1);
     }
-
     #[tokio::test]
-    async fn permission_and_input_bounds_are_checked_before_waiting() {
-        let log = DiagnosticLog::new();
-        let denied = AccessContext::new(PrincipalId::local_owner(), []);
-        assert_eq!(
-            log.read(&denied, None, None, None).await,
-            Err(DiagnosticLogError::PermissionDenied)
-        );
-        let external = AccessContext::new(
-            PrincipalId::parse("client:external").expect("external principal fixture is valid"),
+    async fn owner_and_bounds_are_checked_before_any_file_adapter_call() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let app = TechnicalLogApplication::new(Reader(calls.clone()));
+        let request = || TechnicalLogRead {
+            cursor: None,
+            limit: 100,
+            follow: false,
+            query: TechnicalLogQuery::default(),
+        };
+        let foreign = AccessContext::new(
+            PrincipalId::parse("extension:test").expect("valid technical-log test fixture"),
             [Permission::DiagnosticsRead],
         );
         assert_eq!(
-            log.read(&external, None, None, None).await,
-            Err(DiagnosticLogError::PermissionDenied)
+            app.read(&foreign, request()).await,
+            Err(TechnicalLogError::PermissionDenied)
         );
-        for (limit, wait) in [(0, 0), (201, 0), (1, 20_001)] {
-            assert_eq!(
-                log.read(&AccessContext::local_owner(), None, Some(limit), Some(wait))
-                    .await,
-                Err(DiagnosticLogError::InvalidInput)
-            );
-        }
-        let mut cursor = log
-            .read(&AccessContext::local_owner(), None, None, None)
-            .await
-            .expect("local owner can read the bounded diagnostic log")
-            .next_cursor;
-        cursor.sequence = 1;
+        let denied = AccessContext::new(PrincipalId::local_owner(), []);
         assert_eq!(
-            log.read(&AccessContext::local_owner(), Some(cursor), None, None)
-                .await,
-            Err(DiagnosticLogError::InvalidInput)
+            app.health(&denied),
+            Err(TechnicalLogError::PermissionDenied)
         );
-    }
-
-    #[test]
-    fn unsafe_fields_never_enter_the_buffer_and_error_identity_is_available() {
-        let log = DiagnosticLog::new();
-        for code in [
-            "C:\\private\\token",
-            "https://secret.example",
-            "unsafe\ncode",
-            "",
-            &"x".repeat(97),
-        ] {
-            let item = log.record(
-                DiagnosticLogLevel::Error,
-                Some(code),
-                Some("secret"),
-                None,
-                "Test log entry.",
-                "alcomd::test",
-            );
-            assert_eq!(item.code, "diagnostic.error");
-            assert!(safe_identity(
-                item.diagnostic_id
-                    .as_deref()
-                    .expect("Error records receive a diagnostic identity")
-            ));
-            assert!(item.notify);
-        }
-        let id = new_identity();
-        let item = log.record(
-            DiagnosticLogLevel::Warning,
-            Some("unity_version_unverified"),
-            Some(&id),
-            Some(true),
-            "Test log entry.",
-            "alcomd::test",
+        let mut bad = request();
+        bad.limit = 201;
+        assert_eq!(
+            app.read(&AccessContext::local_owner(), bad).await,
+            Err(TechnicalLogError::InvalidInput)
         );
-        assert_eq!(item.code, "unity_version_unverified");
-        assert_eq!(item.diagnostic_id.as_deref(), Some(id.as_str()));
-        assert!(item.notify);
-    }
-
-    #[test]
-    fn level_defaults_and_overrides_keep_low_levels_silent() {
-        let log = DiagnosticLog::new();
-        for level in [
-            DiagnosticLogLevel::Trace,
-            DiagnosticLogLevel::Debug,
-            DiagnosticLogLevel::Info,
-        ] {
-            assert!(
-                !log.record(
-                    level,
-                    None,
-                    None,
-                    Some(true),
-                    "Test log entry.",
-                    "alcomd::test"
-                )
-                .notify
-            );
-        }
-        assert!(
-            !log.record(
-                DiagnosticLogLevel::Warning,
-                None,
-                None,
-                None,
-                "Test log entry.",
-                "alcomd::test"
-            )
-            .notify
+        let mut bad = request();
+        bad.query.levels = Some(vec!["unknown".into()]);
+        assert_eq!(
+            app.read(&AccessContext::local_owner(), bad).await,
+            Err(TechnicalLogError::InvalidInput)
         );
-        assert!(
-            log.record(
-                DiagnosticLogLevel::Error,
-                None,
-                None,
-                None,
-                "Test log entry.",
-                "alcomd::test"
-            )
-            .notify
-        );
-        assert!(
-            !log.record(
-                DiagnosticLogLevel::Error,
-                None,
-                None,
-                Some(false),
-                "Test log entry.",
-                "alcomd::test"
-            )
-            .notify
-        );
-    }
-
-    #[tokio::test]
-    async fn waiting_read_is_woken_without_lost_notifications_and_can_be_cancelled() {
-        let log = DiagnosticLog::new();
-        let access = AccessContext::local_owner();
-        let cursor = log
-            .read(&access, None, None, None)
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        app.read(&AccessContext::local_owner(), request())
             .await
-            .expect("local owner can read the bounded diagnostic log")
-            .next_cursor;
-        let mut first = Box::pin(log.read(&access, Some(cursor.clone()), None, Some(20_000)));
-        let mut second = Box::pin(log.read(&access, Some(cursor.clone()), None, Some(20_000)));
-        std::future::poll_fn(|cx| {
-            assert!(first.as_mut().poll(cx).is_pending());
-            assert!(second.as_mut().poll(cx).is_pending());
-            Poll::Ready(())
-        })
-        .await;
-        log.record(
-            DiagnosticLogLevel::Error,
-            None,
-            None,
-            None,
-            "Test log entry.",
-            "alcomd::test",
-        );
-        let a = tokio::time::timeout(Duration::from_secs(1), first)
-            .await
-            .expect("first waiting reader wakes after a record")
-            .expect("first resumed owner read succeeds");
-        let b = tokio::time::timeout(Duration::from_secs(1), second)
-            .await
-            .expect("second waiting reader also wakes after the record")
-            .expect("second resumed owner read succeeds");
-        assert_eq!(a.items, b.items);
-        let mut cancelled =
-            Box::pin(log.read(&access, Some(a.next_cursor.clone()), None, Some(20_000)));
-        std::future::poll_fn(|cx| {
-            assert!(cancelled.as_mut().poll(cx).is_pending());
-            Poll::Ready(())
-        })
-        .await;
-        drop(cancelled);
-        let item = log.record(
-            DiagnosticLogLevel::Warning,
-            None,
-            None,
-            None,
-            "Test log entry.",
-            "alcomd::test",
-        );
-        let after = log
-            .read(&access, Some(a.next_cursor), None, None)
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert_eq!(after.items, [item]);
-    }
-
-    #[tokio::test]
-    async fn empty_wait_times_out_without_advancing_the_cursor() {
-        let log = DiagnosticLog::new();
-        let access = AccessContext::local_owner();
-        let cursor = log
-            .read(&access, None, None, None)
-            .await
-            .expect("local owner can read the bounded diagnostic log")
-            .next_cursor;
-        let page = log
-            .read(&access, Some(cursor.clone()), None, Some(1))
-            .await
-            .expect("local owner can read the bounded diagnostic log");
-        assert_eq!(page.next_cursor, cursor);
-        assert!(page.items.is_empty() && !page.reset && !page.gap);
+            .expect("valid technical-log test fixture");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

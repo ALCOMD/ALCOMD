@@ -34,9 +34,30 @@ pub enum CacheErrorCode {
 #[derive(Debug)]
 pub struct CacheError {
     code: CacheErrorCode,
+    context: alcomd_application::TechnicalErrorContext,
 }
 
 impl CacheError {
+    fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+
     #[must_use]
     pub const fn code(&self) -> CacheErrorCode {
         self.code
@@ -45,11 +66,19 @@ impl CacheError {
 
 impl fmt::Display for CacheError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "package cache request failed: {:?}", self.code)
+        write!(formatter, "package cache request failed: {:?}", self.code)?;
+        if let Some(path) = self.context.path.as_deref() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
 
-impl std::error::Error for CacheError {}
+impl std::error::Error for CacheError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 #[derive(Clone)]
 pub struct PackageCache {
@@ -69,7 +98,9 @@ impl PackageCache {
             .timeout(DOWNLOAD_TIMEOUT)
             .redirect(Policy::custom(validate_redirect))
             .build()
-            .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))?;
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
+            })?;
         Ok(Self { root, client })
     }
 
@@ -96,7 +127,7 @@ impl PackageCache {
             Err(_) => {
                 tokio::fs::remove_file(&object)
                     .await
-                    .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
+                    .map_err(|cause| cache_error(CacheErrorCode::Corrupt).with_source(cause))?;
             }
         }
         if offline {
@@ -113,9 +144,11 @@ impl PackageCache {
         source: &Path,
         digest: [u8; 32],
     ) -> Result<PathBuf, CacheError> {
-        let source_metadata = tokio::fs::symlink_metadata(source)
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        let source_metadata = tokio::fs::symlink_metadata(source).await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(source.display().to_string())
+        })?;
         if !source_metadata.is_file()
             || is_link_or_reparse(&source_metadata)
             || source_metadata.len() > MAX_ARCHIVE_BYTES
@@ -128,9 +161,11 @@ impl PackageCache {
         let object = self.object_path(&digest);
         match verify_object(&object, &digest).await {
             Ok(true) => {
-                tokio::fs::remove_file(source)
-                    .await
-                    .map_err(|_| cache_error(CacheErrorCode::Io))?;
+                tokio::fs::remove_file(source).await.map_err(|cause| {
+                    cache_error(CacheErrorCode::Io)
+                        .with_source(cause)
+                        .with_path(source.display().to_string())
+                })?;
                 return Ok(object);
             }
             Ok(false) => {}
@@ -144,14 +179,24 @@ impl PackageCache {
             .parent()
             .ok_or_else(|| cache_error(CacheErrorCode::Io))?;
         prepare_cache_directory(&self.root, parent).await?;
-        tokio::fs::rename(source, &object)
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        tokio::fs::rename(source, &object).await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(source.display().to_string())
+        })?;
         let parent = parent.to_path_buf();
         tokio::task::spawn_blocking(move || alcomd_platform::sync_directory(&parent))
             .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(source.display().to_string())
+            })?
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(source.display().to_string())
+            })?;
         if verify_object(&object, &digest).await? {
             Ok(object)
         } else {
@@ -171,14 +216,16 @@ impl PackageCache {
         prepare_cache_directory(&self.root, parent).await?;
         let part = object.with_extension("zip.part");
         let mut guard = PartialDownload::create(part.clone()).await?;
-        let mut response = self
-            .client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))?;
+        let mut response = self.client.get(url.clone()).send().await.map_err(|cause| {
+            cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
+        })?;
         if response.status() != StatusCode::OK {
-            return Err(cache_error(CacheErrorCode::DownloadFailed));
+            return Err(
+                cache_error(CacheErrorCode::DownloadFailed).with_reason(format!(
+                    "HTTP response status {}",
+                    response.status().as_u16()
+                )),
+            );
         }
         if response
             .headers()
@@ -192,11 +239,9 @@ impl PackageCache {
         let existing = cache_size(&self.root).await?;
         let mut received = 0_u64;
         let mut hasher = Sha256::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|cause| {
+            cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
+        })? {
             received = received
                 .checked_add(chunk.len() as u64)
                 .filter(|size| *size <= MAX_ARCHIVE_BYTES)
@@ -205,41 +250,51 @@ impl PackageCache {
                 return Err(cache_error(CacheErrorCode::QuotaExceeded));
             }
             hasher.update(&chunk);
-            guard
-                .file
-                .write_all(&chunk)
-                .await
-                .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            guard.file.write_all(&chunk).await.map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(object.display().to_string())
+            })?;
         }
         let actual: [u8; 32] = hasher.finalize().into();
         if &actual != expected_digest {
             return Err(cache_error(CacheErrorCode::IntegrityMismatch));
         }
-        guard
-            .file
-            .flush()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
-        guard
-            .file
-            .sync_all()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        guard.file.flush().await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(object.display().to_string())
+        })?;
+        guard.file.sync_all().await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(object.display().to_string())
+        })?;
         if tokio::fs::symlink_metadata(object).await.is_ok() {
             if verify_object(object, expected_digest).await? {
                 return Ok(());
             }
             return Err(cache_error(CacheErrorCode::Corrupt));
         }
-        tokio::fs::rename(&part, object)
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        tokio::fs::rename(&part, object).await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(object.display().to_string())
+        })?;
         guard.published = true;
         let parent = parent.to_path_buf();
         tokio::task::spawn_blocking(move || alcomd_platform::sync_directory(&parent))
             .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(object.display().to_string())
+            })?
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(object.display().to_string())
+            })?;
         if verify_object(object, expected_digest).await? {
             Ok(())
         } else {
@@ -261,7 +316,7 @@ impl PartialDownload {
             .create_new(true)
             .open(&path)
             .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            .map_err(|cause| cache_error(CacheErrorCode::Io).with_source(cause))?;
         Ok(Self {
             path,
             file,
@@ -287,19 +342,22 @@ async fn verify_object(path: &Path, expected: &[u8; 32]) -> Result<bool, CacheEr
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > MAX_ARCHIVE_BYTES {
         return Err(cache_error(CacheErrorCode::Corrupt));
     }
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
+    let mut file = tokio::fs::File::open(path).await.map_err(|cause| {
+        cache_error(CacheErrorCode::Corrupt)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut hasher = Sha256::new();
     // This buffer survives reads across await. Keep it off the nested Plan/RPC
     // futures so their construction and polling fit the normal worker stack.
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut total = 0_u64;
     loop {
-        let read = file
-            .read(&mut buffer)
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
+        let read = file.read(&mut buffer).await.map_err(|cause| {
+            cache_error(CacheErrorCode::Corrupt)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
         if read == 0 {
             break;
         }
@@ -325,12 +383,12 @@ async fn prepare_cache_directory(root: &Path, leaf: &Path) -> Result<(), CacheEr
     if tokio::fs::symlink_metadata(&current).await.is_err() {
         tokio::fs::create_dir(&current)
             .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            .map_err(|cause| cache_error(CacheErrorCode::Io).with_source(cause))?;
     }
     validate_directory(&current).await?;
     let relative = leaf
         .strip_prefix(root)
-        .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        .map_err(|cause| cache_error(CacheErrorCode::Io).with_source(cause))?;
     for component in relative.components() {
         current.push(component);
         match tokio::fs::symlink_metadata(&current).await {
@@ -338,7 +396,7 @@ async fn prepare_cache_directory(root: &Path, leaf: &Path) -> Result<(), CacheEr
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 tokio::fs::create_dir(&current)
                     .await
-                    .map_err(|_| cache_error(CacheErrorCode::Io))?;
+                    .map_err(|cause| cache_error(CacheErrorCode::Io).with_source(cause))?;
                 validate_directory(&current).await?;
             }
             Err(_) => return Err(cache_error(CacheErrorCode::Io)),
@@ -348,9 +406,11 @@ async fn prepare_cache_directory(root: &Path, leaf: &Path) -> Result<(), CacheEr
 }
 
 async fn validate_directory(path: &Path) -> Result<(), CacheError> {
-    let metadata = tokio::fs::symlink_metadata(path)
-        .await
-        .map_err(|_| cache_error(CacheErrorCode::Io))?;
+    let metadata = tokio::fs::symlink_metadata(path).await.map_err(|cause| {
+        cache_error(CacheErrorCode::Io)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if metadata.is_dir() && !is_link_or_reparse(&metadata) {
         Ok(())
     } else {
@@ -366,28 +426,38 @@ async fn cache_size(root: &Path) -> Result<u64, CacheError> {
         Err(_) => return Err(cache_error(CacheErrorCode::Io)),
     };
     let mut total = 0_u64;
-    while let Some(prefix) = prefixes
-        .next_entry()
-        .await
-        .map_err(|_| cache_error(CacheErrorCode::Io))?
-    {
+    while let Some(prefix) = prefixes.next_entry().await.map_err(|cause| {
+        cache_error(CacheErrorCode::Io)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })? {
         let metadata = tokio::fs::symlink_metadata(prefix.path())
             .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            })?;
         if !metadata.is_dir() || is_link_or_reparse(&metadata) {
             return Err(cache_error(CacheErrorCode::Io));
         }
-        let mut objects = tokio::fs::read_dir(prefix.path())
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?;
-        while let Some(object) = objects
-            .next_entry()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::Io))?
-        {
+        let mut objects = tokio::fs::read_dir(prefix.path()).await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
+        while let Some(object) = objects.next_entry().await.map_err(|cause| {
+            cache_error(CacheErrorCode::Io)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })? {
             let metadata = tokio::fs::symlink_metadata(object.path())
                 .await
-                .map_err(|_| cache_error(CacheErrorCode::Io))?;
+                .map_err(|cause| {
+                    cache_error(CacheErrorCode::Io)
+                        .with_source(cause)
+                        .with_path(root.display().to_string())
+                })?;
             if !metadata.is_file() || is_link_or_reparse(&metadata) {
                 return Err(cache_error(CacheErrorCode::Io));
             }
@@ -411,7 +481,8 @@ async fn cache_size(root: &Path) -> Result<u64, CacheError> {
 }
 
 fn parse_artifact_url(value: &str) -> Result<Url, CacheError> {
-    let mut url = Url::parse(value).map_err(|_| cache_error(CacheErrorCode::InvalidUrl))?;
+    let mut url = Url::parse(value)
+        .map_err(|cause| cache_error(CacheErrorCode::InvalidUrl).with_source(cause))?;
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
@@ -461,8 +532,11 @@ fn digest_hex(digest: &[u8; 32]) -> String {
     result
 }
 
-const fn cache_error(code: CacheErrorCode) -> CacheError {
-    CacheError { code }
+fn cache_error(code: CacheErrorCode) -> CacheError {
+    CacheError {
+        code,
+        context: alcomd_application::TechnicalErrorContext::default(),
+    }
 }
 
 #[cfg(test)]

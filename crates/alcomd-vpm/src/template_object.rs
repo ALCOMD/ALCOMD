@@ -38,9 +38,25 @@ pub enum TemplateObjectErrorCode {
 #[derive(Debug)]
 pub struct TemplateObjectError {
     code: TemplateObjectErrorCode,
+    context: alcomd_application::TechnicalErrorContext,
 }
 
 impl TemplateObjectError {
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+
     #[must_use]
     pub const fn code(&self) -> TemplateObjectErrorCode {
         self.code
@@ -49,17 +65,26 @@ impl TemplateObjectError {
 
 impl fmt::Display for TemplateObjectError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Template object operation failed")
+        formatter.write_str("Template object operation failed")?;
+        if let Some(path) = self.context.path.as_deref() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
 
-impl std::error::Error for TemplateObjectError {}
+impl std::error::Error for TemplateObjectError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 impl TemplateObjectStore {
     pub fn new(root: PathBuf) -> Result<Self, TemplateObjectError> {
-        std::fs::create_dir_all(&root).map_err(|_| error(TemplateObjectErrorCode::Io))?;
-        let metadata =
-            std::fs::symlink_metadata(&root).map_err(|_| error(TemplateObjectErrorCode::Io))?;
+        std::fs::create_dir_all(&root)
+            .map_err(|cause| error(TemplateObjectErrorCode::Io).with_source(cause))?;
+        let metadata = std::fs::symlink_metadata(&root)
+            .map_err(|cause| error(TemplateObjectErrorCode::Io).with_source(cause))?;
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err(error(TemplateObjectErrorCode::Io));
         }
@@ -78,12 +103,20 @@ impl TemplateObjectStore {
         }
         let partial = self.partial_path(expected_digest);
         let result = (|| {
-            let mut input = File::open(source).map_err(|_| error(TemplateObjectErrorCode::Io))?;
+            let mut input = File::open(source).map_err(|cause| {
+                error(TemplateObjectErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(source.display().to_string())
+            })?;
             let mut output = OpenOptions::new()
                 .write(true)
                 .create_new(true)
                 .open(&partial)
-                .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+                .map_err(|cause| {
+                    error(TemplateObjectErrorCode::Io)
+                        .with_source(cause)
+                        .with_path(source.display().to_string())
+                })?;
             let actual = copy_and_hash(&mut input, &mut output)?;
             if actual != expected_digest {
                 return Err(error(TemplateObjectErrorCode::DigestMismatch));
@@ -91,19 +124,29 @@ impl TemplateObjectStore {
             output
                 .flush()
                 .and_then(|()| output.sync_all())
-                .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+                .map_err(|cause| {
+                    error(TemplateObjectErrorCode::Io)
+                        .with_source(cause)
+                        .with_path(source.display().to_string())
+                })?;
             drop(output);
             match std::fs::rename(&partial, &final_path) {
                 Ok(()) => {}
                 Err(_) if final_path.exists() => {
                     verify_file(&final_path, expected_digest)?;
-                    std::fs::remove_file(&partial)
-                        .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+                    std::fs::remove_file(&partial).map_err(|cause| {
+                        error(TemplateObjectErrorCode::Io)
+                            .with_source(cause)
+                            .with_path(source.display().to_string())
+                    })?;
                 }
                 Err(_) => return Err(error(TemplateObjectErrorCode::Io)),
             }
-            alcomd_platform::sync_directory(&self.root)
-                .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+            alcomd_platform::sync_directory(&self.root).map_err(|cause| {
+                error(TemplateObjectErrorCode::Io)
+                    .with_source(cause)
+                    .with_path(source.display().to_string())
+            })?;
             verify_file(&final_path, expected_digest)?;
             Ok(object(expected_digest, final_path))
         })();
@@ -128,8 +171,11 @@ impl TemplateObjectStore {
         target: &Path,
     ) -> Result<(), TemplateObjectError> {
         let source = self.open_verified(digest)?;
-        let mut input =
-            File::open(source.path()).map_err(|_| error(TemplateObjectErrorCode::Io))?;
+        let mut input = File::open(source.path()).map_err(|cause| {
+            error(TemplateObjectErrorCode::Io)
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
         let mut output = match OpenOptions::new().write(true).create_new(true).open(target) {
             Ok(output) => output,
             Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -145,7 +191,11 @@ impl TemplateObjectStore {
             output
                 .flush()
                 .and_then(|()| output.sync_all())
-                .map_err(|_| error(TemplateObjectErrorCode::Io))
+                .map_err(|cause| {
+                    error(TemplateObjectErrorCode::Io)
+                        .with_source(cause)
+                        .with_path(target.display().to_string())
+                })
         })();
         drop(output);
         if result.is_err() {
@@ -177,7 +227,11 @@ fn object(digest: [u8; 32], path: PathBuf) -> TemplateObject {
 }
 
 fn verify_file(path: &Path, expected: [u8; 32]) -> Result<(), TemplateObjectError> {
-    let mut file = File::open(path).map_err(|_| error(TemplateObjectErrorCode::ObjectMissing))?;
+    let mut file = File::open(path).map_err(|cause| {
+        error(TemplateObjectErrorCode::ObjectMissing)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut sink = std::io::sink();
     let actual = copy_and_hash(&mut file, &mut sink)?;
     if actual != expected {
@@ -195,13 +249,13 @@ fn copy_and_hash(
     loop {
         let read = reader
             .read(&mut buffer)
-            .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+            .map_err(|cause| error(TemplateObjectErrorCode::Io).with_source(cause))?;
         if read == 0 {
             break;
         }
         writer
             .write_all(&buffer[..read])
-            .map_err(|_| error(TemplateObjectErrorCode::Io))?;
+            .map_err(|cause| error(TemplateObjectErrorCode::Io).with_source(cause))?;
         digest.update(&buffer[..read]);
     }
     Ok(digest.finalize().into())
@@ -211,8 +265,11 @@ fn hex(digest: [u8; 32]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-const fn error(code: TemplateObjectErrorCode) -> TemplateObjectError {
-    TemplateObjectError { code }
+fn error(code: TemplateObjectErrorCode) -> TemplateObjectError {
+    TemplateObjectError {
+        code,
+        context: alcomd_application::TechnicalErrorContext::default(),
+    }
 }
 
 #[cfg(test)]

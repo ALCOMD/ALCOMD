@@ -193,6 +193,8 @@ pub(super) fn accept_template_plan(
             ],
         )
         .map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE template_plans SET state='applied',apply_operation_id=?1
@@ -478,7 +480,9 @@ pub(super) fn complete_template_apply(
         ),
         completed_at_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = operation_kind(plan.kind), template_id = %published.record.template_id, "operation completed");
+    Ok(())
 }
 
 #[cfg(feature = "test-kill-gates")]
@@ -648,6 +652,7 @@ pub(super) fn complete_template_project_create(
     )?;
     test_template_kill_gate("project_registry_commit_intent")?;
     transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "templates.create-project", project_id = %project.project_id, "operation completed");
     test_template_kill_gate("state_committed")
 }
 
@@ -883,6 +888,15 @@ pub(super) fn remove_template(
     if current.revision != expected {
         return Err(error(M5TemplateErrorCode::TemplateRevisionConflict));
     }
+    super::activity::resource(
+        &transaction,
+        owner,
+        "template.remove",
+        "template",
+        &template_id.to_string(),
+        now_ms,
+    )
+    .map_err(failure)?;
     transaction
         .execute(
             "DELETE FROM templates WHERE template_id=?1 AND owner_principal_id=?2 AND revision=?3",
@@ -1089,6 +1103,15 @@ fn insert_event(
             ],
         )
         .map_err(failure)?;
+    super::activity::resource_event(
+        transaction,
+        owner,
+        kind,
+        "template",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(failure)?;
     Ok(())
 }
 
@@ -1279,14 +1302,14 @@ fn parse_hex_digest(value: &str) -> Result<[u8; 32], M5TemplateError> {
     Ok(result)
 }
 
-fn failure(_: rusqlite::Error) -> M5TemplateError {
-    error(M5TemplateErrorCode::StoreUnavailable)
+fn failure(source: rusqlite::Error) -> M5TemplateError {
+    error(M5TemplateErrorCode::StoreUnavailable).with_source(source)
 }
 
 fn internal() -> M5TemplateError {
     error(M5TemplateErrorCode::Internal)
 }
 
-const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
+fn error(code: M5TemplateErrorCode) -> M5TemplateError {
     M5TemplateError::new(code)
 }

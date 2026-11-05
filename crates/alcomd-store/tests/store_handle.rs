@@ -95,8 +95,16 @@ async fn state_check_is_persistent_idempotent_and_evented() {
         .list_events(owner.clone(), 0, 100)
         .await
         .expect("list events");
-    assert_eq!(events.events.len(), 3);
-    assert_eq!(events.next_sequence, events.events[2].sequence);
+    assert_eq!(events.events.len(), 6);
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .filter(|e| e.kind == "activity.changed")
+            .count(),
+        3
+    );
+    assert_eq!(events.next_sequence, events.events[5].sequence);
     let empty = store
         .list_events(owner.clone(), events.next_sequence, 100)
         .await
@@ -112,73 +120,84 @@ async fn state_check_is_persistent_idempotent_and_evented() {
 }
 
 #[tokio::test]
-async fn official_activity_and_diagnostics_are_owner_scoped_redacted_and_pageable() {
+async fn official_activity_is_one_per_task_owner_scoped_and_pageable() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let accepted = store
-        .create_state_check(owner.clone(), key("official-gui-failure"), 10)
+        .create_state_check(owner.clone(), key("history-failure"), 10)
         .await
-        .expect("create operation");
+        .expect("create");
     store
         .begin_state_check(accepted.operation_id, 20)
         .await
-        .expect("begin operation");
+        .expect("begin");
+    let diagnostic = "00000000-0000-4000-8000-000000000777";
     store
         .finish_failed(
             accepted.operation_id,
-            "internal_error".to_owned(),
-            "00000000-0000-4000-8000-000000000777".to_owned(),
+            "internal_error".into(),
+            diagnostic.into(),
             30,
         )
         .await
-        .expect("fail operation");
-
+        .expect("fail");
+    for time in [40, 50] {
+        store
+            .create_state_check(owner.clone(), key(&format!("history-{time}")), time)
+            .await
+            .expect("another task");
+    }
     let first = store
         .list_official_activity(owner.clone(), None, 2)
         .await
-        .expect("first activity page");
+        .expect("page");
     assert_eq!(first.items.len(), 2);
     assert!(first.next_cursor.is_some());
-    assert!(first.items.iter().all(|item| {
-        !item.summary_code.contains("Authorization")
-            && !item.summary_code.contains('\\')
-            && !item.summary_code.contains('/')
-    }));
     let second = store
         .list_official_activity(owner.clone(), first.next_cursor, 2)
         .await
-        .expect("second activity page");
-    assert_eq!(second.items.len(), 2);
+        .expect("older page");
+    assert_eq!(second.items.len(), 1);
     assert!(second.next_cursor.is_none());
-
-    let diagnostics = store
-        .list_official_diagnostics(owner.clone(), None, 100)
-        .await
-        .expect("diagnostics");
-    assert_eq!(diagnostics.items.len(), 1);
-    assert_eq!(diagnostics.items[0].code, "internal_error");
+    let failed = &second.items[0];
+    assert_eq!(failed.activity_id, accepted.operation_id.to_string());
+    assert_eq!(failed.revision, 3);
+    assert_eq!(failed.status, "failed");
     assert_eq!(
-        diagnostics.items[0].diagnostic_id.as_deref(),
-        Some("00000000-0000-4000-8000-000000000777")
+        failed
+            .result
+            .as_ref()
+            .expect("valid isolated activity fixture")
+            .code,
+        "internal_error"
     );
-
-    let other = PrincipalId::parse("test:other-owner").expect("other principal");
+    assert_eq!(failed.diagnostic_id.as_deref(), Some(diagnostic));
+    assert_eq!(failed.parameters, serde_json::json!({}));
+    let loaded = store
+        .get_official_activity(owner.clone(), failed.activity_id.clone())
+        .await
+        .expect("activity by ID");
+    assert_eq!(&loaded, failed);
+    let original = store
+        .get_operation(owner, accepted.operation_id)
+        .await
+        .expect("task remains authoritative");
+    assert_eq!(original.error_code.as_deref(), Some("internal_error"));
+    let other = PrincipalId::parse("test:other-owner").expect("valid isolated activity fixture");
     assert!(
         store
             .list_official_activity(other.clone(), None, 100)
             .await
-            .expect("isolated activity")
+            .expect("valid isolated activity fixture")
             .items
             .is_empty()
     );
     assert!(
         store
-            .list_official_diagnostics(other, None, 100)
+            .get_official_activity(other, failed.activity_id.clone())
             .await
-            .expect("isolated diagnostics")
-            .items
-            .is_empty()
+            .is_err()
     );
 }
 
@@ -350,8 +369,8 @@ async fn running_operation_recovers_through_interrupted_and_recovering() {
         .expect("recovery events");
     assert_eq!(
         events.events.len(),
-        4,
-        "reopening an already-recovering task does not invent changes"
+        8,
+        "four task changes plus four activity changes, reopening remains quiet"
     );
 }
 
@@ -513,7 +532,15 @@ async fn principal_scopes_operations_events_and_idempotency() {
         .list_events(owner_b, 0, 100)
         .await
         .expect("events for B");
-    assert_eq!(events.events.len(), 1);
+    assert_eq!(events.events.len(), 2);
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .filter(|e| e.kind == "activity.changed")
+            .count(),
+        1
+    );
     assert_eq!(
         events.events[0].aggregate_id,
         second.operation_id.to_string()

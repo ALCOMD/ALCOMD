@@ -11,21 +11,39 @@ pub(super) struct PlatformUnityHubLauncher {
 
 impl app::UnityHubLauncher for PlatformUnityHubLauncher {
     fn launch(&self, path: &str) -> Result<(), app::UnityHubOpenError> {
-        self.launcher.launch(path).map_err(|error| match error {
-            platform::UnityHubLaunchError::PathInvalid => app::UnityHubOpenError::PathInvalid,
-            platform::UnityHubLaunchError::PathChanged => app::UnityHubOpenError::PathChanged,
-            platform::UnityHubLaunchError::Unavailable => app::UnityHubOpenError::Unavailable,
-            platform::UnityHubLaunchError::Busy => app::UnityHubOpenError::Busy,
-            platform::UnityHubLaunchError::OpenFailed => app::UnityHubOpenError::OpenFailed,
+        self.launcher.launch(path).map_err(|error| {
+            let classified = match error.kind() {
+                platform::UnityHubLaunchErrorKind::PathInvalid => {
+                    app::UnityHubOpenError::PathInvalid
+                }
+                platform::UnityHubLaunchErrorKind::PathChanged => {
+                    app::UnityHubOpenError::PathChanged
+                }
+                platform::UnityHubLaunchErrorKind::Unavailable => {
+                    app::UnityHubOpenError::Unavailable
+                }
+                platform::UnityHubLaunchErrorKind::Busy => app::UnityHubOpenError::Busy,
+                platform::UnityHubLaunchErrorKind::OpenFailed => app::UnityHubOpenError::OpenFailed,
+            };
+            classified
+                .with_source(error)
+                .with_path(path)
+                .record("failed to open Unity Hub")
         })
     }
 }
 
 impl app::UnityHubPlatform for PlatformUnityHubAdapter {
     fn normalize_path(&self, path: &str) -> Result<String, app::OfficialGuiError> {
-        platform::normalize_unity_hub_path(path).map_err(|error| match error {
-            platform::UnityHubPathError::Invalid => app::OfficialGuiError::InvalidInput,
-            platform::UnityHubPathError::Unavailable => app::OfficialGuiError::Unavailable,
+        platform::normalize_unity_hub_path(path).map_err(|error| {
+            let classified = match error.kind() {
+                platform::UnityHubPathErrorKind::Invalid => app::OfficialGuiError::InvalidInput,
+                platform::UnityHubPathErrorKind::Unavailable => app::OfficialGuiError::Unavailable,
+            };
+            classified
+                .with_source(error)
+                .with_path(path)
+                .record("failed to validate Unity Hub executable")
         })
     }
 

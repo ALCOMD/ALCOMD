@@ -147,6 +147,7 @@ async fn restart_recovery_resumes_each_durable_forward_phase_without_replanning(
                     phase,
                     evidence.clone(),
                     22,
+                    None,
                 )
                 .await
                 .expect("persist recovery checkpoint");
@@ -171,6 +172,7 @@ async fn restart_recovery_resumes_each_durable_forward_phase_without_replanning(
                     UnityMigrationPhase::CleanupComplete,
                     evidence,
                     24,
+                    None,
                 )
                 .await
                 .expect("persist cleanup before simulated restart");
@@ -251,7 +253,13 @@ async fn restart_recovery_required_never_reports_success_or_commits_project() {
     let evidence = recovery_evidence(&draft, accepted.operation_id);
     for phase in recovery_prefix(UnityMigrationPhase::UnityStarted) {
         store
-            .record_unity_migration_checkpoint(accepted.operation_id, phase, evidence.clone(), 22)
+            .record_unity_migration_checkpoint(
+                accepted.operation_id,
+                phase,
+                evidence.clone(),
+                22,
+                None,
+            )
             .await
             .expect("persist recovery checkpoint");
     }
@@ -317,7 +325,13 @@ async fn observed_exit_with_conclusively_unchanged_project_is_an_ordinary_failur
         UnityMigrationPhase::UnityExited,
     ] {
         store
-            .record_unity_migration_checkpoint(accepted.operation_id, phase, evidence.clone(), 22)
+            .record_unity_migration_checkpoint(
+                accepted.operation_id,
+                phase,
+                evidence.clone(),
+                22,
+                None,
+            )
             .await
             .expect("persist recovery checkpoint");
     }

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -330,30 +331,81 @@ pub enum M5BackupErrorCode {
     Internal,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M5BackupError {
     code: M5BackupErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl M5BackupError {
     #[must_use]
-    pub const fn new(code: M5BackupErrorCode) -> Self {
-        Self { code }
+    pub fn new(code: M5BackupErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
-    pub const fn code(self) -> M5BackupErrorCode {
+    pub const fn code(&self) -> M5BackupErrorCode {
         self.code
+    }
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
     }
 }
 
 impl std::fmt::Display for M5BackupError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Backup request failed")
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
-
-impl std::error::Error for M5BackupError {}
+impl std::error::Error for M5BackupError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 pub trait M5BackupStore: Clone + Send + Sync + 'static {
     fn replay_backup_create(
@@ -582,7 +634,7 @@ where
     ) -> Result<UnityWriterState, M5BackupError> {
         self.writer_state_unchecked(access, project_id)
             .await
-            .map_err(|_| error(M5BackupErrorCode::Internal))
+            .map_err(|cause| error(M5BackupErrorCode::Internal).with_source(cause))
     }
 }
 
@@ -807,27 +859,39 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Backup execution failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     fn schedule_restore(&self, operation_id: OperationId, recovery: Option<ProjectRecoveryGuard>) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _recovery = recovery;
-            let _ = application.run_restore(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                let _recovery = recovery;
+                if let Err(source) = application.run_restore(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Backup execution failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     async fn run_restore(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
         let result = self.run_restore_inner(operation_id).await;
         if let Err(source) = result {
+            let (source, diagnostic_id) =
+                source.record_failure(operation_id, "Backup execution failed");
             self.store
                 .fail_backup_restore(
                     operation_id,
                     error_name(source.code()).to_owned(),
-                    OperationId::new().to_string(),
+                    diagnostic_id.clone(),
                     now_ms()?,
                 )
                 .await?;
@@ -965,9 +1029,11 @@ where
     async fn run(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
         let result = self.run_inner(operation_id).await;
         if let Err(source) = result {
+            let (source, diagnostic_id) =
+                source.record_failure(operation_id, "Backup execution failed");
             if source.code() == M5BackupErrorCode::RecoveryRequired {
                 self.store
-                    .defer_backup_recovery(operation_id, OperationId::new().to_string(), now_ms()?)
+                    .defer_backup_recovery(operation_id, diagnostic_id.clone(), now_ms()?)
                     .await?;
                 return Err(source);
             }
@@ -975,7 +1041,7 @@ where
                 .fail_backup_create(
                     operation_id,
                     error_name(source.code()).to_owned(),
-                    OperationId::new().to_string(),
+                    diagnostic_id.clone(),
                     now_ms()?,
                 )
                 .await?;
@@ -1018,7 +1084,7 @@ where
             .store
             .get_project(operation.owner.clone(), operation.request.project_id)
             .await
-            .map_err(|_| error(M5BackupErrorCode::ProjectNotRegistered))?;
+            .map_err(|cause| error(M5BackupErrorCode::ProjectNotRegistered).with_source(cause))?;
         if project.revision != operation.request.expected_revision {
             return Err(error(M5BackupErrorCode::RevisionConflict));
         }
@@ -1057,19 +1123,22 @@ where
             let cancellation = BackupCancellation::default();
             let monitor = cancellation.clone();
             let store = self.store.clone();
-            let polling = tokio::spawn(async move {
-                while !monitor.stopped() {
-                    if store
-                        .cancellation_requested(operation_id)
-                        .await
-                        .unwrap_or(false)
-                    {
-                        monitor.cancel();
-                        break;
+            let polling = tokio::spawn(
+                (async move {
+                    while !monitor.stopped() {
+                        if store
+                            .cancellation_requested(operation_id)
+                            .await
+                            .unwrap_or(false)
+                        {
+                            monitor.cancel();
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-                }
-            });
+                })
+                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+            );
             let archived = self
                 .adapter
                 .archive(
@@ -1165,7 +1234,7 @@ async fn cancelled<S: StateStore>(
     store
         .cancellation_requested(operation_id)
         .await
-        .map_err(|_| error(M5BackupErrorCode::StoreUnavailable))
+        .map_err(|cause| error(M5BackupErrorCode::StoreUnavailable).with_source(cause))
 }
 
 async fn finish_cancelled<S: StateStore>(
@@ -1176,13 +1245,13 @@ async fn finish_cancelled<S: StateStore>(
         .finish_cancelled(operation_id, now_ms()?)
         .await
         .map(|_| ())
-        .map_err(|_| error(M5BackupErrorCode::StoreUnavailable))
+        .map_err(|cause| error(M5BackupErrorCode::StoreUnavailable).with_source(cause))
 }
 
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M5BackupError> {
     access
         .require(permission)
-        .map_err(|_| error(M5BackupErrorCode::PermissionDenied))
+        .map_err(|cause| error(M5BackupErrorCode::PermissionDenied).with_source(cause))
 }
 
 fn now_ms() -> Result<u64, M5BackupError> {
@@ -1190,10 +1259,10 @@ fn now_ms() -> Result<u64, M5BackupError> {
     u64::try_from(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|_| error(M5BackupErrorCode::Internal))?
+            .map_err(|cause| error(M5BackupErrorCode::Internal).with_source(cause))?
             .as_millis(),
     )
-    .map_err(|_| error(M5BackupErrorCode::Internal))
+    .map_err(|cause| error(M5BackupErrorCode::Internal).with_source(cause))
 }
 
 #[cfg(feature = "test-kill-gates")]
@@ -1285,6 +1354,6 @@ pub const fn error_name(code: M5BackupErrorCode) -> &'static str {
     }
 }
 
-const fn error(code: M5BackupErrorCode) -> M5BackupError {
+fn error(code: M5BackupErrorCode) -> M5BackupError {
     M5BackupError::new(code)
 }

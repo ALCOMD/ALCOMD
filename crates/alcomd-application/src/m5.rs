@@ -202,30 +202,64 @@ pub enum M5UnityErrorCode {
 }
 
 /// Safe M5 Unity error with no platform detail.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct M5UnityError {
     code: M5UnityErrorCode,
+    context: Option<crate::TechnicalErrorContext>,
 }
 
 impl M5UnityError {
     #[must_use]
     pub const fn new(code: M5UnityErrorCode) -> Self {
-        Self { code }
+        Self {
+            code,
+            context: None,
+        }
     }
 
     #[must_use]
-    pub const fn code(self) -> M5UnityErrorCode {
+    pub const fn code(&self) -> M5UnityErrorCode {
         self.code
     }
 }
 
 impl std::fmt::Display for M5UnityError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Unity request failed")
+        write!(formatter, "Unity request failed ({:?})", self.code)
     }
 }
 
-impl std::error::Error for M5UnityError {}
+impl M5UnityError {
+    pub fn with_source(mut self, error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_source(error));
+        self
+    }
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = Some(self.context.take().unwrap_or_default().with_path(path));
+        self
+    }
+    pub fn reported(mut self, id: String) -> Self {
+        self.context
+            .get_or_insert_with(Default::default)
+            .diagnostic_id = Some(id);
+        self
+    }
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.context
+            .as_ref()
+            .and_then(|c| c.diagnostic_id.as_deref())
+    }
+    pub fn path(&self) -> Option<&str> {
+        self.context.as_ref().and_then(|c| c.path.as_deref())
+    }
+}
+impl std::error::Error for M5UnityError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context
+            .as_ref()
+            .and_then(crate::TechnicalErrorContext::source_error)
+    }
+}
 
 /// Authoritative persistence port for the M5 Unity registry.
 pub trait M5UnityStore: Clone + Send + Sync + 'static {
@@ -307,6 +341,7 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         launch_id: UnityLaunchId,
         state: UnityLaunchState,
         spawn_accepted: bool,
+        diagnostic_id: Option<String>,
     ) -> impl Future<Output = Result<UnityLaunchRecord, M5UnityError>> + Send;
 }
 
@@ -661,25 +696,29 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         if replayed && record.spawn_accepted {
             return Ok((record, true));
         }
-        if self
+        let executable_path = installation.observation.executable_path;
+        let project_path = project.observation.root_path;
+        if let Err(error) = self
             .platform
             .launch(
-                installation.observation.executable_path,
-                project.observation.root_path,
+                executable_path.clone(),
+                project_path.clone(),
                 config.arguments,
             )
             .await
-            .is_err()
         {
+            let id = crate::OperationId::new().to_string();
+            tracing::error!(diagnostic_id=%id,executable_path,project_path,error=%crate::technical_error_chain(&error),"failed to submit Unity Editor launch");
             self.store
                 .set_launch_state(
                     access.principal().clone(),
                     record.launch_id,
                     UnityLaunchState::Failed,
                     false,
+                    Some(id.clone()),
                 )
                 .await?;
-            return Err(M5UnityError::new(M5UnityErrorCode::LaunchFailed));
+            return Err(error.reported(id));
         }
         let accepted = self
             .store
@@ -688,8 +727,10 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
                 record.launch_id,
                 UnityLaunchState::Opening,
                 true,
+                None,
             )
             .await?;
+        tracing::info!(launch_id=%accepted.launch_id, executable_path, project_path, "Unity Editor launch request submitted");
         Ok((accepted, replayed))
     }
 }

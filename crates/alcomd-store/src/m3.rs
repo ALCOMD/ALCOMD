@@ -22,13 +22,13 @@ pub(super) fn repository_list_snapshot(
     connection: &mut Connection,
     owner: &PrincipalId,
 ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
-    let transaction = connection.transaction().map_err(|_| unavailable())?;
+    let transaction = connection.transaction().map_err(sql_failure)?;
     let mut statement = transaction
         .prepare(
             "SELECT repository_id, revision, source_kind, source_locator FROM repositories
          WHERE owner_principal_id=?1 ORDER BY repository_id",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let rows = statement
         .query_map([owner.as_str()], |row| {
             Ok((
@@ -38,10 +38,10 @@ pub(super) fn repository_list_snapshot(
                 row.get::<_, String>(3)?,
             ))
         })
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut repositories = Vec::new();
     for row in rows {
-        let (repository_id, rev, kind, locator) = row.map_err(|_| unavailable())?;
+        let (repository_id, rev, kind, locator) = row.map_err(sql_failure)?;
         let source = match kind.as_str() {
             "local" => RepositorySource::Local { path: locator },
             "remote" => RepositorySource::Remote { url: locator },
@@ -60,12 +60,12 @@ pub(super) fn repository_list_snapshot(
     drop(statement);
     let mut statement = transaction
         .prepare("SELECT root_path FROM projects ORDER BY project_id")
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let project_roots = statement
         .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|_| unavailable())?
+        .map_err(sql_failure)?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     Ok(alcomd_application::RepositoryListSnapshot {
         repositories,
         project_roots,
@@ -74,6 +74,10 @@ pub(super) fn repository_list_snapshot(
 
 pub(super) fn unavailable() -> M3Error {
     M3Error::new(M3ErrorCode::StoreUnavailable)
+}
+
+fn sql_failure(source: impl std::error::Error + Send + Sync + 'static) -> M3Error {
+    unavailable().with_source(source)
 }
 
 fn internal() -> M3Error {
@@ -102,7 +106,7 @@ fn parse_json<T: DeserializeOwned>(value: &str) -> Result<T, M3Error> {
 fn begin(connection: &mut Connection) -> Result<Transaction<'_>, M3Error> {
     connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|_| unavailable())
+        .map_err(sql_failure)
 }
 
 fn existing_response<T: DeserializeOwned>(
@@ -120,7 +124,7 @@ fn existing_response<T: DeserializeOwned>(
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     match row {
         Some((stored, _)) if stored != fingerprint => {
             Err(M3Error::new(M3ErrorCode::IdempotencyConflict))
@@ -154,7 +158,7 @@ fn save_response<T: Serialize>(
                 integer(now_ms)?
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -183,7 +187,16 @@ fn insert_event(
                 integer(now_ms)?
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
+    super::activity::resource_event(
+        transaction,
+        owner,
+        kind,
+        aggregate_kind,
+        aggregate_id,
+        now_ms,
+    )
+    .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -240,7 +253,7 @@ fn load_project(
             },
         )
         .optional()
-        .map_err(|_| unavailable())?
+        .map_err(sql_failure)?
         .ok_or_else(|| M3Error::new(M3ErrorCode::ProjectNotRegistered))?;
     let observation: ProjectObservation = parse_json(&row.0)?;
     Ok(ProjectRecord {
@@ -274,7 +287,7 @@ pub(super) fn register_project(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let duplicate = transaction
@@ -284,7 +297,7 @@ pub(super) fn register_project(
             |_| Ok(()),
         )
         .optional()
-        .map_err(|_| unavailable())?
+        .map_err(sql_failure)?
         .is_some();
     if duplicate {
         return Err(M3Error::new(M3ErrorCode::ProjectAlreadyRegistered));
@@ -309,7 +322,7 @@ pub(super) fn register_project(
                 integer(now_ms)?
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let record = ProjectRecord {
         project_id: id,
         observation,
@@ -340,7 +353,7 @@ pub(super) fn register_project(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -365,7 +378,7 @@ pub(super) fn list_projects(
                (?2 IS NULL OR registered_at_ms < ?2 OR (registered_at_ms = ?2 AND project_id < ?3))
              ORDER BY registered_at_ms DESC, project_id DESC LIMIT ?4",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let cursor_time = cursor
         .as_ref()
         .map(|value| integer(value.registered_at_ms))
@@ -376,10 +389,10 @@ pub(super) fn list_projects(
             params![owner.as_str(), cursor_time, cursor_id, i64::from(limit) + 1],
             |row| row.get::<_, String>(0),
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut projects = Vec::new();
     for row in rows {
-        let id = ProjectId::parse(&row.map_err(|_| unavailable())?).map_err(|_| internal())?;
+        let id = ProjectId::parse(&row.map_err(sql_failure)?).map_err(|_| internal())?;
         projects.push(load_project(connection, owner, id)?);
     }
     let has_more = projects.len() > limit as usize;
@@ -419,7 +432,7 @@ pub(super) fn refresh_project(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = load_project(&transaction, owner, id)?;
@@ -452,7 +465,7 @@ pub(super) fn refresh_project(
                 id.to_string()
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     if changed {
         insert_event(
             &transaction,
@@ -485,7 +498,7 @@ pub(super) fn refresh_project(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -514,7 +527,7 @@ pub(super) fn set_project_favorite(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = load_project(&transaction, owner, id)?;
@@ -537,7 +550,7 @@ pub(super) fn set_project_favorite(
                     id.to_string()
                 ],
             )
-            .map_err(|_| unavailable())?;
+            .map_err(sql_failure)?;
         insert_event(
             &transaction,
             owner,
@@ -566,7 +579,7 @@ pub(super) fn set_project_favorite(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -588,7 +601,7 @@ pub(super) fn unregister_project(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = load_project(&transaction, owner, id)?;
@@ -596,12 +609,21 @@ pub(super) fn unregister_project(
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
+    super::activity::resource(
+        &transaction,
+        owner,
+        "project.remove",
+        "project",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM projects WHERE owner_principal_id=?1 AND project_id=?2",
             params![owner.as_str(), id.to_string()],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     insert_event(
         &transaction,
         owner,
@@ -625,7 +647,7 @@ pub(super) fn unregister_project(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -679,7 +701,7 @@ fn load_packages(
          FROM repository_package_versions WHERE repository_id=?1
          ORDER BY package_id ASC, version_text ASC",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let rows = statement
         .query_map(params![id.to_string()], |row| {
             Ok(RepositoryPackageVersion {
@@ -693,10 +715,10 @@ fn load_packages(
                 links: repository_package_links(row.get(16)?, row.get(17)?),
             })
         })
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut packages = Vec::new();
     for row in rows {
-        packages.push(row.map_err(|_| unavailable())?);
+        packages.push(row.map_err(sql_failure)?);
     }
     Ok(packages)
 }
@@ -726,7 +748,7 @@ fn load_repository(
          FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
         params![owner.as_str(), id.to_string()],
         |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?,row.get(11)?)),
-    ).optional().map_err(|_| unavailable())?.ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryNotRegistered))?;
+    ).optional().map_err(sql_failure)?.ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryNotRegistered))?;
     let source = match row.0.as_str() {
         "local" => RepositorySource::Local { path: row.1 },
         "remote" => RepositorySource::Remote { url: row.1 },
@@ -764,7 +786,7 @@ fn replace_packages(
             "DELETE FROM repository_package_versions WHERE repository_id=?1",
             params![id.to_string()],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     for package in packages {
         let resolver = if resolver_ready {
             package.resolver.as_ref()
@@ -808,7 +830,7 @@ fn replace_packages(
                         .and_then(|value| value.changelog.as_deref()),
                 ],
             )
-            .map_err(|_| unavailable())?;
+            .map_err(sql_failure)?;
     }
     Ok(())
 }
@@ -855,7 +877,7 @@ fn insert_repository(
                 integer(options.priority)?
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     replace_packages(
         transaction,
         id,
@@ -884,7 +906,7 @@ pub(super) fn register_repository(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let duplicate = transaction
@@ -894,7 +916,7 @@ pub(super) fn register_repository(
             |_| Ok(()),
         )
         .optional()
-        .map_err(|_| unavailable())?
+        .map_err(sql_failure)?
         .is_some();
     if duplicate {
         return Err(M3Error::new(M3ErrorCode::RepositoryAlreadyRegistered));
@@ -906,7 +928,7 @@ pub(super) fn register_repository(
             [owner.as_str()],
             |row| row.get::<_, i64>(0),
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     insert_repository(
         &transaction,
         owner,
@@ -948,7 +970,7 @@ pub(super) fn register_repository(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -972,7 +994,7 @@ pub(super) fn list_repositories(
          (?2 IS NULL OR registered_at_ms < ?2 OR (registered_at_ms = ?2 AND repository_id < ?3))
          ORDER BY registered_at_ms DESC, repository_id DESC LIMIT ?4",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let cursor_time = cursor
         .as_ref()
         .map(|value| integer(value.registered_at_ms))
@@ -983,10 +1005,10 @@ pub(super) fn list_repositories(
             params![owner.as_str(), cursor_time, cursor_id, i64::from(limit) + 1],
             |row| row.get::<_, String>(0),
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut repositories = Vec::new();
     for row in rows {
-        let id = RepositoryId::parse(&row.map_err(|_| unavailable())?).map_err(|_| internal())?;
+        let id = RepositoryId::parse(&row.map_err(sql_failure)?).map_err(|_| internal())?;
         repositories.push(load_repository(connection, owner, id)?);
     }
     let has_more = repositories.len() > limit as usize;
@@ -1025,7 +1047,7 @@ pub(super) fn list_repository_packages(
          (?2 IS NULL OR package_id > ?2 OR (package_id = ?2 AND version_text > ?3))
          ORDER BY package_id ASC, version_text ASC LIMIT ?4",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let cursor_package = cursor.as_ref().map(|value| value.package_id.as_str());
     let cursor_version = cursor.as_ref().map(|value| value.version.as_str());
     let rows = statement
@@ -1049,10 +1071,10 @@ pub(super) fn list_repository_packages(
                 })
             },
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut packages = Vec::new();
     for row in rows {
-        packages.push(row.map_err(|_| unavailable())?);
+        packages.push(row.map_err(sql_failure)?);
     }
     let has_more = packages.len() > limit as usize;
     if has_more {
@@ -1103,7 +1125,7 @@ pub(super) fn refresh_repository(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = load_repository(&transaction, owner, id)?;
@@ -1127,13 +1149,13 @@ pub(super) fn refresh_repository(
             [id.to_string()],
             |row| row.get::<_, i64>(0),
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
             params![owner.as_str(), id.to_string()],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     insert_repository(
         &transaction,
         owner,
@@ -1187,7 +1209,7 @@ pub(super) fn refresh_repository(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -1210,7 +1232,7 @@ pub(super) fn update_repository_validators(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let mut current = load_repository(&transaction, owner, id)?;
@@ -1221,7 +1243,7 @@ pub(super) fn update_repository_validators(
     current.observation.validators = validators.clone();
     current.observation.refreshed_at_ms = now_ms;
     transaction.execute("UPDATE repositories SET etag=?1, last_modified=?2, refreshed_at_ms=?3, updated_at_ms=?3 WHERE owner_principal_id=?4 AND repository_id=?5",
-        params![validators.etag, validators.last_modified, integer(now_ms)?, owner.as_str(), id.to_string()]).map_err(|_| unavailable())?;
+        params![validators.etag, validators.last_modified, integer(now_ms)?, owner.as_str(), id.to_string()]).map_err(sql_failure)?;
     if observed {
         insert_event(
             &transaction,
@@ -1246,7 +1268,7 @@ pub(super) fn update_repository_validators(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -1268,7 +1290,7 @@ pub(super) fn unregister_repository(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = load_repository(&transaction, owner, id)?;
@@ -1276,12 +1298,21 @@ pub(super) fn unregister_repository(
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
+    super::activity::resource(
+        &transaction,
+        owner,
+        "repository.remove",
+        "repository",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
             params![owner.as_str(), id.to_string()],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     insert_event(
         &transaction,
         owner,
@@ -1305,6 +1336,6 @@ pub(super) fn unregister_repository(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }

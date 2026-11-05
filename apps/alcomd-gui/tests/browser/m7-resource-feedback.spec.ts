@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
-test("repository success feedback never changes table or toolbar geometry", async ({ page }) => {
+test("repository fetch success preserves table and toolbar geometry without a popup", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
     const table = page.getByRole("table", { name: "Repositories", exact: true });
     const row = table.getByRole("row").filter({ hasText: "Example packages" });
@@ -9,7 +9,7 @@ test("repository success feedback never changes table or toolbar geometry", asyn
     await page.screenshot({ animations: "disabled" });
     const before = await Promise.all([table.boundingBox(), page.locator(".utility-workspace-toolbar").boundingBox(), row.boundingBox()]);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((r) => r.method === "repositories.refresh").length)).toBeGreaterThan(0);
     await expect(row.getByRole("status")).toHaveCount(0);
     const after = await Promise.all([table.boundingBox(), page.locator(".utility-workspace-toolbar").boundingBox(), row.boundingBox()]);
     for (let index = 0; index < before.length; index++) {
@@ -19,38 +19,38 @@ test("repository success feedback never changes table or toolbar geometry", asyn
     }
 });
 
-test("repository failure stays in the shared outlet and dismissing clears the previous operation", async ({ page }) => {
+test("repository failure stays in its row and dismissing clears the previous operation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure");
     const table = page.getByRole("table", { name: "Repositories", exact: true });
     const row = table.getByRole("row").filter({ hasText: "Local packages" });
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    const host = page.locator(".reminder-floating");
+    const host = row;
     await expect(host).toContainText("Repository refresh failed");
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await expect(row.getByRole("alert")).toHaveCount(0);
+    await expect(row.getByRole("alert")).toHaveCount(1);
     await expectRequestError(host.getByRole("alert"), "repository_unavailable");
     await page.clock.install();
     await page.clock.fastForward(10_000);
     await expect(host.getByRole("alert")).toBeVisible();
-    await host.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(host).toBeHidden();
+    await host.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(host.getByRole("alert")).toHaveCount(0);
     await row.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Remove this repository?", exact: true })).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByRole("alert")).toHaveCount(0);
 });
 
-test("success reminders replace each other, expire, and do not survive a new page visit", async ({ page }) => {
+test("successful repository operations do not create transient feedback or carry it across pages", async ({ page }) => {
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/repositories");
     const row = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Example packages" });
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((r) => r.method === "repositories.refresh").length)).toBeGreaterThan(0);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toHaveCount(1);
+    expect(await page.evaluate(() => window.resourceRequests.filter((r) => r.method === "repositories.refresh"))).toHaveLength(2);
     await page.clock.fastForward(5100);
     await expect(page.getByText("Repository refreshed.", { exact: true })).toHaveCount(0);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(page.getByText("Repository refreshed.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Repository refreshed.", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "User Packages", exact: true }).click();
     await expect(page.getByText("Repository refreshed.", { exact: true })).toHaveCount(0);
 });

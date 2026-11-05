@@ -102,6 +102,8 @@ pub(super) fn accept(
             ],
         )
         .map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE backup_restore_plans SET state='applied',apply_operation_id=?1
@@ -392,7 +394,9 @@ pub(super) fn finish_success(
         "operation.completed",
         completed_at_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "backups.restore", backup_id = %plan.draft.backup_id, project_id = %plan.draft.project_id, "operation completed");
+    Ok(())
 }
 
 pub(super) fn fail(
@@ -764,15 +768,15 @@ fn revision_value(value: u64) -> Result<Revision, M5BackupError> {
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
-fn failure(_: rusqlite::Error) -> M5BackupError {
-    error(M5BackupErrorCode::StoreUnavailable)
+fn failure(source: rusqlite::Error) -> M5BackupError {
+    error(M5BackupErrorCode::StoreUnavailable).with_source(source)
 }
 pub(super) fn unavailable() -> M5BackupError {
     error(M5BackupErrorCode::StoreUnavailable)
 }
-const fn internal() -> M5BackupError {
+fn internal() -> M5BackupError {
     error(M5BackupErrorCode::Internal)
 }
-const fn error(code: M5BackupErrorCode) -> M5BackupError {
+fn error(code: M5BackupErrorCode) -> M5BackupError {
     M5BackupError::new(code)
 }

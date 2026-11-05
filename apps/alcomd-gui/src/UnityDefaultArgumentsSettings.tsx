@@ -4,7 +4,7 @@ import type { SettingsGetResult } from "./core-models";
 import { Button, Dialog } from "./Material";
 import { capabilities, useCapability } from "./capabilities";
 import { useTranslation } from "./i18n";
-import { Reminder, RequestReminder, useReminder } from "./Reminder";
+import { Reminder, RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { SettingsAutosave, UnityArgumentsConflictError } from "./settings-autosave";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
@@ -35,7 +35,7 @@ export function UnityDefaultArgumentsSettings({ settingsWriter, snapshot }: { se
 
 function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settingsWriter: SettingsAutosave; initial: string[] | null; onClose(): void }) {
     const { t } = useTranslation();
-    const reminder = useReminder();
+
     const canManage = useCapability(capabilities.unityManage);
     const [open, setOpen] = useState(true);
     const baseline = useRef(structuredClone(initial)).current;
@@ -48,7 +48,7 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
     const close = () => { if (!pending.current) setOpen(false); };
     const finish = () => {
         setOpen(false);
-        reminder.success(t("Default Unity launch arguments saved."));
+
     };
     const save = async (desired: string[] | null) => {
         if (!canManage || pending.current || conflict) return;

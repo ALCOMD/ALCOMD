@@ -43,9 +43,18 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
 
     let store = StateStoreHandle::open(path.clone()).expect("registered State16 to latest upgrade");
     let connection = Connection::open(&path).expect("inspect upgraded fixture");
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 18);
-    assert_eq!(CURRENT_DATA_SCHEMA, 18);
-    assert_eq!(row_snapshot(&connection), before);
+    assert_eq!(integer(&connection, "PRAGMA user_version"), 19);
+    assert_eq!(CURRENT_DATA_SCHEMA, 19);
+    let mut retained = row_snapshot(&connection);
+    let activity_index = retained
+        .iter()
+        .position(|(name, _)| name == "activities")
+        .expect("State19 adds its own history table");
+    assert!(
+        retained.remove(activity_index).1.is_empty(),
+        "no legacy activity is fabricated"
+    );
+    assert_eq!(retained, before, "every pre-existing row remains unchanged");
     assert_eq!(
         integer(
             &connection,
@@ -77,7 +86,7 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     let reopened = StateStoreHandle::open(path.clone()).expect("reopen latest state");
     let connection = Connection::open(&path).expect("inspect reopened fixture");
     assert_eq!(row_snapshot(&connection), accepted);
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 18);
+    assert_eq!(integer(&connection, "PRAGMA user_version"), 19);
     assert_eq!(
         integer(&connection, "SELECT count(*) FROM pragma_foreign_key_check"),
         0

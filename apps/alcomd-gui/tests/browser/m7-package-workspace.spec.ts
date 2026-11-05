@@ -67,10 +67,10 @@ test("Failed filter persistence keeps the last confirmed visibility and exposes 
         const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
         const repository = panel.getByRole("checkbox").first();
         await repository.click();
-        await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : requestErrorMessage("permission_denied"));
+        await expect(page.getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : requestErrorMessage("permission_denied"));
         await expect(repository).toBeChecked();
         await expect(packageName(page, "Remote tools")).toBeVisible();
-        await expect(page.locator(".reminder-floating").getByRole("button", { name: "Reload filters" })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Reload filters" })).toBeVisible();
     }
 });
 
@@ -153,19 +153,20 @@ test("Package refresh is visible and handles zero or one repository with a final
     const refresh = page.getByRole("button", { name: "Refresh", exact: true });
     await expect(refresh).toBeVisible();
     await refresh.click();
-    await expect(page.getByText("0 refreshed, 0 failed.")).toBeVisible();
+    await expect(refresh).toBeEnabled();
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh"))).toHaveLength(0);
 
     await openHarness(page, "ready");
     await expect(packageName(page, "Refreshed package")).toHaveCount(0);
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByText("1 refreshed, 0 failed.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(1);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 });
 
 test("Package refresh processes every repository and reports partial failure without fake success", async ({ page }) => {
     await openHarness(page, "package-multiple");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByText("2 refreshed, 0 failed.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 
     await openHarness(page, "package-partial-failure");
@@ -178,7 +179,7 @@ test("Package refresh processes every repository and reports partial failure wit
 test("Package refresh retries a revision conflict once and then reloads", async ({ page }) => {
     await openHarness(page, "package-revision-conflict");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByText("1 refreshed, 0 failed.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 });
 
@@ -355,8 +356,8 @@ test("Inline prerelease selection uses daemon classification and surfaces plan f
     await expect(page.getByRole("dialog", { name: "Package filters", exact: true })).toBeHidden();
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1 · Example packages · Prerelease", exact: true }).click();
-    await expect(page.locator(".reminder-floating")).toHaveCount(1);
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Package changes were not applied");
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toContainText("Package changes were not applied");
     await expect(page.locator(".mutation-feedback")).toHaveCount(0);
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
     await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();

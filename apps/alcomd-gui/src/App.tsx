@@ -27,8 +27,8 @@ import type { ReactNode } from "react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
-import { ReminderProvider, RequestReminder } from "./Reminder";
-import { DiagnosticLogNotifications, DiagnosticLogProvider } from "./diagnostic-log-ui";
+import { RequestReminder } from "./Reminder";
+import { FrontendErrorBoundary, FrontendErrorReporter } from "./FrontendErrors";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, CoreEventsStatus, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
@@ -278,19 +278,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
 
     return (
         <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
-            <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
-            <ReminderProvider visit={visibleNavigation.read.visit} feedback={settingsSave.failed || windowStateError !== undefined ? <>
-                        {settingsSave.failed ? <div className="settings-save-error">
-                            <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
-                                message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
-                                <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
-                            </RequestReminder>
-                        </div> : null}
-                        {windowStateError === undefined ? null : <div className="shell-feedback">
-                            <RequestReminder error={windowStateError} title={null} message="Window mode and saved size could not be applied." onDismiss={() => setWindowStateError(undefined)}><Button type="button" variant="text" onClick={() => void windowMemory.current?.retry()}>{t("Retry")}</Button></RequestReminder>
-                        </div>}
-            </> : undefined}>
-            <DiagnosticLogNotifications />
+            <FrontendErrorReporter client={client} />
             <CoreEventsProvider events={events} enabled={negotiatedCapabilities?.kind === "ready"}>
             <div className="app-shell">
                 <div className="app-body">
@@ -301,11 +289,22 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
                         <CoreEventsStatus />
+                        {settingsSave.failed || windowStateError !== undefined ? <>
+                        {settingsSave.failed ? <div className="settings-save-error">
+                            <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
+                                message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
+                                <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
+                            </RequestReminder>
+                        </div> : null}
+                        {windowStateError === undefined ? null : <div className="shell-feedback">
+                            <RequestReminder error={windowStateError} title={null} message="Window mode and saved size could not be applied." onDismiss={() => setWindowStateError(undefined)}><Button type="button" variant="text" onClick={() => void windowMemory.current?.retry()}>{t("Retry")}</Button></RequestReminder>
+                        </div>}
+            </> : undefined}
                         {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
-                                    <RouteContent
+                                    <FrontendErrorBoundary key={visibleNavigation.read.visit} client={client}><RouteContent
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
@@ -313,7 +312,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                                         onSettingsApplied={applySettings}
                                         settingsWriter={settingsWriter}
                                         route={visibleNavigation.route}
-                                    />
+                                    /></FrontendErrorBoundary>
                                 </PageReadContext.Provider>
                             </Suspense>
                         </div>
@@ -327,7 +326,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                     </div>
                 </MaterialDialog>
             </div>
-            </CoreEventsProvider></ReminderProvider></DiagnosticLogProvider>
+            </CoreEventsProvider>
         </CapabilityProvider></LocaleProvider>
     );
 }
@@ -709,7 +708,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <LoadingState title={t("Opening extension UI")} />
                 ) : null}
                 {error === undefined ? null : (
-                    <RequestReminder inline error={error} title={t(errorTitle(error.code))}>
+                    <RequestReminder error={error} title={t(errorTitle(error.code))}>
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
                     </RequestReminder>
                 )}

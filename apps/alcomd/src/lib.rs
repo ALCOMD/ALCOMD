@@ -33,7 +33,8 @@ use tracing::Instrument;
 
 mod diagnostic_log_rpc;
 mod events_rpc;
-mod file_log;
+mod failure_activity;
+mod failure_report;
 mod hub_platform;
 mod m3_rpc;
 mod m4_rpc;
@@ -50,10 +51,8 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
-mod operation_log;
 mod project_discovery_platform;
 mod repository_list_rpc;
-mod rpc_log;
 mod storage_platform;
 
 #[cfg(feature = "test-kill-gates")]
@@ -105,8 +104,8 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
-    diagnostic_log: alcomd_application::DiagnosticLog,
-    _file_log: Option<file_log::FileLog>,
+    technical_logs: diagnostic_log_rpc::LogApplication,
+    _logging_runtime: Option<alcomd_logging::LoggingRuntime>,
     m2: M2Application,
     m3: M3ReadApplication,
     project_discovery: ProjectDiscoveryApplication,
@@ -141,20 +140,20 @@ where
 }
 
 /// Starts Core with the same safe log source used by its tracing subscriber.
-pub async fn serve_with_data_and_diagnostics_until<F>(
+pub async fn serve_with_data_and_logs_until<F>(
     ipc: IpcConfig,
     data: DataConfig,
-    diagnostic_log: alcomd_application::DiagnosticLog,
+    log_source: alcomd_logging::LogSource,
     shutdown: F,
 ) -> Result<(), BindError>
 where
     F: Future<Output = ()>,
 {
-    let (mut listener, applications) = initialize_daemon_with_diagnostics(
+    let (mut listener, applications) = initialize_daemon_with_logs(
         ipc,
         data,
         Arc::new(storage_platform::PlatformStorageDirectories),
-        diagnostic_log,
+        Some(log_source),
     )
     .await?;
     run_listener(&mut listener, applications, shutdown)
@@ -179,20 +178,14 @@ async fn initialize_daemon_with_directories(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_diagnostics(
-        ipc,
-        data,
-        directory_platform,
-        alcomd_application::DiagnosticLog::new(),
-    )
-    .await
+    initialize_daemon_with_logs(ipc, data, directory_platform, None).await
 }
 
-async fn initialize_daemon_with_diagnostics(
+async fn initialize_daemon_with_logs(
     ipc: IpcConfig,
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
-    diagnostic_log: alcomd_application::DiagnosticLog,
+    log_source: Option<alcomd_logging::LogSource>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
@@ -201,16 +194,17 @@ async fn initialize_daemon_with_diagnostics(
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
     let cache_root = data_root.join("package-cache");
-    let file_log = match file_log::FileLog::start(diagnostic_log.clone(), &data_root.join("logs")) {
-        Ok(writer) => Some(writer),
-        Err(error) => {
-            diagnostic_log.record(alcomd_application::DiagnosticLogLevel::Error,
-                Some("diagnostic.log_file_failed"), None, None,
-                &format!("Could not open the technical log directory: {error}. Logs remain available in memory."),
-                "alcomd::logging");
-            None
-        }
-    };
+    let logging_runtime = log_source.is_none().then(|| {
+        alcomd_logging::LoggingRuntime::start(data_root.join("logs").join("core"), "core")
+    });
+    let source = log_source.unwrap_or_else(|| {
+        logging_runtime
+            .as_ref()
+            .expect("owned log runtime")
+            .source()
+    });
+    let technical_logs =
+        alcomd_application::TechnicalLogApplication::new(diagnostic_log_rpc::CoreLogReader(source));
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
@@ -336,23 +330,20 @@ async fn initialize_daemon_with_diagnostics(
         .await
     {
         let project_directory = defaults.project_directory;
+        let prepared_directory = project_directory.clone();
         let prepared = tokio::task::spawn_blocking(move || {
-            alcomd_platform::prepare_storage_directory(std::path::Path::new(&project_directory))
+            alcomd_platform::prepare_storage_directory(std::path::Path::new(&prepared_directory))
         })
         .await;
         match prepared {
             Ok(Ok(_)) => {}
             Ok(Err(error)) => {
-                tracing::warn!(%error, "Default project directory could not be prepared")
+                tracing::warn!(path=%project_directory, error=%alcomd_application::technical_error_chain(&error), "Default project directory could not be prepared")
             }
             Err(error) => {
-                tracing::warn!(%error, "Default project directory preparation did not finish")
+                tracing::warn!(path=%project_directory, error=%alcomd_application::technical_error_chain(&error), "Default project directory preparation did not finish")
             }
         }
-    } else {
-        tracing::warn!(
-            "System default project directory is unavailable; configured locations remain authoritative"
-        );
     }
     let backups = BackupService::with_locks(
         store.clone(),
@@ -374,8 +365,8 @@ async fn initialize_daemon_with_diagnostics(
         official_gui.clone(),
     );
     let applications = Arc::new(Applications {
-        diagnostic_log,
-        _file_log: file_log,
+        technical_logs,
+        _logging_runtime: logging_runtime,
         m2,
         m3: M3ReadApplication::new(store.clone(), reader.clone()),
         project_discovery: ProjectDiscoveryApplication::with_locks(
@@ -423,16 +414,6 @@ where
     F: Future<Output = ()>,
 {
     let mut connections = tokio::task::JoinSet::new();
-    let mut log_tasks = tokio::task::JoinSet::new();
-    let log_subscription = applications
-        .m2
-        .subscribe_events(&AccessContext::local_owner(), None, 100)
-        .map_err(|_| io::Error::other("Task log subscription could not be established"))?;
-    log_tasks.spawn(operation_log::follow(
-        applications.m2.clone(),
-        applications.diagnostic_log.clone(),
-        log_subscription,
-    ));
     let mut runtime_tick = tokio::time::interval(std::time::Duration::from_millis(250));
     runtime_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut discovery_tick = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -459,13 +440,6 @@ where
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
             }
-            result = log_tasks.join_next(), if !log_tasks.is_empty() => {
-                if !matches!(result, Some(Ok(Ok(())))) {
-                    applications.diagnostic_log.record(alcomd_application::DiagnosticLogLevel::Error,
-                        Some("diagnostic.operation_stream_failed"), None, None,
-                        "The committed task event stream stopped. New task results cannot be added to the technical log.", "alcomd::operations");
-                }
-            }
             _ = discovery_tick.tick() => discovery_requested = true,
             () = discovery_notify.notified() => discovery_requested = true,
             () = project_recovery_notify.notified() => discovery_requested = true,
@@ -478,8 +452,15 @@ where
                                 "Default project discovery completed");
                         }
                     }
-                    Some(Ok(Err(error))) => tracing::warn!(?error, "Default project discovery did not complete"),
-                    Some(Err(error)) => tracing::warn!(%error, "Default project discovery task did not finish"),
+                    Some(Ok(Err(_))) => {}
+                    Some(Err(error)) => {
+                        alcomd_application::record_technical_failure(
+                            &error,
+                            None,
+                            None,
+                            "default project discovery task did not finish",
+                        );
+                    }
                     None => {}
                 }
             }
@@ -496,13 +477,12 @@ where
         if discovery_requested && discovery_tasks.is_empty() {
             discovery_requested = false;
             let discovery = applications.project_discovery.clone();
-            discovery_tasks.spawn(async move { discovery.scan().await });
+            discovery_tasks
+                .spawn(async move { discovery.scan().await }.instrument(tracing::Span::current()));
         }
     }
 
     discovery_tasks.abort_all();
-    log_tasks.abort_all();
-    while log_tasks.join_next().await.is_some() {}
     while discovery_tasks.join_next().await.is_some() {}
     connections.abort_all();
     while connections.join_next().await.is_some() {}
@@ -548,7 +528,7 @@ async fn serve_connection(
             // either the normal request path or the disconnect-aware log read.
             let dispatch = Box::pin(
                 dispatch_payload(&payload, &state, &applications)
-                    .instrument(tracing::info_span!("rpc_request", gui_toast = false)),
+                    .instrument(tracing::info_span!("rpc_request")),
             );
             let action = if diagnostic_log_rpc::is_log_read(&payload) {
                 match diagnostic_log_rpc::until_disconnect(&mut stream, dispatch).await? {
@@ -627,7 +607,8 @@ async fn dispatch_payload(
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-    let method = request.method.clone();
+    let attempt = failure_activity::prepare(&request);
+    let access = AccessContext::local_owner();
     let mut action = if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
         m7_candidates_rpc::failure(
             request.id,
@@ -636,10 +617,17 @@ async fn dispatch_payload(
     } else if request.method == METHOD_SYSTEM_STATUS {
         dispatch_status(request, state)
     } else {
-        let access = AccessContext::local_owner();
-        dispatch_m2(request, state, applications, &access).await
+        let project_id = request
+            .params
+            .get("projectId")
+            .and_then(Value::as_str)
+            .filter(|v| alcomd_application::ProjectId::parse(v).is_ok());
+        let span = tracing::info_span!("request",request_method=%request.method,request_id=%request.id,project_id);
+        tracing::Instrument::instrument(dispatch_m2(request, state, applications, &access), span)
+            .await
     };
-    rpc_log::record(&applications.diagnostic_log, &method, &mut action.response);
+    failure_activity::record_rejection(attempt, &mut action, &applications.official_gui, &access)
+        .await;
     action
 }
 
@@ -912,8 +900,10 @@ async fn dispatch_m2(
                 Err(error) => application_error(request.id, error),
             }
         }
-        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ => {
-            diagnostic_log_rpc::dispatch(request, state, &applications.diagnostic_log, access).await
+        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ
+        | alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HISTORY
+        | alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HEALTH => {
+            diagnostic_log_rpc::dispatch(request, state, &applications.technical_logs, access).await
         }
         _ if matches!(
             request.method.as_str(),
@@ -921,7 +911,7 @@ async fn dispatch_m2(
                 | alcomd_protocol::METHOD_SETTINGS_UPDATE
                 | alcomd_protocol::METHOD_UNITY_HUB_OPEN
                 | alcomd_protocol::METHOD_ACTIVITY_LIST
-                | alcomd_protocol::METHOD_DIAGNOSTICS_LIST
+                | alcomd_protocol::METHOD_ACTIVITY_GET
         ) =>
         {
             m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
@@ -1149,25 +1139,22 @@ fn application_rpc_error(error: ApplicationError) -> RpcError {
     match error {
         ApplicationError::PermissionDenied => RpcError::permission_denied(),
         ApplicationError::InvalidInput => RpcError::invalid_request(),
-        ApplicationError::Store(StoreErrorKind::OperationNotFound) => {
-            RpcError::operation_not_found()
-        }
-        ApplicationError::Store(StoreErrorKind::RevisionConflict) => RpcError::revision_conflict(),
-        ApplicationError::Store(StoreErrorKind::IdempotencyConflict) => {
-            RpcError::idempotency_conflict()
-        }
-        ApplicationError::Store(StoreErrorKind::OperationNotCancellable) => {
-            RpcError::operation_not_cancellable()
-        }
-        ApplicationError::Store(StoreErrorKind::Unavailable) => RpcError::store_unavailable(),
-        ApplicationError::Store(StoreErrorKind::CorruptState) => {
-            RpcError::internal(OperationId::new().to_string())
-        }
+        ApplicationError::Store(error) => match error.kind() {
+            StoreErrorKind::OperationNotFound => RpcError::operation_not_found(),
+            StoreErrorKind::RevisionConflict => RpcError::revision_conflict(),
+            StoreErrorKind::IdempotencyConflict => RpcError::idempotency_conflict(),
+            StoreErrorKind::OperationNotCancellable => RpcError::operation_not_cancellable(),
+            StoreErrorKind::Unavailable => RpcError::store_unavailable(),
+            StoreErrorKind::CorruptState => RpcError::internal(OperationId::new().to_string()),
+        },
     }
 }
 
 fn application_error(id: String, error: ApplicationError) -> DispatchAction {
-    error_action(Some(id), application_rpc_error(error), false)
+    let diagnostic_id = failure_report::report(&error, None, "state request failed");
+    let mut public = application_rpc_error(error);
+    public.diagnostic_id = Some(diagnostic_id);
+    error_action(Some(id), public, false)
 }
 
 fn invalid(id: String) -> DispatchAction {

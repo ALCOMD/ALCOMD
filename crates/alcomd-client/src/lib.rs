@@ -215,7 +215,32 @@ impl AlcomdClient {
         &mut self,
         params: alcomd_protocol::DiagnosticLogReadParams,
     ) -> Result<alcomd_protocol::DiagnosticLogReadResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ, params)
+        let deadline = if params.follow {
+            None
+        } else {
+            Some(Duration::from_secs(5))
+        };
+        self.call_with_deadline(
+            alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ,
+            params,
+            deadline,
+        )
+        .await
+    }
+
+    /// Pages saved technical logs without subscribing to notifications.
+    pub async fn diagnostic_log_history(
+        &mut self,
+        params: alcomd_protocol::DiagnosticLogHistoryParams,
+    ) -> Result<alcomd_protocol::DiagnosticLogHistoryResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HISTORY, params)
+            .await
+    }
+
+    pub async fn diagnostic_log_health(
+        &mut self,
+    ) -> Result<alcomd_protocol::DiagnosticLogHealth, ClientError> {
+        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HEALTH, json!({}))
             .await
     }
 
@@ -270,13 +295,15 @@ impl AlcomdClient {
             .await
     }
 
-    /// Lists the current Principal's redacted diagnostic projection.
-    pub async fn diagnostics_list(
+    pub async fn activity_get(
         &mut self,
-        params: alcomd_protocol::DiagnosticsListParams,
-    ) -> Result<alcomd_protocol::DiagnosticsListResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LIST, params)
-            .await
+        activity_id: String,
+    ) -> Result<alcomd_protocol::ActivityGetResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_ACTIVITY_GET,
+            alcomd_protocol::ActivityGetParams { activity_id },
+        )
+        .await
     }
 
     pub async fn extensions_list(
@@ -1079,13 +1106,21 @@ impl AlcomdClient {
         P: Serialize,
         T: DeserializeOwned,
     {
+        let deadline = read_deadline(method);
+        self.call_with_deadline(method, params, deadline).await
+    }
+    async fn call_with_deadline<P: Serialize, T: DeserializeOwned>(
+        &mut self,
+        method: &str,
+        params: P,
+        deadline: Option<Duration>,
+    ) -> Result<T, ClientError> {
         if !self.usable {
             return Err(ClientError::InvalidResponse);
         }
         // If a caller cancels while a frame is in flight, this connection must
         // not be reused with an unread response or a partially consumed frame.
         self.usable = false;
-        let deadline = read_deadline(method);
         let result = match deadline {
             Some(duration) => tokio::time::timeout(duration, self.exchange(method, params))
                 .await
@@ -1110,13 +1145,25 @@ impl AlcomdClient {
         };
         let payload = serde_json::to_vec(&request).map_err(|_| ClientError::InvalidResponse)?;
         let frame = encode_frame(&payload).map_err(|_| ClientError::InvalidResponse)?;
-        self.stream
-            .write_all(&frame)
+        let payload = if method == alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ {
+            // Waiting for a new readable record is intentionally unbounded. A
+            // blocked request write or partially received frame is not idle.
+            tokio::time::timeout(Duration::from_secs(5), async {
+                self.stream.write_all(&frame).await?;
+                self.stream.flush().await
+            })
             .await
+            .map_err(|_| ClientError::ReadTimeout)?
             .map_err(ClientError::Transport)?;
-        self.stream.flush().await.map_err(ClientError::Transport)?;
-
-        let payload = read_frame(&mut self.stream).await?;
+            read_waiting_frame(&mut self.stream, Duration::from_secs(5)).await?
+        } else {
+            self.stream
+                .write_all(&frame)
+                .await
+                .map_err(ClientError::Transport)?;
+            self.stream.flush().await.map_err(ClientError::Transport)?;
+            read_frame(&mut self.stream).await?
+        };
         decode_response(&payload, &request.id)
     }
 }
@@ -1138,7 +1185,10 @@ fn decode_response<T: DeserializeOwned>(
 
 fn read_deadline(method: &str) -> Option<Duration> {
     use alcomd_protocol::*;
-    if matches!(method, METHOD_SYSTEM_HELLO | METHOD_EVENTS_SUBSCRIBE) {
+    if matches!(
+        method,
+        METHOD_SYSTEM_HELLO | METHOD_EVENTS_SUBSCRIBE | METHOD_DIAGNOSTICS_LOG_HISTORY
+    ) {
         return Some(Duration::from_secs(5));
     }
     matches!(
@@ -1169,7 +1219,8 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_EXTENSIONS_PERMISSIONS_LIST
             | METHOD_SETTINGS_GET
             | METHOD_ACTIVITY_LIST
-            | METHOD_DIAGNOSTICS_LIST
+            | METHOD_ACTIVITY_GET
+            | METHOD_DIAGNOSTICS_LOG_HEALTH
     )
     .then_some(Duration::from_secs(10))
 }
@@ -1255,6 +1306,66 @@ async fn read_frame(stream: &mut IpcStream) -> Result<Vec<u8>, ClientError> {
         .await
         .map_err(ClientError::Transport)?;
     Ok(payload)
+}
+
+async fn read_waiting_frame<R: tokio::io::AsyncRead + Unpin>(
+    stream: &mut R,
+    transfer_deadline: Duration,
+) -> Result<Vec<u8>, ClientError> {
+    let mut prefix = [0_u8; 4];
+    stream
+        .read_exact(&mut prefix[..1])
+        .await
+        .map_err(ClientError::Transport)?;
+    tokio::time::timeout(transfer_deadline, async {
+        stream
+            .read_exact(&mut prefix[1..])
+            .await
+            .map_err(ClientError::Transport)?;
+        let length = decode_frame_length(prefix).map_err(|_| ClientError::InvalidResponse)?;
+        let mut payload = vec![0; length];
+        stream
+            .read_exact(&mut payload)
+            .await
+            .map_err(ClientError::Transport)?;
+        Ok(payload)
+    })
+    .await
+    .map_err(|_| ClientError::ReadTimeout)?
+}
+
+#[cfg(test)]
+mod log_transport_tests {
+    use super::*;
+    #[tokio::test]
+    async fn idle_log_wait_has_no_timeout_but_incomplete_frame_does() {
+        let (mut reader, mut writer) = tokio::io::duplex(64);
+        let task = tokio::spawn(async move {
+            read_waiting_frame(&mut reader, Duration::from_millis(25)).await
+        });
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            !task.is_finished(),
+            "healthy idle follow is not a timed read"
+        );
+        writer.write_all(&[3]).await.expect("first prefix byte");
+        assert!(matches!(
+            task.await.expect("reader task"),
+            Err(ClientError::ReadTimeout)
+        ));
+    }
+    #[tokio::test]
+    async fn waiting_log_frame_preserves_the_normal_frame_contract() {
+        let (mut reader, mut writer) = tokio::io::duplex(64);
+        let frame = encode_frame(b"{} ").expect("valid frame");
+        writer.write_all(&frame).await.expect("complete frame");
+        assert_eq!(
+            read_waiting_frame(&mut reader, Duration::from_secs(1))
+                .await
+                .expect("read frame"),
+            b"{} "
+        );
+    }
 }
 
 /// Errors produced by the RPC client.

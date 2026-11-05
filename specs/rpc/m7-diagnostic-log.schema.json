@@ -1,53 +1,411 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-diagnostic-log.json",
-    "title": "ALCOMD bounded safe Core log reads",
-    "x-alcomd-method-permissions": {"diagnostics.log.read": ["diagnostics.read"]},
-    "x-alcomd-method-capabilities": {"diagnostics.log.read": "diagnostics.log.v1"},
-    "x-alcomd-method-params": {"diagnostics.log.read": "#/$defs/readParams"},
-    "x-alcomd-method-results": {"diagnostics.log.read": "#/$defs/readResult"},
+    "title": "ALCOMD local-owner standard technical logs and independent health",
+    "x-alcomd-method-permissions": {
+        "diagnostics.log.read": [
+            "diagnostics.read"
+        ],
+        "diagnostics.log.history": [
+            "diagnostics.read"
+        ],
+        "diagnostics.log.health": [
+            "diagnostics.read"
+        ]
+    },
+    "x-alcomd-method-capabilities": {
+        "diagnostics.log.read": "diagnostics.log.v1",
+        "diagnostics.log.history": "diagnostics.log.v1",
+        "diagnostics.log.health": "diagnostics.log.v1"
+    },
+    "x-alcomd-method-params": {
+        "diagnostics.log.read": "#/$defs/readParams",
+        "diagnostics.log.history": "#/$defs/historyParams",
+        "diagnostics.log.health": "#/$defs/healthParams"
+    },
+    "x-alcomd-method-results": {
+        "diagnostics.log.read": "#/$defs/readResult",
+        "diagnostics.log.history": "#/$defs/historyResult",
+        "diagnostics.log.health": "#/$defs/health"
+    },
     "x-alcomd-local-owner-only": true,
-    "x-alcomd-buffer-capacity": 1024,
+    "x-alcomd-max-frame-bytes": 4194304,
+    "x-alcomd-max-record-bytes": 524288,
+    "x-alcomd-queue-records": 64,
+    "x-alcomd-scan-bytes": 1048576,
     "$defs": {
-        "methodName": {"const": "diagnostics.log.read"},
-        "safeInteger": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
-        "identity": {"type": "string", "minLength": 36, "maxLength": 36, "pattern": "^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$"},
-        "code": {"type": "string", "minLength": 1, "maxLength": 96, "pattern": "^[a-z][a-z0-9._-]*$"},
-        "cursor": {
-            "type": "object", "additionalProperties": false, "required": ["instanceId", "sequence"],
-            "properties": {"instanceId": {"$ref": "#/$defs/identity"}, "sequence": {"$ref": "#/$defs/safeInteger"}}
+        "methodName": {
+            "enum": [
+                "diagnostics.log.read",
+                "diagnostics.log.history",
+                "diagnostics.log.health"
+            ]
         },
-        "readParams": {
-            "type": "object", "additionalProperties": false,
+        "query": {
+            "type": "object",
+            "additionalProperties": false,
             "properties": {
-                "cursor": {"$ref": "#/$defs/cursor"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100},
-                "waitMs": {"type": "integer", "minimum": 0, "maximum": 20000, "default": 0}
-            }
+                "search": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "x-alcomd-max-utf8-bytes": 4096
+                },
+                "levels": {
+                    "type": "array",
+                    "maxItems": 5,
+                    "items": {
+                        "enum": [
+                            "TRACE",
+                            "DEBUG",
+                            "INFO",
+                            "WARN",
+                            "ERROR"
+                        ]
+                    }
+                },
+                "target": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "diagnosticId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                }
+            },
+            "required": []
+        },
+        "health": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "queueDropped": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "oversizeRejected": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "writeFailed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "rotationFailed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "flushFailed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "sourceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "sessionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "state": {
+                    "enum": [
+                        "ready",
+                        "degraded",
+                        "closed"
+                    ]
+                },
+                "hasGap": {
+                    "type": "boolean"
+                },
+                "lastFailure": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "type": "string"
+                        },
+                        "message": {
+                            "type": "string",
+                            "maxLength": 4096
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "message"
+                    ]
+                }
+            },
+            "required": [
+                "revision",
+                "queueDropped",
+                "oversizeRejected",
+                "writeFailed",
+                "rotationFailed",
+                "flushFailed",
+                "sourceId",
+                "sessionId",
+                "state",
+                "hasGap"
+            ]
         },
         "item": {
-            "type": "object", "additionalProperties": false,
-            "required": ["instanceId", "sequence", "occurredAtMs", "level", "code", "message", "target", "notify"],
+            "type": "object",
+            "additionalProperties": false,
             "properties": {
-                "instanceId": {"$ref": "#/$defs/identity"},
-                "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
-                "occurredAtMs": {"$ref": "#/$defs/safeInteger"},
-                "level": {"enum": ["trace", "debug", "info", "warning", "error"]},
-                "code": {"$ref": "#/$defs/code"},
-                "message": {"type":"string", "minLength":1, "maxLength":4096, "x-alcomd-max-utf8-bytes":4096},
-                "target": {"type":"string", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9_:.-]+$"},
-                "diagnosticId": {"$ref": "#/$defs/identity"},
-                "notify": {"type": "boolean"}
-            }
+                "sourceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "sessionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "segmentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "record": {
+                    "type": "object",
+                    "required": [
+                        "timestamp",
+                        "level",
+                        "target",
+                        "fields"
+                    ],
+                    "properties": {
+                        "timestamp": {
+                            "type": "string"
+                        },
+                        "level": {
+                            "enum": [
+                                "TRACE",
+                                "DEBUG",
+                                "INFO",
+                                "WARN",
+                                "ERROR"
+                            ]
+                        },
+                        "target": {
+                            "type": "string"
+                        },
+                        "fields": {
+                            "type": "object"
+                        },
+                        "spans": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        }
+                    },
+                    "additionalProperties": true,
+                    "x-alcomd-max-encoded-bytes": 524288
+                }
+            },
+            "required": [
+                "sourceId",
+                "sessionId",
+                "segmentId",
+                "offset",
+                "record"
+            ]
+        },
+        "issue": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "kind": {
+                    "type": "string"
+                },
+                "segmentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "minLength": 36,
+                    "maxLength": 36
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                }
+            },
+            "required": [
+                "kind"
+            ]
+        },
+        "readParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200,
+                    "default": 100
+                },
+                "follow": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "query": {
+                    "$ref": "#/$defs/query"
+                }
+            },
+            "required": []
+        },
+        "historyParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "before": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200,
+                    "default": 100
+                },
+                "query": {
+                    "$ref": "#/$defs/query"
+                }
+            },
+            "required": []
+        },
+        "healthParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {},
+            "required": []
         },
         "readResult": {
-            "type": "object", "additionalProperties": false, "required": ["items", "nextCursor", "reset", "gap"],
+            "type": "object",
+            "additionalProperties": false,
             "properties": {
-                "items": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/item"}},
-                "nextCursor": {"$ref": "#/$defs/cursor"},
-                "reset": {"type": "boolean"},
-                "gap": {"type": "boolean"}
-            }
+                "items": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "$ref": "#/$defs/item"
+                    }
+                },
+                "health": {
+                    "$ref": "#/$defs/health"
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/issue"
+                    },
+                    "maxItems": 32
+                },
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "scannedBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "nextCursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "baseline": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "health",
+                "issues",
+                "hasMore",
+                "scannedBytes",
+                "nextCursor",
+                "baseline"
+            ]
+        },
+        "historyResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "$ref": "#/$defs/item"
+                    }
+                },
+                "health": {
+                    "$ref": "#/$defs/health"
+                },
+                "issues": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/issue"
+                    },
+                    "maxItems": 32
+                },
+                "hasMore": {
+                    "type": "boolean"
+                },
+                "scannedBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "nextCursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                }
+            },
+            "required": [
+                "items",
+                "health",
+                "issues",
+                "hasMore",
+                "scannedBytes"
+            ]
         }
     }
 }

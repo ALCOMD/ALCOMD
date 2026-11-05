@@ -337,6 +337,8 @@ pub(super) fn accept_package_plan(
             ],
         )
         .map_err(store_error)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE package_plans SET state='applied', apply_operation_id=?1
@@ -688,6 +690,7 @@ pub(super) fn complete_package_apply(
         completed_at_ms,
     )?;
     transaction.commit().map_err(store_error)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "packages.apply", project_id = %plan.project_id, action = ?plan.action, "operation completed");
     Ok(())
 }
 
@@ -1088,8 +1091,8 @@ fn invalid_query() -> rusqlite::Error {
     rusqlite::Error::InvalidQuery
 }
 
-fn store_error(_: rusqlite::Error) -> M4Error {
-    M4Error::new(M4ErrorCode::StoreUnavailable)
+fn store_error(source: rusqlite::Error) -> M4Error {
+    M4Error::new(M4ErrorCode::StoreUnavailable).with_source(source)
 }
 
 fn internal() -> M4Error {

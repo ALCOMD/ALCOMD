@@ -8,15 +8,15 @@ use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
 use alcomd_protocol::{
     ActivityListParams, AppearanceMode, AppearanceMotion, AppearanceScheme,
-    AppearanceSettingsUpdate, DiagnosticsListParams, NullableUpdate, PackageSettingsUpdate,
-    SettingsLocale, SettingsUpdate, SettingsUpdateParams,
+    AppearanceSettingsUpdate, DiagnosticLogHistoryParams, DiagnosticLogReadParams, NullableUpdate,
+    PackageSettingsUpdate, SettingsLocale, SettingsUpdate, SettingsUpdateParams,
 };
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn official_settings_activity_and_diagnostics_round_trip_without_new_state_schema() {
+async fn official_settings_and_independent_activity_round_trip_with_technical_log_health() {
     let fixture = TestDirectory::new();
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
@@ -37,6 +37,14 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
+    assert!(
+        client
+            .activity_list(ActivityListParams::default())
+            .await
+            .expect("fresh activity model")
+            .items
+            .is_empty()
+    );
     assert_eq!(defaults.config_schema, 10);
     assert_eq!(defaults.revision, 1);
     assert!(defaults.settings.projects.auto_discover);
@@ -275,6 +283,15 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     .await
     .expect_err("Hub open has an independent negotiated capability");
     assert_eq!(no_capability.code, "capability_required");
+    let log_without_capability = raw_request(
+        &mut raw,
+        "log-health-without-capability",
+        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_HEALTH,
+        json!({}),
+    )
+    .await
+    .expect_err("technical logs require their negotiated capability");
+    assert_eq!(log_without_capability.code, "capability_required");
     drop(raw);
 
     // Filesystem evidence is derived from the same accepted Config snapshot, never persisted.
@@ -457,20 +474,75 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .expect_err("stale settings update");
     assert!(matches!(stale, ClientError::Remote(error) if error.code == "revision_conflict"));
 
-    let accepted = client
+    assert!(
+        client
+            .activity_list(ActivityListParams::default())
+            .await
+            .expect("settings, read guards and malformed requests do not create activity")
+            .items
+            .is_empty()
+    );
+    let operations_before = client
+        .operations_list(None, Some(100), false)
+        .await
+        .expect("operations before rejected execution");
+    let missing_project = Uuid::new_v4().to_string();
+    let rejected = client
+        .project_unregister(
+            missing_project.clone(),
+            1,
+            "missing-project-attempt".to_owned(),
+        )
+        .await
+        .expect_err("an authorized, meaningful execution can fail its precheck");
+    assert!(
+        matches!(&rejected, ClientError::Remote(error) if error.code == "project_not_registered"),
+        "expected the original project error, got {rejected:?}"
+    );
+    assert_eq!(
+        client
+            .operations_list(None, Some(100), false)
+            .await
+            .expect("rejected execution does not create an Operation"),
+        operations_before
+    );
+    assert!(
+        client
+            .projects_list(None, Some(100))
+            .await
+            .expect("rejected execution preserves project registry")
+            .projects
+            .is_empty()
+    );
+    let rejected_history = client
+        .activity_list(ActivityListParams::default())
+        .await
+        .expect("failed activity is the explicit no-business-side-effect exception");
+    assert_eq!(rejected_history.items.len(), 1);
+    let rejected_activity = &rejected_history.items[0];
+    assert_eq!(rejected_activity.action, "project.remove");
+    assert_eq!(rejected_activity.status, "failed");
+    assert_eq!(
+        rejected_activity.subject.id.as_deref(),
+        Some(missing_project.as_str())
+    );
+    assert_eq!(
+        rejected_activity
+            .result
+            .as_ref()
+            .expect("failed result")
+            .code,
+        "project_not_registered"
+    );
+    assert!(rejected_activity.operation_id.is_none());
+    let first_operation = completed_state_check(&mut client, "m7-official-state-check").await;
+    completed_state_check(&mut client, "m7-official-state-check-second").await;
+    completed_state_check(&mut client, "m7-official-state-check-third").await;
+    let replay = client
         .state_check("m7-official-state-check".to_owned())
         .await
-        .expect("start operation");
-    for _ in 0..100 {
-        let operation = client
-            .operation_get(accepted.operation_id.clone())
-            .await
-            .expect("read operation");
-        if matches!(operation.state, alcomd_protocol::OperationState::Succeeded) {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+        .expect("replay accepted execution");
+    assert_eq!(replay.operation_id, first_operation);
     let activity = client
         .activity_list(ActivityListParams {
             cursor: None,
@@ -480,6 +552,43 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .expect("list activity");
     assert_eq!(activity.items.len(), 2);
     assert!(activity.next_cursor.is_some());
+    let second_page = client
+        .activity_list(ActivityListParams {
+            cursor: activity.next_cursor.clone(),
+            limit: Some(2),
+        })
+        .await
+        .expect("read the remaining independent activities");
+    assert_eq!(second_page.items.len(), 2);
+    assert!(second_page.next_cursor.is_none());
+    let all_items = activity
+        .items
+        .iter()
+        .chain(&second_page.items)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        all_items
+            .iter()
+            .filter(|item| item.action == "state.check")
+            .count(),
+        3
+    );
+    assert!(
+        all_items
+            .windows(2)
+            .all(|pair| (pair[0].started_at_ms, &pair[0].activity_id)
+                > (pair[1].started_at_ms, &pair[1].activity_id))
+    );
+    for item in &all_items {
+        assert_eq!(
+            client
+                .activity_get(item.activity_id.clone())
+                .await
+                .expect("read activity identity")
+                .activity,
+            **item,
+        );
+    }
     let serialized = serde_json::to_string(&activity).expect("serialize redacted activity");
     for forbidden in [
         "Authorization",
@@ -490,14 +599,49 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     ] {
         assert!(!serialized.contains(forbidden), "leaked {forbidden}");
     }
-    assert!(
-        client
-            .diagnostics_list(DiagnosticsListParams::default())
-            .await
-            .expect("list diagnostics")
-            .items
-            .is_empty()
+    let health = client
+        .diagnostic_log_health()
+        .await
+        .expect("read independent log health");
+    assert!(Uuid::parse_str(&health.source_id).is_ok());
+    assert!(Uuid::parse_str(&health.session_id).is_ok());
+    assert_eq!(health.state, "ready");
+    assert!(!health.has_gap);
+    assert_eq!(
+        (
+            health.queue_dropped,
+            health.oversize_rejected,
+            health.write_failed,
+            health.rotation_failed,
+            health.flush_failed
+        ),
+        (0, 0, 0, 0, 0)
     );
+    let baseline = client
+        .diagnostic_log_read(DiagnosticLogReadParams::default())
+        .await
+        .expect("take same-file technical log baseline");
+    assert!(baseline.baseline);
+    assert!(baseline.issues.is_empty());
+    assert_eq!(baseline.health, health);
+    let history = client
+        .diagnostic_log_history(DiagnosticLogHistoryParams {
+            before: Some(baseline.next_cursor),
+            ..DiagnosticLogHistoryParams::default()
+        })
+        .await
+        .expect("read the same source history before baseline");
+    assert_eq!(history.health.source_id, health.source_id);
+    assert_eq!(history.health.session_id, health.session_id);
+    assert!(history.issues.is_empty());
+    let invalid_page = client
+        .activity_list(ActivityListParams {
+            limit: Some(201),
+            ..ActivityListParams::default()
+        })
+        .await
+        .expect_err("activity page remains bounded");
+    assert!(matches!(invalid_page, ClientError::Remote(error) if error.code == "invalid_request"));
 
     shutdown.store(true, Ordering::Relaxed);
     daemon.await.expect("join daemon").expect("daemon shutdown");
@@ -550,6 +694,13 @@ include_library = true
     .await
     .expect("migrate owned Config9 daemon to Config10");
     let mut reopened = connect_with_retry(config).await;
+    let reopened_health = reopened
+        .diagnostic_log_health()
+        .await
+        .expect("read the restarted source identity");
+    assert_eq!(reopened_health.source_id, health.source_id);
+    assert_ne!(reopened_health.session_id, health.session_id);
+    assert!(Uuid::parse_str(&reopened_health.session_id).is_ok());
     let persisted = reopened.settings_get().await.expect("reopened settings");
     assert_eq!(persisted.config_schema, 10);
     assert_eq!(persisted.revision, 14);
@@ -684,6 +835,32 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
         .await
         .expect("join reopened daemon")
         .expect("reopened shutdown");
+}
+
+async fn completed_state_check(client: &mut AlcomdClient, key: &str) -> String {
+    let accepted = client
+        .state_check(key.to_owned())
+        .await
+        .expect("accept state check");
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let operation = client
+                .operation_get(accepted.operation_id.clone())
+                .await
+                .expect("read accepted state check");
+            match operation.state {
+                alcomd_protocol::OperationState::Succeeded => return,
+                alcomd_protocol::OperationState::Failed
+                | alcomd_protocol::OperationState::Cancelled => {
+                    panic!("isolated state check failed: {operation:?}")
+                }
+                _ => tokio::time::sleep(Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await
+    .expect("isolated state check finishes within test deadline");
+    accepted.operation_id
 }
 
 async fn raw_request(

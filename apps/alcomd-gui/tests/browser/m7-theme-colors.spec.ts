@@ -245,11 +245,11 @@ test("failed theme autosave retains editable values and uses the shared Retry", 
     expect(await page.evaluate(() => window.settingsRequests.at(-1)?.update)).toEqual({ appearance: { sourceColor: "#E040A0" } });
 });
 
-test("dismissing a theme failure preserves its intent and the settings header can retry corrected input", async ({ page }) => {
+test("an unresolved inline theme failure preserves its intent and the settings header can retry corrected input", async ({ page }) => {
     await openTheme(page, { "theme-mode": "light", "theme-save": "error-once" });
     await enterHex(page, "#E040A0");
     await expect(page.getByRole("alert")).toContainText("Settings save result is unknown");
-    await page.locator(".reminder-floating").getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(page.getByRole("alert")).toBeVisible();
     await expect(page.locator(".reminder-floating")).toBeHidden();
     await enterHex(page, "#006A60");
     await settleFrames(page);
@@ -264,7 +264,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
     await openTheme(page, { "theme-mode": "light", "theme-save": "conflict-once" });
     const reads = await page.evaluate(() => window.settingsReads);
     await enterHex(page, "#E040A0");
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Settings could not be saved.");
+    await expect(page.getByRole("alert")).toContainText("Settings could not be saved.");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveCount(0);

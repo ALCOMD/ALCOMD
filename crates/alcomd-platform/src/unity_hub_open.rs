@@ -7,17 +7,77 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{SyncSender, sync_channel};
 use std::thread;
 
-use crate::{UnityHubPathError, normalize_unity_hub_path};
+use crate::{UnityHubPathErrorKind, normalize_unity_hub_path};
 
 const MAX_ACTIVE_REAPERS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnityHubLaunchError {
+pub enum UnityHubLaunchErrorKind {
     PathInvalid,
     PathChanged,
     Unavailable,
     Busy,
     OpenFailed,
+}
+
+#[derive(Clone, Debug)]
+pub struct UnityHubLaunchError {
+    kind: UnityHubLaunchErrorKind,
+    source: Option<Arc<dyn std::error::Error + Send + Sync>>,
+}
+impl PartialEq for UnityHubLaunchError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+impl Eq for UnityHubLaunchError {}
+#[allow(non_upper_case_globals)]
+impl UnityHubLaunchError {
+    pub const PathInvalid: Self = Self {
+        kind: UnityHubLaunchErrorKind::PathInvalid,
+        source: None,
+    };
+    pub const PathChanged: Self = Self {
+        kind: UnityHubLaunchErrorKind::PathChanged,
+        source: None,
+    };
+    pub const Unavailable: Self = Self {
+        kind: UnityHubLaunchErrorKind::Unavailable,
+        source: None,
+    };
+    pub const Busy: Self = Self {
+        kind: UnityHubLaunchErrorKind::Busy,
+        source: None,
+    };
+    pub const OpenFailed: Self = Self {
+        kind: UnityHubLaunchErrorKind::OpenFailed,
+        source: None,
+    };
+    pub fn kind(&self) -> UnityHubLaunchErrorKind {
+        self.kind
+    }
+    fn with_source(mut self, error: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.source = Some(Arc::new(error));
+        self
+    }
+}
+impl std::fmt::Display for UnityHubLaunchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self.kind {
+            UnityHubLaunchErrorKind::PathInvalid => "Unity Hub executable path is invalid",
+            UnityHubLaunchErrorKind::PathChanged => "Unity Hub executable path changed",
+            UnityHubLaunchErrorKind::Unavailable => "Unity Hub executable cannot be inspected",
+            UnityHubLaunchErrorKind::Busy => "Unity Hub process capacity is exhausted",
+            UnityHubLaunchErrorKind::OpenFailed => "Unity Hub process creation failed",
+        })
+    }
+}
+impl std::error::Error for UnityHubLaunchError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|value| value as &(dyn std::error::Error + 'static))
+    }
 }
 
 /// One daemon-owned capacity bound; clones share all active child slots.
@@ -69,15 +129,20 @@ impl UnityHubProcessLauncher {
         // The worker must exist before it can create any child. A creation error
         // drops its closure/permit without having launched an untracked process.
         start_worker(Box::new(move || dispatch_and_reap(path, accepted, permit)))
-            .map_err(|_| UnityHubLaunchError::OpenFailed)?;
-        result.recv().map_err(|_| UnityHubLaunchError::OpenFailed)?
+            .map_err(|error| UnityHubLaunchError::OpenFailed.with_source(error))?;
+        result
+            .recv()
+            .map_err(|error| UnityHubLaunchError::OpenFailed.with_source(error))?
     }
 }
 
 fn validate_resolved_path(path: &str) -> Result<(), UnityHubLaunchError> {
-    let normalized = normalize_unity_hub_path(path).map_err(|error| match error {
-        UnityHubPathError::Invalid => UnityHubLaunchError::PathInvalid,
-        UnityHubPathError::Unavailable => UnityHubLaunchError::Unavailable,
+    let normalized = normalize_unity_hub_path(path).map_err(|error| {
+        let value = match error.kind() {
+            UnityHubPathErrorKind::Invalid => UnityHubLaunchError::PathInvalid,
+            UnityHubPathErrorKind::Unavailable => UnityHubLaunchError::Unavailable,
+        };
+        value.with_source(error)
     })?;
     if normalized != path {
         return Err(UnityHubLaunchError::PathChanged);
@@ -111,8 +176,8 @@ fn dispatch_and_reap(
             // Receiver cancellation never skips reaping or kills a user Hub.
             wait_owned_child(child);
         }
-        Err(_) => {
-            let _ = accepted.send(Err(UnityHubLaunchError::OpenFailed));
+        Err(error) => {
+            let _ = accepted.send(Err(UnityHubLaunchError::OpenFailed.with_source(error)));
         }
     }
 }
@@ -260,6 +325,12 @@ mod tests {
             drop(work);
             Err(io::Error::other("isolated worker failure"))
         });
+        assert_eq!(
+            std::error::Error::source(result.as_ref().expect_err("worker failed"))
+                .expect("original worker cause")
+                .to_string(),
+            "isolated worker failure"
+        );
         assert_eq!(result, Err(UnityHubLaunchError::OpenFailed));
         assert_eq!(launcher.active.load(Ordering::Acquire), 0);
     }

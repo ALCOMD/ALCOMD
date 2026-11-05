@@ -27,7 +27,7 @@ fn remote_code(error: ClientError) -> String {
         other => panic!("expected remote error, got {other:?}"),
     }
 }
-fn fingerprints(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+fn fingerprints(root: &Path, excluded: Option<&Path>) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut result = BTreeMap::new();
     if !root.exists() {
         return result;
@@ -35,8 +35,13 @@ fn fingerprints(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     for entry in fs::read_dir(root).expect("read fixture directory") {
         let entry = entry.expect("fixture entry");
         let path = entry.path();
+        if excluded == Some(path.as_path()) {
+            // The independently written technical log and its writer lease are
+            // not business DB/cache/config. Keep all project files covered.
+            continue;
+        }
         if path.is_dir() {
-            result.extend(fingerprints(&path));
+            result.extend(fingerprints(&path, excluded));
         } else if path.extension().is_none_or(|ext| ext != "log")
             && !path
                 .file_name()
@@ -190,8 +195,9 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .await
             .expect("operations"),
     );
-    let before_data = fingerprints(&data);
-    let before_project = fingerprints(&project);
+    let log_directory = data.join("logs/core");
+    let before_data = fingerprints(&data, Some(&log_directory));
+    let before_project = fingerprints(&project, None);
     let summary_request = request(
         &project_id,
         1,
@@ -259,11 +265,11 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         before_operations
     );
     assert_eq!(
-        fingerprints(&data),
+        fingerprints(&data, Some(&log_directory)),
         before_data,
         "query must not write business DB/cache/config"
     );
-    assert_eq!(fingerprints(&project), before_project);
+    assert_eq!(fingerprints(&project, None), before_project);
     assert!(matches!(network.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
 
     // Registered evidence is unchanged by an unrefreshed external repository edit.
@@ -378,7 +384,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         "package_candidate_evidence_stale"
     );
 
-    let project_after_refresh = fingerprints(&project);
+    let project_after_refresh = fingerprints(&project, None);
     let stale_apply = client
         .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
             plan_id: remove_before_project_change.plan_id,
@@ -390,7 +396,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         remote_code(stale_apply.expect_err("Project change invalidates already-created Plan")),
         "plan_stale"
     );
-    assert_eq!(fingerprints(&project), project_after_refresh);
+    assert_eq!(fingerprints(&project, None), project_after_refresh);
     assert!(matches!(network.accept(), Err(e) if e.kind() == std::io::ErrorKind::WouldBlock));
 
     // Candidate evidence never bypasses the existing Plan's project revision check.

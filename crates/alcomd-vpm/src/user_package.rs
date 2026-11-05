@@ -44,7 +44,7 @@ impl UserPackageAdapter for UserPackageEngine {
             prepare_snapshot(Path::new(&source_path), &staging_root)
         })
         .await
-        .map_err(|_| internal())??;
+        .map_err(|cause| internal().with_source(cause))??;
         self.cache
             .publish_owned(&prepared.archive_path, prepared.snapshot.archive_sha256)
             .await
@@ -88,7 +88,7 @@ fn prepare_snapshot(
 ) -> Result<PreparedSnapshot, UserPackageError> {
     validate_root(source)?;
     let (root, source_identity_key) = alcomd_platform::resolve_directory_identity(source)
-        .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+        .map_err(|cause| error(UserPackageErrorCode::SourceUnavailable).with_source(cause))?;
     prepare_staging_root(staging_root)?;
     let entries = inventory(&root)?;
     let manifest_entry = entries
@@ -114,9 +114,10 @@ fn prepare_snapshot(
         TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
     let archive_sha256 = write_archive(&archive_path, &entries)?;
-    preflight_archive(&archive_path).map_err(|_| error(UserPackageErrorCode::SourceUnsafe))?;
+    preflight_archive(&archive_path)
+        .map_err(|cause| error(UserPackageErrorCode::SourceUnsafe).with_source(cause))?;
     let (final_root, final_identity) = alcomd_platform::resolve_directory_identity(&root)
-        .map_err(|_| error(UserPackageErrorCode::SourceChanged))?;
+        .map_err(|cause| error(UserPackageErrorCode::SourceChanged).with_source(cause))?;
     if final_root != root || final_identity != source_identity_key {
         return Err(error(UserPackageErrorCode::SourceChanged));
     }
@@ -155,8 +156,11 @@ fn validate_root(path: &Path) -> Result<(), UserPackageError> {
     ) {
         return Err(error(UserPackageErrorCode::SourceUnsafe));
     }
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        error(UserPackageErrorCode::SourceUnavailable)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_dir() || is_link_or_reparse(&metadata) {
         return Err(error(UserPackageErrorCode::SourceUnsafe));
     }
@@ -171,8 +175,16 @@ fn prepare_staging_root(path: &Path) -> Result<(), UserPackageError> {
         Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => Ok(()),
         Ok(_) => Err(internal()),
         Err(error_value) if error_value.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir(path).map_err(|_| internal())?;
-            let metadata = std::fs::symlink_metadata(path).map_err(|_| internal())?;
+            std::fs::create_dir(path).map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(path.display().to_string())
+            })?;
+            let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(path.display().to_string())
+            })?;
             if metadata.is_dir() && !is_link_or_reparse(&metadata) {
                 Ok(())
             } else {
@@ -215,9 +227,9 @@ fn walk(
     entries: &mut Vec<SourceEntry>,
 ) -> Result<(), UserPackageError> {
     let mut children = std::fs::read_dir(directory)
-        .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?
+        .map_err(|cause| error(UserPackageErrorCode::SourceUnavailable).with_source(cause))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+        .map_err(|cause| error(UserPackageErrorCode::SourceUnavailable).with_source(cause))?;
     children.sort_by_key(std::fs::DirEntry::file_name);
     for child in children {
         if entries.len() >= limits.entries {
@@ -226,7 +238,7 @@ fn walk(
         let path = child.path();
         let relative_os = path
             .strip_prefix(root)
-            .map_err(|_| error(UserPackageErrorCode::SourceUnsafe))?;
+            .map_err(|cause| error(UserPackageErrorCode::SourceUnsafe).with_source(cause))?;
         let relative_text = relative_os
             .to_str()
             .ok_or_else(|| error(UserPackageErrorCode::SourceUnsafe))?
@@ -234,7 +246,7 @@ fn walk(
         let (relative, collision_key) =
             normalize_path(&relative_text, limits).map_err(map_archive)?;
         let metadata = std::fs::symlink_metadata(&path)
-            .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+            .map_err(|cause| error(UserPackageErrorCode::SourceUnavailable).with_source(cause))?;
         if is_link_or_reparse(&metadata) {
             return Err(error(UserPackageErrorCode::SourceUnsafe));
         }
@@ -278,7 +290,7 @@ fn walk(
                 0
             },
             identity: alcomd_platform::file_identity_key(&path)
-                .map_err(|_| error(UserPackageErrorCode::SourceUnsafe))?,
+                .map_err(|cause| error(UserPackageErrorCode::SourceUnsafe).with_source(cause))?,
             executable,
             digest,
         });
@@ -314,7 +326,7 @@ struct ParsedManifest {
 fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
     let mut value: Value =
         serde_json::from_slice(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes))
-            .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
+            .map_err(|cause| error(UserPackageErrorCode::ManifestInvalid).with_source(cause))?;
     let object = value
         .as_object_mut()
         .ok_or_else(|| error(UserPackageErrorCode::ManifestInvalid))?;
@@ -322,7 +334,7 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
     validate_package_id(&package_id)?;
     let version_text = required_string(object, "version", 1_024)?;
     let version = Version::parse(&version_text)
-        .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?
+        .map_err(|cause| error(UserPackageErrorCode::ManifestInvalid).with_source(cause))?
         .to_string();
     object.insert("version".to_owned(), Value::String(version.clone()));
     let display_name = optional_string(object, "displayName", 1_024)?;
@@ -332,7 +344,7 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
     package_minimum(unity.as_deref(), unity_release.as_deref())
         .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
     crate::package::LegacyMetadata::parse(object)
-        .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
+        .map_err(|cause| error(UserPackageErrorCode::ManifestInvalid).with_source(cause))?;
     for field in ["documentationUrl", "changelogUrl"] {
         match crate::sanitized_package_link(object.get(field)) {
             Some(url) => {
@@ -354,7 +366,9 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
                 let range = range
                     .as_str()
                     .ok_or_else(|| error(UserPackageErrorCode::ManifestInvalid))?;
-                VpmRange::parse(range).map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
+                VpmRange::parse(range).map_err(|cause| {
+                    error(UserPackageErrorCode::ManifestInvalid).with_source(cause)
+                })?;
             }
             values.clone()
         }
@@ -364,11 +378,13 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
         "vpmDependencies".to_owned(),
         Value::Object(dependencies.clone()),
     );
-    let manifest_json = serde_json::to_string(&value).map_err(|_| internal())?;
+    let manifest_json =
+        serde_json::to_string(&value).map_err(|cause| internal().with_source(cause))?;
     if manifest_json.len() > MANIFEST_LIMIT as usize {
         return Err(error(UserPackageErrorCode::ManifestInvalid));
     }
-    let dependencies_json = serde_json::to_string(&dependencies).map_err(|_| internal())?;
+    let dependencies_json =
+        serde_json::to_string(&dependencies).map_err(|cause| internal().with_source(cause))?;
     Ok(ParsedManifest {
         package_id,
         version,
@@ -456,7 +472,11 @@ fn write_archive_with_limit(
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| internal())?;
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     let mut archive = zip::ZipWriter::new(BoundedFile {
         file: output,
         limit: archive_limit,
@@ -492,40 +512,71 @@ fn write_archive_with_limit(
             }
         }
     }
-    let mut output = archive
-        .finish()
-        .map_err(|_| error(UserPackageErrorCode::LimitExceeded))?;
-    output.flush().map_err(|_| internal())?;
-    output.file.sync_all().map_err(|_| internal())?;
-    hash_file(path, output.file.metadata().map_err(|_| internal())?.len())
+    let mut output = archive.finish().map_err(|cause| {
+        error(UserPackageErrorCode::LimitExceeded)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    output.flush().map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    output.file.sync_all().map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
+    hash_file(
+        path,
+        output
+            .file
+            .metadata()
+            .map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(path.display().to_string())
+            })?
+            .len(),
+    )
 }
 
 fn write_verified_file<W: Write + Seek>(
     entry: &SourceEntry,
     output: &mut zip::ZipWriter<W>,
 ) -> Result<(), UserPackageError> {
-    let metadata = std::fs::symlink_metadata(&entry.path)
-        .map_err(|_| error(UserPackageErrorCode::SourceChanged))?;
+    let metadata = std::fs::symlink_metadata(&entry.path).map_err(|cause| {
+        error(UserPackageErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(entry.path.display().to_string())
+    })?;
     if !metadata.is_file()
         || is_link_or_reparse(&metadata)
         || metadata.len() != entry.size
-        || alcomd_platform::file_identity_key(&entry.path)
-            .map_err(|_| error(UserPackageErrorCode::SourceChanged))?
-            != entry.identity
+        || alcomd_platform::file_identity_key(&entry.path).map_err(|cause| {
+            error(UserPackageErrorCode::SourceChanged)
+                .with_source(cause)
+                .with_path(entry.path.display().to_string())
+        })? != entry.identity
     {
         return Err(error(UserPackageErrorCode::SourceChanged));
     }
     verify_single_link(&entry.path, &metadata)?;
-    let mut input =
-        File::open(&entry.path).map_err(|_| error(UserPackageErrorCode::SourceChanged))?;
+    let mut input = File::open(&entry.path).map_err(|cause| {
+        error(UserPackageErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(entry.path.display().to_string())
+    })?;
     let mut hasher = Sha256::new();
     let mut remaining = entry.size;
     let mut buffer = [0_u8; 64 * 1024];
     while remaining > 0 {
         let maximum = remaining.min(buffer.len() as u64) as usize;
-        let read = input
-            .read(&mut buffer[..maximum])
-            .map_err(|_| error(UserPackageErrorCode::SourceChanged))?;
+        let read = input.read(&mut buffer[..maximum]).map_err(|cause| {
+            error(UserPackageErrorCode::SourceChanged)
+                .with_source(cause)
+                .with_path(entry.path.display().to_string())
+        })?;
         if read == 0 {
             return Err(error(UserPackageErrorCode::SourceChanged));
         }
@@ -535,10 +586,11 @@ fn write_verified_file<W: Write + Seek>(
             .map_err(map_archive_write_error)?;
         remaining -= read as u64;
     }
-    if input
-        .read(&mut buffer[..1])
-        .map_err(|_| error(UserPackageErrorCode::SourceChanged))?
-        != 0
+    if input.read(&mut buffer[..1]).map_err(|cause| {
+        error(UserPackageErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(entry.path.display().to_string())
+    })? != 0
         || <[u8; 32]>::from(hasher.finalize()) != entry.digest
     {
         return Err(error(UserPackageErrorCode::SourceChanged));
@@ -550,7 +602,7 @@ fn read_exact_verified(entry: &SourceEntry) -> Result<Vec<u8>, UserPackageError>
     let mut bytes = Vec::with_capacity(entry.size as usize);
     File::open(&entry.path)
         .and_then(|mut file| file.read_to_end(&mut bytes))
-        .map_err(|_| error(UserPackageErrorCode::SourceChanged))?;
+        .map_err(|cause| error(UserPackageErrorCode::SourceChanged).with_source(cause))?;
     if bytes.len() as u64 != entry.size || <[u8; 32]>::from(Sha256::digest(&bytes)) != entry.digest
     {
         return Err(error(UserPackageErrorCode::SourceChanged));
@@ -559,25 +611,32 @@ fn read_exact_verified(entry: &SourceEntry) -> Result<Vec<u8>, UserPackageError>
 }
 
 fn hash_file(path: &Path, expected: u64) -> Result<[u8; 32], UserPackageError> {
-    let mut file = File::open(path).map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+    let mut file = File::open(path).map_err(|cause| {
+        error(UserPackageErrorCode::SourceUnavailable)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut remaining = expected;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     while remaining > 0 {
         let maximum = remaining.min(buffer.len() as u64) as usize;
-        let read = file
-            .read(&mut buffer[..maximum])
-            .map_err(|_| error(UserPackageErrorCode::SourceUnavailable))?;
+        let read = file.read(&mut buffer[..maximum]).map_err(|cause| {
+            error(UserPackageErrorCode::SourceUnavailable)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
         if read == 0 {
             return Err(error(UserPackageErrorCode::SourceChanged));
         }
         hasher.update(&buffer[..read]);
         remaining -= read as u64;
     }
-    if file
-        .read(&mut buffer[..1])
-        .map_err(|_| error(UserPackageErrorCode::SourceChanged))?
-        != 0
+    if file.read(&mut buffer[..1]).map_err(|cause| {
+        error(UserPackageErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })? != 0
     {
         return Err(error(UserPackageErrorCode::SourceChanged));
     }
@@ -674,19 +733,21 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 }
 
 fn map_archive(error_value: crate::ArchiveError) -> UserPackageError {
-    match error_value.code() {
+    (match error_value.code() {
         crate::ArchiveErrorCode::QuotaExceeded => error(UserPackageErrorCode::LimitExceeded),
         _ => error(UserPackageErrorCode::SourceUnsafe),
-    }
+    })
+    .with_source(error_value)
 }
 
 fn map_cache(error_value: crate::CacheError) -> UserPackageError {
-    match error_value.code() {
+    (match error_value.code() {
         crate::CacheErrorCode::QuotaExceeded | crate::CacheErrorCode::DownloadTooLarge => {
             error(UserPackageErrorCode::LimitExceeded)
         }
         _ => internal(),
-    }
+    })
+    .with_source(error_value)
 }
 
 fn error(code: UserPackageErrorCode) -> UserPackageError {

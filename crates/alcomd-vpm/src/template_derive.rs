@@ -119,7 +119,8 @@ pub(super) fn derive_plan(
         ),
         manifest_json,
     };
-    let plan_json = serde_json::to_string(&authority).map_err(|_| internal())?;
+    let plan_json =
+        serde_json::to_string(&authority).map_err(|cause| internal().with_source(cause))?;
     Ok(TemplatePlanDraft {
         kind: TemplatePlanKind::Derive,
         plan_fingerprint: Sha256::digest(plan_json.as_bytes()).into(),
@@ -129,7 +130,7 @@ pub(super) fn derive_plan(
 
 pub(super) fn derive_project_id(plan: &TemplatePlanRecord) -> Result<ProjectId, M5TemplateError> {
     let authority = authority(plan)?;
-    ProjectId::parse(&authority.source_project_id).map_err(|_| internal())
+    ProjectId::parse(&authority.source_project_id).map_err(|cause| internal().with_source(cause))
 }
 
 pub(super) fn publish_derive(
@@ -170,8 +171,9 @@ pub(super) fn publish_derive(
                 M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
             ));
         }
-        let inspection = inspect_template_bundle(&path)
-            .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        let inspection = inspect_template_bundle(&path).map_err(|cause| {
+            error(M5TemplateErrorCode::TemplateBundleInvalid).with_source(cause)
+        })?;
         if hex(&inspection.manifest_fingerprint)
             != authority.expected_resulting_manifest_fingerprint
             || inspection.normalized_manifest_json != authority.manifest_json
@@ -182,7 +184,8 @@ pub(super) fn publish_derive(
             .objects
             .publish(&path, inspection.bundle_sha256)
             .map_err(super::template_engine::map_object_error)?;
-        let template_id = TemplateId::parse(&authority.template_id).map_err(|_| internal())?;
+        let template_id = TemplateId::parse(&authority.template_id)
+            .map_err(|cause| internal().with_source(cause))?;
         Ok(PublishedTemplate {
             record: StoredTemplateRecord {
                 template_id,
@@ -207,7 +210,7 @@ fn authority(plan: &TemplatePlanRecord) -> Result<DeriveAuthority, M5TemplateErr
         return Err(internal());
     }
     let authority: DeriveAuthority =
-        serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
+        serde_json::from_str(&plan.plan_json).map_err(|cause| internal().with_source(cause))?;
     if authority.version != 1 || authority.kind != "derive" {
         return Err(internal());
     }
@@ -244,7 +247,7 @@ fn derive_dependencies(
             return Err(error(M5TemplateErrorCode::TemplateConflict));
         }
         semver::Version::parse(&locked.value)
-            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+            .map_err(|cause| error(M5TemplateErrorCode::TemplatePlanStale).with_source(cause))?;
         dependencies.push(TemplateDependency {
             package_id: locked.package_id.clone(),
             version_range: format!("={}", locked.value),
@@ -292,7 +295,11 @@ fn scan_source_tree(
     if !root.is_absolute() {
         return Err(error(M5TemplateErrorCode::InvalidInput));
     }
-    let root_metadata = std::fs::symlink_metadata(root).map_err(|_| internal())?;
+    let root_metadata = std::fs::symlink_metadata(root).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     if !root_metadata.is_dir() || is_link_or_reparse(&root_metadata) {
         return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
     }
@@ -304,14 +311,26 @@ fn scan_source_tree(
         }
     }
     let packages = root.join("Packages");
-    let metadata = std::fs::symlink_metadata(&packages).map_err(|_| internal())?;
+    let metadata = std::fs::symlink_metadata(&packages).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     if !metadata.is_dir() || is_link_or_reparse(&metadata) {
         return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
     }
     let mut entries = std::fs::read_dir(&packages)
-        .map_err(|_| internal())?
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| internal())?;
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         let name = entry
@@ -351,8 +370,13 @@ fn scan_source_tree(
             || file.relative.len() > limits.normalized_path_bytes
             || file.relative.split('/').count() > limits.path_depth
             || !collisions.insert(file.relative.nfc().collect::<String>().to_lowercase())
-            || !identities
-                .insert(alcomd_platform::file_identity_key(&file.path).map_err(|_| internal())?)
+            || !identities.insert(alcomd_platform::file_identity_key(&file.path).map_err(
+                |cause| {
+                    internal()
+                        .with_source(cause)
+                        .with_path(root.display().to_string())
+                },
+            )?)
         {
             return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
         }
@@ -362,7 +386,11 @@ fn scan_source_tree(
         }
         tree.update(
             u32::try_from(file.relative.len())
-                .map_err(|_| internal())?
+                .map_err(|cause| {
+                    internal()
+                        .with_source(cause)
+                        .with_path(root.display().to_string())
+                })?
                 .to_le_bytes(),
         );
         tree.update(file.relative.as_bytes());
@@ -370,7 +398,11 @@ fn scan_source_tree(
         hash_file_into(&file.path, file.bytes, &mut tree)?;
     }
     let tree_sha256: [u8; 32] = tree.finalize().into();
-    let root_identity = alcomd_platform::file_identity_key(root).map_err(|_| internal())?;
+    let root_identity = alcomd_platform::file_identity_key(root).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     let mut fingerprint = Sha256::new();
     fingerprint.update((root_identity.len() as u32).to_le_bytes());
     fingerprint.update(root_identity);
@@ -389,7 +421,8 @@ fn walk(
     excluded_packages: &BTreeSet<&str>,
     files: &mut Vec<SourceFile>,
 ) -> Result<(), M5TemplateError> {
-    let metadata = std::fs::symlink_metadata(path).map_err(|_| internal())?;
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|cause| internal().with_source(cause))?;
     if is_link_or_reparse(&metadata) {
         return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
     }
@@ -397,7 +430,7 @@ fn walk(
         verify_single_link(path, &metadata)?;
         let relative = path
             .strip_prefix(root)
-            .map_err(|_| internal())?
+            .map_err(|cause| internal().with_source(cause))?
             .to_str()
             .ok_or_else(|| error(M5TemplateErrorCode::TemplateBundleInvalid))?
             .replace('\\', "/");
@@ -412,9 +445,9 @@ fn walk(
         return Err(error(M5TemplateErrorCode::TemplateBundleInvalid));
     }
     let mut entries = std::fs::read_dir(path)
-        .map_err(|_| internal())?
+        .map_err(|cause| internal().with_source(cause))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| internal())?;
+        .map_err(|cause| internal().with_source(cause))?;
     entries.sort_by_key(std::fs::DirEntry::file_name);
     for entry in entries {
         let child = entry.path();
@@ -441,52 +474,101 @@ fn write_bundle(
         .write(true)
         .create_new(true)
         .open(target)
-        .map_err(|_| internal())?;
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
     let mut archive = zip::ZipWriter::new(output);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
         .unix_permissions(0o644);
     archive
         .start_file("template.json", options)
-        .map_err(|_| internal())?;
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
     archive
         .write_all(manifest_json.as_bytes())
-        .map_err(|_| internal())?;
+        .map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
     let mut buffer = [0_u8; 64 * 1024];
     for file in files {
         archive
             .start_file(format!("payload/{}", file.relative), options)
-            .map_err(|_| internal())?;
-        let mut input = File::open(&file.path).map_err(|_| internal())?;
+            .map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(target.display().to_string())
+            })?;
+        let mut input = File::open(&file.path).map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })?;
         let mut remaining = file.bytes;
         while remaining > 0 {
             let maximum = remaining.min(buffer.len() as u64) as usize;
-            let read = input.read(&mut buffer[..maximum]).map_err(|_| internal())?;
+            let read = input.read(&mut buffer[..maximum]).map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(target.display().to_string())
+            })?;
             if read == 0 {
                 return Err(error(
                     M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
                 ));
             }
-            archive.write_all(&buffer[..read]).map_err(|_| internal())?;
+            archive.write_all(&buffer[..read]).map_err(|cause| {
+                internal()
+                    .with_source(cause)
+                    .with_path(target.display().to_string())
+            })?;
             remaining -= read as u64;
         }
-        if input.read(&mut buffer[..1]).map_err(|_| internal())? != 0 {
+        if input.read(&mut buffer[..1]).map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(target.display().to_string())
+        })? != 0
+        {
             return Err(error(
                 M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
             ));
         }
     }
-    let output = archive.finish().map_err(|_| internal())?;
-    output.sync_all().map_err(|_| internal())
+    let output = archive.finish().map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(target.display().to_string())
+    })?;
+    output.sync_all().map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(target.display().to_string())
+    })
 }
 
 fn hash_file_into(path: &Path, expected: u64, digest: &mut Sha256) -> Result<(), M5TemplateError> {
-    let mut file = File::open(path).map_err(|_| internal())?;
+    let mut file = File::open(path).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     let mut remaining = expected;
     let mut buffer = [0_u8; 64 * 1024];
     while remaining > 0 {
         let maximum = remaining.min(buffer.len() as u64) as usize;
-        let read = file.read(&mut buffer[..maximum]).map_err(|_| internal())?;
+        let read = file.read(&mut buffer[..maximum]).map_err(|cause| {
+            internal()
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
         if read == 0 {
             return Err(error(
                 M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
@@ -495,7 +577,12 @@ fn hash_file_into(path: &Path, expected: u64, digest: &mut Sha256) -> Result<(),
         digest.update(&buffer[..read]);
         remaining -= read as u64;
     }
-    if file.read(&mut buffer[..1]).map_err(|_| internal())? != 0 {
+    if file.read(&mut buffer[..1]).map_err(|cause| {
+        internal()
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })? != 0
+    {
         return Err(error(
             M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
         ));
@@ -509,15 +596,21 @@ fn parse_unity_line(value: &str) -> Result<TemplateUnityCompatibility, M5Templat
         .and_then(|(major, rest)| rest.split_once('.').map(|(minor, _)| (major, minor)))
         .ok_or_else(|| error(M5TemplateErrorCode::InvalidInput))?;
     Ok(TemplateUnityCompatibility {
-        major: numeric.0.parse().map_err(|_| internal())?,
-        minor: numeric.1.parse().map_err(|_| internal())?,
+        major: numeric
+            .0
+            .parse()
+            .map_err(|cause| internal().with_source(cause))?,
+        minor: numeric
+            .1
+            .parse()
+            .map_err(|cause| internal().with_source(cause))?,
     })
 }
 
 fn canonical_json(value: &impl Serialize) -> Result<String, M5TemplateError> {
-    let mut value = serde_json::to_value(value).map_err(|_| internal())?;
+    let mut value = serde_json::to_value(value).map_err(|cause| internal().with_source(cause))?;
     sort_json(&mut value);
-    serde_json::to_string(&value).map_err(|_| internal())
+    serde_json::to_string(&value).map_err(|cause| internal().with_source(cause))
 }
 
 fn sort_json(value: &mut Value) {
@@ -588,7 +681,7 @@ fn internal() -> M5TemplateError {
     error(M5TemplateErrorCode::Internal)
 }
 
-const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
+fn error(code: M5TemplateErrorCode) -> M5TemplateError {
     M5TemplateError::new(code)
 }
 

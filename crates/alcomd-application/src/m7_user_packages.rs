@@ -1,4 +1,3 @@
-use std::fmt;
 use std::future::Future;
 
 use serde::{Deserialize, Serialize};
@@ -123,27 +122,67 @@ impl UserPackageErrorCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UserPackageError {
     code: UserPackageErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl UserPackageError {
     #[must_use]
-    pub const fn new(code: UserPackageErrorCode) -> Self {
-        Self { code }
+    pub fn new(code: UserPackageErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
     pub const fn code(&self) -> UserPackageErrorCode {
         self.code
     }
-}
-
-impl fmt::Display for UserPackageError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "User Package request failed: {:?}", self.code)
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
     }
 }
 
-impl std::error::Error for UserPackageError {}
+impl std::fmt::Display for UserPackageError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for UserPackageError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 impl From<StoreErrorKind> for UserPackageError {
     fn from(value: StoreErrorKind) -> Self {

@@ -159,7 +159,7 @@ pub const METHOD_EXTENSIONS_UI_CLOSE: &str = "extensions.ui.close";
 pub const METHOD_SETTINGS_GET: &str = "settings.get";
 pub const METHOD_SETTINGS_UPDATE: &str = "settings.update";
 pub const METHOD_ACTIVITY_LIST: &str = "activity.list";
-pub const METHOD_DIAGNOSTICS_LIST: &str = "diagnostics.list";
+pub const METHOD_ACTIVITY_GET: &str = "activity.get";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -3012,11 +3012,9 @@ pub struct SettingsUpdateParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityCursor {
-    pub occurred_at_ms: u64,
-    pub source_rank: u8,
-    pub stable_id: String,
+    pub started_at_ms: u64,
+    pub activity_id: String,
 }
-
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityListParams {
@@ -3025,84 +3023,55 @@ pub struct ActivityListParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ActivityItemType {
-    Operation,
-    Event,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityGetParams {
+    pub activity_id: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivitySubject {
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityResult {
+    pub code: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityItem {
-    pub occurred_at_ms: u64,
-    #[serde(rename = "type")]
-    pub item_type: ActivityItemType,
-    pub summary_code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activity_id: String,
+    pub revision: u64,
+    pub action: String,
+    pub status: String,
+    pub started_at_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at_ms: Option<u64>,
+    pub subject: ActivitySubject,
+    pub parameters: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<ActivityResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_sequence: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_kind: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resource_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic_id: Option<String>,
 }
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ActivityListResult {
     pub items: Vec<ActivityItem>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<ActivityCursor>,
 }
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DiagnosticCursor {
-    pub occurred_at_ms: u64,
-    pub operation_id: String,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct DiagnosticsListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<DiagnosticCursor>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DiagnosticSeverity {
-    Warning,
-    Error,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagnosticItem {
-    pub occurred_at_ms: u64,
-    pub severity: DiagnosticSeverity,
-    pub subsystem: String,
-    pub code: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub diagnostic_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub operation_id: Option<String>,
-    pub summary: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiagnosticsListResult {
-    pub items: Vec<DiagnosticItem>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<DiagnosticCursor>,
+pub struct ActivityGetResult {
+    pub activity: ActivityItem,
 }
 
 /// Successful `system.status` result.

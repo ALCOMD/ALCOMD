@@ -3,6 +3,7 @@
 use std::future::Future;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -197,28 +198,81 @@ pub enum M7UnityMigrationErrorCode {
     Internal,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M7UnityMigrationError(M7UnityMigrationErrorCode);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M7UnityMigrationError {
+    code: M7UnityMigrationErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
+}
 
 impl M7UnityMigrationError {
     #[must_use]
-    pub const fn new(code: M7UnityMigrationErrorCode) -> Self {
-        Self(code)
+    pub fn new(code: M7UnityMigrationErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
-    pub const fn code(self) -> M7UnityMigrationErrorCode {
-        self.0
+    pub fn code(&self) -> M7UnityMigrationErrorCode {
+        self.code
+    }
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
     }
 }
 
 impl std::fmt::Display for M7UnityMigrationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Project Unity migration request failed")
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
-
-impl std::error::Error for M7UnityMigrationError {}
+impl std::error::Error for M7UnityMigrationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 pub trait M7UnityMigrationStore: Clone + Send + Sync + 'static {
     fn create_unity_migration_plan(
@@ -255,6 +309,7 @@ pub trait M7UnityMigrationStore: Clone + Send + Sync + 'static {
         phase: UnityMigrationPhase,
         evidence: UnityMigrationEvidence,
         now_ms: u64,
+        diagnostic_id: Option<String>,
     ) -> impl Future<Output = Result<(), M7UnityMigrationError>> + Send;
     fn commit_unity_migration_project(
         &self,
@@ -402,7 +457,9 @@ where
             .store
             .get_project(access.principal().clone(), project_id)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::ProjectNotRegistered))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::ProjectNotRegistered).with_source(cause)
+            })?;
         if project.revision != expected_project_revision {
             return Err(error(M7UnityMigrationErrorCode::RevisionConflict));
         }
@@ -410,19 +467,23 @@ where
             .store
             .get_installation(access.principal().clone(), target_installation_id)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
+            })?;
         let writer = self
             .writer
             .observe_backup_source(access, project_id)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         require_no_target_writer(writer.state)?;
-        let source_unity_version =
-            crate::m5::canonical_unity_version(&project.observation.unity_version)
-                .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+        let source_unity_version = crate::m5::canonical_unity_version(
+            &project.observation.unity_version,
+        )
+        .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         let target_unity_version =
-            crate::m5::canonical_unity_version(&target.observation.unity_version)
-                .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+            crate::m5::canonical_unity_version(&target.observation.unity_version).map_err(
+                |cause| error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause),
+            )?;
         if source_unity_version == target_unity_version {
             return Ok(UnityMigrationPlanOutcome::NoChange {
                 current_version: source_unity_version,
@@ -475,7 +536,9 @@ where
             .store
             .get_project(access.principal().clone(), plan.draft.project.project_id)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::ProjectNotRegistered))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::ProjectNotRegistered).with_source(cause)
+            })?;
         let target = self
             .store
             .get_installation(
@@ -483,12 +546,14 @@ where
                 plan.draft.target_installation.installation_id,
             )
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
+            })?;
         let writer = self
             .writer
             .observe_backup_source(access, plan.draft.project.project_id)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         require_no_target_writer(writer.state)?;
         self.adapter.revalidate(plan, project, target).await?;
         let outcome = self
@@ -503,9 +568,14 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Unity migration failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M7UnityMigrationError> {
@@ -513,8 +583,11 @@ where
             .store
             .begin_unity_migration(operation_id, now_ms()?)
             .await?;
+        let project_path = record.plan.draft.project.observation.root_path.clone();
+        let mut launch_failure: Option<M7UnityMigrationError> = None;
         if record.phase == UnityMigrationPhase::RecoveryRequired {
-            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+            // This is an already-recorded waiting state, not a new execution failure.
+            return Ok(());
         }
         let _guard = self
             .locks
@@ -544,10 +617,12 @@ where
                 .await
             {
                 Ok(project) => project,
-                Err(_) => {
+                Err(cause) => {
                     self.fail_before_intent(
                         operation_id,
-                        error(M7UnityMigrationErrorCode::ProjectNotRegistered),
+                        error(M7UnityMigrationErrorCode::ProjectNotRegistered)
+                            .with_source(cause)
+                            .with_path(project_path.clone()),
                     )
                     .await?;
                     return Ok(());
@@ -562,10 +637,12 @@ where
                 .await
             {
                 Ok(target) => target,
-                Err(_) => {
+                Err(cause) => {
                     self.fail_before_intent(
                         operation_id,
-                        error(M7UnityMigrationErrorCode::InstallationNotFound),
+                        error(M7UnityMigrationErrorCode::InstallationNotFound)
+                            .with_source(cause)
+                            .with_path(project_path.clone()),
                     )
                     .await?;
                     return Ok(());
@@ -577,10 +654,12 @@ where
                 .await
             {
                 Ok(writer) => writer,
-                Err(_) => {
+                Err(cause) => {
                     self.fail_before_intent(
                         operation_id,
-                        error(M7UnityMigrationErrorCode::Internal),
+                        error(M7UnityMigrationErrorCode::Internal)
+                            .with_source(cause)
+                            .with_path(project_path.clone()),
                     )
                     .await?;
                     return Ok(());
@@ -604,6 +683,7 @@ where
                     UnityMigrationPhase::PreflightComplete,
                     record.evidence.clone(),
                     now_ms()?,
+                    None,
                 )
                 .await?;
             record.phase = UnityMigrationPhase::PreflightComplete;
@@ -645,6 +725,7 @@ where
                         UnityMigrationPhase::PreparationIntent,
                         evidence.clone(),
                         now_ms()?,
+                        None,
                     )
                     .await?;
                 evidence
@@ -658,10 +739,15 @@ where
                 .await
             {
                 Ok(evidence) => evidence,
-                Err(_) => {
-                    self.mark_recovery_required(operation_id, recovery_evidence)
-                        .await?;
-                    return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                Err(cause) => {
+                    return Err(self
+                        .record_recovery_failure(
+                            operation_id,
+                            recovery_evidence,
+                            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause),
+                            &project_path,
+                        )
+                        .await?);
                 }
             };
             self.store
@@ -670,6 +756,7 @@ where
                     UnityMigrationPhase::PreparationComplete,
                     evidence.clone(),
                     now_ms()?,
+                    None,
                 )
                 .await?;
             record.evidence = evidence;
@@ -693,6 +780,7 @@ where
                     UnityMigrationPhase::LaunchIntent,
                     record.evidence.clone(),
                     now_ms()?,
+                    None,
                 )
                 .await?;
             record.phase = UnityMigrationPhase::LaunchIntent;
@@ -708,15 +796,22 @@ where
                             UnityMigrationPhase::UnityStarted,
                             evidence.clone(),
                             now_ms()?,
+                            None,
                         )
                         .await?;
                     let recovery_evidence = evidence.clone();
                     let evidence = match self.adapter.wait(process, evidence).await {
                         Ok(evidence) => evidence,
-                        Err(_) => {
-                            self.mark_recovery_required(operation_id, recovery_evidence)
-                                .await?;
-                            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                        Err(cause) => {
+                            return Err(self
+                                .record_recovery_failure(
+                                    operation_id,
+                                    recovery_evidence,
+                                    error(M7UnityMigrationErrorCode::RecoveryRequired)
+                                        .with_source(cause),
+                                    &project_path,
+                                )
+                                .await?);
                         }
                     };
                     self.store
@@ -725,12 +820,26 @@ where
                             UnityMigrationPhase::UnityExited,
                             evidence.clone(),
                             now_ms()?,
+                            None,
                         )
                         .await?;
                     record.evidence = evidence;
                     record.phase = UnityMigrationPhase::UnityExited;
                 }
-                Err(_) => {
+                Err(cause) => {
+                    let (failure, diagnostic_id) = cause
+                        .with_path(project_path.clone())
+                        .record_failure(operation_id, "Unity migration launch failed");
+                    self.store
+                        .record_unity_migration_checkpoint(
+                            operation_id,
+                            UnityMigrationPhase::LaunchIntent,
+                            record.evidence.clone(),
+                            now_ms()?,
+                            Some(diagnostic_id),
+                        )
+                        .await?;
+                    launch_failure = Some(failure);
                     record.phase = UnityMigrationPhase::LaunchIntent;
                 }
             }
@@ -749,10 +858,16 @@ where
                     .await
                 {
                     Ok(writer) => writer,
-                    Err(_) => {
-                        self.mark_recovery_required(operation_id, record.evidence.clone())
-                            .await?;
-                        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                    Err(cause) => {
+                        return Err(self
+                            .record_recovery_failure(
+                                operation_id,
+                                record.evidence.clone(),
+                                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                                    .with_source(cause),
+                                &project_path,
+                            )
+                            .await?);
                     }
                 };
                 let disposition = match self
@@ -765,10 +880,16 @@ where
                     .await
                 {
                     Ok(disposition) => disposition,
-                    Err(_) => {
-                        self.mark_recovery_required(operation_id, record.evidence.clone())
-                            .await?;
-                        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                    Err(cause) => {
+                        return Err(self
+                            .record_recovery_failure(
+                                operation_id,
+                                record.evidence.clone(),
+                                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                                    .with_source(cause),
+                                &project_path,
+                            )
+                            .await?);
                     }
                 };
                 match disposition {
@@ -780,6 +901,7 @@ where
                                     record.phase,
                                     evidence.clone(),
                                     now_ms()?,
+                                    None,
                                 )
                                 .await?;
                         }
@@ -793,6 +915,7 @@ where
                                 UnityMigrationPhase::ProjectReobserved,
                                 reobserved.evidence.clone(),
                                 now_ms()?,
+                                None,
                             )
                             .await?;
                         self.store
@@ -807,27 +930,33 @@ where
                         break;
                     }
                     UnityMigrationRecoveryDisposition::SafelyUnchanged(evidence) => {
+                        let failure = launch_failure.take().unwrap_or_else(|| error(M7UnityMigrationErrorCode::Internal).with_reason("Unity migration recovery confirmed the project remained unchanged")).with_path(project_path.clone());
+                        let (_, diagnostic_id) = failure
+                            .record_failure(operation_id, "Unity migration did not complete");
                         self.store
                             .record_unity_migration_checkpoint(
                                 operation_id,
                                 record.phase,
                                 evidence,
                                 now_ms()?,
+                                None,
                             )
                             .await?;
                         self.store
                             .fail_unity_migration(
                                 operation_id,
                                 error_code(M7UnityMigrationErrorCode::Internal).to_owned(),
-                                operation_id.to_string(),
+                                diagnostic_id,
                                 now_ms()?,
                             )
                             .await?;
                         return Ok(());
                     }
                     UnityMigrationRecoveryDisposition::RecoveryRequired(evidence) => {
-                        self.mark_recovery_required(operation_id, evidence).await?;
-                        return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                        let failure = launch_failure.take().unwrap_or_else(|| error(M7UnityMigrationErrorCode::RecoveryRequired).with_reason("Recorded migration evidence could not establish a safe completed or unchanged outcome"));
+                        return Err(self
+                            .record_recovery_failure(operation_id, evidence, failure, &project_path)
+                            .await?);
                     }
                 }
             }
@@ -840,10 +969,15 @@ where
                 .await
             {
                 Ok(writer) => writer,
-                Err(_) => {
-                    self.mark_recovery_required(operation_id, record.evidence.clone())
-                        .await?;
-                    return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                Err(cause) => {
+                    return Err(self
+                        .record_recovery_failure(
+                            operation_id,
+                            record.evidence.clone(),
+                            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause),
+                            &project_path,
+                        )
+                        .await?);
                 }
             };
             let reobserved = match self
@@ -852,10 +986,15 @@ where
                 .await
             {
                 Ok(reobserved) => reobserved,
-                Err(_) => {
-                    self.mark_recovery_required(operation_id, record.evidence)
-                        .await?;
-                    return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                Err(cause) => {
+                    return Err(self
+                        .record_recovery_failure(
+                            operation_id,
+                            record.evidence,
+                            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause),
+                            &project_path,
+                        )
+                        .await?);
                 }
             };
             self.store
@@ -872,10 +1011,15 @@ where
                 .await
             {
                 Ok(evidence) => evidence,
-                Err(_) => {
-                    self.mark_recovery_required(operation_id, recovery_evidence)
-                        .await?;
-                    return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
+                Err(cause) => {
+                    return Err(self
+                        .record_recovery_failure(
+                            operation_id,
+                            recovery_evidence,
+                            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause),
+                            &project_path,
+                        )
+                        .await?);
                 }
             };
             self.store
@@ -884,6 +1028,7 @@ where
                     UnityMigrationPhase::CleanupComplete,
                     evidence,
                     now_ms()?,
+                    None,
                 )
                 .await?;
             record.phase = UnityMigrationPhase::CleanupComplete;
@@ -902,20 +1047,38 @@ where
         operation_id: OperationId,
         failure: M7UnityMigrationError,
     ) -> Result<(), M7UnityMigrationError> {
+        let (failure, diagnostic_id) =
+            failure.record_failure(operation_id, "Unity migration preflight failed");
         self.store
             .fail_unity_migration(
                 operation_id,
                 error_code(failure.code()).to_owned(),
-                operation_id.to_string(),
+                diagnostic_id,
                 now_ms()?,
             )
             .await
+    }
+
+    async fn record_recovery_failure(
+        &self,
+        operation_id: OperationId,
+        evidence: UnityMigrationEvidence,
+        failure: M7UnityMigrationError,
+        path: &str,
+    ) -> Result<M7UnityMigrationError, M7UnityMigrationError> {
+        let (failure, diagnostic_id) = failure
+            .with_path(path)
+            .record_failure(operation_id, "Unity migration requires recovery");
+        self.mark_recovery_required(operation_id, evidence, diagnostic_id)
+            .await?;
+        Ok(failure)
     }
 
     async fn mark_recovery_required(
         &self,
         operation_id: OperationId,
         evidence: UnityMigrationEvidence,
+        diagnostic_id: String,
     ) -> Result<(), M7UnityMigrationError> {
         self.store
             .record_unity_migration_checkpoint(
@@ -923,6 +1086,7 @@ where
                 UnityMigrationPhase::RecoveryRequired,
                 evidence,
                 now_ms()?,
+                Some(diagnostic_id),
             )
             .await
     }
@@ -1050,7 +1214,7 @@ fn parse_canonical_unity_version(value: &str) -> Result<ParsedUnityVersion, M7Un
     })
 }
 
-const fn unity_channel_order(channel: u8) -> Result<u8, M7UnityMigrationError> {
+fn unity_channel_order(channel: u8) -> Result<u8, M7UnityMigrationError> {
     match channel {
         b'a' => Ok(0),
         b'b' => Ok(1),
@@ -1082,7 +1246,7 @@ const fn error_code(code: M7UnityMigrationErrorCode) -> &'static str {
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M7UnityMigrationError> {
     access
         .require(permission)
-        .map_err(|_| error(M7UnityMigrationErrorCode::PermissionDenied))
+        .map_err(|cause| error(M7UnityMigrationErrorCode::PermissionDenied).with_source(cause))
 }
 
 fn local_owner(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
@@ -1094,13 +1258,13 @@ fn local_owner(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
 fn now_ms() -> Result<u64, M7UnityMigrationError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| error(M7UnityMigrationErrorCode::Internal))
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))
         .and_then(|duration| {
             u64::try_from(duration.as_millis())
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))
         })
 }
 
-const fn error(code: M7UnityMigrationErrorCode) -> M7UnityMigrationError {
+fn error(code: M7UnityMigrationErrorCode) -> M7UnityMigrationError {
     M7UnityMigrationError::new(code)
 }

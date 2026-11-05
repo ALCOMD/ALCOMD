@@ -159,6 +159,8 @@ pub(super) fn accept(
             ],
         )
         .map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     let changed = transaction
         .execute(
             "UPDATE project_delete_plans SET state='applied',apply_operation_id=?1
@@ -407,7 +409,9 @@ pub(super) fn finish_success(
         "operation.succeeded",
         now_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "projects.delete-directory", project_id = %plan.draft.project.project_id, "operation completed");
+    Ok(())
 }
 
 pub(super) fn fail(
@@ -896,9 +900,7 @@ fn internal() -> M7DeleteError {
 fn failure(source: rusqlite::Error) -> M7DeleteError {
     #[cfg(feature = "test-kill-gates")]
     eprintln!("M7 Project Delete test-only SQLite failure: {source}");
-    #[cfg(not(feature = "test-kill-gates"))]
-    let _ = source;
-    error(M7DeleteErrorCode::StoreUnavailable)
+    error(M7DeleteErrorCode::StoreUnavailable).with_source(source)
 }
 
 pub(super) fn unavailable() -> M7DeleteError {

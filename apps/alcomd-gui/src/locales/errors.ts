@@ -73,7 +73,7 @@ export const errorMessages: TranslationTable = {
     "This project is already registered. Use its existing entry.": { "zh-CN": "此项目已登记，请使用现有记录。", "ja-JP": "このプロジェクトは登録済みです。既存の項目を使用してください。" },
     "The project folder is unavailable. Check its location and access permissions.": { "zh-CN": "项目目录不可用，请核对位置和访问权限。", "ja-JP": "プロジェクトのフォルダーを利用できません。場所とアクセス権を確認してください。" },
     "The project's Unity version cannot be read. Check its version file before choosing an Editor.": { "zh-CN": "无法读取项目的 Unity 版本，请核对版本文件后再选择编辑器。", "ja-JP": "プロジェクトのUnityバージョンを読み取れません。バージョンファイルを確認してからEditorを選んでください。" },
-    "The project contains an invalid package manifest. Review it before changing packages.": { "zh-CN": "项目中的软件包清单无效，请检查后再修改软件包。", "ja-JP": "プロジェクトのパッケージマニフェストが無効です。確認してからパッケージを変更してください。" },
+    "A package manifest in the project could not be read. Check its format and contents.": { "zh-CN": "无法读取项目的软件包清单，请检查其格式和内容。", "ja-JP": "プロジェクトのパッケージマニフェストを読み取れません。形式と内容を確認してください。" },
     "The project changed after review. Refresh it and review a new plan before continuing.": { "zh-CN": "项目已在审阅后发生变化，请刷新并重新审阅计划后再继续。", "ja-JP": "確認後にプロジェクトが変更されました。更新し、新しいプランを確認してください。" },
     "The target already exists. Choose a new name or location; existing files were kept.": { "zh-CN": "目标已存在，原有文件已保留。请选择新的名称或位置。", "ja-JP": "対象は既に存在し、既存ファイルは保持されています。新しい名前または場所を選んでください。" },
     "The selected location did not pass safety checks. Review it or choose another valid location.": { "zh-CN": "所选位置未通过安全检查，请核对或选择其他有效位置。", "ja-JP": "選択した場所が安全性の検証に失敗しました。確認するか、別の有効な場所を選んでください。" },

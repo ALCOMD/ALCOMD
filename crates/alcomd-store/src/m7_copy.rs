@@ -187,6 +187,8 @@ pub(super) fn accept(
             ],
         )
         .map_err(failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE project_copy_plans SET state='applied',apply_operation_id=?1
@@ -438,7 +440,9 @@ pub(super) fn finish_success(
         "operation.succeeded",
         now_ms,
     )?;
-    transaction.commit().map_err(failure)
+    transaction.commit().map_err(failure)?;
+    tracing::info!(operation_id = %operation_id, operation_kind = "projects.copy", project_id = %plan.draft.target_project_id, "operation completed");
+    Ok(())
 }
 
 pub(super) fn fail(
@@ -929,9 +933,7 @@ fn internal() -> M7CopyError {
 fn failure(source: rusqlite::Error) -> M7CopyError {
     #[cfg(feature = "test-kill-gates")]
     eprintln!("M7 Project Copy test-only SQLite failure: {source}");
-    #[cfg(not(feature = "test-kill-gates"))]
-    let _ = source;
-    error(M7CopyErrorCode::StoreUnavailable)
+    error(M7CopyErrorCode::StoreUnavailable).with_source(source)
 }
 pub(super) fn unavailable() -> M7CopyError {
     error(M7CopyErrorCode::StoreUnavailable)

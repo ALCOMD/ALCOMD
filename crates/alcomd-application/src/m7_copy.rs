@@ -4,6 +4,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -138,28 +139,81 @@ pub enum M7CopyErrorCode {
     Internal,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct M7CopyError(M7CopyErrorCode);
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M7CopyError {
+    code: M7CopyErrorCode,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
+}
 
 impl M7CopyError {
     #[must_use]
-    pub const fn new(code: M7CopyErrorCode) -> Self {
-        Self(code)
+    pub fn new(code: M7CopyErrorCode) -> Self {
+        Self {
+            code,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
+        }
     }
-
     #[must_use]
-    pub const fn code(self) -> M7CopyErrorCode {
-        self.0
+    pub const fn code(&self) -> M7CopyErrorCode {
+        self.code
+    }
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
     }
 }
 
 impl std::fmt::Display for M7CopyError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Project Copy request failed")
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
-
-impl std::error::Error for M7CopyError {}
+impl std::error::Error for M7CopyError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 pub trait M7CopyStore: Clone + Send + Sync + 'static {
     fn create_project_copy_plan(
@@ -326,10 +380,15 @@ where
         {
             let recovery = self.locks.project_recovery_guard();
             let application = self.clone();
-            tokio::spawn(async move {
-                let _recovery = recovery;
-                let _ = application.run(operation_id).await;
-            });
+            tokio::spawn(
+                (async move {
+                    let _recovery = recovery;
+                    if let Err(source) = application.run(operation_id).await {
+                        let _ = source.record_failure(operation_id, "Project copy failed");
+                    }
+                })
+                .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+            );
         }
         Ok(())
     }
@@ -358,7 +417,7 @@ where
             .writer
             .observe_backup_source(access, source_project_id)
             .await
-            .map_err(|_| error(M7CopyErrorCode::Internal))?;
+            .map_err(|cause| error(M7CopyErrorCode::Internal).with_source(cause))?;
         if writer.state == UnityWriterStateKind::RunningConfirmed {
             return Err(error(M7CopyErrorCode::UnityProjectRunning));
         }
@@ -415,7 +474,7 @@ where
             .writer
             .observe_backup_source(access, current.project_id)
             .await
-            .map_err(|_| error(M7CopyErrorCode::Internal))?;
+            .map_err(|cause| error(M7CopyErrorCode::Internal).with_source(cause))?;
         if writer.state == UnityWriterStateKind::RunningConfirmed {
             return Err(error(M7CopyErrorCode::UnityProjectRunning));
         }
@@ -438,19 +497,26 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Project copy failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M7CopyError> {
         let result = self.run_inner(operation_id).await;
         if let Err(source) = result {
+            let (source, diagnostic_id) =
+                source.record_failure(operation_id, "Project copy failed");
             self.store
                 .fail_project_copy(
                     operation_id,
                     project_copy_error_name(source.code()).to_owned(),
-                    OperationId::new().to_string(),
+                    diagnostic_id.clone(),
                     now_ms()?,
                 )
                 .await?;
@@ -639,14 +705,21 @@ fn local_owner(access: &AccessContext) -> Result<(), M7CopyError> {
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M7CopyError> {
     access
         .require(permission)
-        .map_err(|_| error(M7CopyErrorCode::PermissionDenied))
+        .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))
 }
 
 fn map_m3(source: crate::M3Error) -> M7CopyError {
-    match source.code() {
+    let path = source.technical_path().map(str::to_owned);
+    let mapped = match source.code() {
         crate::M3ErrorCode::ProjectNotRegistered => error(M7CopyErrorCode::ProjectNotRegistered),
         crate::M3ErrorCode::StoreUnavailable => error(M7CopyErrorCode::StoreUnavailable),
         _ => error(M7CopyErrorCode::Internal),
+    };
+    let mapped = mapped.with_source(source);
+    if let Some(path) = path {
+        mapped.with_path(path)
+    } else {
+        mapped
     }
 }
 
@@ -691,7 +764,7 @@ fn now_ms() -> Result<u64, M7CopyError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| u64::try_from(value.as_millis()).unwrap_or(u64::MAX))
-        .map_err(|_| error(M7CopyErrorCode::Internal))
+        .map_err(|cause| error(M7CopyErrorCode::Internal).with_source(cause))
 }
 
 #[cfg(feature = "test-kill-gates")]

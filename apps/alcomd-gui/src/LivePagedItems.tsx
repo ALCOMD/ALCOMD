@@ -13,6 +13,7 @@ interface LivePagedItemsProps<T, C> {
     merge(current: T[], incoming: T[]): T[];
     catchUp(cursor: C, loaded: T[]): boolean;
     message: string;
+    refreshLoaded?(items: T[]): Promise<T[]>;
     children(items: T[]): ReactNode;
 }
 
@@ -24,7 +25,7 @@ export function LivePagedItems<T, C>(props: LivePagedItemsProps<T, C>) {
     return <LivePageSession key={source.generation} {...props} />;
 }
 
-function LivePageSession<T, C>({ readPage, merge, catchUp, initial, message, children }: LivePagedItemsProps<T, C>) {
+function LivePageSession<T, C>({ readPage, merge, catchUp, initial, message, children, refreshLoaded }: LivePagedItemsProps<T, C>) {
     const { t } = useTranslation();
     const events = useCoreEvents();
     const saved = useRef(events?.readView<ItemPage<T, C>>("activity"));
@@ -105,6 +106,8 @@ function LivePageSession<T, C>({ readPage, merge, catchUp, initial, message, chi
                         cursorRef.current = next;
                         setCursor(next);
                     }
+                    if (refreshLoaded !== undefined) incoming.push(...await refreshLoaded(itemsRef.current));
+                    if (!active) return;
                     apply(incoming);
                     firstBoundary.current = undefined;
                     restoring.current = false;
@@ -126,11 +129,11 @@ function LivePageSession<T, C>({ readPage, merge, catchUp, initial, message, chi
             active = false;
             if (controller.current === controls) controller.current = undefined;
         };
-    }, [readPage, merge, catchUp]);
+    }, [readPage, merge, catchUp, refreshLoaded]);
     const retryLatest = useCoreInvalidation("activity:latest", ["activity"], async () => { await controller.current?.read("latest"); }, true);
 
     return <div ref={root}>
-        {latestError === undefined ? null : <RequestReminder inline error={latestError} message={message}>
+        {latestError === undefined ? null : <RequestReminder error={latestError} message={message}>
             <Button disabled={pending !== undefined} onClick={retryLatest} type="button" variant="text">{t("Retry")}</Button>
         </RequestReminder>}
         {children(items)}

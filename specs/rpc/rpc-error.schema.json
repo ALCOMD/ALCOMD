@@ -162,8 +162,13 @@
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
         },
         "data": {
-            "type": "object"
+    "type": "object",
+    "properties": {
+        "activityRecordingUnavailable": {
+            "const": true
         }
+    }
+}
     },
     "allOf": [
         {

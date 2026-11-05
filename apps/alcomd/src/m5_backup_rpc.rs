@@ -242,7 +242,13 @@ fn hex(value: &[u8; 32]) -> String {
 }
 
 fn backup_error(id: String, source: app::M5BackupError) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "execution request failed")
+        });
+    let mut error = match source.code() {
         app::M5BackupErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M5BackupErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M5BackupErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -250,5 +256,6 @@ fn backup_error(id: String, source: app::M5BackupError) -> DispatchAction {
         app::M5BackupErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         _ => rpc::RpcError::backup(app::error_name(source.code())),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }

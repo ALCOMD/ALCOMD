@@ -69,7 +69,7 @@ pub(super) fn list(
                 (updated_at_ms = ?2 AND user_package_id < ?3))
              ORDER BY updated_at_ms DESC,user_package_id DESC LIMIT ?4",
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let updated_at_ms = cursor
         .as_ref()
         .map(|value| integer(value.updated_at_ms))
@@ -85,7 +85,7 @@ pub(super) fn list(
             ],
             load_row,
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let mut records = rows
         .map(|row| row.map_err(|_| internal()).and_then(record_from_row))
         .collect::<Result<Vec<_>, _>>()?;
@@ -123,7 +123,7 @@ pub(super) fn get(
             load_row,
         )
         .optional()
-        .map_err(|_| unavailable())?
+        .map_err(sql_failure)?
         .ok_or_else(|| error(UserPackageErrorCode::NotFound))
         .and_then(record_from_row)
 }
@@ -141,7 +141,7 @@ pub(super) fn enroll(
         existing_response::<UserPackageWriteResult>(&transaction, owner, ENROLL, key, &fingerprint)?
     {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let duplicate: Option<i64> = transaction
@@ -156,7 +156,7 @@ pub(super) fn enroll(
             |row| row.get(0),
         )
         .optional()
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     if duplicate.is_some() {
         return Err(error(UserPackageErrorCode::AlreadyEnrolled));
     }
@@ -192,7 +192,7 @@ pub(super) fn enroll(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -215,7 +215,7 @@ pub(super) fn refresh(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = get(&transaction, owner, id)?;
@@ -252,7 +252,7 @@ pub(super) fn refresh(
                     integer(expected.get())?,
                 ],
             )
-            .map_err(|_| unavailable())?;
+            .map_err(sql_failure)?;
         insert_event(
             &transaction,
             owner,
@@ -278,7 +278,7 @@ pub(super) fn refresh(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -300,7 +300,7 @@ pub(super) fn remove(
         &fingerprint,
     )? {
         response.replayed = true;
-        transaction.commit().map_err(|_| unavailable())?;
+        transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
     let current = get(&transaction, owner, id)?;
@@ -308,13 +308,22 @@ pub(super) fn remove(
         return Err(error(UserPackageErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
+    super::activity::resource(
+        &transaction,
+        owner,
+        "user-package.remove",
+        "user-package",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(sql_failure)?;
     transaction
         .execute(
             "DELETE FROM user_package_sources WHERE owner_principal_id=?1 AND
              user_package_id=?2 AND revision=?3",
             params![owner.as_str(), id.to_string(), integer(expected.get())?],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     let response = UserPackageRemoveResult {
         user_package_id: id,
         revision: next,
@@ -338,7 +347,7 @@ pub(super) fn remove(
         &response,
         now_ms,
     )?;
-    transaction.commit().map_err(|_| unavailable())?;
+    transaction.commit().map_err(sql_failure)?;
     Ok(response)
 }
 
@@ -374,7 +383,7 @@ fn insert_snapshot(
                 integer(updated_at_ms)?,
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -458,7 +467,7 @@ fn replay<T: DeserializeOwned>(
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     match row {
         Some((stored, _)) if stored != fingerprint => {
             Err(error(UserPackageErrorCode::IdempotencyConflict))
@@ -504,7 +513,7 @@ fn save_response<T: Serialize>(
                 integer(now_ms)?,
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -531,7 +540,16 @@ fn insert_event(
                 integer(now_ms)?,
             ],
         )
-        .map_err(|_| unavailable())?;
+        .map_err(sql_failure)?;
+    super::activity::resource_event(
+        transaction,
+        owner,
+        kind,
+        "user-package",
+        &id.to_string(),
+        now_ms,
+    )
+    .map_err(sql_failure)?;
     Ok(())
 }
 
@@ -550,7 +568,7 @@ fn mutation_fingerprint(id: UserPackageId, expected: Revision) -> Result<String,
 fn begin(connection: &mut Connection) -> Result<Transaction<'_>, UserPackageError> {
     connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(|_| unavailable())
+        .map_err(sql_failure)
 }
 
 fn integer(value: u64) -> Result<i64, UserPackageError> {
@@ -594,6 +612,10 @@ fn error(code: UserPackageErrorCode) -> UserPackageError {
 
 fn unavailable() -> UserPackageError {
     error(UserPackageErrorCode::StoreUnavailable)
+}
+
+fn sql_failure(source: impl std::error::Error + Send + Sync + 'static) -> UserPackageError {
+    unavailable().with_source(source)
 }
 
 fn internal() -> UserPackageError {

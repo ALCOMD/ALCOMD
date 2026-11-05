@@ -159,7 +159,7 @@ function OperationSession({ client, initial, children }: { client: GuiRpcClient;
         }
     };
     return <div ref={root}>
-        {error === undefined ? null : <RequestReminder inline error={error} message="Tasks could not be updated. The last loaded entries are still shown.">
+        {error === undefined ? null : <RequestReminder error={error} message="Tasks could not be updated. The last loaded entries are still shown.">
             <Button disabled={pending} onClick={retryLatest} type="button" variant="text">{t("Retry")}</Button>
         </RequestReminder>}
         {children(items)}

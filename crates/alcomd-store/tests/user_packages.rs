@@ -141,6 +141,7 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
         events
             .events
             .iter()
+            .filter(|event| event.aggregate_kind == "user-package")
             .map(|event| event.kind.as_str())
             .collect::<Vec<_>>(),
         [
@@ -149,9 +150,23 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
             "user_package.removed"
         ]
     );
-    assert!(events.events.iter().all(
-        |event| event.aggregate_kind == "user-package" && event.aggregate_id == id.to_string()
-    ));
+    assert_eq!(events.events.len(), 6);
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .filter(|event| event.kind == "activity.changed" && event.aggregate_kind == "activity")
+            .count(),
+        3
+    );
+    assert!(
+        events
+            .events
+            .iter()
+            .filter(|event| event.aggregate_kind == "user-package")
+            .all(|event| event.aggregate_kind == "user-package"
+                && event.aggregate_id == id.to_string())
+    );
     drop(store);
     std::fs::remove_dir_all(root).expect("cleanup");
 }

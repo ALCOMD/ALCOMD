@@ -18,11 +18,11 @@ pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, prepare_storage_directory,
     publish_file_no_replace,
 };
-pub use unity_hub_open::{UnityHubLaunchError, UnityHubProcessLauncher};
+pub use unity_hub_open::{UnityHubLaunchError, UnityHubLaunchErrorKind, UnityHubProcessLauncher};
 
 pub use unity_hub::{
     ConfiguredUnityHubStatus, UnityHubAvailability, UnityHubInspection, UnityHubOrigin,
-    UnityHubPathError, inspect_unity_hub, normalize_unity_hub_path,
+    UnityHubPathError, UnityHubPathErrorKind, inspect_unity_hub, normalize_unity_hub_path,
 };
 
 pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};

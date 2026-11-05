@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 18;
+const DATA_SCHEMA_VERSION: i64 = 19;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -34,6 +34,7 @@ const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modifi
 const MIGRATION_V16: &str = include_str!("../migrations/0016_remove_project_observed.sql");
 const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
 const MIGRATION_V18: &str = include_str!("../migrations/0018_backup_compression_levels.sql");
+const MIGRATION_V19: &str = include_str!("../migrations/0019_activity.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let mut connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -160,6 +161,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     }
     if version <= 17 {
         migrate_backup_compression(&mut connection, MIGRATION_V18)?;
+    }
+    if version <= 18 {
+        connection
+            .execute_batch(MIGRATION_V19)
+            .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -307,6 +313,8 @@ pub(super) fn create_state_check(
                 created_at_ms
             ],
         )
+        .map_err(store_failure)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
         .map_err(store_failure)?;
     transaction
         .execute(
@@ -1243,8 +1251,8 @@ fn optional_positive_or_zero(value: Option<i64>) -> rusqlite::Result<Option<u64>
     value.map(positive_or_zero).transpose()
 }
 
-fn store_failure(_: rusqlite::Error) -> StoreError {
-    unavailable()
+fn store_failure(error: rusqlite::Error) -> StoreError {
+    unavailable().with_source(error)
 }
 
 pub(super) fn unavailable() -> StoreError {

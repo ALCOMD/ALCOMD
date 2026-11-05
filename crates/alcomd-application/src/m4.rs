@@ -1,5 +1,5 @@
-use std::fmt;
 use std::future::Future;
+use tracing::Instrument;
 
 use serde::{Deserialize, Serialize};
 
@@ -533,43 +533,93 @@ impl M4ErrorCode {
 pub struct M4Error {
     code: M4ErrorCode,
     subreason: Option<String>,
+    context: crate::TechnicalErrorContext,
+    diagnostic_id: Option<String>,
 }
 
 impl M4Error {
     #[must_use]
-    pub const fn new(code: M4ErrorCode) -> Self {
+    pub fn new(code: M4ErrorCode) -> Self {
         Self {
             code,
             subreason: None,
+            context: crate::TechnicalErrorContext::default(),
+            diagnostic_id: None,
         }
     }
-
-    #[must_use]
-    pub fn with_subreason(code: M4ErrorCode, subreason: impl Into<String>) -> Self {
-        Self {
-            code,
-            subreason: Some(subreason.into()),
-        }
-    }
-
     #[must_use]
     pub const fn code(&self) -> M4ErrorCode {
         self.code
     }
+    #[must_use]
+    pub fn with_source(mut self, source: impl std::error::Error + Send + Sync + 'static) -> Self {
+        self.context = self.context.with_source(source);
+        self
+    }
+    #[must_use]
+    pub fn with_path(mut self, path: impl Into<String>) -> Self {
+        self.context = self.context.with_path(path);
+        self
+    }
+    #[must_use]
+    pub fn path(&self) -> Option<&str> {
+        self.context.path.as_deref()
+    }
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.context = self.context.with_reason(reason);
+        self
+    }
+    #[must_use]
+    pub fn with_diagnostic_id(mut self, id: String) -> Self {
+        self.diagnostic_id = Some(id);
+        self
+    }
+    #[must_use]
+    pub fn diagnostic_id(&self) -> Option<&str> {
+        self.diagnostic_id.as_deref()
+    }
+    fn record_failure(
+        mut self,
+        operation_id: crate::OperationId,
+        message: &'static str,
+    ) -> (Self, String) {
+        let id = self.diagnostic_id.clone().unwrap_or_else(|| {
+            crate::record_technical_failure(&self, self.path(), Some(operation_id), message)
+        });
+        self.diagnostic_id = Some(id.clone());
+        (self, id)
+    }
 
+    #[must_use]
+    pub fn with_subreason(code: M4ErrorCode, subreason: impl Into<String>) -> Self {
+        let mut error = Self::new(code);
+        error.subreason = Some(subreason.into());
+        error
+    }
     #[must_use]
     pub fn subreason(&self) -> Option<&str> {
         self.subreason.as_deref()
     }
 }
 
-impl fmt::Display for M4Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "M4 request failed: {:?}", self.code)
+impl std::fmt::Display for M4Error {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "request failed: {:?}", self.code)?;
+        if let Some(reason) = self.subreason.as_deref() {
+            write!(formatter, " ({reason})")?;
+        }
+        if let Some(path) = self.path() {
+            write!(formatter, " at {path}")?;
+        }
+        Ok(())
     }
 }
-
-impl std::error::Error for M4Error {}
+impl std::error::Error for M4Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.context.source_error()
+    }
+}
 
 impl From<StoreErrorKind> for M4Error {
     fn from(value: StoreErrorKind) -> Self {
@@ -816,9 +866,14 @@ where
 
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
-        tokio::spawn(async move {
-            let _ = application.run(operation_id).await;
-        });
+        tokio::spawn(
+            (async move {
+                if let Err(source) = application.run(operation_id).await {
+                    let _ = source.record_failure(operation_id, "Package application failed");
+                }
+            })
+            .instrument(tracing::info_span!("operation", operation_id = %operation_id)),
+        );
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M4Error> {
@@ -868,6 +923,8 @@ where
                         .map_err(|error| M4Error::from(error.kind()))?;
                     return Ok(());
                 }
+                let (error, diagnostic_id) =
+                    error.record_failure(operation_id, "Package application failed");
                 if error.code() == M4ErrorCode::RecoveryRequired {
                     return Err(error);
                 }
@@ -875,7 +932,7 @@ where
                     .fail_package_apply(
                         operation_id,
                         error.code().as_str().to_owned(),
-                        OperationId::new().to_string(),
+                        diagnostic_id,
                         m4_time_ms()?,
                     )
                     .await?;
@@ -888,24 +945,32 @@ where
 fn require(access: &AccessContext, permission: crate::Permission) -> Result<(), M4Error> {
     access
         .require(permission)
-        .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))
+        .map_err(|cause| M4Error::new(M4ErrorCode::PermissionDenied).with_source(cause))
 }
 
 fn map_m3_error(error: crate::M3Error) -> M4Error {
-    match error.code() {
+    let path = error.technical_path().map(str::to_owned);
+    let mapped = match error.code() {
         crate::M3ErrorCode::ProjectNotRegistered => M4Error::new(M4ErrorCode::ProjectNotRegistered),
         crate::M3ErrorCode::PermissionDenied => M4Error::new(M4ErrorCode::PermissionDenied),
         crate::M3ErrorCode::StoreUnavailable => M4Error::new(M4ErrorCode::StoreUnavailable),
         _ => M4Error::new(M4ErrorCode::Internal),
+    };
+    let mapped = mapped.with_source(error);
+    if let Some(path) = path {
+        mapped.with_path(path)
+    } else {
+        mapped
     }
 }
 
 fn m4_time_ms() -> Result<u64, M4Error> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| M4Error::new(M4ErrorCode::Internal))
+        .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))
         .and_then(|duration| {
-            u64::try_from(duration.as_millis()).map_err(|_| M4Error::new(M4ErrorCode::Internal))
+            u64::try_from(duration.as_millis())
+                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))
         })
 }
 
@@ -973,5 +1038,74 @@ mod tests {
             change_set.validate_bounds().expect_err("too large").code(),
             M4ErrorCode::PlanTooLarge
         );
+    }
+}
+
+#[cfg(test)]
+mod execution_log_tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+    #[derive(Clone)]
+    struct Capture(Arc<Mutex<Vec<u8>>>);
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("capture").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    #[test]
+    fn failure_owner_preserves_causes_and_only_real_retry_gets_a_new_diagnostic() {
+        let data = Arc::new(Mutex::new(Vec::new()));
+        let output = data.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_ansi(false)
+            .with_writer(move || Capture(output.clone()))
+            .finish();
+        let operation = OperationId::new();
+        let path = "C:\\ALCOMD-Test\\项目 A\\Packages\\vpm-manifest.json";
+        let (first_id, retry_id) = tracing::subscriber::with_default(subscriber, || {
+            let source = M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+                .with_path(path)
+                .with_source(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "test underlying file permission failure",
+                ));
+            let (source, id) = source.record_failure(operation, "Package application failed");
+            let (propagated, again) =
+                source.record_failure(operation, "Outer propagation must not record again");
+            assert_eq!(id, again);
+            assert_eq!(propagated.diagnostic_id(), Some(id.as_str()));
+            assert!(std::error::Error::source(&propagated).is_some());
+            let (_, retry) = M4Error::new(M4ErrorCode::ProjectChangedDuringApply)
+                .with_path(path)
+                .with_source(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "test underlying file permission failure",
+                ))
+                .record_failure(operation, "Package application failed");
+            (id, retry)
+        });
+        assert_ne!(first_id, retry_id);
+        let text = String::from_utf8(data.lock().expect("capture").clone()).expect("UTF8");
+        let rows = text
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("standard JSON"))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["fields"]["diagnostic_id"], first_id);
+        assert_eq!(rows[1]["fields"]["diagnostic_id"], retry_id);
+        assert!(
+            rows[0]["fields"]["error"]
+                .as_str()
+                .expect("chain")
+                .contains("test underlying file permission failure")
+        );
+        assert_eq!(rows[0]["fields"]["path"], path);
+        assert_eq!(rows[0]["fields"]["operation_id"], operation.to_string());
     }
 }

@@ -69,7 +69,7 @@ impl<S> UnityMigrationEngine<S> {
             return Err(error(M7UnityMigrationErrorCode::Internal));
         }
         let cache = PackageCache::new(cache_root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         Ok(Self {
             store,
             reader,
@@ -108,13 +108,15 @@ where
         }
         let root = PathBuf::from(&project.observation.root_path);
         let (canonical_root, identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         if identity != project.observation.path_identity_key {
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
         let marker_sha256 = project_version_marker_sha256(&canonical_root)?;
         let executable = validate_unity_executable(Path::new(&target.observation.executable_path))
-            .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
+            })?;
         if executable.filesystem_identity() != target.observation.filesystem_identity {
             return Err(error(M7UnityMigrationErrorCode::InstallationNotFound));
         }
@@ -185,7 +187,7 @@ where
         }
         let root = PathBuf::from(&project.observation.root_path);
         let (canonical_root, identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         if identity != plan.draft.project_root_identity
             || project_version_marker_sha256(&canonical_root)?
                 != plan.draft.project_version_marker_sha256
@@ -193,7 +195,9 @@ where
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
         let executable = validate_unity_executable(Path::new(&target.observation.executable_path))
-            .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
+            })?;
         if executable.filesystem_identity() != target.observation.filesystem_identity {
             return Err(error(M7UnityMigrationErrorCode::InstallationNotFound));
         }
@@ -222,17 +226,17 @@ where
                 .await;
         }
         std::fs::create_dir_all(&operation_root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         let bytes = serde_json::to_vec(&EmptyPreparationArtifact {
             version: 1,
             operation_id: operation_id.to_string(),
             plan_fingerprint: &plan.draft.plan_fingerprint,
             preparation_kind: "none",
         })
-        .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         write_new_synced_file(&artifact, &bytes)?;
         alcomd_platform::sync_directory(&operation_root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         evidence.preparation_kind = "none".to_owned();
         evidence.preparation_operation_id = Some(operation_id);
         evidence.preparation_artifact_sha256 = Some(Sha256::digest(&bytes).into());
@@ -279,7 +283,7 @@ where
         }
         let root = PathBuf::from(&plan.draft.project.observation.root_path);
         let (root, identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         if identity != plan.draft.project_root_identity {
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
@@ -289,7 +293,9 @@ where
         let executable = validate_unity_executable(Path::new(
             &plan.draft.target_installation.observation.executable_path,
         ))
-        .map_err(|_| error(M7UnityMigrationErrorCode::InstallationNotFound))?;
+        .map_err(|cause| {
+            error(M7UnityMigrationErrorCode::InstallationNotFound).with_source(cause)
+        })?;
         if executable.filesystem_identity()
             != plan
                 .draft
@@ -300,7 +306,7 @@ where
             return Err(error(M7UnityMigrationErrorCode::InstallationNotFound));
         }
         let process = spawn_unity_editor_migration(&executable, &root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         evidence.spawn_accepted = true;
         evidence
             .safe_evidence
@@ -315,8 +321,8 @@ where
     ) -> Result<UnityMigrationEvidence, M7UnityMigrationError> {
         let exit = tokio::task::spawn_blocking(move || process.wait())
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         evidence.exit_observation = Some(
             match exit {
                 UnityMigrationExit::Success => "success",
@@ -423,11 +429,13 @@ where
     ) -> Result<UnityMigrationEvidence, M7UnityMigrationError> {
         let root = self.operation_root(operation_id);
         if root.exists() {
-            std::fs::remove_dir_all(&root)
-                .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+            std::fs::remove_dir_all(&root).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
             if let Some(parent) = root.parent() {
-                alcomd_platform::sync_directory(parent)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+                alcomd_platform::sync_directory(parent).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                })?;
             }
         }
         evidence
@@ -452,7 +460,7 @@ where
                 source.is_user_package(),
             )
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))
     }
 
     async fn inspect_planned_project(
@@ -466,7 +474,9 @@ where
                 ProjectDiscoveryMode::ExactRoot,
             )
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+            .map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
         if observation.path_identity_key != plan.draft.project_root_identity {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
@@ -492,8 +502,10 @@ where
         {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
-        evidence.reobserved_at_ms =
-            Some(crate::unix_time_ms().map_err(|_| error(M7UnityMigrationErrorCode::Internal))?);
+        evidence.reobserved_at_ms = Some(
+            crate::unix_time_ms()
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?,
+        );
         Ok(UnityMigrationReobservation {
             observation,
             evidence,
@@ -512,25 +524,25 @@ where
         let operation_root = self.operation_root(operation_id);
         if operation_root.exists() {
             std::fs::remove_dir_all(&operation_root)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         }
         let materialized = operation_root.join("materialized");
         let package_staging = materialized.join("packages");
         std::fs::create_dir_all(&package_staging)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
 
         let snapshot = inspect_package_project(&plan.draft.project)
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         let catalog = self
             .store
             .resolver_catalog(plan.owner.clone(), true)
             .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         if !catalog.complete {
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
         let candidates = candidates_from_catalog(&catalog)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
         let requests = migration_requests(&plan.draft.project, &plan.draft.target_unity_version)?;
         let migration_resolution = if requests.is_empty() {
             crate::resolver::UnityMigrationResolution {
@@ -542,7 +554,7 @@ where
             }
         } else {
             resolve_unity_migration_packages(&candidates, &requests)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?
         };
         validate_obligation_scope(&migration_resolution.legacy_cleanup_obligations)?;
         let package_plan = build_bulk_plan(
@@ -550,12 +562,12 @@ where
             &migration_resolution.resolution,
             &BTreeSet::new(),
         )
-        .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
 
         let root = PathBuf::from(&plan.draft.project.observation.root_path);
         let current_vpm = read_project_component(&root, &["Packages", "vpm-manifest.json"])?;
         let next_vpm = materialize_vpm_manifest(&current_vpm, &package_plan.change_set)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
         if Sha256::digest(&next_vpm).as_slice() != package_plan.change_set.vpm_manifest_sha256 {
             return Err(error(M7UnityMigrationErrorCode::Internal));
         }
@@ -572,19 +584,23 @@ where
             let archive = self.cached_source(source).await?;
             let destination = package_staging.join(&mutation.package_id);
             std::fs::create_dir(&destination)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
-            extract_archive(&archive, &destination)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
+            extract_archive(&archive, &destination).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+            })?;
             let expected_version = mutation
                 .to_version
                 .as_deref()
                 .ok_or_else(|| error(M7UnityMigrationErrorCode::Internal))?;
             validate_extracted_package(&destination, &mutation.package_id, expected_version)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+                .map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+                })?;
             prepared_package_trees.insert(
                 mutation.package_id.clone(),
-                tree_fingerprint(&destination)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?,
+                tree_fingerprint(&destination).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+                })?,
             );
         }
 
@@ -614,7 +630,9 @@ where
                     &obligation.version.to_string(),
                 )
                 .await
-                .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+                .map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause)
+                })?;
             for package_id in &metadata.packages {
                 if selected_ids.contains(package_id.as_str()) {
                     return Err(error(M7UnityMigrationErrorCode::Unsupported));
@@ -661,7 +679,7 @@ where
             upm_manifest_after_sha256: Sha256::digest(&next_upm).into(),
         };
         let bytes = serde_json::to_vec(&artifact)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         if bytes.len() as u64 > PREPARATION_ARTIFACT_LIMIT {
             return Err(error(M7UnityMigrationErrorCode::Unsupported));
         }
@@ -693,8 +711,10 @@ where
         if evidence.preparation_artifact_sha256 != Some(Sha256::digest(&bytes).into()) {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
-        let artifact: MigrationPreparationArtifact = serde_json::from_slice(&bytes)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        let artifact: MigrationPreparationArtifact =
+            serde_json::from_slice(&bytes).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
         if artifact.version != 1
             || artifact.operation_id != operation_id.to_string()
             || artifact.plan_fingerprint != plan.draft.plan_fingerprint
@@ -705,7 +725,7 @@ where
         }
         if Sha256::digest(
             serde_json::to_vec(&artifact.change_set)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?,
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?,
         )
         .as_slice()
             != artifact.change_set_fingerprint
@@ -713,15 +733,18 @@ where
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
         let root = PathBuf::from(&plan.draft.project.observation.root_path);
-        let (root, identity) = alcomd_platform::resolve_directory_identity(&root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        let (root, identity) =
+            alcomd_platform::resolve_directory_identity(&root).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
         if identity != plan.draft.project_root_identity {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
         let mut phase = latest_transaction_phase(&operation_root)?;
         if phase.is_none() {
-            let snapshot = inspect_package_project(&plan.draft.project)
-                .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            let snapshot = inspect_package_project(&plan.draft.project).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause)
+            })?;
             if snapshot.fingerprint != artifact.project_snapshot_fingerprint
                 || project_version_marker_sha256(&root)? != plan.draft.project_version_marker_sha256
             {
@@ -953,13 +976,17 @@ fn latest_transaction_phase(
     let entries = match std::fs::read_dir(&marker_root) {
         Ok(entries) => entries,
         Err(value) if value.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(error(M7UnityMigrationErrorCode::RecoveryRequired)),
+        Err(cause) => {
+            return Err(error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause));
+        }
     };
     let marker_paths = entries
         .map(|entry| {
-            entry
-                .map(|entry| entry.path())
-                .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))
+            entry.map(|entry| entry.path()).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(operation_root.display().to_string())
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     if marker_paths.len() > 5
@@ -982,8 +1009,11 @@ fn latest_transaction_phase(
         return Ok(None);
     };
     let bytes = read_regular_file(&marker_path, 65_536)?;
-    let marker: PreparationTransactionMarker = serde_json::from_slice(&bytes)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+    let marker: PreparationTransactionMarker = serde_json::from_slice(&bytes).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(operation_root.display().to_string())
+    })?;
     if marker.version != 1
         || marker.operation_id
             != operation_root
@@ -1002,12 +1032,23 @@ fn write_transaction_marker(
     phase: PreparationTransactionPhase,
 ) -> Result<(), M7UnityMigrationError> {
     let marker_root = operation_root.join("transaction-markers");
-    std::fs::create_dir_all(&marker_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+    std::fs::create_dir_all(&marker_root).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(operation_root.display().to_string())
+    })?;
     let step = std::fs::read_dir(&marker_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?
+        .map_err(|cause| {
+            error(M7UnityMigrationErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(operation_root.display().to_string())
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?
+        .map_err(|cause| {
+            error(M7UnityMigrationErrorCode::RecoveryRequired)
+                .with_source(cause)
+                .with_path(operation_root.display().to_string())
+        })?
         .len()
         .checked_add(1)
         .filter(|step| *step <= 5)
@@ -1017,10 +1058,17 @@ fn write_transaction_marker(
         operation_id: operation_id.to_string(),
         phase,
     })
-    .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+    .map_err(|cause| {
+        error(M7UnityMigrationErrorCode::Internal)
+            .with_source(cause)
+            .with_path(operation_root.display().to_string())
+    })?;
     write_new_synced_file(&marker_root.join(format!("step-{step:04}.json")), &bytes)?;
-    alcomd_platform::sync_directory(&marker_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+    alcomd_platform::sync_directory(&marker_root).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(operation_root.display().to_string())
+    })?;
     Ok(())
 }
 
@@ -1040,13 +1088,19 @@ fn validate_materialized_packages(
             .to_version
             .as_deref()
             .ok_or_else(|| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
-        validate_extracted_package(&path, &mutation.package_id, expected_version)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        validate_extracted_package(&path, &mutation.package_id, expected_version).map_err(
+            |cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(operation_root.display().to_string())
+            },
+        )?;
         if artifact.prepared_package_trees.get(&mutation.package_id)
-            != Some(
-                &tree_fingerprint(&path)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?,
-            )
+            != Some(&tree_fingerprint(&path).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(operation_root.display().to_string())
+            })?)
         {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
@@ -1062,7 +1116,7 @@ fn replace_migration_packages(
     let packages_root = root.join("Packages");
     let backup_root = operation_root.join("backup").join("packages");
     std::fs::create_dir_all(&backup_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause))?;
     for mutation in &artifact.change_set.mutations {
         let target = packages_root.join(&mutation.package_id);
         let backup = backup_root.join(&mutation.package_id);
@@ -1082,11 +1136,14 @@ fn replace_migration_packages(
                     {
                         return Err(error(M7UnityMigrationErrorCode::SourceChanged));
                     }
-                    std::fs::rename(&target, &backup)
-                        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+                    std::fs::rename(&target, &backup).map_err(|cause| {
+                        error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                    })?;
                     alcomd_platform::sync_directory(&packages_root)
                         .and_then(|()| alcomd_platform::sync_directory(&backup_root))
-                        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+                        .map_err(|cause| {
+                            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                        })?;
                 }
                 Ok(_) => return Err(error(M7UnityMigrationErrorCode::RecoveryRequired)),
                 Err(value) if value.kind() == std::io::ErrorKind::NotFound => {
@@ -1094,7 +1151,11 @@ fn replace_migration_packages(
                         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
                     }
                 }
-                Err(_) => return Err(error(M7UnityMigrationErrorCode::RecoveryRequired)),
+                Err(cause) => {
+                    return Err(
+                        error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                    );
+                }
             }
         }
         if mutation.kind == PackageMutationKind::Remove {
@@ -1111,18 +1172,20 @@ fn replace_migration_packages(
             if !prepared.exists() {
                 return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
             }
-            std::fs::rename(&prepared, &target)
-                .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
-            alcomd_platform::sync_directory(&packages_root)
-                .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+            std::fs::rename(&prepared, &target).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
+            alcomd_platform::sync_directory(&packages_root).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?;
         }
-        validate_extracted_package(&target, &mutation.package_id, expected_version)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        validate_extracted_package(&target, &mutation.package_id, expected_version).map_err(
+            |cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause),
+        )?;
         if artifact.prepared_package_trees.get(&mutation.package_id)
-            != Some(
-                &tree_fingerprint(&target)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?,
-            )
+            != Some(&tree_fingerprint(&target).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+            })?)
         {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
@@ -1139,7 +1202,7 @@ fn replace_migration_manifest(
 ) -> Result<(), M7UnityMigrationError> {
     let backup_root = operation_root.join("backup");
     std::fs::create_dir_all(&backup_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause))?;
     let backup = backup_root.join(format!("{name}.old"));
     let prepared = operation_root
         .join("materialized")
@@ -1151,11 +1214,13 @@ fn replace_migration_manifest(
         if hash_optional_regular_file(target)? != Some(expected_before) {
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
-        std::fs::rename(target, &backup)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        std::fs::rename(target, &backup).map_err(|cause| {
+            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+        })?;
         sync_parent(target)?;
-        alcomd_platform::sync_directory(&backup_root)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        alcomd_platform::sync_directory(&backup_root).map_err(|cause| {
+            error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+        })?;
     } else if target.exists() {
         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
     }
@@ -1163,7 +1228,7 @@ fn replace_migration_manifest(
         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
     }
     std::fs::rename(&prepared, target)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause))?;
     sync_parent(target)?;
     if hash_optional_regular_file(target)? != Some(expected_after) {
         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
@@ -1178,7 +1243,7 @@ fn quarantine_legacy_paths(
 ) -> Result<(), M7UnityMigrationError> {
     let quarantine_root = operation_root.join("backup").join("legacy");
     std::fs::create_dir_all(&quarantine_root)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause))?;
     for planned in paths {
         let relative = Path::new(&planned.relative_path);
         let target = root.join(relative);
@@ -1206,13 +1271,16 @@ fn quarantine_legacy_paths(
                 let parent = quarantine
                     .parent()
                     .ok_or_else(|| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
-                std::fs::create_dir_all(parent)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
-                std::fs::rename(&target, &quarantine)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+                std::fs::create_dir_all(parent).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                })?;
+                std::fs::rename(&target, &quarantine).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                })?;
                 sync_parent(&target)?;
-                alcomd_platform::sync_directory(parent)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+                alcomd_platform::sync_directory(parent).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)
+                })?;
             }
         }
     }
@@ -1242,13 +1310,19 @@ fn verify_prepared_project(
             .to_version
             .as_deref()
             .ok_or_else(|| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
-        validate_extracted_package(&target, &mutation.package_id, expected_version)
-            .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+        validate_extracted_package(&target, &mutation.package_id, expected_version).map_err(
+            |cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            },
+        )?;
         if artifact.prepared_package_trees.get(&mutation.package_id)
-            != Some(
-                &tree_fingerprint(&target)
-                    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?,
-            )
+            != Some(&tree_fingerprint(&target).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::RecoveryRequired)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            })?)
         {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
@@ -1265,16 +1339,17 @@ fn hash_optional_regular_file(path: &Path) -> Result<Option<[u8; 32]>, M7UnityMi
                 && metadata.len() <= 4 * 1024 * 1024 =>
         {
             Ok(Some(
-                Sha256::digest(
-                    std::fs::read(path)
-                        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?,
-                )
+                Sha256::digest(std::fs::read(path).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::RecoveryRequired)
+                        .with_source(cause)
+                        .with_path(path.display().to_string())
+                })?)
                 .into(),
             ))
         }
         Ok(_) => Err(error(M7UnityMigrationErrorCode::RecoveryRequired)),
         Err(value) if value.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(_) => Err(error(M7UnityMigrationErrorCode::RecoveryRequired)),
+        Err(cause) => Err(error(M7UnityMigrationErrorCode::RecoveryRequired).with_source(cause)),
     }
 }
 
@@ -1283,7 +1358,11 @@ fn sync_parent(path: &Path) -> Result<(), M7UnityMigrationError> {
         path.parent()
             .ok_or_else(|| error(M7UnityMigrationErrorCode::RecoveryRequired))?,
     )
-    .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))
+    .map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn migration_requests(
@@ -1303,7 +1382,7 @@ fn migration_requests(
         requests.insert(
             dependency.package_id.clone(),
             crate::range::ProjectDependencyRange::parse(&dependency.value)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?
+                .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?
                 .canonical(),
         );
     }
@@ -1374,12 +1453,15 @@ fn sealed_legacy_paths(
             }
             Ok(_) => {}
             Err(cause) if cause.kind() == std::io::ErrorKind::NotFound && guid.is_empty() => {}
-            Err(_) => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
+            Err(cause) => {
+                return Err(error(M7UnityMigrationErrorCode::Unsupported).with_source(cause));
+            }
         }
         if !guid.is_empty() {
             let bytes = read_regular_file(&meta_path, 64 * 1024)?;
-            let text = std::str::from_utf8(&bytes)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+            let text = std::str::from_utf8(&bytes).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
+            })?;
             if !text.lines().any(|line| {
                 line.trim()
                     .strip_prefix("guid:")
@@ -1459,22 +1541,30 @@ fn validate_legacy_paths(
                 Ok(metadata) if metadata.is_file() => (
                     LegacyPathKind::File,
                     Some(
-                        alcomd_platform::file_identity_key(&target)
-                            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?,
+                        alcomd_platform::file_identity_key(&target).map_err(|cause| {
+                            error(M7UnityMigrationErrorCode::SourceChanged)
+                                .with_source(cause)
+                                .with_path(root.display().to_string())
+                        })?,
                     ),
                 ),
                 Ok(metadata) if metadata.is_dir() => (
                     LegacyPathKind::Directory,
                     Some(
-                        alcomd_platform::file_identity_key(&target)
-                            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?,
+                        alcomd_platform::file_identity_key(&target).map_err(|cause| {
+                            error(M7UnityMigrationErrorCode::SourceChanged)
+                                .with_source(cause)
+                                .with_path(root.display().to_string())
+                        })?,
                     ),
                 ),
                 Ok(_) => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
                 Err(value) if value.kind() == std::io::ErrorKind::NotFound => {
                     (LegacyPathKind::Missing, None)
                 }
-                Err(_) => return Err(error(M7UnityMigrationErrorCode::SourceChanged)),
+                Err(cause) => {
+                    return Err(error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause));
+                }
             };
             Ok(LegacyPathPlan {
                 relative_path,
@@ -1496,7 +1586,9 @@ fn validate_existing_component_chain(
             Ok(metadata) if !metadata.file_type().is_symlink() && !is_reparse(&metadata) => {}
             Ok(_) => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
             Err(value) if value.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(_) => return Err(error(M7UnityMigrationErrorCode::SourceChanged)),
+            Err(cause) => {
+                return Err(error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause));
+            }
         }
     }
     Ok(())
@@ -1531,7 +1623,9 @@ fn find_unlocked_conflicts(
             }
             Ok(_) => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
             Err(value) if value.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(error(M7UnityMigrationErrorCode::SourceChanged)),
+            Err(cause) => {
+                return Err(error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause));
+            }
         }
     }
     Ok(conflicts)
@@ -1553,7 +1647,7 @@ fn validate_legacy_package_removals(
 
 fn remove_fixed_xr_dependencies(bytes: &[u8]) -> Result<Vec<u8>, M7UnityMigrationError> {
     let mut value = crate::parse_bounded_json(bytes, M3ErrorCode::ProjectManifestInvalid)
-        .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
     let dependencies = value
         .as_object_mut()
         .and_then(|object| object.get_mut("dependencies"))
@@ -1563,7 +1657,7 @@ fn remove_fixed_xr_dependencies(bytes: &[u8]) -> Result<Vec<u8>, M7UnityMigratio
         dependencies.remove(package_id);
     }
     let mut result = serde_json::to_vec_pretty(&value)
-        .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
     result.push(b'\n');
     Ok(result)
 }
@@ -1575,8 +1669,11 @@ fn read_project_component(
     let mut path = root.to_path_buf();
     for (index, component) in components.iter().enumerate() {
         path.push(component);
-        let metadata = std::fs::symlink_metadata(&path)
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+        let metadata = std::fs::symlink_metadata(&path).map_err(|cause| {
+            error(M7UnityMigrationErrorCode::SourceChanged)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
         if metadata.file_type().is_symlink()
             || is_reparse(&metadata)
             || (index + 1 == components.len() && !metadata.is_file())
@@ -1585,8 +1682,11 @@ fn read_project_component(
             return Err(error(M7UnityMigrationErrorCode::SourceChanged));
         }
     }
-    read_regular_file(&path, 4 * 1024 * 1024)
-        .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))
+    read_regular_file(&path, 4 * 1024 * 1024).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })
 }
 
 fn sync_tree(root: &Path) -> Result<(), M7UnityMigrationError> {
@@ -1598,16 +1698,25 @@ fn sync_tree(root: &Path) -> Result<(), M7UnityMigrationError> {
             return Err(error(M7UnityMigrationErrorCode::Unsupported));
         }
         sync_order.push(directory.clone());
-        for entry in
-            std::fs::read_dir(&directory).map_err(|_| error(M7UnityMigrationErrorCode::Internal))?
-        {
+        for entry in std::fs::read_dir(&directory).map_err(|cause| {
+            error(M7UnityMigrationErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })? {
             entries = entries
                 .checked_add(1)
                 .filter(|count| *count <= 65_536)
                 .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-            let entry = entry.map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
-            let metadata = std::fs::symlink_metadata(entry.path())
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+            let entry = entry.map_err(|cause| {
+                error(M7UnityMigrationErrorCode::Internal)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            })?;
+            let metadata = std::fs::symlink_metadata(entry.path()).map_err(|cause| {
+                error(M7UnityMigrationErrorCode::Internal)
+                    .with_source(cause)
+                    .with_path(root.display().to_string())
+            })?;
             if metadata.file_type().is_symlink() || is_reparse(&metadata) {
                 return Err(error(M7UnityMigrationErrorCode::Unsupported));
             }
@@ -1618,29 +1727,39 @@ fn sync_tree(root: &Path) -> Result<(), M7UnityMigrationError> {
                     .read(true)
                     .open(entry.path())
                     .and_then(|file| file.sync_all())
-                    .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+                    .map_err(|cause| {
+                        error(M7UnityMigrationErrorCode::Internal)
+                            .with_source(cause)
+                            .with_path(root.display().to_string())
+                    })?;
             } else {
                 return Err(error(M7UnityMigrationErrorCode::Unsupported));
             }
         }
     }
     for directory in sync_order.into_iter().rev() {
-        alcomd_platform::sync_directory(&directory)
-            .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+        alcomd_platform::sync_directory(&directory).map_err(|cause| {
+            error(M7UnityMigrationErrorCode::Internal)
+                .with_source(cause)
+                .with_path(root.display().to_string())
+        })?;
     }
     Ok(())
 }
 
 fn fingerprint(value: &impl Serialize) -> Result<String, M7UnityMigrationError> {
-    let bytes =
-        serde_json::to_vec(value).map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+    let bytes = serde_json::to_vec(value)
+        .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
     Ok(hex(&Sha256::digest(bytes).into()))
 }
 
 fn project_version_marker_sha256(root: &Path) -> Result<[u8; 32], M7UnityMigrationError> {
     let path = root.join("ProjectSettings").join("ProjectVersion.txt");
-    let metadata = std::fs::symlink_metadata(&path)
-        .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+    let metadata = std::fs::symlink_metadata(&path).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
         || metadata.len() > PROJECT_VERSION_LIMIT
@@ -1648,13 +1767,20 @@ fn project_version_marker_sha256(root: &Path) -> Result<[u8; 32], M7UnityMigrati
     {
         return Err(error(M7UnityMigrationErrorCode::SourceChanged));
     }
-    let bytes = std::fs::read(path).map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+    let bytes = std::fs::read(path).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::SourceChanged)
+            .with_source(cause)
+            .with_path(root.display().to_string())
+    })?;
     Ok(Sha256::digest(bytes).into())
 }
 
 fn read_regular_file(path: &Path, limit: u64) -> Result<Vec<u8>, M7UnityMigrationError> {
-    let metadata = std::fs::symlink_metadata(path)
-        .map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })?;
     if !metadata.is_file()
         || metadata.file_type().is_symlink()
         || metadata.len() > limit
@@ -1662,7 +1788,11 @@ fn read_regular_file(path: &Path, limit: u64) -> Result<Vec<u8>, M7UnityMigratio
     {
         return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
     }
-    std::fs::read(path).map_err(|_| error(M7UnityMigrationErrorCode::RecoveryRequired))
+    std::fs::read(path).map_err(|cause| {
+        error(M7UnityMigrationErrorCode::RecoveryRequired)
+            .with_source(cause)
+            .with_path(path.display().to_string())
+    })
 }
 
 fn write_new_synced_file(path: &Path, bytes: &[u8]) -> Result<(), M7UnityMigrationError> {
@@ -1672,10 +1802,18 @@ fn write_new_synced_file(path: &Path, bytes: &[u8]) -> Result<(), M7UnityMigrati
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
+        .map_err(|cause| {
+            error(M7UnityMigrationErrorCode::Internal)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })?;
     file.write_all(bytes)
         .and_then(|()| file.sync_all())
-        .map_err(|_| error(M7UnityMigrationErrorCode::Internal))
+        .map_err(|cause| {
+            error(M7UnityMigrationErrorCode::Internal)
+                .with_source(cause)
+                .with_path(path.display().to_string())
+        })
 }
 
 fn require_no_target_writer(writer: &UnityWriterState) -> Result<(), M7UnityMigrationError> {
@@ -1718,7 +1856,7 @@ fn is_reparse(_: &std::fs::Metadata) -> bool {
     false
 }
 
-const fn error(code: M7UnityMigrationErrorCode) -> M7UnityMigrationError {
+fn error(code: M7UnityMigrationErrorCode) -> M7UnityMigrationError {
     M7UnityMigrationError::new(code)
 }
 

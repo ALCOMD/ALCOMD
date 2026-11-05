@@ -180,6 +180,7 @@ impl SubscriptionState {
                         | "project-unity-launch-config"
                         | "template"
                         | "user-package"
+                        | "activity"
                 )
                 || event.aggregate_revision == 0
                 || event.aggregate_revision > i64::MAX as u64
@@ -355,6 +356,7 @@ mod tests {
             "project-unity-launch-config",
             "template",
             "user-package",
+            "activity",
         ] {
             let mut wire = vectors()["batch"].clone();
             wire["params"]["events"][0]["aggregateKind"] = json!(kind);

@@ -96,47 +96,7 @@ export interface SettingsUpdate {
     };
 }
 
-export interface ActivityCursor {
-    occurredAtMs: number;
-    sourceRank: number;
-    stableId: string;
-}
-
-export interface ActivityItem {
-    occurredAtMs: number;
-    type: "operation" | "event";
-    summaryCode: string;
-    operationId?: string;
-    eventSequence?: number;
-    resourceKind?: string;
-    resourceId?: string;
-    state?: string;
-}
-
-export interface ActivityListResult {
-    items: ActivityItem[];
-    nextCursor?: ActivityCursor;
-}
-
-export interface DiagnosticCursor {
-    occurredAtMs: number;
-    operationId: string;
-}
-
-export interface DiagnosticItem {
-    occurredAtMs: number;
-    severity: "warning" | "error";
-    subsystem: string;
-    code: string;
-    diagnosticId?: string;
-    operationId?: string;
-    summary: string;
-}
-
-export interface DiagnosticsListResult {
-    items: DiagnosticItem[];
-    nextCursor?: DiagnosticCursor;
-}
+export type { ActivityCursor, ActivityItem, ActivityListResult, ActivityGetResult } from "@alcomd/sdk";
 
 export interface DependencyIdentity {
     packageId: string;

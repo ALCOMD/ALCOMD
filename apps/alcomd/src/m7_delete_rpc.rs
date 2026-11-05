@@ -138,7 +138,13 @@ fn writer_evidence(value: app::UnityWriterEvidenceKind) -> &'static str {
 }
 
 fn delete_error(id: String, source: app::M7DeleteError) -> DispatchAction {
-    let error = match source.code() {
+    let diagnostic_id = source
+        .diagnostic_id()
+        .map(str::to_owned)
+        .unwrap_or_else(|| {
+            super::failure_report::report(&source, source.path(), "execution request failed")
+        });
+    let mut error = match source.code() {
         app::M7DeleteErrorCode::InvalidInput => rpc::RpcError::invalid_request(),
         app::M7DeleteErrorCode::PermissionDenied => rpc::RpcError::permission_denied(),
         app::M7DeleteErrorCode::RevisionConflict => rpc::RpcError::revision_conflict(),
@@ -147,6 +153,7 @@ fn delete_error(id: String, source: app::M7DeleteError) -> DispatchAction {
         app::M7DeleteErrorCode::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         _ => rpc::RpcError::project_delete(app::project_delete_error_name(source.code())),
     };
+    error.diagnostic_id = Some(diagnostic_id);
     error_action(Some(id), error, false)
 }
 

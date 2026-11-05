@@ -40,6 +40,7 @@ type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates
 declare global {
     interface Window {
         fixtureCore: GuiRpcClient;
+        frontendErrorReports: Array<Parameters<GuiRpcClient["reportFrontendError"]>[0]>;
         h3ReadError?: string;
         queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
@@ -72,6 +73,7 @@ declare global {
 // The concurrency probe supplies only the read method used by the shared function.
 window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
+window.frontendErrorReports = [];
 window.projectSnapshots = [];
 window.autoDiscoveryProjects = [];
 const discovered = window.autoDiscoveryProjects;
@@ -177,7 +179,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     subscribeEvents = browserCoreEvents.subscribe;
     private genericTasks = new Map<string, Operation>();
     private operationSequence = 0;
-    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"));
+    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"), query.has("log-history"), query.has("history-initial-failure"));
+    private readonly localLog = new BrowserDiagnosticLog(true, false, false, false, "gui");
     private listExportAttempts = 0;
     private listPreviewReads = 0;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
@@ -247,6 +250,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private launchArguments = query.has("project-arguments") ? JSON.parse(query.get("project-arguments")!) as string[] : ["-logFile"];
     private launchConfigRevision = query.has("launch-inherit") ? 0 : 2;
     private snapshotRevision = 1;
+    private projectFavorites = new Map<string, boolean>();
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
     private userPackageRemoved = false;
@@ -498,15 +502,27 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     activityList(): ReturnType<GuiRpcClient["activityList"]> {
-        return this.value({ items: this.mode === "empty" ? [] : [{ occurredAtMs: 1_700_000_000_000, type: "operation", summaryCode: "operation.packages.apply.running", operationId: OPERATION_ID, state: "running" }] });
+        return this.value({ items: this.mode === "empty" ? [] : [{ activityId: OPERATION_ID, revision: 1, action: "packages.apply", status: "running", startedAtMs: 1_700_000_000_000, subject: { kind: "project", id: PROJECT_ID, name: "Sample" }, parameters: {}, operationId: OPERATION_ID }] });
     }
-
-    diagnosticsList(): ReturnType<GuiRpcClient["diagnosticsList"]> {
-        return this.value({ items: this.mode === "empty" ? [] : [{ occurredAtMs: 1_700_000_000_000, severity: "error", subsystem: "packages", code: "package_archive_invalid", diagnosticId: "00000000-0000-4000-8000-000000000998", operationId: OPERATION_ID, summary: "The operation failed. Use the diagnostic ID when requesting support." }] });
-    }
-
+    activityGet(activityId: string): ReturnType<GuiRpcClient["activityGet"]> { return this.value({ activity: { activityId, revision: 1, action: "packages.apply", status: "running", startedAtMs: 1_700_000_000_000, subject: { kind: "project", id: PROJECT_ID, name: "Sample" }, parameters: {}, operationId: OPERATION_ID } }); }
     diagnosticLogRead(params: Parameters<GuiRpcClient["diagnosticLogRead"]>[0]): ReturnType<GuiRpcClient["diagnosticLogRead"]> { return this.diagnosticLog.read(params); }
     diagnosticLogCancel(): Promise<void> { return this.diagnosticLog.cancel(); }
+    diagnosticLogHistory(params: Parameters<GuiRpcClient["diagnosticLogHistory"]>[0]): ReturnType<GuiRpcClient["diagnosticLogHistory"]> { return this.diagnosticLog.history(params); }
+    diagnosticLogHealth(): ReturnType<GuiRpcClient["diagnosticLogHealth"]> { return this.diagnosticLog.health(); }
+    localLogRead(params: Parameters<GuiRpcClient["localLogRead"]>[0]): ReturnType<GuiRpcClient["localLogRead"]> { return this.localLog.read(params); }
+    localLogCancel(): Promise<void> { return this.localLog.cancel(); }
+    localLogHistory(params: Parameters<GuiRpcClient["localLogHistory"]>[0]): ReturnType<GuiRpcClient["localLogHistory"]> { return this.localLog.history(params); }
+    localLogHealth(): ReturnType<GuiRpcClient["localLogHealth"]> { return this.localLog.health(); }
+    reportFrontendError(error: Parameters<GuiRpcClient["reportFrontendError"]>[0]): Promise<void> {
+        const bytes = (value: string) => new TextEncoder().encode(value).byteLength;
+        if (!error.name || bytes(error.name) > 128 || bytes(error.message) > 4096
+            || error.stack !== undefined && bytes(error.stack) > 16384
+            || error.location !== undefined && bytes(error.location) > 2048
+            || ["RpcError", "CoreRpcError"].includes(error.name)) return Promise.reject({ code: "invalid_params" });
+        window.frontendErrorReports.push(structuredClone(error));
+        this.localLog.append({ message: "unhandled frontend exception", target: "alcomd_gui::frontend", frontendError: error });
+        return this.value(undefined);
+    }
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
@@ -554,7 +570,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? this.value({ projects: [project(PROJECT_ID, "Alpha")], nextCursor: { registeredAtMs: 1_690_000_000_000, id: PROJECT_ID } })
                 : this.value({ projects: [project("00000000-0000-4000-8000-000000000110", "Zulu Favorite", true)] });
         }
-        const projects = [project(), ...this.createdProjects].filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
+        const projects = [project(), ...this.createdProjects].map((item) => this.projectFavorites.has(item.projectId) ? { ...item, favorite: this.projectFavorites.get(item.projectId)!, revision: 3 } : item).filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
         if (query.has("hold-project-refresh") && this.createdProjects.length > 0) return new Promise((resolve) => window.addEventListener("test-project-refresh-ready", () => resolve({ projects }), { once: true }));
         return this.value({ projects: this.mode === "empty" ? [] : projects });
     }
@@ -574,7 +590,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
         return this.value({ project: value });
     }
-    openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
+    openProjectDirectory(projectId: string): ReturnType<GuiRpcClient["openProjectDirectory"]> { window.resourceRequests.push({ method: "openProjectDirectory", params: { projectId } }); return this.value(undefined); }
     async unityHubOpen(expectedRevision: number, expectedPath: string | null): ReturnType<GuiRpcClient["unityHubOpen"]> {
         window.unityRequests.push({ method: "unityHubOpen", params: { expectedRevision, expectedPath } });
         if (query.get("hub-open") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-open-ready", () => resolve(), { once: true }));
@@ -615,6 +631,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             this.favoriteConflictPending = false;
             return Promise.reject({ code: "revision_conflict" });
         }
+        this.projectFavorites.set(_projectId, favorite);
         return this.value({ project: { ...project(), favorite, revision: 3 }, replayed: false });
     }
     projectUnregister(): ReturnType<GuiRpcClient["projectUnregister"]> { return this.value({ projectId: PROJECT_ID, revision: 3, unregistered: true, replayed: false }); }

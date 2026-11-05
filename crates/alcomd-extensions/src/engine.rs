@@ -25,8 +25,9 @@ impl<S: M6Store> ExtensionEngine<S> {
         std::fs::create_dir_all(root.join("packages"))
             .and_then(|()| std::fs::create_dir_all(root.join("staging")))
             .and_then(|()| std::fs::create_dir_all(root.join("backups")))
-            .map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
-        let root = std::fs::canonicalize(root).map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+            .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
+        let root = std::fs::canonicalize(root)
+            .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
         Ok(Self { store, root })
     }
 
@@ -87,23 +88,23 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         let source = PathBuf::from(path);
         let (canonical, identity) = tokio::task::spawn_blocking(move || {
             let metadata = std::fs::symlink_metadata(&source)
-                .map_err(|_| error(M6ErrorCode::PackageInvalid))?;
+                .map_err(|cause| error(M6ErrorCode::PackageInvalid).with_source(cause))?;
             if !metadata.is_file() || metadata.file_type().is_symlink() {
                 return Err(error(M6ErrorCode::PackageInvalid));
             }
-            let canonical =
-                std::fs::canonicalize(&source).map_err(|_| error(M6ErrorCode::PackageInvalid))?;
+            let canonical = std::fs::canonicalize(&source)
+                .map_err(|cause| error(M6ErrorCode::PackageInvalid).with_source(cause))?;
             let identity = alcomd_platform::file_identity_key(&canonical)
-                .map_err(|_| error(M6ErrorCode::PackageInvalid))?;
+                .map_err(|cause| error(M6ErrorCode::PackageInvalid).with_source(cause))?;
             Ok((canonical, identity))
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         let inspect_path = canonical.clone();
         let verified =
             tokio::task::spawn_blocking(move || inspect_extension_package(&inspect_path))
                 .await
-                .map_err(|_| error(M6ErrorCode::Internal))?
+                .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))?
                 .map_err(map_package_error)?;
         package_evidence(source_kind, canonical, identity, verified)
     }
@@ -116,7 +117,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         let path = PathBuf::from(live_locator);
         let verified = tokio::task::spawn_blocking(move || inspect_extension_directory(&path))
             .await
-            .map_err(|_| error(M6ErrorCode::Internal))?
+            .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))?
             .map_err(map_package_error)?;
         if record.extension_id != verified.manifest.id
             || record.version != verified.manifest.version
@@ -150,7 +151,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
                 verify_plan(&expected, &package)
             })
             .await
-            .map_err(|_| error(M6ErrorCode::Internal))??;
+            .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
             self.journal(
                 operation_id,
                 &plan,
@@ -168,10 +169,10 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         let check_source = source.clone();
         let identity = tokio::task::spawn_blocking(move || {
             alcomd_platform::file_identity_key(&check_source)
-                .map_err(|_| error(M6ErrorCode::PlanStale))
+                .map_err(|cause| error(M6ErrorCode::PlanStale).with_source(cause))
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         if identity != expected_identity {
             return Err(error(M6ErrorCode::PlanStale));
         }
@@ -186,7 +187,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         let verified =
             tokio::task::spawn_blocking(move || inspect_extension_package(&inspect_source))
                 .await
-                .map_err(|_| error(M6ErrorCode::Internal))?
+                .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))?
                 .map_err(map_package_error)?;
         verify_plan(&plan, &verified)?;
         self.journal(
@@ -205,14 +206,14 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         tokio::task::spawn_blocking(move || {
             if extract_staging.exists() {
                 std::fs::remove_dir_all(&extract_staging)
-                    .map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+                    .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
             }
             let extracted = extract_extension_package(&extract_source, &extract_staging)
                 .map_err(map_package_error)?;
             verify_plan(&expected, &extracted)
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         self.journal(
             operation_id,
             &plan,
@@ -238,21 +239,22 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
                 verify_plan(&expected, &existing)?;
                 if publish_staging.exists() {
                     std::fs::remove_dir_all(&publish_staging)
-                        .map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+                        .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
                 }
                 return Ok(());
             }
             let parent = publish_target
                 .parent()
                 .ok_or_else(|| error(M6ErrorCode::Internal))?;
-            std::fs::create_dir_all(parent).map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
             std::fs::rename(&publish_staging, &publish_target)
-                .map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+                .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
             alcomd_platform::sync_directory(parent)
-                .map_err(|_| error(M6ErrorCode::RecoveryRequired))
+                .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         self.journal(
             operation_id,
             &plan,
@@ -303,15 +305,16 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
             }
             let existing = inspect_extension_directory(&target).map_err(map_package_error)?;
             verify_plan(&expected, &existing)?;
-            std::fs::rename(&target, &backup).map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+            std::fs::rename(&target, &backup)
+                .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
             let parent = target
                 .parent()
                 .ok_or_else(|| error(M6ErrorCode::Internal))?;
             alcomd_platform::sync_directory(parent)
-                .map_err(|_| error(M6ErrorCode::RecoveryRequired))
+                .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         self.journal(
             operation_id,
             &plan,
@@ -349,13 +352,13 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
             for path in [staging, backup] {
                 if path.exists() {
                     std::fs::remove_dir_all(path)
-                        .map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+                        .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
                 }
             }
             Ok(())
         })
         .await
-        .map_err(|_| error(M6ErrorCode::Internal))??;
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))??;
         self.journal(
             operation_id,
             &plan,
@@ -442,12 +445,13 @@ fn manifest_ui_protocol(package: &VerifiedExtensionPackage) -> Option<ExtensionU
 }
 
 fn map_package_error(error: PackageError) -> M6Error {
-    match error.code() {
+    (match error.code() {
         PackageErrorCode::ManifestInvalid => M6Error::new(M6ErrorCode::ManifestInvalid),
         PackageErrorCode::SignatureInvalid => M6Error::new(M6ErrorCode::SignatureInvalid),
         PackageErrorCode::Io => M6Error::new(M6ErrorCode::RecoveryRequired),
         _ => M6Error::new(M6ErrorCode::PackageInvalid),
-    }
+    })
+    .with_source(error)
 }
 
 fn error(code: M6ErrorCode) -> M6Error {
@@ -457,9 +461,10 @@ fn error(code: M6ErrorCode) -> M6Error {
 fn time_ms() -> Result<u64, M6Error> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| error(M6ErrorCode::Internal))
+        .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))
         .and_then(|duration| {
-            u64::try_from(duration.as_millis()).map_err(|_| error(M6ErrorCode::Internal))
+            u64::try_from(duration.as_millis())
+                .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))
         })
 }
 
@@ -480,7 +485,8 @@ fn test_kill_gate(checkpoint: &str) -> Result<(), M6Error> {
     }
     let signal = std::env::var_os("ALCOMD_TEST_M6_KILL_SIGNAL")
         .ok_or_else(|| error(M6ErrorCode::Internal))?;
-    std::fs::write(signal, checkpoint).map_err(|_| error(M6ErrorCode::RecoveryRequired))?;
+    std::fs::write(signal, checkpoint)
+        .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60));
     }

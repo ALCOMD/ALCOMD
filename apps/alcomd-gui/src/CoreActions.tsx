@@ -29,7 +29,7 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
-import { GlobalReminder, Reminder, RequestReminder, useReminder } from "./Reminder";
+import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
@@ -46,7 +46,6 @@ interface FeedbackState {
     busy: boolean;
     error?: RpcError;
     message?: string;
-    messageTone?: "success" | "warning";
     operationId?: string;
 }
 
@@ -89,11 +88,11 @@ export function ProjectActions({ client, onChanged, project }: ActionProps & { p
     const revision = project.revision;
     const refresh = async () => {
         if (project.projectId === undefined || revision === undefined) return;
-        await runSimple(setFeedback, () => client.projectRefresh(project.projectId!, revision), t("Project refreshed."), onChanged);
+        await runSimple(setFeedback, () => client.projectRefresh(project.projectId!, revision), onChanged);
     };
     const unregister = async () => {
         if (project.projectId === undefined || revision === undefined) return;
-        await runSimple(setFeedback, () => client.projectUnregister(project.projectId!, revision), t("Project unregistered. Files were not deleted."), onChanged);
+        await runSimple(setFeedback, () => client.projectUnregister(project.projectId!, revision), onChanged);
     };
     return (
         <ActionSection title={t("Project actions")}>
@@ -109,7 +108,7 @@ export function ProjectActions({ client, onChanged, project }: ActionProps & { p
 
 export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const { t } = useTranslation();
-    const reminder = useReminder();
+
     const close = useUtilityDialogClose();
     const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
@@ -124,7 +123,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         event.preventDefault();
         if (pending.current || !available) return;
         pending.current = true;
-        reminder.clear(); setFeedback({ busy: true });
+         setFeedback({ busy: true });
         try {
             const result = await client.repositoriesInspect(source());
             if (current()) { setPreview(result.repository); setFeedback({ busy: false }); }
@@ -140,7 +139,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
             await client.repositoryRegister(preview.source);
             if (!current()) return;
             setPreview(undefined); setValue("");
-            setFeedback(INITIAL_FEEDBACK); reminder.success(t("Repository added.")); close(); onChanged?.();
+            setFeedback(INITIAL_FEEDBACK);  close(); onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
@@ -163,7 +162,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
 
 export function RepositoryActions({ client, onChanged, repository }: ActionProps & { repository: RepositorySnapshot }) {
     const { t } = useTranslation();
-    const reminder = useReminder();
+
     const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [confirmRemove, setConfirmRemove] = useState(false);
@@ -173,30 +172,30 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
     const run = async (remove: boolean) => {
         if (!ready || !available || pending.current) return;
-        pending.current = true; reminder.clear(); setFeedback({ busy: true });
+        pending.current = true;  setFeedback({ busy: true });
         try {
             if (remove) await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
             else await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
             if (!current()) return;
-            setFeedback(INITIAL_FEEDBACK); reminder.success(remove ? t("Repository removed.") : t("Repository refreshed."));
+            setFeedback(INITIAL_FEEDBACK);
             setConfirmRemove(false); setRefreshFailed(false); onChanged?.();
         } catch (caught: unknown) { if (current()) { setFeedback({ busy: false, error: safeError(caught) }); if (!remove) setRefreshFailed(true); } }
         finally { pending.current = false; }
     };
     return <div className="repository-row-actions">
         <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove} refreshingLabel={t("Refreshing repository")} />
-        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => { reminder.clear(); setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
+        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => {  setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repository.name ?? repository.declaredId ?? t("this repository")}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
-        {refreshFailed && feedback.error !== undefined ? <GlobalReminder><RequestReminder error={feedback.error} title={t("Repository refresh failed")} onDismiss={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }}>
+        {refreshFailed && feedback.error !== undefined ? <><RequestReminder error={feedback.error} title={t("Repository refresh failed")} onDismiss={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p>{repository.name ?? repository.declaredId ?? t("Repository")}</p>
             <p>{t("The last available packages are still shown. Check the source and retry.")}</p>
             {feedback.error?.code === "revision_conflict" ? <Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); onChanged?.(); }} type="button">{t("Refresh list")}</Button>
                 : <Button disabled={feedback.busy} onClick={() => void run(false)} type="button">{t("Retry")}</Button>}
-        </RequestReminder></GlobalReminder> : null}
+        </RequestReminder></> : null}
     </div>;
 }
 
@@ -331,7 +330,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
             else if (action === "refresh") await client.unityInstallationsRefresh();
             else { await client.unityInstallationRemove(remove!.installationId, remove!.revision); setRemove(undefined); setConfirmRemove(false); }
             if (!isCurrent()) return;
-            setFeedback({ busy: false, message: action === "register" ? t("Unity installation registered.") : action === "refresh" ? t("Unity installations refreshed.") : t("Unity installation removed from the list."), messageTone: "success" });
+            setFeedback({ busy: false });
             onChanged?.();
         } catch (caught: unknown) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
@@ -645,8 +644,8 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <RequestReminder error={feedback.error}>{submitted && templateApplyResultUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </PlanDialog>
-            {feedback.error === undefined || migrationChooserOpen || migrationPlan !== undefined ? null : <GlobalReminder><RequestReminder error={feedback.error} title={t("Project Unity")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)} /></GlobalReminder>}
-            <MutationFeedback client={client} feedback={{ ...feedback, error: undefined, messageTone: "success" }} />
+            {feedback.error === undefined || migrationChooserOpen || migrationPlan !== undefined ? null : <><RequestReminder error={feedback.error} title={t("Project Unity")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)} /></>}
+            <MutationFeedback client={client} feedback={{ ...feedback, error: undefined, message: undefined }} />
         </>
     );
 }
@@ -825,7 +824,7 @@ export interface TemplateActionSelection {
 
 export function TemplateActions({ client, compact = false, onAction, onChanged, onView, template }: ActionProps & { compact?: boolean; onAction(action: TemplateActionSelection["action"], origin: DialogOrigin): void; onView?(): void; template: TemplateRecord }) {
     const { t } = useTranslation();
-    const reminder = useReminder();
+
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
@@ -835,17 +834,17 @@ export function TemplateActions({ client, compact = false, onAction, onChanged, 
     const current = useActionScope(client);
     const open = (action: TemplateActionSelection["action"]) => {
         if (pending.current) return;
-        reminder.clear(); setFeedback(INITIAL_FEEDBACK);
+         setFeedback(INITIAL_FEEDBACK);
         setMenuOpen(false);
         onAction(action, compact ? menuAnchorRef : { current: document.activeElement instanceof HTMLElement ? document.activeElement : null });
     };
     const favorite = async () => {
         if (pending.current || !canManage) return;
-        pending.current = true; reminder.clear(); setFeedback({ busy: true });
+        pending.current = true;  setFeedback({ busy: true });
         try {
             await client.templateSetFavorite(template.templateId, !template.favorite, template.revision);
             if (!current()) return;
-            setFeedback(INITIAL_FEEDBACK); reminder.success(t("Favorite updated.")); onChanged?.();
+            setFeedback(INITIAL_FEEDBACK);  onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
     };
@@ -867,7 +866,7 @@ export function TemplateActions({ client, compact = false, onAction, onChanged, 
             <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} type="button" variant="text">{t("Export template")}</Button>
             {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">{t("Remove template")}</Button>}
         </div></>}
-        {feedback.error === undefined ? null : <GlobalReminder><RequestReminder error={feedback.error} title={t("Favorite could not be updated")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)}><p>{template.displayName}</p></RequestReminder></GlobalReminder>}
+        {feedback.error === undefined ? null : <><RequestReminder error={feedback.error} title={t("Favorite could not be updated")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)}><p>{template.displayName}</p></RequestReminder></>}
     </section>;
 }
 
@@ -879,7 +878,7 @@ export function TemplateActionDialog({ client, onChanged, onClose, operations, s
 
 function TemplateObjectDialog({ client, onChanged, onClose, operations, selection }: ActionProps & { onClose(): void; operations: TemplateOperations; selection: TemplateActionSelection }) {
     const { t } = useTranslation();
-    const reminder = useReminder();
+
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
     const { template, action } = selection;
@@ -893,7 +892,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
     const pending = useRef(false);
     const current = useActionScope(client, open && !selection.closed);
     const update = (key: keyof typeof fields, value: string) => { setFields((current) => ({ ...current, [key]: value })); setFeedback(INITIAL_FEEDBACK); };
-    const close = () => { if (!pending.current) { reminder.clear(); setFeedback(INITIAL_FEEDBACK); setOpen(false); } };
+    const close = () => { if (!pending.current) {  setFeedback(INITIAL_FEEDBACK); setOpen(false); } };
     const createPlan = async (event: FormEvent) => {
         event.preventDefault();
         if (pending.current || !canCreateProject) return;
@@ -924,7 +923,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
             else if (action === "remove") await client.templateRemove(template.templateId, template.revision);
             else return;
             if (!current()) return;
-            setFeedback(INITIAL_FEEDBACK); reminder.success(action === "export" ? t("Template exported.") : t("Template removed.")); setOpen(false);
+            setFeedback(INITIAL_FEEDBACK);  setOpen(false);
             if (action === "remove") onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
@@ -1026,7 +1025,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
         try {
             await client.operationCancel(operation.operationId, operation.revision);
             if (!isCurrent()) return;
-            setConfirm(false); setFeedback({ busy: false, message: t("Cancellation requested."), messageTone: "success" }); onChanged?.();
+            setConfirm(false); setFeedback({ busy: false }); onChanged?.();
         } catch (caught: unknown) {
             if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) });
         } finally { pending.current = false; }
@@ -1132,7 +1131,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
             } else if (kind === "enable" || kind === "disable") {
                 await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision) : client.extensionDisable(extension.extensionId, extension.revision));
                 if (!current()) return;
-                setFeedback({ busy: false, messageTone: "success", message: kind === "enable" ? t("Extension enabled.") : t("Extension disabled.") });
+                setFeedback({ busy: false });
                 onChanged?.();
             }
         } catch (caught: unknown) { if (current()) { const error = safeError(caught); if (!templateApplyResultUnknown(error)) setSubmitted(false); setFeedback({ busy: false, error }); } }
@@ -1178,14 +1177,10 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
 }
 
 function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
-    const { success, clear } = useReminder();
-    useEffect(() => {
-        if (feedback.busy) clear();
-        else if (feedback.messageTone === "success" && feedback.error === undefined && feedback.operationId === undefined && feedback.message !== undefined) success(feedback.message);
-    }, [feedback.busy, feedback.error, feedback.operationId, feedback.message, feedback.messageTone, success, clear]);
+
     if (feedback.error !== undefined) return <RequestReminder error={feedback.error} title={errorTitle} />;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
-    if (feedback.message !== undefined && feedback.messageTone !== "success") return <GlobalReminder><Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder></GlobalReminder>;
+    if (feedback.message !== undefined) return <Reminder>{feedback.message}</Reminder>;
     return null;
 }
 
@@ -1365,13 +1360,13 @@ export function OperationProgress({ error, operation, title = "Operation" }: { e
     const { t } = useTranslation();
     return <>
         <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
-        {operation?.state !== "failed" ? null : <RequestReminder inline error={{ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }} title={t("Operation failed")} />}
+        {operation?.state !== "failed" ? null : <RequestReminder error={{ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }} title={t("Operation failed")} />}
     </>;
 }
 
-async function runSimple<T>(setFeedback: (value: FeedbackState) => void, run: () => Promise<T>, message: string, onChanged?: () => void): Promise<void> {
+async function runSimple<T>(setFeedback: (value: FeedbackState) => void, run: () => Promise<T>, onChanged?: () => void): Promise<void> {
     setFeedback({ busy: true });
-    try { await run(); setFeedback({ busy: false, message, messageTone: "success" }); onChanged?.(); }
+    try { await run(); setFeedback({ busy: false }); onChanged?.(); }
     catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
 }
 

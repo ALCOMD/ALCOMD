@@ -714,6 +714,8 @@ pub(super) fn accept_plan(
             ],
         )
         .map_err(store_error)?;
+    super::activity::snapshot_operation(&transaction, &operation_id.to_string())
+        .map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE extension_plans SET state='applied', apply_operation_id=?1
@@ -916,37 +918,48 @@ pub(super) fn complete_operation(
     now_ms: u64,
 ) -> Result<(), M6Error> {
     let transaction = transaction(connection)?;
-    if let Some((owner, revision)) = finish_operation(
+    let completion = finish_operation(
         &transaction,
         operation_id,
         "succeeded",
         None,
+        None,
         sqlite_integer(now_ms)?,
-    )? {
+    )?;
+    if let Some((ref owner, revision, _)) = completion {
         insert_operation_event(
             &transaction,
-            &owner,
+            owner,
             operation_id,
             revision,
             "operation.completed",
             sqlite_integer(now_ms)?,
         )?;
     }
-    transaction.commit().map_err(store_error)
+    transaction.commit().map_err(store_error)?;
+    if let Some((_, _, kind)) = completion {
+        tracing::info!(operation_id = %operation_id, operation_kind = kind.as_str(), "operation completed");
+    }
+    Ok(())
 }
 
 pub(super) fn fail_operation(
     connection: &mut Connection,
     operation_id: OperationId,
     code: M6ErrorCode,
+    diagnostic_id: String,
     now_ms: u64,
 ) -> Result<(), M6Error> {
+    if uuid::Uuid::parse_str(&diagnostic_id).is_err() {
+        return Err(error(M6ErrorCode::InvalidInput));
+    }
     let transaction = transaction(connection)?;
-    if let Some((owner, revision)) = finish_operation(
+    if let Some((owner, revision, _)) = finish_operation(
         &transaction,
         operation_id,
         "failed",
         Some(error_code(code)),
+        Some(&diagnostic_id),
         sqlite_integer(now_ms)?,
     )? {
         insert_operation_event(
@@ -1053,6 +1066,15 @@ pub(super) fn set_grant(
         replayed: false,
     };
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
+    super::activity::permission_changed(
+        &transaction,
+        owner,
+        extension_id,
+        permission,
+        grant,
+        now_ms,
+    )
+    .map_err(store_error)?;
     transaction.commit().map_err(store_error)?;
     Ok((result, owner == &PrincipalId::local_owner()))
 }
@@ -1119,6 +1141,15 @@ pub(super) fn set_desired(
         .map_err(store_error)?;
     let result = get_extension(&transaction, owner, extension_id)?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
+    super::activity::resource(
+        &transaction,
+        owner,
+        method,
+        "extension",
+        extension_id,
+        now_ms,
+    )
+    .map_err(store_error)?;
     transaction.commit().map_err(store_error)?;
     Ok((result, owner == &PrincipalId::local_owner()))
 }
@@ -1866,14 +1897,15 @@ fn finish_operation(
     operation_id: OperationId,
     state: &str,
     operation_error: Option<&str>,
+    diagnostic_id: Option<&str>,
     now: i64,
-) -> Result<Option<(PrincipalId, Revision)>, M6Error> {
-    let (current_state, owner): (String, String) = transaction
+) -> Result<Option<(PrincipalId, Revision, String)>, M6Error> {
+    let (current_state, owner, kind): (String, String, String) = transaction
         .query_row(
-            "SELECT state, owner_principal_id FROM operations WHERE operation_id=?1
+            "SELECT state, owner_principal_id, kind FROM operations WHERE operation_id=?1
              AND kind IN ('extensions.install', 'extensions.uninstall')",
             [operation_id.to_string()],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(store_error)?
@@ -1889,8 +1921,14 @@ fn finish_operation(
         .execute(
             "UPDATE operations SET state=?1, revision=revision+1, error_code=?2,
              result_json=CASE WHEN ?1='succeeded' THEN '{}' ELSE NULL END,
-             completed_at_ms=?3, updated_at_ms=?3 WHERE operation_id=?4",
-            params![state, operation_error, now, operation_id.to_string()],
+             completed_at_ms=?3, updated_at_ms=?3, diagnostic_id=?5 WHERE operation_id=?4",
+            params![
+                state,
+                operation_error,
+                now,
+                operation_id.to_string(),
+                diagnostic_id
+            ],
         )
         .map_err(store_error)?;
     if changed != 1 {
@@ -1899,6 +1937,7 @@ fn finish_operation(
     Ok(Some((
         PrincipalId::parse(owner).map_err(|_| internal())?,
         operation_revision(transaction, operation_id)?,
+        kind,
     )))
 }
 
@@ -2188,8 +2227,8 @@ fn internal() -> M6Error {
     error(M6ErrorCode::Internal)
 }
 
-fn store_error(_: rusqlite::Error) -> M6Error {
-    error(M6ErrorCode::StoreUnavailable)
+fn store_error(source: rusqlite::Error) -> M6Error {
+    error(M6ErrorCode::StoreUnavailable).with_source(source)
 }
 
 pub(super) fn unavailable() -> M6Error {

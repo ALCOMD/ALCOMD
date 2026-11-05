@@ -1,165 +1,159 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { DiagnosticLogItem } from "@alcomd/sdk";
-import { selectSettingsSection } from "./settings-sections";
-import { DIAGNOSTIC_LOG_FIXTURE_IDS as IDS } from "./diagnostic-log-client";
-
+import type { TestLogInput } from "./diagnostic-log-client";
 test.use({ viewport: { width: 1280, height: 800 } });
+const url = "/browser-harness.html?route=/diagnostics&state=empty&diagnostic-log=1&motion=reduced";
+const table = (page: Page) => page.getByRole("table", { name: "Technical Logs", exact: true });
+const append = (page: Page, detail: TestLogInput) => page.evaluate((detail) => window.dispatchEvent(new CustomEvent("test-diagnostic-log", { detail })), detail);
 
-async function open(page: Page, route = "/diagnostics") {
-    await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&diagnostic-log=1&h3-unity-discovery=1`);
-    await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(2);
-    if (route === "/diagnostics") await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
-}
-
-async function emit(page: Page, value: Partial<DiagnosticLogItem>) {
-    await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("test-diagnostic-log", { detail })), value);
-}
-
-test("real Unicode log text is primary and the same record backs its popup and technical details", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/diagnostics&diagnostic-log=1");
-    await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(2);
-    await emit(page, { message: "无法读取 Unity 安装。\npath=C:\\Unity 项目\\测试 🦀", target: "alcomd::unity", code: "unity_unavailable", diagnosticId: IDS.newLog });
-    const popup = page.locator(".reminder-floating .reminder");
-    await expect(popup).toContainText("无法读取 Unity 安装。");
-    const key = await popup.getAttribute("data-log-id");
-    const row = page.getByRole("table", { name: "Technical Logs", exact: true }).locator(`[data-log-id="${key}"]`);
-    await expect(row).toContainText("无法读取 Unity 安装。");
-    await expect(row).not.toContainText("unity_unavailable");
-    await expect(row).not.toContainText(IDS.newLog);
+test("real source JSON retains technical path and error details without any popup", async ({ page }) => {
+    await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
+    const path = "C:\\项目A\\Packages\\vpm-manifest.json";
+    await append(page, { message: "Cannot parse the selected manifest", path, diagnosticId: "00000000-0000-4000-8000-000000000921" });
+    await expect(table(page)).toContainText("Cannot parse the selected manifest");
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
     await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
-    await expect(row).toContainText("path=C:\\Unity 项目\\测试 🦀");
-    await expect(row).toContainText("alcomd::unity");
-    await expect(row).toContainText("unity_unavailable");
-    await popup.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(popup).toHaveCount(0);
-    await expect(row).toBeVisible();
+    await expect(table(page)).toContainText(JSON.stringify(path));
+    await expect(table(page)).toContainText("00000000-0000-4000-8000-000000000921");
 });
 
-test("historical logs stay silent and a new error appears once in the shared outlet and log table", async ({ page }) => {
-    await open(page);
-    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await expect(table).toContainText(IDS.historic);
-    const outlet = page.locator(".reminder-floating");
-    await expect(outlet).toBeHidden();
-    await emit(page, { level: "error", diagnosticId: IDS.newLog });
-    await expect(outlet.getByRole("alert")).toHaveCount(1);
-    await expect(outlet).toContainText("Background error");
-    await expect(table).toContainText(IDS.newLog);
-    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
-    await expect(outlet.getByText("diagnostic.error", { exact: true })).toBeVisible();
-    await expect(outlet.getByText(IDS.newLog, { exact: true })).toBeVisible();
-    const bounds = (await outlet.boundingBox())!;
-    expect(bounds.x + bounds.width).toBe(1280 - 24);
-    expect(bounds.y + bounds.height).toBe(800 - 24);
-    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(outlet).toBeHidden();
-    await expect(table).toContainText(IDS.newLog);
-    expect(await page.evaluate(() => window.diagnosticLogRequests.map((request) => request.cursor?.sequence))).toEqual([undefined, 1, 2]);
+test("health-only changes are visible without adding a fabricated log record", async ({ page }) => {
+    await page.goto(url); await expect(table(page)).toContainText("Core logging initialized.");
+    const before = await table(page).locator("tbody tr").count();
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-log-health", { detail: { source: "core", state: "degraded", queueDropped: 7, writeFailed: 2, hasGap: true } })));
+    await expect(page.getByRole("alert")).toContainText("Log storage is degraded");
+    await expect(page.locator('[data-log-source="core"]')).toContainText("7");
+    await expect(table(page).locator("tbody tr")).toHaveCount(before);
 });
 
-test("warning opt-in and error opt-out control popup delivery while every record stays in the log", async ({ page }) => {
-    await open(page);
-    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await emit(page, { level: "warning", diagnosticId: IDS.quietWarning });
-    await expect(table).toContainText(IDS.quietWarning);
-    await emit(page, { level: "error", notify: false, diagnosticId: IDS.quietError });
-    await expect(table).toContainText(IDS.quietError);
-    await emit(page, { level: "info", notify: true, diagnosticId: IDS.quietInformation });
-    await expect(table).toContainText(IDS.quietInformation);
-    const outlet = page.locator(".reminder-floating");
-    await expect(outlet).toBeHidden();
-    await emit(page, { level: "warning", notify: true, diagnosticId: IDS.visibleWarning });
-    await expect(outlet.getByRole("alert")).toHaveCount(1);
-    await expect(outlet).toContainText("Background warning");
-    await expect(table).toContainText(IDS.visibleWarning);
-    await expect(outlet).not.toContainText(IDS.quietWarning);
+test("Core offline does not block GUI logging or real frontend exception capture", async ({ page }) => {
+    await page.goto(url + "&log-initial-failure=1");
+    await expect(page.getByRole("alert")).toContainText("Core logs could not be read.");
+    await append(page, { source: "gui", message: "Native window operation failed" });
+    await expect(table(page)).toContainText("Native window operation failed");
+    await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
+    await page.evaluate(() => {
+        const error = new Error("Actual renderer exception");
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+    });
+    await expect(table(page)).toContainText("Actual renderer exception");
+    expect(await page.evaluate(() => window.frontendErrorReports)).toHaveLength(1);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
 });
 
-test("the app-owned log outlet survives navigation and stays interactive inside a native modal", async ({ page }) => {
-    await open(page, "/projects");
-    await emit(page, { diagnosticId: IDS.navigation });
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
-    await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Settings$/ }) }).click();
-    await selectSettingsSection(page, "unity");
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
-    await page.getByRole("button", { name: "Manage installations", exact: true }).click();
-    const modal = page.locator("md-dialog[open]");
-    const outlet = page.locator(".reminder-floating");
-    await expect(modal.locator(".reminder-floating")).toHaveCount(1);
-    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
-    await expect(outlet.getByText(IDS.navigation, { exact: true })).toBeVisible();
-    await emit(page, { diagnosticId: IDS.modal });
-    await expect(outlet.getByRole("alert")).toHaveCount(2);
-    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).first().click();
-    await expect(outlet.getByRole("alert")).toHaveCount(1);
-    await modal.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.locator("body > .reminder-floating").getByRole("alert")).toHaveCount(1);
-    expect(await page.evaluate(() => window.diagnosticLogRequests.filter((request) => request.cursor === undefined).length)).toBe(1);
-});
-
-test("a failed log read retains entries and reconnects from its cursor without a recursive popup", async ({ page }) => {
-    await open(page);
-    await page.clock.install();
+test("healthy idle and ordinary failed reads do not establish periodic reads", async ({ page }) => {
+    await page.clock.install(); await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
+    const before = await page.evaluate(() => [window.diagnosticLogRequests.length, window.localLogRequests.length]);
+    await page.clock.fastForward(120_000);
+    expect(await page.evaluate(() => [window.diagnosticLogRequests.length, window.localLogRequests.length])).toEqual(before);
     await page.evaluate(() => window.dispatchEvent(new Event("test-diagnostic-log-failure")));
-    await expect(page.locator(".logs-workspace > .reminder").getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText("New logs could not be loaded.");
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText(IDS.historic);
-    await expect(page.locator(".reminder-floating")).toBeHidden();
-    await page.clock.fastForward(1000);
-    await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(3);
-    await emit(page, { diagnosticId: IDS.resumed });
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
-    await expect(page.locator(".logs-workspace > .reminder")).toHaveCount(0);
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText("New logs could not be loaded.");
-    expect(await page.evaluate(() => window.diagnosticLogRequests[2]?.cursor)).toEqual({ instanceId: IDS.coreA, sequence: 1 });
-    await expect(page.locator("body")).not.toContainText("never render raw failure detail");
+    await expect(page.getByRole("alert")).toContainText("Core logs could not be read.");
+    const failed = await page.evaluate(() => window.diagnosticLogRequests.length);
+    await page.clock.fastForward(120_000);
+    expect(await page.evaluate(() => window.diagnosticLogRequests.length)).toBe(failed);
 });
 
-test("a restarted Core replaces its log baseline without replaying old or startup errors", async ({ page }) => {
-    await open(page);
-    await emit(page, { diagnosticId: IDS.oldInstance });
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
-    await page.evaluate(() => window.dispatchEvent(new Event("test-diagnostic-log-reset")));
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText(IDS.restarted);
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).not.toContainText(IDS.oldInstance);
-    await expect(page.locator(".reminder-floating")).toBeHidden();
-    await emit(page, { diagnosticId: IDS.newInstance });
-    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
+test("delayed readable updates are not displayed until the source publishes", async ({ page }) => {
+    await page.goto(url); await expect(table(page)).toContainText("Core logging initialized.");
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-log-hold", { detail: { held: true } })));
+    await append(page, { message: "Delayed complete record" });
+    await expect(table(page)).not.toContainText("Delayed complete record");
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-log-hold", { detail: { held: false } })));
+    await expect(table(page)).toContainText("Delayed complete record");
 });
 
-test("a Core without the log capability starts no log read or cancellation", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/diagnostics");
-    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.diagnosticLogRequests)).toEqual([]);
-    expect(await page.evaluate(() => window.diagnosticLogCancels)).toBe(0);
+test("leaving and remounting cancels each source without leaking duplicate readers", async ({ page }) => {
+    await page.goto(url); await expect(table(page)).toContainText("Core logging initialized.");
+    await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
+    await expect.poll(() => page.evaluate(() => window.diagnosticLogCancels)).toBeGreaterThan(0);
+    await expect.poll(() => page.evaluate(() => window.localLogCancels)).toBeGreaterThan(0);
+    await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Logs$/ }) }).click();
+    await page.getByRole("navigation", { name: "Logs", exact: true }).getByRole("button", { name: "Technical Logs", exact: true }).click();
+    await expect(table(page)).toContainText("Core logging initialized.");
+    await expect(table(page).locator("tbody tr")).toHaveCount(1);
 });
 
-test("an initial log read failure cannot be presented as an empty diagnostic history", async ({ page }) => {
-    await page.clock.install();
-    await page.goto("/browser-harness.html?route=/diagnostics&state=empty&diagnostic-log=1&log-initial-failure=1");
-    await expect(page.locator(".logs-workspace > .reminder").getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
-    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await expect(table).toContainText("New logs could not be loaded.");
-    await expect(table).not.toContainText("No technical logs yet");
-    await expect(page.locator(".reminder-floating")).toBeHidden();
+test("a missing diagnostic association is reported without synthesizing a summary", async ({ page }) => {
+    await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
+    await page.getByRole("searchbox", { name: "Search technical logs", exact: true }).fill("00000000-0000-4000-8000-000000009999");
+    await expect(page.getByRole("status").filter({ hasText: "No associated record was found" })).toBeVisible();
+    await expect(table(page).locator("[data-log-id]")).toHaveCount(0);
 });
 
-test("an ordinary request popup is backed by a session log and dismissal keeps that record", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure&diagnostic-log=1");
-    const repository = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Local packages" });
-    await repository.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    const popup = page.locator(".reminder-floating .reminder").filter({ hasText: "Repository refresh failed" });
-    await expect(popup).toBeVisible();
-    const logId = await popup.getAttribute("data-log-id");
-    expect(logId).toBeTruthy();
-    await popup.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-    await expect(popup).toHaveCount(0);
-    await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item")
-        .filter({ has: page.locator(".navigation-item-label", { hasText: /^Logs$/ }) }).click();
-    await page.getByRole("button", { name: "Technical Logs", exact: true }).click();
+test("ordinary Core failures are not submitted as frontend exceptions", async ({ page }) => {
+    await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
+    await page.evaluate(() => window.dispatchEvent(new PromiseRejectionEvent("unhandledrejection", { promise: Promise.resolve(), reason: Object.assign(new Error("Already recorded by Core"), { code: "invalid_params" }) })));
+    await expect(table(page)).not.toContainText("Already recorded by Core");
+    expect(await page.evaluate(() => window.frontendErrorReports)).toHaveLength(0);
+});
+
+test("a real retry can report the same Error object in a new propagation turn", async ({ page }) => {
+    await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
     await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
-    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await expect(table.locator(`[data-log-id="${logId}"]`)).toContainText("repository_unavailable");
-    await expect(table).toContainText("ALCOMD GUI");
-    await expect(table.locator(`[data-log-id="${logId}"]`)).toHaveCount(1);
+    await page.evaluate(async () => {
+        const error = new Error("Renderer failure retried");
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+    });
+    await expect.poll(() => page.evaluate(() => window.frontendErrorReports.length)).toBe(2);
+    await expect(table(page).locator("tbody tr").filter({ hasText: "Renderer failure retried" })).toHaveCount(2);
+});
+
+test("long Chinese frontend exceptions fit native UTF-8 limits without splitting Unicode scalars", async ({ page }) => {
+    await page.goto(url);
+    await expect(table(page)).toContainText("Core logging initialized.");
+    const oversizedRejected = await page.evaluate(async () => {
+        try { await window.fixtureCore.reportFrontendError({ name: "Error", message: "中".repeat(1366) }); return false; }
+        catch (failure: unknown) { return typeof failure === "object" && failure !== null && "code" in failure && failure.code === "invalid_params"; }
+    });
+    expect(oversizedRejected).toBe(true);
+    await page.evaluate(() => {
+        const error = new Error("中".repeat(1365) + "😀" + "尾".repeat(1000));
+        error.name = "名".repeat(42) + "😀尾";
+        error.stack = "栈".repeat(5461) + "😀" + "尾".repeat(2000);
+        window.history.replaceState(null, "", "/" + "位".repeat(1000));
+        window.dispatchEvent(new ErrorEvent("error", { error }));
+    });
+    await expect.poll(() => page.evaluate(() => window.frontendErrorReports.length)).toBe(1);
+    const report = await page.evaluate(() => window.frontendErrorReports[0]!);
+    expect(report.name).toBe("名".repeat(42));
+    expect(report.message).toBe("中".repeat(1365));
+    expect(report.stack).toBe("栈".repeat(5461));
+    for (const [key, limit] of [["name", 128], ["message", 4096], ["stack", 16384], ["location", 2048]] as const) {
+        expect(new TextEncoder().encode(report[key] ?? "").byteLength).toBeLessThanOrEqual(limit);
+        expect(report[key]).not.toContain("\ufffd");
+    }
+    await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
+    await expect(table(page)).toContainText("unhandled frontend exception");
+    await expect(table(page)).toContainText(report.message);
+    await expect(table(page)).toContainText(report.stack!);
+});
+
+test("a long Unicode path is queried intact and oversize UTF-8 input remains an explicit field error", async ({ page }) => {
+    await page.clock.install();
+    await page.goto(url);
+    const path = "C:\\Fixture\\" + "长路径".repeat(200) + "\\manifest.json";
+    await expect(table(page)).toContainText("Core logging initialized.");
+    await append(page, { message: "Long path failure", path });
+    await expect(table(page)).toContainText("Long path failure");
+    const input = page.getByRole("searchbox", { name: "Search technical logs", exact: true });
+    await input.fill("  " + path + "  ");
+    await page.clock.runFor(500);
+    await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.at(-1)?.query?.search)).toBe(path);
+    await expect(table(page)).toContainText("Long path failure");
+    await expect(table(page)).not.toContainText("Core logging initialized.");
+    const before = await page.evaluate(() => [window.diagnosticLogRequests.length, window.localLogRequests.length]);
+    await input.fill("界".repeat(1366));
+    await expect(page.locator("md-filled-text-field.logs-search")).toHaveJSProperty("error", true);
+    await expect(page.locator("md-filled-text-field.logs-search").getByRole("alert")).toContainText("Search text is too long. Shorten it to apply the filter.");
+    await page.clock.runFor(1000);
+    expect(await page.evaluate(() => [window.diagnosticLogRequests.length, window.localLogRequests.length])).toEqual(before);
+    await expect(table(page)).toContainText("Long path failure");
 });
