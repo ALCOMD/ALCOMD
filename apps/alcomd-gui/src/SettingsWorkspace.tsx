@@ -9,7 +9,7 @@ import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, SegmentedButtons, Select, TextField } from "./Material";
+import { Button, Checkbox, PathField, SegmentedButtons, Select } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
@@ -194,11 +194,13 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
         void save("edit", true);
     }}>
         <div className="settings-path-row">
-            <TextField id={`settings-${directoryKey}`} label={label} error={invalid} readOnly={busy} value={draft}
+            <PathField id={`settings-${directoryKey}`} label={label} error={invalid} readOnly={busy} value={draft}
                 onInput={(value) => {
                     if (!edit.current.dirty) edit.current.previousPath = acceptedRef.current.settings.paths[directoryKey];
+                    const acceptedPath = acceptedRef.current.directories[directoryKey];
+                    if (value === displayPath(acceptedPath)) value = acceptedPath;
                     edit.current.value = value;
-                    edit.current.dirty = value !== acceptedRef.current.directories[directoryKey];
+                    edit.current.dirty = value !== acceptedPath;
                     setDraft(value); setInvalid(false); failedEdit.current = undefined;
                 }} onKeyDown={(event) => {
                     if (event.key === "Escape") {
@@ -237,7 +239,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const generation = useRef(0);
     const resetDraft = (value: SettingsGetResult) => {
         const path = value.unityHub.path ?? value.settings.unity.hubPath ?? "";
-        edit.current = { value: path, display: path, previousPath: value.settings.unity.hubPath, dirty: false };
+        edit.current = { value: path, display: displayPath(path), previousPath: value.settings.unity.hubPath, dirty: false };
         setDraft(path);
     };
     useEffect(() => {
@@ -362,7 +364,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                 void run({ kind: "edit", trigger: "blur" });
             }}>
             <div className="settings-path-row">
-                <TextField id="settings-unity-hub-path" label={t("Unity Hub Path")} readOnly={busy || state.failed}
+                <PathField id="settings-unity-hub-path" label={t("Unity Hub Path")} readOnly={busy || state.failed}
                     placeholder={location.path === null && accepted.settings.unity.hubPath === null ? pathLabel : undefined} value={draft}
                     onFocus={() => { if (!edit.current.dirty) resetDraft(acceptedRef.current); }}
                     onInput={(value) => {

@@ -2,7 +2,7 @@ import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
 import type { BackupApplyRestoreResult, BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
-import { Button, Dialog, Select, TextField } from "./Material";
+import { Button, Dialog, PathField, Select, TextField } from "./Material";
 import { OperationFollow, TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useActionScope, useTemplateOperations } from "./CoreActions";
 import { Reminder, RequestReminder } from "./Reminder";
 import { capabilities, useCapability } from "./capabilities";
@@ -11,7 +11,7 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
 import type { SupportedLocale } from "./i18n-types";
-import { displayPath } from "./display-path";
+import { displayChildPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
 
@@ -228,7 +228,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                         <CreateUnityVersionField disabled={busy} selection={unity} />
                         <TextField disabled={busy} aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="project-target-picker">
-                            <TextField disabled={busy} aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
+                            <PathField disabled={busy} aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
                         <div className="dialog-actions">
@@ -419,7 +419,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                         {backup === undefined ? <Select aria-label={t("Project backup")} disabled={busy} label={t("Backup")} onChange={(value) => { setBackupId(value); setError(undefined); }} options={backups.map((backup) => ({ label: backupLabel(backup, locale), value: backup.backupId }))} value={backupId} /> : <p>{backupLabel(backup, locale)}</p>}
                         {cursor === undefined ? null : <Button disabled={busy} onClick={() => void loadMore()} type="button" variant="text">{t("Load more")}</Button>}
                         <div className="project-target-picker">
-                            <TextField aria-label={t("Restore target parent")} disabled={busy} label={t("Parent directory")} onInput={(value) => { setTargetParent(value); setError(undefined); }} value={targetParent} />
+                            <PathField aria-label={t("Restore target parent")} disabled={busy} label={t("Parent directory")} onInput={(value) => { setTargetParent(value); setError(undefined); }} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
                         <TextField aria-label={t("Restore project name")} disabled={busy} label={t("Project name")} onInput={(value) => { setTargetLeaf(value); setError(undefined); }} value={targetLeaf} />
@@ -432,7 +432,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                     <>
                         <div className="dialog-summary">
                             <div><span>{t("Backup")}</span><strong>{selectedBackup === undefined ? backupId : backupLabel(selectedBackup, locale)}</strong></div>
-                            <div><span>{t("Destination")}</span><code>{displayPath(plan.target.parent)}\{plan.target.leaf}</code></div>
+                            <div><span>{t("Destination")}</span><code>{displayChildPath(plan.target.parent, plan.target.leaf)}</code></div>
                             <div><span>{t("Package resolution")}</span><strong>{plan.packagesRequireResolve ? t("Required") : t("Not required")}</strong></div>
                             <div><span>{t("Plan")}</span><code>{plan.planFingerprint.slice(0, 12)}</code></div>
                         </div>

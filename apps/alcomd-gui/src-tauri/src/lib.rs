@@ -214,7 +214,8 @@ async fn gui_open_project_directory(
     };
 
     let root = validated_registered_project_root(&project.root_path)?;
-    open::that(root).map_err(|_| RpcError::extension("project_directory_open_failed"))
+    let path = alcomd_platform::external_filesystem_path(&root);
+    open::that(path.as_os_str()).map_err(|_| RpcError::extension("project_directory_open_failed"))
 }
 
 /// Closed UI adapter: no caller-supplied URL, executable path or arguments.
@@ -254,7 +255,8 @@ async fn gui_select_unity_hub(
             path
         };
         if let Some(parent) = path.parent() {
-            picker = picker.set_directory(parent);
+            picker =
+                picker.set_directory(alcomd_platform::external_filesystem_path(parent).as_ref());
         }
         if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
             picker = picker.set_file_name(name);

@@ -281,10 +281,10 @@ pub fn launch_unity_editor(
     project_root: &Path,
     arguments: &[OsString],
 ) -> io::Result<()> {
-    let mut command = Command::new(executable);
+    let mut command = Command::new(crate::external_filesystem_path(executable).as_os_str());
     command
         .arg("-projectPath")
-        .arg(project_root)
+        .arg(crate::external_filesystem_path(project_root).as_os_str())
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -304,11 +304,12 @@ pub fn spawn_unity_editor_migration(
             "authoritative project root is invalid",
         ));
     }
-    let child = Command::new(executable.executable_path())
+    let executable_path = crate::external_filesystem_path(executable.executable_path());
+    let child = Command::new(executable_path.as_os_str())
         .arg("-quit")
         .arg("-batchmode")
         .arg("-projectPath")
-        .arg(authoritative_project_root)
+        .arg(crate::external_filesystem_path(authoritative_project_root).as_os_str())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -419,6 +420,42 @@ mod tests {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).expect("remove owned discovery fixture");
         }
+    }
+
+    #[test]
+    fn launch_paths_use_ordinary_notation_for_the_same_editor_and_project() {
+        let fixture = DiscoveryFixture::new();
+        let editor = fixture.editor("中文 Editor", "Unity");
+        let project = fixture.root().join("项目 with spaces");
+        std::fs::create_dir(&project).expect("owned project directory");
+        for path in [editor, project] {
+            let canonical = std::fs::canonicalize(path).expect("canonical input");
+            let argument = crate::external_filesystem_path(&canonical);
+            assert!(!argument.as_os_str().to_string_lossy().starts_with(r"\\?\"));
+            assert_eq!(
+                crate::file_identity_key(&argument).expect("argument identity"),
+                crate::file_identity_key(&canonical).expect("canonical identity")
+            );
+        }
+    }
+
+    #[test]
+    fn launch_paths_keep_verbatim_semantics_when_ordinary_path_is_another_object() {
+        let fixture = DiscoveryFixture::new();
+        let ordinary = fixture.root().join("project");
+        std::fs::create_dir(&ordinary).expect("ordinary directory");
+        let verbatim = std::fs::canonicalize(fixture.root())
+            .expect("canonical parent")
+            .join("project.");
+        std::fs::create_dir(&verbatim).expect("distinct verbatim directory");
+        assert_ne!(
+            crate::file_identity_key(&ordinary).expect("ordinary identity"),
+            crate::file_identity_key(&verbatim).expect("verbatim identity")
+        );
+        assert_eq!(
+            crate::external_filesystem_path(&verbatim).as_ref(),
+            verbatim
+        );
     }
 
     #[test]

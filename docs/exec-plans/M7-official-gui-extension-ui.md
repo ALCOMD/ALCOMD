@@ -349,6 +349,12 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 
 所有者明确：目的是防止重复打开同一项目，其他 Unity 或无法关联项目的进程不得形成全局启动禁令。本轮据此纠正 M5 行为，不增加再次确认或绕过开关。
 
+2026-11-06 所有者报告打开项目仅出现Hub、v3可以打开。只读核对登记为实际2022.3.22f1 Editor；Editor.log记录程序和-projectPath均为`\\?\`路径，切换到Test-Avatar后立即exit0。许可更新错误后仍有entitlements resolved，不能据此认定许可是根因。[官方启动参数](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)使用直接Editor和-projectPath；本次候选仅在执行边界复用已有Hub的DOS/UNC适配，重新解析仍为同一路径时才转换，保留数据库/RPC/锁身份，普通启动和迁移共用。先红后绿，平台53/0、严格Clippy/fmt及自有假Editor真实argv两例通过，覆盖中文/空格/引号及shell字符、不同对象和verbatim语义保留。所有者选择自行实测；尚未证明本次Hub现象的现场因果，也未启动真实Unity、修改真实项目或替换Core171196，不混入并行State21候选。补丁/结果位于`target/m7-launch-hub-20261106/`，不宣称原生问题已解决。
+
+Windows 路径在外部调用处统一使用平台适配。Unity 普通启动、版本迁移、Hub 以及系统目录打开和选择器使用普通 DOS 或 UNC 拼写前，须确认该拼写仍解析到同一规范路径。长路径、特殊命名空间和普通规则可能重新解释的名称保留原拼写。GUI 路径标签及 Core 或选择器提供的初始字段值使用共享展示规则，未编辑提交仍带原值。项目身份、文件写入、Plan 和 RPC 继续使用各自的原始路径。[Rust 规范化行为](https://doc.rust-lang.org/std/fs/fn.canonicalize.html) · [Windows 路径命名](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) · [Windows 路径长度](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
+
+定向验证覆盖 Windows 平台 54 项、严格 Clippy、假 Editor 的两条真实 Windows argv 链路、Tauri 检查、前端检查和 53 条浏览器用例。浏览器旧刷新入口断言已改为从管理安装触发查找。Cargo 合同测试入口受并行 Core 改动的 `store` 移动后借用错误阻断，对应静态合同用例独立编译执行通过。真实 Unity、系统文件选择器与 SMB 共享留待原生实测。
+
 - 明确匹配其他项目目录身份的进程不污染目标项目状态；同目标项目且已登记 Editor 为 confirmed，同目标但 executable 未核实为 suspected；无法读取/归属的观察保留 unknown。启动只拦目标项目 confirmed/suspected，unknown 不作为全局启动禁令。
 - Windows 用有界版本资源和前后文件身份核对排除同名非 Editor（实际复现为 Hub 的 unity.exe serve）；缺失/损坏/变化的身份不伪装为已确认非 Editor。没有新增 unsafe、依赖、持久数据、配置、权限或 RPC 字段，四态 Schema 保持，协议语义原位更新。
 - 所有者后续明确批准将项目范围规则用于删除及 Unity 版本迁移：confirmed/suspected 仍拒绝，无法归属的 unknown 不再全局阻断。目标目录身份、内容变化、权限及文件系统边界检查保留；删除在隔离前再次观察占用，若出现目标项目写者则保留目录/登记并清理自有预备目录。迁移已观察到自身子进程退出时继续目标复验；中断且缺少退出证据仍需恢复核实，不伪报成功或重启 Unity。复制、创建备份、派生模板的既有规则保持。

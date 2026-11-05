@@ -547,7 +547,8 @@ fn official_gui_local_project_affordances_remain_closed() {
     assert!(GUI_RUST_ADAPTER.contains("async fn gui_open_project_directory("));
     assert!(GUI_RUST_ADAPTER.contains("project_id: String"));
     assert!(GUI_RUST_ADAPTER.contains("client.project_get(project_id).await"));
-    assert!(GUI_RUST_ADAPTER.contains("open::that(root)"));
+    assert!(GUI_RUST_ADAPTER.contains("external_filesystem_path(&root)"));
+    assert!(GUI_RUST_ADAPTER.contains("open::that(path.as_os_str())"));
     assert!(!GUI_RUST_ADAPTER.contains("open::with"));
     assert!(GUI_RUST_ADAPTER.contains("async fn gui_select_directory(app: tauri::AppHandle)"));
     assert!(GUI_RPC_ADAPTER.contains("gui_open_project_directory"));

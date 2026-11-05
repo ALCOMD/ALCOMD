@@ -123,40 +123,11 @@ pub fn normalize_unity_hub_path(path: &str) -> Result<String, UnityHubPathError>
             return Err(UnityHubPathError::Invalid);
         }
     }
-    #[cfg(windows)]
-    let canonical = readable_windows_path(canonical);
-    canonical
+    crate::external_filesystem_path(&canonical)
         .to_str()
         .filter(|value| valid_text(value))
         .map(str::to_owned)
         .ok_or(UnityHubPathError::Invalid)
-}
-
-/// Use ordinary DOS/UNC notation only when it resolves to the same canonical file.
-/// Device/volume paths and paths that require verbatim semantics stay unchanged.
-#[cfg(windows)]
-fn readable_windows_path(canonical: PathBuf) -> PathBuf {
-    let mut components = canonical.components();
-    let Some(std::path::Component::Prefix(prefix)) = components.next() else {
-        return canonical;
-    };
-    let mut readable = match prefix.kind() {
-        std::path::Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:", char::from(drive))),
-        std::path::Prefix::VerbatimUNC(server, share) => {
-            let mut path = std::ffi::OsString::from(r"\\");
-            path.push(server);
-            path.push(r"\");
-            path.push(share);
-            PathBuf::from(path)
-        }
-        _ => return canonical,
-    };
-    readable.push(components.as_path());
-    if fs::canonicalize(&readable).is_ok_and(|resolved| resolved == canonical) {
-        readable
-    } else {
-        canonical
-    }
 }
 
 /// Searches only fixed platform candidates after the configured executable.
@@ -447,13 +418,6 @@ mod tests {
             normalize_unity_hub_path(canonical.to_str().expect("UTF-8")),
             Ok(normalized)
         );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_hub_path_keeps_unknown_verbatim_volume_paths() {
-        let path = PathBuf::from(r"\\?\Volume{00000000-0000-0000-0000-000000000000}\Hub.exe");
-        assert_eq!(readable_windows_path(path.clone()), path);
     }
 
     #[cfg(windows)]

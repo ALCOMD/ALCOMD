@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+mod external_path;
 mod process;
 mod project_delete;
 mod project_discovery;
@@ -14,6 +15,7 @@ mod unity;
 mod unity_hub;
 mod unity_hub_open;
 
+pub use external_path::external_filesystem_path;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, prepare_storage_directory,
     publish_file_no_replace,

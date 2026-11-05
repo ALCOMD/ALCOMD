@@ -68,7 +68,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
-import { displayPath } from "./display-path";
+import { displayChildPath, displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
@@ -801,7 +801,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                 ) : operation === undefined ? (
                     <>
                         <p><strong>{t("Source:")}</strong> {projectName(t, locale, project)}</p>
-                        <p><strong>{t("Destination:")}</strong> {displayPath(plan.targetParentCanonicalPath)}\{plan.normalizedTargetLeaf}</p>
+                        <p><strong>{t("Destination:")}</strong> {displayChildPath(plan.targetParentCanonicalPath, plan.normalizedTargetLeaf)}</p>
                         <p><strong>{t("Unity writer:")}</strong> {humanize(t, plan.writerEvidence.state)}</p>
                         <p><strong>{t("Copy profile:")}</strong> {t("v{version}; excludes Logs, Obj, Temp and .git.", { version: plan.profile.version })}</p>
                         <div className="dialog-actions">

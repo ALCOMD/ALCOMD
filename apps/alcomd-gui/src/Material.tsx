@@ -1,5 +1,6 @@
 import { createScrollArea, materialElements, reducedMotion, subscribeMotion } from "@alcomd/ui";
 import { refreshIcon, resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
+import { displayPath } from "./display-path";
 import {
     Children,
     createContext,
@@ -418,6 +419,20 @@ export function TextField({
         type,
         value
     } as MaterialProps, leadingIcon);
+}
+
+/** Shows supplied paths readably while preserving untouched and manually entered values. */
+export function PathField({ value, onBlur, onInput, ...props }: Omit<TextFieldProps, "value" | "type"> & { value: string }) {
+    const [lastInput, setLastInput] = useState<string>();
+    const visibleValue = value === lastInput ? value : displayPath(value);
+    return <TextField {...props} value={visibleValue} onBlur={() => {
+        setLastInput(undefined);
+        onBlur?.();
+    }} onInput={(next) => {
+        if (next === visibleValue) return;
+        setLastInput(next);
+        onInput?.(next);
+    }} />;
 }
 
 export function Slider({ id, label, min, max, value, onInput, disabled, labeled = false }: {
