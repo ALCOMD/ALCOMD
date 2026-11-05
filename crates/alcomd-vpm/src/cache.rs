@@ -291,7 +291,9 @@ async fn verify_object(path: &Path, expected: &[u8; 32]) -> Result<bool, CacheEr
         .await
         .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
+    // This buffer survives reads across await. Keep it off the nested Plan/RPC
+    // futures so their construction and polling fit the normal worker stack.
+    let mut buffer = vec![0_u8; 64 * 1024];
     let mut total = 0_u64;
     loop {
         let read = file
