@@ -60,12 +60,12 @@ test("task read failures retain data until a new change and isolate late list re
     await page.evaluate(() => window.h5Utilities.failNext("operations.list", "permission_denied"));
     await addTask(page, 7);
     await page.clock.runFor(500);
-    await expect(page.getByRole("alert")).toContainText("Tasks could not be updated. The last loaded entries are still shown.");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(table.locator("tbody tr")).toHaveCount(3);
     const failed = await listReads(page);
     await page.clock.fastForward(9_000);
     expect(await listReads(page)).toBe(failed);
-    await expect(page.getByRole("alert")).toContainText("Tasks could not be updated.");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await addTask(page, 8);
     await page.clock.runFor(500);
     await expect(page.getByRole("alert")).toHaveCount(0);

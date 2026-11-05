@@ -163,7 +163,7 @@ test("Package refresh is visible and handles zero or one repository with a final
     await expect(packageName(page, "Refreshed package")).toBeVisible();
 });
 
-test("Package refresh processes every repository and reports partial failure without fake success", async ({ page }) => {
+test("Package refresh attempts every repository and reloads available results without inserting a notice", async ({ page }) => {
     await openHarness(page, "package-multiple");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
@@ -171,9 +171,10 @@ test("Package refresh processes every repository and reports partial failure wit
 
     await openHarness(page, "package-partial-failure");
     await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("1 refreshed, 1 failed.");
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh").length)).toBe(2);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(packageName(page, "Refreshed package")).toBeVisible();
-    await expect(page.getByText("2 refreshed, 0 failed.")).toHaveCount(0);
+    await expect(page.getByText(/refreshed, .* failed/)).toHaveCount(0);
 });
 
 test("Package refresh retries a revision conflict once and then reloads", async ({ page }) => {

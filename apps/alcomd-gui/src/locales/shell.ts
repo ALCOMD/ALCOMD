@@ -58,10 +58,6 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "软件包目录证据不完整",
         "ja-JP": "パッケージカタログの情報が不完全です"
     },
-    "Check the editable fields before submitting.": {
-        "zh-CN": "请检查可编辑字段后再提交。",
-        "ja-JP": "編集可能な項目を確認してから送信してください。"
-    },
     "Checking daemon capabilities.": {
         "zh-CN": "正在检查服务能力。",
         "ja-JP": "サービスの機能を確認しています。"
@@ -561,10 +557,6 @@ export const shellMessages: TranslationTable = {
     "Template": {
         "zh-CN": "模板",
         "ja-JP": "テンプレート"
-    },
-    "The form is no longer current. Refresh the extension page.": {
-        "zh-CN": "表单已过期，请刷新扩展页面。",
-        "ja-JP": "フォームの内容が古くなっています。拡張機能のページを更新してください。"
     },
     "The operation failed. Use the diagnostic ID when requesting support.": {
         "zh-CN": "操作失败。请求支持时请提供诊断 ID。",

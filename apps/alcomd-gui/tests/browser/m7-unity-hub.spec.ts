@@ -53,7 +53,8 @@ test("rapid repeated selection opens one picker and keeps accepted path while pe
 test("failed Hub save retains accepted evidence and Retry reconciles before saving", async ({ page }) => {
     await open(page, "theme-save=error-once");
     await section(page).getByRole("button", { name: "Select", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Unity Hub save result is unknown");
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await value(page)).toBe("");
     await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", "Unity Hub was not found.");
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
@@ -82,7 +83,7 @@ test("an old picker result cannot save after leaving and reopening Settings", as
 test("lost Hub save reply reconciles without duplicate write", async ({ page }) => {
     await open(page, "theme-save=commit-error-once");
     await section(page).getByRole("button", { name: "Select", exact: true }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => value(page)).toBe(path);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
@@ -91,10 +92,10 @@ test("lost Hub save reply reconciles without duplicate write", async ({ page }) 
 test("ambiguous normalized Hub save requires reselect instead of a second write", async ({ page }) => {
     await open(page, "theme-save=commit-error-once&hub-normalize=1");
     await section(page).getByRole("button", { name: "Select", exact: true }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(section(page).getByRole("alert")).toContainText("Unity Hub path changed.");
-    await expect(page.getByRole("alert")).toHaveCount(1);
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
@@ -104,8 +105,9 @@ test("ambiguous normalized Hub save requires reselect instead of a second write"
 test("Editor refresh failure is separate from a confirmed Hub save", async ({ page }) => {
     await open(page, "hub-refresh=error");
     await section(page).getByRole("button", { name: "Select", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Unity Hub path was saved, but Unity installations could not be refreshed.");
-    expect(await value(page)).toBe(path);
+    await expect.poll(() => value(page)).toBe(path);
+    await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
 });
 
@@ -148,7 +150,8 @@ test("failed automatic detection retries a read without changing preferences", a
         window.dispatchEvent(new Event("test-hub-read-error"));
     });
     await section(page).getByRole("button", { name: "Auto detect", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Unity Hub location could not be detected.");
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await value(page)).toBe("");
     await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", "Unity Hub was not found.");
     await page.getByRole("button", { name: "Retry", exact: true }).click();
@@ -160,7 +163,7 @@ test("failed automatic detection retries a read without changing preferences", a
 test("failed manual-to-auto clear retains null intent for Retry", async ({ page }) => {
     await open(page, `hub-path=${encodeURIComponent(path)}&hub-default=1&theme-save=error-once`);
     await section(page).getByRole("button", { name: "Auto detect", exact: true }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     expect(await value(page)).toBe(path);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => value(page)).toBe("C:\\Program Files\\Unity Hub\\Unity Hub.exe");
@@ -171,7 +174,7 @@ test("failed manual-to-auto clear retains null intent for Retry", async ({ page 
 test("lost null-clear reply reconciles automatic mode without a duplicate write", async ({ page }) => {
     await open(page, `hub-path=${encodeURIComponent(path)}&hub-default=1&theme-save=commit-error-once`);
     await section(page).getByRole("button", { name: "Auto detect", exact: true }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     expect(await value(page)).toBe(path);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => value(page)).toBe("C:\\Program Files\\Unity Hub\\Unity Hub.exe");
@@ -226,12 +229,13 @@ test("Escape cancels the draft and composing Enter cannot submit", async ({ page
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
 });
 
-test("invalid draft remains visible, unchanged blur does not retry, and corrected Retry keeps errors stable", async ({ page }) => {
+test("invalid draft remains visible, unchanged blur does not retry, and a corrected field can be submitted", async ({ page }) => {
     await open(page, "hub-reject-invalid=1&theme-save=hold");
     const invalid = "C:\\Invalid\\Unity Hub.exe";
     await input(page).fill(invalid);
     await input(page).press("Enter");
-    await expect(page.getByRole("alert")).toContainText("Unity Hub path could not be saved. Check the path and try again.");
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await value(page)).toBe(invalid);
     await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
@@ -240,11 +244,11 @@ test("invalid draft remains visible, unchanged blur does not retry, and correcte
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await input(page).fill(invalid);
     await input(page).press("Enter");
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await input(page).fill(path);
-    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await input(page).press("Enter");
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(3);
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ unity: { hubPath: invalid } }, { unity: { hubPath: invalid } }, { unity: { hubPath: path } }]);
     await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
@@ -297,7 +301,7 @@ test("no-path statuses are placeholders and an explicitly empty edit never sends
     await open(page, `hub-path=${encodeURIComponent(path)}`);
     await input(page).fill("");
     await input(page).press("Enter");
-    await expect(section(page).getByRole("alert")).toContainText("Enter a Unity Hub executable path, or use Auto detect.");
+    await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("error", true);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
 });
 
@@ -313,11 +317,11 @@ test("a broken saved path stays editable and correction uses Core validation", a
     const missing = "C:\\Missing\\Unity Hub.exe";
     await open(page, `hub-path=${encodeURIComponent(missing)}&hub-missing=1`);
     expect(await value(page)).toBe(missing);
-    await expect(section(page)).toContainText("The saved Unity Hub path is no longer usable.");
+    await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("error", true);
     await input(page).fill(path);
     await input(page).press("Enter");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    await expect(section(page)).not.toContainText("The saved Unity Hub path is no longer usable.");
+    await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("error", false);
     expect(await value(page)).toBe(path);
 });
 
@@ -430,8 +434,8 @@ test("a stale Hub target rereads authority and requires a fresh explicit click",
     await open(page, "hub-default=1&hub-open=stale");
     const reads = await page.evaluate(() => window.settingsReads);
     await section(page).getByRole("button", { name: "Open Unity Hub", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Unity Hub location changed. Review the current path and click again.");
-    expect(await value(page)).toBe("C:\\Changed\\Unity Hub.exe");
+    await expect.poll(() => value(page)).toBe("C:\\Changed\\Unity Hub.exe");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsReads)).toBe(reads + 1);
     expect(await requests(page, "unityHubOpen")).toBe(1);
     expect(await requests(page, "openUnityHubDownload")).toBe(0);
@@ -455,7 +459,8 @@ test("Open and Download labels reserve one width when stale evidence changes the
 test("an unknown Hub open result remains explicit and never retries automatically", async ({ page }) => {
     await open(page, "hub-default=1&hub-open=unknown");
     await section(page).getByRole("button", { name: "Open Unity Hub", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("The result of opening Unity Hub is unknown. Check Unity Hub before trying again.");
+    await expect.poll(() => requests(page, "unityHubOpen")).toBe(1);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "unityHubOpen")).toBe(1);
     expect(await requests(page, "openUnityHubDownload")).toBe(0);
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
@@ -465,7 +470,8 @@ for (const failure of ["failed", "denied"]) {
     test(`known Hub open ${failure} remains an error without an implicit download`, async ({ page }) => {
         await open(page, `hub-default=1&hub-open=${failure}`);
         await section(page).getByRole("button", { name: "Open Unity Hub", exact: true }).click();
-        await expect(page.getByRole("alert")).toContainText(failure === "failed" ? "Unity Hub could not be opened." : "Opening Unity Hub is not permitted on this connection.");
+        await expect.poll(() => requests(page, "unityHubOpen")).toBe(1);
+        await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
         expect(await requests(page, "unityHubOpen")).toBe(1);
         expect(await requests(page, "openUnityHubDownload")).toBe(0);
     });
@@ -474,7 +480,8 @@ for (const failure of ["failed", "denied"]) {
 test("download adapter failure is retained and never becomes an automatic second attempt", async ({ page }) => {
     await open(page, "hub-download-error=1");
     await section(page).getByRole("button", { name: "Download Unity Hub", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("The Unity Hub download page could not be opened.");
+    await expect.poll(() => requests(page, "openUnityHubDownload")).toBe(1);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "unityHubOpen")).toBe(1);
     expect(await requests(page, "openUnityHubDownload")).toBe(1);
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);

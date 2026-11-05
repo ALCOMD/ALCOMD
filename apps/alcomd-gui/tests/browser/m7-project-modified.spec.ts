@@ -1,6 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
-import { expectRequestError } from "./request-error-assertions";
 
 const descending = ["Favorite", "Newest", "Equal A", "Equal B", "Unknown history"];
 const ascending = ["Favorite", "Equal A", "Equal B", "Newest", "Unknown history"];
@@ -78,7 +77,7 @@ for (const view of ["list", "grid"] as const) {
             await expect(date).toContainText("12 hours ago");
             if (failed) {
                 await expect(page.locator(".reminder-floating")).toHaveCount(0);
-                await expectRequestError(page.getByRole("alert"), "unity_launch_failed");
+                await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
                 await expect(page.locator("md-dialog[open]")).toHaveCount(0);
             } else await expect(page.locator(".reminder-floating")).toHaveCount(0);
             const names = view === "grid" ? page.locator(".project-card h2") : listNames(page);
@@ -96,7 +95,7 @@ for (const view of ["list", "grid"] as const) {
         const target = view === "grid" ? page.getByRole("article", { name: "Equal B", exact: true }) : page.locator(".projects-list tbody tr").filter({ hasText: "Equal B" });
         await target.getByRole("button", { name: "Open Unity", exact: true }).click();
         await expect(page.locator(".reminder-floating")).toHaveCount(0);
-        await expectRequestError(page.getByRole("alert"), "revision_conflict");
+        await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
         await expect(page.locator("md-dialog[open]")).toHaveCount(0);
         const date = view === "grid" ? target.locator(".project-card-dates") : target.locator("td").nth(4);
         await expect(date).toContainText("2 days ago");

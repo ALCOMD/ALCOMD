@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { expectRequestError } from "./request-error-assertions";
 
 test("repository fetch success preserves table and toolbar geometry without a popup", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
@@ -19,21 +18,19 @@ test("repository fetch success preserves table and toolbar geometry without a po
     }
 });
 
-test("repository failure stays in its row and dismissing clears the previous operation", async ({ page }) => {
+test("repository refresh failure leaves the row intact and a separate action still opens its confirmation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure");
     const table = page.getByRole("table", { name: "Repositories", exact: true });
     const row = table.getByRole("row").filter({ hasText: "Local packages" });
-    await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    const host = row;
-    await expect(host).toContainText("Repository refresh failed");
+    await expect(row).toBeVisible();
+    const before = await row.boundingBox();
+    const refresh = row.getByRole("button", { name: "Refresh repository", exact: true });
+    await refresh.click();
+    await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((r) => r.method === "repositories.refresh").length)).toBe(1);
+    await expect(refresh).toBeEnabled();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await expect(row.getByRole("alert")).toHaveCount(1);
-    await expectRequestError(host.getByRole("alert"), "repository_unavailable");
-    await page.clock.install();
-    await page.clock.fastForward(10_000);
-    await expect(host.getByRole("alert")).toBeVisible();
-    await host.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(host.getByRole("alert")).toHaveCount(0);
+    expect((await row.boundingBox())!.height).toBe(before!.height);
     await row.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Remove this repository?", exact: true })).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByRole("alert")).toHaveCount(0);

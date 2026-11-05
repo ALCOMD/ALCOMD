@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "./Material";
 import type { RpcError } from "@alcomd/sdk";
-import { RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 
 export interface ItemPage<T, C> {
@@ -69,7 +68,6 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             {children(items)}
             {cursor === undefined ? null : (
                 <div className="pagination-controls" aria-busy={loading}>
-                    {failure === undefined ? null : <RequestReminder error={failure}>{t("Could not load more items. Your loaded items are still available.")}</RequestReminder>}
                     <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
                         {failure !== undefined ? t("Retry loading more") : t("Load more")}
                     </Button>

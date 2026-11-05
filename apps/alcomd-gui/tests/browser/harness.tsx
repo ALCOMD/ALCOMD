@@ -1005,7 +1005,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
         window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });
         if (query.has("projectModified")) this.projectLaunchTimes.set(projectId, 1_700_216_000_000);
-        if (query.has("unityLaunchError")) return Promise.reject({ code: "unity_launch_failed" });
+        if (query.has("unityLaunchError")) return Promise.reject({ code: query.get("unityLaunchError") === "unity_project_running" ? "unity_project_running" : "unity_launch_failed" });
         const acceptedLaunch = { ...launch(), projectId, installationId };
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: acceptedLaunch, replayed: false }), 100));
     }

@@ -13,7 +13,6 @@ import {
 } from "./portable-ui";
 import { useTranslation, type Translate } from "./i18n";
 import { Button, Progress, Select, Switch, TextField } from "./Material";
-import { Reminder } from "./Reminder";
 
 interface PortableUiRendererProps {
     snapshot: UiSnapshot;
@@ -32,12 +31,10 @@ export function PortableUiRenderer({
     const [drafts, setDrafts] = useState<Record<string, FormDraft>>(
         () => createFormDrafts(snapshot)
     );
-    const [formError, setFormError] = useState<{ formId: string; message: string }>();
     const tree = buildTree(snapshot.document);
 
     useEffect(() => {
         setDrafts(createFormDrafts(snapshot));
-        setFormError(undefined);
         onDirtyChange(false);
     }, [snapshot.sessionId, snapshot.snapshotRevision, onDirtyChange]);
 
@@ -49,7 +46,6 @@ export function PortableUiRenderer({
         if (formId === undefined) {
             throw new PortableUiConsumerError("extension_ui_document_invalid");
         }
-        setFormError(undefined);
         setDrafts((current) => {
             const draft = current[formId];
             if (draft === undefined) {
@@ -63,25 +59,11 @@ export function PortableUiRenderer({
     const submit = async (event: FormEvent<HTMLFormElement>, formId: string) => {
         event.preventDefault();
         const draft = drafts[formId];
-        if (draft === undefined) {
-            setFormError({
-                formId,
-                message: t("The form is no longer current. Refresh the extension page.")
-            });
-            return;
-        }
+        if (draft === undefined) return;
         try {
-            setFormError(undefined);
             await onAction(submitFormAction(snapshot.document, formId, draft));
         } catch (error: unknown) {
-            if (error instanceof PortableUiConsumerError) {
-                setFormError({
-                    formId,
-                    message: t("Check the editable fields before submitting.")
-                });
-                return;
-            }
-            throw error;
+            if (!(error instanceof PortableUiConsumerError)) throw error;
         }
     };
 
@@ -134,9 +116,6 @@ export function PortableUiRenderer({
                                 {node.payload.submitLabel}
                             </Button>
                         </fieldset>
-                        {formError?.formId !== node.nodeId ? null : (
-                            <Reminder tone="error">{formError.message}</Reminder>
-                        )}
                     </form>
                 );
             }

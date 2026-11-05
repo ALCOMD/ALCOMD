@@ -29,10 +29,10 @@ async function requests(page: Page, method: string) {
 }
 
 async function expectHostErrorsCleared(page: Page) {
-    await expect(page.locator(".reminder[role=alert]")).toHaveCount(0);
+    await expect(page.locator(".extension-body [role=alert]:not(.portable-document [role=alert])")).toHaveCount(0);
     // This guest field validation is part of the existing public fixture. A
     // successful host request must not erase an extension's field-level error.
-    await expect(page.locator(".portable-document").getByRole("alert").filter({ hasText: "The host rejected the previous value." })).toBeVisible();
+    await expect(page.getByLabel("Custom detail", { exact: true })).toHaveAccessibleDescription(/The host rejected the previous value\./);
 }
 
 test("H4 Portable UI closes an open result that arrives after its route has been left", async ({ page }) => {
@@ -101,19 +101,24 @@ test("H4 Portable UI has no host refresh and dispatches the current session revi
     expect(await requests(page, "extensions.ui.refresh")).toHaveLength(0);
 });
 
-test("H4 Portable UI retains dirty reconnect confirmation after removing host refresh", async ({ page }) => {
+test("H4 Portable UI preserves the dirty draft after a conflict without inserting a page prompt", async ({ page }) => {
     await openUi(page);
     await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
     await page.getByLabel("Enable presence", { exact: true }).uncheck();
     await page.evaluate(() => window.h4Portable.failNext("dispatch", "revision_conflict"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await expect.poll(async () => (await requests(page, "extensions.ui.dispatch")).length).toBe(1);
+    await expectHostErrorsCleared(page);
+    await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toHaveCount(0);
+    await navigate(page, "/projects");
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeHidden();
     await expect(page.getByLabel("Enable presence", { exact: true })).not.toBeChecked();
-    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await navigate(page, "/projects");
     await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+    await navigate(page, uiRoute(discord));
     await expect(page.getByRole("heading", { name: "Fixture h4-session-2", exact: true })).toBeVisible();
     await expect(page.getByLabel("Enable presence", { exact: true })).toBeChecked();
     expect(await requests(page, "extensions.ui.refresh")).toHaveLength(0);
@@ -126,7 +131,7 @@ for (const code of ["extension_permission_denied", "extension_quarantined", "ext
         await page.getByLabel("Enable presence", { exact: true }).uncheck();
         await page.evaluate((errorCode) => window.h4Portable.failNext("dispatch", errorCode), code);
         await page.getByRole("button", { name: "Save", exact: true }).click();
-        await expectRequestError(page.locator(".reminder[role=alert]"), code);
+        await expectRequestError(page.locator(".extension-body [role=alert]:not(.portable-document [role=alert])"), code);
         await expect(page.locator(".portable-document")).toHaveCount(0);
         expect(await requests(page, "extensions.ui.dispatch")).toHaveLength(1);
         await expect.poll(async () => (await requests(page, "extensions.ui.close")).some((request) => (request.params as { sessionId: string }).sessionId === "h4-session-1")).toBe(true);
@@ -144,10 +149,20 @@ for (const code of ["extension_permission_denied", "extension_quarantined", "ext
 test("H4 Portable UI keeps a refused action's draft and only retries on an explicit new submit", async ({ page }) => {
     await openUi(page);
     await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
+    const interval = page.getByLabel("Refresh interval seconds", { exact: true });
+    const form = page.locator(".portable-form");
+    const before = await form.boundingBox();
+    await interval.fill("-1");
+    await form.dispatchEvent("submit");
+    expect(await requests(page, "extensions.ui.dispatch")).toHaveLength(0);
+    expect((await form.boundingBox())!.height).toBe(before!.height);
+    await expect(form).not.toContainText("Check the editable fields before submitting.");
+    await interval.fill("15");
     await page.getByLabel("Enable presence", { exact: true }).uncheck();
     await page.evaluate(() => window.h4Portable.failNext("dispatch", "extension_ui_action_invalid"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expectRequestError(page.locator(".reminder[role=alert]"), "extension_ui_action_invalid");
+    await expect.poll(async () => (await requests(page, "extensions.ui.dispatch")).length).toBe(1);
+    await expectHostErrorsCleared(page);
     await expect(page.getByLabel("Enable presence", { exact: true })).not.toBeChecked();
     expect(await requests(page, "extensions.ui.dispatch")).toHaveLength(1);
     expect(await requests(page, "extensions.ui.close")).toHaveLength(0);
@@ -165,7 +180,7 @@ test("H4 Portable UI reconnect negotiates changed capabilities and never repeats
     const initialStatusReads = (await requests(page, "system.status")).length;
     await page.evaluate(() => window.h4Portable.failNext("dispatch", "daemon_unavailable"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expectRequestError(page.locator(".reminder[role=alert]"), "daemon_unavailable");
+    await expectRequestError(page.locator(".extension-body [role=alert]:not(.portable-document [role=alert])"), "daemon_unavailable");
     await expect(page.locator(".portable-document")).toHaveCount(0);
     await page.evaluate(() => { window.h4Portable.removeUiCapability = true; });
     await page.getByRole("button", { name: "Reconnect", exact: true }).click();

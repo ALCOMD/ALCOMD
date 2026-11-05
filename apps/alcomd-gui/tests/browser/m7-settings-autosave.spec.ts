@@ -61,30 +61,34 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
     await expect(page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true })).toBeChecked();
 });
 
-test("failed autosave is visible after navigation and explicit Retry saves retained intent", async ({ page }) => {
+test("failed autosave retains intent across navigation without inserting a page alert", async ({ page }) => {
     await openSettings(page, "error-once");
     await selectMotion(page, "full");
-    await expect(page.getByRole("alert")).toContainText("Settings save result is unknown");
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-    await expect(page.getByRole("alert")).toBeVisible();
-    await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
+    await navigation(page, "Settings").click();
+    await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ appearance: { motion: "full" } }, { appearance: { motion: "full" } }]);
-    await navigation(page, "Settings").click();
+    await selectSettingsSection(page, "appearance");
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
 });
 
 test("unknown commit outcome reconciles without a duplicate save", async ({ page }) => {
     await openSettings(page, "commit-error-once");
     await selectMotion(page, "full");
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
@@ -93,9 +97,10 @@ test("unknown commit outcome reconciles without a duplicate save", async ({ page
 test("conflict Retry preserves external theme fields and changes only the requested setting", async ({ page }) => {
     await openSettings(page, "conflict-once");
     await selectMotion(page, "full");
-    await expect(page.getByRole("alert")).toBeVisible();
-    await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     await expect(page.locator("html")).toHaveAttribute("data-theme-scheme", "neutral");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");

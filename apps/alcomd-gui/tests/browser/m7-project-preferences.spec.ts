@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
-import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
@@ -141,7 +140,8 @@ test("Projects grid keeps shared capability restrictions and missing-Editor hand
     await page.locator("md-dialog[open]").getByRole("button", { name: "Migrate Project…", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/unity\\?afterMigration=open$`));
     await expect(page.getByRole("heading", { name: "Project Unity", exact: true })).toBeVisible();
-    await expect(page.getByText(/No exact matching Unity installation was found/).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+    await expect(page.getByText(/No exact matching Unity installation was found/)).toHaveCount(0);
 });
 
 test("Projects view survives navigation, reload and reopening the page in both modes", async ({ page, context }) => {
@@ -207,11 +207,11 @@ test("Favorite mutation updates list and grid and exposes retryable errors", asy
 
     await openHarness(page, "/projects", "favorite-error");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
-    await expect(page.getByText(`Unable to update favorite: ${requestErrorMessage("internal_error")}`)).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
 
     await openHarness(page, "/projects", "favorite-conflict");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
-    await expect(page.getByText(`Unable to update favorite: ${requestErrorMessage("revision_conflict")}`)).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
     await expect(page.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
 });
@@ -262,11 +262,13 @@ test("Unity launch arguments discard drafts on Cancel and Escape", async ({ page
 test("Unity exact launch handles zero, one, and multiple matching installations", async ({ page }) => {
     await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-automatic");
     await launch(page);
-    await expect(page.getByText("Unity launch opening.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch").length)).toBe(1);
+    await expect(page.getByText("Unity launch opening.")).toHaveCount(0);
 
     await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-zero");
-    await launch(page);
-    await expect(page.getByText("No exact matching Unity installation was found.").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+    await expect(page.getByText("No exact matching Unity installation was found.", { exact: false })).toHaveCount(0);
+    expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(0);
 
     await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-multiple");
     const chooser = page.getByRole("combobox", { name: "Unity installation for this launch" });
@@ -274,7 +276,8 @@ test("Unity exact launch handles zero, one, and multiple matching installations"
     await chooser.click();
     await page.getByRole("option", { name: "Unity 2022.3.22f1 · x86_64" }).nth(1).click();
     await launch(page);
-    await expect(page.getByText("Unity launch opening.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch").length)).toBe(1);
+    await expect(page.getByText("Unity launch opening.")).toHaveCount(0);
 });
 
 test("Project workspace Open Unity uses the exact 0/1/many flow", async ({ page }) => {
@@ -346,7 +349,7 @@ for (const view of ["list", "grid"] as const) {
     });
 }
 
-test("Open Unity keeps launch and options failures explicit without navigation or migration", async ({ page }) => {
+test("Open Unity reports a failure only within an existing installation chooser", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fprojects&state=unity-multiple&unityLaunchError=1");
     await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
     const chooser = page.locator("md-dialog[open]");
@@ -362,7 +365,7 @@ test("Open Unity keeps launch and options failures explicit without navigation o
     await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&unityOptionsError=1");
     await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
-    await expectRequestError(page.getByRole("alert"), "revision_conflict");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
     await expect(page).toHaveURL(/\/projects$/);
@@ -448,7 +451,9 @@ test("Open Unity migration composition revalidates options before the exact laun
     await page.getByRole("button", { name: "Review migration" }).click();
     const review = page.locator("md-dialog[open]");
     await review.getByRole("button", { name: "Apply reviewed plan" }).click();
-    await expect(page.getByText("Migration completed. Unity launch opening.")).toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch").length)).toBe(1);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText("Migration completed. Unity launch opening.")).toHaveCount(0);
 });
 
 async function launch(page: Page) {

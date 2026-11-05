@@ -30,7 +30,7 @@ import { guiVersion } from "./build-info";
 import { RequestReminder } from "./Reminder";
 import { FrontendErrorBoundary, FrontendErrorReporter } from "./FrontendErrors";
 import { CoreEvents } from "./core-events";
-import { CoreEventsProvider, CoreEventsStatus, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
+import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
 import {
     AboutPage,
@@ -117,7 +117,6 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
     const settingsAuthority = useRef<SettingsGetResult | undefined>(undefined);
     const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
     const windowMemory = useRef<WindowStateMemory | undefined>(undefined);
-    const [windowStateError, setWindowStateError] = useState<RpcError>();
     if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) {
         settingsConnection.current = { client, generation: connectionGeneration };
         settingsAuthority.current = undefined;
@@ -197,7 +196,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
     useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
     useEffect(() => {
-        const memory = nativeWindowStateMemory(setWindowStateError);
+        const memory = nativeWindowStateMemory(() => {});
         windowMemory.current = memory;
         if (settingsAuthority.current !== undefined) void memory?.apply(settingsAuthority.current.settings.window.rememberState, settingsAuthority.current.settings.window.fullscreen);
         return () => { memory?.dispose(); if (windowMemory.current === memory) windowMemory.current = undefined; };
@@ -288,19 +287,6 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                         navigate={navigate}
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
-                        <CoreEventsStatus />
-                        {settingsSave.failed || windowStateError !== undefined ? <>
-                        {settingsSave.failed ? <div className="settings-save-error">
-                            <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
-                                message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
-                                <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
-                            </RequestReminder>
-                        </div> : null}
-                        {windowStateError === undefined ? null : <div className="shell-feedback">
-                            <RequestReminder error={windowStateError} title={null} message="Window mode and saved size could not be applied." onDismiss={() => setWindowStateError(undefined)}><Button type="button" variant="text" onClick={() => void windowMemory.current?.retry()}>{t("Retry")}</Button></RequestReminder>
-                        </div>}
-            </> : undefined}
-                        {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
@@ -707,7 +693,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                 {busy && snapshot === undefined ? (
                     <LoadingState title={t("Opening extension UI")} />
                 ) : null}
-                {error === undefined ? null : (
+                {error === undefined || snapshot !== undefined ? null : (
                     <RequestReminder error={error} title={t(errorTitle(error.code))}>
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
                     </RequestReminder>

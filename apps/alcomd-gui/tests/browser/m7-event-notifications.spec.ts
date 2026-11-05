@@ -151,7 +151,7 @@ test("transient disconnect recovers authoritative state and permanent closed nev
 
     const recovered = await subscriptions(page);
     await page.evaluate(() => window.coreEvents.close(false, "permission_denied"));
-    await expect(page.getByRole("alert")).toContainText("Updates are temporarily unavailable. The displayed data may be out of date.");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await page.clock.fastForward(60_000);
     expect(await subscriptions(page)).toBe(recovered);
     expect(await page.evaluate(() => window.coreEvents.connections)).toBe(0);
@@ -245,23 +245,23 @@ test("cross-client project launch arguments update the current Unity page throug
     expect(await page.evaluate(() => window.coreEvents.rpcRequests.length)).toBe(stable);
 });
 
-test("an explicit page retry clears a failed resynchronization job without another connection or timed retry", async ({ page }) => {
+test("a new resource change recovers a failed resynchronization job without a page notice or timed retry", async ({ page }) => {
     await page.clock.install();
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/extensions/${extensionId}`)}&state=ready&h4-management=1&motion=reduced`);
     await expect(page.getByRole("heading", { name: "Extension detail", level: 1, exact: true })).toBeVisible();
     await pauseClock(page);
     await page.evaluate(() => { window.h4Management.failNext("extensions.get", "permission_denied"); window.coreEvents.restart(); });
     await page.clock.runFor(750);
-    await expect(page.getByRole("alert")).toContainText("The last loaded result is still shown.");
-    await expect(page.getByRole("status").filter({ hasText: "Updates are being restored." })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText("Desired state", { exact: true }).locator("..")).toContainText("enabled");
     const reads = await page.evaluate(() => window.h4Management.requests.filter((request) => request.method === "extensions.get").length);
     await page.clock.fastForward(10_000);
     expect(await page.evaluate(() => window.h4Management.requests.filter((request) => request.method === "extensions.get").length)).toBe(reads);
     const opened = await subscriptions(page);
-    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await page.evaluate((id) => window.h4Management.setDesired(id, "installed_disabled"), extensionId);
     await page.clock.runFor(500);
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.getByRole("status").filter({ hasText: "Updates are being restored." })).toHaveCount(0);
+    await expect(page.getByText("Desired state", { exact: true }).locator("..")).toContainText("installed disabled");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await subscriptions(page)).toBe(opened);
     await expect(page.getByRole("heading", { name: "Extension detail", level: 1, exact: true })).toBeVisible();
 });

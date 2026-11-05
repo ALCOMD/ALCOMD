@@ -26,11 +26,12 @@ test("an accepted import survives dialog close and explicit progress retries ret
     await page.goto("/browser-harness.html?route=/templates&template-tasks=1&template-first-read-error=1");
     await importReview(page);
     await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
+    await retryProgress(page, operationId);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeHidden();
     const table = page.getByRole("table", { name: "Templates", exact: true });
     await expect(table).not.toContainText("Imported fixture");
-    await retryProgress(page, operationId);
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
     const before = await listReads(page);
     await finish(page, operationId);
     await expect(table).toContainText("Imported fixture");
@@ -75,8 +76,8 @@ test("an invalid project task result appears once in its dialog while its dialog
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     await expect.poll(() => reads(page, operationId)).toBeGreaterThan(0);
     await finish(page, operationId);
-    await expectRequestError(page.locator(".reminder--error"), "internal_error");
-    await expect(page.locator(".reminder--error")).toHaveCount(1);
+    await expectRequestError(dialog.getByRole("alert"), "internal_error");
+    await expect(dialog.getByRole("alert")).toHaveCount(1);
     await expect(dialog).toHaveAttribute("open", "");
     expect(await applies(page)).toHaveLength(1);
     await expect(page).toHaveURL(/\/projects$/);
@@ -137,9 +138,11 @@ test("two explicitly accepted template operations retain separate IDs through a 
     const secondId = "00000000-0000-4000-8000-000000005001";
     await expect.poll(() => reads(page, secondId)).toBeGreaterThan(0);
     await finish(page, secondId);
-    await expect(page.getByRole("button", { name: "Open created project", exact: true })).toBeVisible();
+    const openCreatedProject = page.locator("md-dialog[open]").getByRole("button", { name: "Open created project", exact: true });
+    await expect(openCreatedProject).toBeVisible();
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
     expect(await applies(page)).toHaveLength(2);
-    await page.getByRole("button", { name: "Open created project", exact: true }).click();
+    await openCreatedProject.click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000007001$/);
 });
 
@@ -171,9 +174,11 @@ for (const state of ["failed", "cancelled"]) {
         await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeHidden();
         const before = await listReads(page);
         await finish(page, operationId, state);
-        await expect(page.getByRole("status").filter({ hasText: "Operation" }).locator("strong")).toHaveText(state);
-        expect(await listReads(page)).toBeLessThanOrEqual(before + 1);
+        await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
         await expect(page.getByRole("table", { name: "Templates", exact: true })).not.toContainText("Imported fixture");
+        expect(await listReads(page)).toBeLessThanOrEqual(before + 1);
+        await page.getByRole("navigation", { name: "Utilities", exact: true }).locator("md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Tasks$/ }) }).click();
+        await expect(page.getByRole("table", { name: "Tasks", exact: true }).getByRole("row").filter({ hasText: "Import template" })).toContainText(state);
         expect(await applies(page)).toHaveLength(1);
     });
 }
@@ -287,7 +292,9 @@ async function projectReview(page: Page, name: string) {
     const host = page.locator("md-dialog[open]");
     await host.getByLabel("Create target parent", { exact: true }).fill("C:\\Fixture");
     await host.getByLabel("Create project name", { exact: true }).fill(name);
-    await host.getByLabel("Unity version", { exact: true }).fill("2022.3.22f1");
+    await host.getByRole("combobox", { name: "Unity version", exact: true }).click();
+    await page.getByRole("option", { name: "Custom", exact: true }).click();
+    await host.getByRole("textbox", { name: "Unity version", exact: true }).fill("2022.3.22f1");
     await host.getByRole("button", { name: "Review creation", exact: true }).click();
     await expect(host.locator(".dialog-summary")).toContainText(name);
     return page.locator("md-dialog").filter({ has: page.locator('[slot="headline"]').filter({ hasText: /^Create project$/ }) });

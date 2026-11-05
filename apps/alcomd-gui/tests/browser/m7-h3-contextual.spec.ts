@@ -16,8 +16,8 @@ test("backup creation leaves one contextual task and refreshes its project histo
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog.getByRole("heading", { name: "Create backup", exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Create backup", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
-    await expect(page.locator(".operation-follow")).toContainText("running");
+    await expect(dialog.locator(".operation-follow")).toContainText("running");
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
     expect(await requests(page, "backups.create")).toEqual([{ method: "backups.create", params: { projectId, expectedRevision: 2, compressionMode: "fast", excludeVpmPackages: false, includeLibrary: false } }]);
     expect(await requests(page, "backups.list")).toHaveLength(1);
     await state(page, "succeeded");
@@ -53,7 +53,8 @@ test("operation detail retries a failed progress read on the same ID and keeps t
     await open(page, `/operations/${operationId}`);
     await expect(page.locator(".operation-follow")).toContainText("running");
     await page.evaluate(() => { window.h3ReadError = "daemon_unavailable"; window.h3Operation = { ...window.h3Operation, revision: window.h3Operation.revision + 1 }; });
-    await expect(page.locator(".operation-follow")).toContainText("temporarily unavailable");
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.locator(".operation-follow")).not.toContainText("temporarily unavailable");
     await page.evaluate(() => { window.h3ReadError = undefined; });
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(async () => (await requests(page, "operations.get")).length).toBeGreaterThanOrEqual(3);
@@ -178,26 +179,22 @@ test("Settings Unity errors stay with the action and a corrected registration su
     expect(await requests(page, "unity.installations.register")).toHaveLength(2);
 });
 
-test("a successful Unity launch keeps the project row unchanged and closing an error leaves no stale feedback", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/projects&state=unity-automatic");
-    const row = page.locator(".project-row-actions").first().locator("xpath=ancestor::tr");
-    const before = await row.boundingBox();
-    await row.getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.unityRequests.some((r) => r.method === "unity.launch"))).toBe(true);
-    const after = await row.boundingBox();
-    expect(after!.height).toBe(before!.height);
-    await expect(row.getByRole("status")).toHaveCount(0);
-
-    await page.goto("/browser-harness.html?route=/projects&unityOptionsError=1");
-    const launch = page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true });
-    await launch.click();
-    const outlet = page.locator(".project-row-actions").first().locator("xpath=ancestor::tr");
-    await expectRequestError(outlet.getByRole("alert"), "revision_conflict");
-    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await outlet.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(launch).toBeFocused();
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
+test("Unity launch outcomes keep the project row unchanged and never add a prompt", async ({ page }) => {
+    for (const [query, reachesLaunch] of [["", true], ["&unityLaunchError=unity_project_running", true], ["&unityOptionsError=1", false]] as const) {
+        await page.goto(`/browser-harness.html?route=/projects&state=unity-automatic${query}`);
+        const row = page.locator(".project-row-actions").first().locator("xpath=ancestor::tr");
+        const launch = row.getByRole("button", { name: "Open Unity", exact: true });
+        await expect(launch).toBeEnabled();
+        const before = await row.boundingBox();
+        await launch.click();
+        await expect.poll(() => page.evaluate(() => window.unityRequests.length)).toBe(reachesLaunch ? 2 : 1);
+        await expect(launch).toBeEnabled();
+        expect((await row.boundingBox())!.height).toBe(before!.height);
+        await expect(row.getByRole("status")).toHaveCount(0);
+        await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+        await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+        expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch").length)).toBe(reachesLaunch ? 1 : 0);
+    }
 });
 
 for (const route of ["/projects", `/projects/${projectId}/packages`]) {

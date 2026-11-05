@@ -16,12 +16,12 @@ test("paging is explicit, locks duplicate requests, retains items on error and r
     await expect(page.getByText("Loading more items…")).toHaveCount(0);
     expect(await page.evaluate(() => window.pendingPages.map((pending) => pending.cursor))).toEqual([1]);
     await page.evaluate(() => window.pendingPages[0]!.reject(new Error("Private transport error")));
-    await expect(page.getByRole("alert")).toContainText("loaded items are still available");
+    await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("list")).toHaveText("First item");
     await expect(page.getByText("Private transport error")).toHaveCount(0);
     await page.getByRole("button", { name: "Retry loading more" }).click();
     await expect(page.getByRole("button", { name: "Retry loading more", exact: true })).toBeDisabled();
-    await expect(page.getByRole("alert")).toContainText("loaded items are still available");
+    await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.pendingPages.map((pending) => pending.cursor))).toEqual([1, 1]);
     await page.evaluate(() => window.pendingPages[1]!.resolve({ items: ["Second item"], nextCursor: 2 }));
     await expect(page.getByRole("list")).toHaveText("First itemSecond item");

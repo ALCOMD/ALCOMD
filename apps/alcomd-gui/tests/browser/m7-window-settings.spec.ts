@@ -53,13 +53,14 @@ test("failed window preference keeps the intent and uses explicit Retry after ch
     await page.evaluate(() => window.h5Settings.failNext("settings.update", "permission_denied"));
     const checkbox = page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true });
     await checkbox.check();
-    const feedback = page.locator(".settings-save-error").getByRole("alert");
-    await expect(feedback).toContainText("You do not have permission for this action.");
+    const feedback = page.getByRole("button", { name: "Retry saving settings", exact: true });
+    await expect(feedback).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.h5Settings.commits)).toEqual([]);
     await selectSettingsSection(page, "unity");
     await selectSettingsSection(page, "appearance");
     await expect(checkbox).toBeChecked();
-    await feedback.getByRole("button", { name: "Retry", exact: true }).click();
+    await feedback.click();
     await expect(feedback).toHaveCount(0);
     expect((await changes(page)).map((request) => request.params)).toEqual([
         { expectedRevision: 7, update: { window: { rememberState: true } } },
@@ -72,11 +73,12 @@ test("an unknown committed window setting is reconciled without another write", 
     await openSettings(page);
     await page.evaluate(() => window.h5Settings.failNext("settings.update", "daemon_unavailable", true));
     await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).check();
-    const feedback = page.locator(".settings-save-error").getByRole("alert");
-    await expect(feedback).toContainText("Settings save result is unknown");
+    const feedback = page.getByRole("button", { name: "Retry saving settings", exact: true });
+    await expect(feedback).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     const reads = await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length);
-    await feedback.getByRole("button", { name: "Retry", exact: true }).click();
+    await feedback.click();
     await expect(feedback).toHaveCount(0);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length)).toBe(reads + 1);
     expect(await changes(page)).toHaveLength(1);

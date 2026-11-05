@@ -243,20 +243,22 @@ test("Transitive selection cannot be silently removed but can be reinstalled", a
 test("Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry", async ({ page }) => {
     await open(page, "versionsStale=1");
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
-    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText("Candidate evidence is stale.", { exact: true }).first()).toBeVisible();
+    await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", "Candidate evidence is stale.");
+    await expect(page.getByRole("table", { name: "Packages", exact: true })).not.toContainText("Candidate evidence is stale.");
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await open(page, "intentStale=1");
     await page.getByRole("button", { name: "Update All (1)", exact: true }).click();
-    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText("Candidate evidence is stale.", { exact: true }).first()).toBeVisible();
+    await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", "Candidate evidence is stale.");
+    await expect(page.getByRole("table", { name: "Packages", exact: true })).not.toContainText("Candidate evidence is stale.");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.limit === 1).length)).toBe(1);
 });
 
 test("Candidate quota failure is unavailable evidence, never empty/latest or a Plan probe", async ({ page }) => {
     await open(page, "candidateError=package_candidate_limit_exceeded");
-    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText(requestErrorMessage("package_candidate_limit_exceeded"), { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("table", { name: "Packages", exact: true })).not.toContainText(requestErrorMessage("package_candidate_limit_exceeded"));
     await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", requestErrorMessage("package_candidate_limit_exceeded"));
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await page.getByRole("button", { name: "Retry", exact: true }).click();

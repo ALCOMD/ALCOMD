@@ -125,8 +125,8 @@ export function UtilityWorkspace<T>({
         if (events) retryRead(); else refresh();
     };
 
-    const failure = error === undefined ? null : <RequestReminder error={error}>
-        <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")}</p>
+    const failure = error === undefined || value !== undefined ? null : <RequestReminder error={error}>
+        <p>{t("This page could not be loaded.")}</p>
         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
     </RequestReminder>;
 
@@ -149,7 +149,7 @@ export function UtilityWorkspace<T>({
                 </div>
             </PageHeader>
             <ScrollArea className="utility-workspace-body">
-                {value === undefined ? failure : <>{failure}</>}
+                {failure}
                 {value === undefined ? (
                     pending ? <LoadingState title={t("Loading…")} /> : null
                 ) : (

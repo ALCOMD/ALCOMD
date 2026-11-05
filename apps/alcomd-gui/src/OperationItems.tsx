@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { Operation, OperationsListResult } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { Button } from "./Material";
-import { RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { useCoreEvents, useCoreInvalidation, useViewReadingPosition } from "./core-events-ui";
@@ -36,7 +35,6 @@ function OperationSession({ client, initial, children }: { client: GuiRpcClient;
     const cursorRef = useRef(cursor);
     const [pending, setPending] = useState(false);
     const [synchronized, setSynchronized] = useState(false);
-    const [error, setError] = useState<ReturnType<typeof normalizeRequestError>>();
     const [moreError, setMoreError] = useState<ReturnType<typeof normalizeRequestError>>();
     const active = useRef(true);
     const reading = useRef(false);
@@ -107,16 +105,14 @@ function OperationSession({ client, initial, children }: { client: GuiRpcClient;
                 }
                 apply(incoming);
                 saved.current = { items: itemsRef.current, cursor: cursorRef.current };
-                setError(undefined);
             } while (queued.current && active.current);
             events?.completeOverflowSync(overflowVersion);
             if (active.current) setSynchronized(true);
         } catch (caught: unknown) {
-            if (active.current) setError(normalizeRequestError(caught));
             throw caught;
         } finally { reading.current = false; if (active.current) setPending(false); }
     }, [client, events, apply]);
-    const retryLatest = useCoreInvalidation("operations:list", ["operations", "operations-resync"], latest, true);
+    useCoreInvalidation("operations:list", ["operations", "operations-resync"], latest, true);
     useEffect(() => {
         active.current = true;
         if (!events) void latest().catch(() => {});
@@ -159,12 +155,8 @@ function OperationSession({ client, initial, children }: { client: GuiRpcClient;
         }
     };
     return <div ref={root}>
-        {error === undefined ? null : <RequestReminder error={error} message="Tasks could not be updated. The last loaded entries are still shown.">
-            <Button disabled={pending} onClick={retryLatest} type="button" variant="text">{t("Retry")}</Button>
-        </RequestReminder>}
         {children(items)}
         {cursor === undefined ? null : <div className="pagination-controls" aria-busy={pending}>
-            {moreError === undefined ? null : <RequestReminder error={moreError}>{t("Could not load more items. Your loaded items are still available.")}</RequestReminder>}
             <Button disabled={pending} onClick={() => void more()} type="button" variant="tonal">{t(moreError === undefined ? "Load more" : "Retry loading more")}</Button>
         </div>}
     </div>;

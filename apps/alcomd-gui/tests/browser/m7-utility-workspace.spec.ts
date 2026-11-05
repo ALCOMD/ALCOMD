@@ -41,22 +41,19 @@ test("route changes discard late responses and queued invalidations from the old
     expect(await page.evaluate(() => window.workspaceReads.length)).toBe(3);
 });
 
-test("refresh failures stay with loaded content and keep an explicit retry", async ({ page }) => {
+test("refresh failures retain loaded content and the original action can retry", async ({ page }) => {
     const snapshot = page.getByLabel("Snapshot");
     await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.evaluate(() => window.workspaceReads[1]!.reject({ code: "permission_denied" }));
-    const failure = page.locator(".utility-workspace-body").getByRole("alert");
-    await expect(failure).toContainText("Refresh failed. The last loaded result is still shown.");
     await expect(snapshot).toHaveText("Initial snapshot");
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
-    await failure.getByRole("button", { name: "Show details", exact: true }).click();
-    await expect(failure).toContainText("permission_denied");
-    await failure.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(3);
     await page.evaluate(() => window.workspaceReads[2]!.resolve("Recovered snapshot"));
     await expect(snapshot).toHaveText("Recovered snapshot");
-    await expect(failure).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
 });
 test("dialog errors preserve their draft and remain attached while a nested dialog opens", async ({ page }) => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();

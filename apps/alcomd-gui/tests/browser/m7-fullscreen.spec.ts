@@ -67,9 +67,10 @@ test("window reset confirms and resets both fullscreen and geometry memory", asy
 test("an unknown fullscreen save reconciles without another committed write", async ({ page }) => {
     await open(page, "&theme-save=commit-error-once");
     await fullscreen(page).check();
-    const feedback = page.getByRole("alert");
-    await expect(feedback).toContainText("Settings save result is unknown");
-    await feedback.getByRole("button", { name: "Retry", exact: true }).click();
+    const feedback = page.getByRole("button", { name: "Retry saving settings", exact: true });
+    await expect(feedback).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await feedback.click();
     await expect(feedback).toHaveCount(0);
     await expect(fullscreen(page)).toBeChecked();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);

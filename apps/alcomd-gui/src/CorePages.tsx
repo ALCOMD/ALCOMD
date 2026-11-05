@@ -251,7 +251,6 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [restoreOpen, setRestoreOpen] = useState(false);
     const [registerPath, setRegisterPath] = useState("");
     const [selectingDirectory, setSelectingDirectory] = useState(false);
-    const inlineError = useInlineError();
     const current = useActionScope(client);
     const addProjectMenuRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
@@ -336,15 +335,12 @@ export function ProjectsPage({ client, navigate }: PageProps) {
 
     const chooseProjectDirectory = async () => {
         setSelectingDirectory(true);
-        inlineError.clear();
         try {
             const selected = await client.selectDirectory();
             if (!current() || selected === undefined) return;
             setRegisterPath(selected);
             setRegisterOpen(true);
-        } catch (caught: unknown) {
-            if (current()) inlineError.show(safeError(t, locale, caught), t("Unable to select directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
-        } finally {
+        } catch {} finally {
             setSelectingDirectory(false);
         }
     };
@@ -354,7 +350,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
     };
 
-    return <>{inlineError.notice}{(
+    return <>{(
         <section className="projects-page" aria-busy={state.loading} ref={root}>
             <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
@@ -394,8 +390,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             ) : null}
             <div className="projects-content">
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
-                {state.error === undefined ? null : state.projects.length === 0 ? <ErrorState error={state.error} retry={retryProjects} />
-                    : <><RequestReminder error={state.error} title={t("Refresh failed: ")}><Button onClick={retryProjects} type="button" variant="text">{t("Retry")}</Button></RequestReminder></>}
+                {state.error !== undefined && state.projects.length === 0 ? <ErrorState error={state.error} retry={retryProjects} /> : null}
                 {!state.loading && state.error === undefined && projects.length === 0 ? (
                     <section className="projects-empty" role="status">
                         <h2>{search.length === 0 ? t("No registered projects") : t("No matching projects")}</h2>
@@ -504,7 +499,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     project: ProjectSnapshot;
 }) {
     const { t, locale } = useTranslation();
-    const inlineError = useInlineError();
     const current = useActionScope(client);
     const [removalFailure, setRemovalFailure] = useState<{ message: string; error?: RpcError }>();
     const canReadProjects = useCapability(capabilities.projectsRead);
@@ -564,15 +558,12 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     };
 
     const openDirectory = async () => {
-        inlineError.clear();
         setOpeningDirectory(true);
         setMenuOpen(false);
         try {
             await client.openProjectDirectory(projectId);
 
-        } catch (caught: unknown) {
-            if (current()) inlineError.show(safeError(t, locale, caught), t("Unable to open project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
-        } finally {
+        } catch {} finally {
             setOpeningDirectory(false);
         }
     };
@@ -641,10 +632,10 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             <MenuItem className="project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label={t("Delete Project Directory…")} onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete, t)} />
         </> : <MenuItem className="project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label={t("Remove Project")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />}
     </>;
-    return <>{inlineError.notice}{(
+    return <>{(
         <>
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
-                {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} onStart={inlineError.clear} onError={inlineError.show} project={project} />}
+                {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} project={project} />}
                 {workspace ? null : <Button {...unityLaunch.action} className="project-open-unity-action" type="button">
                     {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
                     {t("Open Unity")}
@@ -874,8 +865,8 @@ function ProjectCard({ client, onChanged, onRefresh, project, navigate }: { clie
     );
 }
 
-function ProjectFavoriteButton({ client, onChanged, onRefresh, onStart, onError, project }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onRefresh(): void; onStart(): void; onError(error: RpcError, message?: string): void; project: ProjectSnapshot }) {
-    const { t, locale } = useTranslation();
+function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onRefresh(): void; project: ProjectSnapshot }) {
+    const { t } = useTranslation();
     const current = useActionScope(client);
     const canManageProjects = useCapability(capabilities.projectsRegistry);
     const [busy, setBusy] = useState(false);
@@ -884,7 +875,6 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, onStart, onError,
     const favorite = project.favorite === true;
     const toggle = async () => {
         if (projectId === undefined || revision === undefined) return;
-        onStart();
         setBusy(true);
         try {
             const result = await client.projectSetFavorite(projectId, !favorite, revision);
@@ -893,9 +883,7 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, onStart, onError,
 
         } catch (caught: unknown) {
             if (!current()) return;
-            const error = safeError(t, locale, caught);
-            onError(error, t("Unable to update favorite: {value0}", { value0: t(requestErrorMessage(error.code)) }));
-            if (error.code === "revision_conflict") onRefresh();
+            if (normalizeRequestError(caught).code === "revision_conflict") onRefresh();
         } finally {
             setBusy(false);
         }
@@ -1129,9 +1117,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     onAction(action: PackageActionSelection["action"], origin: DialogOrigin): void;
     row: PackageWorkspaceRow;
 }) {
-    const { t, locale } = useTranslation();
-    const inlineError = useInlineError();
-    const current = useActionScope(client);
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     // Keep a first-opened menu connected through Material's closed callbacks.
     const [contentMounted, setContentMounted] = useState(false);
@@ -1139,14 +1125,11 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     const openLink = async (kind: "documentation" | "changelog") => {
         if (row.linkTarget === undefined) return;
         setOpen(false);
-        inlineError.clear();
         try {
             await client.openPackageLink(row.linkTarget.repositoryId, row.packageId, row.linkTarget.version, kind);
-        } catch (caught: unknown) {
-            if (current()) inlineError.show(safeError(t, locale, caught), t("Package link unavailable: ") + t(requestErrorMessage(safeError(t, locale, caught).code)));
-        }
+        } catch {}
     };
-    return <>{inlineError.notice}{(
+    return <>{(
         <>
             <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => { setContentMounted(true); setOpen(true); }} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
@@ -1227,12 +1210,17 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
             setBusy(false);
         }
     };
+    const failure = error === undefined ? null : <div role="alert">
+        <p>{t(error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : requestErrorMessage(error.code))}</p>
+        <code>{error.code}</code>
+        {error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
+        <Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button>
+    </div>;
     return <>
         <Button aria-expanded={open} aria-haspopup="dialog" className="package-filter-trigger" onClick={() => setOpen(!open)} ref={anchorRef} type="button" variant="tonal">{t("Filter packages")}</Button>
         <FilterPopover anchorRef={anchorRef} label={t("Package filters")} onClose={() => setOpen(false)} open={open}>
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Repositories")}</legend>
-                {snapshot.settings.packages.hiddenRepositoryIds.length < 256 ? null : <Reminder tone="warning">{t("Up to 256 repositories can be hidden. Unhide one before hiding another.")}</Reminder>}
                 {repositories.map((repository) => repository.repositoryId === undefined ? null : <Checkbox
                     checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
                     disabled={busy || snapshot.settings.packages.hiddenRepositoryIds.length >= 256 && !snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
@@ -1256,22 +1244,13 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
                 <Select disabled={busy} label={t("Status")} onChange={setFilter} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
                 <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
+            {failure}
         </FilterPopover>
-        {error === undefined ? null : <><RequestReminder error={error} message={error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : undefined}>
-            <Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button>
-        </RequestReminder></>}
         <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title={t("Show prerelease versions?")}>
             <p>{t("Prerelease packages may be unstable. Showing them does not install or update any package.")}</p>
             <div className="dialog-actions"><Button onClick={() => setConfirmPrerelease(false)} type="button" variant="text">{t("Cancel")}</Button><Button onClick={() => { setConfirmPrerelease(false); void save({ showPrerelease: true }); }} type="button">{t("Show prerelease versions")}</Button></div>
         </Dialog>
     </>;
-}
-
-interface RepositoryRefreshProgress {
-    failures: Array<{ code: string; repositoryId: string }>;
-    results: Array<{ code?: string; repositoryId: string; status: "failure" | "success" }>;
-    running: boolean;
-    successes: number;
 }
 
 async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnapshot[]> {
@@ -1365,7 +1344,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     const [packageMutationBusy, setPackageMutationBusy] = useState(false);
     useEffect(() => setEvidenceInvalid(false), [load]);
     const [bulkSelection, setBulkSelection] = useState<string[]>([]);
-    const [repositoryRefresh, setRepositoryRefresh] = useState<RepositoryRefreshProgress>();
+    const [repositoriesRefreshing, setRepositoriesRefreshing] = useState(false);
     const [selection, setSelection] = useState<PackageActionSelection>();
     const selectedSource = (row: PackageWorkspaceRow): PackageSourceSelector | undefined => {
         const selectedKey = sourceSelections[row.packageId];
@@ -1388,56 +1367,24 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
     };
     const refreshRepositories = async (reload: () => void) => {
-
-        setRepositoryRefresh({ failures: [], results: [], running: true, successes: 0 });
-        let repositories: RepositorySnapshot[];
+        setRepositoriesRefreshing(true);
         try {
-            repositories = await listAllRepositories(client);
-        } catch (caught: unknown) {
-            const error = safeError(t, locale, caught);
-            setRepositoryRefresh({ failures: [{ code: error.code, repositoryId: "catalog" }], results: [{ code: error.code, repositoryId: "catalog", status: "failure" }], running: false, successes: 0 });
-            return;
-        }
-        let successes = 0;
-        const failures: RepositoryRefreshProgress["failures"] = [];
-        const results: RepositoryRefreshProgress["results"] = [];
-        for (const repository of repositories) {
-            const repositoryId = repository.repositoryId;
-            const revision = repository.revision;
-            if (repositoryId === undefined || revision === undefined) {
-                failures.push({ code: "invalid_repository_snapshot", repositoryId: repositoryId ?? "unknown" });
-                results.push({ code: "invalid_repository_snapshot", repositoryId: repositoryId ?? "unknown", status: "failure" });
-            } else {
+            for (const repository of await listAllRepositories(client)) {
+                const { repositoryId, revision } = repository;
+                if (repositoryId === undefined || revision === undefined) continue;
                 try {
                     await client.repositoryRefresh(repositoryId, revision);
-                    successes += 1;
-                    results.push({ repositoryId, status: "success" });
                 } catch (caught: unknown) {
-                    const error = safeError(t, locale, caught);
-                    if (error.code === "revision_conflict") {
-                        try {
-                            const current = await client.repositoryGet(repositoryId);
-                            if (current.repository.revision === undefined) throw { code: "invalid_repository_snapshot" };
-                            await client.repositoryRefresh(repositoryId, current.repository.revision);
-                            successes += 1;
-                            results.push({ repositoryId, status: "success" });
-                        } catch (retryCaught: unknown) {
-                            const retryError = safeError(t, locale, retryCaught);
-                            failures.push({ code: retryError.code, repositoryId });
-                            results.push({ code: retryError.code, repositoryId, status: "failure" });
-                        }
-                    } else {
-                        failures.push({ code: error.code, repositoryId });
-                        results.push({ code: error.code, repositoryId, status: "failure" });
-                    }
+                    if (normalizeRequestError(caught).code !== "revision_conflict") continue;
+                    try {
+                        const current = await client.repositoryGet(repositoryId);
+                        if (current.repository.revision !== undefined) await client.repositoryRefresh(repositoryId, current.repository.revision);
+                    } catch {}
                 }
             }
-        }
-        if (failures.length === 0) {
-            setRepositoryRefresh(undefined);
-
-        } else setRepositoryRefresh({ failures, results, running: false, successes });
-        reload();
+            reload();
+        } catch {}
+        finally { setRepositoriesRefreshing(false); }
     };
     return (
         <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
@@ -1496,7 +1443,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         title={projectName(t, locale, project)}
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
-                            {refreshError === undefined ? null : <><RequestReminder error={refreshError} title={t("Refresh failed: ")}><Button onClick={refresh} type="button" variant="text">{t("Retry")}</Button></RequestReminder></>}
                             <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
@@ -1513,7 +1459,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
-                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !canManageRepositories) || refreshing || repositoryRefresh?.running === true} label={evidenceFailure ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
+                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || refreshing || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshRepositories(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
                                  <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={(event) => submitBulk(allLatest.intents, { current: event.currentTarget }, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>
@@ -1525,12 +1471,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>
-                        {repositoryRefresh === undefined || repositoryRefresh.running ? null : <><Reminder tone={repositoryRefresh.failures.length > 0 ? "warning" : "success"} onDismiss={() => setRepositoryRefresh(undefined)}>
-                            <div>
-                                <span>{`${repositoryRefresh.successes} refreshed, ${repositoryRefresh.failures.length} failed.`}</span>
-                                {repositoryRefresh.failures.length === 0 ? null : <details><summary>{t("Show details")}</summary><ul>{repositoryRefresh.results.map((result) => result.code === undefined ? null : <li key={result.repositoryId}>{result.repositoryId}: {t(requestErrorMessage(result.code))}</li>)}</ul></details>}
-                            </div>
-                        </Reminder></>}
                         {bulkSelection.length === 0 ? null : (
                             <div aria-label={t("Selected package actions")} className="package-bulk-bar" role="region">
                                 <strong>{t("{count} selected", { count: bulkSelection.length })}</strong>
@@ -1538,7 +1478,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 {stableSelectionDiffers ? <Button disabled={!canPlanPackagesV2 || !canSelectedStable} onClick={(event) => submitBulk(selectedStable, { current: event.currentTarget })} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
                                 <Button disabled={!canPlanPackagesV2 || !canBulkInstalled} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-reinstall", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
                                 <Button disabled={!canPlanPackagesV2 || !canBulkRemove} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-remove", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
-                                {!canSelected || !canBulkInstalled || !canBulkRemove ? <span role="status">{t("Actions require every selected package, including hidden rows: install/update needs eligible targets; reinstall needs locks; remove needs direct requirements. Limits: 1–256 packages.")}</span> : null}
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}
@@ -1564,7 +1503,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                              <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} />,
                                              <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
                                              <><PackageVersionPicker client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
-                                             <>{evidenceFailure ? <span title={evidenceFailure}>{evidenceFailure}</span> : evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
+                                             <>{evidence ? choiceText(evidence.latest, t) : "—"}{update && update.kind !== "target" ? <small>{updateReason(update, t)}</small> : null}</>,
                                              <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
                                              <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                          ] };
@@ -1688,18 +1627,16 @@ export function UserPackagesPage({ client, navigate }: PageProps) {
 }
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
 
     const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState<string>();
-    const [error, setError] = useState<RpcError>();
     const enroll = async () => {
         if (pending.current) return;
         pending.current = true;
 
         setBusy("enroll");
-        setError(undefined);
         try {
             const sourcePath = await client.selectDirectory();
             if (current() && sourcePath !== undefined) {
@@ -1708,18 +1645,12 @@ function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChan
 
                 onChanged();
             }
-        } catch (caught: unknown) {
-            if (current()) setError(safeError(t, locale, caught));
-        } finally {
+        } catch {} finally {
             if (current()) setBusy(undefined);
             pending.current = false;
         }
     };
-    return <><Button aria-busy={busy !== undefined} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>
-        {error === undefined ? null : <><RequestReminder error={error} title={t("User Package enrollment failed")} onDismiss={() => setError(undefined)}>
-            <Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Retry")}</Button>
-        </RequestReminder></>}
-    </>;
+    return <Button aria-busy={busy !== undefined} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>;
 }
 
 function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
@@ -1732,7 +1663,6 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     const [selected, setSelected] = useState<string>();
     const detailsOrigin = useRef<HTMLElement>(null);
     const [error, setError] = useState<RpcError>();
-    const [refreshFailed, setRefreshFailed] = useState<UserPackageRecord>();
     const refresh = async (item: UserPackageRecord) => {
         if (pending.current) return;
         pending.current = true;
@@ -1742,11 +1672,10 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
         try {
             await client.userPackageRefresh(item.userPackageId, item.revision);
             if (!current()) return;
-            setRefreshFailed(undefined);
 
             onChanged();
         } catch (caught: unknown) {
-            if (current()) { setError(safeError(t, locale, caught)); setRefreshFailed(item); }
+            if (current() && normalizeRequestError(caught).code === "revision_conflict") onChanged();
         } finally {
             setBusy(undefined);
             pending.current = false;
@@ -1771,16 +1700,11 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             pending.current = false;
         }
     };
-    return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => {  detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => {  setRefreshFailed(undefined); setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
+    return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => {  detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => {  setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
         <Dialog onClose={() => setSelected(undefined)} open={selected !== undefined} returnFocus={detailsOrigin} title={t("User Package details")}>
             {selected === undefined ? null : <UserPackageDetails client={client} userPackageId={selected} />}
             <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
         </Dialog>
-        {refreshFailed === undefined || error === undefined ? null : <><RequestReminder error={error} title={t("User Package refresh failed")} onDismiss={() => { setRefreshFailed(undefined); setError(undefined); }}>
-            <p>{refreshFailed.displayName ?? refreshFailed.packageId}</p>
-            {error.code === "revision_conflict" ? <Button disabled={busy !== undefined} onClick={() => { setRefreshFailed(undefined); setError(undefined); onChanged(); }} type="button">{t("Refresh list")}</Button>
-                : <Button disabled={busy !== undefined} onClick={() => void refresh(refreshFailed)} type="button">{t("Retry")}</Button>}
-        </RequestReminder></>}
         {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
         {error === undefined ? null : <RequestReminder error={error} />}
@@ -1829,7 +1753,7 @@ export function TemplatesPage({ client, navigate }: PageProps) {
             rows={templates.map((template) => ({
                 key: template.templateId,
                 cells: [
-                    <><strong>{template.displayName}</strong><small>{template.description ?? template.templateVersion}</small></>,
+                    <><strong>{template.displayName}</strong>{template.description && <small>{template.description}</small>}</>,
                     template.templateId,
                     formatTime(t, locale, template.updatedAtMs),
                     humanize(t, template.sourceKind),
@@ -1837,8 +1761,8 @@ export function TemplatesPage({ client, navigate }: PageProps) {
                 ]
             }))}
         />}</PagedItems>
-            {selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}
-            {operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}
+            {selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} operations={operations} selection={selection} />}
+            {operations.follow(refresh)}
         </>}
     </UtilityWorkspace>;
 }
@@ -1850,7 +1774,7 @@ export function TemplateDetailPage({ client, navigate, templateId }: PageProps &
     const session = useRef(0);
     useEffect(() => { setSelection(undefined); }, [client]);
     const load = useCallback(() => client.templateGet(templateId), [client, templateId]);
-    return <UtilityWorkspace changes={["templates"]} title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Version")} value={template.templateVersion} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}{operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["templates"]} title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} operations={operations} selection={selection} />}{operations.follow(refresh)}</>}</UtilityWorkspace>;
 }
 
 export function UnityPage({ client, navigate }: PageProps) {
@@ -1891,15 +1815,10 @@ export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & 
     const [accepted, setAccepted] = useState<BackupCreateResult>();
     const load = useCallback(async () => ({ backups: await client.backupsList(projectId), project: (await client.projectGet(projectId)).project }), [client, projectId]);
     return <UtilityWorkspace changes={["backups"]} title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
-        action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} onAccepted={setAccepted} project={value.project} /> }}>
+        action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} navigate={navigate} onAccepted={setAccepted} project={value.project} /> }}>
         {(value, refresh) => <>
             <p>{projectName(t, locale, value.project)}</p>
-            {accepted === undefined ? null : <OperationFollow client={client} key={accepted.operationId} onTerminal={refresh} operationId={accepted.operationId}>
-                {(operation, error) => <>
-                    <OperationProgress error={error} operation={operation} title={t("Create backup")} />
-                    <div className="action-row"><Button onClick={() => navigate(`/operations/${accepted.operationId}`)} type="button" variant="text">{t("View operation")}</Button>{operation?.state !== "succeeded" ? null : <Button onClick={() => navigate(`/backups/${accepted.backupId}`)} type="button" variant="tonal">{t("View backup")}</Button>}</div>
-                </>}
-            </OperationFollow>}
+            {accepted === undefined ? null : <OperationFollow client={client} key={accepted.operationId} onTerminal={refresh} operationId={accepted.operationId} background />}
             <PagedItems initialItems={value.backups.backups} initialCursor={value.backups.nextCursor} loadMore={async (cursor) => { const page = await client.backupsList(projectId, cursor); return { items: page.backups, nextCursor: page.nextCursor }; }}>
                 {(backups) => backups.length === 0 ? <RouteState kind="empty" title={t("No backups for this project")} /> : <UtilityTable label={t("Backups")} headers={[t("Created"), t("Size"), t("Packages"), t("Actions")]} rows={backups.map((backup) => ({ key: backup.backupId, cells: [formatTime(t, locale, backup.createdAtMs), formatBytes(t, locale, backup.archiveBytes), backup.excludeVpmPackages ? t("VPM packages excluded") : t("VPM packages included"), <Button onClick={() => navigate("/backups/" + backup.backupId)} type="button" variant="text">{t("View backup")}</Button>] }))} />}
             </PagedItems>
@@ -1932,7 +1851,7 @@ export function OperationDetailPage({ client, navigate, operationId }: PageProps
     const load = useCallback(() => client.operationGet(operationId), [client, operationId]);
     return <UtilityWorkspace title={t("Operation detail")} back={<BackTo label={t(navigationLabels.taskCenter)} navigate={navigate} path="/operations" />} load={load}>{(initialOperation, refresh) => <OperationFollow client={client} initialOperation={initialOperation} operationId={operationId}>
         {(operation, error) => operation === undefined ? <OperationProgress error={error} /> : <>
-            <OperationProgress error={error} operation={operation} />
+            <OperationProgress operation={operation} />
             <dl className="detail-grid"><Detail label={t("Kind")} value={humanize(t, operation.kind)} /><Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /></dl>
             <OperationResultLinks navigate={navigate} operation={operation} />
             <OperationActions client={client} key={operation.operationId} onChanged={refresh} operation={operation} />
@@ -1952,11 +1871,10 @@ function OperationResultLinks({ navigate, operation }: { navigate(path: string):
 }
 
 export function ExtensionsPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
     const load = useCallback(() => client.extensionsList(), [client]);
     const canManage = useCapability(capabilities.extensionsLifecycle);
     const canOpen = useCapability(capabilities.extensionsPortableUi);
-    const inlineError = useInlineError();
     const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState(false);
@@ -1966,21 +1884,18 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
         if (!canManage || pending.current) return;
         pending.current = true;
         setBusy(true);
-        inlineError.clear();
         try {
             await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
             if (!current()) return;
 
             refresh();
-        } catch (caught: unknown) {
-            if (current()) inlineError.show(safeError(t, locale, caught));
-        } finally {
+        } catch {} finally {
             pending.current = false;
             if (current()) setBusy(false);
         }
     };
-    return <>{inlineError.notice}<UtilityWorkspace changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
-        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} />}
+    return <><UtilityWorkspace changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
+        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} background />}
         <PagedItems initialItems={value.extensions} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.extensionsList(cursor); return { items: page.extensions, nextCursor: page.nextCursor }; }}>{(extensions) => (
         <section className="extension-management" aria-labelledby="extension-management-title">
             <header className="extension-management-heading"><h2 id="extension-management-title">{t("Manage extensions")}</h2></header>
@@ -2011,7 +1926,7 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
         <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</Button> : null}
         <ExtensionActions client={client} extension={extension} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
-        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { if (operation.state === "succeeded") navigate("/extensions"); else { setOperationTerminal(true); refresh(); } }} operationId={operationId} />}
+        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { if (operation.state === "succeeded") navigate("/extensions"); else { setOperationTerminal(true); refresh(); } }} operationId={operationId} background />}
     </>}</UtilityWorkspace>;
 }
 

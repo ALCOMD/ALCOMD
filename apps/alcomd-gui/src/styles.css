@@ -236,10 +236,6 @@ md-linear-progress {
 
 .route-content { height: 100%; min-width: 0; min-height: 0; }
 
-.page-navigation-progress { position: absolute; top: 8px; left: 24px; right: 24px; pointer-events: none; }
-.page-navigation-progress .loading-state { min-height: 0; padding: 0; }
-.page-navigation-progress .loading-state-indicator { max-width: none; }
-.page-navigation-progress h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 .projects-page { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
 

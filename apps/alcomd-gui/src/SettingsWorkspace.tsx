@@ -114,7 +114,6 @@ function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden 
 
 type UnityHubIntent = { path: string | null; previousPath: string | null; origin: "select" | "auto" | "edit" };
 type UnityHubAction = { kind: "select" | "auto" | "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
-type SettingsFeedback = { message: string; cause?: RpcError };
 
 function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, label, onDirtyChange }: {
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult;
@@ -129,12 +128,11 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
     const [draft, setDraft] = useState(accepted.directories[directoryKey]);
     const edit = useRef({ dirty: false, previousPath: accepted.settings.paths[directoryKey], value: draft });
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<SettingsFeedback>();
+    const [invalid, setInvalid] = useState(false);
     const [pending, setPending] = useState<{ path: string; previousPath: string | null }>();
     const generation = useRef(0);
     const guard = useRef(false);
     const failedEdit = useRef<string | undefined>(undefined);
-    const feedbackRef = useRef<HTMLDivElement>(null);
     const reset = (value: SettingsGetResult, preserveFailed = false) => {
         const desired = preserveFailed ? state.settings?.paths[directoryKey] : undefined;
         const path = desired ?? value.directories[directoryKey];
@@ -143,12 +141,12 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
     };
     useEffect(() => {
         reset(acceptedRef.current, state.failed);
-        setBusy(false); setError(undefined); setPending(undefined); failedEdit.current = undefined;
+        setBusy(false); setInvalid(false); setPending(undefined); failedEdit.current = undefined;
         return () => { generation.current += 1; guard.current = false; };
     }, [client, settingsWriter, directoryKey]);
     useEffect(() => {
         if (pending !== undefined && accepted.settings.paths[directoryKey] !== pending.previousPath) {
-            reset(accepted); setPending(undefined); setError(undefined); failedEdit.current = undefined;
+            reset(accepted); setPending(undefined); setInvalid(false); failedEdit.current = undefined;
         } else if (!edit.current.dirty) reset(accepted, state.failed);
     }, [accepted, state.failed, state.settings]);
     useEffect(() => { onDirtyChange(edit.current.dirty); }, [draft, accepted, state.failed, state.settings, onDirtyChange]);
@@ -156,7 +154,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
         if (guard.current || (state.saving && action !== "edit")) return;
         if (action === "edit" && (!edit.current.dirty || blur && edit.current.value === failedEdit.current)) return;
         let intent = action === "retry" ? pending : action === "edit" ? { path: edit.current.value, previousPath: edit.current.previousPath } : undefined;
-        if (intent?.path.length === 0) { setError({ message: "Choose a folder or enter an absolute directory path." }); return; }
+        if (intent?.path.length === 0) { setInvalid(true); return; }
         guard.current = true;
         const request = generation.current;
         setBusy(true);
@@ -170,17 +168,16 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
             setPending(intent);
             const result = await settingsWriter.saveDirectory(directoryKey, intent.path, intent.previousPath);
             if (request !== generation.current) return;
-            reset(result); setError(undefined); setPending(undefined); failedEdit.current = undefined;
+            reset(result); setInvalid(false); setPending(undefined); failedEdit.current = undefined;
         } catch (caught: unknown) {
             if (request !== generation.current) return;
             if (action === "edit") failedEdit.current = intent?.path;
             if (caught instanceof StorageDirectoryConflictError) {
+                reset(acceptedRef.current);
                 setPending(undefined);
-                setError({ message: "This location changed. Press Escape to load the current path before editing again." });
-            } else {
-                const cause = normalizeRequestError(caught);
-                setError({ message: intent === undefined ? "The folder picker could not be opened."
-                    : "The current save location could not be checked.", cause });
+                setInvalid(false);
+            } else if (intent !== undefined) {
+                setInvalid(true);
             }
         } finally {
             if (request === generation.current) { guard.current = false; setBusy(false); }
@@ -190,34 +187,30 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
         if (resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
         let target: EventTarget | null = event.relatedTarget;
         while (target instanceof Node) {
-            if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
+            if (event.currentTarget.contains(target)) return;
             const root = target.getRootNode();
             target = root instanceof ShadowRoot ? root.host : null;
         }
         void save("edit", true);
     }}>
         <div className="settings-path-row">
-            <TextField id={`settings-${directoryKey}`} label={label} readOnly={busy} value={draft}
+            <TextField id={`settings-${directoryKey}`} label={label} error={invalid} readOnly={busy} value={draft}
                 onInput={(value) => {
                     if (!edit.current.dirty) edit.current.previousPath = acceptedRef.current.settings.paths[directoryKey];
                     edit.current.value = value;
                     edit.current.dirty = value !== acceptedRef.current.directories[directoryKey];
-                    setDraft(value); setError(undefined); failedEdit.current = undefined;
+                    setDraft(value); setInvalid(false); failedEdit.current = undefined;
                 }} onKeyDown={(event) => {
                     if (event.key === "Escape") {
                         if (state.failed) settingsWriter.change({ paths: { [directoryKey]: acceptedRef.current.settings.paths[directoryKey] } });
                         event.preventDefault(); event.stopPropagation(); reset(acceptedRef.current);
-                        setError(undefined); setPending(undefined); failedEdit.current = undefined;
+                        setInvalid(false); setPending(undefined); failedEdit.current = undefined;
                     } else if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
                         event.preventDefault(); void save("edit");
                     }
                 }} />
-            <Button softDisabled={busy || state.saving} onClick={() => void save("select")} type="button">{t("Select")}</Button>
+            <Button softDisabled={busy || state.saving} onClick={() => void save(invalid && pending !== undefined ? "retry" : "select")} type="button">{t(invalid && pending !== undefined ? "Retry" : "Select")}</Button>
         </div>
-        {error === undefined || state.failed ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-            : <div ref={feedbackRef}><RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
-                {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void save("retry")} type="button" variant="text">{t("Retry")}</Button>}
-            </RequestReminder></div>}
     </div>;
 }
 
@@ -233,18 +226,11 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const manageUnity = useCapability(capabilities.unityManage);
     const canOpenHub = useCapability(capabilities.unityHubOpen);
     const [busy, setBusy] = useState(false);
-    const [error, setErrorState] = useState<SettingsFeedback>();
-    const [openError, setOpenErrorState] = useState<SettingsFeedback>();
-    const setError = useCallback((message?: string, cause?: unknown) => setErrorState(message === undefined ? undefined
-        : { message, cause: cause === undefined ? undefined : normalizeRequestError(cause) }), []);
-    const setOpenError = useCallback((message?: string, cause?: unknown) => setOpenErrorState(message === undefined ? undefined
-        : { message, cause: cause === undefined ? undefined : normalizeRequestError(cause) }), []);
+    const [invalid, setInvalid] = useState(false);
     const [pending, setPending] = useState<UnityHubIntent>();
     const [draft, setDraft] = useState(accepted.unityHub.path ?? accepted.settings.unity.hubPath ?? "");
     const edit = useRef({ value: draft, display: draft, previousPath: accepted.settings.unity.hubPath, dirty: false });
     const failedEdit = useRef<string | undefined>(undefined);
-    const feedbackRef = useRef<HTMLDivElement>(null);
-    const errorOrigin = useRef<UnityHubIntent["origin"] | "refresh" | undefined>(undefined);
     const group = useRef<HTMLElement>(null);
     const guard = useRef(false);
     const active = useRef(true);
@@ -257,14 +243,12 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     useEffect(() => {
         active.current = true;
         setBusy(false);
-        setError(undefined);
-        setOpenError(undefined);
+        setInvalid(false);
         setPending(undefined);
         failedEdit.current = undefined;
-        errorOrigin.current = undefined;
         resetDraft(acceptedRef.current);
         return () => { active.current = false; generation.current += 1; guard.current = false; };
-    }, [client, settingsWriter, setError, setOpenError]);
+    }, [client, settingsWriter]);
     useEffect(() => {
         if (!edit.current.dirty) resetDraft(accepted);
     }, [accepted]);
@@ -275,11 +259,10 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         if (action.kind === "edit" && action.trigger === "blur" && edit.current.value === failedEdit.current) return;
         let intent = action.kind === "retry" ? pending : undefined;
         if (action.kind === "edit" || (intent?.origin === "edit" && action.kind === "retry")) {
-            if (!edit.current.dirty) { errorOrigin.current = undefined; setError(undefined); setPending(undefined); return; }
+            if (!edit.current.dirty) { setInvalid(false); setPending(undefined); return; }
             if (edit.current.value.length === 0) {
                 setPending(undefined);
-                errorOrigin.current = "edit";
-                setError("Enter a Unity Hub executable path, or use Auto detect.");
+                setInvalid(true);
                 return;
             }
             intent = { path: edit.current.value, previousPath: edit.current.previousPath, origin: "edit" };
@@ -288,7 +271,6 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         const request = generation.current;
         let restoreDraftFocus = false;
         setBusy(true);
-        setOpenError(undefined);
         try {
             if (action.kind === "auto" || action.kind === "select") {
                 const path = action.kind === "auto" ? null : await client.selectUnityHub(acceptedRef.current.unityHub.path);
@@ -304,35 +286,22 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             setPending(undefined);
             failedEdit.current = undefined;
             resetDraft(result);
-            let refreshFailed = false;
+            setInvalid(false);
             if (manageUnity && (intent.path !== null || intent.previousPath !== null)) {
                 try {
                     await client.unityInstallationsRefresh();
                     if (request === generation.current) onInstallationsChanged();
-                } catch (cause: unknown) {
-                    refreshFailed = true;
-                    errorOrigin.current = "refresh";
-                    if (request === generation.current) setError("Unity Hub path was saved, but Unity installations could not be refreshed.", cause);
-                }
+                } catch {}
             }
-            if (!refreshFailed && request === generation.current) { errorOrigin.current = undefined; setError(undefined); }
         } catch (cause) {
             if (request !== generation.current) return;
-            errorOrigin.current = intent?.origin ?? "select";
             if (intent?.origin === "edit") failedEdit.current = intent.path ?? undefined;
             if (cause instanceof UnityHubConflictError) {
+                resetDraft(acceptedRef.current);
                 setPending(undefined);
-                setError(intent?.origin === "auto" ? "Unity Hub path changed. Use Auto detect again to replace it."
-                    : intent?.origin === "edit" ? "Unity Hub path changed. Press Escape to load the current path before editing again."
-                        : "Unity Hub path changed. Select the file again to replace it.");
-            } else {
-                const safe = normalizeRequestError(cause);
-                setError(intent === undefined ? "The file picker could not be opened."
-                    : (safe.code === "daemon_unavailable" || safe.code === "internal_error") && !(intent.path === null && intent.previousPath === null) ? "Unity Hub save result is unknown"
-                    : intent.origin === "edit"
-                    ? "Unity Hub path could not be saved. Check the path and try again."
-                    : intent.path === null ? "Unity Hub location could not be detected. Retry the operation."
-                        : "Unity Hub path could not be saved. Select a usable executable or retry.", safe);
+                setInvalid(false);
+            } else if (intent !== undefined) {
+                setInvalid(true);
             }
         } finally {
             if (request === generation.current) {
@@ -359,50 +328,25 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         guard.current = true;
         const request = generation.current;
         setBusy(true);
-        setOpenError(undefined);
         try {
             const current = acceptedRef.current;
             const result = await client.unityHubOpen(current.revision, current.unityHub.path);
             if (request !== generation.current) return;
-            if (result.outcome === "download_required") {
-                try { await client.openUnityHubDownload(); }
-                catch (cause: unknown) {
-                    if (request === generation.current) setOpenError("The Unity Hub download page could not be opened.", cause);
-                    return;
-                }
-            }
-            if (request === generation.current) setOpenError(undefined);
+            if (result.outcome === "download_required") await client.openUnityHubDownload();
         } catch (cause) {
             if (request !== generation.current) return;
-            const error = normalizeRequestError(cause);
-            const code = error.code;
+            const { code } = normalizeRequestError(cause);
             if (["revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable"].includes(code)) {
-                try { await settingsWriter.reload(); }
-                catch (caught: unknown) {
-                    if (request === generation.current) setOpenError("Unity Hub settings could not be refreshed. Refresh Settings before trying again.", caught);
-                    return;
-                }
-                if (request === generation.current) setOpenError("Unity Hub location changed. Review the current path and click again.", error);
-            } else if (code === "hub_open_failed") {
-                setOpenError("Unity Hub could not be opened.", error);
-            } else if (code === "hub_open_busy") {
-                setOpenError("Unity Hub is already being opened. Check its window before trying again.", error);
-            } else if (code === "permission_denied") {
-                setOpenError("Opening Unity Hub is not permitted on this connection.", error);
-            } else {
-                setOpenError("The result of opening Unity Hub is unknown. Check Unity Hub before trying again.", error);
+                await settingsWriter.reload().catch(() => {});
             }
         } finally {
             if (request === generation.current) { guard.current = false; setBusy(false); }
         }
     };
-    const readUnknown = (error?.message === "Unity Hub path was saved, but Unity installations could not be refreshed."
-        || error?.message === "Unity Hub location could not be detected. Retry the operation." && pending?.path === null && pending.previousPath === null)
-        && (error.cause?.code === "internal_error" || error.cause?.code === "daemon_unavailable");
     return (
         <SettingsSection title={t("Unity Hub Path")} sectionRef={group}
             actions={<div className="action-row">
-                <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "auto" })} type="button" variant="tonal">{t("Auto detect")}</Button>
+                <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: invalid && pending?.origin === "auto" ? "retry" : "auto" })} type="button" variant="tonal">{t(invalid && pending?.origin === "auto" ? "Retry" : "Auto detect")}</Button>
                 <Button disabled={!canOpenHub || (!usable && !download)} softDisabled={busy || state.saving || state.failed || edit.current.dirty || pending !== undefined}
                     aria-describedby={openDisabledReason === undefined ? undefined : "settings-unity-hub-open-reason"} title={openDisabledReason}
                     widthLabels={[t("Open Unity Hub"), t("Download Unity Hub")]} onClick={() => void openHub()} type="button">{openLabel}</Button>
@@ -411,7 +355,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                 if (resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
                 let target: EventTarget | null = event.relatedTarget;
                 while (target instanceof Node) {
-                    if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
+                    if (event.currentTarget.contains(target)) return;
                     const root = target.getRootNode();
                     target = root instanceof ShadowRoot ? root.host : null;
                 }
@@ -425,12 +369,15 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                         const current = acceptedRef.current;
                         if (value === edit.current.display || value === (current.unityHub.path ?? current.settings.unity.hubPath ?? "")) {
                             resetDraft(current);
-                            if (errorOrigin.current === "edit") {
-                                failedEdit.current = undefined; errorOrigin.current = undefined;
-                                setError(undefined); setPending((intent) => intent?.origin === "edit" ? undefined : intent);
+                            if (pending?.origin === "edit") {
+                                failedEdit.current = undefined;
+                                setInvalid(false); setPending(undefined);
                             }
                             return;
                         }
+                        failedEdit.current = undefined;
+                        setInvalid(false);
+                        setPending(undefined);
                         edit.current.value = value;
                         edit.current.dirty = value !== edit.current.display;
                         setDraft(value);
@@ -438,23 +385,15 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                     onKeyDown={(event) => {
                         if (event.key === "Escape") {
                             event.preventDefault(); event.stopPropagation();
-                            resetDraft(acceptedRef.current); failedEdit.current = undefined; errorOrigin.current = undefined; setError(undefined); setPending(undefined);
+                            resetDraft(acceptedRef.current); failedEdit.current = undefined; setInvalid(false); setPending(undefined);
                         } else if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
                             event.preventDefault();
                             void run({ kind: "edit", trigger: "enter" });
                         }
                     }} />
-                <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "select" })} type="button">{t("Select")}</Button>
+                <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: invalid && pending !== undefined && pending.origin !== "auto" ? "retry" : "select" })} type="button">{t(invalid && pending !== undefined && pending.origin !== "auto" ? "Retry" : "Select")}</Button>
             </div>
-            {location.configuredPathStatus === "invalid" ? <Reminder tone="warning">{t("The saved Unity Hub path is no longer usable.")}</Reminder> : null}
-            {error === undefined ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-                : <div ref={feedbackRef}><RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
-                    message={readUnknown ? error.message : error.message === "Unity Hub save result is unknown" ? "Retry checks the current path before writing again." : undefined}>
-                    {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "retry" })} type="button" variant="text">{t("Retry")}</Button>}
-                </RequestReminder></div>}
             {openDisabledReason === undefined ? null : <span className="visually-hidden" id="settings-unity-hub-open-reason">{openDisabledReason}</span>}
-            {openError === undefined ? null : <>{openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
-                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}</>}
         </SettingsSection>
     );
 }
@@ -512,7 +451,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
         }>
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
-                    {error === undefined ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")}>
+                    {error === undefined || items.length > 0 ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")}>
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </RequestReminder>}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />

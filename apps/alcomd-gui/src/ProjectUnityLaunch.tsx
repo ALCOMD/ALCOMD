@@ -40,9 +40,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
         pending.current = true; setBusy(true); setError(undefined);
         try { await task(current); }
         catch (caught: unknown) {
-            if (current !== generation.current) return;
-            const failure = normalizeRpcError(caught);
-            setError(failure);
+            if (current === generation.current && dialog === "choose") setError(normalizeRpcError(caught));
         } finally {
             if (current === generation.current) { pending.current = false; setBusy(false); }
         }
@@ -93,7 +91,6 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t)
         },
         dialogs: <>
-            {dialog !== undefined || error === undefined ? null : <RequestReminder error={error} onDismiss={() => { setError(undefined); window.requestAnimationFrame(() => trigger.current?.focus()); }} />}
             <Dialog onClose={() => closed("missing")} open={dialog === "missing"} title={t("Unity installation required")}>
                 <p>{t("This project requires Unity {version}. No exact matching Unity installation was found.", { version: options?.projectUnityVersion ?? project.unityVersion })}</p>
                 <div className="dialog-actions">

@@ -42,7 +42,8 @@ test("H4 extension pagination keeps loaded cards on failure and retries the same
     await expect(page.getByRole("article")).toHaveCount(1);
     await page.evaluate(() => window.h4Management.failNext("extensions.list", "daemon_unavailable"));
     await page.getByRole("button", { name: "Load more", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Could not load more items");
+    await expect(page.getByRole("button", { name: "Retry loading more", exact: true })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("article", { name: H4_ALPHA, exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Retry loading more", exact: true }).click();
     await expect(page.getByRole("article", { name: H4_BETA, exact: true })).toBeVisible();
@@ -54,7 +55,7 @@ test("H4 extension pagination keeps loaded cards on failure and retries the same
     expect(paged.map((request) => request.params.cursor)).toEqual([`h4-after:${H4_ALPHA}`, `h4-after:${H4_ALPHA}`, `h4-after:${H4_BETA}`]);
 });
 
-test("H4 extension toggle errors stay with the list and successful retry restores its layout", async ({ page }) => {
+test("H4 failed extension toggle retains its state and retries without changing page layout", async ({ page }) => {
     await open(page);
     const card = page.getByRole("article", { name: H4_ALPHA, exact: true });
     const toggle = card.getByRole("switch", { name: "Enabled", exact: true });
@@ -64,15 +65,14 @@ test("H4 extension toggle errors stay with the list and successful retry restore
     await toggle.click();
     await expect(toggle).toBeChecked();
     await expect(toggle).toBeFocused();
-    await expectRequestError(page.getByRole("alert"), "permission_denied");
-    await expect(card.getByRole("alert")).toHaveCount(0);
+    await expect(toggle).toBeEnabled();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     const failed = await card.boundingBox();
     expect(failed!.width).toBe(before!.width);
     expect(failed!.height).toBe(before!.height);
-    expect(await page.getByRole("alert").evaluate((node) => getComputedStyle(node).position)).not.toBe("fixed");
     await page.clock.install();
     await page.clock.fastForward(6000);
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await toggle.click();
     await expect(toggle).not.toBeChecked();
     await expect(card.getByRole("alert")).toHaveCount(0);
@@ -95,13 +95,14 @@ test("H4 install preserves its raw path, reviews expected absence, and follows o
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue(packagePath);
     await modal(page).getByRole("button", { name: "Create install plan", exact: true }).click();
     await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator(".operation-follow")).toContainText(/running/i);
-    await expect(page.getByRole("button", { name: "Install extension", exact: true })).toBeDisabled();
+    await expect(modal(page).locator(".operation-follow")).toContainText(/running/i);
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
+    await expect(page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Install extension", exact: true, includeHidden: true })).toBeDisabled();
     const operationId = await page.evaluate(() => window.h4Management.lastOperationId!);
     await page.evaluate(() => window.h4Management.complete("succeeded"));
+    await expect(modal(page).locator(".operation-follow")).toContainText(/succeeded/i);
+    await modal(page).getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("article", { name: H4_ADDED, exact: true })).toBeVisible();
-    await expect(page.locator(".operation-follow")).toContainText(/succeeded/i);
     await expect(page.getByRole("button", { name: "Install extension", exact: true })).toBeEnabled();
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
     const reads = await requests(page, "operations.get");
@@ -128,10 +129,12 @@ test("H4 install keeps an unknown Apply result visible and never repeats the wri
 test("H4 quarantined extension recovery uses explicit enable and preserves a refusal without granting permissions", async ({ page }) => {
     await open(page, true, "&h4-quarantined=1");
     await expect(page.getByRole("button", { name: "Open Portable UI", exact: true })).toBeDisabled();
-    await expect(page.getByRole("alert")).toContainText("This extension is quarantined");
+    await expect(page.getByText("Quarantine", { exact: true }).locator("..")).toContainText("quarantined");
     await page.evaluate(() => window.h4Management.failNext("extensions.enable", "extension_package_untrusted"));
     await page.getByRole("button", { name: "Recover extension", exact: true }).click();
-    await expectRequestError(page.locator(".reminder[role=alert]").filter({ hasText: requestErrorMessage("extension_package_untrusted") }), "extension_package_untrusted");
+    await expect.poll(() => requests(page, "extensions.enable").then((items) => items.length)).toBe(1);
+    await expect(page.getByRole("button", { name: "Recover extension", exact: true })).toBeEnabled();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open Portable UI", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Recover extension", exact: true }).click();
     await expect(page.getByRole("button", { name: "Recover extension", exact: true })).toHaveCount(0);
@@ -151,15 +154,16 @@ test("H4 uninstall defaults to retaining data and keeps a failed delete-data ope
     await uninstallReview(page, true);
     expect((await requests(page, "extensions.planUninstall"))[1]!.params.dataDisposition).toBe("delete_data");
     await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    await expect(page.locator(".operation-follow")).toContainText(/running/i);
-    await expect(page.getByRole("button", { name: "Uninstall extension", exact: true })).toBeDisabled();
+    await expect(modal(page).locator(".operation-follow")).toContainText(/running/i);
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("button", { name: "Uninstall extension", exact: true, includeHidden: true })).toBeDisabled();
     await page.evaluate(() => window.h4Management.complete("failed", "extension_recovery_required"));
-    await expectRequestError(page.getByRole("alert"), "extension_recovery_required");
-    await expect(page.locator(".operation-follow")).toContainText(/failed/i);
+    await expectRequestError(modal(page).getByRole("alert"), "extension_recovery_required");
+    await expect(modal(page).locator(".operation-follow")).toContainText(/failed/i);
+    await modal(page).getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Extension detail", exact: true })).toBeVisible();
     expect(await requests(page, "extensions.applyUninstall")).toHaveLength(1);
-    await expect(page.getByRole("button", { name: "Uninstall extension", exact: true })).toBeDisabled();
+    await expect(page.getByRole("main").getByRole("button", { name: "Uninstall extension", exact: true, includeHidden: true })).toBeDisabled();
 });
 
 test("H4 successful uninstall returns to the refreshed list instead of showing a missing-detail error", async ({ page }) => {
