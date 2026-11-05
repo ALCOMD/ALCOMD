@@ -186,9 +186,9 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
-/// Atomically moves a completed file without replacing an existing destination.
+/// Atomically moves a file or directory without replacing an existing destination.
 #[cfg(unix)]
-pub fn publish_file_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+pub fn publish_path_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
     rustix::fs::renameat_with(
         rustix::fs::CWD,
         source,
@@ -200,8 +200,8 @@ pub fn publish_file_no_replace(source: &Path, destination: &Path) -> io::Result<
 }
 
 #[cfg(windows)]
-pub fn publish_file_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
-    crate::windows::publish_file_no_replace(source, destination)
+pub fn publish_path_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    crate::windows::publish_path_no_replace(source, destination)
 }
 
 fn invalid(message: &'static str) -> io::Error {
@@ -247,13 +247,38 @@ mod tests {
         let target = root.join("archive.zip");
         std::fs::write(&source, b"new").expect("source");
         std::fs::write(&target, b"existing").expect("target");
-        assert!(publish_file_no_replace(&source, &target).is_err());
+        assert!(publish_path_no_replace(&source, &target).is_err());
         assert_eq!(std::fs::read(&source).expect("source"), b"new");
         assert_eq!(std::fs::read(&target).expect("target"), b"existing");
         std::fs::remove_file(&target).expect("remove target");
-        publish_file_no_replace(&source, &target).expect("publish");
+        publish_path_no_replace(&source, &target).expect("publish");
         assert!(!source.exists());
         assert_eq!(std::fs::read(&target).expect("published"), b"new");
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn publishing_a_directory_never_replaces_an_empty_destination() {
+        let root = fixture();
+        let source = root.join("staging").join("project");
+        let target = root.join("project");
+        std::fs::create_dir_all(&source).expect("staging project");
+        std::fs::write(source.join("contents"), b"new").expect("project contents");
+        std::fs::create_dir(&target).expect("existing empty directory");
+        assert!(publish_path_no_replace(&source, &target).is_err());
+        assert!(source.join("contents").is_file());
+        assert!(
+            std::fs::read_dir(&target)
+                .expect("existing directory")
+                .next()
+                .is_none()
+        );
+        std::fs::remove_dir(&target).expect("release target");
+        publish_path_no_replace(&source, &target).expect("publish");
+        assert_eq!(
+            std::fs::read(target.join("contents")).expect("published project"),
+            b"new"
+        );
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 

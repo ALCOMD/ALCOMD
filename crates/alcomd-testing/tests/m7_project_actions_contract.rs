@@ -15,7 +15,6 @@ const STATE_V11: &str = include_str!("../../../specs/storage/state-v11.md");
 const STATE_V11_MIGRATION: &str =
     include_str!("../../../specs/storage/state-v11-migration.proposal.contract.json");
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/alcomd-rpc-v1.md");
-const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
 const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
 const ACTIVE_UNITY_SCHEMA: &str = include_str!("../../../specs/rpc/m5-unity.schema.json");
 const ACTIVE_UNITY_MIGRATION: &str =
@@ -100,7 +99,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 21;"));
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 23);
 }
 
 #[test]
@@ -463,7 +462,7 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
     assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 21;"));
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 23);
 }
 
 #[test]
@@ -606,7 +605,7 @@ fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection(
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR"));
     assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 21;"));
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 23);
     assert!(ACTIVE_UNITY_MIGRATION.contains("DROP TABLE project_editor_preferences"));
     assert_eq!(
         active_unity["$defs"]["projectUnityLaunchConfig"]["required"],

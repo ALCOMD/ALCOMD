@@ -1,3 +1,4 @@
+import type { ProjectTemplateRecord } from "@alcomd/sdk";
 import { browserCoreEvents, withBrowserCoreEvents } from "./core-events-client";
 import type {
     CandidateChoice,
@@ -23,7 +24,7 @@ import ReactDOM from "react-dom/client";
 import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json" with { type: "json" };
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
-import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult, TemplatePlan, TemplateRecord } from "../../src/core-models";
+import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
@@ -156,9 +157,8 @@ const SUPPORTED_CAPABILITIES = [
     "repositories.registry.v1",
     RPC_CAPABILITIES.repositoriesListFiles,
     "state.check.v1",
-    "templates.create-project.v1",
-    "templates.manage.v1",
-    "templates.read.v1",
+    "projects.create.v1",
+    "projectTemplates.v1",
     "unity.hub.open.v1",
     "unity.launch.v1",
     "unity.manage.v1",
@@ -171,7 +171,6 @@ const CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING = [
     RPC_CAPABILITIES.extensionsLifecycle,
     "projects.read.v1",
     "repositories.read.v1",
-    "templates.read.v1",
     "unity.read.v1"
 ] as const;
 
@@ -281,11 +280,10 @@ class DeterministicGuiClient implements GuiRpcClient {
     private lifecycleRepositories = new Map<string, RepositorySnapshot>();
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
-    private templateTasks = new Map<string, { operation: Operation; result: object; template?: TemplateRecord; project?: ReturnType<typeof project> }>();
-    private templatePlans = new Map<string, TemplatePlan>();
-    private builtinTemplate: TemplateRecord = template();
-    private importedTemplates: TemplateRecord[] = query.has("template-existing") ? [{ ...template(), templateId: USER_TEMPLATE_ID, sourceKind: "user", displayName: "Existing fixture" }] : [];
-    private templateOperationReads = 0;
+    private projectTemplates = [template(), template(true), ...(query.has("template-existing")
+        ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "Avatar starter" : "Existing fixture")] : [])];
+    private templateRevision = 4;
+    private creationRequests = new Map<string, { fingerprint: string; projectId: string; operationId: string }>();
 
     private connectionRestored = false;
 
@@ -297,16 +295,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("test-resource-repository-advance", () => {
             for (const [id, record] of this.lifecycleRepositories) this.lifecycleRepositories.set(id, { ...record, revision: (record.revision ?? 0) + 1 });
         });
-        window.addEventListener("test-template-finish", ((event: CustomEvent<{ operationId: string; state?: string }>) => {
-            const task = this.templateTasks.get(event.detail.operationId);
-            if (task === undefined) return;
-            const state = event.detail.state ?? "succeeded";
-            task.operation = { ...task.operation, state, revision: 4, ...(state === "succeeded" ? { result: task.result } : {}) };
-            browserCoreEvents.emit("operation", task.operation.operationId, `operation.${state}`, task.operation.revision);
-            if (task.operation.state !== "succeeded") return;
-            if (task.template !== undefined) this.importedTemplates = [...this.importedTemplates.filter((item) => item.templateId !== task.template!.templateId), task.template];
-            if (task.project !== undefined) this.createdProjects.push(task.project);
-        }) as EventListener);
+        window.addEventListener("test-template-advance", () => {
+            this.projectTemplates = this.projectTemplates.map((template) => template.declaration.id === USER_TEMPLATE_ID
+                ? { ...template, revision: ++this.templateRevision } : template);
+            browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", this.templateRevision);
+        });
         window.addEventListener("test-template-list-readable", () => { this.templatesUnavailable = false; });
         window.addEventListener("test-hub-default-ready", () => { this.hubDefaultReady = true; });
         window.addEventListener("test-hub-read-error", () => { this.hubReadFailurePending = true; });
@@ -351,15 +344,15 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
+                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v1"))
         });
     }
 
-    private beginOperation(kind = "packages.apply", knownId?: string) {
+    private beginOperation(kind = "packages.apply", knownId?: string, createdProject?: ReturnType<typeof project>) {
         const operationId = knownId ?? (this.operationSequence++ === 0 ? OPERATION_ID : crypto.randomUUID());
         const operation: Operation = { ...runningOperation(), operationId, kind, revision: 1 };
         this.genericTasks.set(operationId, operation);
-        const project = this.pendingProject;
+        const project = createdProject ?? this.pendingProject;
         const deleting = this.pendingDeleteProjectId;
         const migration = this.pendingMigrationTarget;
         browserCoreEvents.emit("operation", operationId, "operation.created", 1);
@@ -373,7 +366,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ...(state === "succeeded" && project ? { result: { projectId: project.projectId, revision: 1 } } : {}),
                 ...(state === "failed" ? { errorCode: "package_archive_invalid" } : {}) };
             this.genericTasks.set(operationId, next);
-            if (project) browserCoreEvents.emit("project", project.projectId, "project.registered", project.revision);
+            if (state === "succeeded" && project) browserCoreEvents.emit("project", project.projectId, "project.registered", project.revision);
             if (deleting) browserCoreEvents.emit("project", deleting, "project.directory_deleted", 3);
             if (migration) browserCoreEvents.emit("project", PROJECT_ID, "project.unity_changed", this.currentProjectRevision);
             browserCoreEvents.emit("operation", operationId, `operation.${state}`, next.revision);
@@ -385,8 +378,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     operationsList(cursor?: Parameters<GuiRpcClient["operationsList"]>[0], activeOnly = false): ReturnType<GuiRpcClient["operationsList"]> {
-        let operations = query.has("h3") ? [window.h3Operation] : query.has("template-tasks")
-            ? [...this.templateTasks.values()].map((task) => task.operation) : [...this.genericTasks.values()];
+        let operations = query.has("h3") ? [window.h3Operation] : [...this.genericTasks.values()];
         const activeCount = operations.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state)).length;
         if (activeOnly) operations = operations.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state));
         if (query.has("h3")) {
@@ -403,13 +395,6 @@ class DeterministicGuiClient implements GuiRpcClient {
             const reads = window.h3Requests.filter((request) => request.method === "operations.get").length;
             if (String(reads) === query.get("h3-read-error-at") || reads <= Number(query.get("h3-read-error-until") ?? "0")) return Promise.reject({ code: "daemon_unavailable" });
             return this.value({ ...window.h3Operation, operationId, ...(window.h3Operation.state === "succeeded" ? { result: this.pendingProject === undefined ? { backupId: BACKUP_ID } : { projectId: this.pendingProject.projectId } } : {}) });
-        }
-        const task = this.templateTasks.get(operationId);
-        if (task !== undefined) {
-            window.templateRequests.push({ method: "operations.get", params: { operationId } });
-            this.templateOperationReads++;
-            if (query.has("template-first-read-error") && this.templateOperationReads <= 2) return Promise.reject({ code: "daemon_unavailable" });
-            return this.value(task.operation);
         }
         return this.value(this.genericTasks.get(operationId) ?? runningOperation());
     }
@@ -538,13 +523,6 @@ class DeterministicGuiClient implements GuiRpcClient {
             }
             return this.value({ projects });
         }
-        if (query.has("template-tasks")) window.templateRequests.push({ method: "projects.list", params: cursor ?? {} });
-        if (query.has("template-project-pages")) {
-            const source = (index: number) => ({ ...project(`00000000-0000-4000-8000-${String(2000 + index).padStart(12, "0")}`, `Source ${String(index).padStart(3, "0")}`), revision: 7 });
-            return cursor === undefined
-                ? this.value({ projects: Array.from({ length: 100 }, (_, index) => source(index + 1)), nextCursor: { registeredAtMs: 1_690_000_000_000, id: source(100).projectId } })
-                : this.value({ projects: [source(101)] });
-        }
         if (query.has("projectModified")) {
             const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
             const projects = [
@@ -578,7 +556,6 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
         const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
-        if (query.has("template-project-pages")) value.revision = 7;
         if (this.projectLaunchTimes.has(projectId)) value.lastModifiedAtMs = this.projectLaunchTimes.get(projectId)!;
         if (query.get("twoInstalled")) {
             value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
@@ -1021,100 +998,80 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: this.beginOperation(), replayed: false });
     }
 
-    async templatesList(cursor?: string): ReturnType<GuiRpcClient["templatesList"]> {
-        window.templateRequests.push({ method: "templates.list", params: cursor === undefined ? {} : { cursor } });
+async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTemplatesList"]> {
+        window.templateRequests.push({ method: "projectTemplates.list", params: cursor === undefined ? {} : { cursor } });
         if (this.templatesUnavailable) throw { code: "internal_error" };
-        if (query.has("holdTemplates")) {
+        if (query.has("holdTemplates") && window.heldTemplateReads === 0) {
             window.heldTemplateReads += 1;
             await new Promise<void>((resolve) => window.addEventListener("test-templates-ready", () => resolve(), { once: true }));
         }
         if (query.has("template-pages")) {
             if (cursor === undefined) return this.value({ templates: Array.from({ length: 100 }, (_, index) => catalogTemplate(index + 1)), nextCursor: TEMPLATE_PAGE_CURSOR });
-            if (cursor !== TEMPLATE_PAGE_CURSOR) throw { code: "invalid_params" };
+            if (cursor !== TEMPLATE_PAGE_CURSOR) throw { code: "invalid_request" };
             this.templatePageReads += 1;
             if (query.has("template-page-error") && this.templatePageReads === 1) throw { code: "daemon_unavailable" };
-            if (query.has("hold-template-page")) await new Promise<void>((resolve) => window.addEventListener("test-template-page-ready", () => resolve(), { once: true }));
-            const next = await this.value({ templates: [catalogTemplate(101)] });
+            if (query.has("hold-template-page") && this.templatePageReads === 1) {
+                await new Promise<void>((resolve) => window.addEventListener("test-template-page-ready", () => resolve(), { once: true }));
+            }
             window.templatePageCompletions += 1;
-            return next;
+            return this.value({ templates: [catalogTemplate(101)] });
         }
-        return this.value({ templates: this.mode === "empty" ? [] : [this.builtinTemplate, ...this.importedTemplates] });
-    }
-    templateGet(templateId: string): ReturnType<GuiRpcClient["templateGet"]> {
-        const result = [this.builtinTemplate, ...this.importedTemplates].find((item) => item.templateId === templateId);
-        return result === undefined ? Promise.reject({ code: "template_not_found" }) : this.value({ template: result, replayed: false });
-    }
-    templateInspectBundle(): ReturnType<GuiRpcClient["templateInspectBundle"]> {
-        const same = query.has("template-same-digest");
-        return this.value({ formatVersion: 1, templateId: query.has("template-builtin-import") ? TEMPLATE_ID : USER_TEMPLATE_ID, templateVersion: same ? "1.0.0" : "1.1.0", displayName: same ? "Existing fixture" : "Imported fixture", provenance: "authored", bundleSha256: same ? HASH : NEW_HASH, manifestFingerprint: same ? HASH : NEW_HASH, payloadTreeSha256: HASH, entryCount: 4, totalBytes: 4096 });
-    }
-    templatePlanImport(bundlePath: string, override: boolean, expectedRevision: number): ReturnType<GuiRpcClient["templatePlanImport"]> {
-        window.templateRequests.push({ method: "templates.planImport", params: { bundlePath, override, expectedRevision } });
-        if (query.has("template-builtin-import")) return Promise.reject({ code: "template_builtin_immutable" });
-        const existing = this.importedTemplates.find((item) => item.templateId === USER_TEMPLATE_ID);
-        const same = query.has("template-same-digest");
-        if ((existing === undefined && override) || (existing !== undefined && !same && !override)) return Promise.reject({ code: "template_conflict" });
-        return this.saveTemplatePlan({ ...templatePlan(existing === undefined ? "import" : "override"), templateId: USER_TEMPLATE_ID, expectedRevision, sourceFilesystemIdentity: "opaque-selected-bundle", oldBundleSha256: existing?.bundleSha256 ?? null, newBundleSha256: same ? HASH : NEW_HASH, manifestFingerprint: same ? HASH : NEW_HASH });
-    }
-    templateApplyImport(planId: string): ReturnType<GuiRpcClient["templateApplyImport"]> { return this.acceptTemplatePlan(planId, "import"); }
-    async templatePlanDerive(params: Parameters<GuiRpcClient["templatePlanDerive"]>[0]): ReturnType<GuiRpcClient["templatePlanDerive"]> {
-        window.templateRequests.push({ method: "templates.planDerive", params });
-        const plan = await this.saveTemplatePlan({ ...templatePlan("derive"), templateId: params.templateId, sourceProjectId: params.projectId, sourceProjectRevision: params.expectedProjectRevision, sourceProjectFingerprint: HASH, includePolicyVersion: 1 });
-        if (query.has("hold-template-derive-plan")) await new Promise<void>((resolve) => window.addEventListener("test-template-derive-plan-ready", () => resolve(), { once: true }));
-        return plan;
-    }
-    templateApplyDerive(planId: string): ReturnType<GuiRpcClient["templateApplyDerive"]> { return this.acceptTemplatePlan(planId, "derive"); }
-    templateExport(templateId: string, expectedRevision: number, targetPath: string): ReturnType<GuiRpcClient["templateExport"]> {
-        window.templateRequests.push({ method: "templates.export", params: { templateId, expectedRevision, targetPath } });
-        return this.value({ exported: true });
-    }
-    templateSetFavorite(templateId: string, favorite: boolean, expectedRevision: number): ReturnType<GuiRpcClient["templateSetFavorite"]> {
-        window.templateRequests.push({ method: "templates.setFavorite", params: { templateId, favorite, expectedRevision } });
-        const existing = [this.builtinTemplate, ...this.importedTemplates].find((item) => item.templateId === templateId);
-        if (existing === undefined) return Promise.reject({ code: "template_not_found" });
-        if (existing.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
-        const next = { ...existing, favorite, revision: expectedRevision + 1 };
-        if (templateId === TEMPLATE_ID) this.builtinTemplate = next;
-        else this.importedTemplates = this.importedTemplates.map((item) => item.templateId === templateId ? next : item);
-        return this.value({ template: next, replayed: false });
-    }
-    templateRemove(templateId: string, expectedRevision: number): ReturnType<GuiRpcClient["templateRemove"]> {
-        window.templateRequests.push({ method: "templates.remove", params: { templateId, expectedRevision } });
-        if (templateId === TEMPLATE_ID) return Promise.reject({ code: "template_builtin_immutable" });
-        this.importedTemplates = this.importedTemplates.filter((item) => item.templateId !== templateId);
-        return this.value({ templateId, removed: true, replayed: false });
-    }
-    async templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string, unityVersion: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
-        window.templateRequests.push({ method: "templates.planCreateProject", params: { templateId: _templateId, expectedTemplateRevision: _expectedTemplateRevision, targetParent: _targetParent, targetLeaf, unityVersion } });
-        if (query.has("holdCreatePlan")) await new Promise<void>((resolve) => window.addEventListener("test-create-plan-ready", () => resolve(), { once: true }));
-        if (this.mode === "create-error") return Promise.reject({ code: "template_plan_stale" });
-        this.pendingProject = project(query.has("template-tasks") ? `00000000-0000-4000-8000-${String(7000 + this.templatePlans.size).padStart(12, "0")}` : CREATED_PROJECT_ID, targetLeaf);
-        this.pendingProject.unityVersion = unityVersion;
-        return this.saveTemplatePlan({ ...templatePlan("create_project"), templateId: _templateId, templateRevision: _expectedTemplateRevision, unityVersion, projectVersionSha256: HASH, bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, parentFilesystemIdentity: "opaque-parent", targetLeaf, targetMustBeAbsent: true, packageChangeSetFingerprint: HASH, resourceDigests: [], projectSummaryFingerprint: HASH });
-    }
-    templateApplyCreateProject(planId: string): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { return this.acceptTemplatePlan(planId, "create_project"); }
-
-    private saveTemplatePlan(plan: TemplatePlan): Promise<TemplatePlan> {
-        const next: TemplatePlan = { ...plan, planId: `00000000-0000-4000-8000-${String(4000 + this.templatePlans.size).padStart(12, "0")}` };
-        if (query.get("template-invalid-plan") === "import-hash") next.newBundleSha256 = HASH;
-        else if (query.get("template-invalid-plan") === "derive-revision") next.sourceProjectRevision = "2";
-        else if (query.has("template-invalid-plan")) delete next.targetMustBeAbsent;
-        this.templatePlans.set(next.planId, next);
-        return this.value(next);
+        return this.value({ templates: this.mode === "empty" ? [] : this.projectTemplates });
     }
 
-    private async acceptTemplatePlan(planId: string, action: string) {
-        window.templateRequests.push({ method: `templates.apply${action === "create_project" ? "CreateProject" : action === "derive" ? "Derive" : "Import"}`, params: { planId } });
-        if (query.has("template-apply-error")) throw { code: "template_plan_stale" };
-        if (!query.has("template-tasks")) return this.value({ operationId: this.beginOperation("templates." + action), replayed: false });
-        const plan = this.templatePlans.get(planId)!;
-        const operationId = `00000000-0000-4000-8000-${String(5000 + this.templateTasks.size).padStart(12, "0")}`;
-        const resultTemplate = { ...template(), templateId: String(plan.templateId), sourceKind: "user", displayName: action === "derive" ? "Derived fixture" : "Imported fixture", provenance: action === "derive" ? "derived" : "authored", templateVersion: "1.1.0", bundleSha256: NEW_HASH, manifestFingerprint: NEW_HASH, revision: typeof plan.expectedRevision === "number" ? plan.expectedRevision + 1 : 1 };
-        this.templateTasks.set(operationId, { operation: { ...runningOperation(), operationId, kind: `templates.${action === "create_project" ? "create-project" : action}` }, result: action === "create_project" ? query.has("template-result-missing") ? {} : { projectId: this.pendingProject!.projectId, revision: 1 } : { templateId: resultTemplate.templateId, revision: resultTemplate.revision }, ...(action === "create_project" ? { project: this.pendingProject } : { template: resultTemplate }) });
-        browserCoreEvents.emit("operation", operationId, "operation.created", 3);
-        if (query.has("template-apply-unknown")) throw { code: "daemon_unavailable" };
-        if (query.has("hold-template-apply")) await new Promise<void>((resolve) => window.addEventListener("test-template-apply-ready", () => resolve(), { once: true }));
-        return this.value({ operationId, replayed: false });
+    projectTemplatesSave(params: Parameters<GuiRpcClient["projectTemplatesSave"]>[0]): ReturnType<GuiRpcClient["projectTemplatesSave"]> {
+        window.templateRequests.push({ method: "projectTemplates.save", params: structuredClone(params) });
+        const { declaration, expectedRevision } = params;
+        const existing = this.projectTemplates.find((item) => item.declaration.id === declaration.id);
+        if (expectedRevision === undefined && existing !== undefined) {
+            return JSON.stringify(existing.declaration) === JSON.stringify(declaration)
+                ? this.value({ template: existing }) : Promise.reject({ code: "template_conflict" });
+        }
+        if (expectedRevision !== undefined && existing?.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
+        if (existing?.locked) return Promise.reject({ code: "template_builtin_immutable" });
+        const template = { declaration, revision: ++this.templateRevision, locked: false };
+        this.projectTemplates = [...this.projectTemplates.filter((item) => item.declaration.id !== declaration.id), template];
+        browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", template.revision);
+        return this.value({ template });
+    }
+
+    projectTemplatesRemove(params: Parameters<GuiRpcClient["projectTemplatesRemove"]>[0]): ReturnType<GuiRpcClient["projectTemplatesRemove"]> {
+        window.templateRequests.push({ method: "projectTemplates.remove", params });
+        const existing = this.projectTemplates.find((item) => item.declaration.id === params.id);
+        if (existing?.revision !== params.expectedRevision) return Promise.reject({ code: "revision_conflict" });
+        if (existing.locked) return Promise.reject({ code: "template_builtin_immutable" });
+        this.projectTemplates = this.projectTemplates.filter((item) => item !== existing);
+        const revision = ++this.templateRevision;
+        browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", revision);
+        return this.value({ id: params.id, revision });
+    }
+
+    async projectsCreate(params: Parameters<GuiRpcClient["projectsCreate"]>[0]): ReturnType<GuiRpcClient["projectsCreate"]> {
+        window.templateRequests.push({ method: "projects.create", params: structuredClone(params) });
+        const { idempotencyKey, ...input } = params;
+        const fingerprint = JSON.stringify(input);
+        const previous = this.creationRequests.get(idempotencyKey);
+        if (previous !== undefined) {
+            if (previous.fingerprint !== fingerprint) throw { code: "idempotency_conflict" };
+            return this.value({ operationId: previous.operationId, projectId: previous.projectId, replayed: true });
+        }
+        if (query.has("hold-create-request")) {
+            await new Promise<void>((resolve) => window.addEventListener("test-create-request-ready", () => resolve(), { once: true }));
+        }
+        if (this.mode === "create-error") throw { code: "project_create_target_exists" };
+        if (input.template !== undefined) {
+            const requested = input.template;
+            const record = this.projectTemplates.find(({ declaration }) => declaration.id === requested.id)
+                ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ declaration }) => declaration.id === requested.id) : undefined);
+            if (record?.revision !== requested.revision) throw { code: "revision_conflict" };
+        }
+        const projectId = this.creationRequests.size === 0 ? CREATED_PROJECT_ID : crypto.randomUUID();
+        const created = project(projectId, input.name);
+        created.unityVersion = input.unityVersion;
+        const operationId = this.beginOperation("projects.create", undefined, created);
+        this.creationRequests.set(idempotencyKey, { fingerprint, projectId, operationId });
+        if (query.has("create-unknown")) throw { code: "daemon_unavailable" };
+        return this.value({ operationId, projectId, replayed: false });
     }
 
     async backupsList(projectId?: string, cursor?: string): ReturnType<GuiRpcClient["backupsList"]> {
@@ -1193,8 +1150,10 @@ const LOCAL_REPOSITORY_ID = "00000000-0000-4000-8000-000000000112";
 const USER_PACKAGE_ID = "00000000-0000-4000-8000-000000000113";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
 const MIGRATION_INSTALLATION_ID = "00000000-0000-4000-8000-000000000114";
-const TEMPLATE_ID = "00000000-0000-4000-8000-000000000301";
-const USER_TEMPLATE_ID = "00000000-0000-4000-8000-000000000302";
+const TEMPLATE_ID = "com.vrclearn.alcomd.templates.vrchat.avatars";
+const WORLD_TEMPLATE_ID = "com.vrclearn.alcomd.templates.vrchat.worlds";
+const USER_TEMPLATE_ID = "com.example.fixture";
+const TEMPLATE_EVENT_ID = "00000000-0000-4000-8000-000000000301";
 const NEW_HASH = "b".repeat(64);
 const TEMPLATE_PAGE_CURSOR = "opaque template cursor:100/+=";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
@@ -1215,12 +1174,37 @@ function installation() { return { installationId: INSTALLATION_ID, executablePa
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
-function template() { return { unity: { major: 2022, minor: 3 }, templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "authored", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
-function catalogTemplate(index: number) { return { ...template(), templateId: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`, sourceKind: "user", provenance: "authored", displayName: `Catalog template ${String(index).padStart(3, "0")}` }; }
+function template(worlds = false): ProjectTemplateRecord {
+    const packageId = worlds ? "com.vrchat.worlds" : "com.vrchat.avatars";
+    return {
+        declaration: {
+            id: worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID,
+            name: worlds ? "World starter" : "Avatar starter",
+            unity: { series: ["2022.3"], presets: ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"] },
+            dependencies: [{ packageId, versionRange: "*" }],
+            constraints: ["com.vrchat.base", packageId].map((id) => ({ unityVersion: "2019.4.31f1", packageId: id, versionRange: "<=3.4.2" }))
+        },
+        revision: worlds ? 3 : 2,
+        locked: true
+    };
+}
+
+function userTemplate(id: string, name: string): ProjectTemplateRecord {
+    return {
+        declaration: { id, name, unity: { series: ["2022.3"], presets: ["2022.3.22f1", "2022.3.6f1"] }, dependencies: [], constraints: [] },
+        revision: 4,
+        locked: false
+    };
+}
+
+function catalogTemplate(index: number) {
+    const suffix = String(index).padStart(3, "0");
+    return userTemplate("com.example.catalog-" + suffix, "Catalog template " + suffix);
+}
+
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 3, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
-function templatePlan(action: string) { return { planId: PLAN_ID, action, state: "unapplied", planFingerprint: HASH }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, trustDecision: "official", desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }
 function extensionPlan(action: string) { return { planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, trustDecision: "official", dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1", requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] }; }
 

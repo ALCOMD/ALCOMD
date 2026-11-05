@@ -321,6 +321,18 @@ fn acceptance_target(
     request: &str,
 ) -> Result<AcceptedLog, StoreError> {
     let request: serde_json::Value = serde_json::from_str(request).map_err(failure)?;
+    if action == "projects.create" {
+        let name = request.get("name").and_then(serde_json::Value::as_str);
+        let parent = request
+            .get("targetParent")
+            .and_then(serde_json::Value::as_str);
+        return Ok(AcceptedLog {
+            target: parent
+                .zip(name)
+                .map(|(parent, name)| destination_target(parent, name)),
+            ..AcceptedLog::default()
+        });
+    }
     let plan = request.get("planId").and_then(serde_json::Value::as_str);
     let mut planned_action = None;
     if let Some(id) = plan {
@@ -595,8 +607,7 @@ mod tests {
     fn state21_upgrade_preserves_preexisting_state20_and_does_not_create_old_log_facts() {
         let directory = crate::events_tests::Directory::new();
         let path = directory.database();
-        let mut connection =
-            crate::sqlite::initialize_connection(&path).expect("isolated database");
+        let mut connection = crate::sqlite::state21_fixture(&path);
         let owner = PrincipalId::local_owner();
         let operation = crate::sqlite::create_state_check(
             &mut connection,

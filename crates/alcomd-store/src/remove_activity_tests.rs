@@ -84,7 +84,7 @@ fn legacy_fixture(connection: &mut Connection) {
 }
 
 fn business_rows(connection: &Connection) -> BTreeMap<String, Vec<Vec<Value>>> {
-    let mut tables = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('activities','operation_log_entries') ORDER BY name").expect("tables");
+    let mut tables = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('activities','operation_log_entries','templates','template_plans','project_templates','project_template_revision') ORDER BY name").expect("tables");
     let names = tables
         .query_map([], |row| row.get::<_, String>(0))
         .expect("names")
@@ -137,8 +137,7 @@ fn new_database_has_no_history_table_or_triggers() {
 #[test]
 fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence() {
     let fixture = Fixture::new();
-    let mut connection =
-        crate::sqlite::initialize_connection(&fixture.database()).expect("database");
+    let mut connection = crate::sqlite::state21_fixture(&fixture.database());
     legacy_fixture(&mut connection);
     let before = business_rows(&connection);
     let watermark: i64 = connection
@@ -193,8 +192,7 @@ fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence()
 #[test]
 fn deleting_the_last_history_event_does_not_reset_the_sequence() {
     let fixture = Fixture::new();
-    let mut connection =
-        crate::sqlite::initialize_connection(&fixture.database()).expect("database");
+    let mut connection = crate::sqlite::state21_fixture(&fixture.database());
     legacy_fixture(&mut connection);
     let watermark: i64 = connection
         .query_row(
@@ -232,8 +230,7 @@ fn deleting_the_last_history_event_does_not_reset_the_sequence() {
 #[test]
 fn failure_rolls_back_history_removal_and_preserves_original_version() {
     let fixture = Fixture::new();
-    let mut connection =
-        crate::sqlite::initialize_connection(&fixture.database()).expect("database");
+    let mut connection = crate::sqlite::state21_fixture(&fixture.database());
     legacy_fixture(&mut connection);
     connection
         .execute_batch("CREATE TABLE events_before_activity_removal(sentinel TEXT);")

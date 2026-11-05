@@ -126,12 +126,6 @@ enum Command {
         #[command(subcommand)]
         command: UnityCommand,
     },
-    /// Inspect and manage native ALCOMD Template bundles.
-    #[command(visible_alias = "templates")]
-    Template {
-        #[command(subcommand)]
-        command: TemplateCommand,
-    },
     /// List, inspect, and create managed native Backup archives.
     Backup {
         #[command(subcommand)]
@@ -187,15 +181,15 @@ enum ProjectCommand {
         idempotency_key: String,
     },
     Create {
-        #[arg(long)]
-        template: String,
         target_parent: PathBuf,
-        target_leaf: String,
+        name: String,
         #[arg(long)]
         unity_version: String,
-        #[arg(long)]
-        expected_template_revision: u64,
-        #[arg(long)]
+        #[arg(long, requires = "template_revision")]
+        template_id: Option<String>,
+        #[arg(long, requires = "template_id")]
+        template_revision: Option<u64>,
+        #[arg(long, conflicts_with = "dry_run")]
         idempotency_key: String,
     },
     DeleteDirectory {
@@ -425,64 +419,6 @@ enum UnityCommand {
     },
 }
 
-#[derive(Debug, Subcommand)]
-enum TemplateCommand {
-    List {
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    Get {
-        template_id: String,
-    },
-    Inspect {
-        bundle_path: PathBuf,
-    },
-    Import {
-        bundle_path: PathBuf,
-        #[arg(long)]
-        override_existing: bool,
-        #[arg(long, default_value_t = 0)]
-        expected_revision: u64,
-        #[arg(long)]
-        idempotency_key: String,
-    },
-    Derive {
-        project_id: String,
-        template_id: String,
-        #[arg(long)]
-        expected_project_revision: u64,
-        #[arg(long)]
-        template_version: String,
-        #[arg(long)]
-        display_name: String,
-        #[arg(long)]
-        description: Option<String>,
-        #[arg(long)]
-        idempotency_key: String,
-    },
-    Export {
-        template_id: String,
-        target_path: PathBuf,
-        #[arg(long)]
-        expected_revision: u64,
-    },
-    Favorite {
-        template_id: String,
-        favorite: bool,
-        #[arg(long)]
-        expected_revision: u64,
-        #[arg(long)]
-        idempotency_key: String,
-    },
-    Remove {
-        template_id: String,
-        #[arg(long)]
-        expected_revision: u64,
-        #[arg(long)]
-        idempotency_key: String,
-    },
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum BackupCompression {
     Store,
@@ -693,48 +629,34 @@ async fn execute(
                 }
             }
             ProjectCommand::Create {
-                template,
+                name,
                 target_parent,
-                target_leaf,
                 unity_version,
-                expected_template_revision,
+                template_id,
+                template_revision,
                 idempotency_key,
             } => {
                 let target_parent =
                     absolute_path(target_parent).map_err(alcomd_client::ClientError::Transport)?;
-                let plan = client
-                    .template_plan_create_project(
-                        alcomd_protocol::TemplatePlanCreateProjectParams {
-                            template_id: template,
-                            expected_template_revision,
-                            target_parent,
-                            target_leaf,
-                            unity_version,
-                        },
-                    )
+                let template = template_id
+                    .zip(template_revision)
+                    .map(|(id, revision)| alcomd_protocol::ProjectTemplateRef { id, revision });
+                let accepted = client
+                    .projects_create(alcomd_protocol::ProjectsCreateParams {
+                        name,
+                        target_parent,
+                        unity_version,
+                        idempotency_key,
+                        template,
+                    })
                     .await?;
-                if options.dry_run {
-                    serde_json::to_value(plan)
+                if options.no_wait {
+                    serde_json::to_value(accepted)
                 } else {
-                    confirm_high_impact(options)?;
-                    let accepted = client
-                        .template_apply_create_project(alcomd_protocol::TemplateApplyPlanParams {
-                            plan_id: plan.plan_id,
-                            idempotency_key,
-                        })
-                        .await?;
-                    if options.no_wait {
-                        serde_json::to_value(accepted)
-                    } else {
-                        serde_json::to_value(
-                            wait_for_operation(
-                                &mut client,
-                                accepted.operation_id,
-                                options.output_mode,
-                            )
+                    serde_json::to_value(
+                        wait_for_operation(&mut client, accepted.operation_id, options.output_mode)
                             .await?,
-                        )
-                    }
+                    )
                 }
             }
             ProjectCommand::DeleteDirectory { project_id } => {
@@ -1192,154 +1114,6 @@ async fn execute(
                     .await?,
             ),
         },
-        Command::Template { command } => match command {
-            TemplateCommand::List { limit } => serde_json::to_value(
-                client
-                    .templates_list(alcomd_protocol::TemplatesListParams {
-                        cursor: None,
-                        limit,
-                    })
-                    .await?,
-            ),
-            TemplateCommand::Get { template_id } => {
-                serde_json::to_value(client.template_get(template_id).await?)
-            }
-            TemplateCommand::Inspect { bundle_path } => {
-                let bundle_path =
-                    absolute_path(bundle_path).map_err(alcomd_client::ClientError::Transport)?;
-                serde_json::to_value(client.template_inspect_bundle(bundle_path).await?)
-            }
-            TemplateCommand::Import {
-                bundle_path,
-                override_existing,
-                expected_revision,
-                idempotency_key,
-            } => {
-                let bundle_path =
-                    absolute_path(bundle_path).map_err(alcomd_client::ClientError::Transport)?;
-                let plan = client
-                    .template_plan_import(alcomd_protocol::TemplatePlanImportParams {
-                        bundle_path,
-                        override_existing,
-                        expected_revision,
-                    })
-                    .await?;
-                if options.dry_run {
-                    serde_json::to_value(plan)
-                } else {
-                    confirm_high_impact(options)?;
-                    let accepted = client
-                        .template_apply_import(alcomd_protocol::TemplateApplyPlanParams {
-                            plan_id: plan.plan_id,
-                            idempotency_key,
-                        })
-                        .await?;
-                    if options.no_wait {
-                        serde_json::to_value(accepted)
-                    } else {
-                        serde_json::to_value(
-                            wait_for_operation(
-                                &mut client,
-                                accepted.operation_id,
-                                options.output_mode,
-                            )
-                            .await?,
-                        )
-                    }
-                }
-            }
-            TemplateCommand::Derive {
-                project_id,
-                template_id,
-                expected_project_revision,
-                template_version,
-                display_name,
-                description,
-                idempotency_key,
-            } => {
-                let plan = client
-                    .template_plan_derive(alcomd_protocol::TemplatePlanDeriveParams {
-                        project_id,
-                        expected_project_revision,
-                        template_id,
-                        template_version,
-                        display_name,
-                        description,
-                    })
-                    .await?;
-                if options.dry_run {
-                    serde_json::to_value(plan)
-                } else {
-                    confirm_high_impact(options)?;
-                    let accepted = client
-                        .template_apply_derive(alcomd_protocol::TemplateApplyPlanParams {
-                            plan_id: plan.plan_id,
-                            idempotency_key,
-                        })
-                        .await?;
-                    if options.no_wait {
-                        serde_json::to_value(accepted)
-                    } else {
-                        serde_json::to_value(
-                            wait_for_operation(
-                                &mut client,
-                                accepted.operation_id,
-                                options.output_mode,
-                            )
-                            .await?,
-                        )
-                    }
-                }
-            }
-            TemplateCommand::Export {
-                template_id,
-                target_path,
-                expected_revision,
-            } => {
-                let target_path =
-                    absolute_path(target_path).map_err(alcomd_client::ClientError::Transport)?;
-                serde_json::to_value(
-                    client
-                        .template_export(alcomd_protocol::TemplateExportParams {
-                            template_id,
-                            expected_revision,
-                            target_path,
-                        })
-                        .await?,
-                )
-            }
-            TemplateCommand::Favorite {
-                template_id,
-                favorite,
-                expected_revision,
-                idempotency_key,
-            } => serde_json::to_value(
-                client
-                    .template_set_favorite(alcomd_protocol::TemplateSetFavoriteParams {
-                        template_id,
-                        favorite,
-                        expected_revision,
-                        idempotency_key,
-                    })
-                    .await?,
-            ),
-            TemplateCommand::Remove {
-                template_id,
-                expected_revision,
-                idempotency_key,
-            } => {
-                confirm_high_impact(options)?;
-                serde_json::to_value(
-                    client
-                        .template_remove(alcomd_protocol::TemplateRemoveParams {
-                            template_id,
-                            expected_revision,
-                            idempotency_key,
-                        })
-                        .await?,
-                )
-            }
-        },
         Command::Backup { command } => match command {
             BackupCommand::List {
                 project_id,
@@ -1490,16 +1264,6 @@ impl Command {
                 UnityCommand::WriterState { .. } => "unity writer-state",
                 UnityCommand::Launch { .. } => "unity launch",
                 UnityCommand::LaunchOptions { .. } => "unity launch-options",
-            },
-            Self::Template { command } => match command {
-                TemplateCommand::List { .. } => "template list",
-                TemplateCommand::Get { .. } => "template get",
-                TemplateCommand::Inspect { .. } => "template inspect",
-                TemplateCommand::Import { .. } => "template import",
-                TemplateCommand::Derive { .. } => "template derive",
-                TemplateCommand::Export { .. } => "template export",
-                TemplateCommand::Favorite { .. } => "template favorite",
-                TemplateCommand::Remove { .. } => "template remove",
             },
             Self::Backup { command } => match command {
                 BackupCommand::List { .. } => "backup list",
@@ -1794,8 +1558,7 @@ fn output_error_exit(result: io::Result<()>) -> ExitCode {
 }
 
 fn write_completion(shell: CompletionShell) -> ExitCode {
-    const COMMANDS: &str =
-        "system operation project repository package unity template backup completion";
+    const COMMANDS: &str = "system operation project repository package unity backup completion";
     let script = match shell {
         CompletionShell::Bash => format!("complete -W '{COMMANDS}' alcomd-cli\n"),
         CompletionShell::Zsh => {
@@ -1813,31 +1576,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn project_create_requires_explicit_complete_version_argument() {
+    fn project_create_requires_a_version_and_supports_no_template() {
         let base = [
             "alcomd-cli",
             "project",
             "create",
-            "--template",
-            "00000000-0000-4000-8000-000000000001",
             ".",
             "Created",
-            "--expected-template-revision",
-            "1",
             "--idempotency-key",
             "create",
         ];
         assert!(Arguments::try_parse_from(base).is_err());
-        let parsed =
-            Arguments::try_parse_from(base.into_iter().chain(["--unity-version", "2022.3.22f1"]))
-                .expect("explicit creation version");
+        let arguments = base.into_iter().chain(["--unity-version", "2022.3.22f1"]);
+        let parsed = Arguments::try_parse_from(arguments.clone()).expect("standalone creation");
         let Command::Project {
-            command: ProjectCommand::Create { unity_version, .. },
+            command:
+                ProjectCommand::Create {
+                    unity_version,
+                    template_id,
+                    template_revision,
+                    ..
+                },
         } = parsed.command
         else {
             panic!("project create");
         };
         assert_eq!(unity_version, "2022.3.22f1");
+        assert!(template_id.is_none() && template_revision.is_none());
+        assert!(Arguments::try_parse_from(arguments.clone().chain(["--dry-run"])).is_err());
+        assert!(
+            Arguments::try_parse_from(
+                arguments
+                    .clone()
+                    .chain(["--template-id", "com.example.avatar-tools",])
+            )
+            .is_err()
+        );
+        assert!(
+            Arguments::try_parse_from(arguments.chain([
+                "--template-id",
+                "com.example.avatar-tools",
+                "--template-revision",
+                "1",
+            ]))
+            .is_ok()
+        );
+        assert!(Arguments::try_parse_from(["alcomd-cli", "template", "list"]).is_err());
     }
 
     #[test]

@@ -9,17 +9,12 @@ mod legacy;
 mod package;
 mod plan;
 mod project_copy;
+mod project_create;
 mod project_delete;
 mod range;
 mod repository_list;
 mod resolver;
 mod staging_package;
-mod template;
-mod template_builtin;
-mod template_create;
-mod template_derive;
-mod template_engine;
-mod template_object;
 mod unity_migration;
 mod unity_version;
 mod user_package;
@@ -43,6 +38,7 @@ pub use plan::{
     build_resolution_plan, inspect_package_project, materialize_vpm_manifest,
 };
 pub use project_copy::ProjectCopyEngine;
+pub use project_create::ProjectCreateEngine;
 pub use project_delete::ProjectDeleteEngine;
 pub use repository_list::RepositoryListFileAdapter;
 pub use resolver::{
@@ -53,17 +49,6 @@ pub use resolver::{
 pub use staging_package::{
     FrozenPackageMaterializer, PreparedFrozenPackages, StagingPackageEvidence,
     StagingProjectEvidence,
-};
-pub use template::{
-    TemplateDependency, TemplateError, TemplateErrorCode, TemplateInspection, TemplateManifest,
-    TemplatePayload, TemplateProvenance, TemplateProvenanceKind, TemplateResource,
-    TemplateUnityCompatibility, inspect_template_bundle, inspect_template_bundle_with_limits,
-};
-#[doc(hidden)]
-pub use template_create::{PreparedTemplateProject, StagedTemplateProject};
-pub use template_engine::TemplateEngine;
-pub use template_object::{
-    TemplateObject, TemplateObjectError, TemplateObjectErrorCode, TemplateObjectStore,
 };
 pub use unity_migration::UnityMigrationEngine;
 pub use unity_version::UnityVersion;

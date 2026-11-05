@@ -1,4 +1,4 @@
-import type { TemplatePlanCreateProjectParams } from "@alcomd/sdk";
+import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
@@ -6,7 +6,7 @@ import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExp
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 
-import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, TemplateApplyResult, TemplateBundleInspection, TemplateExportResult, TemplatePlan, TemplateRecordResult, TemplateRemoveResult, TemplatesListResult, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
+import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
 export interface GuiRpcClient {
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
@@ -73,18 +73,10 @@ export interface GuiRpcClient {
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
     projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
-    templatesList(cursor?: string): Promise<TemplatesListResult>;
-    templateGet(templateId: string): Promise<TemplateRecordResult>;
-    templateInspectBundle(bundlePath: string): Promise<TemplateBundleInspection>;
-    templatePlanImport(bundlePath: string, overrideExisting: boolean, expectedRevision: number): Promise<TemplatePlan>;
-    templateApplyImport(planId: string): Promise<TemplateApplyResult>;
-    templatePlanDerive(params: { projectId: string; expectedProjectRevision: number; templateId: string; templateVersion: string; displayName: string; description?: string }): Promise<TemplatePlan>;
-    templateApplyDerive(planId: string): Promise<TemplateApplyResult>;
-    templateExport(templateId: string, expectedRevision: number, targetPath: string): Promise<TemplateExportResult>;
-    templateSetFavorite(templateId: string, favorite: boolean, expectedRevision: number): Promise<TemplateRecordResult>;
-    templateRemove(templateId: string, expectedRevision: number): Promise<TemplateRemoveResult>;
-    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string, unityVersion: string): Promise<TemplatePlan>;
-    templateApplyCreateProject(planId: string): Promise<TemplateApplyResult>;
+    projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult>;
+    projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult>;
+    projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult>;
+    projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult>;
     backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
     backupGet(backupId: string): Promise<BackupRecord>;
     backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "level3" | "level5" | "level7" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): Promise<BackupCreateResult>;
@@ -365,52 +357,20 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_apply_unity_migration", { params: { planId, idempotencyKey: crypto.randomUUID() } });
     }
 
-    templatesList(cursor?: string): Promise<TemplatesListResult> {
-        return invokeTyped("gui_templates_list", { params: { limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
+    projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult> {
+        return invokeTyped("gui_projects_create", { params });
     }
 
-    templateGet(templateId: string): Promise<TemplateRecordResult> {
-        return invokeTyped("gui_template_get", { templateId });
+    projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult> {
+        return invokeTyped("gui_project_templates_list", { params: { limit: 100, cursor } });
     }
 
-    templateInspectBundle(bundlePath: string): Promise<TemplateBundleInspection> {
-        return invokeTyped("gui_template_inspect_bundle", { bundlePath });
+    projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult> {
+        return invokeTyped("gui_project_templates_save", { params });
     }
 
-    templatePlanImport(bundlePath: string, overrideExisting: boolean, expectedRevision: number): Promise<TemplatePlan> {
-        return invokeTyped("gui_template_plan_import", { params: { bundlePath, override: overrideExisting, expectedRevision } });
-    }
-
-    templateApplyImport(planId: string): Promise<TemplateApplyResult> {
-        return invokeTyped("gui_template_apply_import", { params: { planId, idempotencyKey: crypto.randomUUID() } });
-    }
-
-    templatePlanDerive(params: { projectId: string; expectedProjectRevision: number; templateId: string; templateVersion: string; displayName: string; description?: string }): Promise<TemplatePlan> {
-        return invokeTyped("gui_template_plan_derive", { params });
-    }
-
-    templateApplyDerive(planId: string): Promise<TemplateApplyResult> {
-        return invokeTyped("gui_template_apply_derive", { params: { planId, idempotencyKey: crypto.randomUUID() } });
-    }
-
-    templateExport(templateId: string, expectedRevision: number, targetPath: string): Promise<TemplateExportResult> {
-        return invokeTyped("gui_template_export", { params: { templateId, expectedRevision, targetPath } });
-    }
-
-    templateSetFavorite(templateId: string, favorite: boolean, expectedRevision: number): Promise<TemplateRecordResult> {
-        return invokeTyped("gui_template_set_favorite", { params: { templateId, favorite, expectedRevision, idempotencyKey: crypto.randomUUID() } });
-    }
-
-    templateRemove(templateId: string, expectedRevision: number): Promise<TemplateRemoveResult> {
-        return invokeTyped("gui_template_remove", { params: { templateId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
-    }
-
-    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string, unityVersion: string): Promise<TemplatePlan> {
-        return invokeTyped("gui_template_plan_create_project", { params: { templateId, expectedTemplateRevision, targetParent, targetLeaf, unityVersion } satisfies TemplatePlanCreateProjectParams });
-    }
-
-    templateApplyCreateProject(planId: string): Promise<TemplateApplyResult> {
-        return invokeTyped("gui_template_apply_create_project", { params: { planId, idempotencyKey: crypto.randomUUID() } });
+    projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult> {
+        return invokeTyped("gui_project_templates_remove", { params });
     }
 
     backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult> {

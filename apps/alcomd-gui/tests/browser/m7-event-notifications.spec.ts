@@ -29,7 +29,7 @@ async function readCounts(page: Page) {
             activity: requests.filter((item) => item.method === "activity.list").length,
             // This outer client records delegated methods as well as H5 reads;
             // the H5-only request array cannot prove other pages stayed idle.
-            others: window.coreEvents.rpcRequests.filter((item) => /^(projectsList|projectGet|repositoriesList|repositoryGet|repositoryPackages|userPackagesList|userPackageGet|templatesList|templateGet|backupsList|backupGet|extensionsList|extensionGet|extensionPermissionsList|unityInstallationsList|unityInstallationGet|unityProjectLaunchConfigGet|unityWriterState|unityLaunchOptions)$/.test(item.method)).length
+            others: window.coreEvents.rpcRequests.filter((item) => /^(projectsList|projectGet|repositoriesList|repositoryGet|repositoryPackages|userPackagesList|userPackageGet|projectTemplatesList|backupsList|backupGet|extensionsList|extensionGet|extensionPermissionsList|unityInstallationsList|unityInstallationGet|unityProjectLaunchConfigGet|unityWriterState|unityLaunchOptions)$/.test(item.method)).length
         };
     }, taskId);
 }

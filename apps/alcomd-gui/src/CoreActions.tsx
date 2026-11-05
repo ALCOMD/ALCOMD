@@ -5,7 +5,7 @@ import type { Translate } from "./i18n-types";
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
 import { useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
     BackupCreateResult,
@@ -18,21 +18,16 @@ import type {
     ProjectUnityLaunchConfigResult,
     ProjectUnityMigrationPlan,
     RepositorySnapshot,
-    TemplateRecord,
     UnityInstallation,
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { closeIcon, moreVertIcon, starIcon } from "@alcomd/ui/icons";
-import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
-import { SplitButton } from "./SplitButton";
+import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
+import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
-import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { displayPath } from "./display-path";
-import { useProjectDirectory } from "./use-project-directory";
-import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
 import { backupCompressionOptions } from "./backup-compression";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
@@ -576,7 +571,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
             </ModalDialog>
             <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && templateApplyResultUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </PlanDialog>
 
         </>
@@ -596,311 +591,6 @@ export function useActionScope(client: GuiRpcClient, active = true) {
     return () => scope.active && holder.current === scope && visible.current;
 }
 
-export function TemplateImportPanel({ client, operations }: { client: GuiRpcClient; operations: TemplateOperations }) {
-    const { t } = useTranslation();
-    const available = useCapability(capabilities.templatesManage);
-    const [bundlePath, setBundlePath] = useState("");
-    const [overrideExisting, setOverrideExisting] = useState(false);
-    const [review, setReview] = useState<TemplateReview>();
-    const [submitted, setSubmitted] = useState(false);
-    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    useUtilityDialogBusy(feedback.busy);
-    const pending = useRef(false);
-    const current = useActionScope(client);
-    const create = async (event: FormEvent) => {
-        event.preventDefault();
-        if (!available || pending.current) return;
-        pending.current = true; setFeedback({ busy: true });
-        try {
-            const inspected = await client.templateInspectBundle(bundlePath);
-            let existing: TemplateRecord | undefined;
-            try { existing = (await client.templateGet(inspected.templateId)).template; }
-            catch (caught: unknown) { if (safeError(caught).code !== "template_not_found") throw caught; }
-            const plan = await client.templatePlanImport(bundlePath, overrideExisting, existing?.revision ?? 0);
-            if (!current()) return;
-            setReview(reviewTemplateImport(plan, inspected, existing, overrideExisting));
-            setSubmitted(false); setFeedback({ busy: false });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const apply = async () => {
-        if (review === undefined || submitted || !available || pending.current) return;
-        pending.current = true; setSubmitted(true); setFeedback({ busy: true });
-        try {
-            const result = await client.templateApplyImport(review.plan.planId);
-            operations.accept(result.operationId);
-            if (!current()) return;
-            setReview(undefined); setBundlePath("");
-            setFeedback({ busy: false, operationId: result.operationId });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    return <ActionSection title={review === undefined ? t("Import template") : t("Review template import")}>
-        {feedback.operationId !== undefined ? <div className="dialog-actions"><UtilityDialogCancel label={t("Close")} /></div> : review === undefined ? <form onSubmit={(event) => void create(event)}>
-            <TextField disabled={feedback.busy} id="template-bundle" label={t("Template bundle")} maxLength={1024} onInput={setBundlePath} required value={bundlePath} />
-            <Checkbox checked={overrideExisting} disabled={feedback.busy} label={t("Replace an existing matching template")} onChange={setOverrideExisting} />
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || bundlePath.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.templatesManage, t)} type="submit">{t("Review import")}</Button></div>
-        </form> : <>
-            <TemplatePlanReview review={review} />
-            <p className="risk-summary">{t("The daemon will revalidate this frozen plan before importing.")}</p>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setReview(undefined); setSubmitted(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
-        </>}
-        <TemplateMutationFeedback client={client} feedback={feedback} operations={operations} submitted={submitted} />
-    </ActionSection>;
-}
-
-export function TemplateCreateActions({ client, operations, primaryRef: providedPrimaryRef }: { client: GuiRpcClient; operations: TemplateOperations; primaryRef?: RefObject<HTMLElement | null> }) {
-    const { t } = useTranslation();
-    const canManage = useCapability(capabilities.templatesManage);
-    const [creating, setCreating] = useState(false);
-    const [importing, setImporting] = useState(false);
-    const menuAnchorRef = useRef<HTMLElement>(null);
-    const ownPrimaryRef = useRef<HTMLElement>(null);
-    const primaryRef = providedPrimaryRef ?? ownPrimaryRef;
-    useEffect(() => { setCreating(false); setImporting(false); }, [client]);
-    return <>
-        <SplitButton disabled={!canManage} label={t("Create template")} menuButtonRef={menuAnchorRef} menuLabel={t("More template creation options")} onClick={() => setCreating(true)} primaryRef={primaryRef} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)}>
-            <MenuItem disabled={!canManage} label={t("Import template")} onClick={() => setImporting(true)} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} />
-        </SplitButton>
-        {creating ? <TemplateDeriveDialog client={client} operations={operations} onClose={() => { setCreating(false); window.requestAnimationFrame(() => primaryRef.current?.focus()); }} /> : null}
-        {importing ? <UtilityActionDialog title={t("Import template")} onClose={() => { setImporting(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}><TemplateImportPanel client={client} operations={operations} /></UtilityActionDialog> : null}
-    </>;
-}
-
-function TemplateDeriveDialog({ client, operations, onClose, origin, closed = false }: { client: GuiRpcClient; operations: TemplateOperations; onClose(): void; origin?: DialogOrigin; closed?: boolean }) {
-    const { t } = useTranslation();
-    const canManage = useCapability(capabilities.templatesManage);
-    const [open, setOpen] = useState(true);
-    const [review, setReview] = useState<TemplateReview>();
-    const [submitted, setSubmitted] = useState(false);
-    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [projects, setProjects] = useState<ProjectSnapshot[]>([]);
-    const [projectPage, setProjectPage] = useState<Awaited<ReturnType<GuiRpcClient["projectsList"]>>>();
-    const [projectsLoading, setProjectsLoading] = useState(true);
-    const showProjectsLoading = useDelayedPending(projectsLoading && projects.length === 0);
-    const [fields, setFields] = useState({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "" });
-    const pending = useRef(false);
-    const projectLoad = useRef(0);
-    const current = useActionScope(client, open && !closed);
-    const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
-    useEffect(() => {
-        const generation = ++projectLoad.current;
-        void client.projectsList().then((page) => {
-            if (generation !== projectLoad.current) return;
-            setProjectPage(page); setProjects(page.projects); setProjectsLoading(false);
-        }).catch((caught: unknown) => { if (generation === projectLoad.current) { setProjectsLoading(false); setFeedback({ busy: false, error: safeError(caught) }); } });
-        return () => { projectLoad.current += 1; };
-    }, [client]);
-    const loadMore = async () => {
-        if (projectPage?.nextCursor === undefined || projectsLoading) return;
-        const generation = ++projectLoad.current;
-        setProjectsLoading(true);
-        try {
-            const page = await client.projectsList(projectPage.nextCursor);
-            if (generation !== projectLoad.current) return;
-            setProjectPage(page); setProjects((current) => [...current, ...page.projects]);
-        } catch (caught: unknown) { if (generation === projectLoad.current) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (generation === projectLoad.current) setProjectsLoading(false); }
-    };
-    const createPlan = async (event: FormEvent) => {
-        event.preventDefault();
-        if (pending.current || !canManage) return;
-        pending.current = true; setFeedback({ busy: true });
-        try {
-            const source = (await client.projectGet(fields.projectId)).project;
-            if (source.projectId === undefined || source.revision === undefined) throw { code: "project_revision_unavailable" };
-            const request = { projectId: source.projectId, expectedProjectRevision: source.revision, templateId: fields.templateId, templateVersion: fields.templateVersion, displayName: fields.displayName, ...(fields.description.length === 0 ? {} : { description: fields.description }) };
-            const plan = await client.templatePlanDerive(request);
-            if (!current()) return;
-            setReview(reviewTemplateDerive(plan, request)); setSubmitted(false); setFeedback({ busy: false });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const apply = async () => {
-        if (review === undefined || submitted || pending.current || !canManage) return;
-        pending.current = true; setSubmitted(true); setFeedback({ busy: true });
-        try {
-            const result = await client.templateApplyDerive(review.plan.planId);
-            operations.accept(result.operationId);
-            if (!current()) return;
-            setReview(undefined); setFeedback({ busy: false, operationId: result.operationId });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const close = () => { if (!pending.current) setOpen(false); };
-    return <MaterialDialog dismissible={!feedback.busy} open={open && !closed} onClose={onClose} returnFocus={origin} title={review === undefined ? t("Create template from project") : t("Review new template")}>
-        {feedback.operationId !== undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div> : review !== undefined ? <>
-            <TemplatePlanReview review={review} />
-            <p className="risk-summary">{t("The daemon will revalidate this frozen plan before applying it.")}</p>
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canManage} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
-        </> : <form onSubmit={(event) => void createPlan(event)}>
-            <Select id="derive-project" label={t("Source project")} disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: t("Choose a project"), value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: displayPath(project.rootPath), value: project.projectId! }))]} value={fields.projectId} />
-            {showProjectsLoading ? <p role="status">{t("Loading projects…")}</p> : !projectsLoading && projects.length === 0 ? <p>{t("No registered projects available.")}</p> : null}
-            {projectPage?.nextCursor === undefined ? null : <Button disabled={projectsLoading || feedback.busy} onClick={() => void loadMore()} type="button" variant="text">{t("Load more projects")}</Button>}
-            <TextField disabled={feedback.busy} id="derive-name" label={t("Display name")} onInput={(next) => update("displayName", next)} required value={fields.displayName} />
-            <TextField disabled={feedback.busy} id="derive-template-id" label={t("New template ID")} onInput={(next) => update("templateId", next)} required value={fields.templateId} />
-            <TextField disabled={feedback.busy} id="derive-version" label={t("Template version")} onInput={(next) => update("templateVersion", next)} required value={fields.templateVersion} />
-            <TextField disabled={feedback.busy} id="derive-description" label={t("Description")} onInput={(next) => update("description", next)} value={fields.description} />
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canManage || fields.projectId.length === 0} type="submit">{t("Review")}</Button></div>
-        </form>}
-        {open && !closed ? <TemplateMutationFeedback client={client} feedback={feedback} operations={operations} submitted={submitted} /> : null}
-    </MaterialDialog>;
-}
-
-export interface TemplateActionSelection {
-    action: "derive" | "create" | "export" | "remove";
-    key: number;
-    template: TemplateRecord;
-    origin: DialogOrigin;
-    closed?: boolean;
-}
-
-export function TemplateActions({ client, compact = false, onAction, onChanged, onView, template }: ActionProps & { compact?: boolean; onAction(action: TemplateActionSelection["action"], origin: DialogOrigin): void; onView?(): void; template: TemplateRecord }) {
-    const { t } = useTranslation();
-
-    const canCreateProject = useCapability(capabilities.templatesCreateProject);
-    const canManage = useCapability(capabilities.templatesManage);
-    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [menuOpen, setMenuOpen] = useState(false);
-    const menuAnchorRef = useRef<HTMLElement>(null);
-    const pending = useRef(false);
-    const current = useActionScope(client);
-    const open = (action: TemplateActionSelection["action"]) => {
-        if (pending.current) return;
-         setFeedback(INITIAL_FEEDBACK);
-        setMenuOpen(false);
-        onAction(action, compact ? menuAnchorRef : { current: document.activeElement instanceof HTMLElement ? document.activeElement : null });
-    };
-    const favorite = async () => {
-        if (pending.current || !canManage) return;
-        pending.current = true;  setFeedback({ busy: true });
-        try {
-            await client.templateSetFavorite(template.templateId, !template.favorite, template.revision);
-            if (!current()) return;
-            setFeedback(INITIAL_FEEDBACK);  onChanged?.();
-        } catch (caught: unknown) {
-            if (current()) {
-                setFeedback(INITIAL_FEEDBACK);
-                if (safeError(caught).code === "revision_conflict") onChanged?.();
-            }
-        } finally { pending.current = false; }
-    };
-    return <section className={compact ? "template-row-actions" : "action-section"}>
-        {compact ? <div className="card-actions">
-            <IconButton aria-pressed={template.favorite} className="project-favorite-action" disabled={!canManage || feedback.busy} label={template.favorite ? t("Remove {name} from favorites", { name: template.displayName }) : t("Favorite {name}", { name: template.displayName })} onClick={() => void favorite()} type="button"><Icon asset={starIcon} /></IconButton>
-            <IconButton aria-expanded={menuOpen} disabled={feedback.busy} label={t("More actions for {name}", { name: template.displayName })} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button"><Icon asset={moreVertIcon} size={24} /></IconButton>
-            <Menu anchorRef={menuAnchorRef} onClose={() => setMenuOpen(false)} open={menuOpen}>
-                <MenuItem disabled={!canCreateProject} label={t("Create project")} onClick={() => open("create")} />
-                {onView === undefined ? null : <MenuItem label={t("View template")} onClick={() => { setMenuOpen(false); onView(); }} />}
-                <MenuItem disabled={!canManage} label={t("Derive from project")} onClick={() => open("derive")} />
-                <MenuItem disabled={!canManage} label={t("Export template")} onClick={() => open("export")} />
-                <MenuItem disabled={!canManage || template.sourceKind === "builtin"} label={t("Remove template")} onClick={() => open("remove")} title={template.sourceKind === "builtin" ? t("Built-in templates cannot be removed.") : undefined} />
-            </Menu>
-        </div> : <><h2>{t("Template actions")}</h2><div className="action-row">
-            <Button disabled={!canCreateProject || feedback.busy} onClick={() => open("create")} title={capabilityUnavailableTitle(canCreateProject, capabilities.templatesCreateProject, t)} type="button">{t("Create project")}</Button>
-            <Button disabled={!canManage || feedback.busy} onClick={() => open("derive")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} type="button" variant="tonal">{t("Derive from project")}</Button>
-            <Button widthLabels={[t("Remove favorite"), t("Favorite")]} disabled={!canManage || feedback.busy} onClick={() => void favorite()} type="button" variant="text">{template.favorite ? t("Remove favorite") : t("Favorite")}</Button>
-            <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} type="button" variant="text">{t("Export template")}</Button>
-            {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">{t("Remove template")}</Button>}
-        </div></>}
-    </section>;
-}
-
-export function TemplateActionDialog({ client, onChanged, onClose, onOpenProject, operations, selection }: ActionProps & { onClose(): void; onOpenProject(projectId: string): void; operations: TemplateOperations; selection: TemplateActionSelection }) {
-    return selection.action === "derive"
-        ? <TemplateDeriveDialog client={client} closed={selection.closed} onClose={onClose} operations={operations} origin={selection.origin} />
-        : <TemplateObjectDialog client={client} onChanged={onChanged} onClose={onClose} onOpenProject={onOpenProject} operations={operations} selection={selection} />;
-}
-
-function TemplateObjectDialog({ client, onChanged, onClose, onOpenProject, operations, selection }: ActionProps & { onClose(): void; onOpenProject(projectId: string): void; operations: TemplateOperations; selection: TemplateActionSelection }) {
-    const { t } = useTranslation();
-
-    const canCreateProject = useCapability(capabilities.templatesCreateProject);
-    const canManage = useCapability(capabilities.templatesManage);
-    const { template, action } = selection;
-    const [open, setOpen] = useState(true);
-    const [review, setReview] = useState<TemplateReview>();
-    const [submitted, setSubmitted] = useState(false);
-    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [fields, setFields] = useState({ leaf: "", exportPath: "" });
-    const projectDirectory = useProjectDirectory(client, action === "create" && open && !selection.closed);
-    const unity = useCreateUnityVersion(client, template, action === "create" && open && !selection.closed);
-    const pending = useRef(false);
-    const current = useActionScope(client, open && !selection.closed);
-    const update = (key: keyof typeof fields, value: string) => { setFields((current) => ({ ...current, [key]: value })); setFeedback(INITIAL_FEEDBACK); };
-    const close = () => { if (!pending.current) {  setFeedback(INITIAL_FEEDBACK); setOpen(false); } };
-    const createPlan = async (event: FormEvent) => {
-        event.preventDefault();
-        if (pending.current || !canCreateProject) return;
-        pending.current = true; setFeedback({ busy: true });
-        try {
-            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, projectDirectory.directory, fields.leaf, unity.version.trim());
-            if (!current()) return;
-            setReview(reviewTemplateCreation(plan, template, projectDirectory.directory, fields.leaf, unity.version.trim())); setSubmitted(false); setFeedback({ busy: false });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const apply = async () => {
-        if (review === undefined || submitted || pending.current || !canCreateProject) return;
-        pending.current = true; setSubmitted(true); setFeedback({ busy: true });
-        try {
-            const result = await client.templateApplyCreateProject(review.plan.planId);
-            operations.accept(result.operationId);
-            if (!current()) return;
-            setFeedback({ busy: false, operationId: result.operationId });
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const simple = async () => {
-        if (pending.current || !canManage || (action === "remove" && template.sourceKind === "builtin")) return;
-        pending.current = true; setFeedback({ busy: true });
-        try {
-            if (action === "export") await client.templateExport(template.templateId, template.revision, fields.exportPath);
-            else if (action === "remove") await client.templateRemove(template.templateId, template.revision);
-            else return;
-            if (!current()) return;
-            setFeedback(INITIAL_FEEDBACK);  setOpen(false);
-            if (action === "remove") onChanged?.();
-        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) pending.current = false; }
-    };
-    const pickParent = async () => {
-        if (pending.current) return;
-        pending.current = true; setFeedback({ busy: true });
-        try { const path = await client.selectDirectory(); if (current() && path !== undefined) projectDirectory.setDirectory(path); }
-        catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
-        finally { if (current()) { pending.current = false; setFeedback((value) => ({ ...value, busy: false })); } }
-    };
-    const createdProject = feedback.operationId === undefined ? undefined : templateOperationProjectId(operations.snapshot(feedback.operationId)?.operation);
-    const title = review !== undefined ? t("Review project creation") : action === "create" ? t("Create project") : action === "export" ? t("Export template") : t("Remove template");
-    return <MaterialDialog dismissible={!feedback.busy} open={open && !selection.closed} onClose={onClose} returnFocus={selection.origin} title={title}>
-        {feedback.operationId !== undefined ? <div className="dialog-actions">
-            <Button onClick={close} type="button" variant="text">{t("Close")}</Button>
-            {createdProject === undefined ? null : <Button onClick={() => onOpenProject(createdProject)} type="button">{t("Open created project")}</Button>}
-        </div> : review !== undefined ? <>
-            <TemplatePlanReview review={review} />
-            <p className="risk-summary">{t("The daemon will revalidate this frozen plan before applying it.")}</p>
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canCreateProject} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
-        </> : action === "create" ? <form onSubmit={(event) => void createPlan(event)}>
-            <p>{t("Template:")}<strong>{template.displayName}</strong></p>
-            <CreateUnityVersionField disabled={feedback.busy} selection={unity} />
-            <TextField disabled={feedback.busy} id="create-leaf" label={t("Project folder name")} onInput={(next) => update("leaf", next)} required value={fields.leaf} />
-            <PathField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
-            <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
-            {projectDirectory.error === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((projectDirectory.error).code))}</p><code>{(projectDirectory.error).code}</code>{projectDirectory.error.diagnosticId === undefined ? null : <p><code>{projectDirectory.error.diagnosticId}</code></p>}</div>}
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0 || unity.version.trim().length === 0} type="submit">{t("Review")}</Button></div>
-        </form> : action === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple(); }}>
-            <p><Translated message="Export {name} as a template bundle." values={{ name: <strong>{template.displayName}</strong> }} /></p>
-            <TextField disabled={feedback.busy} id="template-export" label={t("Export target")} onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={!canManage || feedback.busy} type="submit">{t("Export")}</Button></div>
-        </form> : <>
-            <p><Translated message="Remove {name} from your templates?" values={{ name: <strong>{template.displayName}</strong> }} /></p>
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => void simple()} type="button">{t("Remove template")}</Button></div>
-        </>}
-        <TemplateMutationFeedback client={client} feedback={feedback} operations={operations} submitted={submitted} />
-    </MaterialDialog>;
-}
-
 export function BackupCreatePanel({ client, navigate, onAccepted, project }: { client: GuiRpcClient; navigate(path: string): void; onAccepted(result: BackupCreateResult): void; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const available = useCapability(capabilities.backupsCreate);
@@ -909,7 +599,7 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
     const [readGeneration, setReadGeneration] = useState(0);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const showLoading = useDelayedPending(options === undefined && feedback.error === undefined);
-    const unknown = templateApplyResultUnknown(feedback.error);
+    const unknown = operationRequestOutcomeUnknown(feedback.error);
     const pending = useRef(false);
     const close = useUtilityDialogClose();
     const isCurrent = useActionScope(client);
@@ -1025,7 +715,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         } catch (caught: unknown) {
             if (!current()) return;
             const error = safeError(caught);
-            if (!templateApplyResultUnknown(error)) setSubmitted(false);
+            if (!operationRequestOutcomeUnknown(error)) setSubmitted(false);
             setFeedback({ busy: false, error });
         }
         finally { pending.current = false; }
@@ -1041,7 +731,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}
-        {submitted && templateApplyResultUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 
@@ -1082,7 +772,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 setFeedback({ busy: false });
                 onChanged?.();
             }
-        } catch (caught: unknown) { if (current()) { const error = safeError(caught); if (!templateApplyResultUnknown(error)) setSubmitted(false); setFeedback({ busy: false, error }); } }
+        } catch (caught: unknown) { if (current()) { const error = safeError(caught); if (!operationRequestOutcomeUnknown(error)) setSubmitted(false); setFeedback({ busy: false, error }); } }
         finally { pending.current = false; }
     };
     const blocked = extension.desiredState === "uninstalling" || operationActive;
@@ -1099,7 +789,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
                 <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
             </>}
-            {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
         </MaterialDialog>
     </ActionSection>;
 }
@@ -1124,7 +814,7 @@ function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }:
     return null;
 }
 
-interface AcceptedTemplateOperation {
+interface AcceptedOperation {
     operationId: string;
     client: GuiRpcClient;
     onSucceeded?(operation: Operation): void | Promise<void>;
@@ -1133,11 +823,11 @@ interface AcceptedTemplateOperation {
     progressError?: RpcError;
 }
 
-export type TemplateOperations = ReturnType<typeof useTemplateOperations>;
+export type AcceptedOperations = ReturnType<typeof useAcceptedOperations>;
 
 // These are only this page's explicitly accepted IDs. Core remains the task history owner.
-export function useTemplateOperations(client: GuiRpcClient) {
-    const [accepted, setAccepted] = useState<AcceptedTemplateOperation[]>([]);
+export function useAcceptedOperations(client: GuiRpcClient) {
+    const [accepted, setAccepted] = useState<AcceptedOperation[]>([]);
     const owner = useRef({ client, active: false, seen: new Set<string>(), finished: new Set<string>() });
     if (owner.current.client !== client) owner.current = { client, active: false, seen: new Set(), finished: new Set() };
     const scope = owner.current;
@@ -1146,7 +836,7 @@ export function useTemplateOperations(client: GuiRpcClient) {
         setAccepted([]);
         return () => { scope.active = false; };
     }, [scope]);
-    const accept = (operationId: string, onSucceeded?: AcceptedTemplateOperation["onSucceeded"]) => {
+    const accept = (operationId: string, onSucceeded?: AcceptedOperation["onSucceeded"]) => {
         if (owner.current !== scope || !scope.active || scope.seen.has(operationId)) return;
         if (!canonicalUuid(operationId)) throw { code: "internal_error" };
         scope.seen.add(operationId);
@@ -1182,7 +872,7 @@ export function useTemplateOperations(client: GuiRpcClient) {
     return { accept, snapshot, follow };
 }
 
-export function templateOperationProjectId(operation: Operation | undefined): string | undefined {
+export function operationResultProjectId(operation: Operation | undefined): string | undefined {
     if (operation?.state !== "succeeded" || typeof operation.result !== "object" || operation.result === null) return undefined;
     const projectId = (operation.result as { projectId?: unknown }).projectId;
     return canonicalUuid(projectId) ? projectId : undefined;
@@ -1190,17 +880,11 @@ export function templateOperationProjectId(operation: Operation | undefined): st
 
 function canonicalUuid(value: unknown): value is string { return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value); }
 
-export function templateApplyResultUnknown(error: RpcError | undefined): boolean {
+export function operationRequestOutcomeUnknown(error: RpcError | undefined): boolean {
     return error?.code === "daemon_unavailable" || error?.code === "internal_error";
 }
 
-function TemplateMutationFeedback({ client, feedback, operations, submitted = false }: { client: GuiRpcClient; feedback: FeedbackState; operations: TemplateOperations; submitted?: boolean }) {
-    const { t } = useTranslation();
-    if (feedback.operationId === undefined) return <><MutationFeedback client={client} feedback={feedback} />{submitted && templateApplyResultUnknown(feedback.error) ? <p>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</p> : null}</>;
-    return <TemplateOperationProgress operationId={feedback.operationId} operations={operations} />;
-}
-
-export function TemplateOperationProgress({ operationId, operations }: { operationId: string; operations: TemplateOperations }) {
+export function AcceptedOperationProgress({ operationId, operations }: { operationId: string; operations: AcceptedOperations }) {
     const { t } = useTranslation();
     const events = useCoreEvents();
     const item = operations.snapshot(operationId);

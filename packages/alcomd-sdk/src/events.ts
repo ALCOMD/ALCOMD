@@ -1,7 +1,7 @@
 import type { RpcError } from "./index";
 
 export type CoreEventAggregateKind = "operation" | "project" | "repository" | "unity-installation"
-    | "project-editor-preference" | "project-unity-launch-config" | "template" | "user-package";
+    | "project-editor-preference" | "project-unity-launch-config" | "project-template" | "user-package";
 
 export interface CoreEvent {
     sequence: number;

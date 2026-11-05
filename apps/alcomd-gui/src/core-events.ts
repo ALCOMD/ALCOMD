@@ -15,10 +15,10 @@ interface ViewRecord { data?: unknown; rows: number; bytes: number; visit: numbe
 
 const terminal = (value: Operation) => ["succeeded", "failed", "cancelled"].includes(value.state);
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
+const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "project-template", "user-package"]);
 const READS = new Set(["operationsList", "logsRead", "operationGet", "projectsList", "projectGet", "repositoriesList",
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
-    "unityWriterState", "unityLaunchOptions", "templatesList", "templateGet", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
+    "unityWriterState", "unityLaunchOptions", "projectTemplatesList", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
 /** One disposable notification/read coordinator per GUI connection. It owns no business state. */
 export class CoreEvents {
@@ -264,7 +264,7 @@ export class CoreEvents {
             this.pumpReads();
             return;
         }
-        const scopes: Record<string, ChangeScope> = { project: "projects", repository: "repositories", template: "templates",
+        const scopes: Record<string, ChangeScope> = { project: "projects", repository: "repositories", "project-template": "templates",
             "user-package": "user-packages", "unity-installation": "unity", "project-editor-preference": "projects", "project-unity-launch-config": "projects" };
         const scope = scopes[event.aggregateKind];
         if (scope !== undefined) this.invalidate(scope, /registered|removed|unregistered|deleted/.test(event.kind));
@@ -456,9 +456,9 @@ export class CoreEvents {
         const scopes = method === "settingsGet" ? [] : method === "systemStatus" ? [] : method === "packageQueryProjectCandidates" ? ["projects", "repositories", "user-packages"]
             : method === "operationGet" ? ["operation-progress"] : method.startsWith("operations") ? ["operations"]
             : method === "logsRead" ? ["operation-log"]
-            : method.startsWith("project") ? ["projects"] : method.startsWith("repositor") ? ["repositories"]
+            : method === "projectTemplatesList" ? ["templates"] : method.startsWith("project") ? ["projects"] : method.startsWith("repositor") ? ["repositories"]
             : method.startsWith("userPackage") ? ["user-packages"] : method.startsWith("unity") ? ["unity", "projects"]
-            : method.startsWith("template") ? ["templates"] : method.startsWith("backup") ? ["backups"] : ["extensions"];
+            : method.startsWith("backup") ? ["backups"] : ["extensions"];
         return scopes.map((scope) => this.categoryVersions.get(scope) ?? 0).join(":");
     }
     private pumpReads() {
@@ -512,7 +512,6 @@ export class CoreEvents {
         if (stateChanged && terminal(value)) {
             if (value.kind.startsWith("extensions.")) this.invalidate("extensions", terminal(value));
             if (value.kind.startsWith("backups.")) this.invalidate("backups", terminal(value));
-            if (value.kind.startsWith("templates.")) this.invalidate("templates", terminal(value));
         }
         if (terminal(value)) {
             this.urgentOperations.delete(value.operationId);

@@ -398,50 +398,6 @@ export type ProjectsPlanUnityMigrationResult =
 
 export interface ProjectsApplyUnityMigrationResult { operationId: string; replayed: boolean }
 
-export interface TemplatePlan {
-    planId: string;
-    action: string;
-    state: string;
-    planFingerprint: string;
-    [key: string]: unknown;
-}
-
-export interface TemplateApplyResult { operationId: string; replayed: boolean }
-export interface TemplateExportResult { exported: boolean }
-export interface TemplateRemoveResult { templateId: string; removed: boolean; replayed: boolean }
-
-export interface TemplateRecord {
-    templateId: string;
-    sourceKind: string;
-    templateVersion: string;
-    unity?: { major: number; minor: number };
-    displayName: string;
-    description?: string;
-    provenance: string;
-    favorite: boolean;
-    bundleSha256: string;
-    manifestFingerprint: string;
-    revision: number;
-    createdAtMs: number;
-    updatedAtMs: number;
-}
-
-export interface TemplatesListResult { templates: TemplateRecord[]; nextCursor?: string }
-export interface TemplateRecordResult { template: TemplateRecord; replayed: boolean }
-export interface TemplateBundleInspection {
-    formatVersion: number;
-    templateId: string;
-    templateVersion: string;
-    displayName: string;
-    description?: string;
-    provenance: string;
-    bundleSha256: string;
-    manifestFingerprint: string;
-    payloadTreeSha256: string;
-    entryCount: number;
-    totalBytes: number;
-}
-
 export interface BackupRecord {
     backupId: string;
     sourceProjectId: string;

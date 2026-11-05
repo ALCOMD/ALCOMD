@@ -54,7 +54,7 @@ test("operation follow explicitly retries the same known ID after an initial fai
 async function resolve(page: Page, index: number, state: string, operationId?: string) {
     await page.evaluate(({ index, state, operationId }) => {
         const read = window.followReads[index]!;
-        const value: Operation = { operationId: operationId ?? read.operationId, kind: "templates.import", state, revision: index + 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000 };
+        const value: Operation = { operationId: operationId ?? read.operationId, kind: "projects.create", state, revision: index + 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000 };
         read.resolve(value);
     }, { index, state, operationId });
 }

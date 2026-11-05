@@ -19,7 +19,7 @@ mod known_folder;
 mod security;
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
-pub(crate) use file_publish::publish_file_no_replace;
+pub(crate) use file_publish::publish_path_no_replace;
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {

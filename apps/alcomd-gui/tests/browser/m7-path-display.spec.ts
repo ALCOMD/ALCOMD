@@ -105,14 +105,14 @@ test("project paths and copy review use display labels while the plan request ke
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
-test("create shows the default project directory without changing its plan request", async ({ page }) => {
+test("create shows the default project directory without changing its request", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&windows-paths=1");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const parent = page.getByRole("textbox", { name: "Create target parent", exact: true });
     await expect(parent).toHaveValue("C:\\Projects");
     await page.getByRole("textbox", { name: "Create project name", exact: true }).fill("Path Fixture");
-    await page.getByRole("button", { name: "Review creation", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.templateRequests.find((request) => request.method === "templates.planCreateProject")?.params))
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Create project", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params))
         .toMatchObject({ targetParent: "\\\\?\\C:\\Projects" });
 });
 

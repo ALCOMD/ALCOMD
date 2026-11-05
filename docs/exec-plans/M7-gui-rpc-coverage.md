@@ -2,7 +2,7 @@
 
 状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。2026-11-05撤销旧日志/活动接口后的91项基线新增单页业务日志的`logs.read`，现为92项。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
+本矩阵记录方法归属。单页业务日志和模板重建后的现行清单共 84 项。当前阶段见 `../status.md`。H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -28,6 +28,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `projects.refresh` | `projects.registry.v1` | Project detail | refresh registered model | W | no | no | refreshing/stale | `gui.m7-operation-flows` |
 | `projects.setFavorite` | `projects.registry.v1` | Projects | toggle favorite | W | no | no | mutation/revision/idempotency | `gui.m7-project-action-contract` |
 | `projects.unregister` | `projects.registry.v1` | Project detail | remove registry entry | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
+| `projects.create` | `projects.create.v1` | Projects / New project | create a project with an optional template ID and revision | W | explicit action | yes | idempotency, destination conflict, recovery, stale template | `gui.m7-operation-flows` |
 | `projects.planCopy` | `projects.copy.v1` | Project Copy dialog | plan copy to new directory | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
 | `projects.applyCopy` | `projects.copy.v1` | Project Copy dialog | apply reviewed Copy Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
 | `projects.planDeleteDirectory` | `projects.delete.v1` | Project remove dialog | plan directory deletion | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
@@ -70,18 +71,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
 | `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
 | `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
-| `templates.list` | `templates.read.v1` | Templates | page templates | R | no | no | data/keyset | `gui.m7-core-surfaces` |
-| `templates.get` | `templates.read.v1` | Template detail | load template | R | no | no | data | `gui.m7-core-surfaces` |
-| `templates.inspectBundle` | `templates.read.v1` | Template import dialog | validate bundle | R | no | no | dialog data | `gui.m7-core-surfaces` |
-| `templates.planImport` | `templates.manage.v1` | Template import dialog | plan import | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
-| `templates.applyImport` | `templates.manage.v1` | Template import dialog | apply reviewed import | W | required | yes | mutation/recovery | `gui.m7-operation-flows` |
-| `templates.planDerive` | `templates.manage.v1` | Template derive dialog | plan derive | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
-| `templates.applyDerive` | `templates.manage.v1` | Template derive dialog | apply reviewed derive | W | required | yes | mutation/recovery | `gui.m7-operation-flows` |
-| `templates.export` | `templates.manage.v1` | Template detail | export native bundle | W | yes | no | mutation | `gui.m7-operation-flows` |
-| `templates.setFavorite` | `templates.manage.v1` | Templates, Template detail | set favorite | W | no | no | optimistic-disabled/stale | `gui.m7-operation-flows` |
-| `templates.remove` | `templates.manage.v1` | Template detail | remove template | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
-| `templates.planCreateProject` | `templates.create-project.v1` | Template detail | plan project creation | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
-| `templates.applyCreateProject` | `templates.create-project.v1` | Template detail | apply reviewed creation | W | required | yes | mutation/recovery | `gui.m7-operation-flows` |
+| `projectTemplates.list` | `projectTemplates.v1` | Resources / Templates, Projects / New project | page the template catalog by ID | R | no | no | keyset, retained data, committed invalidation | `gui.m7-core-surfaces` |
+| `projectTemplates.save` | `projectTemplates.v1` | Resources / Templates editor | create or edit a declaration | W | explicit save | no | same ID and content, conflict, revision, locked record | `gui.m7-operation-flows` |
+| `projectTemplates.remove` | `projectTemplates.v1` | Resources / Templates | remove a user template by ID and revision | W | yes | no | revision, locked record, committed invalidation | `gui.m7-operation-flows` |
 | `backups.list` | `backups.read.v1` | Project Backups | page backups | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `backups.get` | `backups.read.v1` | Backup detail | load backup | R | no | no | data | `gui.m7-core-surfaces` |
 | `backups.create` | `backups.create.v1` | Project Backups | create backup | W | yes | yes | mutation/recovery | `gui.m7-operation-flows` |

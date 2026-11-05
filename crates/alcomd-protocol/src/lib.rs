@@ -13,12 +13,14 @@ mod events;
 mod m7;
 mod m7_candidates;
 mod operation_logs;
+mod project_create;
 mod repository_list;
 
 pub use events::*;
 pub use m7::*;
 pub use m7_candidates::*;
 pub use operation_logs::*;
+pub use project_create::*;
 pub use repository_list::*;
 
 pub const METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES: &str = "packages.queryProjectCandidates";
@@ -118,18 +120,10 @@ pub const METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR: &str = "unity.projectLaunchC
 pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
 pub const METHOD_UNITY_LAUNCH_OPTIONS: &str = "unity.launchOptions";
 pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
-pub const METHOD_TEMPLATES_LIST: &str = "templates.list";
-pub const METHOD_TEMPLATES_GET: &str = "templates.get";
-pub const METHOD_TEMPLATES_INSPECT_BUNDLE: &str = "templates.inspectBundle";
-pub const METHOD_TEMPLATES_PLAN_IMPORT: &str = "templates.planImport";
-pub const METHOD_TEMPLATES_APPLY_IMPORT: &str = "templates.applyImport";
-pub const METHOD_TEMPLATES_PLAN_DERIVE: &str = "templates.planDerive";
-pub const METHOD_TEMPLATES_APPLY_DERIVE: &str = "templates.applyDerive";
-pub const METHOD_TEMPLATES_EXPORT: &str = "templates.export";
-pub const METHOD_TEMPLATES_SET_FAVORITE: &str = "templates.setFavorite";
-pub const METHOD_TEMPLATES_REMOVE: &str = "templates.remove";
-pub const METHOD_TEMPLATES_PLAN_CREATE_PROJECT: &str = "templates.planCreateProject";
-pub const METHOD_TEMPLATES_APPLY_CREATE_PROJECT: &str = "templates.applyCreateProject";
+pub const METHOD_PROJECTS_CREATE: &str = "projects.create";
+pub const METHOD_PROJECT_TEMPLATES_LIST: &str = "projectTemplates.list";
+pub const METHOD_PROJECT_TEMPLATES_SAVE: &str = "projectTemplates.save";
+pub const METHOD_PROJECT_TEMPLATES_REMOVE: &str = "projectTemplates.remove";
 pub const METHOD_BACKUPS_LIST: &str = "backups.list";
 pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
@@ -167,6 +161,8 @@ pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
 
 /// Capability required by `events.list`.
 pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
+pub const CAPABILITY_PROJECTS_CREATE_V1: &str = "projects.create.v1";
+pub const CAPABILITY_PROJECT_TEMPLATES_V1: &str = "projectTemplates.v1";
 pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
@@ -183,9 +179,6 @@ pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 pub const METHOD_UNITY_HUB_OPEN: &str = "unity.hub.open";
 pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
-pub const CAPABILITY_TEMPLATES_READ_V1: &str = "templates.read.v1";
-pub const CAPABILITY_TEMPLATES_MANAGE_V1: &str = "templates.manage.v1";
-pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-project.v1";
 pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
@@ -326,16 +319,6 @@ pub mod error_code {
     pub const PROJECT_DELETE_RECOVERY_REQUIRED: &str = "project_delete_recovery_required";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
-    pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
-    pub const TEMPLATE_BUILTIN_IMMUTABLE: &str = "template_builtin_immutable";
-    pub const TEMPLATE_CONFLICT: &str = "template_conflict";
-    pub const TEMPLATE_PLAN_STALE: &str = "template_plan_stale";
-    pub const TEMPLATE_BUNDLE_INVALID: &str = "template_bundle_invalid";
-    pub const TEMPLATE_DIGEST_MISMATCH: &str = "template_digest_mismatch";
-    pub const TEMPLATE_PAYLOAD_UNAVAILABLE: &str = "template_payload_unavailable";
-    pub const TEMPLATE_TARGET_EXISTS: &str = "template_target_exists";
-    pub const PROJECT_CHANGED_DURING_TEMPLATE_CREATE: &str =
-        "project_changed_during_template_create";
     pub const EXTENSION_MANIFEST_INVALID: &str = "extension_manifest_invalid";
     pub const EXTENSION_PACKAGE_INVALID: &str = "extension_package_invalid";
     pub const EXTENSION_PACKAGE_UNTRUSTED: &str = "extension_package_untrusted";
@@ -634,12 +617,6 @@ impl RpcError {
         Self::simple(code, message)
     }
 
-    /// Creates a stable, non-sensitive M5 Template error.
-    #[must_use]
-    pub fn template(code: &str) -> Self {
-        Self::simple(code, "The Template request could not be completed.")
-    }
-
     /// Creates a stable, non-sensitive M5 Backup error.
     #[must_use]
     pub fn backup(code: &str) -> Self {
@@ -650,6 +627,15 @@ impl RpcError {
     #[must_use]
     pub fn project_copy(code: &str) -> Self {
         Self::simple(code, "The Project Copy request could not be completed.")
+    }
+
+    /// Creates a bounded error for project creation and template management.
+    #[must_use]
+    pub fn project_create(code: &str) -> Self {
+        Self::simple(
+            code,
+            "The project creation or template request could not be completed.",
+        )
     }
 
     /// Creates a stable, non-sensitive M7 Project Directory Delete error.
@@ -1941,188 +1927,6 @@ pub struct UnityLaunchResult {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TemplateSourceKind {
-    Builtin,
-    User,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateRecord {
-    pub template_id: String,
-    pub source_kind: TemplateSourceKind,
-    pub template_version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub unity: Option<TemplateUnityCompatibility>,
-    pub display_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub provenance: String,
-    pub favorite: bool,
-    pub bundle_sha256: String,
-    pub manifest_fingerprint: String,
-    pub revision: u64,
-    pub created_at_ms: u64,
-    pub updated_at_ms: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TemplateUnityCompatibility {
-    pub major: u32,
-    pub minor: u32,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplatesListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplatesListResult {
-    pub templates: Vec<TemplateRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateIdParams {
-    pub template_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateRecordResult {
-    pub template: TemplateRecord,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateInspectBundleParams {
-    pub bundle_path: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateBundleInspection {
-    pub format_version: u32,
-    pub template_id: String,
-    pub template_version: String,
-    pub display_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub provenance: String,
-    pub bundle_sha256: String,
-    pub manifest_fingerprint: String,
-    pub payload_tree_sha256: String,
-    pub entry_count: u64,
-    pub total_bytes: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplatePlanImportParams {
-    pub bundle_path: String,
-    #[serde(rename = "override")]
-    pub override_existing: bool,
-    pub expected_revision: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplatePlanDeriveParams {
-    pub project_id: String,
-    pub expected_project_revision: u64,
-    pub template_id: String,
-    pub template_version: String,
-    pub display_name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateApplyPlanParams {
-    pub plan_id: String,
-    pub idempotency_key: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplatePlan {
-    pub plan_id: String,
-    pub action: String,
-    pub state: String,
-    pub plan_fingerprint: String,
-    #[serde(flatten)]
-    pub evidence: serde_json::Map<String, Value>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateApplyResult {
-    pub operation_id: String,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateExportParams {
-    pub template_id: String,
-    pub expected_revision: u64,
-    pub target_path: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateExportResult {
-    pub exported: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateSetFavoriteParams {
-    pub template_id: String,
-    pub favorite: bool,
-    pub expected_revision: u64,
-    pub idempotency_key: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplateRemoveParams {
-    pub template_id: String,
-    pub expected_revision: u64,
-    pub idempotency_key: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateRemoveResult {
-    pub template_id: String,
-    pub removed: bool,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct TemplatePlanCreateProjectParams {
-    pub template_id: String,
-    pub expected_template_revision: u64,
-    pub target_parent: String,
-    pub target_leaf: String,
-    pub unity_version: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum BackupCompression {
     Store,
     Fast,
@@ -3164,11 +2968,12 @@ fn validate_capabilities(capabilities: &[String]) -> Result<(), ContractViolatio
         if capability.is_empty()
             || capability.len() > MAX_CAPABILITY_BYTES
             || !capability.is_ascii()
-            || !capability.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'.' | b'_' | b'-')
-            })
+            || (capability != CAPABILITY_PROJECT_TEMPLATES_V1
+                && !capability.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'.' | b'_' | b'-')
+                }))
             || !unique.insert(capability)
         {
             return Err(ContractViolation::InvalidCapability);

@@ -190,7 +190,6 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/user-packages", "Resources"],
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["/templates", "Resources"],
-        ["/templates/00000000-0000-4000-8000-000000000301", "Template detail"],
         ["/unity", "Settings"],
         ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["/operations", "Tasks"],
@@ -426,12 +425,11 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     expect(await page.evaluate(() => window.coreEvents.rpcRequests.filter(request => request.method === "repositoryRegister").length)).toBe(1);
 
     await openHarness(page, "/templates");
-    await page.getByRole("button", { name: "More template creation options", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Import template", exact: true }).click();
-    await page.getByLabel("Template bundle").fill("C:\\Fixture\\avatar.alcomdtemplate");
-    await page.getByRole("button", { name: "Review import" }).click();
-    await clickDialogAction(page, "Import template", "Apply reviewed plan");
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
+    await page.getByRole("button", { name: "Create template", exact: true }).click();
+    await page.getByLabel("Template ID", { exact: true }).fill("com.example.accessibility");
+    await page.getByLabel("Name", { exact: true }).fill("Accessibility fixture");
+    await clickDialogAction(page, "Create template", "Save template");
+    await expect(page.getByRole("row").filter({ hasText: "com.example.accessibility" })).toBeVisible();
 
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/backups");
     await page.getByRole("button", { name: "Create backup", exact: true }).click();

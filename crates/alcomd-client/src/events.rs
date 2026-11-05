@@ -180,7 +180,7 @@ impl SubscriptionState {
                         | "unity-installation"
                         | "project-editor-preference"
                         | "project-unity-launch-config"
-                        | "template"
+                        | "project-template"
                         | "user-package"
                 )
                 || event.aggregate_revision == 0
@@ -355,7 +355,7 @@ mod tests {
             "unity-installation",
             "project-editor-preference",
             "project-unity-launch-config",
-            "template",
+            "project-template",
             "user-package",
         ] {
             let mut wire = vectors()["batch"].clone();
@@ -407,6 +407,7 @@ mod tests {
             "operations.get",
             "repositories.packages",
             "packages.queryProjectCandidates",
+            "projectTemplates.list",
             "unity.writerState",
             "unity.launchOptions",
         ] {
@@ -418,6 +419,9 @@ mod tests {
         }
         assert_eq!(super::super::read_deadline("state.check"), None);
         assert_eq!(super::super::read_deadline("operations.cancel"), None);
+        assert_eq!(super::super::read_deadline("projects.create"), None);
+        assert_eq!(super::super::read_deadline("projectTemplates.save"), None);
+        assert_eq!(super::super::read_deadline("projectTemplates.remove"), None);
     }
 
     #[test]

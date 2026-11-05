@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const cursor = "opaque template cursor:100/+=";
-const lastTemplateId = "00000000-0000-4000-8000-000000001101";
+const lastTemplateId = "com.example.catalog-101";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-test("Templates exposes item 101 through the existing opaque cursor without planning", async ({ page }) => {
+test("Templates exposes item 101 through the existing opaque cursor without creating a project", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-pages=1");
     const table = page.getByRole("table", { name: "Templates", exact: true });
     await expect(table.locator("tbody tr")).toHaveCount(100);
@@ -14,10 +14,10 @@ test("Templates exposes item 101 through the existing opaque cursor without plan
     await expect(table.locator("tbody tr")).toHaveCount(101);
     await table.getByRole("row").filter({ hasText: "Catalog template 101" }).scrollIntoViewIfNeeded();
     await expect(table.getByText("Catalog template 101", { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.list" && Object.keys(request.params as object).length > 0))).toEqual([
-        { method: "templates.list", params: { cursor } }
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projectTemplates.list" && Object.keys(request.params as object).length > 0))).toEqual([
+        { method: "projectTemplates.list", params: { cursor } }
     ]);
-    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method.includes("plan")))).toEqual([]);
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([]);
 });
 
 test("Projects can select template 101 and create the project returned by Core", async ({ page }) => {
@@ -26,16 +26,16 @@ test("Projects can select template 101 and create the project returned by Core",
     await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
     const select = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await select.click();
-    await dialog.getByRole("option", { name: "Catalog template 101 · 1.0.0", exact: true }).click();
+    await dialog.getByRole("option", { name: /^Catalog template 101/ }).click();
     await expect(select).toContainText("Catalog template 101");
     await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
     await dialog.getByLabel("Create project name", { exact: true }).fill("From page two");
-    await dialog.getByLabel("Unity version", { exact: true }).fill("2022.3.22f1");
-    await dialog.getByRole("button", { name: "Review creation", exact: true }).click();
-    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.planCreateProject"))).toEqual([
-        { method: "templates.planCreateProject", params: { templateId: lastTemplateId, expectedTemplateRevision: 2, targetParent: "C:\\Fixture\\Avatar", targetLeaf: "From page two", unityVersion: "2022.3.22f1" } }
-    ]);
+    await dialog.getByRole("combobox", { name: "Unity version", exact: true }).click();
+    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([
+        { method: "projects.create", params: { template: { id: lastTemplateId, revision: 4 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
+    ]);
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "From page two" })).toBeVisible();
@@ -46,47 +46,46 @@ test("Templates page failure retains all loaded rows and retries the same cursor
     const rows = page.getByRole("table", { name: "Templates", exact: true }).locator("tbody tr");
     await expect(rows).toHaveCount(100);
     await page.getByRole("button", { name: "Load more", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Your loaded items are still available.");
     await expect(rows).toHaveCount(100);
     await page.getByRole("button", { name: "Retry loading more", exact: true }).click();
     await expect(rows).toHaveCount(101);
-    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.list" && Object.keys(request.params as object).length > 0).map((request) => request.params))).toEqual([{ cursor }, { cursor }]);
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projectTemplates.list" && Object.keys(request.params as object).length > 0).map((request) => request.params))).toEqual([{ cursor }, { cursor }]);
 });
 
 test("Create template paging retains the selected template and draft after failure and retry", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&template-pages=1&template-page-error=1");
     const dialog = await openCreation(page);
     await dialog.getByRole("combobox", { name: "Project template", exact: true }).click();
-    await dialog.getByRole("option", { name: "Catalog template 050 · 1.0.0", exact: true }).click();
+    await dialog.getByRole("option", { name: /^Catalog template 050/ }).click();
     await dialog.getByLabel("Create project name", { exact: true }).fill("Keep this draft");
     await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("Your loaded items are still available.");
-    await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "00000000-0000-4000-8000-000000001050");
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
-    await dialog.getByRole("button", { name: "Retry loading more", exact: true }).click();
+    await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "com.example.catalog-050");
     await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
-    await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "00000000-0000-4000-8000-000000001050");
+    await dialog.getByRole("button", { name: "Retry loading more", exact: true }).click();
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(102);
+    await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "com.example.catalog-050");
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("Keep this draft");
-    expect(await dialog.locator("#project-create-template md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(101);
+    expect(await dialog.locator("#project-create-template md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(102);
 });
 
 test("A closed template picker rejects the old page response after a new draft opens", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&template-pages=1&hold-template-page=1");
     const dialog = await openCreation(page);
     await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.list" && Object.keys(request.params as object).length > 0).length)).toBe(1);
+    await expect.poll(() => page.evaluate(() => window.templateRequests.filter((request) => request.method === "projectTemplates.list" && Object.keys(request.params as object).length > 0).length)).toBe(1);
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toBeHidden();
     await openCreation(page);
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
     await dialog.getByLabel("Create project name", { exact: true }).fill("New draft");
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-page-ready")));
     await expect.poll(() => page.evaluate(() => window.templatePageCompletions)).toBe(1);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("New draft");
     await expect(dialog.getByRole("button", { name: "Load more templates", exact: true })).toBeEnabled();
-    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method.includes("plan")))).toEqual([]);
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([]);
 });
 
 test("A template read failure stays distinct from an empty catalog and can be explicitly retried", async ({ page }) => {
@@ -97,10 +96,9 @@ test("A template read failure stays distinct from an empty catalog and can be ex
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-list-readable")));
     await dialog.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.heldTemplateReads)).toBe(1);
-    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-    expect(await dialog.evaluate(async (element) => { await (element as HTMLElement & { updateComplete: Promise<void> }).updateComplete; return (element as HTMLElement & { open: boolean }).open; })).toBe(true);
+    await expect(dialog).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-templates-ready")));
-    await expect(dialog.getByRole("combobox", { name: "Project template", exact: true })).toContainText("Avatar starter");
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(3);
     await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 

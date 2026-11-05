@@ -245,13 +245,14 @@ test("Resources sections and detail return controls work through ordinary clicks
     await resources.getByRole("button", { name: "Templates", exact: true }).click();
     await expectHeading(page, "Resources");
     await expect(resources.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "ID", "Last modified", "Source", "Actions"]);
-    await page.getByRole("button", { name: /^More actions for / }).click();
+    await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "Template ID", "Actions"]);
+    await page.getByRole("button", { name: "More actions for Avatar starter", exact: true }).click();
     await page.getByRole("menuitem", { name: "View template", exact: true }).click();
-    await expectHeading(page, "Template detail");
-    await expect(page.getByRole("button", { name: "Favorite", exact: true })).toBeVisible();
+    const templateDialog = page.getByRole("dialog", { name: "View template", exact: true });
+    await expect(templateDialog).toBeVisible();
+    await expect(dialogHost(page, "View template").getByLabel("Template ID", { exact: true })).toHaveValue("com.vrclearn.alcomd.templates.vrchat.avatars");
     await expect(page.getByRole("button", { name: "Remove template", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Templates", exact: true }).click();
+    await dialogHost(page, "View template").getByRole("button", { name: "Close", exact: true }).click();
     await expectHeading(page, "Resources");
     await resources.getByRole("button", { name: "Repositories", exact: true }).click();
     await expectHeading(page, "Resources");
@@ -298,7 +299,7 @@ test("Settings uses shared sections while Logs retains its two real read surface
 test("utility actions use modal dialogs and cancel clears drafts and returns focus", async ({ page }) => {
     const cases = [
         ["/repositories", "Add repository", "Repository URL", "https://example.invalid/preserved.json"],
-        ["/templates", "Import template", "Template bundle", "C:\\Fixture\\preserved.alcomdtemplate"],
+        ["/templates", "Create template", "Template ID", "com.example.preserved"],
         ["/extensions", "Install extension", "Extension package", "C:\\Fixture\\preserved.alcomdext"],
         ["/unity", "Manage installations", "Unity executable", "C:\\Fixture\\Unity.exe"]
     ] as const;
@@ -306,10 +307,9 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         await openHarness(page, route);
         const control = page.getByLabel(field, { exact: true });
         await expect(control).toHaveCount(0);
-        const trigger = page.getByRole("button", { name: route === "/templates" ? "More template creation options" : title, exact: true });
+        const trigger = page.getByRole("button", { name: title, exact: true });
         const openAction = async () => {
             await trigger.click();
-            if (route === "/templates") await page.getByRole("menuitem", { name: title, exact: true }).click();
         };
         await openAction();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
@@ -393,7 +393,6 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["repository", "/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["user-packages", "/user-packages", "Resources"],
         ["templates", "/templates", "Resources"],
-        ["template", "/templates/00000000-0000-4000-8000-000000000301", "Template detail"],
         ["settings", "/settings", "Settings"],
         ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],

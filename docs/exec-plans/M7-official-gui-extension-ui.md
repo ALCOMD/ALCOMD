@@ -114,12 +114,21 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 | Editor观察 / 创建ProjectVersion | Unity 2022.3 -version；ALCOMD显式完整版本策略 | Windows PE，其余显式有界探测；创建选择不冒充安装或启动验证 |
 
 
-- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI版本选择器包含已安装版本和“自定义”，仅选自定义时显示完整版本输入框；仅一个兼容安装时预填，多项不擅选，无安装默认自定义。手动输入匹配已安装版本也不切换选择模式；项目页和模板页共用同一组件，字段顺序为模板→Unity版本→项目名称→保存位置。
+- 创建请求不接受省略unityVersion的旧公开形状；Core校验完整版本与模板兼容性，将最终ProjectVersion内容/摘要固定进Plan。GUI版本选择器包含Core预设、兼容的已安装版本和“自定义”，仅选自定义时显示完整版本输入框；仅一个兼容安装时预填，多项不擅选，无安装默认自定义。手动输入匹配已安装版本也不切换选择模式；项目页和模板页共用同一组件，字段顺序为模板→Unity版本→项目名称→保存位置。
+
 - Windows保留PE读取；macOS/Linux仅在登记/重新扫描时执行-version，独立空工作目录、直接argv，并发2、总超时10秒、stdout/stderr各64KiB；执行前后核对身份，超时只终止并回收自己子进程。普通列表不探测，失败保留已有记录。
 - ALCOMD原生Template Bundle v1的unity主次对按同一版本线校验（ALCOMD策略，不冒称VRChat外部模板格式的最低版本规则）；patch由所选完整版本与包最低要求决定，不擅自支持未来主次版本。
 - unityRelease进入resolver/candidate共享最低版本判断；缺unity不施加门槛，无法可靠解释则unknown，Plan不据此宣称兼容，启动exact规则保持。数值渠道支持a/b/f/p，experimental及区域/自定义后缀保持unknown；依据[Unity 2022.3版本表达式](https://docs.unity3d.com/2022.3/Documentation/Manual/ScriptCompilationAssemblyDefinitionFiles.html#unity-version-numbers)。
 - TOML依赖沿用workspace当前锁定1.1.4，不增加第二个parser；替代手写语法减少维护分歧，仍执行各历史版本closed校验、16KiB限制及u64 revision/CAS。维护成本为既有库升级与新增store依赖边，替代方案继续手写已因可复现语法缺口拒绝。
 - 本轮按批次本地提交；不推送、不部署或重启用户环境，不操作真实项目和Unity。旧Plan不重签，未接受旧语义计划走stale，已接受任务恢复证据保持。
+
+### 指定创建版本补齐（2026-11-06，所有者已批准）
+
+v3功能审计确认：内置Avatar/World模板的三项版本与安装登记无关，并按选择使用对应模板内容。v4沿用独立编写的模板脚手架，按所选版本冻结ProjectVersion和SDK依赖，不复制旧版源码或模板字节。
+
+`TemplateRecord.unityVersionPresets`是Core派生的必需只读完整版本列表，最多64项，空数组表示无预设。VRChat内置Avatar/World依次提供2022.3.22f1、2022.3.6f1、2019.4.31f1，其他模板只提供自身声明主次线内的预设。GUI与兼容的安装版本去重合并，保留自定义及原默认选择逻辑；预设不表示已安装Editor。RPC major 1响应扩展，不加缺字段回退，不改变创建请求、权限、State表、Plan恢复或依赖。
+
+2019.4.31f1只作为经Core识别的内置Avatar/World额外版本；导入/派生bundle不继承。内置SDK Avatars/Worlds及传递依赖Base限定不高于3.4.2，仍经现有包兼容求解并冻结确切来源/哈希，缺少兼容SDK明确返回template_dependency_unsatisfied。[VRChat官方当前版本](https://creators.vrchat.com/sdk/upgrade/current-unity-version/)为2022.3.22f1，[官方入门文档](https://creators.vrchat.com/getting-started/)将2019.4.31f1用于SDK3.4.2及以前；已核对[官方包索引](https://vrchat.github.io/packages/index.json)仍有三项SDK3.4.2及SHA-256。2022.3继续依据包元数据及Unity最低版本求解，启动仍按真实安装和完整版本核对。
 
 ### 本轮实现与实际验证（A01–A10）
 
@@ -161,6 +170,29 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 原始日志、源码清单、失败轮次、新旧库future量测、迁移逐行比较、IPC帧、物理记录及二进制hash统一保留在标准目录 `target/m7-full-gates-update-20261105/run-20261105T093004Z/`；关键结果为 `rust-test-counts.json`、`migration-row-preservation.json`、`native-pair-result.json`、`deployment-result.json`、`updated-after-gui-comparison.json` 和 `protected-final.json`。本节补齐此前独立批次声明未执行的完整Rust/固定用户端点IPC和原环境更新，不改写那些历史结果。
 
 ## 当前有效合同
+
+### 模板系统清理与重建（公共合同与删除清单已获所有者批准）
+
+分两批验收。第一批停用旧模板系统，保留资源页中的模板空页，并提供独立的新建项目。第二批启用统一的模板声明和本地管理。旧模板格式和接口在第一批切换后失效。开发期模板数据直接废弃。以下 Schema 编号以当前工作树的 State21 为基线。
+
+#### 第一批：State22 与独立新建项目
+
+- 新增 `projects.create.v1` 和 `projects.create`。只允许已认证的本机所有者，检查现有 `projects.create` 权限。请求为 `{name, targetParent, unityVersion, idempotencyKey}`，返回 `{operationId, projectId, replayed}`。`name` 使用现有跨平台单段项目目录校验，`unityVersion` 为完整规范 Unity Editor 版本，允许尚未安装的版本。幂等作用域与现有规则一致，规范请求相同则返回原任务，不同则返回 `idempotency_conflict`。
+- 新任务 kind 为 `projects.create`。接受事务分配项目 ID 并记录请求和恢复信息。Core 在同一父目录暂存最小 Unity 工程，发布前核对父目录身份，使用平台独占重命名，目标存在时保留原目录。发布后同事务登记项目、终结任务并写入 `project.registered` 和任务变化事件。恢复只处理能核实归属的暂存或已发布目录。GUI 保留默认位置、已安装版本和自定义版本，接受后跟踪原任务，成功后打开项目详情。CLI 的 `project create` 调用同一入口。
+- 删除 `templates.*` 方法、`templates.read.v1`、`templates.manage.v1`、`templates.create-project.v1` 及 `templates.read`、`templates.manage` 权限名称，连同旧模板命令、SDK 与前端适配、Schema、包解析/生成、注册、恢复和模板变更通知。资源页的模板标签继续打开空页。其他使用 `projects.create` 的入口保留原有授权要求。
+- State22 删除 `templates`、`template_plans` 及其索引和触发器。从共享表清除 `templates.import`、`templates.derive`、`templates.create-project` 三种旧任务及其 journal，清除这些任务的幂等记录及 `templates.applyPlan`、`templates.setFavorite`、`templates.remove` 方法的幂等记录。清除 `aggregate_kind='template'` 事件和已确认旧任务 ID 对应的 operation 事件。清除 `operation_log_entries` 中关联这些旧任务 ID 或结构化 action 以 `templates.` 开头的记录，覆盖 `templates.favorite` 等独立于任务的日志。保持保留行、外键约束及事件和日志的自增水位。更新 operation kind 和 event aggregate kind 的 Schema 约束。
+- 迁移开始时若仍有未终结旧模板任务，先在升级旧库之前拒绝打开，确保旧 Core 还能正常完成或取消任务。已创建的项目、项目事件、非模板任务、设置和共享包缓存不在删除清单内。Core 首次成功升级 State4–21 后检查数据根直属的 `template-store` 与 `template-builtin-staging`。只有路径、文件系统身份和旧产物命名均可核实时才清理。无法核实的内容留在原处，Core 启动输出说明失败原因。真实 profile 切换另按运行环境授权执行。
+
+#### 第二批：State23 与统一模板声明
+
+- 新增 `projectTemplates.v1` 及 `projectTemplates.list`、`projectTemplates.save`、`projectTemplates.remove`，初期限已认证本机所有者。`list` 按 ID 稳定分页，沿用现有有界列表参数和游标约定。记录返回 `{declaration, revision, locked}`。`save` 接收 `{declaration, expectedRevision?}`，省略修订表示创建，提供修订表示更新。创建同 ID 同内容返回已有记录，同 ID 异内容报告冲突。更新及 `{id, expectedRevision}` 删除均先验证当前修订与锁定状态。相同内容不产生新修订或变化事件。
+- 声明为 `{id, name, unity, dependencies, constraints}`。ID 必填，点分隔的非空小写 ASCII 段，每段以字母或数字开头及结尾，允许内部连字符，最多 128 字节。名称可重名。Unity 条件由允许的 major/minor 系列和精确版本预设取并集，两者为空时接受合法完整版本。依赖为 `{packageId, versionRange}`，条件约束为 `{unityVersion, packageId, versionRange}`，只限制已被求解器纳入的包，不追加直接依赖。声明统一校验并生成确定性 UTF-8 JSON，内部记录 UUID、修订、锁定标记和时间戳在 JSON 之外。
+- State23 新增模板目录和目录修订分配状态。记录保存 owner、公开模板 ID、内部 UUID、规范声明 JSON、正整数修订和锁定标记，按 owner 和公开 ID 唯一。修订在同一事务分配，跨删除和重建不重用。预置 Avatars 和 Worlds 使用与用户声明完全相同的结构和校验，分别使用 `com.vrclearn.alcomd.templates.vrchat.avatars` 和 `com.vrclearn.alcomd.templates.vrchat.worlds`。预设依次为 `2022.3.22f1`、`2022.3.6f1`、`2019.4.31f1`，2019 对应 SDK 与 Base 上限 `3.4.2` 由条件约束表达。内置锁仅影响编辑及删除。普通表单可生成与内置逐字节一致的声明，同名不同 ID 可分别保存。
+- `projects.create` 请求增加可选 `template: {id, revision}`。Core 接受任务时在事务内校验修订并冻结声明，旧修订或已删除记录提示重新选择。使用模板依赖的创建还检查现有 `packages.read`、`repositories.read` 和 `packages.manage` 权限，通过同一求解器锁定来源、版本和内容后再发布。GUI 默认不使用模板，无独立 Blank。模板创建、更新和删除同事务写入 `project-template.changed`，沿用当前事件入口，事件 aggregate ID 用内部 UUID，GUI 按模板目录失效处理。
+
+#### 验收与交付边界
+
+第一批在隔离 profile 验证旧入口消失、空页零模板请求、State21 定向清理与中断拒绝、外键和水位保留、GUI/CLI 无模板创建、目录冲突、幂等及发布恢复，并回归登记、复制、备份还原。第二批验证权限、同名不同 ID、同 ID 的重用和冲突、删除后重建的旧修订、内置不可编辑删除、普通表单与内置字节一致、六组内置模板与 Unity 版本组合、依赖约束及事件更新。同步协议规范、Schema、SDK 和契约向量，分别记录验证。H2–H6 历史材料保留，M7/H7 最终确认由所有者完成。
 
 ### 页面提示边界
 
@@ -392,6 +424,8 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 日常定向检查，稳定候选集中完整Rust门禁和适用前端/浏览器回归，不按提交重复。只在标准main开发，保留全部既有修改/证据；不操作真实Unity/项目、不恢复桌面控制、不推送，不自行签收M7/H7。交付绑定实际候选及真实竞态/背压/查询计数和未覆盖范围。
 
 ### Unity 启动只判断目标项目（2026-11-05）
+
+2026-11-06 所有者确认 v3 能看到其他入口启动的 Unity，并能把已就绪的编辑器置于前台。v4 将此能力作为 Windows 本地桌面操作。Core 通过现有项目读取合同授权目标，启动判断和写者保护继续走原用例。桌面平台按项目目录身份、Editor 进程和主窗口确认按钮状态，Windows 目录通知、窗口事件及进程退出触发更新。共享适配一次等待一份最新状态，健康空闲时无周期读取。点击置前时再次通过 Core 核对目标项目及占用，再核对当前 HWND 的进程归属。Windows 拒绝或窗口消失时在操作对话框反馈。其他平台维持已有打开入口。本轮使用已有 `windows-sys` 增开窗口及可访问性 API 特性，无公共 RPC、数据结构或权限变更。目录启动提示有界，覆盖当前最多 20 个登记目标，其余项目通过窗口事件和初始快照更新。
 
 所有者明确：目的是防止重复打开同一项目，其他 Unity 或无法关联项目的进程不得形成全局启动禁令。本轮据此纠正 M5 行为，不增加再次确认或绕过开关。
 

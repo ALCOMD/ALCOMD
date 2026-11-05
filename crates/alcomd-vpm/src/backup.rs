@@ -288,7 +288,7 @@ impl M5BackupAdapter for BackupEngine {
                 return published(&final_path, &request);
             }
             verify_archive(&partial, &evidence, limits)?;
-            match alcomd_platform::publish_file_no_replace(&partial, &final_path) {
+            match alcomd_platform::publish_path_no_replace(&partial, &final_path) {
                 Ok(()) => {}
                 Err(_) if final_path.exists() => {
                     verify_archive(&final_path, &evidence, limits)?;

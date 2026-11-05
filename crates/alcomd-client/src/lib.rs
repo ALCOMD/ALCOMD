@@ -131,6 +131,8 @@ impl AlcomdClient {
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_LOGS_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
@@ -148,9 +150,6 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
@@ -621,112 +620,36 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn templates_list(
+    pub async fn projects_create(
         &mut self,
-        params: alcomd_protocol::TemplatesListParams,
-    ) -> Result<alcomd_protocol::TemplatesListResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_LIST, params)
+        params: alcomd_protocol::ProjectsCreateParams,
+    ) -> Result<alcomd_protocol::ProjectsCreateResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECTS_CREATE, params)
             .await
     }
 
-    pub async fn template_get(
+    pub async fn project_templates_list(
         &mut self,
-        template_id: String,
-    ) -> Result<alcomd_protocol::TemplateRecordResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_TEMPLATES_GET,
-            alcomd_protocol::TemplateIdParams { template_id },
-        )
-        .await
-    }
-
-    pub async fn template_inspect_bundle(
-        &mut self,
-        bundle_path: String,
-    ) -> Result<alcomd_protocol::TemplateBundleInspection, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_TEMPLATES_INSPECT_BUNDLE,
-            alcomd_protocol::TemplateInspectBundleParams { bundle_path },
-        )
-        .await
-    }
-
-    pub async fn template_plan_import(
-        &mut self,
-        params: alcomd_protocol::TemplatePlanImportParams,
-    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_PLAN_IMPORT, params)
+        params: alcomd_protocol::ProjectTemplatesListParams,
+    ) -> Result<alcomd_protocol::ProjectTemplatesListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST, params)
             .await
     }
 
-    pub async fn template_apply_import(
+    pub async fn project_templates_save(
         &mut self,
-        params: alcomd_protocol::TemplateApplyPlanParams,
-    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_APPLY_IMPORT, params)
+        params: alcomd_protocol::ProjectTemplatesSaveParams,
+    ) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE, params)
             .await
     }
 
-    pub async fn template_plan_derive(
+    pub async fn project_templates_remove(
         &mut self,
-        params: alcomd_protocol::TemplatePlanDeriveParams,
-    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_PLAN_DERIVE, params)
+        params: alcomd_protocol::ProjectTemplatesRemoveParams,
+    ) -> Result<alcomd_protocol::ProjectTemplatesRemoveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE, params)
             .await
-    }
-
-    pub async fn template_apply_derive(
-        &mut self,
-        params: alcomd_protocol::TemplateApplyPlanParams,
-    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_APPLY_DERIVE, params)
-            .await
-    }
-
-    pub async fn template_export(
-        &mut self,
-        params: alcomd_protocol::TemplateExportParams,
-    ) -> Result<alcomd_protocol::TemplateExportResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_EXPORT, params)
-            .await
-    }
-
-    pub async fn template_set_favorite(
-        &mut self,
-        params: alcomd_protocol::TemplateSetFavoriteParams,
-    ) -> Result<alcomd_protocol::TemplateRecordResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_SET_FAVORITE, params)
-            .await
-    }
-
-    pub async fn template_remove(
-        &mut self,
-        params: alcomd_protocol::TemplateRemoveParams,
-    ) -> Result<alcomd_protocol::TemplateRemoveResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_TEMPLATES_REMOVE, params)
-            .await
-    }
-
-    pub async fn template_plan_create_project(
-        &mut self,
-        params: alcomd_protocol::TemplatePlanCreateProjectParams,
-    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_TEMPLATES_PLAN_CREATE_PROJECT,
-            params,
-        )
-        .await
-    }
-
-    pub async fn template_apply_create_project(
-        &mut self,
-        params: alcomd_protocol::TemplateApplyPlanParams,
-    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_TEMPLATES_APPLY_CREATE_PROJECT,
-            params,
-        )
-        .await
     }
 
     pub async fn backups_list(
@@ -1157,8 +1080,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET
             | METHOD_UNITY_WRITER_STATE
             | METHOD_UNITY_LAUNCH_OPTIONS
-            | METHOD_TEMPLATES_LIST
-            | METHOD_TEMPLATES_GET
+            | METHOD_PROJECT_TEMPLATES_LIST
             | METHOD_BACKUPS_LIST
             | METHOD_BACKUPS_GET
             | METHOD_EXTENSIONS_LIST

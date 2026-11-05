@@ -840,8 +840,9 @@ fn recover(connection: &mut Connection, kind: &str, time: u64) -> Result<Vec<Ope
         "backups.restore" => {
             m5_backup_restore::recover(connection, time).map_err(|error| format!("{error:?}"))
         }
-        "templates.import" => m5_template::recover_template_operations(connection, time)
-            .map_err(|error| format!("{error:?}")),
+        "projects.create" => {
+            project_create::pending(connection, time).map_err(|error| format!("{error:?}"))
+        }
         "extensions.install" => {
             m6::recover_operations(connection, time).map_err(|error| format!("{error:?}"))
         }
@@ -863,7 +864,7 @@ fn each_existing_recovery_commits_state_revision_and_event_atomically_and_repeat
         "packages.apply",
         "backups.create",
         "backups.restore",
-        "templates.import",
+        "projects.create",
         "extensions.install",
         "projects.copy",
         "projects.delete-directory",
@@ -874,10 +875,24 @@ fn each_existing_recovery_commits_state_revision_and_event_atomically_and_repeat
             sqlite::initialize_connection(&directory.database()).expect("isolated database");
         let owner = PrincipalId::parse("test:recovery-owner").expect("fixture owner");
         let operation = OperationId::new();
+        let request = if kind == "projects.create" {
+            r#"{"name":"Sample","targetParent":"/tmp","unityVersion":"2022.3.22f1"}"#
+        } else {
+            "{}"
+        };
         connection.execute("INSERT INTO operations(operation_id,kind,state,revision,owner_principal_id,request_json,created_at_ms,updated_at_ms)
-            VALUES(?1,?2,'running',1,?3,'{}',1,1)", params![operation.to_string(), kind, owner.as_str()]).expect("public task fixture");
+            VALUES(?1,?2,'running',1,?3,?4,1,1)", params![operation.to_string(), kind, owner.as_str(), request]).expect("public task fixture");
         if kind == "state.check" {
             connection.execute("INSERT INTO operation_journal(operation_id,step,kind,state,payload_json,updated_at_ms) VALUES(?1,1,'state.check','prepared','{}',1)", [operation.to_string()]).expect("recovery journal");
+        }
+        if kind == "projects.create" {
+            let payload = serde_json::json!({
+                "projectId": ProjectId::new().to_string(),
+                "canonicalParent": "/tmp",
+                "parentIdentity": [1],
+                "phase": "preflight_complete"
+            });
+            connection.execute("INSERT INTO operation_journal(operation_id,step,kind,state,payload_json,updated_at_ms) VALUES(?1,1,'projects.create','prepared',?2,1)", params![operation.to_string(), payload.to_string()]).expect("creation journal");
         }
         if kind == "packages.apply" {
             let project = ProjectId::new();

@@ -37,7 +37,7 @@ requires `projects.manage` in addition to `settings.manage`; a settings-only pri
 use the local-owner worker to obtain registry write authority. Scanning is single-in-flight,
 bounded to 4096 immediate directory entries and rejects links/reparse points. Each candidate
 rechecks root/child identity and the current settings revision before registry acceptance.
-It shares the ProjectCreate lock with Template/Restore/Copy publication to preserve their
+It shares the ProjectCreate lock with project creation, restore, and copy publication to preserve their
 preallocated project identities. Disabling or changing the root orders before later old-scan
 registrations. Failed scans never delete existing projects or write project files.
 

@@ -155,25 +155,19 @@ export function requestErrorMessage(code: string): string {
             return "The package manifest is invalid. Check the selected package folder.";
         case "user_package_limit_exceeded":
             return "The user package exceeds supported limits. Reduce its contents before checking it again.";
-        case "template_not_found":
-            return "This template is no longer available. Refresh the template list.";
         case "template_builtin_immutable":
-            return "Built-in templates cannot be removed or replaced. Use a user template for changes.";
+            return "Built-in templates cannot be edited or removed.";
         case "template_conflict":
-            return "A different template uses this identifier. Review the existing template before choosing an explicit replacement.";
-        case "template_bundle_invalid":
-            return "The template bundle is invalid or unsupported. Choose a valid ALCOMD template bundle.";
-        case "template_digest_mismatch":
+            return "A different template uses this ID. Choose another template ID.";
+        case "template_dependency_unsatisfied":
+            return "The template packages could not be resolved. Check the package ranges, repositories and Unity version.";
         case "package_integrity_mismatch":
         case "backup_integrity_mismatch":
             return "The content failed its integrity check. Use a verified source before continuing.";
-        case "template_payload_unavailable":
-            return "The template contents are unavailable. Refresh the list and check the template source.";
 
         case "plan_not_found":
         case "plan_stale":
         case "extension_plan_stale":
-        case "template_plan_stale":
         case "backup_restore_plan_not_found":
         case "backup_restore_plan_stale":
         case "project_copy_plan_not_found":
@@ -205,12 +199,13 @@ export function requestErrorMessage(code: string): string {
         case "project_manifest_invalid":
             return "A package manifest in the project could not be read. Check its format and contents.";
         case "project_changed_during_apply":
-        case "project_changed_during_template_create":
         case "project_copy_source_changed":
         case "project_delete_source_changed":
         case "project_unity_migration_source_changed":
             return "The project changed after review. Refresh it and review a new plan before continuing.";
-        case "template_target_exists":
+        case "project_create_destination_changed":
+            return "The destination folder changed during creation. Check the location and try again.";
+        case "project_create_target_exists":
         case "backup_target_exists":
         case "project_copy_target_exists":
             return "The target already exists. Choose a new name or location; existing files were kept.";

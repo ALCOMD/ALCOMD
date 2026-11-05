@@ -1050,10 +1050,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "任务",
         "ja-JP": "タスク"
     },
-    "Template detail": {
-        "zh-CN": "模板详情",
-        "ja-JP": "テンプレートの詳細"
-    },
     "Templates": {
         "zh-CN": "模板",
         "ja-JP": "テンプレート"

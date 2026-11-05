@@ -24,7 +24,7 @@ pub struct StagingProjectEvidence {
     pub final_vpm_manifest_sha256: [u8; 32],
 }
 
-/// Bounded non-sensitive evidence returned to the outer Template journal.
+/// Bounded non-sensitive evidence returned to the project creation journal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StagingPackageEvidence {
     pub package_count: u32,
@@ -164,7 +164,7 @@ fn materialize_blocking(
 
     let work = evidence
         .root
-        .join("Library/ALCOMD/template-package-staging");
+        .join("Library/ALCOMD/project-create-package-staging");
     ensure_new_directory_chain(&evidence.root, Path::new("Library/ALCOMD"))?;
     match std::fs::symlink_metadata(&work) {
         Ok(_) => return Err(M4Error::new(M4ErrorCode::RecoveryRequired)),

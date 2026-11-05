@@ -1,0 +1,126 @@
+{
+    "create": {
+        "name": "Created Project",
+        "targetParent": "C:\\Fixture",
+        "unityVersion": "2022.3.22f1",
+        "idempotencyKey": "create-without-template"
+    },
+    "createFromTemplate": {
+        "name": "Created Project",
+        "targetParent": "C:\\Fixture",
+        "unityVersion": "2022.3.22f1",
+        "idempotencyKey": "create-from-template",
+        "template": {
+            "id": "com.example.avatar-tools",
+            "revision": 3
+        }
+    },
+    "created": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "projectId": "00000000-0000-4000-8000-000000000002",
+        "replayed": false
+    },
+    "list": {
+        "templates": [
+            {
+                "declaration": {
+                    "id": "com.example.avatar-tools",
+                    "name": "Avatar Tools",
+                    "unity": {
+                        "series": [
+                            "2022.3"
+                        ],
+                        "presets": [
+                            "2022.3.22f1",
+                            "2019.4.31f1"
+                        ]
+                    },
+                    "dependencies": [
+                        {
+                            "packageId": "com.vrchat.avatars",
+                            "versionRange": "*"
+                        }
+                    ],
+                    "constraints": [
+                        {
+                            "unityVersion": "2019.4.31f1",
+                            "packageId": "com.vrchat.base",
+                            "versionRange": "<=3.4.2"
+                        }
+                    ]
+                },
+                "revision": 3,
+                "locked": false
+            }
+        ],
+        "nextCursor": "com.example.avatar-tools"
+    },
+    "save": {
+        "declaration": {
+            "id": "com.example.avatar-tools",
+            "name": "Avatar Tools",
+            "unity": {
+                "series": [
+                    "2022.3"
+                ],
+                "presets": [
+                    "2022.3.22f1",
+                    "2019.4.31f1"
+                ]
+            },
+            "dependencies": [
+                {
+                    "packageId": "com.vrchat.avatars",
+                    "versionRange": "*"
+                }
+            ],
+            "constraints": [
+                {
+                    "unityVersion": "2019.4.31f1",
+                    "packageId": "com.vrchat.base",
+                    "versionRange": "<=3.4.2"
+                }
+            ]
+        }
+    },
+    "saved": {
+        "template": {
+            "declaration": {
+                "id": "com.example.avatar-tools",
+                "name": "Avatar Tools",
+                "unity": {
+                    "series": [
+                        "2022.3"
+                    ],
+                    "presets": [
+                        "2022.3.22f1",
+                        "2019.4.31f1"
+                    ]
+                },
+                "dependencies": [
+                    {
+                        "packageId": "com.vrchat.avatars",
+                        "versionRange": "*"
+                    }
+                ],
+                "constraints": [
+                    {
+                        "unityVersion": "2019.4.31f1",
+                        "packageId": "com.vrchat.base",
+                        "versionRange": "<=3.4.2"
+                    }
+                ]
+            },
+            "revision": 3,
+            "locked": false
+        }
+    },
+    "remove": {
+        "id": "com.example.avatar-tools",
+        "expectedRevision": 3
+    },
+    "removed": {
+        "id": "com.example.avatar-tools",
+        "revision": 4
+    }
+}

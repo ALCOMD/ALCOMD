@@ -200,7 +200,7 @@ PackageCache
 Project(project_id)
 ProjectBackup(project_id)
 ProjectRestore(target_path)
-Template(template_id)
+ProjectCreate(parent_identity, target_leaf)
 Extension(extension_id)
 ExternalConfig(provider_id)
 ```

@@ -146,7 +146,6 @@ test("Resources segments remain keyboard reachable with visible contextual actio
     await expect(page.getByRole("table", { name: "Templates", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Resources", level: 1, exact: true })).toBeFocused();
     await expectReachable(page, page.getByRole("button", { name: "Create template", exact: true }));
-    await expectReachable(page, page.getByRole("button", { name: "More template creation options", exact: true }));
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await expectHeaderFits(page);
     await expectCanvasFits(page);

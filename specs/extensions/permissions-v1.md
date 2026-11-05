@@ -14,8 +14,6 @@ packages.read
 packages.manage
 repositories.read
 repositories.manage
-templates.read
-templates.manage
 unity.read
 unity.manage
 unity.launch
@@ -120,7 +118,7 @@ mcp.configuration.manage
 - M4 仅允许 `builtin:local-owner` 使用 Apply 写路径。真实外部 credential enrollment/revocation 与
   第三方 mutation 尚未实现，不得因 Schema 已冻结而描述为开放。
 
-## M5 CLI、Unity、Template 与 Backup 权限
+## CLI、Unity、项目创建与备份权限
 
 - `unity.read`：查询 installation registry、project launch config、exact launch options 与 writer state；
   不允许修改 registry、启动 Editor 或读取任意进程技术信息。
@@ -132,13 +130,8 @@ mcp.configuration.manage
   修改、shell command、任意 executable 或绕过 writer gate。
 - `projects.create`：只允许在显式、不存在的 destination 创建一个全新 Project；不允许删除、覆盖、
   merge 或修改既有 Project，也不扩大 `projects.manage` 的 M3 registry 语义。
-- `templates.read`：允许 list/get/inspect/export 已授权 template；不允许注册、favorite、remove、derive、
-  object publish 或创建项目。inspect/export 仍由 application/RPC 执行，不能据此直接读取 object store。
-- `templates.manage`：允许 user template import/explicit override、derive、favorite 与 remove；不允许修改或
-  删除 builtin，不隐含 `projects.create`、`projects.read` 或任意 package mutation authority。
-- derive from Project 还要求目标 Project 的 `projects.read` scope。template create-project Plan 需要
-  `templates.read + projects.create`；有 dependency 时还需要 `packages.read + repositories.read`，Apply
-  materialization 另需既有 `packages.manage`。`templates.manage` 不能隐式提供这些 package 权限。
+- `projects.create` 入口与 `projectTemplates.*` 目录操作只允许 `builtin:local-owner`。模板目录不新增权限。
+  使用模板依赖创建项目时另检查 `packages.read`、`repositories.read` 和 `packages.manage`。
 - `backups.list` 与 `backups.get` 只要求 `backups.read`。Backup Create contract-first 的
   `backups.create` 要求 `backups.manage` 与目标 Project 的 `projects.read` scope；它不要求
   `projects.manage`、`projects.create` 或 `packages.manage`。`excludeVpmPackages` 只读取 normalized locked
@@ -147,11 +140,11 @@ mcp.configuration.manage
   staging、target 或 Operation。`backups.applyRestore` 必须重新验证相同权限，并额外需要
   `backups.manage`。两者都只允许恢复到明确不存在的全新 Project target，不隐含 package/repository/
   Unity 权限，也不允许 overwrite、merge、delete-then-restore 或 arbitrary ZIP。
-- Template/Backup 所有外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
-  TemplateId、bundle digest、target path 与 object locator 都不是授权凭据。
+- 备份的外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
+  bundle digest、target path 与 object locator 都不是授权凭据。
 - `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation
   尚未实现，高影响 write path 不得描述为已向任意第三方开放。
-- capability、InstallationId、LaunchId、TemplateId、BackupId、路径、PID 与 client metadata 都不是
+- capability、InstallationId、LaunchId、BackupId、路径、PID 与 client metadata 都不是
   Principal 或授权凭据。
 
 ## M6 Extension Runtime 权限与 scope

@@ -58,7 +58,6 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         (&["project", "list"][..], "project list"),
         (&["repository", "list"][..], "repository list"),
         (&["unity", "list"][..], "unity list"),
-        (&["template", "list"][..], "template list"),
         (&["backup", "list"][..], "backup list"),
     ] {
         let output = run_group_cli(runtime.clone(), arguments);
@@ -68,6 +67,40 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
             serde_json::from_slice(&output.stdout).expect("group JSON stdout");
         assert_eq!(document["command"], expected_command);
     }
+
+    let project_parent =
+        std::env::temp_dir().join(format!("alcomd-cli-create-{}", std::process::id()));
+    std::fs::create_dir(&project_parent).expect("owned project fixture directory");
+    let target_parent = project_parent.to_str().expect("UTF-8 fixture path");
+    let creation = run_group_cli(
+        runtime.clone(),
+        &[
+            "project",
+            "create",
+            target_parent,
+            "CLI Project",
+            "--unity-version",
+            "2022.3.22f1",
+            "--idempotency-key",
+            "cli-create-contract",
+        ],
+    );
+    assert!(
+        creation.status.success(),
+        "{}",
+        String::from_utf8_lossy(&creation.stderr)
+    );
+    let created: serde_json::Value =
+        serde_json::from_slice(&creation.stdout).expect("project create JSON stdout");
+    assert_eq!(created["command"], "project create");
+    assert_eq!(created["result"]["state"], "succeeded");
+    assert!(created["result"]["result"]["projectId"].as_str().is_some());
+    assert!(
+        project_parent
+            .join("CLI Project/ProjectSettings/ProjectVersion.txt")
+            .is_file()
+    );
+    std::fs::remove_dir_all(&project_parent).expect("remove owned project fixture directory");
 
     let confirmation_runtime = runtime.clone();
     let confirmation =
@@ -130,8 +163,8 @@ fn run_confirmation_required_cli(runtime: Option<PathBuf>) -> std::process::Outp
         command.arg("--runtime-dir").arg(runtime);
     }
     command.args([
-        "template",
-        "remove",
+        "package",
+        "apply-plan",
         "00000000-0000-4000-8000-000000000001",
         "--expected-revision",
         "1",

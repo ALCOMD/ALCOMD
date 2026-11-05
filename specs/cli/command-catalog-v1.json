@@ -74,20 +74,6 @@
             ]
         },
         {
-            "name": "template",
-            "aliases": ["templates"],
-            "commands": [
-                {"name": "list", "aliases": []},
-                {"name": "get", "aliases": ["info"]},
-                {"name": "inspect", "aliases": []},
-                {"name": "import", "aliases": []},
-                {"name": "export", "aliases": []},
-                {"name": "derive", "aliases": []},
-                {"name": "remove", "aliases": []},
-                {"name": "favorite", "aliases": []}
-            ]
-        },
-        {
             "name": "backup",
             "aliases": [],
             "commands": [

@@ -1,0 +1,129 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-create.json",
+    "title": "ALCOMD project creation and template declarations",
+    "x-alcomd-local-owner-only": true,
+    "x-alcomd-max-canonical-declaration-bytes": 24576,
+    "x-alcomd-method-permissions": {
+        "projects.create": ["projects.create"],
+        "projectTemplates.list": [],
+        "projectTemplates.save": [],
+        "projectTemplates.remove": []
+    },
+    "x-alcomd-project-create-dependency-permissions": ["packages.read", "repositories.read", "packages.manage"],
+    "x-alcomd-method-capabilities": {
+        "projects.create": "projects.create.v1",
+        "projectTemplates.list": "projectTemplates.v1",
+        "projectTemplates.save": "projectTemplates.v1",
+        "projectTemplates.remove": "projectTemplates.v1"
+    },
+    "x-alcomd-method-params": {
+        "projects.create": "#/$defs/createParams",
+        "projectTemplates.list": "#/$defs/listParams",
+        "projectTemplates.save": "#/$defs/saveParams",
+        "projectTemplates.remove": "#/$defs/removeParams"
+    },
+    "x-alcomd-method-results": {
+        "projects.create": "#/$defs/createResult",
+        "projectTemplates.list": "#/$defs/listResult",
+        "projectTemplates.save": "#/$defs/saveResult",
+        "projectTemplates.remove": "#/$defs/removeResult"
+    },
+    "$defs": {
+        "templateId": {
+            "type": "string", "minLength": 3, "maxLength": 128,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+        },
+        "unityVersion": {
+            "type": "string", "minLength": 8, "maxLength": 64,
+            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)[abfpx][1-9][0-9]*(?:c[1-9][0-9]*)?$"
+        },
+        "packageId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "versionRange": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        "templateRef": {
+            "type": "object", "additionalProperties": false, "required": ["id", "revision"],
+            "properties": {"id": {"$ref": "#/$defs/templateId"}, "revision": {"$ref": "#/$defs/revision"}}
+        },
+        "unity": {
+            "type": "object", "additionalProperties": false, "required": ["series", "presets"],
+            "properties": {
+                "series": {
+                    "type": "array", "maxItems": 64, "uniqueItems": true,
+                    "items": {"type": "string", "maxLength": 64, "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"}
+                },
+                "presets": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/unityVersion"}}
+            }
+        },
+        "dependency": {
+            "type": "object", "additionalProperties": false, "required": ["packageId", "versionRange"],
+            "properties": {"packageId": {"$ref": "#/$defs/packageId"}, "versionRange": {"$ref": "#/$defs/versionRange"}}
+        },
+        "constraint": {
+            "type": "object", "additionalProperties": false, "required": ["unityVersion", "packageId", "versionRange"],
+            "properties": {
+                "unityVersion": {"$ref": "#/$defs/unityVersion"},
+                "packageId": {"$ref": "#/$defs/packageId"},
+                "versionRange": {"$ref": "#/$defs/versionRange"}
+            }
+        },
+        "declaration": {
+            "type": "object", "additionalProperties": false, "required": ["id", "name", "unity", "dependencies", "constraints"],
+            "properties": {
+                "id": {"$ref": "#/$defs/templateId"},
+                "name": {"type": "string", "minLength": 1, "maxLength": 128},
+                "unity": {"$ref": "#/$defs/unity"},
+                "dependencies": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/dependency"}},
+                "constraints": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/constraint"}}
+            }
+        },
+        "record": {
+            "type": "object", "additionalProperties": false, "required": ["declaration", "revision", "locked"],
+            "properties": {
+                "declaration": {"$ref": "#/$defs/declaration"}, "revision": {"$ref": "#/$defs/revision"}, "locked": {"type": "boolean"}
+            }
+        },
+        "createParams": {
+            "type": "object", "additionalProperties": false, "required": ["name", "targetParent", "unityVersion", "idempotencyKey"],
+            "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 255},
+                "targetParent": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "unityVersion": {"$ref": "#/$defs/unityVersion"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+                "template": {"$ref": "#/$defs/templateRef"}
+            }
+        },
+        "createResult": {
+            "type": "object", "additionalProperties": false, "required": ["operationId", "projectId", "replayed"],
+            "properties": {
+                "operationId": {"type": "string", "format": "uuid"},
+                "projectId": {"type": "string", "format": "uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "listParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 100}, "cursor": {"type": "string", "minLength": 1, "maxLength": 128}}
+        },
+        "listResult": {
+            "type": "object", "additionalProperties": false, "required": ["templates"],
+            "properties": {
+                "templates": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/record"}},
+                "nextCursor": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "saveParams": {
+            "type": "object", "additionalProperties": false, "required": ["declaration"],
+            "properties": {"declaration": {"$ref": "#/$defs/declaration"}, "expectedRevision": {"$ref": "#/$defs/revision"}}
+        },
+        "saveResult": {
+            "type": "object", "additionalProperties": false, "required": ["template"],
+            "properties": {"template": {"$ref": "#/$defs/record"}}
+        },
+        "removeParams": {
+            "type": "object", "additionalProperties": false, "required": ["id", "expectedRevision"],
+            "properties": {"id": {"$ref": "#/$defs/templateId"}, "expectedRevision": {"$ref": "#/$defs/revision"}}
+        },
+        "removeResult": {"$ref": "#/$defs/templateRef"}
+    }
+}

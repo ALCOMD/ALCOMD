@@ -111,8 +111,8 @@ const SCHEMAS: [(&str, &str); 31] = [
         include_str!("../../../specs/rpc/m5-unity.schema.json"),
     ),
     (
-        "m5-template",
-        include_str!("../../../specs/rpc/m5-template.schema.json"),
+        "m7-project-create",
+        include_str!("../../../specs/rpc/m7-project-create.schema.json"),
     ),
     (
         "m5-backup-create",
@@ -204,7 +204,7 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
             "unity-installation",
             "project-editor-preference",
             "project-unity-launch-config",
-            "template",
+            "project-template",
             "user-package"
         ]),
         "the log scope does not add a durable business Event aggregate"
@@ -1296,9 +1296,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
         json!([
             "state.check",
             "packages.apply",
-            "templates.import",
-            "templates.derive",
-            "templates.create-project",
+            "projects.create",
             "backups.create",
             "backups.restore",
             "extensions.install",
@@ -1311,7 +1309,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23
         ])
     );
 }
@@ -1406,7 +1404,7 @@ fn hello_schema_accepts_the_project_observation_removal_v16_store() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23
         ])
     );
 }
@@ -1513,65 +1511,94 @@ fn m7_project_favorite_and_unity_launch_config_are_active_contracts() {
 }
 
 #[test]
-fn template_creation_requires_explicit_editor_version() {
-    let contract = schema("m5-template");
-    assert!(
-        contract["$defs"]["planCreateProjectParams"]["required"]
-            .as_array()
-            .expect("required")
-            .contains(&json!("unityVersion"))
+fn project_creation_and_template_declarations_round_trip() {
+    use alcomd_protocol::{
+        ProjectTemplatesListResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult,
+        ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectsCreateParams,
+        ProjectsCreateResult,
+    };
+    let contract = schema("m7-project-create");
+    assert_eq!(contract["x-alcomd-local-owner-only"], true);
+    assert_eq!(contract["x-alcomd-max-canonical-declaration-bytes"], 24_576);
+    assert_eq!(
+        contract["x-alcomd-method-capabilities"],
+        json!({
+            "projects.create": "projects.create.v1",
+            "projectTemplates.list": "projectTemplates.v1",
+            "projectTemplates.save": "projectTemplates.v1",
+            "projectTemplates.remove": "projectTemplates.v1"
+        })
     );
-    let mut request = json!({ "templateId": "00000000-0000-4000-8000-000000000001", "expectedTemplateRevision": 1, "targetParent": "C:\\Fixture", "targetLeaf": "Created" });
-    assert!(
-        serde_json::from_value::<alcomd_protocol::TemplatePlanCreateProjectParams>(request.clone())
-            .is_err()
+    assert_eq!(
+        contract["$defs"]["createParams"]["required"],
+        json!(["name", "targetParent", "unityVersion", "idempotencyKey"])
     );
-    request["unityVersion"] = json!("2022.3.22f1");
-    let typed = serde_json::from_value::<alcomd_protocol::TemplatePlanCreateProjectParams>(request)
-        .expect("complete input");
-    assert_eq!(typed.unity_version, "2022.3.22f1");
-}
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../specs/rpc/m7-project-create.contract-vectors.json"
+    ))
+    .expect("project creation vectors");
+    fn round_trip<T: serde::de::DeserializeOwned + serde::Serialize>(sample: &Value) {
+        let parsed: T = serde_json::from_value(sample.clone()).expect("valid contract vector");
+        assert_eq!(serde_json::to_value(parsed).expect("round trip"), *sample);
+    }
+    round_trip::<ProjectsCreateParams>(&vectors["create"]);
+    round_trip::<ProjectsCreateParams>(&vectors["createFromTemplate"]);
+    round_trip::<ProjectsCreateResult>(&vectors["created"]);
+    round_trip::<ProjectTemplatesListResult>(&vectors["list"]);
+    round_trip::<ProjectTemplatesSaveParams>(&vectors["save"]);
+    round_trip::<ProjectTemplatesSaveResult>(&vectors["saved"]);
+    round_trip::<ProjectTemplatesRemoveParams>(&vectors["remove"]);
+    round_trip::<ProjectTemplatesRemoveResult>(&vectors["removed"]);
+    let mut request = vectors["create"].clone();
+    request["template"] = Value::Null;
+    assert!(serde_json::from_value::<ProjectsCreateParams>(request).is_err());
+    let mut request = vectors["create"].clone();
+    request
+        .as_object_mut()
+        .expect("request")
+        .remove("unityVersion");
+    assert!(serde_json::from_value::<ProjectsCreateParams>(request).is_err());
+    let mut request = vectors["save"].clone();
+    request["declaration"]["base"] = json!("com.example.base");
+    assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(request).is_err());
 
-#[test]
-fn m5_template_contract_is_valid_and_implemented_without_backup_claims() {
-    let contract = schema("m5-template");
-    assert_eq!(
-        contract["x-alcomd-publication"],
-        "contract-only-until-production-capability-exists"
-    );
-    assert_eq!(
-        contract["$defs"]["capability"]["enum"],
-        json!([
-            "templates.read.v1",
-            "templates.manage.v1",
-            "templates.create-project.v1"
-        ])
-    );
-    assert_eq!(
-        contract["$defs"]["createProjectPlan"]["allOf"][1]["properties"]["targetMustBeAbsent"]["const"],
-        true
-    );
+    let hello = HelloParams {
+        rpc_version: RPC_VERSION,
+        client: ClientInfo {
+            name: "contract-test".to_owned(),
+            version: "test".to_owned(),
+            instance_id: "contract".to_owned(),
+        },
+        capabilities: vec![
+            "projects.create.v1".to_owned(),
+            "projectTemplates.v1".to_owned(),
+        ],
+    };
+    assert!(hello.validate().is_ok());
+    let invalid = HelloParams {
+        capabilities: vec!["projectTemplates.v2".to_owned()],
+        ..hello
+    };
+    assert!(invalid.validate().is_err());
+
     let errors = schema("rpc-error");
     let codes = errors["properties"]["code"]["enum"]
         .as_array()
-        .expect("error code enum");
+        .expect("error codes");
     for code in [
-        "template_not_found",
-        "template_bundle_invalid",
-        "template_manifest_invalid",
-        "template_digest_mismatch",
-        "template_payload_unavailable",
         "template_conflict",
         "template_builtin_immutable",
         "template_dependency_unsatisfied",
-        "template_resource_invalid",
-        "template_target_exists",
-        "template_target_invalid",
-        "template_plan_stale",
-        "project_changed_during_template_create",
+        "project_create_target_exists",
+        "project_create_destination_changed",
     ] {
         assert!(codes.iter().any(|candidate| candidate == code), "{code}");
     }
+    assert!(
+        !codes
+            .iter()
+            .any(|candidate| candidate == "template_bundle_invalid")
+    );
 }
 
 #[test]

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 21;
+const DATA_SCHEMA_VERSION: i64 = CURRENT_DATA_SCHEMA as i64;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -36,8 +36,17 @@ const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_
 const MIGRATION_V18: &str = include_str!("../migrations/0018_backup_compression_levels.sql");
 const MIGRATION_V20: &str = include_str!("../migrations/0020_remove_activity.sql");
 const MIGRATION_V21: &str = include_str!("../migrations/0021_operation_logs.sql");
+const MIGRATION_V22: &str = include_str!("../migrations/0022_remove_templates.sql");
+const MIGRATION_V23: &str = include_str!("../migrations/0023_project_templates.sql");
 
+#[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
+    initialize_connection_with_report(path).map(|(connection, _)| connection)
+}
+
+pub(super) fn initialize_connection_with_report(
+    path: &Path,
+) -> Result<(Connection, bool), StoreOpenError> {
     let mut connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
     let version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
@@ -47,6 +56,9 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
             found: u32::try_from(version).unwrap_or(u32::MAX),
             supported: CURRENT_DATA_SCHEMA,
         });
+    }
+    if (5..=21).contains(&version) && legacy_template_operations_active(&connection)? {
+        return Err(StoreOpenError::LegacyTemplateOperationsActive);
     }
     connection
         .execute_batch("PRAGMA foreign_keys=ON;")
@@ -173,6 +185,14 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
             .execute_batch(MIGRATION_V21)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
+    if version <= 21 {
+        migrate_remove_templates(&mut connection)?;
+    }
+    if version <= 22 {
+        connection
+            .execute_batch(MIGRATION_V23)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -188,34 +208,14 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     {
         return Err(StoreOpenError::Unavailable);
     }
-    Ok(connection)
+    Ok((connection, (4..=21).contains(&version)))
 }
 
 fn migrate_backup_compression(
     connection: &mut Connection,
     migration: &str,
 ) -> Result<(), StoreOpenError> {
-    let foreign_keys: i64 = connection
-        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-        .map_err(|_| StoreOpenError::Unavailable)?;
-    if !connection.is_autocommit() || foreign_keys != 1 {
-        return Err(StoreOpenError::Unavailable);
-    }
-    // SQLite cannot switch foreign_keys while a transaction is active. Keep
-    // every table change/version write atomic and always restore enforcement.
-    let result = (|| {
-        connection
-            .execute_batch("PRAGMA foreign_keys=OFF;")
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        let disabled: i64 = connection
-            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
-            .map_err(|_| StoreOpenError::Unavailable)?;
-        if disabled != 0 {
-            return Err(StoreOpenError::Unavailable);
-        }
-        let transaction = connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(|_| StoreOpenError::Unavailable)?;
+    with_foreign_keys_suspended(connection, |transaction| {
         let objects = {
             let mut statement = transaction
                 .prepare(
@@ -238,6 +238,61 @@ fn migrate_backup_compression(
                 .execute_batch(&sql)
                 .map_err(|_| StoreOpenError::Unavailable)?;
         }
+        Ok(())
+    })
+}
+
+fn migrate_remove_templates(connection: &mut Connection) -> Result<(), StoreOpenError> {
+    with_foreign_keys_suspended(connection, |transaction| {
+        if legacy_template_operations_active(transaction)? {
+            return Err(StoreOpenError::LegacyTemplateOperationsActive);
+        }
+        transaction
+            .execute_batch(MIGRATION_V22)
+            .map_err(|_| StoreOpenError::Unavailable)
+    })
+}
+
+fn legacy_template_operations_active(connection: &Connection) -> Result<bool, StoreOpenError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM operations
+                WHERE kind IN ('templates.import', 'templates.derive', 'templates.create-project')
+                  AND state NOT IN ('succeeded', 'failed', 'cancelled')
+            )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| StoreOpenError::Unavailable)
+}
+
+fn with_foreign_keys_suspended(
+    connection: &mut Connection,
+    migrate: impl FnOnce(&Transaction<'_>) -> Result<(), StoreOpenError>,
+) -> Result<(), StoreOpenError> {
+    let foreign_keys: i64 = connection
+        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if !connection.is_autocommit() || foreign_keys != 1 {
+        return Err(StoreOpenError::Unavailable);
+    }
+    // SQLite cannot switch foreign_keys while a transaction is active. Keep
+    // every table change/version write atomic and always restore enforcement.
+    let result = (|| {
+        connection
+            .execute_batch("PRAGMA foreign_keys=OFF;")
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        let disabled: i64 = connection
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        if disabled != 0 {
+            return Err(StoreOpenError::Unavailable);
+        }
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        migrate(&transaction)?;
         let invalid_foreign_keys: bool = transaction
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
@@ -269,6 +324,45 @@ fn migrate_backup_compression(
 #[cfg(test)]
 #[path = "sqlite_backup_compression_tests.rs"]
 mod backup_compression_migration_tests;
+
+#[cfg(test)]
+#[path = "sqlite_template_removal_tests.rs"]
+mod template_removal_migration_tests;
+
+#[cfg(test)]
+pub(super) fn state21_fixture(path: &Path) -> Connection {
+    let mut connection = Connection::open(path).expect("isolated database");
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON;")
+        .expect("enforce foreign keys");
+    for migration in [
+        MIGRATION_V1,
+        MIGRATION_V2,
+        MIGRATION_V3,
+        MIGRATION_V4,
+        MIGRATION_V5,
+        MIGRATION_V6,
+        MIGRATION_V7,
+        MIGRATION_V8,
+        MIGRATION_V9,
+        MIGRATION_V10,
+        MIGRATION_V11,
+        MIGRATION_V12,
+        MIGRATION_V13,
+        MIGRATION_V14,
+        MIGRATION_V15,
+        MIGRATION_V16,
+        MIGRATION_V17,
+    ] {
+        connection
+            .execute_batch(migration)
+            .expect("historical schema");
+    }
+    migrate_backup_compression(&mut connection, MIGRATION_V18).expect("State18");
+    connection.execute_batch(MIGRATION_V20).expect("State20");
+    connection.execute_batch(MIGRATION_V21).expect("State21");
+    connection
+}
 
 pub(super) fn create_state_check(
     connection: &mut Connection,
@@ -407,7 +501,7 @@ pub(super) fn cancel_operation(
     if operation.state.is_terminal() {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
-    if operation.kind == "projects.copy"
+    if matches!(operation.kind.as_str(), "projects.copy" | "projects.create")
         && matches!(
             operation.progress_phase,
             Some(
@@ -699,16 +793,16 @@ pub(super) fn recover(
     let mut schedule = Vec::new();
     for (operation_id, state, kind) in candidates {
         let operation_id = OperationId::parse(&operation_id).map_err(|_| corrupt_state())?;
-        // Later milestone handlers own recovery for their durable Operation kinds. The M2
-        // state-check recovery pass must leave those rows untouched so the package/Template
-        // recovery pass can reuse its own journal and immutable Plan authority.
+        // Each dedicated handler owns recovery for its durable operation and journal.
         if kind == "packages.apply"
-            || kind.starts_with("templates.")
             || matches!(kind.as_str(), "backups.create" | "backups.restore")
             || matches!(kind.as_str(), "extensions.install" | "extensions.uninstall")
             || matches!(
                 kind.as_str(),
-                "projects.copy" | "projects.delete-directory" | "projects.unity-migration"
+                "projects.create"
+                    | "projects.copy"
+                    | "projects.delete-directory"
+                    | "projects.unity-migration"
             )
         {
             continue;
@@ -866,7 +960,7 @@ pub(super) fn load_owned_operation(
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-              WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+              WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1 AND owner_principal_id=?2",
         params![operation_id.to_string(), owner.as_str()],
@@ -891,7 +985,7 @@ fn load_operation(
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-              WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+              WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1",
         [operation_id.to_string()],
@@ -974,7 +1068,7 @@ pub(super) fn list_operations(
                  (SELECT phase FROM backup_restore_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-                  WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+                  WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
                   ORDER BY step DESC LIMIT 1))
              FROM operations
              WHERE owner_principal_id=?1
@@ -1172,7 +1266,7 @@ fn classify_rows(
     }
 }
 
-fn insert_event(
+pub(super) fn insert_event(
     transaction: &Transaction<'_>,
     owner: &PrincipalId,
     operation_id: OperationId,
@@ -1209,7 +1303,7 @@ fn insert_event(
     Ok(())
 }
 
-fn state_name(state: OperationState) -> &'static str {
+pub(super) fn state_name(state: OperationState) -> &'static str {
     match state {
         OperationState::Queued => "queued",
         OperationState::Planning => "planning",
@@ -1224,7 +1318,7 @@ fn state_name(state: OperationState) -> &'static str {
     }
 }
 
-fn parse_state(value: &str) -> Result<OperationState, StoreError> {
+pub(super) fn parse_state(value: &str) -> Result<OperationState, StoreError> {
     match value {
         "queued" => Ok(OperationState::Queued),
         "planning" => Ok(OperationState::Planning),

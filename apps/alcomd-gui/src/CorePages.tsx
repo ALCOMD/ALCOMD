@@ -41,8 +41,7 @@ import type {
     UnityInstallation,
     UnityLaunchOptionsResult,
     UserPackageRecord,
-    SettingsGetResult,
-    TemplateRecord
+    SettingsGetResult
 } from "./core-models";
 import {
     BackupCreatePanel,
@@ -57,11 +56,6 @@ import {
     ProjectUnityActions,
     ProjectUnityWorkspaceActions,
     RepositoryActions,
-    TemplateActions,
-    TemplateActionDialog,
-    type TemplateActionSelection,
-    TemplateCreateActions,
-    useTemplateOperations,
     useActionScope,
     UnityRegistryActions
 } from "./CoreActions";
@@ -83,6 +77,7 @@ import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuIt
 import { SplitButton } from "./SplitButton";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
+import { ProjectTemplatesWorkspace } from "./ProjectTemplatesWorkspace";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
@@ -209,7 +204,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const root = useRef<HTMLElement>(null);
     const { t, locale } = useTranslation();
     const canRegister = useCapability(capabilities.projectsRegistry);
-    const canCreate = useCapability(capabilities.templatesCreateProject);
+    const canCreate = useCapability(capabilities.projectsCreate);
     const canRestore = useCapability(capabilities.backupsRestore);
     const load = useCallback(async () => {
         const read = async () => {
@@ -353,7 +348,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <Icon asset={view === "list" ? viewListIcon : viewGridIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? t("List view") : t("Grid view")} labels={[t("List view"), t("Grid view")]} />
                 </Button>
-                <SplitButton disabled={!canCreate} label={t("Create project")} menuButtonRef={addProjectMenuRef} menuLabel={t("More project creation options")} onClick={() => setCreateOpen(true)} primaryRef={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.templatesCreateProject, t)}>
+                <SplitButton disabled={!canCreate} label={t("Create project")} menuButtonRef={addProjectMenuRef} menuLabel={t("More project creation options")} onClick={() => setCreateOpen(true)} primaryRef={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.projectsCreate, t)}>
                     <MenuItem disabled={!canRegister || selectingDirectory} label={selectingDirectory ? t("Choosing…") : t("Add existing project")} onClick={() => void chooseProjectDirectory()} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry, t)} />
                     <MenuItem disabled={!canRestore} label={t("Restore from backup")} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} />
                 </SplitButton>
@@ -1727,49 +1722,13 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
 }
 
 export function TemplatesPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
-    const operations = useTemplateOperations(client);
-    const [selection, setSelection] = useState<TemplateActionSelection>();
-    const session = useRef(0);
-    const createButtonRef = useRef<HTMLElement>(null);
-    useEffect(() => { setSelection(undefined); }, [client]);
-    const selectAction = (template: TemplateRecord, action: TemplateActionSelection["action"], origin: DialogOrigin) => {
-        const fallbackOrigin = { get current() { return origin.current?.isConnected ? origin.current : createButtonRef.current; } };
-        setSelection({ action, key: ++session.current, template, origin: fallbackOrigin });
-    };
-    const load = useCallback(() => client.templatesList(), [client]);
-    return <UtilityWorkspace changes={["templates"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={() => <TemplateCreateActions client={client} operations={operations} primaryRef={createButtonRef} />}>
-        {(value, refresh) => <><PagedItems initialItems={value.templates} initialCursor={value.nextCursor} loadMore={async (cursor) => {
-            const next = await client.templatesList(cursor);
-            return { items: next.templates, nextCursor: next.nextCursor };
-        }}>{(templates) => templates.length === 0 ? <RouteState kind="empty" title={t("No templates available")} /> : <UtilityTable
-            label={t("Templates")}
-            headers={[t("Template"), "ID", t("Last modified"), t("Source"), t("Actions")]}
-            rows={templates.map((template) => ({
-                key: template.templateId,
-                cells: [
-                    <><strong>{template.displayName}</strong>{template.description && <small>{template.description}</small>}</>,
-                    template.templateId,
-                    formatTime(t, locale, template.updatedAtMs),
-                    humanize(t, template.sourceKind),
-                    <TemplateActions client={client} compact onAction={(action, origin) => selectAction(template, action, origin)} onChanged={refresh} onView={() => navigate("/templates/" + template.templateId)} template={template} />
-                ]
-            }))}
-        />}</PagedItems>
-            {selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} operations={operations} selection={selection} />}
-            {operations.follow(refresh)}
-        </>}
-    </UtilityWorkspace>;
-}
-
-export function TemplateDetailPage({ client, navigate, templateId }: PageProps & { templateId: string }) {
-    const { t, locale } = useTranslation();
-    const operations = useTemplateOperations(client);
-    const [selection, setSelection] = useState<TemplateActionSelection>();
-    const session = useRef(0);
-    useEffect(() => { setSelection(undefined); }, [client]);
-    const load = useCallback(() => client.templateGet(templateId), [client, templateId]);
-    return <UtilityWorkspace changes={["templates"]} title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} onOpenProject={(projectId) => navigate(`/projects/${projectId}`)} operations={operations} selection={selection} />}{operations.follow(refresh)}</>}</UtilityWorkspace>;
+    const { t } = useTranslation();
+    const available = useCapability(capabilities.projectTemplates);
+    const navigation = <ResourceNavigation current="/templates" navigate={navigate} />;
+    if (!available) return <section className="utility-workspace page-surface--utility" aria-labelledby="route-title">
+        <PageHeader className="utility-workspace-toolbar" title={t(navigationLabels.resources)}>{navigation}</PageHeader>
+    </section>;
+    return <ProjectTemplatesWorkspace client={client} navigation={navigation} />;
 }
 
 export function UnityPage({ client, navigate }: PageProps) {
@@ -1966,9 +1925,7 @@ function formatBytes(t: Translate, locale: SupportedLocale, value: number): stri
 function shortHash(value: string): string { return value.length <= 24 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`; }
 function humanize(t: Translate, value: string): string {
     const labels: Readonly<Record<string, string>> = {
-        "templates.create-project": "Create project",
-        "templates.derive": "Create template from project",
-        "templates.import": "Import template",
+        "projects.create": "Create project",
         "projects.delete-directory": "Delete project directory",
         "extensions.permission.change": "Change extension permissions",
         "extensions.disable": "Disable extension",
@@ -1976,8 +1933,8 @@ function humanize(t: Translate, value: string): string {
         "user-package.remove": "Remove user package registration",
         "user-package.refresh": "Read user package content",
         "user-package.add": "Add user package",
-        "template.remove": "Remove template",
-        "template.favorite": "Change template favorite",
+        "projectTemplates.remove": "Remove template",
+        "projectTemplates.save": "Save template",
         "unity.launch": "Request Unity launch",
         "unity.launch-config.change": "Change Unity launch arguments",
         "unity.installation.remove": "Remove Unity installation",
@@ -2037,7 +1994,6 @@ function humanize(t: Translate, value: string): string {
         "packages.apply": "Change packages",
         "projects.copy": "Copy project",
         "projects.delete": "projects delete",
-        "projects.create": "projects create",
         "projects.unity-migration": "Change project Unity version",
         "backups.create": "Create backup",
         "backups.restore": "Restore backup",

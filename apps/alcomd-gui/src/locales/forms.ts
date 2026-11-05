@@ -3,7 +3,6 @@ import type { TranslationTable } from "../i18n-types";
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const formMessages: TranslationTable = {
     "Unity version:": { "zh-CN": "Unity 版本：", "ja-JP": "Unity バージョン：" },
-    "Choose an installed version": { "zh-CN": "选择已安装的版本", "ja-JP": "インストール済みバージョンを選択" },
     "Custom": { "zh-CN": "自定义", "ja-JP": "カスタム" },
     "Installed Unity versions could not be loaded.": { "zh-CN": "无法读取已安装的 Unity 版本。", "ja-JP": "インストール済み Unity バージョンを読み込めません。" },
     "Details": {
@@ -38,17 +37,9 @@ export const formMessages: TranslationTable = {
         "zh-CN": "预期修订号",
         "ja-JP": "想定リビジョン"
     },
-    "Replace existing template": {
-        "zh-CN": "替换现有模板",
-        "ja-JP": "既存のテンプレートを置換"
-    },
     "Source project revision": {
         "zh-CN": "源项目修订号",
         "ja-JP": "元プロジェクトのリビジョン"
-    },
-    "Template revision": {
-        "zh-CN": "模板修订号",
-        "ja-JP": "テンプレートのリビジョン"
     },
     "Destination must be absent": {
         "zh-CN": "目标目录必须不存在",
@@ -186,10 +177,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "保存",
         "ja-JP": "保存"
     },
-    "ALCOMD Core will validate the frozen template, create the project transactionally, and register the completed project.": {
-        "zh-CN": "ALCOMD Core 将验证已冻结的模板，以事务方式创建项目，并登记创建完成的项目。",
-        "ja-JP": "ALCOMD Core は固定されたテンプレートを検証し、トランザクションでプロジェクトを作成して、完了したプロジェクトを登録します。"
-    },
     "ALCOMD Core will validate the managed archive, restore transactionally, and register the completed project.": {
         "zh-CN": "ALCOMD Core 将验证已管理的备份文件，以事务方式恢复项目，并登记恢复完成的项目。",
         "ja-JP": "ALCOMD Core は管理対象のアーカイブを検証し、トランザクションで復元して、完了したプロジェクトを登録します。"
@@ -250,10 +237,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "界面动画",
         "ja-JP": "UI のアニメーション"
     },
-    "Import or create a template before creating a project.": {
-        "zh-CN": "请先导入或创建模板，再创建项目。",
-        "ja-JP": "プロジェクトを作成する前に、テンプレートをインポートまたは作成してください。"
-    },
     "Language": {
         "zh-CN": "界面语言(Language)",
         "ja-JP": "言語設定(Language)"
@@ -269,10 +252,6 @@ export const formMessages: TranslationTable = {
     "Loading backups…": {
         "zh-CN": "正在加载备份…",
         "ja-JP": "バックアップを読み込み中…"
-    },
-    "Loading templates…": {
-        "zh-CN": "正在加载模板…",
-        "ja-JP": "テンプレートを読み込み中…"
     },
     "Loading Unity installations…": {
         "zh-CN": "正在加载已安装的 Unity…",
@@ -357,10 +336,6 @@ export const formMessages: TranslationTable = {
     "Restore target parent": {
         "zh-CN": "恢复项目的父目录",
         "ja-JP": "復元先の親フォルダ"
-    },
-    "Review creation": {
-        "zh-CN": "审阅创建计划",
-        "ja-JP": "作成内容を確認"
     },
     "Review restore": {
         "zh-CN": "审阅恢复计划",

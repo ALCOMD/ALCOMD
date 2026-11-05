@@ -4,15 +4,13 @@
 
 本合同只定义 `alcomd-cli` 的公共进程行为。CLI 永远是
 `alcomd-cli -> alcomd-client -> RPC -> alcomd-application` 的适配器，不读取 `state.db`、项目、
-repository、package cache、template/backup 文件，也不直接启动 Unity。命令只有在对应 daemon
+repository、package cache 或备份文件，也不直接启动 Unity。命令只有在对应 daemon
 capability 已真实实现时才可进入 help；合同中存在名称不等于后端已经可用。
 
 权威 machine-readable 工件：
 
 - `alcomd-cli-v1.schema.json`：machine output、stream record、退出码与全局选项。
-- `command-catalog-v1.json`：M5 已发布命令和 alias；只列出已有真实 daemon capability 的入口。
-- `m5-template-commands-v1.json`：已发布的 Template 命令合同；对应 daemon capability、RPC 与生产
-  use case 已真实存在，并以兼容增加方式进入 help/catalog。
+- `command-catalog-v1.json`：已发布的命令和 alias。只列出已有真实 daemon capability 的入口。
 - `m5-backup-commands-v1.json`：已发布的 Backup list/get/create/restore 命令合同。
 
 ## 输出模式
@@ -58,6 +56,10 @@ NDJSON。普通日志不得污染任何 machine stdout。
   只 detach，输出该 ID，以 130 退出；daemon Operation 继续运行。业务取消必须显式调用
   `operation cancel`。
 
+`project create <target-parent> <name> --unity-version <version> --idempotency-key <key>` 默认直接创建项目。
+选用模板时同时提供 `--template-id <id>` 和 `--template-revision <revision>`。
+命令直接接受任务，支持 `--no-wait`，不接受 `--dry-run`。旧 `template` 命令随 M7 模板切换撤除。
+
 ## completion
 
 `completion <shell>` 只根据静态 command tree 向 stdout 输出 script，不连接/启动 daemon，不访问
@@ -68,4 +70,4 @@ NDJSON。普通日志不得污染任何 machine stdout。
 
 新增命令、alias、可选 machine 字段或 NDJSON record type 是版本内兼容增加，但只有真实 backend
 存在后才能发布。删除/重命名命令或 alias、改变退出码、stdout/stderr 路由、既有字段类型或语义是
-破坏性变化，必须提升 CLI contract version 或提供经过批准的兼容 alias。
+破坏性变化。首次发布前的 M7 模板切换已获准移除旧命令和参数，CLI contract version 保持 1。

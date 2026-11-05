@@ -30,6 +30,7 @@ test("project and template action menus use one compact style including every en
     await templateTrigger.click();
     await actionMenu(page.locator('md-menu[data-menu-kind="actions"][open]'));
     await expect(page.locator('md-menu[open] > md-menu-item').filter({ hasText: "Remove template" })).toHaveJSProperty("disabled", true);
+    await expect(page.getByRole("menuitem", { name: "View template", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(templateTrigger).toBeFocused();
 });

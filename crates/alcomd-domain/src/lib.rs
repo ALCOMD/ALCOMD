@@ -148,37 +148,6 @@ impl fmt::Display for ProjectId {
     }
 }
 
-/// Stable identifier for a builtin or user Template.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct TemplateId(Uuid);
-
-impl TemplateId {
-    #[must_use]
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-
-    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
-        Uuid::parse_str(value)
-            .ok()
-            .filter(|parsed| parsed.to_string() == value)
-            .map(Self)
-            .ok_or(DomainValueError::InvalidTemplateId)
-    }
-
-    #[must_use]
-    pub const fn as_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl Default for TemplateId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Stable identifier for one managed native backup archive.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -238,12 +207,6 @@ impl Default for UserPackageId {
 }
 
 impl fmt::Display for UserPackageId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-impl fmt::Display for TemplateId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(formatter)
     }
@@ -569,12 +532,6 @@ pub enum Permission {
     /// Migrate a registered project's authoritative Unity version through the bounded workflow.
     #[serde(rename = "projects.unity-migrate")]
     ProjectsUnityMigrate,
-    /// Read Template registry records and inspect/export bundles.
-    #[serde(rename = "templates.read")]
-    TemplatesRead,
-    /// Import, derive, favorite, and remove user Templates.
-    #[serde(rename = "templates.manage")]
-    TemplatesManage,
     /// Read public-safe managed Backup metadata.
     #[serde(rename = "backups.read")]
     BackupsRead,
@@ -622,8 +579,6 @@ impl Permission {
             Self::ProjectsCreate => "projects.create",
             Self::ProjectsDelete => "projects.delete",
             Self::ProjectsUnityMigrate => "projects.unity-migrate",
-            Self::TemplatesRead => "templates.read",
-            Self::TemplatesManage => "templates.manage",
             Self::BackupsRead => "backups.read",
             Self::BackupsManage => "backups.manage",
             Self::ExtensionsRead => "extensions.read",
@@ -718,7 +673,6 @@ pub enum DomainValueError {
     /// Plan ID was not a valid UUID.
     InvalidPlanId,
     /// Template ID was not a valid UUID.
-    InvalidTemplateId,
     /// Backup ID was not a canonical UUID.
     InvalidBackupId,
     /// User Package ID was not a canonical UUID.
@@ -740,7 +694,6 @@ impl fmt::Display for DomainValueError {
             Self::InvalidUnityLaunchId => formatter.write_str("invalid Unity launch identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
-            Self::InvalidTemplateId => formatter.write_str("invalid Template identifier"),
             Self::InvalidBackupId => formatter.write_str("invalid Backup identifier"),
             Self::InvalidUserPackageId => formatter.write_str("invalid User Package identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),

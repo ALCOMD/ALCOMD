@@ -202,8 +202,7 @@ const actions = {
     "packages.resolve": "Resolve packages", "packages.reinstall": "Reinstall packages",
     "packages.userPackages.enroll": "Add user package", "packages.userPackages.refresh": "Read user package content", "packages.userPackages.remove": "Remove user package registration",
     "backups.create": "Create backup", "backups.restore": "Restore backup",
-    "templates.import": "Import template", "templates.derive": "Create template from project", "templates.create-project": "Create project",
-    "templates.export": "Export template", "templates.favorite": "Change template favorite", "templates.remove": "Remove template",
+    "projects.create": "Create project", "projectTemplates.save": "Save template", "projectTemplates.remove": "Remove template",
     "projects.copy": "Copy project", "projects.delete-directory": "Delete project directory", "projects.unity-migration": "Change project Unity version",
     "extensions.install": "Install extension", "extensions.uninstall": "Uninstall extension", "state.check": "Check runtime status",
     "extensions.enable": "Enable extension", "extensions.disable": "Disable extension", "extensions.permission": "Change extension permissions",
@@ -219,7 +218,7 @@ const steps = {
     interrupted: "Interrupted", waiting_for_input: "Waiting for input", queued: "Queued", plan: "Prepare plan", planned: "Save plan",
     archiving: "Write archive", verifying: "Verify files", extracting: "Extract files", prepared: "Preparation complete",
     prepare_destination: "Prepare destination", check_destination: "Check destination", check_backup: "Check backup archive",
-    inspect_bundle: "Check template bundle", write_bundle: "Write template bundle", inspect_package: "Check package files",
+    inspect_package: "Check package files",
     resolve_dependencies: "Resolve packages", check_plan: "Check plan", check_editor: "Check Unity Editor", find_editors: "Find Unity installations",
     installations_synchronized: "Save installation list", launch_requested: "Send launch request", hub_not_installed: "Unity Hub not found",
     open_hub: "Open Unity Hub", saved: "Save changes", cleared: "Clear saved value", write_repository_list: "Write repository list",
@@ -234,4 +233,4 @@ const steps = {
     unity_started: "Unity process started", unity_exited: "Unity process exited", project_reobserved: "Recheck project files",
     extracted: "Extract files", packages_replaced: "Replace packages", vpm_manifest_committed: "Save VPM manifest", filesystem_committed: "Save file changes"
 };
-const targets = { project: "Project", repository: "Repository", file: "File", directory: "Folder", extension: "Extension", template: "Template", unity: "Unity", package: "Package", backup: "Backup" };
+const targets = { project: "Project", repository: "Repository", file: "File", directory: "Folder", extension: "Extension", "project-template": "Template", unity: "Unity", package: "Package", backup: "Backup" };

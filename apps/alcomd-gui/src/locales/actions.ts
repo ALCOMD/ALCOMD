@@ -2,6 +2,21 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "No template": { "zh-CN": "不使用模板", "ja-JP": "テンプレートを使用しない" },
+    "Edit template": { "zh-CN": "编辑模板", "ja-JP": "テンプレートを編集" },
+    "Save template": { "zh-CN": "保存模板", "ja-JP": "テンプレートを保存" },
+    "Unity version series": { "zh-CN": "适用的 Unity 版本系列", "ja-JP": "対応する Unity バージョン系列" },
+    "Unity version presets": { "zh-CN": "Unity 预设版本", "ja-JP": "Unity のプリセットバージョン" },
+    "For example, com.example.my-template": { "zh-CN": "例如 com.example.my-template", "ja-JP": "例：com.example.my-template" },
+    "For example, 2022.3.22f1, 2022.3.6f1": { "zh-CN": "例如 2022.3.22f1, 2022.3.6f1", "ja-JP": "例：2022.3.22f1, 2022.3.6f1" },
+    "VPM dependencies": { "zh-CN": "VPM 依赖", "ja-JP": "VPM 依存関係" },
+    "Package constraints by Unity version": { "zh-CN": "按 Unity 版本限制软件包", "ja-JP": "Unity バージョンごとのパッケージ制約" },
+    "Package ID": { "zh-CN": "软件包 ID", "ja-JP": "パッケージ ID" },
+    "Version range": { "zh-CN": "版本范围", "ja-JP": "バージョン範囲" },
+    "Add dependency": { "zh-CN": "添加依赖", "ja-JP": "依存関係を追加" },
+    "Add constraint": { "zh-CN": "添加版本约束", "ja-JP": "バージョン制約を追加" },
+    "The selected template changed. Select it again.": { "zh-CN": "所选模板已变化，请重新选择。", "ja-JP": "選択したテンプレートが変更されました。選び直してください。" },
+    "Retry with the same details to recover the original creation request.": { "zh-CN": "使用相同信息重试，可找回原创建请求。", "ja-JP": "元の作成リクエストを取得するには、同じ内容で再試行してください。" },
     "Publisher confirmation required": { "zh-CN": "请确认扩展发布者", "ja-JP": "拡張機能の発行元を確認してください" },
     "Error code": { "zh-CN": "错误标识", "ja-JP": "エラーコード" },
     "Requested permissions": { "zh-CN": "申请的权限", "ja-JP": "要求する権限" },
@@ -172,10 +187,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "浏览…",
         "ja-JP": "参照…"
     },
-    "Built-in templates cannot be removed.": {
-        "zh-CN": "无法删除内置模板。",
-        "ja-JP": "組み込みのテンプレートは削除できません。"
-    },
     "Cancel operation": {
         "zh-CN": "取消任务",
         "ja-JP": "タスクをキャンセル"
@@ -256,10 +267,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "创建模板",
         "ja-JP": "テンプレートを作成"
     },
-    "Create template from project": {
-        "zh-CN": "从项目创建模板",
-        "ja-JP": "プロジェクトからテンプレートを作成"
-    },
     "Create uninstall plan": {
         "zh-CN": "创建卸载计划",
         "ja-JP": "アンインストールプランを作成"
@@ -283,10 +290,6 @@ export const actionMessages: TranslationTable = {
     "derive": {
         "zh-CN": "派生",
         "ja-JP": "作成"
-    },
-    "Derive from project": {
-        "zh-CN": "从项目派生",
-        "ja-JP": "プロジェクトから作成"
     },
     "Description": {
         "zh-CN": "描述",
@@ -324,17 +327,9 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "导出",
         "ja-JP": "エクスポート"
     },
-    "Export {name} as a template bundle.": {
-        "zh-CN": "将 {name} 导出为模板包。",
-        "ja-JP": "{name}をテンプレートバンドルとしてエクスポートします。"
-    },
     "Export target": {
         "zh-CN": "导出路径",
         "ja-JP": "エクスポート先"
-    },
-    "Export template": {
-        "zh-CN": "导出模板",
-        "ja-JP": "テンプレートをエクスポート"
     },
     "Extension": {
         "zh-CN": "扩展",
@@ -404,10 +399,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "导入",
         "ja-JP": "インポート"
     },
-    "Import template": {
-        "zh-CN": "导入模板",
-        "ja-JP": "テンプレートをインポート"
-    },
     "Installation to remove": {
         "zh-CN": "要删除的安装记录",
         "ja-JP": "削除する登録"
@@ -476,10 +467,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "{name} 的更多操作",
         "ja-JP": "{name}のその他の操作"
     },
-    "More template creation options": {
-        "zh-CN": "更多模板创建选项",
-        "ja-JP": "その他のテンプレート作成方法"
-    },
     "More than one source provides this package version. Choose a source and try again.": {
         "zh-CN": "多个来源提供此软件包版本。请选择来源后重试。",
         "ja-JP": "このパッケージのバージョンは複数のソースにあります。ソースを選択して再試行してください。"
@@ -491,10 +478,6 @@ export const actionMessages: TranslationTable = {
     "New directory name": {
         "zh-CN": "新目录名称",
         "ja-JP": "新しいフォルダー名"
-    },
-    "New template ID": {
-        "zh-CN": "新模板 ID",
-        "ja-JP": "新しいテンプレートID"
     },
     "no change": {
         "zh-CN": "无更改",
@@ -680,10 +663,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "删除 Unity 安装记录",
         "ja-JP": "Unityの登録を削除"
     },
-    "Replace an existing matching template": {
-        "zh-CN": "替换已有的匹配模板",
-        "ja-JP": "一致する既存のテンプレートを置き換える"
-    },
     "Repository added.": {
         "zh-CN": "已添加存储库。",
         "ja-JP": "リポジトリを追加しました。"
@@ -740,10 +719,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "确认迁移",
         "ja-JP": "移行内容を確認"
     },
-    "Review new template": {
-        "zh-CN": "确认新模板",
-        "ja-JP": "新しいテンプレートを確認"
-    },
     "Review project creation": {
         "zh-CN": "确认创建项目",
         "ja-JP": "プロジェクトの作成を確認"
@@ -759,10 +734,6 @@ export const actionMessages: TranslationTable = {
     "Review repository": {
         "zh-CN": "确认存储库",
         "ja-JP": "リポジトリを確認"
-    },
-    "Review template import": {
-        "zh-CN": "确认模板导入",
-        "ja-JP": "テンプレートのインポートを確認"
     },
     "Review the changes ALCOMD will make to this project.": {
         "zh-CN": "请确认 ALCOMD 将对此项目进行的更改。",
@@ -827,38 +798,6 @@ export const actionMessages: TranslationTable = {
     "Target Unity version": {
         "zh-CN": "目标 Unity 版本",
         "ja-JP": "移行先のUnityバージョン"
-    },
-    "Template actions": {
-        "zh-CN": "模板操作",
-        "ja-JP": "テンプレートの操作"
-    },
-    "Template bundle": {
-        "zh-CN": "模板包",
-        "ja-JP": "テンプレートバンドル"
-    },
-    "Template exported.": {
-        "zh-CN": "已导出模板。",
-        "ja-JP": "テンプレートをエクスポートしました。"
-    },
-    "Template import accepted.": {
-        "zh-CN": "已接受模板导入请求。",
-        "ja-JP": "テンプレートのインポートを受け付けました。"
-    },
-    "Template operation accepted.": {
-        "zh-CN": "已接受模板操作请求。",
-        "ja-JP": "テンプレートの操作を受け付けました。"
-    },
-    "Template removed.": {
-        "zh-CN": "已删除模板。",
-        "ja-JP": "テンプレートを削除しました。"
-    },
-    "Template version": {
-        "zh-CN": "模板版本",
-        "ja-JP": "テンプレートのバージョン"
-    },
-    "Template:": {
-        "zh-CN": "模板:",
-        "ja-JP": "テンプレート:"
     },
     "The connected daemon did not negotiate {capability}.": {
         "zh-CN": "当前连接的后台服务不支持 {capability}。",

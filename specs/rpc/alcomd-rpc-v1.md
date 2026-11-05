@@ -263,7 +263,7 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本；当前 State v18 由 daemon 的存储
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v23 由 daemon 的存储
 组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 10，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
@@ -598,7 +598,7 @@ project selector；daemon 固定把已验证 absolute project root 作为独立 
 脱敏 evidence。process/path/argv 检查失败必须为 unknown；not_observed 不表示 definitely not running。
 `running_suspected` 需要正向项目关联证据：进程的项目目录身份匹配目标，但 executable 身份尚未核实。
 已明确属于其他项目的进程不影响目标项目；无法关联的同名进程或进程观察失败保留为 `unknown`，不谎称未运行。
-package/template/backup mutation 对 confirmed 返回 `unity_project_running`，suspected/unknown 仅 advisory
+package/backup mutation 对 confirmed 返回 `unity_project_running`，suspected/unknown 仅 advisory
 并继续 live fingerprint gate。Unity launch 仅对目标项目 confirmed 拒绝第二实例，对目标项目 suspected 返回
 `unity_launch_state_uncertain`；not_observed 与无法关联的 unknown 允许 spawn，不因其他或身份不明进程形成全局启动禁令。
 项目删除和 Unity 版本迁移同样只对目标项目 confirmed/suspected 拦截，无法归属的 unknown 不作全局阻断。
@@ -624,46 +624,32 @@ project revision、canonical exact version、permission 与永久 idempotency。
 `unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
-完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config；daemon
-在 store 成功初始化后通过 hello 广告当前 `dataSchema: 18` 和客户端实际协商的已实现 capability。此兼容增加不
-改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config。daemon
+在 store 成功初始化后通过 hello 广告实际 `dataSchema` 和客户端实际协商的已实现 capability。此兼容增加不
+改变 M1-M4 方法语义，也不表示 Backup 或完整 CLI 已实现。
 
-## 20. M5 contract-only 兼容增加：Template Bundle v1
+## 20. M7 新建项目与模板声明
 
-Template production adapter 已实现以下三项 capability；`system.hello` 只在实际 dispatcher、application
-use case 与持久状态初始化成功后广告：
+Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的本机所有者持有 `projects.create` 权限时可提交
+`{name,targetParent,unityVersion,idempotencyKey}`，并获得持久任务和预分配项目
+`{operationId,projectId,replayed}`。完整 Unity Editor 版本不要求已安装。同一 owner、方法和幂等键下，
+相同请求返回原任务，不同请求返回 `idempotency_conflict`。成功的任务结果包含 `projectId`。
+Core 校验目标父目录的身份，只向不存在的目标发布，并在同一事务登记项目、完成任务和写入事件。
 
-| capability | method |
-|---|---|
-| `templates.read.v1` | `templates.list/get/inspectBundle/export` |
-| `templates.manage.v1` | `templates.planImport/applyImport/planDerive/applyDerive/setFavorite/remove` |
-| `templates.create-project.v1` | `templates.planCreateProject/applyCreateProject` |
+模板目录通过 `projectTemplates.v1` 发布 `projectTemplates.list`、`projectTemplates.save` 和 `projectTemplates.remove`，
+仅限已认证的本机所有者。公开记录由模板声明、当前修订和独立锁定标记组成。目录按 ID 排序分页。
+同名的不同 ID 可以并存。同 ID 同内容的创建返回已有记录，同 ID 异内容的创建返回 `template_conflict`。
+编辑与删除检查修订，锁定记录返回 `template_builtin_immutable`。每次实际变化提交
+`project-template.changed` 事件，内部 aggregate UUID 只用于事件关联。
 
-完整 DTO、collection/field bounds、immutable Plan、Operation progress 与 permission matrix 由
-`m5-template.schema.json` 冻结。这些 method 已进入 dispatcher；Backup 仍未实现或发布。
+模板声明包含公开 ID、名称、Unity 系列和精确预设、VPM 直接依赖及按精确 Unity 版本匹配的包约束。
+选择模板时，在 `projects.create` 请求中加入 `template: {id, revision}` 并协商模板能力。
+Core 在接受任务的事务内检查修订并固定声明。已删除或过期的引用返回 `revision_conflict`。
+使用模板依赖时检查 `packages.read`、`repositories.read` 和 `packages.manage`，并在发布前锁定包版本、来源和内容。
+条件约束作用于求解器纳入的包，包括传递依赖。内置与用户模板走同一个求解器。
 
-Template Plan authority 使用 State Schema v5 的窄 `template_plans` 表。Plan JSON 固定 `version: 1`
-并按 import/derive/create-project 使用严格 DTO；唯一允许的持久更新是从 unapplied 绑定到精确匹配的
-`templates.import`、`templates.derive` 或 `templates.create-project` Operation。M4 `package_plans`
-保持不变且不得承载 Template Plan。Schema v5 只使这些 Operation kind 可持久化，不等同于 capability
-或 dispatcher 已发布。
-
-inspect 纯只读。Import/override 和 derive 先产生 immutable Plan；Apply 返回 OperationId 并复验相同
-bundle/project identity、digest、revision、fingerprint 与 idempotency。新 ID import 可创建；user 同 ID
-同 digest 为 no-op；user 同 ID 异 digest为 `template_conflict`；builtin ID 永远
-`template_builtin_immutable`。favorite 是低影响 revision/idempotency command；remove 只删除 user registry
-binding，不执行 object GC。
-
-create-project Plan 固定 parent filesystem identity + normalized target leaf、target absent、template
-revision/digest、manifest/payload/resource fingerprint 和 M4 exact package ChangeSet/source pins。Plan 不刷新
-repository、不写目标目录。Apply 返回 OperationId，只能创建全新目录；不 overwrite、merge、删除既有
-内容或重新 resolve。package dependency 复用 M4 authority 和 transaction primitive，不创建 nested child
-Operation。state commit 前不得 succeeded，重启必须复用同一 OperationId/Plan/idempotency/ProjectId。
-
-普通错误只返回稳定 code、opaque ID/revision 和安全 subreason，不返回 bundle/source/target 完整私密
-路径、locator、raw manifest、ZIP entry、credential 或 SQL/OS debug。新增 Template errors 由
-`rpc-error.schema.json` 冻结。CLI 名称在 `m5-template-commands-v1.json`，并已加入实际 command
-catalog/help。
+State22 清除旧模板与专属记录，State23 加入新模板目录。旧 `templates.*` 方法和能力随切换失效。
+精确 DTO 和边界见 `m7-project-create.schema.json`。
 
 ## 21. M5 兼容增加：Backup Create
 
@@ -969,7 +955,6 @@ repository_list_io_error；普通错误与日志均不包含原始秘密。
 
 ## M7 实现依据整改：创建版本与兼容语义（2026-11-05已批准）
 
-templates.planCreateProject的请求增加必需unityVersion完整规范Editor版本字符串；不保留省略字段的旧请求形状。指定版本无需已经安装；安装与exact启动选择另行校验。Core校验模板兼容性，以该版本求解软件包，并将最终ProjectVersion内容及摘要固定入Plan。Rust/TypeScript SDK、CLI --unity-version、GUI和Tauri适配同步。首次公开发布前经所有者批准的请求破坏性修订，RPC major保持1，不新增数据库、权限或配置字段。
 
 包/锁依赖的普通范围与项目直接依赖范围分开；普通完整裸版本为exact，项目直接依赖单版本沿有据的minimum语义。unityRelease补充unity最低版本判断，Core候选与Plan一致；无unity时不施加此门槛。权限、来源、强摘要、Plan/Apply和启动exact匹配保持。
 

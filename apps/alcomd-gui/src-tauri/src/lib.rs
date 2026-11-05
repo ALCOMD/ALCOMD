@@ -1134,168 +1134,56 @@ async fn gui_unity_launch(
 }
 
 #[tauri::command]
-async fn gui_templates_list(
+async fn gui_projects_create(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplatesListParams,
-) -> Result<alcomd_protocol::TemplatesListResult, RpcError> {
+    params: alcomd_protocol::ProjectsCreateParams,
+) -> Result<alcomd_protocol::ProjectsCreateResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.templates_list(params).await,
+        Some(client) => client.projects_create(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_template_get(
+async fn gui_project_templates_list(
     state: State<'_, GuiClientState>,
-    template_id: String,
-) -> Result<alcomd_protocol::TemplateRecordResult, RpcError> {
+    params: alcomd_protocol::ProjectTemplatesListParams,
+) -> Result<alcomd_protocol::ProjectTemplatesListResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.template_get(template_id).await,
+        Some(client) => client.project_templates_list(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_template_inspect_bundle(
+async fn gui_project_templates_save(
     state: State<'_, GuiClientState>,
-    bundle_path: String,
-) -> Result<alcomd_protocol::TemplateBundleInspection, RpcError> {
+    params: alcomd_protocol::ProjectTemplatesSaveParams,
+) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.template_inspect_bundle(bundle_path).await,
+        Some(client) => client.project_templates_save(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_template_plan_import(
+async fn gui_project_templates_remove(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplatePlanImportParams,
-) -> Result<alcomd_protocol::TemplatePlan, RpcError> {
+    params: alcomd_protocol::ProjectTemplatesRemoveParams,
+) -> Result<alcomd_protocol::ProjectTemplatesRemoveResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.template_plan_import(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_apply_import(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateApplyPlanParams,
-) -> Result<alcomd_protocol::TemplateApplyResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_apply_import(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_plan_derive(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplatePlanDeriveParams,
-) -> Result<alcomd_protocol::TemplatePlan, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_plan_derive(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_apply_derive(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateApplyPlanParams,
-) -> Result<alcomd_protocol::TemplateApplyResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_apply_derive(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_export(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateExportParams,
-) -> Result<alcomd_protocol::TemplateExportResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_export(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_set_favorite(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateSetFavoriteParams,
-) -> Result<alcomd_protocol::TemplateRecordResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_set_favorite(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_remove(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateRemoveParams,
-) -> Result<alcomd_protocol::TemplateRemoveResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_remove(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_plan_create_project(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplatePlanCreateProjectParams,
-) -> Result<alcomd_protocol::TemplatePlan, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_plan_create_project(params).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
-async fn gui_template_apply_create_project(
-    state: State<'_, GuiClientState>,
-    params: alcomd_protocol::TemplateApplyPlanParams,
-) -> Result<alcomd_protocol::TemplateApplyResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.template_apply_create_project(params).await,
+        Some(client) => client.project_templates_remove(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1705,18 +1593,10 @@ pub fn run() {
             gui_unity_writer_state,
             gui_unity_launch_options,
             gui_unity_launch,
-            gui_templates_list,
-            gui_template_get,
-            gui_template_inspect_bundle,
-            gui_template_plan_import,
-            gui_template_apply_import,
-            gui_template_plan_derive,
-            gui_template_apply_derive,
-            gui_template_export,
-            gui_template_set_favorite,
-            gui_template_remove,
-            gui_template_plan_create_project,
-            gui_template_apply_create_project,
+            gui_projects_create,
+            gui_project_templates_list,
+            gui_project_templates_save,
+            gui_project_templates_remove,
             gui_backups_list,
             gui_backup_get,
             gui_backup_create,

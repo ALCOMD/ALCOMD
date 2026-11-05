@@ -13,12 +13,11 @@ use alcomd_application::{
     BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase,
     BackupRestoreApplyOutcome, BackupRestoreOperationRecord, BackupRestorePhase,
     BackupRestorePlanDraft, BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome,
-    CreatedTemplateProject, EventCommitWatermark, EventPage, ExtensionApplyOutcome,
-    ExtensionDataValue, ExtensionDataWriteResult, ExtensionFilesystemJournalEntry,
-    ExtensionGrantMutation, ExtensionGrantRecord, ExtensionInstallPlanDraft,
-    ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord, ExtensionUninstallPlanDraft,
-    FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
-    M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore,
+    EventCommitWatermark, EventPage, ExtensionApplyOutcome, ExtensionDataValue,
+    ExtensionDataWriteResult, ExtensionFilesystemJournalEntry, ExtensionGrantMutation,
+    ExtensionGrantRecord, ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord,
+    ExtensionRecord, ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error,
+    M3RegistryStore, M4Error, M4Store, M5BackupError, M5BackupStore, M5UnityError, M5UnityStore,
     M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
     M7UnityMigrationError, M7UnityMigrationStore, OperationCursor, OperationId, OperationPage,
     OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft,
@@ -27,17 +26,15 @@ use alcomd_application::{
     ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
     ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
     ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
-    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, PublishedTemplate,
-    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
-    RepositoryValidators, ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore,
-    StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome,
-    TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
-    UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
-    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState,
-    UnityMigrationApplyOutcome, UnityMigrationEvidence, UnityMigrationOperationRecord,
-    UnityMigrationPhase, UnityMigrationPlanDraft, UnityMigrationPlanOutcome,
-    UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor, UserPackageError,
-    UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
+    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, RegistryCursor, RepositoryId,
+    RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog,
+    RestoredProject, Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord,
+    SyncWrite, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
+    UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
+    UnityMigrationOperationRecord, UnityMigrationPhase, UnityMigrationPlanDraft,
+    UnityMigrationPlanOutcome, UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor,
+    UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
     UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
 use tokio::sync::{mpsc, oneshot, watch};
@@ -55,7 +52,6 @@ mod m4;
 mod m5;
 mod m5_backup;
 mod m5_backup_restore;
-mod m5_template;
 mod m6;
 mod m7_candidates;
 mod m7_copy;
@@ -63,6 +59,8 @@ mod m7_delete;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod operation_logs;
+mod project_create;
+mod project_templates;
 mod sqlite;
 
 pub use config::FileConfigStore;
@@ -71,7 +69,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 21;
+pub const CURRENT_DATA_SCHEMA: u32 = 23;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -83,6 +81,8 @@ pub enum StoreOpenError {
         /// Highest version supported by this binary.
         supported: u32,
     },
+    /// Finish or cancel legacy template operations before removing their authority.
+    LegacyTemplateOperationsActive,
     /// The worker thread could not be started or initialized.
     Unavailable,
 }
@@ -94,6 +94,9 @@ impl fmt::Display for StoreOpenError {
                 formatter,
                 "state data schema {found} is newer than supported schema {supported}"
             ),
+            Self::LegacyTemplateOperationsActive => {
+                formatter.write_str("finish or cancel legacy template operations before upgrading")
+            }
             Self::Unavailable => formatter.write_str("state store initialization failed"),
         }
     }
@@ -112,6 +115,7 @@ struct StoreInner {
     commands: Mutex<Option<mpsc::Sender<Command>>>,
     worker: Option<thread::JoinHandle<()>>,
     event_commits: watch::Receiver<EventCommitWatermark>,
+    retired_legacy_template_state: bool,
 }
 
 impl Drop for StoreInner {
@@ -141,21 +145,23 @@ impl StateStoreHandle {
         let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
         let worker = thread::Builder::new()
             .name("alcomd-state-store".to_owned())
-            .spawn(move || match sqlite::initialize_connection(&path) {
-                Ok(connection) => {
-                    if publish_event_watermark(&connection, &commits, false).is_err() {
-                        let _ = ready_sender.send(Err(StoreOpenError::Unavailable));
-                        return;
+            .spawn(
+                move || match sqlite::initialize_connection_with_report(&path) {
+                    Ok((connection, retired_legacy_template_state)) => {
+                        if publish_event_watermark(&connection, &commits, false).is_err() {
+                            let _ = ready_sender.send(Err(StoreOpenError::Unavailable));
+                            return;
+                        }
+                        let _ = ready_sender.send(Ok(retired_legacy_template_state));
+                        run_worker(connection, receiver, commits);
                     }
-                    let _ = ready_sender.send(Ok(()));
-                    run_worker(connection, receiver, commits);
-                }
-                Err(error) => {
-                    let _ = ready_sender.send(Err(error));
-                }
-            })
+                    Err(error) => {
+                        let _ = ready_sender.send(Err(error));
+                    }
+                },
+            )
             .map_err(|_| StoreOpenError::Unavailable)?;
-        ready_receiver
+        let retired_legacy_template_state = ready_receiver
             .recv()
             .map_err(|_| StoreOpenError::Unavailable)??;
         Ok(Self {
@@ -163,8 +169,15 @@ impl StateStoreHandle {
                 commands: Mutex::new(Some(commands)),
                 worker: Some(worker),
                 event_commits,
+                retired_legacy_template_state,
             }),
         })
+    }
+
+    /// Reports whether this open removed an existing legacy template schema.
+    #[must_use]
+    pub fn retired_legacy_template_state(&self) -> bool {
+        self.inner.retired_legacy_template_state
     }
 
     async fn request<T>(
@@ -2132,250 +2145,6 @@ impl M7UnityMigrationStore for StateStoreHandle {
     }
 }
 
-impl M5TemplateStore for StateStoreHandle {
-    async fn ensure_builtin_templates(
-        &self,
-        owner: PrincipalId,
-        templates: Vec<StoredTemplateRecord>,
-        now_ms: u64,
-    ) -> Result<(), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::ensure_builtin_templates(connection, &owner, templates, now_ms)
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn list_templates(
-        &self,
-        owner: PrincipalId,
-        cursor: Option<TemplateCursor>,
-        limit: u32,
-    ) -> Result<Vec<StoredTemplateRecord>, M5TemplateError> {
-        self.request_worker(
-            move |connection| m5_template::list_templates(connection, &owner, cursor, limit),
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn get_template(
-        &self,
-        owner: PrincipalId,
-        template_id: TemplateId,
-    ) -> Result<StoredTemplateRecord, M5TemplateError> {
-        self.request_worker(
-            move |connection| m5_template::get_template(connection, &owner, template_id),
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn create_template_plan(
-        &self,
-        owner: PrincipalId,
-        draft: TemplatePlanDraft,
-        created_at_ms: u64,
-    ) -> Result<TemplatePlanRecord, M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::create_template_plan(connection, &owner, draft, created_at_ms)
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn get_template_plan(
-        &self,
-        owner: PrincipalId,
-        plan_id: PlanId,
-    ) -> Result<TemplatePlanRecord, M5TemplateError> {
-        self.request_worker(
-            move |connection| m5_template::get_template_plan(connection, &owner, plan_id),
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn accept_template_plan(
-        &self,
-        owner: PrincipalId,
-        plan_id: PlanId,
-        key: IdempotencyKey,
-        created_at_ms: u64,
-    ) -> Result<TemplateApplyOutcome, M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::accept_template_plan(connection, &owner, plan_id, &key, created_at_ms)
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn begin_template_apply(
-        &self,
-        operation_id: OperationId,
-        updated_at_ms: u64,
-    ) -> Result<TemplatePlanRecord, M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::begin_template_apply(connection, operation_id, updated_at_ms)
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn complete_template_apply(
-        &self,
-        operation_id: OperationId,
-        template: PublishedTemplate,
-        completed_at_ms: u64,
-    ) -> Result<(), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::complete_template_apply(
-                    connection,
-                    operation_id,
-                    template,
-                    completed_at_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn record_template_checkpoint(
-        &self,
-        operation_id: OperationId,
-        step: u64,
-        phase: String,
-        updated_at_ms: u64,
-    ) -> Result<(), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::record_template_checkpoint(
-                    connection,
-                    operation_id,
-                    step,
-                    &phase,
-                    updated_at_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn complete_template_project_create(
-        &self,
-        operation_id: OperationId,
-        project: CreatedTemplateProject,
-        completed_at_ms: u64,
-    ) -> Result<(), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::complete_template_project_create(
-                    connection,
-                    operation_id,
-                    project,
-                    completed_at_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn fail_template_apply(
-        &self,
-        operation_id: OperationId,
-        error_code: String,
-        diagnostic_id: String,
-        completed_at_ms: u64,
-    ) -> Result<(), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::fail_template_apply(
-                    connection,
-                    operation_id,
-                    &error_code,
-                    &diagnostic_id,
-                    completed_at_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn recover_template_operations(
-        &self,
-        recovered_at_ms: u64,
-    ) -> Result<Vec<OperationId>, M5TemplateError> {
-        self.request_worker(
-            move |connection| m5_template::recover_template_operations(connection, recovered_at_ms),
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn set_template_favorite(
-        &self,
-        owner: PrincipalId,
-        template_id: TemplateId,
-        favorite: bool,
-        expected: Revision,
-        key: IdempotencyKey,
-        now_ms: u64,
-    ) -> Result<(StoredTemplateRecord, bool), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::set_template_favorite(
-                    connection,
-                    &owner,
-                    template_id,
-                    favorite,
-                    expected,
-                    &key,
-                    now_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
-    async fn remove_template(
-        &self,
-        owner: PrincipalId,
-        template_id: TemplateId,
-        expected: Revision,
-        key: IdempotencyKey,
-        now_ms: u64,
-    ) -> Result<(bool, bool), M5TemplateError> {
-        self.request_worker(
-            move |connection| {
-                m5_template::remove_template(
-                    connection,
-                    &owner,
-                    template_id,
-                    expected,
-                    &key,
-                    now_ms,
-                )
-            },
-            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-}
-
 impl StateStore for StateStoreHandle {
     fn event_commits(&self) -> watch::Receiver<EventCommitWatermark> {
         self.inner.event_commits.clone()
@@ -2628,8 +2397,10 @@ fn publish_event_watermark(
         return Err(rusqlite::Error::InvalidQuery);
     }
     let (sequence, log_sequence): (i64, i64) = connection.query_row(
-        "SELECT (SELECT coalesce(MAX(sequence), 0) FROM events),
-                (SELECT coalesce(MAX(sequence), 0) FROM operation_log_entries)",
+        "SELECT max(coalesce((SELECT seq FROM sqlite_sequence WHERE name='events'), 0),
+                    (SELECT coalesce(MAX(sequence), 0) FROM events)),
+                max(coalesce((SELECT seq FROM sqlite_sequence WHERE name='operation_log_entries'), 0),
+                    (SELECT coalesce(MAX(sequence), 0) FROM operation_log_entries))",
         [],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;

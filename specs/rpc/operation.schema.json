@@ -12,9 +12,7 @@
             "enum": [
                 "state.check",
                 "packages.apply",
-                "templates.import",
-                "templates.derive",
-                "templates.create-project",
+                "projects.create",
                 "backups.create",
                 "backups.restore",
                 "extensions.install",

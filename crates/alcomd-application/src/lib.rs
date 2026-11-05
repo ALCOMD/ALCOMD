@@ -11,7 +11,7 @@ use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
     BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
-    ProjectId, RepositoryId, ResourceKey, Revision, TemplateId, UnityInstallationId, UnityLaunchId,
+    ProjectId, RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId,
     UserPackageId,
 };
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,6 @@ mod events;
 mod m4;
 mod m5;
 mod m5_backup;
-mod m5_template;
 mod m6;
 mod m7;
 mod m7_candidates;
@@ -34,6 +33,7 @@ mod m7_unity_migration;
 mod m7_user_packages;
 mod operation_logs;
 mod project_authority;
+mod project_create;
 mod project_discovery;
 mod repository_list;
 
@@ -42,7 +42,6 @@ pub use events::*;
 pub use m4::*;
 pub use m5::*;
 pub use m5_backup::*;
-pub use m5_template::*;
 pub use m6::*;
 pub use m7::*;
 pub use m7_candidates::*;
@@ -54,6 +53,7 @@ pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 pub use operation_logs::*;
 pub use project_authority::*;
+pub use project_create::*;
 pub use project_discovery::*;
 pub use repository_list::*;
 
@@ -866,8 +866,6 @@ impl AccessContext {
                 Permission::ProjectsCreate,
                 Permission::ProjectsDelete,
                 Permission::ProjectsUnityMigrate,
-                Permission::TemplatesRead,
-                Permission::TemplatesManage,
                 Permission::BackupsRead,
                 Permission::BackupsManage,
                 Permission::ExtensionsRead,

@@ -18,7 +18,7 @@ mod unity_hub_open;
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, prepare_storage_directory,
-    publish_file_no_replace,
+    publish_path_no_replace,
 };
 pub use unity_hub_open::{UnityHubLaunchError, UnityHubLaunchErrorKind, UnityHubProcessLauncher};
 

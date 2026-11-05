@@ -1,11 +1,11 @@
-//! One Win32 move without replacement; the standard rename API can replace files.
+//! One Win32 move without replacement for files and directories.
 #![allow(unsafe_code)]
 
 use std::io;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
-pub(crate) fn publish_file_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
+pub(crate) fn publish_path_no_replace(source: &Path, destination: &Path) -> io::Result<()> {
     let wide = |path: &Path| -> io::Result<Vec<u16>> {
         let mut value: Vec<u16> = path.as_os_str().encode_wide().collect();
         if value.contains(&0) {

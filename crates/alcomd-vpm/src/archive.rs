@@ -42,19 +42,6 @@ impl ArchiveLimits {
     }
 
     #[must_use]
-    pub const fn template() -> Self {
-        Self {
-            archive_bytes: 2_147_483_648,
-            entries: 100_000,
-            entry_bytes: 2_147_483_648,
-            total_uncompressed_bytes: 8_589_934_592,
-            path_depth: 64,
-            normalized_path_bytes: 1_024,
-            expansion_ratio: 1_000,
-        }
-    }
-
-    #[must_use]
     pub const fn backup() -> Self {
         Self {
             archive_bytes: 68_719_476_736,

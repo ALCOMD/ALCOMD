@@ -33,7 +33,7 @@ import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplateDetailPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
+import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
@@ -70,7 +70,6 @@ type Route =
     | { kind: "repository-detail"; repositoryId: string }
     | { kind: "templates" }
     | { kind: "user-packages" }
-    | { kind: "template-detail"; templateId: string }
     | { kind: "unity" }
     | { kind: "backup-detail"; backupId: string }
     | { kind: "operations" }
@@ -452,9 +451,8 @@ function RouteContent({
         case "project-backups": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.backupsRead]}><ProjectBackupsPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "repositories": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoriesPage {...props} /></CapabilityRoute>;
         case "repository-detail": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoryDetailPage {...props} repositoryId={route.repositoryId} /></CapabilityRoute>;
-        case "templates": return <CapabilityRoute required={[capabilities.templatesRead]}><TemplatesPage {...props} /></CapabilityRoute>;
+        case "templates": return <TemplatesPage {...props} />;
         case "user-packages": return <CapabilityRoute required={[capabilities.packagesUserPackages]}><UserPackagesPage {...props} /></CapabilityRoute>;
-        case "template-detail": return <CapabilityRoute required={[capabilities.templatesRead]}><TemplateDetailPage {...props} templateId={route.templateId} /></CapabilityRoute>;
         case "unity": return <CapabilityRoute required={[capabilities.unityRead]}><UnityPage {...props} /></CapabilityRoute>;
         case "backup-detail": return <CapabilityRoute required={[capabilities.backupsRead]}><BackupDetailPage {...props} backupId={route.backupId} /></CapabilityRoute>;
         case "operations": return <CapabilityRoute required={[capabilities.operations]}><OperationsPage {...props} /></CapabilityRoute>;
@@ -823,7 +821,6 @@ function readRoute(pathname: string, search = ""): Route {
         if (segments.length === 3 && segments[2] === "backups") return { kind: "project-backups", projectId: segments[1] };
     }
     if (segments[0] === "repositories" && segments.length === 2 && segments[1] !== undefined) return { kind: "repository-detail", repositoryId: segments[1] };
-    if (segments[0] === "templates" && segments.length === 2 && segments[1] !== undefined) return { kind: "template-detail", templateId: segments[1] };
     if (segments[0] === "backups" && segments.length === 2 && segments[1] !== undefined) return { kind: "backup-detail", backupId: segments[1] };
     if (segments[0] === "operations" && segments.length === 2 && segments[1] !== undefined) return { kind: "operation-detail", operationId: segments[1] };
     if (segments[0] === "extensions" && segments[1] !== undefined) {
@@ -844,7 +841,6 @@ function routePath(route: Route): string {
         case "repository-detail": return `/repositories/${encodeURIComponent(route.repositoryId)}`;
         case "templates": return "/templates";
         case "user-packages": return "/user-packages";
-        case "template-detail": return `/templates/${encodeURIComponent(route.templateId)}`;
         case "unity": return "/unity";
         case "backup-detail": return `/backups/${encodeURIComponent(route.backupId)}`;
         case "operations": return "/operations";
@@ -868,8 +864,7 @@ function routeSection(route: Route): string {
         case "repositories":
         case "repository-detail":
         case "templates":
-        case "user-packages":
-        case "template-detail": return "packages";
+        case "user-packages": return "packages";
         case "backup-detail": return "projects";
         case "operations":
         case "operation-detail": return "tasks";

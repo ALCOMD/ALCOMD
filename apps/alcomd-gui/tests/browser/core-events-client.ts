@@ -127,7 +127,6 @@ export function withBrowserCoreEvents(client: GuiRpcClient): GuiRpcClient {
         projectRegister: ["project", "project.registered"], projectRefresh: ["project", "project.refreshed"], projectSetFavorite: ["project", "project.favorite_changed"], projectUnregister: ["project", "project.unregistered"],
         repositoryRegister: ["repository", "repository.registered"], repositoryRefresh: ["repository", "repository.refreshed"], repositoryUnregister: ["repository", "repository.unregistered"],
         userPackageEnroll: ["user-package", "user_package.enrolled"], userPackageRefresh: ["user-package", "user_package.refreshed"], userPackageRemove: ["user-package", "user_package.removed"],
-        templateSetFavorite: ["template", "template.favorite_changed"], templateRemove: ["template", "template.removed"],
         unityInstallationRegister: ["unity-installation", "unity_installation.registered"], unityInstallationRemove: ["unity-installation", "unity_installation.removed"], unityInstallationsRefresh: ["unity-installation", "unity_installations.refreshed"],
         unityProjectLaunchConfigSet: ["project-unity-launch-config", "unity.project-launch-config.set"], unityProjectLaunchConfigClear: ["project-unity-launch-config", "unity.project-launch-config.cleared"]
     };

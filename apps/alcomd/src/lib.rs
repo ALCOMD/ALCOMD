@@ -8,11 +8,10 @@ use std::sync::Arc;
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
-    M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
-    M7Application, M7CopyApplication as ProjectCopyService,
-    M7DeleteApplication as ProjectDeleteService, M7OfficialApplication,
-    M7UnityMigrationApplication as UnityMigrationService, OperationCursor, OperationId,
-    OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
+    M5UnityApplication as M5Application, M6Application, M7Application,
+    M7CopyApplication as ProjectCopyService, M7DeleteApplication as ProjectDeleteService,
+    M7OfficialApplication, M7UnityMigrationApplication as UnityMigrationService, OperationCursor,
+    OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
     StoreErrorKind, UserPackageApplication as UserPackageService,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
@@ -32,13 +31,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod events_rpc;
 mod hub_platform;
+mod legacy_template_cleanup;
 mod logs_rpc;
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
 mod m5_platform;
 mod m5_rpc;
-mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
 mod m7_candidates_rpc;
@@ -48,6 +47,7 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
+mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
 mod storage_platform;
@@ -69,8 +69,8 @@ type RepositoryListApplication = alcomd_application::RepositoryListApplication<
 type M4PackageApplication =
     M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
 type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
-type TemplateApplication =
-    TemplateService<StateStoreHandle, alcomd_vpm::TemplateEngine, M5UnityApplication>;
+type ProjectCreateApplication =
+    alcomd_application::ProjectCreateApplication<StateStoreHandle, alcomd_vpm::ProjectCreateEngine>;
 type BackupApplication =
     BackupService<StateStoreHandle, alcomd_vpm::BackupEngine, M5UnityApplication>;
 type M6ExtensionApplication = M6Application<
@@ -108,7 +108,7 @@ struct Applications {
     repository_lists: RepositoryListApplication,
     m4: M4PackageApplication,
     m5: M5UnityApplication,
-    templates: TemplateApplication,
+    project_create: ProjectCreateApplication,
     backups: BackupApplication,
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
@@ -164,6 +164,11 @@ async fn initialize_daemon_with_directories(
             "state store failed closed: {error}"
         )))
     })?;
+    if store.retired_legacy_template_state()
+        && let Err(error) = legacy_template_cleanup::retire(&data_root)
+    {
+        eprintln!("Legacy template file cleanup incomplete: {error}");
+    }
     let m2 = M2Application::new(store.clone());
     m2.recover()
         .await
@@ -211,28 +216,25 @@ async fn initialize_daemon_with_directories(
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Unity migration recovery failed")))?;
-    let template_engine = alcomd_vpm::TemplateEngine::with_package_cache(
-        data_root.join("template-store"),
-        cache_root.clone(),
-    )
-    .map_err(|_| BindError::Io(io::Error::other("Template engine initialization failed")))?;
-    let templates = TemplateService::with_locks(
+    let project_create_engine =
+        alcomd_vpm::ProjectCreateEngine::new(cache_root.clone()).map_err(|_| {
+            BindError::Io(io::Error::other(
+                "Project create engine initialization failed",
+            ))
+        })?;
+    let project_create = alcomd_application::ProjectCreateApplication::with_locks(
         store.clone(),
-        template_engine.clone(),
-        unity.clone(),
+        project_create_engine,
         Arc::clone(&locks),
     );
-    let builtins = template_engine
-        .materialize_builtins(&data_root.join("template-builtin-staging"))
-        .map_err(|_| BindError::Io(io::Error::other("builtin Template initialization failed")))?;
-    templates
-        .ensure_builtins(builtins)
+    project_create
+        .seed_builtin_templates()
         .await
-        .map_err(|_| BindError::Io(io::Error::other("builtin Template registration failed")))?;
-    templates
+        .map_err(|_| BindError::Io(io::Error::other("Project template initialization failed")))?;
+    project_create
         .recover()
         .await
-        .map_err(|_| BindError::Io(io::Error::other("Template recovery failed")))?;
+        .map_err(|_| BindError::Io(io::Error::other("Project creation recovery failed")))?;
     let project_copy = ProjectCopyService::with_locks(
         store.clone(),
         alcomd_vpm::ProjectCopyEngine,
@@ -324,7 +326,7 @@ async fn initialize_daemon_with_directories(
         ),
         m4,
         m5: unity,
-        templates,
+        project_create,
         backups,
         m6,
         m7,
@@ -592,9 +594,8 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
         alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
-        alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1,
-        alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1,
-        alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
+        alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
@@ -875,8 +876,11 @@ async fn dispatch_m2(
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
-        _ if request.method.starts_with("templates.") => {
-            m5_template_rpc::dispatch(request, state, &applications.templates, access).await
+        alcomd_protocol::METHOD_PROJECTS_CREATE
+        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
+        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE
+        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE => {
+            project_create_rpc::dispatch(request, state, &applications.project_create, access).await
         }
         _ if request.method.starts_with("backups.") => {
             m5_backup_rpc::dispatch(request, state, &applications.backups, access).await

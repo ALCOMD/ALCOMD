@@ -269,7 +269,7 @@ fn integer(connection: &Connection, sql: &str) -> i64 {
 }
 
 fn row_snapshot(connection: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
-    let names: Vec<String> = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name != 'operation_log_entries' ORDER BY name").expect("tables").query_map([], |row| row.get(0)).expect("table names").map(|row| row.expect("table name")).collect();
+    let names: Vec<String> = connection.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('operation_log_entries','templates','template_plans','project_templates','project_template_revision') ORDER BY name").expect("retained business tables").query_map([], |row| row.get(0)).expect("table names").map(|row| row.expect("table name")).collect();
     names
         .into_iter()
         .map(|name| {
