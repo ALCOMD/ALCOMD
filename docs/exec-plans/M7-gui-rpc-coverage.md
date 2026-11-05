@@ -2,21 +2,24 @@
 
 状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。当前清单包含已批准的日志读取与事件订阅方法，并按2026-11-05授权删除手动启动状态查询，公开常量与矩阵按94项核对；此前94项（未列事件订阅）、93/93及92/92保持原候选绑定。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
+本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。2026-11-05撤销旧日志/活动接口后的91项基线新增单页业务日志的`logs.read`，现为92项。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
 ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal source，不直接形成 GUI action。
 
+单页日志使用既有`operations.read`和local-owner边界；共享`events.subscribe`增加经协商的`operation-log`失效范围，正文只从`logs.read`读取。
+
 | RPC method | capability | page / route | user action | R/W | confirmation | Operation | state handling | test owner |
 |---|---|---|---|---|---|---|---|---|
 | `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config5 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About, shell | read Core version/status; local GUI build version remains independent | R | no | no | data/error/reconnect | `gui.m7-core-surfaces` |
-| `state.check` | `state.check.v1` + `operations.v1` for GUI progress | Diagnostics | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
-| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail / Log detail | follow the same accepted ID and open Core results | R | no | existing Operation | event invalidation/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
+| `logs.read` | `logs.read.v1` | `/logs` | read business steps and retained history as one continuous list | R | no | no | data/error/reconnect, owner scope, bounded frame | `gui.m7-operation-logs` |
+| `state.check` | `state.check.v1` + `operations.v1` for GUI progress | N/A (CLI/API only) | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
+| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail | follow the same accepted ID and open Core results | R | no | existing Operation | event invalidation/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
 | `operations.list` | `operations.v1` | Operations | page Operations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `operations.cancel` | `operations.v1` | Operation detail | cooperative cancel | W | yes | existing Operation | mutation/stale | `gui.m7-operation-flows` |
-| `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.transactions-and-owner` |
+| `events.list` | `events.replay.v1` | N/A direct | business Event replay/cursor recovery only | R | no | no | N/A | `events.commit-and-owner` |
 | `events.subscribe` | `events.live.v1` | shared app notification entry | receive committed changes and invalidate affected reads | R/stream | no | no | generation/ACK/replay/resync/backpressure; no periodic business reads | `gui.m7-operation-flows` |
 | `projects.inspect` | `projects.read.v1` | Projects add dialog | validate candidate path | R | no | no | dialog data | `gui.m7-core-surfaces` |
 | `projects.list` | `projects.read.v1` | Projects | page projects | R | no | no | data/keyset | `gui.m7-core-surfaces` |
@@ -101,18 +104,13 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `extensions.ui.close` | `extensions.ui.portable.v1` | Extension Portable UI | close route/session | W/session | discard if dirty | no | best-effort | `gui.m7-portable-ui-production` |
 | `settings.get` | base RPC v1; no new capability approved | Settings, shell and project target forms | load current Config without density, Hub evidence and effective project/backup directories | R | no | no | data/revision | `settings.authoritative-storage` |
 | `settings.update` | base RPC v1; no new capability approved | Settings | serial CAS narrow PATCH; theme Save/Cancel | W | immediate ordinary changes; explicit theme save | no | mutation/stale/intent retained/unknown commit | `settings.authoritative-storage` |
-| `activity.list` | base RPC v1; no new capability approved | Activity | page independent owner-visible activity | R | no | no | data/keyset | `activity.transactions-and-owner` |
-| `activity.get` | base | Activity | update an existing activity by ID | R | no | no | revision/owner/read retry | `activity.atomic-history` |
-| `diagnostics.log.read` | `diagnostics.log.v1` | app shell, Diagnostics | read complete Core records plus independent health; no floating notifications | R | no | no | baseline/file position/health/gap/cancellation; dedicated connection | `diagnostics.standard-json-files` |
-| `diagnostics.log.history` | `diagnostics.log.v1` | Technical Logs | page retained Core files and merge original log identities | R | no | no | paging/rotation/expired cursor/damaged records; health/scan bounds; no floating notifications | `diagnostics.saved-log-history` |
-| `diagnostics.log.health` | `diagnostics.log.v1` | Technical Logs | read source health independently of files | R | no | no | degradation/independent revision | `diagnostics.source-health` |
 
 ## Coverage rules
 
 - New methods, public capabilities and breaking DTO changes require owner approval. The methods above include the later approved Project/Package, exact Unity, candidate evidence and Hub contracts; the original four M7 utility additions are not the full current set.
 - `packages.plan.v2` also supports the original package Plan methods; `planReinstall` and `planBulk` require v2. GUI candidate/source filters use complete Core evidence; optional display metadata does not determine business state.
 - A method is complete only when typed Rust and TypeScript adapters, real page/action behavior, common states and its test owner all exist.
-- `events.list` remains a daemon projection source; Activity UI must call `activity.list`, not join raw Events and Operations in JavaScript.
+- 日志与活动接口、专属capability/权限/GUI入口全部撤销；`events.list/subscribe`仅承担业务变化与恢复，不重新投影日志或活动历史。
 - Direct registry/lifecycle writes that do not have a Core Plan method receive explicit confirmation but must not invent a GUI Plan.
 - Any Apply returning an Operation follows the same Operation detail model and survives route/window close and reconnect.
 - List import reuses `repositories.inspect/register` sequentially after selection and confirmation; it appends without clearing existing sources, has no atomic-transaction claim, and keeps cancellation, partial and unknown results distinct. Export preserves validated query text and requires a new file. Tests: `m7-repository-list.spec.ts`, repository-list Core/RPC cases.

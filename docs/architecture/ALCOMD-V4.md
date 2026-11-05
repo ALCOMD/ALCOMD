@@ -337,7 +337,9 @@ Tauri command 只能用于窗口、文件选择器、系统通知、typed RPC �
 ALCOMD RPC/application 边界，不使用 extension private command。Tauri command 不得实现包、项目、MCP、Discord
 或迁移业务。
 
-M7技术日志使用共享 `alcomd-logging` 底座和标准tracing JSONL，Core通过application授权接口读取自身数据目录下的`logs/core`，GUI原生层只读写其平台应用日志目录下的`gui`；不接受任意日志路径，Core离线不影响GUI自身来源。两个来源不是业务状态权威。活动由Core独立数据库投影，与Operation/同步业务及变化事件同事务；不从技术日志、页面文案或任务终态订阅造记录。浮动提示已清理，不实现替代通知机制。
+2026-11-05所有者撤销日志、活动记录与提示系统：删除Core/GUI日志生产、文件读取、健康状态、独立活动表/API及所有浮动提醒。无替代实现或兼容入口。Operation仍是任务执行权威，业务Event及其共享变化通知用于数据同步；所属页面保留错误、确认、重试与完成行为。State20删除清单、备份要求和验证以当前M7 ExecPlan为准；原日志与验收材料保留。
+
+2026-11-06批准新的单页业务操作日志：Core在真实业务步骤记录追加事实，State21持久保存历史及发起入口，`logs.read`仅供已认证本机所有者，GUI借共享提交后通知按需读取。Operation仍为执行权威；没有独立活动投影、技术日志页、浮动提醒或旧日志转换。具体合同见M7 ExecPlan。
 
 Tauri Bundler 可在某个平台作为 `cargo xtask dist` 的受控底层工具，但不得决定产品组成、
 安装布局、更新事务、迁移流程或最终发行资产集合。这不是禁用 Tauri Bundler；它可以参与
