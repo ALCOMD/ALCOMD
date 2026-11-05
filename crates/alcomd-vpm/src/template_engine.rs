@@ -221,6 +221,7 @@ impl M5TemplateAdapter for TemplateEngine {
         catalog: alcomd_application::ResolverCatalog,
         target_parent: String,
         target_leaf: String,
+        unity_version: String,
     ) -> Result<TemplatePlanDraft, M5TemplateError> {
         crate::template_create::plan_create_project(
             self,
@@ -228,6 +229,7 @@ impl M5TemplateAdapter for TemplateEngine {
             catalog,
             target_parent,
             target_leaf,
+            unity_version,
         )
         .await
     }

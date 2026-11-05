@@ -265,7 +265,7 @@ fn validate_plan_registry(
         TemplatePlanKind::CreateProject => {
             let authority: CreateProjectAuthority =
                 serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
-            validate_create_registry(connection, owner, &authority)?;
+            validate_create_registry(connection, owner, &authority, false)?;
         }
     }
     Ok(())
@@ -323,8 +323,19 @@ fn validate_create_registry(
     connection: &Connection,
     owner: &PrincipalId,
     authority: &CreateProjectAuthority,
+    accepted: bool,
 ) -> Result<(), M5TemplateError> {
-    if authority.version != 1 || authority.kind != "create-project" {
+    let current_basis = authority.creation_basis_version == Some(2);
+    let accepted_legacy = authority.creation_basis_version.is_none() && accepted;
+    if authority.version != 1
+        || !(current_basis || accepted_legacy)
+        || authority.kind != "create-project"
+        || current_basis
+            && authority
+                .unity_version
+                .as_deref()
+                .is_none_or(|version| alcomd_application::canonical_unity_version(version).is_err())
+    {
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
     let template_revision = connection
@@ -553,10 +564,19 @@ pub(super) fn complete_template_project_create(
         serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
     if authority.project_id != project.project_id.to_string()
         || authority.target_path != project.observation.root_path
+        || authority
+            .unity_version
+            .as_ref()
+            .is_some_and(|version| version != &project.observation.unity_version)
     {
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
-    validate_create_registry(&transaction, &owner, &authority)?;
+    validate_create_registry(
+        &transaction,
+        &owner,
+        &authority,
+        plan.state == TemplatePlanState::Applied,
+    )?;
     let existing = transaction
         .query_row(
             "SELECT project_id,root_path,path_identity_key FROM projects
@@ -1182,6 +1202,8 @@ struct CreateProjectAuthority {
     bundle_sha256: String,
     project_id: String,
     target_path: String,
+    creation_basis_version: Option<u32>,
+    unity_version: Option<String>,
 }
 
 fn plan_kind(value: TemplatePlanKind) -> &'static str {

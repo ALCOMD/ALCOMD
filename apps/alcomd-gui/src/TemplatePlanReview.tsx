@@ -12,7 +12,7 @@ type ReviewContext = {
 export type TemplateReview = ReviewContext & (
     { action: "import" | "override"; expectedRevision: number; replacing: boolean }
     | { action: "derive"; sourceProjectId: string; sourceProjectRevision: number }
-    | { action: "create_project"; templateRevision: number; targetParent: string; targetLeaf: string }
+    | { action: "create_project"; templateRevision: number; targetParent: string; targetLeaf: string; unityVersion: string }
 );
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -57,7 +57,7 @@ export function reviewTemplateDerive(plan: TemplatePlan, request: { templateId: 
     return { plan, action: "derive", templateId: request.templateId, displayName: request.displayName, templateVersion: request.templateVersion, sourceProjectId: request.projectId, sourceProjectRevision: request.expectedProjectRevision };
 }
 
-export function reviewTemplateCreation(plan: TemplatePlan, template: TemplateRecord, targetParent: string, targetLeaf: string): TemplateReview {
+export function reviewTemplateCreation(plan: TemplatePlan, template: TemplateRecord, targetParent: string, targetLeaf: string, unityVersion: string): TemplateReview {
     validateBase(plan);
     requireEvidence(plan.action === "create_project" && plan.templateId === template.templateId
         && validRevision(plan.templateRevision) && plan.templateRevision === template.revision
@@ -66,9 +66,9 @@ export function reviewTemplateCreation(plan: TemplatePlan, template: TemplateRec
         && validHash(plan.payloadTreeSha256) && validHash(plan.packageChangeSetFingerprint) && validHash(plan.projectSummaryFingerprint)
         && opaqueIdentity(plan.parentFilesystemIdentity)
         && typeof plan.targetLeaf === "string" && plan.targetLeaf.length > 0 && plan.targetLeaf === targetLeaf
-        && plan.targetMustBeAbsent === true
+        && plan.targetMustBeAbsent === true && plan.unityVersion === unityVersion && validHash(plan.projectVersionSha256)
         && Array.isArray(plan.resourceDigests) && plan.resourceDigests.length <= 4096 && plan.resourceDigests.every(validHash) && new Set(plan.resourceDigests).size === plan.resourceDigests.length);
-    return { plan, action: "create_project", templateId: template.templateId, displayName: template.displayName, templateVersion: template.templateVersion, templateRevision: template.revision, targetParent, targetLeaf };
+    return { plan, action: "create_project", templateId: template.templateId, displayName: template.displayName, templateVersion: template.templateVersion, templateRevision: template.revision, targetParent, targetLeaf, unityVersion };
 }
 
 export function TemplatePlanReview({ review }: { review: TemplateReview }) {
@@ -87,6 +87,7 @@ export function TemplatePlanReview({ review }: { review: TemplateReview }) {
                 <div><dt>{t("Source project")}</dt><dd><code>{review.sourceProjectId}</code></dd></div>
                 <div><dt>{t("Source project revision")}</dt><dd>{review.sourceProjectRevision}</dd></div>
             </> : review.action === "create_project" ? <>
+                <div><dt>{t("Unity version")}</dt><dd>{review.unityVersion}</dd></div>
                 <div><dt>{t("Template revision")}</dt><dd>{review.templateRevision}</dd></div>
                 <div><dt>{t("Destination")}</dt><dd><code>{displayPath(review.targetParent)}</code><br /><code>{review.targetLeaf}</code></dd></div>
                 <div><dt>{t("Destination must be absent")}</dt><dd>{t("Yes")}</dd></div>

@@ -32,6 +32,7 @@ import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, Tem
 import { GlobalReminder, Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
+import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
 import { backupCompressionOptions } from "./backup-compression";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
@@ -888,6 +889,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [fields, setFields] = useState({ leaf: "", exportPath: "" });
     const projectDirectory = useProjectDirectory(client, action === "create" && open && !selection.closed);
+    const unity = useCreateUnityVersion(client, template, action === "create" && open && !selection.closed);
     const pending = useRef(false);
     const current = useActionScope(client, open && !selection.closed);
     const update = (key: keyof typeof fields, value: string) => { setFields((current) => ({ ...current, [key]: value })); setFeedback(INITIAL_FEEDBACK); };
@@ -897,9 +899,9 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
         if (pending.current || !canCreateProject) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, projectDirectory.directory, fields.leaf);
+            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, projectDirectory.directory, fields.leaf, unity.version.trim());
             if (!current()) return;
-            setReview(reviewTemplateCreation(plan, template, projectDirectory.directory, fields.leaf)); setSubmitted(false); setFeedback({ busy: false });
+            setReview(reviewTemplateCreation(plan, template, projectDirectory.directory, fields.leaf, unity.version.trim())); setSubmitted(false); setFeedback({ busy: false });
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
     };
@@ -944,9 +946,10 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
             <p>{t("Template:")}<strong>{template.displayName}</strong></p>
             <TextField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
             <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
+            <CreateUnityVersionField disabled={feedback.busy} selection={unity} />
             <TextField disabled={feedback.busy} id="create-leaf" label={t("Project folder name")} onInput={(next) => update("leaf", next)} required value={fields.leaf} />
             {projectDirectory.error === undefined ? null : <RequestReminder error={projectDirectory.error} title={t("Default project location could not be loaded.")} />}
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0} type="submit">{t("Review")}</Button></div>
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0 || unity.version.trim().length === 0} type="submit">{t("Review")}</Button></div>
         </form> : action === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple(); }}>
             <p><Translated message="Export {name} as a template bundle." values={{ name: <strong>{template.displayName}</strong> }} /></p>
             <TextField disabled={feedback.busy} id="template-export" label={t("Export target")} onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />

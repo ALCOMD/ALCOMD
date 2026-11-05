@@ -192,6 +192,8 @@ enum ProjectCommand {
         target_parent: PathBuf,
         target_leaf: String,
         #[arg(long)]
+        unity_version: String,
+        #[arg(long)]
         expected_template_revision: u64,
         #[arg(long)]
         idempotency_key: String,
@@ -693,6 +695,7 @@ async fn execute(
                 template,
                 target_parent,
                 target_leaf,
+                unity_version,
                 expected_template_revision,
                 idempotency_key,
             } => {
@@ -705,6 +708,7 @@ async fn execute(
                             expected_template_revision,
                             target_parent,
                             target_leaf,
+                            unity_version,
                         },
                     )
                     .await?;
@@ -1806,6 +1810,34 @@ fn write_completion(shell: CompletionShell) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_create_requires_explicit_complete_version_argument() {
+        let base = [
+            "alcomd-cli",
+            "project",
+            "create",
+            "--template",
+            "00000000-0000-4000-8000-000000000001",
+            ".",
+            "Created",
+            "--expected-template-revision",
+            "1",
+            "--idempotency-key",
+            "create",
+        ];
+        assert!(Arguments::try_parse_from(base).is_err());
+        let parsed =
+            Arguments::try_parse_from(base.into_iter().chain(["--unity-version", "2022.3.22f1"]))
+                .expect("explicit creation version");
+        let Command::Project {
+            command: ProjectCommand::Create { unity_version, .. },
+        } = parsed.command
+        else {
+            panic!("project create");
+        };
+        assert_eq!(unity_version, "2022.3.22f1");
+    }
 
     #[test]
     fn backup_compression_cli_publishes_only_the_six_approved_choices() {

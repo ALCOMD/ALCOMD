@@ -46,6 +46,10 @@ pub struct FrozenPackageMaterializer {
 }
 
 impl FrozenPackageMaterializer {
+    pub(crate) fn cache(&self) -> &PackageCache {
+        &self.cache
+    }
+
     pub fn new(cache_root: PathBuf) -> Result<Self, M4Error> {
         Ok(Self {
             cache: PackageCache::new(cache_root)

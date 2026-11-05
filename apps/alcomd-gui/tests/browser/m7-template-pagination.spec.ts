@@ -30,9 +30,10 @@ test("Projects can select template 101 and create the project returned by Core",
     await expect(select).toContainText("Catalog template 101");
     await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
     await dialog.getByLabel("Create project name", { exact: true }).fill("From page two");
+    await dialog.getByLabel("Unity version", { exact: true }).fill("2022.3.22f1");
     await dialog.getByRole("button", { name: "Review creation", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.planCreateProject"))).toEqual([
-        { method: "templates.planCreateProject", params: { templateId: lastTemplateId, expectedTemplateRevision: 2, targetParent: "C:\\Fixture\\Avatar", targetLeaf: "From page two" } }
+        { method: "templates.planCreateProject", params: { templateId: lastTemplateId, expectedTemplateRevision: 2, targetParent: "C:\\Fixture\\Avatar", targetLeaf: "From page two", unityVersion: "2022.3.22f1" } }
     ]);
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
@@ -61,12 +62,12 @@ test("Create template paging retains the selected template and draft after failu
     await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("Your loaded items are still available.");
     await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "00000000-0000-4000-8000-000000001050");
-    await expect(dialog.locator("md-select-option")).toHaveCount(100);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await dialog.getByRole("button", { name: "Retry loading more", exact: true }).click();
-    await expect(dialog.locator("md-select-option")).toHaveCount(101);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
     await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "00000000-0000-4000-8000-000000001050");
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("Keep this draft");
-    expect(await dialog.locator("md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(101);
+    expect(await dialog.locator("#project-create-template md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(101);
 });
 
 test("A closed template picker rejects the old page response after a new draft opens", async ({ page }) => {
@@ -77,12 +78,12 @@ test("A closed template picker rejects the old page response after a new draft o
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toBeHidden();
     await openCreation(page);
-    await expect(dialog.locator("md-select-option")).toHaveCount(100);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await dialog.getByLabel("Create project name", { exact: true }).fill("New draft");
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-page-ready")));
     await expect.poll(() => page.evaluate(() => window.templatePageCompletions)).toBe(1);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(dialog.locator("md-select-option")).toHaveCount(100);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("New draft");
     await expect(dialog.getByRole("button", { name: "Load more templates", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method.includes("plan")))).toEqual([]);

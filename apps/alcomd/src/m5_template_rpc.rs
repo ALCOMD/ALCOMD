@@ -229,6 +229,7 @@ pub(super) async fn dispatch(
                     revision,
                     params.target_parent,
                     params.target_leaf,
+                    params.unity_version,
                 )
                 .await
             {
@@ -289,7 +290,12 @@ async fn apply(
 }
 
 fn template(value: app::TemplateRecord) -> rpc::TemplateRecord {
+    let unity = serde_json::from_str::<Value>(&value.manifest_json)
+        .ok()
+        .and_then(|manifest| manifest.get("unity").cloned())
+        .and_then(|unity| serde_json::from_value(unity).ok());
     rpc::TemplateRecord {
+        unity,
         template_id: value.template_id.to_string(),
         source_kind: match value.source_kind {
             app::TemplateSourceKind::Builtin => rpc::TemplateSourceKind::Builtin,
@@ -366,6 +372,8 @@ fn plan(value: app::TemplatePlanRecord) -> Result<rpc::TemplatePlan, ()> {
             "parentFilesystemIdentity",
             "targetLeaf",
             "targetMustBeAbsent",
+            "unityVersion",
+            "projectVersionSha256",
             "packageChangeSetFingerprint",
             "resourceDigests",
             "projectSummaryFingerprint",
@@ -438,3 +446,7 @@ fn hex(bytes: &[u8]) -> String {
     }
     value
 }
+
+#[cfg(all(test, windows))]
+#[path = "m5_template_ipc_tests.rs"]
+mod creation_ipc_tests;

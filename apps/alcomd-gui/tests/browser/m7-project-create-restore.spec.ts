@@ -21,6 +21,28 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
     await expect(page.getByRole("row").filter({ hasText: "Created Project" })).toBeVisible();
 });
 
+test("creation accepts an explicit uninstalled Editor version", async ({ page }) => {
+    await openHarness(page, "/projects", "unity-zero");
+    await page.getByRole("button", { name: "Create project", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("");
+    await page.getByRole("textbox", { name: "Unity version", exact: true }).fill("2022.3.99f1");
+    await page.getByLabel("Create project name").fill("Uninstalled Version");
+    await page.getByRole("button", { name: "Review creation" }).click();
+    await expect(page.getByText("Unity version", { exact: true }).locator("..")).toContainText("2022.3.99f1");
+    expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "templates.planCreateProject")?.params)).toMatchObject({ unityVersion: "2022.3.99f1" });
+});
+
+test("creation prefills one compatible Editor but requires a choice for multiple installations", async ({ page }) => {
+    await openHarness(page, "/projects");
+    await page.getByRole("button", { name: "Create project", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
+    await openHarness(page, "/projects", "unity-multiple");
+    await page.getByRole("button", { name: "Create project", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Installed Unity version", exact: true })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("");
+    await expect(page.getByRole("button", { name: "Review creation" })).toBeDisabled();
+});
+
 test("Projects Restore uses a managed Backup Plan Apply Operation and opens the registered result", async ({ page }) => {
     await openHarness(page, "/projects");
 

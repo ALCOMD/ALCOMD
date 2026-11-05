@@ -1574,6 +1574,26 @@ fn m7_project_favorite_and_unity_launch_config_are_active_contracts() {
 }
 
 #[test]
+fn template_creation_requires_explicit_editor_version() {
+    let contract = schema("m5-template");
+    assert!(
+        contract["$defs"]["planCreateProjectParams"]["required"]
+            .as_array()
+            .expect("required")
+            .contains(&json!("unityVersion"))
+    );
+    let mut request = json!({ "templateId": "00000000-0000-4000-8000-000000000001", "expectedTemplateRevision": 1, "targetParent": "C:\\Fixture", "targetLeaf": "Created" });
+    assert!(
+        serde_json::from_value::<alcomd_protocol::TemplatePlanCreateProjectParams>(request.clone())
+            .is_err()
+    );
+    request["unityVersion"] = json!("2022.3.22f1");
+    let typed = serde_json::from_value::<alcomd_protocol::TemplatePlanCreateProjectParams>(request)
+        .expect("complete input");
+    assert_eq!(typed.unity_version, "2022.3.22f1");
+}
+
+#[test]
 fn m5_template_contract_is_valid_and_implemented_without_backup_claims() {
     let contract = schema("m5-template");
     assert_eq!(

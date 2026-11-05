@@ -1065,12 +1065,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         this.importedTemplates = this.importedTemplates.filter((item) => item.templateId !== templateId);
         return this.value({ templateId, removed: true, replayed: false });
     }
-    async templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
-        window.templateRequests.push({ method: "templates.planCreateProject", params: { templateId: _templateId, expectedTemplateRevision: _expectedTemplateRevision, targetParent: _targetParent, targetLeaf } });
+    async templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string, unityVersion: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
+        window.templateRequests.push({ method: "templates.planCreateProject", params: { templateId: _templateId, expectedTemplateRevision: _expectedTemplateRevision, targetParent: _targetParent, targetLeaf, unityVersion } });
         if (query.has("holdCreatePlan")) await new Promise<void>((resolve) => window.addEventListener("test-create-plan-ready", () => resolve(), { once: true }));
         if (this.mode === "create-error") return Promise.reject({ code: "template_plan_stale" });
         this.pendingProject = project(query.has("template-tasks") ? `00000000-0000-4000-8000-${String(7000 + this.templatePlans.size).padStart(12, "0")}` : CREATED_PROJECT_ID, targetLeaf);
-        return this.saveTemplatePlan({ ...templatePlan("create_project"), templateId: _templateId, templateRevision: _expectedTemplateRevision, bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, parentFilesystemIdentity: "opaque-parent", targetLeaf, targetMustBeAbsent: true, packageChangeSetFingerprint: HASH, resourceDigests: [], projectSummaryFingerprint: HASH });
+        this.pendingProject.unityVersion = unityVersion;
+        return this.saveTemplatePlan({ ...templatePlan("create_project"), templateId: _templateId, templateRevision: _expectedTemplateRevision, unityVersion, projectVersionSha256: HASH, bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, parentFilesystemIdentity: "opaque-parent", targetLeaf, targetMustBeAbsent: true, packageChangeSetFingerprint: HASH, resourceDigests: [], projectSummaryFingerprint: HASH });
     }
     templateApplyCreateProject(planId: string): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { return this.acceptTemplatePlan(planId, "create_project"); }
 
@@ -1195,7 +1196,7 @@ function installation() { return { installationId: INSTALLATION_ID, executablePa
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
-function template() { return { templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "authored", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
+function template() { return { unity: { major: 2022, minor: 3 }, templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "authored", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function catalogTemplate(index: number) { return { ...template(), templateId: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`, sourceKind: "user", provenance: "authored", displayName: `Catalog template ${String(index).padStart(3, "0")}` }; }
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }

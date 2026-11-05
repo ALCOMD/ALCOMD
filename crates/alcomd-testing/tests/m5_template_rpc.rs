@@ -68,6 +68,7 @@ async fn template_builtin_create_project_round_trips_over_rpc() {
             expected_template_revision: blank.revision,
             target_parent: projects.to_string_lossy().into_owned(),
             target_leaf: "RPC Project".to_owned(),
+            unity_version: "2022.3.22f1".to_owned(),
         })
         .await
         .expect("plan create");
@@ -175,6 +176,7 @@ fn subprocess_runs_template_create_until_killed() {
                 expected_template_revision: blank.revision,
                 target_parent: projects.to_string_lossy().into_owned(),
                 target_leaf: "Crash Project".to_owned(),
+                unity_version: "2022.3.22f1".to_owned(),
             })
             .await
             .expect("plan create");

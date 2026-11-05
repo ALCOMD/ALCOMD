@@ -1954,6 +1954,8 @@ pub struct TemplateRecord {
     pub template_id: String,
     pub source_kind: TemplateSourceKind,
     pub template_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unity: Option<TemplateUnityCompatibility>,
     pub display_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -1964,6 +1966,13 @@ pub struct TemplateRecord {
     pub revision: u64,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TemplateUnityCompatibility {
+    pub major: u32,
+    pub minor: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
@@ -2111,6 +2120,7 @@ pub struct TemplatePlanCreateProjectParams {
     pub expected_template_revision: u64,
     pub target_parent: String,
     pub target_leaf: String,
+    pub unity_version: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

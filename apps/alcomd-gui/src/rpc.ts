@@ -1,3 +1,4 @@
+import type { TemplatePlanCreateProjectParams } from "@alcomd/sdk";
 import type {
     ProjectCandidateRequest,
     ProjectCandidatePage,
@@ -167,7 +168,7 @@ export interface GuiRpcClient {
     templateExport(templateId: string, expectedRevision: number, targetPath: string): Promise<TemplateExportResult>;
     templateSetFavorite(templateId: string, favorite: boolean, expectedRevision: number): Promise<TemplateRecordResult>;
     templateRemove(templateId: string, expectedRevision: number): Promise<TemplateRemoveResult>;
-    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string): Promise<TemplatePlan>;
+    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string, unityVersion: string): Promise<TemplatePlan>;
     templateApplyCreateProject(planId: string): Promise<TemplateApplyResult>;
     backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
     backupGet(backupId: string): Promise<BackupRecord>;
@@ -501,8 +502,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_template_remove", { params: { templateId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
-    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string): Promise<TemplatePlan> {
-        return invokeTyped("gui_template_plan_create_project", { params: { templateId, expectedTemplateRevision, targetParent, targetLeaf } });
+    templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string, unityVersion: string): Promise<TemplatePlan> {
+        return invokeTyped("gui_template_plan_create_project", { params: { templateId, expectedTemplateRevision, targetParent, targetLeaf, unityVersion } satisfies TemplatePlanCreateProjectParams });
     }
 
     templateApplyCreateProject(planId: string): Promise<TemplateApplyResult> {

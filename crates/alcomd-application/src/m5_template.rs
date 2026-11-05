@@ -160,6 +160,7 @@ pub enum M5TemplateErrorCode {
     TemplateBundleInvalid,
     TemplateBundleChanged,
     TemplateObjectMissing,
+    DependencyUnsatisfied,
     TemplateTargetExists,
     ProjectNotRegistered,
     ProjectRunning,
@@ -337,6 +338,7 @@ pub trait M5TemplateAdapter: Clone + Send + Sync + 'static {
         catalog: ResolverCatalog,
         target_parent: String,
         target_leaf: String,
+        unity_version: String,
     ) -> impl Future<Output = Result<TemplatePlanDraft, M5TemplateError>> + Send;
     fn create_project_resource(
         &self,
@@ -677,6 +679,7 @@ where
         expected_template_revision: Revision,
         target_parent: String,
         target_leaf: String,
+        unity_version: String,
     ) -> Result<TemplatePlanRecord, M5TemplateError> {
         require_local_owner(access, crate::Permission::TemplatesRead)?;
         require(access, crate::Permission::ProjectsCreate)?;
@@ -699,7 +702,7 @@ where
         }
         let draft = self
             .adapter
-            .create_project_plan(template, catalog, target_parent, target_leaf)
+            .create_project_plan(template, catalog, target_parent, target_leaf, unity_version)
             .await?;
         self.store
             .create_template_plan(access.principal().clone(), draft, now_ms()?)
@@ -723,6 +726,11 @@ where
             .await?;
         if plan.kind != TemplatePlanKind::CreateProject {
             return Err(error(M5TemplateErrorCode::InvalidInput));
+        }
+        if plan.state == TemplatePlanState::Unapplied {
+            // Validate the frozen authority before acceptance changes its state.
+            // Accepted historical work still recovers from its original evidence.
+            self.adapter.create_project_resource(&plan)?;
         }
         let outcome = self
             .store
@@ -988,6 +996,7 @@ pub const fn template_error_name(code: M5TemplateErrorCode) -> &'static str {
         M5TemplateErrorCode::TemplateBundleInvalid => "template_bundle_invalid",
         M5TemplateErrorCode::TemplateBundleChanged => "template_digest_mismatch",
         M5TemplateErrorCode::TemplateObjectMissing => "template_payload_unavailable",
+        M5TemplateErrorCode::DependencyUnsatisfied => "template_dependency_unsatisfied",
         M5TemplateErrorCode::TemplateTargetExists => "template_target_exists",
         M5TemplateErrorCode::ProjectNotRegistered => "project_not_registered",
         M5TemplateErrorCode::ProjectRunning => "unity_project_running",

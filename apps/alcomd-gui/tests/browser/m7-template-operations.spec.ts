@@ -287,6 +287,7 @@ async function projectReview(page: Page, name: string) {
     const host = page.locator("md-dialog[open]");
     await host.getByLabel("Create target parent", { exact: true }).fill("C:\\Fixture");
     await host.getByLabel("Create project name", { exact: true }).fill(name);
+    await host.getByLabel("Unity version", { exact: true }).fill("2022.3.22f1");
     await host.getByRole("button", { name: "Review creation", exact: true }).click();
     await expect(host.locator(".dialog-summary")).toContainText(name);
     return page.locator("md-dialog").filter({ has: page.locator('[slot="headline"]').filter({ hasText: /^Create project$/ }) });

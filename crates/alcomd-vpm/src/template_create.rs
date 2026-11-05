@@ -14,7 +14,7 @@ use unicode_normalization::UnicodeNormalization;
 use crate::{
     PreparedFrozenPackages, Resolution, ResolveRequest, StagingProjectEvidence, TemplateEngine,
     VpmReader, build_resolution_plan, candidates_from_catalog, inspect_package_project,
-    inspect_template_bundle, materialize_vpm_manifest, resolve_packages,
+    inspect_template_bundle, materialize_vpm_manifest,
 };
 
 #[doc(hidden)]
@@ -59,6 +59,14 @@ struct CreateProjectAuthority {
     final_vpm_manifest_sha256: String,
     resource_digests: Vec<String>,
     project_summary_fingerprint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    creation_basis_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unity_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project_version_contents: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project_version_sha256: Option<String>,
 }
 
 pub(super) async fn plan_create_project(
@@ -67,7 +75,10 @@ pub(super) async fn plan_create_project(
     catalog: ResolverCatalog,
     target_parent: String,
     target_leaf: String,
+    unity_version: String,
 ) -> Result<TemplatePlanDraft, M5TemplateError> {
+    alcomd_application::canonical_unity_version(&unity_version)
+        .map_err(|_| error(M5TemplateErrorCode::InvalidInput))?;
     validate_target_leaf(&target_leaf)?;
     let requested_parent = PathBuf::from(&target_parent);
     let (parent, parent_identity) = alcomd_platform::resolve_directory_identity(&requested_parent)
@@ -86,6 +97,17 @@ pub(super) async fn plan_create_project(
     {
         return Err(error(M5TemplateErrorCode::TemplateBundleChanged));
     }
+    let selected_components = unity_version.split('.').take(2).collect::<Vec<_>>();
+    if selected_components
+        != [
+            inspection.manifest.unity.major.to_string(),
+            inspection.manifest.unity.minor.to_string(),
+        ]
+    {
+        return Err(error(M5TemplateErrorCode::DependencyUnsatisfied));
+    }
+    let project_version_contents = format!("m_EditorVersion: {unity_version}\n");
+    let project_version_sha256 = hex(&digest(project_version_contents.as_bytes()));
     let project_id = ProjectId::new();
     let scratch = engine
         .staging
@@ -94,6 +116,7 @@ pub(super) async fn plan_create_project(
     let result = async {
         crate::template::materialize_template_bundle(object.path(), &scratch)
             .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+        write_project_version(&scratch, &project_version_contents)?;
         let (_, scratch_identity) = alcomd_platform::resolve_directory_identity(&scratch)
             .map_err(|_| error(M5TemplateErrorCode::Internal))?;
         let reader = VpmReader::new().map_err(|_| error(M5TemplateErrorCode::Internal))?;
@@ -122,10 +145,7 @@ pub(super) async fn plan_create_project(
                 range: dependency.version_range.clone(),
                 source: None,
                 include_prerelease: dependency.include_prerelease,
-                unity_version: Some((
-                    u64::from(inspection.manifest.unity.major),
-                    u64::from(inspection.manifest.unity.minor),
-                )),
+                unity_version: crate::UnityVersion::parse_editor(&unity_version),
             })
             .collect::<Vec<_>>();
         let resolution = if requests.is_empty() {
@@ -134,8 +154,14 @@ pub(super) async fn plan_create_project(
                 dependency_edges: Vec::new(),
             }
         } else {
-            resolve_packages(&candidates, &requests)
-                .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?
+            crate::engine::resolve_project_packages(
+                engine.package_materializer.cache(),
+                &scratch,
+                &candidates,
+                &requests,
+            )
+            .await
+            .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?
         };
         let package_plan = build_resolution_plan(&snapshot, PlanAction::Install, &resolution)
             .map_err(map_m4_error)?;
@@ -164,6 +190,7 @@ pub(super) async fn plan_create_project(
                 change_set_fingerprint.as_slice(),
                 parent_identity_sha256.as_slice(),
                 target_leaf.as_bytes(),
+                project_version_contents.as_bytes(),
             ]
             .concat(),
         );
@@ -192,6 +219,10 @@ pub(super) async fn plan_create_project(
             final_vpm_manifest_sha256: hex(&digest(&expected_vpm)),
             resource_digests,
             project_summary_fingerprint: hex(&project_summary_fingerprint),
+            creation_basis_version: Some(2),
+            unity_version: Some(unity_version),
+            project_version_contents: Some(project_version_contents),
+            project_version_sha256: Some(project_version_sha256),
         };
         let plan_json =
             serde_json::to_string(&authority).map_err(|_| error(M5TemplateErrorCode::Internal))?;
@@ -287,6 +318,9 @@ pub(super) async fn stage_create_project(
         .map_err(super::template_engine::map_object_error)?;
     crate::template::materialize_template_bundle(object.path(), &staging_root)
         .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+    if let Some(contents) = &authority.project_version_contents {
+        write_project_version(&staging_root, contents)?;
+    }
     let initial_vpm = read_bounded(&staging_root.join("Packages/vpm-manifest.json"))?;
     let initial_upm = read_bounded(&staging_root.join("Packages/manifest.json"))?;
     if hex(&digest(&initial_vpm)) != authority.initial_vpm_manifest_sha256
@@ -406,6 +440,20 @@ async fn validate_published_target(
         .inspect_project_root(root, identity)
         .await
         .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
+    if let Some(expected_version) = &authority.unity_version
+        && (&observation.unity_version != expected_version
+            || authority.project_version_sha256.as_deref()
+                != Some(
+                    hex(&digest(&read_bounded(
+                        &target.join("ProjectSettings/ProjectVersion.txt"),
+                    )?))
+                    .as_str(),
+                ))
+    {
+        return Err(error(
+            M5TemplateErrorCode::ProjectChangedDuringTemplateCreate,
+        ));
+    }
     if hex(&digest(&read_bounded(
         &target.join("Packages/vpm-manifest.json"),
     )?)) != authority.final_vpm_manifest_sha256
@@ -432,7 +480,11 @@ fn authority(plan: &TemplatePlanRecord) -> Result<CreateProjectAuthority, M5Temp
     }
     let authority: CreateProjectAuthority = serde_json::from_str(&plan.plan_json)
         .map_err(|_| error(M5TemplateErrorCode::TemplatePlanStale))?;
+    let current_basis = authority.creation_basis_version == Some(2);
+    let legacy_accepted = authority.creation_basis_version.is_none()
+        && plan.state == alcomd_application::TemplatePlanState::Applied;
     if authority.version != 1
+        || !(current_basis || legacy_accepted)
         || authority.kind != "create-project"
         || !authority.target_must_be_absent
         || ProjectId::parse(&authority.project_id).is_err()
@@ -445,8 +497,40 @@ fn authority(plan: &TemplatePlanRecord) -> Result<CreateProjectAuthority, M5Temp
     {
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
+    if current_basis {
+        let version = authority
+            .unity_version
+            .as_deref()
+            .ok_or_else(|| error(M5TemplateErrorCode::TemplatePlanStale))?;
+        let contents = authority
+            .project_version_contents
+            .as_deref()
+            .ok_or_else(|| error(M5TemplateErrorCode::TemplatePlanStale))?;
+        if alcomd_application::canonical_unity_version(version).is_err()
+            || contents != format!("m_EditorVersion: {version}\n")
+            || authority.project_version_sha256.as_deref()
+                != Some(hex(&digest(contents.as_bytes())).as_str())
+        {
+            return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+        }
+    }
     validate_target_leaf(&authority.target_leaf)?;
     Ok(authority)
+}
+
+fn write_project_version(root: &Path, contents: &str) -> Result<(), M5TemplateError> {
+    use std::io::Write;
+    let path = root.join("ProjectSettings/ProjectVersion.txt");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
+    file.write_all(contents.as_bytes())
+        .and_then(|()| file.sync_all())
+        .map_err(|_| error(M5TemplateErrorCode::Internal))?;
+    alcomd_platform::sync_directory(&root.join("ProjectSettings"))
+        .map_err(|_| error(M5TemplateErrorCode::Internal))
 }
 
 fn verify_parent(authority: &CreateProjectAuthority) -> Result<(), M5TemplateError> {
@@ -740,11 +824,153 @@ const fn error(code: M5TemplateErrorCode) -> M5TemplateError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use alcomd_application::{PlanId, PrincipalId, TemplatePlanState, TemplateSourceKind};
 
     static NEXT_TEMPORARY_PATH: AtomicU64 = AtomicU64::new(0);
+
+    // Synthetic package bodies exercise the production materializer; they are
+    // independently authored test data, not copies of VRChat SDK content.
+    fn sdk_fixture_catalog(engine: &TemplateEngine) -> ResolverCatalog {
+        let mut entries = Vec::new();
+        for package_id in ["com.vrchat.avatars", "com.vrchat.worlds"] {
+            let manifest = serde_json::json!({ "name": package_id, "version": "3.10.0", "unity": "2022.3", "unityRelease": "22f1", "vpmDependencies": {} });
+            let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            archive
+                .start_file(
+                    "package.json",
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Stored),
+                )
+                .expect("manifest entry");
+            archive
+                .write_all(
+                    serde_json::to_string(&manifest)
+                        .expect("manifest")
+                        .as_bytes(),
+                )
+                .expect("package contents");
+            let bytes = archive.finish().expect("archive").into_inner();
+            let sha256 = digest(&bytes);
+            let object = engine.package_materializer.cache().object_path(&sha256);
+            std::fs::create_dir_all(object.parent().expect("cache directory"))
+                .expect("owned cache directory");
+            std::fs::write(object, bytes).expect("owned cache object");
+            entries.push(alcomd_application::ResolverCatalogEntry {
+                source: alcomd_application::ResolverCatalogSource::Repository {
+                    repository_locator: "https://example.invalid/synthetic-index.json".to_owned(),
+                    repository_id: "isolated-synthetic-sdk".to_owned(),
+                    repository_revision: 1,
+                    repository_priority: 1,
+                    source_identity: "isolated-synthetic-sdk".to_owned(),
+                    artifact_url: "https://example.invalid/unused-already-cached.zip".to_owned(),
+                    zip_sha256: hex(&sha256),
+                    manifest_fingerprint: digest(
+                        serde_json::to_string(&manifest)
+                            .expect("manifest")
+                            .as_bytes(),
+                    ),
+                },
+                package_id: package_id.to_owned(),
+                version: "3.10.0".to_owned(),
+                yanked: false,
+                unity: Some("2022.3".to_owned()),
+                unity_release: Some("22f1".to_owned()),
+                author_name: String::new(),
+                author_email: String::new(),
+                dependencies_json: "{}".to_owned(),
+                legacy_metadata_present: false,
+            });
+        }
+        ResolverCatalog {
+            entries,
+            complete: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn avatar_and_world_creation_solve_against_the_explicit_patch_version() {
+        let root = temporary("sdk-create");
+        let parent = temporary("sdk-parent");
+        let builtin_staging = temporary("sdk-builtins");
+        std::fs::create_dir_all(&root).expect("root");
+        std::fs::create_dir_all(&parent).expect("parent");
+        let engine = TemplateEngine::new(root.clone()).expect("engine");
+        let catalog = sdk_fixture_catalog(&engine);
+        let templates = engine
+            .materialize_builtins(&builtin_staging)
+            .expect("builtins");
+        for template in templates
+            .into_iter()
+            .filter(|template| !template.template_id.to_string().ends_with("b001"))
+        {
+            let leaf = if template.template_id.to_string().ends_with("b002") {
+                "Avatar"
+            } else {
+                "World"
+            };
+            let rejected = plan_create_project(
+                &engine,
+                template.clone(),
+                catalog.clone(),
+                path_text(&parent).expect("parent"),
+                leaf.to_owned(),
+                "2022.3.21f1".to_owned(),
+            )
+            .await
+            .expect_err("patch below package minimum");
+            assert_eq!(rejected.code(), M5TemplateErrorCode::TemplatePlanStale);
+            let draft = plan_create_project(
+                &engine,
+                template,
+                catalog.clone(),
+                path_text(&parent).expect("parent"),
+                leaf.to_owned(),
+                "2022.3.22f1".to_owned(),
+            )
+            .await
+            .expect("minimum patch plan");
+            let plan = TemplatePlanRecord {
+                plan_id: PlanId::new(),
+                owner: PrincipalId::local_owner(),
+                kind: TemplatePlanKind::CreateProject,
+                state: TemplatePlanState::Applied,
+                plan_json: draft.plan_json,
+                plan_fingerprint: draft.plan_fingerprint,
+                apply_operation_id: None,
+                created_at_ms: 0,
+            };
+            let prepared = prepare_create_project(
+                &engine,
+                plan.clone(),
+                Arc::new(ResourceLockCoordinator::default()),
+            )
+            .await
+            .expect("frozen preparation");
+            let staged = stage_create_project(&engine, OperationId::new(), prepared)
+                .await
+                .expect("materialize selected packages");
+            let created = publish_create_project(staged).await.expect("publish");
+            assert_eq!(created.observation.unity_version, "2022.3.22f1");
+            assert_eq!(created.observation.locked_dependencies.len(), 1);
+            assert_eq!(created.observation.locked_dependencies[0].value, "3.10.0");
+            assert_eq!(
+                hex(&digest(
+                    &std::fs::read(parent.join(leaf).join("ProjectSettings/ProjectVersion.txt"))
+                        .expect("version")
+                )),
+                authority(&plan)
+                    .expect("authority")
+                    .project_version_sha256
+                    .expect("frozen hash")
+            );
+        }
+        std::fs::remove_dir_all(root).expect("remove isolated root");
+        std::fs::remove_dir_all(parent).expect("remove isolated projects");
+        std::fs::remove_dir_all(builtin_staging).expect("remove isolated builtins");
+    }
 
     fn temporary(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -789,6 +1015,7 @@ mod tests {
             },
             path_text(&parent).expect("parent path"),
             "Created Project".to_owned(),
+            "2022.3.22f1".to_owned(),
         )
         .await
         .expect("plan");
@@ -802,6 +1029,38 @@ mod tests {
             apply_operation_id: None,
             created_at_ms: 0,
         };
+        let frozen = authority(&plan).expect("full version frozen authority");
+        assert_eq!(frozen.version, 1);
+        assert_eq!(frozen.creation_basis_version, Some(2));
+        assert_eq!(frozen.unity_version.as_deref(), Some("2022.3.22f1"));
+        let mut old_json: serde_json::Value =
+            serde_json::from_str(&plan.plan_json).expect("old authority fixture");
+        let old_object = old_json.as_object_mut().expect("object");
+        old_object.insert("version".to_owned(), 1.into());
+        for field in [
+            "creationBasisVersion",
+            "unityVersion",
+            "projectVersionContents",
+            "projectVersionSha256",
+        ] {
+            old_object.remove(field);
+        }
+        let old_bytes = serde_json::to_string(&old_json).expect("old authority");
+        let mut historical = plan.clone();
+        historical.plan_json = old_bytes;
+        historical.plan_fingerprint = digest(historical.plan_json.as_bytes());
+        historical.state = TemplatePlanState::Unapplied;
+        assert_eq!(
+            create_project_resource(&historical)
+                .expect_err("unaccepted partial-version plan is stale")
+                .code(),
+            M5TemplateErrorCode::TemplatePlanStale
+        );
+        historical.state = TemplatePlanState::Applied;
+        assert!(
+            create_project_resource(&historical).is_ok(),
+            "accepted old work retains its original recovery authority"
+        );
         let resource = create_project_resource(&plan).expect("resource");
         let locks = Arc::new(ResourceLockCoordinator::default());
         let prepared = prepare_create_project(&engine, plan.clone(), Arc::clone(&locks))
@@ -834,6 +1093,17 @@ mod tests {
             .await
             .expect("rebuild owned staging after publish race");
         let created = publish_create_project(staged).await.expect("publish");
+        assert_eq!(created.observation.unity_version, "2022.3.22f1");
+        assert!(
+            alcomd_application::canonical_unity_version(&created.observation.unity_version).is_ok()
+        );
+        assert_eq!(
+            std::fs::read_to_string(
+                parent.join("Created Project/ProjectSettings/ProjectVersion.txt")
+            )
+            .expect("frozen version"),
+            "m_EditorVersion: 2022.3.22f1\n"
+        );
         assert_eq!(
             created.project_id,
             ProjectId::parse(&authority(&plan).expect("authority").project_id).expect("project id")
@@ -888,6 +1158,36 @@ mod tests {
             entries: Vec::new(),
             complete: true,
         };
+        for version in ["2022.3", "2022.3.01f1", "2022.3.22f0", "2022.3.22f1 "] {
+            assert_eq!(
+                plan_create_project(
+                    &engine,
+                    template.clone(),
+                    catalog.clone(),
+                    path_text(&parent).expect("parent"),
+                    "VersionTest".to_owned(),
+                    version.to_owned()
+                )
+                .await
+                .expect_err("invalid complete Editor version")
+                .code(),
+                M5TemplateErrorCode::InvalidInput
+            );
+        }
+        assert_eq!(
+            plan_create_project(
+                &engine,
+                template.clone(),
+                catalog.clone(),
+                path_text(&parent).expect("parent"),
+                "VersionTest".to_owned(),
+                "2021.3.22f1".to_owned()
+            )
+            .await
+            .expect_err("different template compatibility line")
+            .code(),
+            M5TemplateErrorCode::DependencyUnsatisfied
+        );
         assert_eq!(
             plan_create_project(
                 &engine,
@@ -895,6 +1195,7 @@ mod tests {
                 catalog.clone(),
                 path_text(&parent).expect("parent"),
                 "Existing".to_owned(),
+                "2022.3.22f1".to_owned(),
             )
             .await
             .expect_err("existing target")
@@ -908,6 +1209,7 @@ mod tests {
                 catalog,
                 path_text(&parent).expect("parent"),
                 "cafe\u{301}".to_owned(),
+                "2022.3.22f1".to_owned(),
             )
             .await
             .expect_err("non-NFC leaf")

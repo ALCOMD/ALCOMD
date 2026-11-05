@@ -455,6 +455,7 @@ export interface TemplateRecord {
     templateId: string;
     sourceKind: string;
     templateVersion: string;
+    unity?: { major: number; minor: number };
     displayName: string;
     description?: string;
     provenance: string;

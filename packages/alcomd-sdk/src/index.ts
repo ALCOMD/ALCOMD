@@ -17,6 +17,7 @@ export * from "./events";
 export * from "./package-candidates";
 export * from "./unity-hub";
 export * from "./repository-list";
+export * from "./templates";
 
 export interface ClientInfo {
     name: string;

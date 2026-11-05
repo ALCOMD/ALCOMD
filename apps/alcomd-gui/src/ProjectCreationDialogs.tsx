@@ -13,6 +13,7 @@ import { useTranslation } from "./i18n";
 import type { SupportedLocale } from "./i18n-types";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
+import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
 
 interface ProjectDialogProps {
     client: GuiRpcClient;
@@ -42,6 +43,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const templateSession = useRef(0);
     const templatePageRequest = useRef<object | undefined>(undefined);
     const [templateId, setTemplateId] = useState("");
+    const unity = useCreateUnityVersion(client, templates.find((template) => template.templateId === templateId), open);
     const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
     const [targetLeaf, setTargetLeaf] = useState("");
     const [reviewed, setReviewed] = useState<TemplateReview>();
@@ -156,9 +158,9 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         const ownsDraft = () => current() && generation === templateSession.current && draftRequest.current === request;
         setBusy(true); setError(undefined);
         try {
-            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, targetParent, targetLeaf.trim());
+            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, targetParent, targetLeaf.trim(), unity.version.trim());
             if (!ownsDraft()) return;
-            setReviewed(reviewTemplateCreation(plan, template, targetParent, targetLeaf.trim()));
+            setReviewed(reviewTemplateCreation(plan, template, targetParent, targetLeaf.trim(), unity.version.trim()));
             setSubmitted(false);
         } catch (caught: unknown) { if (ownsDraft()) setError(safeError(caught)); }
         finally { if (ownsDraft()) { draftRequest.current = undefined; setBusy(false); } }
@@ -227,10 +229,11 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                             <TextField disabled={busy} aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
+                        <CreateUnityVersionField disabled={busy} selection={unity} />
                         <TextField disabled={busy} aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
-                            <Button disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{t("Review creation")}</Button>
+                            <Button disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0 || unity.version.trim().length === 0} onClick={() => void review()} type="button">{t("Review creation")}</Button>
                         </div>
                     </>
                 ) : operationId === undefined ? (

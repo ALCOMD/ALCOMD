@@ -10,7 +10,12 @@ use alcomd_application::{
 };
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::TemplateEngine;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+#[cfg(windows)]
+#[path = "../../alcomd-platform/test-support/windows_unity_editor.rs"]
+mod windows_editor_fixture;
 
 #[derive(Clone)]
 struct FixedWriter(UnityWriterStateKind);
@@ -27,6 +32,59 @@ impl M5TemplateWriterGate for FixedWriter {
             evidence: Vec::new(),
             checked_at_ms: 1,
         })
+    }
+}
+
+// Launch-options is a registry query: this fixture proves creation needs neither
+// an installed Editor nor a process probe, and must never launch Unity.
+#[derive(Clone)]
+struct NoUnityExecution;
+impl alcomd_application::M5UnityPlatform for NoUnityExecution {
+    async fn validate_installation(
+        &self,
+        _: String,
+        _: alcomd_application::UnitySourceKind,
+    ) -> Result<alcomd_application::UnityInstallationObservation, alcomd_application::M5UnityError>
+    {
+        panic!("no Editor validation");
+    }
+    async fn discover_installations(
+        &self,
+    ) -> Result<
+        Vec<alcomd_application::UnityInstallationObservation>,
+        alcomd_application::M5UnityError,
+    > {
+        panic!("no Editor discovery");
+    }
+    async fn observe_processes(
+        &self,
+    ) -> Result<Vec<alcomd_application::UnityProcessObservation>, alcomd_application::M5UnityError>
+    {
+        panic!("no Unity process observation");
+    }
+    async fn path_identity(&self, _: String) -> Result<Vec<u8>, alcomd_application::M5UnityError> {
+        panic!("no Editor identity probe");
+    }
+    async fn launch(
+        &self,
+        _: String,
+        _: String,
+        _: Vec<String>,
+    ) -> Result<(), alcomd_application::M5UnityError> {
+        panic!("never launch Unity");
+    }
+}
+impl alcomd_application::UnityLaunchDefaultsSource for NoUnityExecution {
+    fn arguments(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<String>, alcomd_application::M5UnityError>>
+                + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async { panic!("no launch defaults needed") })
     }
 }
 
@@ -195,9 +253,49 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
             blank.revision,
             fixture.path().to_string_lossy().into_owned(),
             "CreatedFromTemplate".to_owned(),
+            "2022.3.22f1".to_owned(),
         )
         .await
         .expect("plan create project");
+    let mut legacy_json: serde_json::Value =
+        serde_json::from_str(&plan.plan_json).expect("frozen plan JSON");
+    let object = legacy_json.as_object_mut().expect("authority");
+    object.insert("version".to_owned(), 1.into());
+    for field in [
+        "creationBasisVersion",
+        "unityVersion",
+        "projectVersionContents",
+        "projectVersionSha256",
+    ] {
+        object.remove(field);
+    }
+    let legacy_json = serde_json::to_string(&legacy_json).expect("legacy plan fixture");
+    let legacy = store
+        .create_template_plan(
+            PrincipalId::local_owner(),
+            alcomd_application::TemplatePlanDraft {
+                kind: plan.kind,
+                plan_fingerprint: Sha256::digest(legacy_json.as_bytes()).into(),
+                plan_json: legacy_json.clone(),
+            },
+            1,
+        )
+        .await
+        .expect("save isolated old unaccepted plan");
+    assert_eq!(
+        application
+            .apply_create_project(&access, legacy.plan_id, key("create-project"))
+            .await
+            .expect_err("old plan cannot be silently re-signed or accepted")
+            .code(),
+        M5TemplateErrorCode::TemplatePlanStale
+    );
+    let unchanged = store
+        .get_template_plan(PrincipalId::local_owner(), legacy.plan_id)
+        .await
+        .expect("preserved old plan");
+    assert_eq!(unchanged.state, TemplatePlanState::Unapplied);
+    assert_eq!(unchanged.plan_json, legacy_json);
     let accepted = application
         .apply_create_project(&access, plan.plan_id, key("create-project"))
         .await
@@ -237,6 +335,77 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
         .expect("list projects");
     assert_eq!(projects.projects.len(), 1);
     let created = &projects.projects[0];
+    assert_eq!(created.observation.unity_version, "2022.3.22f1");
+    let unity = alcomd_application::M5UnityApplication::new(
+        store.clone(),
+        NoUnityExecution,
+        std::sync::Arc::new(NoUnityExecution),
+    );
+    let launch_options = unity
+        .launch_options(&access, created.project_id, created.revision)
+        .await
+        .expect("created registered project supports launch-options query");
+    assert_eq!(launch_options.project_unity_version, "2022.3.22f1");
+    assert!(
+        launch_options.exact_matching_installations.is_empty(),
+        "creation does not invent an installed Editor"
+    );
+    #[cfg(windows)]
+    {
+        use alcomd_application::M5UnityStore;
+        let mut exact_id = None;
+        for (index, version) in ["2022.3.22f1", "2022.3.23f1"].into_iter().enumerate() {
+            let editor = fixture.path().join(format!("Editor-{index}/Unity.exe"));
+            let manifest = editor
+                .parent()
+                .expect("Editor directory")
+                .join("Data/Resources/PackageManager/Editor/manifest.json");
+            fs::create_dir_all(manifest.parent().expect("catalog directory"))
+                .expect("create fake Editor layout");
+            fs::write(manifest, r#"{"schemaVersion":4,"packages":{}}"#)
+                .expect("catalog without an Editor version");
+            windows_editor_fixture::write_editor_fixture(&editor, "Unity", version)
+                .expect("write owned fake PE");
+            let validated = alcomd_platform::inspect_unity_installation(&editor)
+                .expect("read PE version without execution");
+            let (installation, _) = store
+                .register_installation(
+                    PrincipalId::local_owner(),
+                    alcomd_application::UnityInstallationObservation {
+                        executable_path: validated.executable_path().to_string_lossy().into_owned(),
+                        filesystem_identity: validated.filesystem_identity().to_vec(),
+                        unity_version: alcomd_application::canonical_unity_version(
+                            validated.product_version(),
+                        )
+                        .expect("full PE version"),
+                        architecture: alcomd_application::UnityArchitecture::Unknown,
+                        source_kind: alcomd_application::UnitySourceKind::Manual,
+                        observed_at_ms: 10 + index as u64,
+                    },
+                    key(&format!("create-editor-{index}")),
+                    10 + index as u64,
+                )
+                .await
+                .expect("register owned fixture Editor");
+            if index == 0 {
+                exact_id = Some(installation.installation_id);
+            }
+        }
+        let options = unity
+            .launch_options(&access, created.project_id, created.revision)
+            .await
+            .expect("exact launch options after fixture registration");
+        assert_eq!(
+            options.exact_matching_installations.len(),
+            1,
+            "a higher patch does not relax launch's exact match"
+        );
+        assert_eq!(
+            Some(options.exact_matching_installations[0].installation_id),
+            exact_id
+        );
+    }
+
     assert_eq!(
         created.last_modified_at_ms, initialized_time,
         "create replay preserves first registration activity"
@@ -339,6 +508,7 @@ async fn template_registry_drift_rejects_unapplied_plans_without_acceptance_side
             template.revision,
             fixture.path().to_string_lossy().into_owned(),
             "UnacceptedCreate".to_owned(),
+            "2022.3.22f1".to_owned(),
         )
         .await
         .expect("plan create project");
@@ -434,6 +604,7 @@ async fn template_registry_drift_rejects_unapplied_plans_without_acceptance_side
             current_template.revision,
             fixture.path().to_string_lossy().into_owned(),
             "UnacceptedCreate".to_owned(),
+            "2022.3.22f1".to_owned(),
         )
         .await
         .expect("explicit corrected plan");
