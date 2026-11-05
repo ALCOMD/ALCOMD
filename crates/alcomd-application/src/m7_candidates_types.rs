@@ -14,6 +14,7 @@ pub struct CandidateCatalogEntry {
     pub priority: u64,
     pub yanked: bool,
     pub unity: Option<String>,
+    pub unity_release: Option<String>,
     pub metadata_ready: bool,
     pub legacy_metadata_present: bool,
 }

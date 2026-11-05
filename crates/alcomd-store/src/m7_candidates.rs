@@ -45,7 +45,7 @@ pub(super) fn snapshot(
         .transpose()
         .map_err(|_| Error::Unavailable)?;
     let mut statement = transaction.prepare(
-        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,p.resolver_ready,p.legacy_metadata_present
+        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,p.resolver_ready,p.legacy_metadata_present,p.unity_release_text
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
          WHERE r.owner_principal_id=?1 AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
          ORDER BY r.repository_id,p.package_id,p.version_text LIMIT 100001"
@@ -64,6 +64,7 @@ pub(super) fn snapshot(
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 yanked: row.get(5)?,
                 unity: row.get(6)?,
+                unity_release: row.get(9)?,
                 metadata_ready: row.get(7)?,
                 legacy_metadata_present: row.get(8)?,
             })
@@ -76,12 +77,16 @@ pub(super) fn snapshot(
     }
     let remaining = MAX_CANDIDATE_RECORDS - entries.len() + 1;
     let mut statement = transaction.prepare(
-        "SELECT package_id,version,user_package_id,revision,json_extract(manifest_json,'$.unity') FROM user_package_sources
+        "SELECT package_id,version,user_package_id,revision,manifest_json FROM user_package_sources
          WHERE owner_principal_id=?1 AND (?2 IS NULL OR package_id IN (SELECT value FROM json_each(?2))) ORDER BY user_package_id LIMIT ?3"
     ).map_err(|_| Error::Unavailable)?;
     let user_entries = statement
         .query_map(params![owner.as_str(), ids_json, remaining as i64], |row| {
             let id: String = row.get(2)?;
+            let manifest: String = row.get(4)?;
+            let manifest =
+                serde_json::from_str(&manifest).map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let metadata = crate::m4::user_manifest_metadata(&manifest)?;
             Ok(CandidateCatalogEntry {
                 package_id: row.get(0)?,
                 version: row.get(1)?,
@@ -93,9 +98,10 @@ pub(super) fn snapshot(
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 priority: 0,
                 yanked: false,
-                unity: row.get(4)?,
+                unity: metadata.unity,
+                unity_release: metadata.unity_release,
                 metadata_ready: true,
-                legacy_metadata_present: false,
+                legacy_metadata_present: metadata.legacy_present,
             })
         })
         .map_err(|_| Error::Unavailable)?
@@ -310,7 +316,7 @@ mod tests {
     #[test]
     fn registered_user_snapshot_is_read_without_source_files_or_effects() {
         let mut f = Fixture::new();
-        f.connection.execute("INSERT INTO user_package_sources VALUES ('33333333-3333-4333-8333-333333333333',?1,'source-does-not-exist',x'03','com.example.user','1.0.0','{\"unity\":\"2022.3\"}',zeroblob(32),zeroblob(32),?2,1,1,1)", params![PrincipalId::local_owner().as_str(), "a".repeat(64)]).expect("candidate fixture or query must succeed");
+        f.connection.execute("INSERT INTO user_package_sources VALUES ('33333333-3333-4333-8333-333333333333',?1,'source-does-not-exist',x'03','com.example.user','1.0.0','{\"unity\":\"2022.3\",\"unityRelease\":\"22f1\",\"legacyFolders\":{\"Assets/Old\":\"\"}}',zeroblob(32),zeroblob(32),?2,1,1,1)", params![PrincipalId::local_owner().as_str(), "a".repeat(64)]).expect("candidate fixture or query must succeed");
         let changes = f.connection.total_changes();
         let result = snapshot(
             &mut f.connection,
@@ -321,6 +327,13 @@ mod tests {
         .expect("candidate fixture or query must succeed");
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].unity.as_deref(), Some("2022.3"));
+        assert_eq!(result.entries[0].unity_release.as_deref(), Some("22f1"));
+        assert!(result.entries[0].legacy_metadata_present);
+        let resolver =
+            crate::m4::resolver_catalog(&f.connection, &PrincipalId::local_owner(), true)
+                .expect("resolver sees the same registered metadata");
+        assert_eq!(resolver.entries[0].unity_release.as_deref(), Some("22f1"));
+        assert!(resolver.entries[0].legacy_metadata_present);
         assert!(result.entries[0].metadata_ready);
         assert_eq!(changes, f.connection.total_changes());
         assert!(matches!(
@@ -333,6 +346,35 @@ mod tests {
             ),
             Err(Error::ProjectNotRegistered)
         ));
+    }
+
+    #[test]
+    fn invalid_stored_user_metadata_is_not_silently_treated_as_absent() {
+        for manifest in [
+            serde_json::json!({"unity":"2022.3","unityRelease":22}),
+            serde_json::json!({"unityRelease":null}),
+            serde_json::json!({"legacyFolders":[]}),
+            serde_json::json!({"legacyFiles":{"Assets/Old":"invalid-guid"}}),
+            serde_json::json!({"legacyPackages":{}}),
+        ] {
+            let mut f = Fixture::new();
+            f.connection.execute("INSERT INTO user_package_sources VALUES ('33333333-3333-4333-8333-333333333333',?1,'source-does-not-exist',x'03','com.example.user','1.0.0',?2,zeroblob(32),zeroblob(32),?3,1,1,1)", params![PrincipalId::local_owner().as_str(), serde_json::to_string(&manifest).expect("manifest"), "a".repeat(64)]).expect("historical registered input");
+            assert!(
+                snapshot(
+                    &mut f.connection,
+                    &PrincipalId::local_owner(),
+                    f.project,
+                    None
+                )
+                .is_err(),
+                "candidate {manifest}"
+            );
+            assert!(
+                crate::m4::resolver_catalog(&f.connection, &PrincipalId::local_owner(), true)
+                    .is_err(),
+                "resolver {manifest}"
+            );
+        }
     }
     #[test]
     fn raw_unready_evidence_and_global_readiness_are_not_silently_omitted() {

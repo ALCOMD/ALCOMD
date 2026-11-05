@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::range::VpmRange;
 use crate::resolver::{PackageCandidate, PackageDependency, PackageSource, PackageSourceAuthority};
+use crate::unity_version::package_minimum;
 use crate::{JSON_COLLECTION_LIMIT, M3ErrorCode, parse_bounded_json};
 
 const PACKAGE_ID_LIMIT: usize = 128;
@@ -160,7 +161,7 @@ pub(crate) fn validate_extracted_package(
     Ok(())
 }
 
-fn parse_manifest(
+pub(crate) fn parse_manifest(
     package_key: &str,
     version_key: &str,
     manifest: &Map<String, Value>,
@@ -192,23 +193,18 @@ fn parse_manifest(
     if author_email.len() < 3 {
         return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
     }
-    let unity_minimum = optional_string(manifest, "unity", UNITY_LIMIT)?
-        .as_deref()
-        .map(parse_unity)
-        .transpose()?;
+    let unity = optional_string(manifest, "unity", UNITY_LIMIT)?;
     let unity_release = optional_string(manifest, "unityRelease", UNITY_RELEASE_LIMIT)?;
+    let unity_minimum = package_minimum(unity.as_deref(), unity_release.as_deref())
+        .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
     let yanked = match manifest.get("yanked") {
         None => false,
         Some(Value::Bool(value)) => *value,
         Some(_) => return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid)),
     };
     let (dependencies, dependencies_json) = parse_dependencies(manifest.get("vpmDependencies"))?;
-    let legacy_metadata_present = ["legacyFolders", "legacyFiles", "legacyPackages"]
-        .into_iter()
-        .map(|key| parse_legacy(manifest.get(key)))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .any(|present| present);
+    let legacy_metadata = LegacyMetadata::parse(manifest)?;
+    let legacy_metadata_present = !legacy_metadata.is_empty();
     let manifest_fingerprint = Sha256::digest(
         serde_json::to_vec(manifest)
             .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?,
@@ -225,6 +221,7 @@ fn parse_manifest(
             dependencies,
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    repository_locator: None,
                     repository_id: context.repository_id.clone(),
                     repository_revision: context.repository_revision,
                     priority: context.priority,
@@ -332,28 +329,6 @@ fn hex_nibble(value: u8) -> u8 {
     }
 }
 
-fn parse_unity(value: &str) -> Result<(u64, u64), PackageManifestError> {
-    let Some((major, minor)) = value.split_once('.') else {
-        return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
-    };
-    if major.is_empty()
-        || minor.is_empty()
-        || minor.contains('.')
-        || !major.bytes().all(|byte| byte.is_ascii_digit())
-        || !minor.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
-    }
-    Ok((
-        major
-            .parse()
-            .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?,
-        minor
-            .parse()
-            .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?,
-    ))
-}
-
 fn parse_dependencies(
     value: Option<&Value>,
 ) -> Result<(Vec<PackageDependency>, String), PackageManifestError> {
@@ -388,25 +363,71 @@ fn parse_dependencies(
     Ok((parsed, json))
 }
 
-fn parse_legacy(value: Option<&Value>) -> Result<bool, PackageManifestError> {
-    let Some(value) = value else {
-        return Ok(false);
-    };
-    let entries = value
-        .as_array()
-        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
-    if entries.len() > DEPENDENCY_LIMIT {
-        return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
+/// VPM paths map to GUIDs. They are evidence, never permission to delete.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LegacyMetadata {
+    pub folders: BTreeMap<String, String>,
+    pub files: BTreeMap<String, String>,
+    pub packages: Vec<String>,
+}
+
+impl LegacyMetadata {
+    pub(crate) fn parse(manifest: &Map<String, Value>) -> Result<Self, PackageManifestError> {
+        let paths = |key| -> Result<BTreeMap<String, String>, PackageManifestError> {
+            let Some(value) = manifest.get(key) else {
+                return Ok(BTreeMap::new());
+            };
+            let entries = value
+                .as_object()
+                .filter(|entries| entries.len() <= DEPENDENCY_LIMIT)
+                .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+            entries
+                .iter()
+                .map(|(path, guid)| {
+                    let guid = guid
+                        .as_str()
+                        .filter(|guid| {
+                            guid.is_empty()
+                                || guid.len() == 32
+                                    && guid.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        })
+                        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+                    if path.is_empty()
+                        || path.len() > LEGACY_ENTRY_LIMIT
+                        || path.chars().any(char::is_control)
+                    {
+                        return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
+                    }
+                    Ok((path.clone(), guid.to_ascii_lowercase()))
+                })
+                .collect()
+        };
+        let packages = match manifest.get("legacyPackages") {
+            None => Vec::new(),
+            Some(value) => value
+                .as_array()
+                .filter(|values| values.len() <= DEPENDENCY_LIMIT)
+                .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?
+                .iter()
+                .map(|value| {
+                    let id = value
+                        .as_str()
+                        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+                    validate_package_id(id)?;
+                    Ok(id.to_owned())
+                })
+                .collect::<Result<Vec<_>, PackageManifestError>>()?,
+        };
+        Ok(Self {
+            folders: paths("legacyFolders")?,
+            files: paths("legacyFiles")?,
+            packages,
+        })
     }
-    for entry in entries {
-        let valid = entry
-            .as_str()
-            .is_some_and(|value| !value.is_empty() && value.len() <= LEGACY_ENTRY_LIMIT);
-        if !valid {
-            return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
-        }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.folders.is_empty() && self.files.is_empty() && self.packages.is_empty()
     }
-    Ok(!entries.is_empty())
 }
 
 const fn manifest_error(code: PackageManifestErrorCode) -> PackageManifestError {
@@ -432,20 +453,67 @@ mod tests {
     }
 
     #[test]
+    fn frozen_official_legacy_shape_is_readable_and_preserves_guids() {
+        let bytes =
+            include_bytes!("../../alcomd-testing/fixtures/m4/official-vpm-legacy-sample.json");
+        let parsed = parse_resolver_ready_repository(bytes, &context()).expect("official sample");
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0].candidate.legacy_metadata_present);
+        let document: Value = serde_json::from_slice(bytes).expect("sample");
+        let package = document["packages"]
+            .as_object()
+            .expect("packages")
+            .values()
+            .next()
+            .expect("package");
+        let manifest = package["versions"]
+            .as_object()
+            .expect("versions")
+            .values()
+            .next()
+            .expect("version")
+            .as_object()
+            .expect("manifest");
+        let legacy = LegacyMetadata::parse(manifest).expect("legacy");
+        for (path, guid) in &legacy.folders {
+            assert_eq!(manifest["legacyFolders"][path], *guid);
+        }
+        assert!(
+            LegacyMetadata::parse(
+                serde_json::json!({"legacyFolders":[]})
+                    .as_object()
+                    .expect("object")
+            )
+            .is_err()
+        );
+        assert!(
+            LegacyMetadata::parse(
+                serde_json::json!({"legacyPackages":{}})
+                    .as_object()
+                    .expect("object")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn public_fixture_becomes_resolver_ready_without_hidden_defaults() {
         let parsed = parse_resolver_ready_repository(READY, &context()).expect("ready fixture");
         assert_eq!(parsed.len(), 2);
         let base = &parsed[0];
         assert_eq!(base.candidate.package_id, "com.example.base");
         assert_eq!(base.candidate.version, Version::new(1, 2, 3));
-        assert_eq!(base.candidate.unity_minimum, Some((2022, 3)));
+        assert_eq!(
+            base.candidate.unity_minimum,
+            crate::UnityVersion::parse_editor("2022.3.22f1")
+        );
         assert!(!base.candidate.legacy_metadata_present);
         assert_eq!(base.candidate.source.archive_sha256[0], 0x01);
         assert_eq!(base.candidate.source.archive_sha256[31], 0xef);
         assert_eq!(base.dependencies_json, "{}");
         let feature = &parsed[1];
         assert_eq!(feature.candidate.dependencies.len(), 1);
-        assert_eq!(feature.candidate.dependencies[0].range, "<2.0.0 >=1.2.0");
+        assert_eq!(feature.candidate.dependencies[0].range, "^1.2.0");
     }
 
     #[test]

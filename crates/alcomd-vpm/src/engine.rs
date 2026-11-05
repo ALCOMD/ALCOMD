@@ -17,7 +17,7 @@ use crate::package::validate_extracted_package;
 use crate::{
     PackageCache, ResolveError, ResolveRequest, VpmReader, build_bulk_plan, build_reinstall_plan,
     build_remove_plan, build_resolution_plan, candidates_from_catalog, extract_archive,
-    inspect_package_project, materialize_vpm_manifest, resolve_packages,
+    inspect_package_project, materialize_vpm_manifest,
 };
 
 #[derive(Clone)]
@@ -53,10 +53,10 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         .await
         .map_err(|_| M4Error::new(M4ErrorCode::Internal))??;
         if request.action == PlanAction::Reinstall {
-            return prepare_reinstall(&snapshot, &project, &catalog, &request);
+            return prepare_reinstall(&self.cache, &snapshot, &project, &catalog, &request).await;
         }
         if request.action == PlanAction::Bulk {
-            return prepare_bulk(&snapshot, &project, &catalog, &request);
+            return prepare_bulk(&self.cache, &snapshot, &project, &catalog, &request).await;
         }
         if request.action == PlanAction::Remove {
             let package_id = request
@@ -70,20 +70,29 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 .direct_dependencies
                 .iter()
                 .filter(|dependency| dependency.package_id != package_id)
-                .map(|dependency| ResolveRequest {
-                    package_id: dependency.package_id.clone(),
-                    range: dependency.value.clone(),
-                    source: None,
-                    include_prerelease: request.include_prerelease,
-                    unity_version,
+                .map(|dependency| {
+                    Ok(ResolveRequest {
+                        package_id: dependency.package_id.clone(),
+                        range: crate::range::ProjectDependencyRange::parse(&dependency.value)
+                            .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?
+                            .canonical(),
+                        source: None,
+                        include_prerelease: request.include_prerelease,
+                        unity_version,
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, M4Error>>()?;
             let remaining = if remaining_requests.is_empty() {
                 None
             } else {
                 Some(
-                    resolve_packages(&candidates, &remaining_requests)
-                        .map_err(map_resolve_error)?,
+                    resolve_project_packages(
+                        &self.cache,
+                        &snapshot.root,
+                        &candidates,
+                        &remaining_requests,
+                    )
+                    .await?,
                 )
             };
             return build_remove_plan(&snapshot, package_id, remaining.as_ref());
@@ -91,7 +100,8 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         let candidates = candidates_from_catalog(&catalog).map_err(map_resolve_error)?;
         let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
         let requests = resolution_requests(&project, &request, unity_version)?;
-        let resolution = resolve_packages(&candidates, &requests).map_err(map_resolve_error)?;
+        let resolution =
+            resolve_project_packages(&self.cache, &snapshot.root, &candidates, &requests).await?;
         validate_action_direction(&project, &request, &resolution)?;
         build_resolution_plan(&snapshot, request.action, &resolution)
     }
@@ -116,7 +126,8 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
     }
 }
 
-fn prepare_reinstall(
+async fn prepare_reinstall(
+    cache: &PackageCache,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -177,14 +188,15 @@ fn prepare_reinstall(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_packages(&candidates, &requests).map_err(map_resolve_error)?
+        resolve_project_packages(cache, &snapshot.root, &candidates, &requests).await?
     };
     normalize_direct_authority(project, &mut resolution);
     validate_locked_versions(&locked, &resolution)?;
     build_reinstall_plan(snapshot, &resolution, &targets)
 }
 
-fn prepare_bulk(
+async fn prepare_bulk(
+    cache: &PackageCache,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -213,12 +225,18 @@ fn prepare_bulk(
         .direct_dependencies
         .iter()
         .map(|dependency| {
-            (
+            Ok((
                 dependency.package_id.clone(),
-                (dependency.value.clone(), None, false),
-            )
+                (
+                    crate::range::ProjectDependencyRange::parse(&dependency.value)
+                        .map(|range| range.canonical())
+                        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
+                    None,
+                    false,
+                ),
+            ))
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Result<BTreeMap<_, _>, M4Error>>()?;
     let mut reinstall_targets = BTreeSet::new();
     let mut upgrade_targets = BTreeSet::new();
     let mut removed = BTreeSet::new();
@@ -317,17 +335,15 @@ fn prepare_bulk(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_packages(&candidates, &requests).map_err(map_resolve_error)?
+        resolve_project_packages(cache, &snapshot.root, &candidates, &requests).await?
     };
     let desired_ids = desired.keys().map(String::as_str).collect::<BTreeSet<_>>();
     for package in &mut resolution.packages {
         package.direct = desired_ids.contains(package.package_id.as_str());
     }
-    for edge in &mut resolution.dependency_edges {
-        if edge.direct {
-            edge.direct = desired_ids.contains(edge.to_package_id.as_str());
-        }
-    }
+    resolution
+        .dependency_edges
+        .retain(|edge| !edge.direct || desired_ids.contains(edge.to_package_id.as_str()));
     if removed.iter().any(|package_id| {
         resolution
             .packages
@@ -398,11 +414,10 @@ fn normalize_direct_authority(project: &ProjectRecord, resolution: &mut crate::R
     for package in &mut resolution.packages {
         package.direct = direct.contains(package.package_id.as_str());
     }
-    for edge in &mut resolution.dependency_edges {
-        if edge.direct {
-            edge.direct = direct.contains(edge.to_package_id.as_str());
-        }
-    }
+    // A pinned transitive root is a solver constraint, not a package self-dependency.
+    resolution
+        .dependency_edges
+        .retain(|edge| !edge.direct || direct.contains(edge.to_package_id.as_str()));
 }
 
 fn validate_locked_versions(
@@ -522,6 +537,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
             validate_extracted_package(&destination, &package_id, expected_version)
                 .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+            if plan.change_set.format_version >= 3 {
+                verify_extracted_legacy(&root, &destination)?;
+            }
         }
         append_phase(
             &self.store,
@@ -565,7 +583,12 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             .await;
         let catalog = self
             .store
-            .resolver_catalog(plan.owner.clone(), plan.change_set.format_version == 2)
+            .resolver_catalog(
+                plan.owner.clone(),
+                plan.source_set
+                    .iter()
+                    .any(alcomd_application::PackageSourcePin::is_user_package),
+            )
             .await?;
         revalidate(&project, &catalog, &plan).await?;
         if self
@@ -583,6 +606,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         let current_manifest = read_regular_file(&manifest_path, crate::PROJECT_MANIFEST_LIMIT)?;
         let new_manifest = materialize_vpm_manifest(&current_manifest, &plan.change_set)?;
         if Sha256::digest(&new_manifest).as_slice() != plan.change_set.vpm_manifest_sha256 {
+            if plan.change_set.format_version < 3 {
+                return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+            }
             return Err(M4Error::with_subreason(
                 M4ErrorCode::PlanStale,
                 "project_snapshot_changed",
@@ -633,6 +659,8 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
+        // No awaited work separates this proof from the first project write.
+        verify_plan_legacy(&self.cache, &root, &staging, &catalog, &plan)?;
         if let Err(error) = replace_packages(&packages_root, &staging, &backup, &attempt, &plan) {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
@@ -692,7 +720,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
-        if let Err(error) = commit_manifest(&manifest_path, &attempt) {
+        // Core's package swap must not introduce or conceal a cleanup obligation.
+        // A late target change uses the same established rollback path.
+        let commit = verify_plan_legacy(&self.cache, &root, &packages_root, &catalog, &plan)
+            .and_then(|()| commit_manifest(&manifest_path, &attempt));
+        if let Err(error) = commit {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
                 &self.store,
@@ -881,6 +913,10 @@ async fn revalidate(
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
 ) -> Result<(), M4Error> {
+    if plan.state == alcomd_application::PlanState::Unapplied && plan.change_set.format_version < 3
+    {
+        return stale("implementation_basis_changed");
+    }
     if project.revision != plan.project_revision {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
@@ -985,21 +1021,25 @@ async fn revalidate(
 fn resolution_requests(
     project: &ProjectRecord,
     request: &PackagePlanRequest,
-    unity_version: Option<(u64, u64)>,
+    unity_version: Option<crate::UnityVersion>,
 ) -> Result<Vec<ResolveRequest>, M4Error> {
     if request.action == PlanAction::Resolve {
         let requests = project
             .observation
             .direct_dependencies
             .iter()
-            .map(|dependency| ResolveRequest {
-                package_id: dependency.package_id.clone(),
-                range: dependency.value.clone(),
-                source: None,
-                include_prerelease: request.include_prerelease,
-                unity_version,
+            .map(|dependency| {
+                Ok(ResolveRequest {
+                    package_id: dependency.package_id.clone(),
+                    range: crate::range::ProjectDependencyRange::parse(&dependency.value)
+                        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?
+                        .canonical(),
+                    source: None,
+                    include_prerelease: request.include_prerelease,
+                    unity_version,
+                })
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, M4Error>>()?;
         if requests.is_empty() {
             return Err(M4Error::new(M4ErrorCode::PackageNotFound));
         }
@@ -1061,17 +1101,117 @@ fn validate_action_direction(
         .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))
 }
 
-pub(crate) fn parse_unity_editor_version(value: &str) -> Result<Option<(u64, u64)>, M4Error> {
-    let mut parts = value.split('.');
-    let major = parts
-        .next()
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
-    let minor = parts
-        .next()
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
-    Ok(Some((major, minor)))
+pub(crate) fn parse_unity_editor_version(
+    value: &str,
+) -> Result<Option<crate::UnityVersion>, M4Error> {
+    Ok(crate::UnityVersion::parse_editor(value))
+}
+
+pub(crate) async fn resolve_project_packages(
+    cache: &PackageCache,
+    root: &Path,
+    candidates: &[crate::PackageCandidate],
+    requests: &[ResolveRequest],
+) -> Result<crate::Resolution, M4Error> {
+    let resolved = crate::resolver::resolve_unity_migration_packages(candidates, requests)
+        .map_err(map_resolve_error)?;
+    let selected_ids = resolved
+        .resolution
+        .packages
+        .iter()
+        .map(|package| package.package_id.as_str())
+        .collect::<BTreeSet<_>>();
+    for package in &resolved.resolution.packages {
+        let needs_proof = resolved
+            .legacy_cleanup_obligations
+            .iter()
+            .any(|obligation| obligation.package_id == package.package_id)
+            || matches!(
+                package.source.authority,
+                crate::PackageSourceAuthority::UserPackage { .. }
+            );
+        if needs_proof {
+            let metadata = cache
+                .pin_legacy_manifest(
+                    &package.source,
+                    &package.package_id,
+                    &package.version.to_string(),
+                )
+                .await
+                .map_err(map_cache_error)?;
+            if metadata
+                .packages
+                .iter()
+                .any(|id| selected_ids.contains(id.as_str()))
+            {
+                return Err(M4Error::new(M4ErrorCode::PackageLegacyCleanupRequired));
+            }
+            crate::legacy::verify_absent(root, &metadata)?;
+        }
+    }
+    Ok(resolved.resolution)
+}
+
+fn verify_extracted_legacy(root: &Path, extracted: &Path) -> Result<(), M4Error> {
+    let bytes = read_regular_file(&extracted.join("package.json"), 4 * 1024 * 1024)?;
+    let manifest: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+    let metadata = crate::package::LegacyMetadata::parse(
+        manifest
+            .as_object()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
+    )
+    .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+    crate::legacy::verify_absent(root, &metadata)
+}
+
+fn verify_plan_legacy(
+    cache: &PackageCache,
+    root: &Path,
+    payload_root: &Path,
+    catalog: &ResolverCatalog,
+    plan: &PackagePlanRecord,
+) -> Result<(), M4Error> {
+    if plan.change_set.format_version >= 3 {
+        for source in &plan.source_set {
+            let fingerprint = match source {
+                alcomd_application::PackageSourcePin::Repository(pin) => pin.manifest_fingerprint,
+                alcomd_application::PackageSourcePin::UserPackage(pin) => pin.manifest_fingerprint,
+            };
+            let requires_pin = source.is_user_package()
+                || catalog.entries.iter().any(|entry| {
+                    entry.legacy_metadata_present
+                        && entry.package_id == source.package_id()
+                        && entry.version == source.version()
+                        && match (&entry.source, source) {
+                            (
+                                alcomd_application::ResolverCatalogSource::Repository {
+                                    repository_id,
+                                    manifest_fingerprint,
+                                    ..
+                                },
+                                alcomd_application::PackageSourcePin::Repository(pin),
+                            ) => {
+                                repository_id == &pin.repository_id
+                                    && manifest_fingerprint == &pin.manifest_fingerprint
+                            }
+                            _ => false,
+                        }
+                });
+            if requires_pin {
+                let metadata = cache
+                    .read_pinned_legacy(&fingerprint)
+                    .map_err(map_cache_error)?;
+                crate::legacy::verify_absent(root, &metadata)?;
+            }
+        }
+        for mutation in &plan.change_set.mutations {
+            if mutation.source.is_some() {
+                verify_extracted_legacy(root, &payload_root.join(&mutation.package_id))?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn prepare_transaction_root(root: &Path, operation_id: OperationId) -> Result<PathBuf, M4Error> {
@@ -1374,8 +1514,11 @@ fn read_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, M4Error> {
     if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > limit as u64 {
         return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
     }
-    let bytes =
-        std::fs::read(path).map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| file.take(limit as u64 + 1).read_to_end(&mut bytes))
+        .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
     if bytes.len() > limit {
         return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
     }
@@ -1506,6 +1649,25 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn old_unaccepted_plan_is_stale_before_filesystem_or_source_reads() {
+        let mut old = plan(PackageMutationKind::Install);
+        old.state = PlanState::Unapplied;
+        let project = project_with_locked_version("1.0.0");
+        let error = revalidate(
+            &project,
+            &ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            },
+            &old,
+        )
+        .await
+        .expect_err("old basis is stale");
+        assert_eq!(error.code(), M4ErrorCode::PlanStale);
+        assert_eq!(error.subreason(), Some("implementation_basis_changed"));
+    }
     use alcomd_application::{
         DependencyIdentity, ManifestState, PackageChangeSet, PackageMutation, PackagePlanRecord,
         PackagePlanVersion, PlanState, PrincipalId, ProjectId, ProjectObservation, ProjectType,
@@ -1640,13 +1802,14 @@ mod tests {
         );
     }
 
-    #[test]
-    fn reinstall_targets_direct_transitive_and_all_without_changing_locked_versions() {
+    #[tokio::test]
+    async fn reinstall_targets_direct_transitive_and_all_without_changing_locked_versions() {
         let installed = [
             ("com.example.direct".to_owned(), "1.0.0".to_owned()),
             ("com.example.transitive".to_owned(), "2.0.0".to_owned()),
         ];
         let (root, project, snapshot) = planning_fixture(&installed[..1], &installed);
+        let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
         let catalog = catalog(&[
             ("com.example.direct", "1.0.0"),
             ("com.example.direct", "1.1.0"),
@@ -1659,7 +1822,8 @@ mod tests {
         request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
             "com.example.transitive".to_owned(),
         ]));
-        let transitive = prepare_reinstall(&snapshot, &project, &catalog, &request)
+        let transitive = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+            .await
             .expect("reinstall transitive package");
         assert_eq!(transitive.change_set.mutations.len(), 1);
         assert_eq!(
@@ -1676,7 +1840,8 @@ mod tests {
         );
 
         request.reinstall_selection = Some(ReinstallSelection::All);
-        let all = prepare_reinstall(&snapshot, &project, &catalog, &request)
+        let all = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+            .await
             .expect("reinstall all locked packages");
         assert_eq!(all.change_set.mutations.len(), 2);
         assert!(all.change_set.mutations.iter().all(|mutation| {
@@ -1688,7 +1853,8 @@ mod tests {
             "com.example.missing".to_owned(),
         ]));
         assert_eq!(
-            prepare_reinstall(&snapshot, &project, &catalog, &request)
+            prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+                .await
                 .expect_err("uninstalled target must fail")
                 .code(),
             M4ErrorCode::PackageNotInstalled
@@ -1698,6 +1864,7 @@ mod tests {
         let (empty_root, empty_project, empty_snapshot) = planning_fixture(&[], &[]);
         request.reinstall_selection = Some(ReinstallSelection::All);
         let empty = prepare_reinstall(
+            &cache,
             &empty_snapshot,
             &empty_project,
             &ResolverCatalog {
@@ -1706,6 +1873,7 @@ mod tests {
             },
             &request,
         )
+        .await
         .expect("empty all is a successful empty Plan");
         assert!(empty.change_set.mutations.is_empty());
         std::fs::remove_dir_all(empty_root).expect("remove empty fixture");
@@ -1738,14 +1906,59 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
-    #[test]
-    fn bulk_supports_all_four_intents_in_one_canonical_atomic_plan() {
+    #[tokio::test]
+    async fn bulk_transitive_reinstall_does_not_write_its_solver_pin_as_a_self_dependency() {
+        let direct = [("com.example.alpha".to_owned(), "1.0.0".to_owned())];
+        let locked = [
+            direct[0].clone(),
+            ("com.example.beta".to_owned(), "1.0.0".to_owned()),
+        ];
+        let (root, project, snapshot) = planning_fixture(&direct, &locked);
+        let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
+        let mut catalog = catalog(&[
+            ("com.example.alpha", "1.0.0"),
+            ("com.example.beta", "1.0.0"),
+        ]);
+        catalog.entries[0].dependencies_json = r#"{"com.example.beta":"1.0.0"}"#.to_owned();
+        let mut request = package_request(PlanAction::Bulk);
+        request.plan_version = PackagePlanVersion::V2;
+        request.bulk_intents = vec![PackageBulkIntent::Reinstall {
+            package_id: "com.example.beta".to_owned(),
+            source: None,
+        }];
+        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("transitive reinstall");
+        assert!(
+            !plan
+                .change_set
+                .dependency_edges
+                .iter()
+                .any(|edge| !edge.direct && edge.from_package_id == edge.to_package_id)
+        );
+        let before = std::fs::read(root.join("Packages/vpm-manifest.json")).expect("manifest");
+        let after = materialize_vpm_manifest(&before, &plan.change_set).expect("frozen output");
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(&after)),
+            plan.change_set.vpm_manifest_sha256
+        );
+        let after: serde_json::Value = serde_json::from_slice(&after).expect("JSON");
+        assert_eq!(
+            after["locked"]["com.example.beta"]["dependencies"],
+            serde_json::json!({})
+        );
+        std::fs::remove_dir_all(root).expect("fixture cleanup");
+    }
+
+    #[tokio::test]
+    async fn bulk_supports_all_four_intents_in_one_canonical_atomic_plan() {
         let direct = [
             ("com.example.alpha".to_owned(), "1.0.0".to_owned()),
             ("com.example.beta".to_owned(), "1.0.0".to_owned()),
             ("com.example.delta".to_owned(), "1.0.0".to_owned()),
         ];
         let (root, project, snapshot) = planning_fixture(&direct, &direct);
+        let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
         let catalog = catalog(&[
             ("com.example.alpha", "1.0.0"),
             ("com.example.alpha", "1.1.0"),
@@ -1776,8 +1989,9 @@ mod tests {
             },
         ];
 
-        let plan =
-            prepare_bulk(&snapshot, &project, &catalog, &request).expect("one atomic mixed plan");
+        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("one atomic mixed plan");
         assert_eq!(plan.action, PlanAction::Bulk);
         assert_eq!(
             plan.change_set
@@ -1806,15 +2020,16 @@ mod tests {
             ]
         );
         request.bulk_intents.reverse();
-        let reversed = prepare_bulk(&snapshot, &project, &catalog, &request)
+        let reversed = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
             .expect("caller order must not change the Plan");
         assert_eq!(reversed.change_set, plan.change_set);
         assert_eq!(reversed.change_set_fingerprint, plan.change_set_fingerprint);
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
-    #[test]
-    fn bulk_rejects_duplicate_intents_and_257_but_accepts_256() {
+    #[tokio::test]
+    async fn bulk_rejects_duplicate_intents_and_257_but_accepts_256() {
         let installed = (0..256)
             .map(|value| {
                 (
@@ -1824,6 +2039,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (root, project, snapshot) = planning_fixture(&installed, &installed);
+        let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
         let mut request = package_request(PlanAction::Bulk);
         request.plan_version = PackagePlanVersion::V2;
         request.bulk_intents = installed
@@ -1833,6 +2049,7 @@ mod tests {
             })
             .collect();
         let plan = prepare_bulk(
+            &cache,
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -1841,6 +2058,7 @@ mod tests {
             },
             &request,
         )
+        .await
         .expect("256 intents are accepted");
         assert_eq!(plan.change_set.mutations.len(), 256);
 
@@ -1851,6 +2069,7 @@ mod tests {
             include_prerelease: false,
         });
         let too_many = prepare_bulk(
+            &cache,
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -1859,6 +2078,7 @@ mod tests {
             },
             &request,
         )
+        .await
         .expect_err("257 intents must fail");
         assert_eq!(too_many.code(), M4ErrorCode::PlanTooLarge);
         assert_eq!(too_many.subreason(), Some("selection_limit"));
@@ -1874,6 +2094,7 @@ mod tests {
         ];
         assert_eq!(
             prepare_bulk(
+                &cache,
                 &snapshot,
                 &project,
                 &ResolverCatalog {
@@ -1882,6 +2103,7 @@ mod tests {
                 },
                 &request,
             )
+            .await
             .expect_err("duplicate intent must fail")
             .code(),
             M4ErrorCode::PackageIntentConflict
@@ -1902,6 +2124,7 @@ mod tests {
         reinstall.plan_version = PackagePlanVersion::V2;
         reinstall.reinstall_selection = Some(ReinstallSelection::All);
         let too_many = prepare_reinstall(
+            &cache,
             &over_snapshot,
             &over_project,
             &ResolverCatalog {
@@ -1910,6 +2133,7 @@ mod tests {
             },
             &reinstall,
         )
+        .await
         .expect_err("reinstall all over 256 must fail");
         assert_eq!(too_many.code(), M4ErrorCode::PlanTooLarge);
         assert_eq!(too_many.subreason(), Some("selection_limit"));
@@ -1968,6 +2192,7 @@ mod tests {
                 version: Version::parse(version).expect("version"),
                 source: crate::PackageSource {
                     authority: crate::PackageSourceAuthority::Repository {
+                        repository_locator: None,
                         repository_id: "repo".to_owned(),
                         repository_revision: 1,
                         priority: 1,
@@ -1991,7 +2216,12 @@ mod tests {
         std::fs::create_dir_all(root.join("Packages")).expect("Packages");
         let dependencies = direct
             .iter()
-            .map(|(package_id, version)| (package_id.clone(), serde_json::json!(version)))
+            .map(|(package_id, version)| {
+                (
+                    package_id.clone(),
+                    serde_json::json!({ "version": version }),
+                )
+            })
             .collect::<serde_json::Map<_, _>>();
         let locked_json = locked
             .iter()
@@ -2061,6 +2291,7 @@ mod tests {
                 .enumerate()
                 .map(|(index, (package_id, version))| ResolverCatalogEntry {
                     source: ResolverCatalogSource::Repository {
+                        repository_locator: String::new(),
                         repository_id: "00000000-0000-4000-8000-000000000001".to_owned(),
                         repository_revision: 1,
                         repository_priority: 1,

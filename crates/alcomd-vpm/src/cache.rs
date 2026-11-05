@@ -10,6 +10,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::archive::MAX_ARCHIVE_BYTES;
 
+#[path = "legacy_manifest_cache.rs"]
+mod legacy_manifest;
+
 pub const MAX_CACHE_BYTES: u64 = 17_179_869_184;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
@@ -390,6 +393,10 @@ async fn cache_size(root: &Path) -> Result<u64, CacheError> {
                 .path()
                 .extension()
                 .is_some_and(|value| value == "zip")
+                || object
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|value| value.ends_with(".manifest.json"))
             {
                 total = total
                     .checked_add(metadata.len())

@@ -6,6 +6,7 @@ use semver::Version;
 use serde_json::Value;
 
 use crate::range::{VpmRange, compare_precedence};
+use crate::unity_version::{UnityVersion, meets_minimum, package_minimum};
 use alcomd_application::{PackageSourceSelector, ResolverCatalog, ResolverCatalogSource};
 
 const MAX_REQUIREMENTS: usize = 4_096;
@@ -21,6 +22,7 @@ pub struct PackageSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PackageSourceAuthority {
     Repository {
+        repository_locator: Option<String>,
         repository_id: String,
         repository_revision: u64,
         priority: u64,
@@ -83,7 +85,7 @@ pub struct PackageCandidate {
     pub package_id: String,
     pub version: Version,
     pub yanked: bool,
-    pub unity_minimum: Option<(u64, u64)>,
+    pub unity_minimum: Option<UnityVersion>,
     pub legacy_metadata_present: bool,
     pub dependencies: Vec<PackageDependency>,
     pub source: PackageSource,
@@ -95,7 +97,7 @@ pub struct ResolveRequest {
     pub range: String,
     pub source: Option<PackageSourceSelector>,
     pub include_prerelease: bool,
-    pub unity_version: Option<(u64, u64)>,
+    pub unity_version: Option<UnityVersion>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -141,7 +143,8 @@ pub fn candidates_from_catalog(
     let mut candidates = Vec::with_capacity(catalog.entries.len());
     for row in &catalog.entries {
         let version = Version::parse(&row.version).map_err(|_| ResolveError::InvalidVersion)?;
-        let unity_minimum = row.unity.as_deref().map(parse_unity).transpose()?;
+        let unity_minimum = package_minimum(row.unity.as_deref(), row.unity_release.as_deref())
+            .map_err(|_| ResolveError::InvalidRange)?;
         let dependencies = serde_json::from_str::<Value>(&row.dependencies_json)
             .ok()
             .and_then(|value| value.as_object().cloned())
@@ -159,6 +162,7 @@ pub fn candidates_from_catalog(
             .collect::<Result<Vec<_>, _>>()?;
         let (source, manifest_fingerprint, archive_sha256) = match &row.source {
             ResolverCatalogSource::Repository {
+                repository_locator,
                 repository_id,
                 repository_revision,
                 repository_priority,
@@ -169,6 +173,8 @@ pub fn candidates_from_catalog(
             } => (
                 PackageSource {
                     authority: PackageSourceAuthority::Repository {
+                        repository_locator: (!repository_locator.is_empty())
+                            .then(|| repository_locator.clone()),
                         repository_id: repository_id.clone(),
                         repository_revision: *repository_revision,
                         priority: *repository_priority,
@@ -435,7 +441,7 @@ fn solve<'a>(
     requirements: BTreeMap<String, Vec<Requirement>>,
     selected: BTreeMap<String, &'a PackageCandidate>,
     include_prerelease: bool,
-    unity_version: Option<(u64, u64)>,
+    unity_version: Option<UnityVersion>,
     legacy_handling: LegacyCandidateHandling,
 ) -> Result<Solved<'a>, ResolveError> {
     for (package_id, package_requirements) in &requirements {
@@ -594,7 +600,7 @@ fn classify_no_candidates(
     package_id: &str,
     requirements: &[Requirement],
     include_prerelease: bool,
-    unity_version: Option<(u64, u64)>,
+    unity_version: Option<UnityVersion>,
 ) -> ResolveError {
     let Some(candidates) = catalog.get(package_id) else {
         return if requirements.iter().any(|requirement| !requirement.direct) {
@@ -632,11 +638,7 @@ fn classify_no_candidates(
         .iter()
         .copied()
         .filter(source_and_range_match)
-        .any(|candidate| {
-            candidate
-                .unity_minimum
-                .is_some_and(|minimum| unity_version.is_none_or(|unity| unity < minimum))
-        })
+        .any(|candidate| !meets_minimum(unity_version, candidate.unity_minimum))
     {
         return ResolveError::UnityIncompatible {
             package_id: package_id.to_owned(),
@@ -657,12 +659,10 @@ fn candidate_satisfies(
     candidate: &PackageCandidate,
     requirements: &[Requirement],
     include_prerelease: bool,
-    unity_version: Option<(u64, u64)>,
+    unity_version: Option<UnityVersion>,
 ) -> bool {
     !candidate.yanked
-        && candidate
-            .unity_minimum
-            .is_none_or(|minimum| unity_version.is_some_and(|unity| unity >= minimum))
+        && meets_minimum(unity_version, candidate.unity_minimum)
         && requirements.iter().all(|requirement| {
             requirement
                 .source
@@ -698,6 +698,7 @@ fn validate_candidate(candidate: &PackageCandidate) -> Result<(), ResolveError> 
             repository_revision,
             priority,
             artifact_url,
+            ..
         } => {
             !repository_id.is_empty()
                 && *repository_revision != 0
@@ -732,22 +733,6 @@ fn validate_package_id(value: &str) -> Result<(), ResolveError> {
         return Err(ResolveError::InvalidPackageId);
     }
     Ok(())
-}
-
-pub(crate) fn parse_unity(value: &str) -> Result<(u64, u64), ResolveError> {
-    let (major, minor) = value.split_once('.').ok_or(ResolveError::InvalidRange)?;
-    if major.is_empty()
-        || minor.is_empty()
-        || minor.contains('.')
-        || !major.bytes().all(|byte| byte.is_ascii_digit())
-        || !minor.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(ResolveError::InvalidRange);
-    }
-    Ok((
-        major.parse().map_err(|_| ResolveError::InvalidRange)?,
-        minor.parse().map_err(|_| ResolveError::InvalidRange)?,
-    ))
 }
 
 fn parse_digest(value: &str) -> Result<[u8; 32], ResolveError> {
@@ -799,6 +784,7 @@ mod tests {
                 .collect(),
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    repository_locator: None,
                     repository_id: repository_id.to_owned(),
                     repository_revision: 1,
                     priority,
@@ -817,7 +803,7 @@ mod tests {
             range: range.to_owned(),
             source: None,
             include_prerelease: false,
-            unity_version: Some((2022, 3)),
+            unity_version: Some(UnityVersion::major_minor(2022, 3)),
         }
     }
 
@@ -948,7 +934,7 @@ mod tests {
         let mut blocked = candidate("com.example.pkg", "1.0.0", 1, "repo-a", &[]);
         blocked.yanked = true;
         let mut incompatible = candidate("com.example.pkg", "2.0.0", 1, "repo-a", &[]);
-        incompatible.unity_minimum = Some((2023, 1));
+        incompatible.unity_minimum = Some(UnityVersion::major_minor(2023, 1));
         let mut pinned = request("com.example.pkg", ">=1.0.0");
         pinned.source = Some(PackageSourceSelector::Repository {
             repository_id: "repo-b".to_owned(),

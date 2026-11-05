@@ -168,7 +168,7 @@ pub struct PackageChangeSet {
 
 impl PackageChangeSet {
     pub fn validate_bounds(&self) -> Result<(), M4Error> {
-        if !matches!(self.format_version, 1 | 2)
+        if !matches!(self.format_version, 1..=3)
             || self.mutations.len() > MAX_PACKAGE_MUTATIONS
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
             || (self.format_version == 1
@@ -222,6 +222,7 @@ pub struct PackagePlanRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolverCatalogSource {
     Repository {
+        repository_locator: String,
         repository_id: String,
         repository_revision: u64,
         repository_priority: u64,
@@ -791,7 +792,9 @@ where
             .store
             .resolver_catalog(
                 access.principal().clone(),
-                plan.change_set.format_version == 2,
+                plan.source_set
+                    .iter()
+                    .any(PackageSourcePin::is_user_package),
             )
             .await?;
         self.adapter.revalidate_plan(project, catalog, plan).await?;

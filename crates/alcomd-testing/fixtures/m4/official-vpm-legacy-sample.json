@@ -1,0 +1,62 @@
+{
+    "id": "com.vrchat.repos.official",
+    "packages": {
+        "com.vrchat.worlds": {
+            "versions": {
+                "3.10.6": {
+                    "name": "com.vrchat.worlds",
+                    "displayName": "VRChat SDK - Worlds",
+                    "version": "3.10.6",
+                    "unity": "2022.3",
+                    "description": "Tools for creating interactive VRChat worlds using Udon",
+                    "dependencies": {
+                        "com.unity.cinemachine": "2.9.7",
+                        "com.unity.textmeshpro": "3.0.6",
+                        "com.unity.inputsystem": "1.2.0",
+                        "com.unity.ai.navigation": "1.1.5"
+                    },
+                    "vpmDependencies": {
+                        "com.vrchat.base": "3.10.6"
+                    },
+                    "samples": [
+                        {
+                            "displayName": "UdonExampleScene",
+                            "description": "Basic Udon Examples for Learning",
+                            "path": "Samples/UdonExampleScene"
+                        },
+                        {
+                            "displayName": "UdonSharp CustomInspectors",
+                            "description": "Custom Inspector Example",
+                            "path": "Integrations/UdonSharp/Samples~/CustomInspectors"
+                        },
+                        {
+                            "displayName": "UdonSharp Tutorials",
+                            "description": "Tutorials Example",
+                            "path": "Integrations/UdonSharp/Samples~/Tutorials"
+                        }
+                    ],
+                    "author": {
+                        "name": "VRChat",
+                        "email": "developer@vrchat.com",
+                        "url": "https://github.com/vrchat/packages"
+                    },
+                    "zipSHA256": "2792eb597356cdf3fa7263bf3d089a1f516f04544e4244ed180c7879ae90576b",
+                    "url": "https://github.com/vrchat/packages/releases/download/3.10.6/com.vrchat.worlds-3.10.6.zip",
+                    "legacyFolders": {
+                        "Assets\\VRCSDK": "",
+                        "Assets\\Udon": "",
+                        "Assets\\VRChat Examples": "",
+                        "Packages\\com.vrchat.vrcsdk3": "",
+                        "Assets\\UdonSharp": "b031f928e5c709b4887f6513084aaa51",
+                        "Assets\\Gizmos\\UdonSharp": "6e940dfc89ce4ca41b651e05bc21be6b",
+                        "Assets\\CyanEmu": "91b9a83a129504741a363d9a324de958"
+                    },
+                    "legacyPackages": [
+                        "com.vrchat.clientsim",
+                        "com.vrchat.udonsharp"
+                    ]
+                }
+            }
+        }
+    }
+}

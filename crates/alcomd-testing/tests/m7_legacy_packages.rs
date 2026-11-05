@@ -1,0 +1,526 @@
+//! Real reader/store/Plan/Apply tests using owned projects and cached synthetic
+//! packages. Legacy fields follow the official VPM path-to-GUID object shape.
+//! No IPC endpoint, Editor process, user profile, or real project is used.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use alcomd_application::{
+    AccessContext, IdempotencyKey, M3Application, M4Application, M4ErrorCode, OperationId,
+    OperationRecord, OperationState, PackagePlanRequest, PackagePlanVersion, PlanAction,
+    PrincipalId, ProjectRecord, RepositorySource, StateStore,
+};
+use alcomd_store::StateStoreHandle;
+use alcomd_vpm::{PackageCache, PackageEngine, VpmReader};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
+
+const KEEP: &str = "com.example.keep";
+const NEW: &str = "com.example.new";
+const CHILD: &str = "com.example.child";
+const FILE_GUID: &str = "11111111111111111111111111111111";
+const FOLDER_GUID: &str = "22222222222222222222222222222222";
+
+type Packages = M4Application<StateStoreHandle, PackageEngine<StateStoreHandle>>;
+
+struct Fixture {
+    project_root: PathBuf,
+    store: StateStoreHandle,
+    packages: Packages,
+    project: ProjectRecord,
+    _directory: TestDirectory,
+}
+
+#[derive(Clone, Copy)]
+enum ExistingLegacy {
+    None,
+    File,
+    Folder,
+    MovedGuid,
+}
+
+impl Fixture {
+    async fn new(archive_has_legacy: bool, existing: ExistingLegacy) -> Self {
+        let directory = TestDirectory::new();
+        let project_root = directory.0.join("Project");
+        for child in ["Assets", "ProjectSettings", "Packages/com.example.keep"] {
+            fs::create_dir_all(project_root.join(child)).expect("owned project directory");
+        }
+        fs::write(
+            project_root.join("ProjectSettings/ProjectVersion.txt"),
+            "m_EditorVersion: 2022.3.22f1\n",
+        )
+        .expect("full project version");
+        fs::write(
+            project_root.join("Packages/manifest.json"),
+            b"{\"dependencies\":{}}",
+        )
+        .expect("UPM project manifest");
+        fs::write(project_root.join("Packages/vpm-manifest.json"), serde_json::to_vec_pretty(&json!({
+            "dependencies": {KEEP: {"version": "1.0.0", "note": "retain direct metadata"}},
+            "locked": {KEEP: {"version": "1.0.0", "dependencies": {"com.example.existing-child": "^1.0.0"}, "url": "https://example.invalid/original-index.json", "extension": {"preserved": true}},
+                "com.example.existing-child": {"version": "1.0.0", "dependencies": {}}}
+        })).expect("VPM fixture")).expect("VPM project manifest");
+        fs::write(
+            project_root.join("Packages/com.example.keep/package.json"),
+            br#"{"name":"com.example.keep","version":"1.0.0"}"#,
+        )
+        .expect("existing package");
+        fs::write(
+            project_root.join("Packages/com.example.keep/keep.txt"),
+            b"existing package bytes",
+        )
+        .expect("existing package sentinel");
+        seed_legacy(&project_root, existing);
+
+        let cache_root = directory.0.join("package-cache");
+        let cache = PackageCache::new(cache_root.clone()).expect("owned package cache");
+        let mut new_manifest = json!({"name": NEW, "version": "2.0.0", "vpmDependencies": {CHILD: "^1.0.0"}, "unity": "2022.3", "unityRelease": "22f1"});
+        if archive_has_legacy {
+            add_legacy(&mut new_manifest);
+        }
+        let new_digest = cache_package(&cache, &new_manifest);
+        let child_manifest = json!({"name": CHILD, "version": "1.0.0"});
+        let child_digest = cache_package(&cache, &child_manifest);
+        let mut indexed_new = new_manifest;
+        add_legacy(&mut indexed_new);
+        add_repository_fields(&mut indexed_new, &new_digest);
+        let mut indexed_child = child_manifest;
+        add_repository_fields(&mut indexed_child, &child_digest);
+        let index = directory.0.join("index.json");
+        fs::write(&index, serde_json::to_vec(&json!({"id": "isolated-legacy-fixture", "name": "Isolated VPM shape fixture", "packages": {
+            NEW: {"versions": {"2.0.0": indexed_new}}, CHILD: {"versions": {"1.0.0": indexed_child}}
+        }})).expect("index")).expect("owned local index");
+        let store = StateStoreHandle::open(directory.0.join("state.db")).expect("isolated store");
+        let reader = VpmReader::new().expect("reader");
+        let registry = M3Application::new(store.clone(), reader.clone());
+        let access = AccessContext::local_owner();
+        let project = registry
+            .register_project(
+                &access,
+                project_root.to_string_lossy().into_owned(),
+                key("register-project"),
+            )
+            .await
+            .expect("register owned project")
+            .value;
+        let repository = registry
+            .register_repository(
+                &access,
+                RepositorySource::Local {
+                    path: index.to_string_lossy().into_owned(),
+                },
+                key("register-repository"),
+            )
+            .await
+            .expect("read and register actual local index")
+            .value;
+        assert!(
+            repository.observation.issues.is_empty(),
+            "official-shape legacy metadata is readable"
+        );
+        registry
+            .refresh_repository(
+                &access,
+                repository.repository_id,
+                repository.revision,
+                key("refresh-repository"),
+            )
+            .await
+            .expect("persist resolver-ready local index");
+        let engine = PackageEngine::new(store.clone(), reader, cache_root).expect("engine");
+        let packages = M4Application::new(store.clone(), engine);
+        Self {
+            _directory: directory,
+            project_root,
+            store,
+            packages,
+            project,
+        }
+    }
+
+    fn request(&self) -> PackagePlanRequest {
+        PackagePlanRequest {
+            action: PlanAction::Install,
+            project_id: self.project.project_id,
+            expected_revision: self.project.revision,
+            package_id: Some(NEW.to_owned()),
+            version_range: Some("2.0.0".to_owned()),
+            repository_id: None,
+            include_prerelease: false,
+            plan_version: PackagePlanVersion::V2,
+            source_selector: None,
+            reinstall_selection: None,
+            reinstall_sources: Vec::new(),
+            bulk_intents: Vec::new(),
+        }
+    }
+
+    async fn replace_indexed_legacy_packages(&self, packages: &[&str]) {
+        let path = self._directory.0.join("index.json");
+        let mut index: Value =
+            serde_json::from_slice(&fs::read(&path).expect("owned index")).expect("index JSON");
+        index["packages"][NEW]["versions"]["2.0.0"]["legacyPackages"] = json!(packages);
+        fs::write(path, serde_json::to_vec(&index).expect("index JSON"))
+            .expect("change actual indexed package metadata");
+        let registry = M3Application::new(self.store.clone(), VpmReader::new().expect("reader"));
+        let access = AccessContext::local_owner();
+        let repositories = registry
+            .list_repositories(&access, None, 10)
+            .await
+            .expect("owned repositories");
+        assert_eq!(repositories.repositories.len(), 1);
+        let repository = &repositories.repositories[0];
+        registry
+            .refresh_repository(
+                &access,
+                repository.repository_id,
+                repository.revision,
+                key("refresh-conflicting-legacy-packages"),
+            )
+            .await
+            .expect("refresh actual metadata through the Core reader");
+    }
+
+    async fn terminal(&self, id: OperationId) -> OperationRecord {
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let operation = self
+                    .store
+                    .get_operation(PrincipalId::local_owner(), id)
+                    .await
+                    .expect("owned operation");
+                if operation.state.is_terminal() {
+                    return operation;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("package worker terminates")
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn absent_legacy_obligations_allow_real_install_and_preserve_frozen_lock_information() {
+    let fixture = Fixture::new(true, ExistingLegacy::None).await;
+    let access = AccessContext::local_owner();
+    let manifest_path = fixture.project_root.join("Packages/vpm-manifest.json");
+    let before: Value =
+        serde_json::from_slice(&fs::read(&manifest_path).expect("original manifest"))
+            .expect("JSON");
+    let plan = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("metadata alone does not forbid installation");
+    assert_eq!(plan.change_set.format_version, 3);
+    let dependency = plan
+        .change_set
+        .dependency_edges
+        .iter()
+        .find(|edge| !edge.direct && edge.from_package_id == NEW && edge.to_package_id == CHILD)
+        .expect("frozen dependency edge")
+        .range
+        .clone();
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("install"),
+        )
+        .await
+        .expect("accept actual Plan");
+    let operation = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(
+        operation.state,
+        OperationState::Succeeded,
+        "{:?}",
+        operation.error_code
+    );
+    let after_bytes = fs::read(&manifest_path).expect("published manifest");
+    let after: Value = serde_json::from_slice(&after_bytes).expect("published JSON");
+    assert_eq!(after["locked"][KEEP], before["locked"][KEEP]);
+    assert_eq!(after["dependencies"][KEEP], before["dependencies"][KEEP]);
+    assert_eq!(after["locked"][NEW]["dependencies"][CHILD], dependency);
+    assert_eq!(after["locked"][CHILD]["version"], "1.0.0");
+    assert_eq!(
+        <[u8; 32]>::from(Sha256::digest(&after_bytes)),
+        plan.change_set.vpm_manifest_sha256
+    );
+    assert_eq!(
+        fs::read(
+            fixture
+                .project_root
+                .join("Packages/com.example.keep/keep.txt")
+        )
+        .expect("old package retained"),
+        b"existing package bytes"
+    );
+    assert!(
+        fixture
+            .project_root
+            .join("Packages/com.example.new/package.json")
+            .is_file()
+    );
+    assert!(
+        fixture
+            .project_root
+            .join("Packages/com.example.child/package.json")
+            .is_file()
+    );
+    let replay = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("install"),
+        )
+        .await
+        .expect("idempotent replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    assert_eq!(
+        fs::read(manifest_path).expect("replayed bytes"),
+        after_bytes
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn declared_existing_paths_or_moved_guids_refuse_planning_without_deletion() {
+    for existing in [
+        ExistingLegacy::File,
+        ExistingLegacy::Folder,
+        ExistingLegacy::MovedGuid,
+    ] {
+        let fixture = Fixture::new(true, existing).await;
+        let before = fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("original manifest");
+        let error = fixture
+            .packages
+            .plan(&AccessContext::local_owner(), fixture.request())
+            .await
+            .expect_err("cleanup is required or cannot be ruled out");
+        assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+        assert_eq!(
+            fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("untouched manifest"),
+            before
+        );
+        match existing {
+            ExistingLegacy::File => assert!(fixture.project_root.join("Assets/Old.txt").is_file()),
+            ExistingLegacy::Folder => assert!(fixture.project_root.join("Assets/Legacy").is_dir()),
+            ExistingLegacy::MovedGuid => {
+                assert!(fixture.project_root.join("Assets/Moved.txt.meta").is_file())
+            }
+            ExistingLegacy::None => unreachable!(),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn indexed_legacy_evidence_remains_authoritative_when_the_archive_omits_it() {
+    let fixture = Fixture::new(false, ExistingLegacy::File).await;
+    let error = fixture
+        .packages
+        .plan(&AccessContext::local_owner(), fixture.request())
+        .await
+        .expect_err("archive omission cannot erase indexed cleanup obligations");
+    assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+    assert_eq!(
+        fs::read(fixture.project_root.join("Assets/Old.txt")).expect("legacy file retained"),
+        b"legacy content"
+    );
+    assert!(
+        !fixture
+            .project_root
+            .join("Packages/com.example.new")
+            .exists()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cleanup_of_a_package_selected_by_the_same_plan_is_not_proven_absent() {
+    let fixture = Fixture::new(true, ExistingLegacy::None).await;
+    let path = fixture.project_root.join("Packages/vpm-manifest.json");
+    let before = fs::read(&path).expect("original manifest");
+    let original: Value = serde_json::from_slice(&before).expect("manifest JSON");
+    assert!(original["locked"].get(CHILD).is_none());
+    assert!(!fixture.project_root.join("Packages").join(CHILD).exists());
+    fixture.replace_indexed_legacy_packages(&[CHILD]).await;
+    let error = fixture.packages.plan(&AccessContext::local_owner(), fixture.request()).await
+        .expect_err("a dependency selected for installation cannot simultaneously be discharged as absent legacy content");
+    assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+    assert_eq!(fs::read(path).expect("original manifest retained"), before);
+    for package in [NEW, CHILD] {
+        assert!(!fixture.project_root.join("Packages").join(package).exists());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_legacy_target_created_after_planning_fails_apply_before_changing_packages() {
+    let fixture = Fixture::new(true, ExistingLegacy::None).await;
+    let access = AccessContext::local_owner();
+    let plan = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("absence proven while planning");
+    let original_vpm =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("VPM manifest");
+    let original_upm =
+        fs::read(fixture.project_root.join("Packages/manifest.json")).expect("UPM manifest");
+    seed_legacy(&fixture.project_root, ExistingLegacy::File);
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("changed-before-apply"),
+        )
+        .await
+        .expect("accepted before execution rechecks target evidence");
+    let operation = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(
+        operation.error_code.as_deref(),
+        Some("package_legacy_cleanup_required")
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("original VPM preserved"),
+        original_vpm
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Packages/manifest.json"))
+            .expect("original UPM preserved"),
+        original_upm
+    );
+    assert_eq!(
+        fs::read(
+            fixture
+                .project_root
+                .join("Packages/com.example.keep/keep.txt")
+        )
+        .expect("original package preserved"),
+        b"existing package bytes"
+    );
+    assert!(
+        !fixture
+            .project_root
+            .join("Packages/com.example.new")
+            .exists()
+    );
+    assert!(
+        !fixture
+            .project_root
+            .join("Packages/com.example.child")
+            .exists()
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Assets/Old.txt"))
+            .expect("newly observed legacy file retained"),
+        b"legacy content"
+    );
+}
+
+fn add_legacy(manifest: &mut Value) {
+    manifest["legacyFiles"] = json!({"Assets/Old.txt": FILE_GUID});
+    manifest["legacyFolders"] = json!({"Assets/Legacy": FOLDER_GUID});
+    manifest["legacyPackages"] = json!(["com.example.legacy"]);
+}
+
+fn add_repository_fields(manifest: &mut Value, digest: &[u8; 32]) {
+    manifest["displayName"] = json!(manifest["name"]);
+    manifest["author"] = json!({"name": "Isolated fixture", "email": "fixture@example.invalid"});
+    manifest["url"] = json!("https://network-must-not-be-used.invalid/synthetic.zip");
+    manifest["zipSHA256"] = json!(
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+}
+
+fn cache_package(cache: &PackageCache, manifest: &Value) -> [u8; 32] {
+    let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    archive
+        .start_file(
+            "package.json",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored),
+        )
+        .expect("manifest entry");
+    archive
+        .write_all(
+            serde_json::to_string(manifest)
+                .expect("manifest JSON")
+                .as_bytes(),
+        )
+        .expect("manifest bytes");
+    archive
+        .start_file(
+            "Runtime/fixture.txt",
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored),
+        )
+        .expect("payload entry");
+    archive
+        .write_all(b"independently authored synthetic package content")
+        .expect("payload");
+    let bytes = archive.finish().expect("archive").into_inner();
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    let path = cache.object_path(&digest);
+    fs::create_dir_all(path.parent().expect("cache parent")).expect("owned cache parent");
+    fs::write(path, bytes).expect("owned cached package");
+    digest
+}
+
+fn seed_legacy(root: &Path, existing: ExistingLegacy) {
+    match existing {
+        ExistingLegacy::None => {}
+        ExistingLegacy::File => {
+            fs::write(root.join("Assets/Old.txt"), b"legacy content").expect("owned legacy file")
+        }
+        ExistingLegacy::Folder => {
+            fs::create_dir(root.join("Assets/Legacy")).expect("owned legacy directory")
+        }
+        ExistingLegacy::MovedGuid => {
+            fs::write(root.join("Assets/Moved.txt"), b"moved legacy content").expect("moved file");
+            fs::write(
+                root.join("Assets/Moved.txt.meta"),
+                format!("fileFormatVersion: 2\nguid: {FILE_GUID}\n"),
+            )
+            .expect("moved GUID evidence");
+        }
+    }
+}
+
+fn key(value: &str) -> IdempotencyKey {
+    IdempotencyKey::parse(value.to_owned()).expect("key")
+}
+
+struct TestDirectory(PathBuf);
+impl TestDirectory {
+    fn new() -> Self {
+        #[cfg(target_os = "macos")]
+        let base = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = std::env::temp_dir();
+        let path = base.join(format!("alcomd-m7-legacy-{}", Uuid::new_v4()));
+        fs::create_dir(&path).expect("new owned fixture root");
+        Self(path)
+    }
+}
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}

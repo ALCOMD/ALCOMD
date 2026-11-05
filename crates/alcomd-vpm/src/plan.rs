@@ -55,8 +55,8 @@ pub fn inspect_package_project(project: &ProjectRecord) -> Result<ProjectPackage
     let object = vpm_manifest
         .as_object()
         .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    let actual_direct = string_map(object.get("dependencies"))?;
-    let actual_locked = locked_map(object.get("locked"))?;
+    let actual_direct = vpm_version_map(object.get("dependencies"))?;
+    let actual_locked = vpm_version_map(object.get("locked"))?;
     let observed_direct = project
         .observation
         .direct_dependencies
@@ -131,8 +131,8 @@ fn build_complete_resolution_plan(
         .vpm_manifest
         .as_object()
         .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    let old_direct = string_map(object.get("dependencies"))?;
-    let old_locked = locked_map(object.get("locked"))?;
+    let old_direct = vpm_version_map(object.get("dependencies"))?;
+    let old_locked = vpm_version_map(object.get("locked"))?;
     let mut new_direct = BTreeMap::new();
     let mut new_locked = BTreeMap::new();
     let mut selected = BTreeMap::new();
@@ -141,7 +141,17 @@ fn build_complete_resolution_plan(
         let version = package.version.to_string();
         new_locked.insert(package.package_id.clone(), version.clone());
         if package.direct {
-            new_direct.insert(package.package_id.clone(), version);
+            let direct_version = if old_locked.get(&package.package_id) == Some(&version)
+                && (preserve_manifest_bytes || !force_replace.contains(&package.package_id))
+            {
+                old_direct
+                    .get(&package.package_id)
+                    .cloned()
+                    .unwrap_or(version)
+            } else {
+                version
+            };
+            new_direct.insert(package.package_id.clone(), direct_version);
         }
         selected.insert(package.package_id.as_str(), package);
     }
@@ -194,6 +204,7 @@ fn build_complete_resolution_plan(
         }
     }
 
+    source_set.extend(resolution.packages.iter().map(source_pin));
     let manifest_bytes = if preserve_manifest_bytes {
         snapshot.vpm_manifest_bytes.clone()
     } else {
@@ -201,7 +212,13 @@ fn build_complete_resolution_plan(
         let object = manifest
             .as_object_mut()
             .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-        write_manifest_maps(object, &new_direct, &new_locked);
+        write_manifest_maps(
+            object,
+            &new_direct,
+            &new_locked,
+            &frozen_edges(&resolution.dependency_edges),
+            &mutations,
+        );
         serialize_manifest(&manifest)?
     };
     build_draft_from_bytes(
@@ -226,8 +243,8 @@ pub fn build_resolution_plan(
     let object = manifest
         .as_object_mut()
         .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    let mut direct = string_map(object.get("dependencies"))?;
-    let mut locked = locked_map(object.get("locked"))?;
+    let mut direct = vpm_version_map(object.get("dependencies"))?;
+    let mut locked = vpm_version_map(object.get("locked"))?;
     let direct_ids = resolution
         .packages
         .iter()
@@ -256,19 +273,32 @@ pub fn build_resolution_plan(
             source_set.push(source);
         }
         locked.insert(package.package_id.clone(), target_version.clone());
-        if direct_ids.contains(package.package_id.as_str()) {
+        if direct_ids.contains(package.package_id.as_str())
+            && (!direct.contains_key(&package.package_id)
+                || mutations
+                    .iter()
+                    .any(|mutation| mutation.package_id == package.package_id))
+        {
             direct.insert(package.package_id.clone(), target_version);
         }
     }
-    write_manifest_maps(object, &direct, &locked);
-    build_draft(
-        snapshot,
-        action,
-        manifest,
-        mutations,
-        resolution.dependency_edges.clone(),
-        source_set,
-    )
+    source_set.extend(resolution.packages.iter().map(source_pin));
+    let mut edges = resolution.dependency_edges.clone();
+    for (id, range) in &direct {
+        if !edges
+            .iter()
+            .any(|edge| edge.direct && edge.to_package_id == *id)
+        {
+            edges.push(PackageDependencyEdge {
+                from_package_id: id.clone(),
+                to_package_id: id.clone(),
+                range: range.clone(),
+                direct: true,
+            });
+        }
+    }
+    write_manifest_maps(object, &direct, &locked, &frozen_edges(&edges), &mutations);
+    build_draft(snapshot, action, manifest, mutations, edges, source_set)
 }
 
 pub fn build_remove_plan(
@@ -281,8 +311,8 @@ pub fn build_remove_plan(
     let object = manifest
         .as_object_mut()
         .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    let mut direct = string_map(object.get("dependencies"))?;
-    let mut locked = locked_map(object.get("locked"))?;
+    let mut direct = vpm_version_map(object.get("dependencies"))?;
+    let mut locked = vpm_version_map(object.get("locked"))?;
     if direct.remove(package_id).is_none() {
         return Err(M4Error::new(M4ErrorCode::PackageNotFound));
     }
@@ -312,6 +342,9 @@ pub fn build_remove_plan(
             Some(package) if package.version.to_string() != installed_version => {
                 let source = source_pin(package);
                 locked.insert(installed_id.clone(), package.version.to_string());
+                if direct.contains_key(&installed_id) {
+                    direct.insert(installed_id.clone(), package.version.to_string());
+                }
                 mutations.push(PackageMutation {
                     kind: PackageMutationKind::Replace,
                     package_id: installed_id,
@@ -338,7 +371,18 @@ pub fn build_remove_plan(
             source_set.push(source);
         }
     }
-    write_manifest_maps(object, &direct, &locked);
+    if let Some(resolution) = remaining {
+        source_set.extend(resolution.packages.iter().map(source_pin));
+    }
+    write_manifest_maps(
+        object,
+        &direct,
+        &locked,
+        &remaining
+            .map(|resolution| frozen_edges(&resolution.dependency_edges))
+            .unwrap_or_default(),
+        &mutations,
+    );
     build_draft(
         snapshot,
         PlanAction::Remove,
@@ -370,8 +414,8 @@ pub fn materialize_vpm_manifest(
     let object = manifest
         .as_object_mut()
         .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    let mut direct = string_map(object.get("dependencies"))?;
-    let mut locked = locked_map(object.get("locked"))?;
+    let mut direct = vpm_version_map(object.get("dependencies"))?;
+    let mut locked = vpm_version_map(object.get("locked"))?;
     let direct_ids = change_set
         .dependency_edges
         .iter()
@@ -396,7 +440,56 @@ pub fn materialize_vpm_manifest(
             }
         }
     }
-    write_manifest_maps(object, &direct, &locked);
+    if change_set.format_version < 3 {
+        // Only already-accepted pre-remediation tasks may reach this path.
+        // Recreate their frozen bytes; never re-sign them with the new writer.
+        for (key, values) in [("dependencies", &direct), ("locked", &locked)] {
+            object.insert(
+                key.to_owned(),
+                Value::Object(
+                    values
+                        .iter()
+                        .map(|(id, version)| (id.clone(), serde_json::json!({"version":version})))
+                        .collect(),
+                ),
+            );
+        }
+        let bytes = serialize_manifest(&manifest)?;
+        if Sha256::digest(&bytes).as_slice() == change_set.vpm_manifest_sha256 {
+            return Ok(bytes);
+        }
+        // Historical builds wrote direct strings. Accept only an exact match
+        // to the task's original digest, never a newly computed authority.
+        manifest.as_object_mut().expect("validated object").insert(
+            "dependencies".to_owned(),
+            Value::Object(
+                direct
+                    .iter()
+                    .map(|(id, version)| (id.clone(), Value::String(version.clone())))
+                    .collect(),
+            ),
+        );
+        let strings = serialize_manifest(&manifest)?;
+        if Sha256::digest(&strings).as_slice() == change_set.vpm_manifest_sha256 {
+            return Ok(strings);
+        }
+        return Ok(bytes);
+    }
+    direct.retain(|id, _| direct_ids.contains(id.as_str()));
+    for id in &direct_ids {
+        if !direct.contains_key(*id)
+            && let Some(version) = locked.get(*id)
+        {
+            direct.insert((*id).to_owned(), version.clone());
+        }
+    }
+    write_manifest_maps(
+        object,
+        &direct,
+        &locked,
+        &change_set.dependency_edges,
+        &change_set.mutations,
+    );
     serialize_manifest(&manifest)
 }
 
@@ -451,11 +544,7 @@ fn build_draft_from_bytes(
     edges.sort();
     edges.dedup();
     let change_set = PackageChangeSet {
-        format_version: if source_set.iter().any(PackageSourcePin::is_user_package) {
-            2
-        } else {
-            1
-        },
+        format_version: 3,
         mutations,
         dependency_edges: edges,
         vpm_manifest_sha256,
@@ -508,37 +597,63 @@ fn source_pin(package: &ResolvedPackage) -> PackageSourcePin {
     }
 }
 
+fn frozen_edges(edges: &[PackageDependencyEdge]) -> Vec<ChangeSetEdge> {
+    edges
+        .iter()
+        .map(|edge| ChangeSetEdge {
+            from_package_id: edge.from_package_id.clone(),
+            to_package_id: edge.to_package_id.clone(),
+            range: edge.range.clone(),
+            direct: edge.direct,
+        })
+        .collect()
+}
+
 fn write_manifest_maps(
     object: &mut Map<String, Value>,
     direct: &BTreeMap<String, String>,
     locked: &BTreeMap<String, String>,
+    edges: &[ChangeSetEdge],
+    mutations: &[PackageMutation],
 ) {
-    object.insert(
-        "dependencies".to_owned(),
-        Value::Object(
-            direct
-                .iter()
-                .map(|(name, version)| (name.clone(), Value::String(version.clone())))
-                .collect(),
-        ),
-    );
-    object.insert(
-        "locked".to_owned(),
-        Value::Object(
-            locked
-                .iter()
-                .map(|(name, version)| {
-                    (
-                        name.clone(),
-                        Value::Object(Map::from_iter([(
-                            "version".to_owned(),
-                            Value::String(version.clone()),
-                        )])),
-                    )
-                })
-                .collect(),
-        ),
-    );
+    // Preserve the original objects for entries untouched by this plan. A new
+    // version receives only dependency evidence frozen by the solver.
+    for (key, versions) in [("dependencies", direct), ("locked", locked)] {
+        let previous = object.get(key).and_then(Value::as_object);
+        let entries = versions
+            .iter()
+            .map(|(name, version)| {
+                let old = previous
+                    .and_then(|entries| entries.get(name))
+                    .and_then(Value::as_object);
+                let changed = key == "locked"
+                    && mutations.iter().any(|mutation| {
+                        mutation.package_id == *name && mutation.kind != PackageMutationKind::Remove
+                    });
+                let mut entry = if !changed {
+                    old.cloned().unwrap_or_default()
+                } else {
+                    Map::new()
+                };
+                entry.insert("version".to_owned(), Value::String(version.clone()));
+                if key == "locked" && (changed || old.is_none()) {
+                    let dependencies = edges
+                        .iter()
+                        .filter(|edge| !edge.direct && edge.from_package_id == *name)
+                        .map(|edge| {
+                            (
+                                edge.to_package_id.clone(),
+                                Value::String(edge.range.clone()),
+                            )
+                        })
+                        .collect::<Map<_, _>>();
+                    entry.insert("dependencies".to_owned(), Value::Object(dependencies));
+                }
+                (name.clone(), Value::Object(entry))
+            })
+            .collect();
+        object.insert(key.to_owned(), Value::Object(entries));
+    }
 }
 
 fn serialize_manifest(value: &Value) -> Result<Vec<u8>, M4Error> {
@@ -548,27 +663,7 @@ fn serialize_manifest(value: &Value) -> Result<Vec<u8>, M4Error> {
     Ok(bytes)
 }
 
-fn string_map(value: Option<&Value>) -> Result<BTreeMap<String, String>, M4Error> {
-    let Some(value) = value else {
-        return Ok(BTreeMap::new());
-    };
-    let object = value
-        .as_object()
-        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-    object
-        .iter()
-        .map(|(name, value)| {
-            validate_package_id(name)?;
-            let version = value
-                .as_str()
-                .filter(|version| !version.is_empty() && version.len() <= 1_024)
-                .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
-            Ok((name.clone(), version.to_owned()))
-        })
-        .collect()
-}
-
-fn locked_map(value: Option<&Value>) -> Result<BTreeMap<String, String>, M4Error> {
+fn vpm_version_map(value: Option<&Value>) -> Result<BTreeMap<String, String>, M4Error> {
     let Some(value) = value else {
         return Ok(BTreeMap::new());
     };
@@ -603,7 +698,7 @@ fn validate_package_id(value: &str) -> Result<(), M4Error> {
     Ok(())
 }
 
-fn read_regular_component(
+pub(crate) fn read_regular_component(
     root: &Path,
     components: &[&str],
     limit: usize,
@@ -711,4 +806,204 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 #[cfg(unix)]
 fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepted_old_writer_uses_original_digest_without_resigning() {
+        let current = br#"{"dependencies":{"com.example.a":{"version":"1.0.0"}},"locked":{"com.example.a":{"version":"1.0.0","dependencies":{"com.example.b":"^1.0.0"}}}}"#;
+        let historical = serde_json::json!({"dependencies":{"com.example.a":{"version":"1.0.0"}},"locked":{"com.example.a":{"version":"1.0.0"}}});
+        let expected = serialize_manifest(&historical).expect("frozen historical output");
+        let mut change_set = PackageChangeSet {
+            format_version: 1,
+            mutations: Vec::new(),
+            dependency_edges: vec![ChangeSetEdge {
+                from_package_id: "com.example.a".to_owned(),
+                to_package_id: "com.example.a".to_owned(),
+                range: "1.0.0".to_owned(),
+                direct: true,
+            }],
+            vpm_manifest_sha256: Sha256::digest(&expected).into(),
+        };
+        assert_eq!(
+            materialize_vpm_manifest(current, &change_set).expect("recover original output"),
+            expected
+        );
+        let frozen = change_set.vpm_manifest_sha256;
+        change_set.format_version = 3;
+        let next = materialize_vpm_manifest(current, &change_set).expect("new output");
+        assert_ne!(<[u8; 32]>::from(Sha256::digest(next)), frozen);
+        assert_eq!(
+            change_set.vpm_manifest_sha256, frozen,
+            "materialization cannot re-sign authority"
+        );
+    }
+
+    #[test]
+    fn removal_preserves_unmodified_lock_metadata_and_matches_frozen_hash() {
+        let original = serde_json::json!({
+            "dependencies":{"com.example.a":{"version":"1.0.0","note":"keep"},"com.example.b":{"version":"1.0.0"}},
+            "locked":{"com.example.a":{"version":"1.0.0","dependencies":{"com.example.c":"^1.2.x"},"other":{"value":7}},
+                "com.example.b":{"version":"1.0.0","dependencies":{}},"com.example.c":{"version":"1.2.1","dependencies":{}}},
+            "custom":{"value":"preserved"}
+        });
+        let snapshot = snapshot(original.clone());
+        let remaining = Resolution {
+            packages: vec![
+                resolved("com.example.a", "1.0.0", true),
+                resolved("com.example.c", "1.2.1", false),
+            ],
+            dependency_edges: vec![
+                edge("com.example.a", "com.example.a", "1.0.0", true),
+                edge("com.example.a", "com.example.c", "^1.2.x", false),
+            ],
+        };
+        let plan =
+            build_remove_plan(&snapshot, "com.example.b", Some(&remaining)).expect("remove B");
+        let bytes = materialize_vpm_manifest(&snapshot.vpm_manifest_bytes, &plan.change_set)
+            .expect("apply bytes");
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(&bytes)),
+            plan.change_set.vpm_manifest_sha256
+        );
+        let next: Value = serde_json::from_slice(&bytes).expect("manifest");
+        assert_eq!(
+            next["locked"]["com.example.a"],
+            original["locked"]["com.example.a"]
+        );
+        assert_eq!(
+            next["dependencies"]["com.example.a"],
+            original["dependencies"]["com.example.a"]
+        );
+        assert!(next["locked"].get("com.example.b").is_none());
+        assert_eq!(next["custom"], original["custom"]);
+    }
+
+    #[test]
+    fn changed_lock_uses_frozen_edges_and_retained_transitive_root_is_removed() {
+        let initial = serde_json::json!({"dependencies":{"com.example.a":{"version":"1.0.0"},"com.example.b":{"version":"1.0.0"}},
+            "locked":{"com.example.a":{"version":"1.0.0","dependencies":{"com.example.b":"1.0.0"}},"com.example.b":{"version":"1.0.0","dependencies":{}}}});
+        let snapshot = snapshot(initial);
+        let resolution = Resolution {
+            packages: vec![
+                resolved("com.example.a", "2.0.0", true),
+                resolved("com.example.b", "1.0.0", false),
+            ],
+            dependency_edges: vec![
+                edge("com.example.a", "com.example.a", "2.0.0", true),
+                edge("com.example.a", "com.example.b", "=1.0.0", false),
+            ],
+        };
+        let plan = build_remove_plan(&snapshot, "com.example.b", Some(&resolution))
+            .expect("remove direct B but retain transitive");
+        let bytes = materialize_vpm_manifest(&snapshot.vpm_manifest_bytes, &plan.change_set)
+            .expect("apply bytes");
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(&bytes)),
+            plan.change_set.vpm_manifest_sha256
+        );
+        let value: Value = serde_json::from_slice(&bytes).expect("JSON");
+        assert!(value["dependencies"].get("com.example.b").is_none());
+        assert_eq!(
+            value["locked"]["com.example.a"]["dependencies"]["com.example.b"],
+            "=1.0.0"
+        );
+        assert!(value["locked"].get("com.example.b").is_some());
+    }
+
+    fn snapshot(value: Value) -> ProjectPackageSnapshot {
+        ProjectPackageSnapshot {
+            project_id: alcomd_application::ProjectId::new(),
+            project_revision: alcomd_application::Revision::new(1).expect("revision"),
+            root: PathBuf::new(),
+            path_identity_key: vec![1],
+            fingerprint: [1; 32],
+            vpm_manifest_bytes: serialize_manifest(&value).expect("original"),
+            vpm_manifest: value,
+        }
+    }
+
+    fn edge(from: &str, to: &str, range: &str, direct: bool) -> PackageDependencyEdge {
+        PackageDependencyEdge {
+            from_package_id: from.to_owned(),
+            to_package_id: to.to_owned(),
+            range: range.to_owned(),
+            direct,
+        }
+    }
+
+    fn resolved(id: &str, version: &str, direct: bool) -> ResolvedPackage {
+        ResolvedPackage {
+            package_id: id.to_owned(),
+            version: semver::Version::parse(version).expect("version"),
+            direct,
+            source: crate::PackageSource {
+                authority: crate::PackageSourceAuthority::Repository {
+                    repository_locator: None,
+                    repository_id: "fixture".to_owned(),
+                    repository_revision: 1,
+                    priority: 1,
+                    artifact_url: "https://fixtures.invalid/package.zip".to_owned(),
+                },
+                source_identity: "fixture".to_owned(),
+                manifest_fingerprint: [1; 32],
+                archive_sha256: [2; 32],
+            },
+        }
+    }
+
+    #[test]
+    fn materialized_vpm_versions_round_trip_as_objects() {
+        let mut manifest = serde_json::json!({"preserved": true});
+        let direct = BTreeMap::from([("com.example.direct".to_owned(), "^1.0.x".to_owned())]);
+        let locked = BTreeMap::from([
+            ("com.example.direct".to_owned(), "1.0.1".to_owned()),
+            ("com.example.transitive".to_owned(), "2.0.0".to_owned()),
+        ]);
+        write_manifest_maps(
+            manifest.as_object_mut().expect("object"),
+            &direct,
+            &locked,
+            &[],
+            &[],
+        );
+        assert_eq!(
+            manifest["dependencies"]["com.example.direct"]["version"],
+            "^1.0.x"
+        );
+        assert!(
+            manifest["dependencies"]
+                .get("com.example.transitive")
+                .is_none()
+        );
+        assert_eq!(
+            vpm_version_map(manifest.get("dependencies")).expect("direct"),
+            direct
+        );
+        assert_eq!(
+            vpm_version_map(manifest.get("locked")).expect("locked"),
+            locked
+        );
+        let bytes = serialize_manifest(&manifest).expect("serialize");
+        let value: Value = serde_json::from_slice(&bytes).expect("JSON");
+        assert_eq!(value["preserved"], true);
+        assert_eq!(
+            crate::parse_vpm_dependencies(value.get("dependencies"))
+                .expect("reader")
+                .len(),
+            1
+        );
+        assert_eq!(
+            crate::parse_vpm_dependencies(value.get("locked"))
+                .expect("reader")
+                .len(),
+            2
+        );
+        assert!(
+            vpm_version_map(Some(&serde_json::json!({"com.example.direct": "1.0.0"}))).is_err()
+        );
+    }
 }

@@ -176,7 +176,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         })
         .await
         .expect("plan exact reinstall");
-    assert_eq!(reinstall.change_set.format_version, 1);
+    assert_eq!(reinstall.change_set.format_version, 3);
     assert_eq!(reinstall.change_set.mutations.len(), 1);
     assert_eq!(
         reinstall.change_set.mutations[0].kind,
@@ -313,7 +313,7 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
         })
         .await
         .expect("plan User Package install");
-    assert_eq!(plan.change_set.format_version, 2);
+    assert_eq!(plan.change_set.format_version, 3);
     assert!(matches!(
         plan.change_set.mutations[0].source.as_ref(),
         Some(alcomd_protocol::PackageSourcePin::UserPackage(_))
@@ -838,7 +838,7 @@ fn create_installed_package(project: &Path, version: &str, content: &[u8]) {
     fs::write(
         project.join("Packages/vpm-manifest.json"),
         format!(
-            "{{\"dependencies\":{{\"com.example.fixture\":\"{version}\"}},\"locked\":{{\"com.example.fixture\":{{\"version\":\"{version}\"}}}},\"preserved\":true}}\n"
+            "{{\"dependencies\":{{\"com.example.fixture\":{{\"version\":\"{version}\"}}}},\"locked\":{{\"com.example.fixture\":{{\"version\":\"{version}\"}}}},\"preserved\":true}}\n"
         ),
     )
     .expect("installed VPM manifest");
@@ -1038,6 +1038,10 @@ fn assert_manifest_version(project: &Path, expected: Option<&str>) {
     .expect("parse VPM manifest");
     assert_eq!(
         value["locked"]["com.example.fixture"]["version"].as_str(),
+        expected
+    );
+    assert_eq!(
+        value["dependencies"]["com.example.fixture"]["version"].as_str(),
         expected
     );
     assert_eq!(value["preserved"], true);

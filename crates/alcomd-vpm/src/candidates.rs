@@ -12,9 +12,9 @@ use alcomd_application::{
 use semver::{BuildMetadata, Version};
 use sha2::{Digest, Sha256};
 
-use crate::engine::parse_unity_editor_version;
 use crate::range::compare_precedence;
-use crate::resolver::{parse_unity, source_group_is_ambiguous};
+use crate::resolver::source_group_is_ambiguous;
+use crate::unity_version::{UnityVersion, meets_minimum, package_minimum};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProjectCandidateEngine;
@@ -260,9 +260,7 @@ fn observed_entries<'a>(
     source: Option<&PackageSourceSelector>,
     installed: &CandidateInstalled,
 ) -> Vec<Observed<'a>> {
-    let project_unity = parse_unity_editor_version(&input.project.unity_version)
-        .ok()
-        .flatten();
+    let project_unity = UnityVersion::parse_editor(&input.project.unity_version);
     entries
         .filter(|entry| {
             visible(input, &entry.source) && source.is_none_or(|source| source == &entry.source)
@@ -287,14 +285,13 @@ fn observed_entries<'a>(
                 }
                 _ => CandidateRelation::Unknown,
             };
-            let unity = match entry.unity.as_deref().map(parse_unity) {
-                None => CandidateUnity::NotRequired,
-                Some(Ok(minimum)) => match project_unity {
-                    None => CandidateUnity::Unknown,
-                    Some(actual) if actual >= minimum => CandidateUnity::Compatible,
-                    Some(_) => CandidateUnity::Incompatible,
-                },
-                Some(Err(_)) => CandidateUnity::Unknown,
+            let minimum = package_minimum(entry.unity.as_deref(), entry.unity_release.as_deref());
+            let unity = match minimum {
+                Ok(None) => CandidateUnity::NotRequired,
+                Ok(Some(_)) if project_unity.is_none() => CandidateUnity::Unknown,
+                Ok(minimum) if meets_minimum(project_unity, minimum) => CandidateUnity::Compatible,
+                Ok(_) => CandidateUnity::Incompatible,
+                Err(()) => CandidateUnity::Unknown,
             };
             let mut reasons = BTreeSet::new();
             if entry.yanked {
@@ -309,17 +306,11 @@ fn observed_entries<'a>(
                 reasons.insert(CandidateReason::UnityIncompatible);
             }
             if unity == CandidateUnity::Unknown {
-                reasons.insert(
-                    if entry
-                        .unity
-                        .as_deref()
-                        .is_some_and(|value| parse_unity(value).is_err())
-                    {
-                        CandidateReason::MetadataInvalid
-                    } else {
-                        CandidateReason::ProjectUnityUnknown
-                    },
-                );
+                reasons.insert(if minimum.is_err() {
+                    CandidateReason::MetadataInvalid
+                } else {
+                    CandidateReason::ProjectUnityUnknown
+                });
             }
             if !entry.metadata_ready {
                 reasons.insert(CandidateReason::CatalogIncomplete);
@@ -327,9 +318,6 @@ fn observed_entries<'a>(
             if classification == CandidateClassification::Unknown {
                 reasons.insert(CandidateReason::ClassificationUnknown);
                 reasons.insert(CandidateReason::MetadataInvalid);
-            }
-            if entry.legacy_metadata_present {
-                reasons.insert(CandidateReason::LegacyMetadata);
             }
             let eligibility = if reasons.is_empty() {
                 CandidateEligibility::Eligible
@@ -373,7 +361,7 @@ fn exact_group(row: &Observed<'_>) -> Option<(String, Version)> {
     })
 }
 
-// Legacy metadata is rejected only after source ambiguity by the existing resolver.
+// Legacy metadata requires a target-specific read-only proof in Plan; its mere presence does not block a source.
 // Include it when checking whether an exact precedence/source intent is expressible.
 fn resolver_direct_match(row: &Observed<'_>) -> bool {
     row.entry.metadata_ready
@@ -453,9 +441,6 @@ fn choose(
         let mut reasons = BTreeSet::new();
         if row.entry.yanked {
             reasons.insert(CandidateReason::AllYanked);
-        }
-        if row.entry.legacy_metadata_present {
-            reasons.insert(CandidateReason::LegacyMetadata);
         }
         if row.evidence.classification == CandidateClassification::Prerelease
             && (stable || !show_prerelease)
@@ -625,6 +610,7 @@ mod tests {
             priority: 1,
             yanked: false,
             unity: None,
+            unity_release: None,
             metadata_ready: true,
             legacy_metadata_present: false,
         }
@@ -727,7 +713,7 @@ mod tests {
         input.entries[1].legacy_metadata_present = true;
         let versions = evaluate_candidate_versions(&input, PACKAGE, None);
         assert_eq!(versions[0].reasons, [CandidateReason::SourceAmbiguous]);
-        assert_eq!(versions[1].reasons, [CandidateReason::LegacyMetadata]);
+        assert_eq!(versions[1].reasons, [CandidateReason::SourceAmbiguous]);
         assert!(matches!(
             summary(&input).project_latest,
             CandidateChoice::Ambiguous { .. }
@@ -876,7 +862,75 @@ mod tests {
     }
 
     #[test]
-    fn yanked_and_legacy_remain_explanatory_disabled_entries() {
+    fn package_release_candidates_and_resolver_use_the_same_minimum() {
+        use crate::{
+            PackageCandidate, PackageSource, PackageSourceAuthority, ResolveRequest,
+            resolve_packages,
+        };
+        let mut input = input(&["2.0.0"], Some("1.0.0"));
+        input.entries[0].unity = Some("2022.3".to_owned());
+        input.entries[0].unity_release = Some("22f1".to_owned());
+        let package = PackageCandidate {
+            package_id: PACKAGE.to_owned(),
+            version: Version::new(2, 0, 0),
+            yanked: false,
+            unity_minimum: package_minimum(Some("2022.3"), Some("22f1")).expect("minimum"),
+            legacy_metadata_present: false,
+            dependencies: Vec::new(),
+            source: PackageSource {
+                authority: PackageSourceAuthority::Repository {
+                    repository_locator: None,
+                    repository_id: "repository-a".to_owned(),
+                    repository_revision: 1,
+                    priority: 1,
+                    artifact_url: "https://example.invalid/package.zip".to_owned(),
+                },
+                source_identity: "repository-a".to_owned(),
+                manifest_fingerprint: [1; 32],
+                archive_sha256: [2; 32],
+            },
+        };
+        for (actual, compatible) in [
+            ("2022.3.21f10", false),
+            ("2022.3.22b10", false),
+            ("2022.3.22f1", true),
+            ("2022.3.22f10", true),
+            ("2022.3.22p1", true),
+            ("2022.3.100f1", true),
+        ] {
+            input.project.unity_version = actual.to_owned();
+            let rows = evaluate_candidate_versions(&input, PACKAGE, None);
+            assert_eq!(
+                rows[0].unity == CandidateUnity::Compatible,
+                compatible,
+                "candidate {actual}"
+            );
+            let request = ResolveRequest {
+                package_id: PACKAGE.to_owned(),
+                range: "*".to_owned(),
+                source: None,
+                include_prerelease: false,
+                unity_version: UnityVersion::parse_editor(actual),
+            };
+            assert_eq!(
+                resolve_packages(std::slice::from_ref(&package), &[request]).is_ok(),
+                compatible,
+                "resolver {actual}"
+            );
+        }
+        input.entries[0].unity_release = Some("22z1".to_owned());
+        let rows = evaluate_candidate_versions(&input, PACKAGE, None);
+        assert_eq!(rows[0].unity, CandidateUnity::Unknown);
+        assert!(rows[0].reasons.contains(&CandidateReason::MetadataInvalid));
+        input.entries[0].unity = None;
+        assert_eq!(
+            evaluate_candidate_versions(&input, PACKAGE, None)[0].unity,
+            CandidateUnity::NotRequired
+        );
+    }
+
+    #[test]
+    fn yanked_is_blocked_but_legacy_metadata_requires_plan_target_proof() {
         let mut input = input(&["2.0.0"], Some("1.0.0"));
         input.entries[0].yanked = true;
         assert_eq!(
@@ -891,11 +945,10 @@ mod tests {
         );
         input.entries[0].yanked = false;
         input.entries[0].legacy_metadata_present = true;
+        assert_eq!(candidate(&summary(&input).latest).version, "2.0.0");
         assert_eq!(
-            summary(&input).latest,
-            CandidateChoice::None {
-                reasons: vec![CandidateReason::LegacyMetadata]
-            }
+            evaluate_candidate_versions(&input, PACKAGE, None)[0].eligibility,
+            CandidateEligibility::Eligible
         );
     }
 
@@ -1084,6 +1137,7 @@ mod tests {
                 .collect(),
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    repository_locator: None,
                     repository_id: "repository-a".to_owned(),
                     repository_revision: 1,
                     priority: 1,
@@ -1105,7 +1159,7 @@ mod tests {
             range: "*".to_owned(),
             source: None,
             include_prerelease: false,
-            unity_version: Some((2022, 3)),
+            unity_version: Some(UnityVersion::major_minor(2022, 3)),
         });
         let result = resolve_packages(&catalog, &requests);
         assert!(

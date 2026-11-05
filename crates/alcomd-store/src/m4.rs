@@ -46,6 +46,7 @@ pub(super) fn resolver_catalog(
             };
             Ok(ResolverCatalogEntry {
                 source: ResolverCatalogSource::Repository {
+                    repository_locator: source_locator.clone(),
                     repository_id: row.get(0)?,
                     repository_revision: nonnegative(row.get(1)?)?,
                     repository_priority: nonnegative(row.get(2)?)?,
@@ -82,6 +83,7 @@ pub(super) fn resolver_catalog(
                 let manifest_json: String = row.get(5)?;
                 let manifest: serde_json::Value =
                     serde_json::from_str(&manifest_json).map_err(|_| invalid_query())?;
+                let metadata = user_manifest_metadata(&manifest)?;
                 let dependencies_json = serde_json::to_string(
                     manifest
                         .get("vpmDependencies")
@@ -103,15 +105,12 @@ pub(super) fn resolver_catalog(
                     package_id: row.get(3)?,
                     version: row.get(4)?,
                     yanked: false,
-                    unity: manifest
-                        .get("unity")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned),
+                    unity: metadata.unity,
                     author_name: String::new(),
                     author_email: String::new(),
-                    unity_release: None,
+                    unity_release: metadata.unity_release,
                     dependencies_json,
-                    legacy_metadata_present: false,
+                    legacy_metadata_present: metadata.legacy_present,
                 })
             })
             .map_err(store_error)?;
@@ -120,6 +119,78 @@ pub(super) fn resolver_catalog(
     Ok(ResolverCatalog {
         entries,
         complete: incomplete == 0,
+    })
+}
+
+pub(super) struct UserManifestMetadata {
+    pub(super) unity: Option<String>,
+    pub(super) unity_release: Option<String>,
+    pub(super) legacy_present: bool,
+}
+
+/// Old registered inputs can predate importer validation. Do not convert an
+/// illegal present value into an absent compatibility or cleanup requirement.
+pub(super) fn user_manifest_metadata(
+    manifest: &serde_json::Value,
+) -> rusqlite::Result<UserManifestMetadata> {
+    let manifest = manifest.as_object().ok_or_else(invalid_query)?;
+    let string = |field: &str, limit: usize| -> rusqlite::Result<Option<String>> {
+        match manifest.get(field) {
+            None => Ok(None),
+            Some(serde_json::Value::String(value)) if !value.is_empty() && value.len() <= limit => {
+                Ok(Some(value.clone()))
+            }
+            Some(_) => Err(invalid_query()),
+        }
+    };
+    let mut legacy_present = false;
+    for field in ["legacyFolders", "legacyFiles"] {
+        if let Some(value) = manifest.get(field) {
+            let paths = value
+                .as_object()
+                .filter(|paths| paths.len() <= 4_096)
+                .ok_or_else(invalid_query)?;
+            for (path, guid) in paths {
+                if path.is_empty()
+                    || path.len() > 1_024
+                    || path.chars().any(char::is_control)
+                    || !guid.as_str().is_some_and(|guid| {
+                        guid.is_empty()
+                            || guid.len() == 32 && guid.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    })
+                {
+                    return Err(invalid_query());
+                }
+            }
+            legacy_present |= !paths.is_empty();
+        }
+    }
+    if let Some(value) = manifest.get("legacyPackages") {
+        let packages = value
+            .as_array()
+            .filter(|packages| packages.len() <= 4_096)
+            .ok_or_else(invalid_query)?;
+        if packages.iter().any(|value| {
+            !value.as_str().is_some_and(|id| {
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id
+                        .bytes()
+                        .next()
+                        .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                    && id.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
+                    })
+            })
+        }) {
+            return Err(invalid_query());
+        }
+        legacy_present |= !packages.is_empty();
+    }
+    Ok(UserManifestMetadata {
+        unity: string("unity", 1_024)?,
+        unity_release: string("unityRelease", 64)?,
+        legacy_present,
     })
 }
 

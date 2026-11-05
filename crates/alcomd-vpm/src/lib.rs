@@ -5,6 +5,7 @@ mod backup;
 mod cache;
 mod candidates;
 mod engine;
+mod legacy;
 mod package;
 mod plan;
 mod project_copy;
@@ -20,6 +21,7 @@ mod template_derive;
 mod template_engine;
 mod template_object;
 mod unity_migration;
+mod unity_version;
 mod user_package;
 
 pub use archive::{
@@ -64,6 +66,7 @@ pub use template_object::{
     TemplateObject, TemplateObjectError, TemplateObjectErrorCode, TemplateObjectStore,
 };
 pub use unity_migration::UnityMigrationEngine;
+pub use unity_version::UnityVersion;
 pub use user_package::UserPackageEngine;
 
 use std::path::{Path, PathBuf};
@@ -194,7 +197,7 @@ impl VpmReader {
                     .ok_or_else(|| M3Error::new(M3ErrorCode::ProjectManifestInvalid))?;
                 (
                     ManifestState::Valid,
-                    parse_string_map(object.get("dependencies"))?,
+                    parse_vpm_dependencies(object.get("dependencies"))?,
                     parse_vpm_dependencies(object.get("locked"))?,
                 )
             }
@@ -713,6 +716,16 @@ fn parse_repository(
     let declared_id = optional_bounded_string(object, "id", 1_024)?;
     let name = optional_bounded_string(object, "name", 4_096)?;
     let declared_url = optional_bounded_string(object, "url", 32_768)?;
+    let source_identity = match &source {
+        RepositorySource::Local { path } => format!("local:{path}"),
+        RepositorySource::Remote { url } => format!("remote:{url}"),
+    };
+    let context = RepositoryPackageContext {
+        repository_id: "pending:repository".to_owned(),
+        repository_revision: 1,
+        priority: 1,
+        source_identity,
+    };
     let mut rows = Vec::new();
     let mut issues = Vec::new();
     if let Some(packages_value) = object.get("packages") {
@@ -751,15 +764,59 @@ fn parse_repository(
                 rows.push(RepositoryPackageVersion {
                     package_id: package_key.to_owned(),
                     version: version_key.to_owned(),
-                    display_name: optional_bounded_string(manifest, "displayName", 4_096)?,
-                    description: optional_bounded_string(manifest, "description", 65_536)?,
+                    display_name: repository_display_field(
+                        manifest,
+                        "displayName",
+                        4_096,
+                        &item,
+                        &mut issues,
+                    )?,
+                    description: repository_display_field(
+                        manifest,
+                        "description",
+                        65_536,
+                        &item,
+                        &mut issues,
+                    )?,
                     yanked: manifest
                         .get("yanked")
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
-                    unity: optional_bounded_string(manifest, "unity", 1_024)?,
+                    unity: repository_display_field(manifest, "unity", 1_024, &item, &mut issues)?,
                     links: package_links(manifest),
-                    resolver: None,
+                    resolver: match package::parse_manifest(
+                        package_key,
+                        version_key,
+                        manifest,
+                        &context,
+                    ) {
+                        Ok(package) => {
+                            let PackageSourceAuthority::Repository { artifact_url, .. } =
+                                package.candidate.source.authority
+                            else {
+                                unreachable!("repository context")
+                            };
+                            Some(ResolverPackageMetadata {
+                                semantic_version: package.candidate.version.to_string(),
+                                author_name: package.author_name,
+                                author_email: package.author_email,
+                                artifact_url,
+                                zip_sha256: digest_text(&package.candidate.source.archive_sha256),
+                                unity_release: package.unity_release,
+                                dependencies_json: package.dependencies_json,
+                                manifest_fingerprint: package
+                                    .candidate
+                                    .source
+                                    .manifest_fingerprint
+                                    .to_vec(),
+                                legacy_metadata_present: package.candidate.legacy_metadata_present,
+                            })
+                        }
+                        Err(_) => {
+                            push_issue(&mut issues, "resolver_metadata_invalid", "version", &item)?;
+                            None
+                        }
+                    },
                 });
             }
         }
@@ -770,51 +827,6 @@ fn parse_repository(
             .cmp(right.package_id.as_bytes())
             .then_with(|| left.version.as_bytes().cmp(right.version.as_bytes()))
     });
-    let source_identity = match &source {
-        RepositorySource::Local { path } => format!("local:{path}"),
-        RepositorySource::Remote { url } => format!("remote:{url}"),
-    };
-    if let Ok(ready) = parse_resolver_ready_repository(
-        bytes,
-        &RepositoryPackageContext {
-            repository_id: "pending:repository".to_owned(),
-            repository_revision: 1,
-            priority: 1,
-            source_identity,
-        },
-    ) {
-        let ready = ready
-            .into_iter()
-            .filter_map(|package| {
-                let key = (
-                    package.candidate.package_id.clone(),
-                    package.candidate.version.to_string(),
-                );
-                let PackageSourceAuthority::Repository { artifact_url, .. } =
-                    package.candidate.source.authority
-                else {
-                    return None;
-                };
-                let metadata = ResolverPackageMetadata {
-                    semantic_version: package.candidate.version.to_string(),
-                    author_name: package.author_name,
-                    author_email: package.author_email,
-                    artifact_url,
-                    zip_sha256: digest_text(&package.candidate.source.archive_sha256),
-                    unity_release: package.unity_release,
-                    dependencies_json: package.dependencies_json,
-                    manifest_fingerprint: package.candidate.source.manifest_fingerprint.to_vec(),
-                    legacy_metadata_present: package.candidate.legacy_metadata_present,
-                };
-                Some((key, metadata))
-            })
-            .collect::<std::collections::BTreeMap<_, _>>();
-        for row in &mut rows {
-            row.resolver = ready
-                .get(&(row.package_id.clone(), row.version.clone()))
-                .cloned();
-        }
-    }
     issues.sort();
     Ok(RepositoryObservation {
         source,
@@ -827,6 +839,22 @@ fn parse_repository(
         validators,
         refreshed_at_ms,
     })
+}
+
+fn repository_display_field(
+    manifest: &Map<String, Value>,
+    key: &str,
+    limit: usize,
+    item: &str,
+    issues: &mut Vec<ReadIssue>,
+) -> Result<Option<String>, M3Error> {
+    match optional_bounded_string(manifest, key, limit) {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            push_issue(issues, "package_field_invalid", key, item)?;
+            Ok(None)
+        }
+    }
 }
 
 fn package_links(
@@ -914,6 +942,80 @@ mod tests {
     use super::*;
 
     #[test]
+    fn vpm_versions_are_objects_and_upm_dependencies_are_strings() {
+        let vpm = serde_json::json!({
+            "com.vrchat.avatars": { "version": "^3.10.x" },
+            "com.example.tool": { "version": "1.0.0" }
+        });
+        let parsed = parse_vpm_dependencies(Some(&vpm)).expect("VPM version objects");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[1].package_id, "com.vrchat.avatars");
+        assert_eq!(parsed[1].value, "^3.10.x");
+        let upm = serde_json::json!({ "com.unity.test": "file:../local-package" });
+        assert_eq!(
+            parse_string_map(Some(&upm)).expect("UPM string")[0].value,
+            "file:../local-package"
+        );
+        assert!(parse_string_map(Some(&vpm)).is_err());
+        for invalid in [
+            serde_json::json!({"com.example.tool": "1.0.0"}),
+            serde_json::json!({"com.example.tool": {}}),
+            serde_json::json!({"com.example.tool": {"version": null}}),
+            serde_json::json!({"com.example.tool": {"version": ""}}),
+        ] {
+            assert_eq!(
+                parse_vpm_dependencies(Some(&invalid))
+                    .expect_err("invalid VPM")
+                    .code(),
+                M3ErrorCode::ProjectManifestInvalid
+            );
+        }
+    }
+
+    #[test]
+    fn one_invalid_manifest_preserves_healthy_rows_and_reports_incomplete_metadata() {
+        let bytes =
+            include_bytes!("../../alcomd-testing/fixtures/m4/repository-resolver-ready.json");
+        let mut document: Value = serde_json::from_slice(bytes).expect("fixture");
+        document["packages"]["com.example.feature"]["versions"]["2.0.0"]["description"] =
+            serde_json::json!(["invalid"]);
+        let parsed = parse_repository(
+            &serde_json::to_vec(&document).expect("JSON"),
+            RepositorySource::Remote {
+                url: "https://fixtures.invalid/index.json".to_owned(),
+            },
+            vec![1],
+            RepositoryValidators::default(),
+            1,
+        )
+        .expect("read remaining versions");
+        assert!(
+            parsed
+                .packages
+                .iter()
+                .any(|row| row.package_id == "com.example.base" && row.resolver.is_some())
+        );
+        assert!(
+            parsed
+                .packages
+                .iter()
+                .any(|row| row.package_id == "com.example.feature" && row.resolver.is_none())
+        );
+        assert!(
+            parsed
+                .issues
+                .iter()
+                .any(|issue| issue.code == "package_field_invalid")
+        );
+        assert!(
+            parsed
+                .issues
+                .iter()
+                .any(|issue| issue.code == "resolver_metadata_invalid")
+        );
+    }
+
+    #[test]
     fn repository_rows_and_issues_are_deterministic_without_semver() {
         let document = br#"{
             "name":"Fixture",
@@ -947,7 +1049,16 @@ mod tests {
                 ("z.package", "1.0.0")
             ]
         );
-        assert_eq!(parsed.issues.len(), 2);
+        assert_eq!(parsed.issues.len(), 5);
+        assert_eq!(
+            parsed
+                .issues
+                .iter()
+                .filter(|issue| issue.code == "resolver_metadata_invalid")
+                .count(),
+            3
+        );
+        assert!(parsed.packages.iter().all(|row| row.resolver.is_none()));
     }
 
     #[test]

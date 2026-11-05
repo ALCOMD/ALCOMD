@@ -17,14 +17,14 @@ use alcomd_platform::{
     validate_unity_executable,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::package::validate_extracted_package;
 use crate::plan::tree_fingerprint;
 use crate::resolver::{
-    LegacyCleanupObligation, PackageSource, PackageSourceAuthority, ResolveRequest,
+    LegacyCleanupObligation, PackageSourceAuthority, ResolveRequest,
     resolve_unity_migration_packages,
 };
 use crate::{
@@ -455,22 +455,6 @@ where
             .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))
     }
 
-    async fn cached_package_source(
-        &self,
-        source: &PackageSource,
-    ) -> Result<PathBuf, M7UnityMigrationError> {
-        let (url, offline) = match &source.authority {
-            PackageSourceAuthority::Repository { artifact_url, .. } => {
-                (artifact_url.as_str(), false)
-            }
-            PackageSourceAuthority::UserPackage { .. } => ("", true),
-        };
-        self.cache
-            .get(source.archive_sha256, url, offline)
-            .await
-            .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))
-    }
-
     async fn inspect_planned_project(
         &self,
         plan: &UnityMigrationPlanRecord,
@@ -532,9 +516,7 @@ where
         }
         let materialized = operation_root.join("materialized");
         let package_staging = materialized.join("packages");
-        let legacy_staging = materialized.join("legacy-evidence");
         std::fs::create_dir_all(&package_staging)
-            .and_then(|()| std::fs::create_dir_all(&legacy_staging))
             .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
 
         let snapshot = inspect_package_project(&plan.draft.project)
@@ -623,38 +605,34 @@ where
         let mut legacy_paths = Vec::new();
         let mut legacy_packages = BTreeSet::new();
         let mut pinned_obligations = Vec::new();
-        for (index, obligation) in migration_resolution
-            .legacy_cleanup_obligations
-            .iter()
-            .enumerate()
-        {
-            let archive = self.cached_package_source(&obligation.source).await?;
-            let destination = legacy_staging.join(format!("{index:04}"));
-            std::fs::create_dir(&destination)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
-            extract_archive(&archive, &destination)
-                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
-            validate_extracted_package(
-                &destination,
-                &obligation.package_id,
-                &obligation.version.to_string(),
-            )
-            .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
-            let manifest = parse_profile_legacy_manifest(
-                &destination.join("package.json"),
-                &obligation.package_id,
-                &obligation.version.to_string(),
-            )?;
-            for package_id in manifest.legacy_packages {
+        for obligation in &migration_resolution.legacy_cleanup_obligations {
+            let metadata = self
+                .cache
+                .pin_legacy_manifest(
+                    &obligation.source,
+                    &obligation.package_id,
+                    &obligation.version.to_string(),
+                )
+                .await
+                .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
+            for package_id in &metadata.packages {
                 if selected_ids.contains(package_id.as_str()) {
                     return Err(error(M7UnityMigrationErrorCode::Unsupported));
                 }
                 if old_locked.contains(package_id.as_str()) {
-                    legacy_packages.insert(package_id);
+                    legacy_packages.insert(package_id.clone());
+                } else if plan
+                    .draft
+                    .project
+                    .observation
+                    .direct_dependencies
+                    .iter()
+                    .any(|dependency| dependency.package_id == *package_id)
+                {
+                    return Err(error(M7UnityMigrationErrorCode::Unsupported));
                 }
             }
-            legacy_paths.extend(manifest.legacy_files);
-            legacy_paths.extend(manifest.legacy_folders);
+            legacy_paths.extend(sealed_legacy_paths(&root, &metadata)?);
             pinned_obligations.push(PinnedLegacyObligation::from_obligation(obligation));
         }
         let legacy_paths = validate_legacy_paths(&root, legacy_paths)?;
@@ -948,13 +926,6 @@ impl PinnedLegacyObligation {
             archive_sha256: value.source.archive_sha256,
         }
     }
-}
-
-#[derive(Default)]
-struct ProfileLegacyManifest {
-    legacy_files: Vec<String>,
-    legacy_folders: Vec<String>,
-    legacy_packages: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -1319,7 +1290,8 @@ fn migration_requests(
     project: &ProjectRecord,
     target_unity_version: &str,
 ) -> Result<Vec<ResolveRequest>, M7UnityMigrationError> {
-    let unity_version = unity_major_minor(target_unity_version)?;
+    let unity_version = crate::UnityVersion::parse_editor(target_unity_version)
+        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
     let locked = project
         .observation
         .locked_dependencies
@@ -1328,7 +1300,12 @@ fn migration_requests(
         .collect::<BTreeMap<_, _>>();
     let mut requests = BTreeMap::<String, String>::new();
     for dependency in &project.observation.direct_dependencies {
-        requests.insert(dependency.package_id.clone(), dependency.value.clone());
+        requests.insert(
+            dependency.package_id.clone(),
+            crate::range::ProjectDependencyRange::parse(&dependency.value)
+                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?
+                .canonical(),
+        );
     }
     for package_id in VRCHAT_PACKAGE_IDS {
         if let Some(version) = locked.get(package_id) {
@@ -1347,19 +1324,6 @@ fn migration_requests(
         .collect())
 }
 
-fn unity_major_minor(value: &str) -> Result<(u64, u64), M7UnityMigrationError> {
-    let mut parts = value.split('.');
-    let major = parts
-        .next()
-        .and_then(|part| part.parse().ok())
-        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-    let minor = parts
-        .next()
-        .and_then(|part| part.parse().ok())
-        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-    Ok((major, minor))
-}
-
 fn validate_obligation_scope(
     obligations: &[LegacyCleanupObligation],
 ) -> Result<(), M7UnityMigrationError> {
@@ -1373,56 +1337,60 @@ fn validate_obligation_scope(
     Ok(())
 }
 
-fn parse_profile_legacy_manifest(
-    path: &Path,
-    expected_package_id: &str,
-    expected_version: &str,
-) -> Result<ProfileLegacyManifest, M7UnityMigrationError> {
-    let bytes = read_regular_file(path, 4 * 1024 * 1024)?;
-    let value = crate::parse_bounded_json(&bytes, M3ErrorCode::RepositoryDocumentInvalid)
-        .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-    if object.get("name").and_then(Value::as_str) != Some(expected_package_id)
-        || object.get("version").and_then(Value::as_str) != Some(expected_version)
-    {
-        return Err(error(M7UnityMigrationErrorCode::SourceChanged));
-    }
-    Ok(ProfileLegacyManifest {
-        legacy_files: string_array(object, "legacyFiles", false)?,
-        legacy_folders: string_array(object, "legacyFolders", false)?,
-        legacy_packages: string_array(object, "legacyPackages", true)?,
-    })
-}
-
-fn string_array(
-    object: &Map<String, Value>,
-    key: &str,
-    package_ids: bool,
+fn sealed_legacy_paths(
+    root: &Path,
+    metadata: &crate::package::LegacyMetadata,
 ) -> Result<Vec<String>, M7UnityMigrationError> {
-    let Some(value) = object.get(key) else {
-        return Ok(Vec::new());
-    };
-    let values = value
-        .as_array()
-        .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-    if values.len() > LEGACY_ENTRY_LIMIT {
-        return Err(error(M7UnityMigrationErrorCode::Unsupported));
-    }
-    values
-        .iter()
-        .map(|value| {
-            let text = value
-                .as_str()
-                .filter(|text| !text.is_empty() && text.len() <= LEGACY_PATH_LENGTH_LIMIT)
-                .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
-            if package_ids {
-                validate_package_id(text)?;
+    let paths = metadata
+        .files
+        .keys()
+        .chain(metadata.folders.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    // Validate the existing sealed path scope before reading any target metadata.
+    let planned = validate_legacy_paths(root, paths.iter().cloned().collect())?;
+    let mut result = Vec::new();
+    for path in planned {
+        let guid = metadata
+            .files
+            .get(&path.relative_path)
+            .or_else(|| metadata.folders.get(&path.relative_path))
+            .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?;
+        let single = crate::package::LegacyMetadata {
+            files: BTreeMap::from([(path.relative_path.clone(), guid.clone())]),
+            ..Default::default()
+        };
+        if crate::legacy::verify_absent(root, &single).is_ok() {
+            continue;
+        }
+        if path.kind == LegacyPathKind::Missing {
+            return Err(error(M7UnityMigrationErrorCode::Unsupported));
+        }
+        let meta_relative = format!("{}.meta", path.relative_path);
+        let meta_path = root.join(&meta_relative);
+        match std::fs::symlink_metadata(&meta_path) {
+            Ok(_) if !paths.contains(&meta_relative) => {
+                return Err(error(M7UnityMigrationErrorCode::Unsupported));
             }
-            Ok(text.to_owned())
-        })
-        .collect()
+            Ok(_) => {}
+            Err(cause) if cause.kind() == std::io::ErrorKind::NotFound && guid.is_empty() => {}
+            Err(_) => return Err(error(M7UnityMigrationErrorCode::Unsupported)),
+        }
+        if !guid.is_empty() {
+            let bytes = read_regular_file(&meta_path, 64 * 1024)?;
+            let text = std::str::from_utf8(&bytes)
+                .map_err(|_| error(M7UnityMigrationErrorCode::Unsupported))?;
+            if !text.lines().any(|line| {
+                line.trim()
+                    .strip_prefix("guid:")
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case(guid))
+            }) {
+                return Err(error(M7UnityMigrationErrorCode::Unsupported));
+            }
+        }
+        result.push(path.relative_path);
+    }
+    Ok(result)
 }
 
 fn validate_legacy_paths(
@@ -1619,19 +1587,6 @@ fn read_project_component(
     }
     read_regular_file(&path, 4 * 1024 * 1024)
         .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))
-}
-
-fn validate_package_id(value: &str) -> Result<(), M7UnityMigrationError> {
-    if value.is_empty()
-        || value.len() > 128
-        || !value.as_bytes()[0].is_ascii_alphanumeric()
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-    {
-        return Err(error(M7UnityMigrationErrorCode::Unsupported));
-    }
-    Ok(())
 }
 
 fn sync_tree(root: &Path) -> Result<(), M7UnityMigrationError> {
@@ -1905,6 +1860,44 @@ mod tests {
         assert!(!dependencies.contains_key("com.unity.xr.openvr.standalone"));
         assert_eq!(dependencies["com.example.keep"], "3.0.0");
         assert_eq!(value["scopedRegistries"][0]["name"], "keep");
+    }
+
+    #[test]
+    fn legacy_metadata_cannot_expand_the_sealed_companion_file_scope() {
+        let fixture = TestDirectory::new("legacy-guid-scope");
+        let root = fixture.path();
+        fs::create_dir(root.join("Assets")).expect("assets");
+        let mut metadata = crate::package::LegacyMetadata {
+            folders: BTreeMap::from([(
+                "Assets/Old".to_owned(),
+                "0123456789abcdef0123456789abcdef".to_owned(),
+            )]),
+            ..Default::default()
+        };
+        assert!(
+            sealed_legacy_paths(root, &metadata)
+                .expect("no actual cleanup")
+                .is_empty()
+        );
+        fs::create_dir(root.join("Assets/Old")).expect("legacy target");
+        fs::write(
+            root.join("Assets/Old.meta"),
+            "guid: 0123456789abcdef0123456789abcdef\n",
+        )
+        .expect("companion");
+        assert_eq!(
+            sealed_legacy_paths(root, &metadata)
+                .expect_err("no implicit companion deletion")
+                .code(),
+            M7UnityMigrationErrorCode::Unsupported
+        );
+        metadata
+            .files
+            .insert("Assets/Old.meta".to_owned(), String::new());
+        assert_eq!(
+            sealed_legacy_paths(root, &metadata).expect("explicit exact paths only"),
+            ["Assets/Old", "Assets/Old.meta"]
+        );
     }
 
     #[test]

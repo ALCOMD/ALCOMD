@@ -143,7 +143,7 @@ fn archive_fixture_freezes_quotas_and_cross_platform_rejections() {
 #[test]
 fn changeset_golden_is_bounded_and_pins_the_complete_source() {
     let change_set = json(CHANGESET_GOLDEN);
-    assert_eq!(change_set["formatVersion"], 1);
+    assert_eq!(change_set["formatVersion"], 3);
     let mutations = change_set["mutations"].as_array().expect("mutations");
     let edges = change_set["dependencyEdges"]
         .as_array()

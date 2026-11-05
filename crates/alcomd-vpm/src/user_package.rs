@@ -15,6 +15,7 @@ use zip::write::SimpleFileOptions;
 
 use crate::archive::{ArchiveLimits, MAX_ARCHIVE_BYTES, normalize_path, validate_collision};
 use crate::range::VpmRange;
+use crate::unity_version::package_minimum;
 use crate::{PackageCache, preflight_archive};
 
 const MANIFEST_LIMIT: u64 = 1_048_576;
@@ -326,7 +327,12 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
     object.insert("version".to_owned(), Value::String(version.clone()));
     let display_name = optional_string(object, "displayName", 1_024)?;
     let _ = optional_string(object, "description", 65_536)?;
-    let _ = optional_string(object, "unity", 1_024)?;
+    let unity = optional_string(object, "unity", 1_024)?;
+    let unity_release = optional_string(object, "unityRelease", 64)?;
+    package_minimum(unity.as_deref(), unity_release.as_deref())
+        .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
+    crate::package::LegacyMetadata::parse(object)
+        .map_err(|_| error(UserPackageErrorCode::ManifestInvalid))?;
     for field in ["documentationUrl", "changelogUrl"] {
         match crate::sanitized_package_link(object.get(field)) {
             Some(url) => {
@@ -370,6 +376,13 @@ fn parse_manifest(bytes: &[u8]) -> Result<ParsedManifest, UserPackageError> {
         manifest_json,
         dependencies_json,
     })
+}
+
+/// Reuses the importer normalization for evidence recovered from its owned ZIP.
+/// The ZIP intentionally retains source bytes, while the registry fingerprint
+/// addresses this normalized manifest (including default dependencies and links).
+pub(crate) fn normalized_manifest_json(bytes: &[u8]) -> Result<String, UserPackageError> {
+    parse_manifest(bytes).map(|manifest| manifest.manifest_json)
 }
 
 fn required_string(
@@ -903,6 +916,130 @@ mod tests {
         let value: Value = serde_json::from_str(&manifest.manifest_json).expect("manifest JSON");
         assert!(value.get("documentationUrl").is_none());
         assert!(value.get("changelogUrl").is_none());
+    }
+
+    #[test]
+    fn unity_release_and_legacy_shapes_are_validated_during_import() {
+        for extra in [
+            serde_json::json!({"unityRelease":22}),
+            serde_json::json!({"unityRelease":null}),
+            serde_json::json!({"unity":"2022.3","unityRelease":"22z1"}),
+            serde_json::json!({"legacyFolders":[]}),
+            serde_json::json!({"legacyFiles":{"Assets/Old":"not-a-guid"}}),
+            serde_json::json!({"legacyPackages":{}}),
+        ] {
+            let mut manifest = serde_json::json!({"name":"com.example.local","version":"1.2.3"});
+            manifest
+                .as_object_mut()
+                .expect("object")
+                .extend(extra.as_object().expect("extra").clone());
+            assert_eq!(
+                parse_manifest(&serde_json::to_vec(&manifest).expect("manifest"))
+                    .err()
+                    .expect("reject malformed metadata")
+                    .code(),
+                UserPackageErrorCode::ManifestInvalid,
+                "{extra}"
+            );
+        }
+        parse_manifest(br#"{"name":"com.example.local","version":"1.2.3","unityRelease":"ignored-without-unity"}"#)
+            .expect("release does not create a minimum without unity");
+    }
+
+    #[tokio::test]
+    async fn owned_zip_and_frozen_legacy_reuse_importer_normalization() {
+        use crate::{PackageSource, PackageSourceAuthority};
+        for (case, extra) in [
+            ("no-dependencies", serde_json::json!({})),
+            (
+                "presentation-and-legacy",
+                serde_json::json!({
+                    "documentationUrl":42,"changelogUrl":"file:///private/changelog",
+                    "legacyFolders":{"Assets/Old":"0123456789abcdef0123456789abcdef"},
+                    "legacyFiles":{"Assets/Old.txt":""},"legacyPackages":["com.example.old"]
+                }),
+            ),
+            (
+                "release",
+                serde_json::json!({"unity":"2022.3","unityRelease":"22f1","vpmDependencies":{}}),
+            ),
+        ] {
+            let root = temporary_root(case);
+            let source = root.join("source");
+            std::fs::create_dir_all(&source).expect("owned source");
+            let mut original = serde_json::json!({"name":"com.example.local","version":"1.2.3"});
+            original
+                .as_object_mut()
+                .expect("object")
+                .extend(extra.as_object().expect("extra").clone());
+            let original_bytes = serde_json::to_vec_pretty(&original).expect("source manifest");
+            std::fs::write(source.join("package.json"), &original_bytes).expect("source manifest");
+            let prepared =
+                prepare_snapshot(&source, &root.join("staging")).expect("prepare snapshot");
+            let cache = PackageCache::new(root.join("cache")).expect("owned cache");
+            let archive = cache
+                .publish_owned(&prepared.archive_path, prepared.snapshot.archive_sha256)
+                .await
+                .expect("publish owned zip");
+            {
+                let mut archive =
+                    zip::ZipArchive::new(File::open(archive).expect("owned zip")).expect("zip");
+                let mut archived = Vec::new();
+                archive
+                    .by_name("package.json")
+                    .expect("package entry")
+                    .read_to_end(&mut archived)
+                    .expect("raw source bytes");
+                assert_eq!(
+                    archived, original_bytes,
+                    "archive preserves source evidence"
+                );
+            }
+            let normalized: Value = serde_json::from_str(&prepared.snapshot.manifest_json)
+                .expect("normalized manifest");
+            assert!(normalized["vpmDependencies"].is_object());
+            if case == "presentation-and-legacy" {
+                assert!(normalized.get("documentationUrl").is_none());
+                assert!(normalized.get("changelogUrl").is_none());
+            }
+            assert_eq!(
+                std::fs::read(source.join("package.json")).expect("source unchanged"),
+                original_bytes
+            );
+            std::fs::remove_dir_all(&source).expect("source may disappear after import");
+            let pin = PackageSource {
+                authority: PackageSourceAuthority::UserPackage {
+                    user_package_id: alcomd_application::UserPackageId::new(),
+                    source_revision: 1,
+                },
+                source_identity: "owned-user-package-fixture".to_owned(),
+                manifest_fingerprint: prepared.snapshot.manifest_fingerprint,
+                archive_sha256: prepared.snapshot.archive_sha256,
+            };
+            let metadata = cache
+                .pin_legacy_manifest(
+                    &pin,
+                    &prepared.snapshot.package_id,
+                    &prepared.snapshot.version,
+                )
+                .await
+                .expect("pin from normalized owned zip");
+            assert_eq!(!metadata.is_empty(), case == "presentation-and-legacy");
+            if case == "presentation-and-legacy" {
+                assert_eq!(
+                    metadata.folders["Assets/Old"],
+                    "0123456789abcdef0123456789abcdef"
+                );
+                assert_eq!(metadata.packages, ["com.example.old"]);
+            }
+            assert_eq!(
+                cache
+                    .read_pinned_legacy(&pin.manifest_fingerprint)
+                    .expect("frozen metadata"),
+                metadata
+            );
+            std::fs::remove_dir_all(root).expect("owned fixture cleanup");
+        }
     }
 
     #[cfg(unix)]

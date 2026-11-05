@@ -80,7 +80,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     fs::write(
         project.join("Packages/vpm-manifest.json"),
         json!({
-            "dependencies":{"com.example.candidate":"1.9.0"},
+            "dependencies":{"com.example.candidate":{"version":"1.9.0"}},
             "locked":{"com.example.candidate":{"version":"1.9.0"}}
         })
         .to_string(),

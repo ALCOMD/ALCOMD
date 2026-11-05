@@ -303,7 +303,7 @@ fn create_project(root: &Path) {
     .expect("write ProjectVersion");
     fs::write(
         root.join("Packages/vpm-manifest.json"),
-        r#"{"dependencies":{"com.vrchat.avatars":"3.7.0"},"locked":{"com.vrchat.avatars":{"version":"3.7.0"}}}"#,
+        r#"{"dependencies":{"com.vrchat.avatars":{"version":"3.7.0"}},"locked":{"com.vrchat.avatars":{"version":"3.7.0"}}}"#,
     )
     .expect("write vpm manifest");
 }
