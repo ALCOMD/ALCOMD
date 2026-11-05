@@ -22,7 +22,7 @@ test("template import review uses the flat Core identity, revision and replaceme
     await expect(page.locator("md-dialog[open]")).not.toContainText("opaque-selected-bundle");
 });
 
-test("an accepted import survives dialog close, retries its first progress read and refreshes only on success", async ({ page }) => {
+test("an accepted import survives dialog close and explicit progress retries retain the same task", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-tasks=1&template-first-read-error=1");
     await importReview(page);
     await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
@@ -30,7 +30,7 @@ test("an accepted import survives dialog close, retries its first progress read 
     await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeHidden();
     const table = page.getByRole("table", { name: "Templates", exact: true });
     await expect(table).not.toContainText("Imported fixture");
-    await expect.poll(() => reads(page, operationId)).toBeGreaterThan(2);
+    await retryProgress(page, operationId);
     const before = await listReads(page);
     await finish(page, operationId);
     await expect(table).toContainText("Imported fixture");
@@ -82,11 +82,11 @@ test("an invalid project task result reaches the shared channel once while its d
     await expect(page).toHaveURL(/\/projects$/);
 });
 
-test("a known template operation keeps reading after its initial progress request fails", async ({ page }) => {
+test("a known template operation retains its failure until explicitly retried", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-tasks=1&template-first-read-error=1");
     await importReview(page);
     await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
-    await expect.poll(() => reads(page, operationId)).toBeGreaterThan(2);
+    await retryProgress(page, operationId);
     expect(await applies(page)).toHaveLength(1);
 });
 
@@ -163,7 +163,7 @@ test("an older created project refresh cannot close or navigate a newly opened P
 });
 
 for (const state of ["failed", "cancelled"]) {
-    test(`a ${state} template task does not refresh or report success`, async ({ page }) => {
+    test(`a ${state} template task invalidates once without reporting success or repeating Apply`, async ({ page }) => {
         await page.goto("/browser-harness.html?route=/templates&template-tasks=1");
         await importReview(page);
         await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
@@ -172,7 +172,7 @@ for (const state of ["failed", "cancelled"]) {
         const before = await listReads(page);
         await finish(page, operationId, state);
         await expect(page.getByRole("status").filter({ hasText: "Operation" }).locator("strong")).toHaveText(state);
-        expect(await listReads(page)).toBe(before);
+        await expect.poll(() => listReads(page)).toBe(before + 1);
         await expect(page.getByRole("table", { name: "Templates", exact: true })).not.toContainText("Imported fixture");
         expect(await applies(page)).toHaveLength(1);
     });
@@ -198,7 +198,7 @@ test("an unknown Apply response is not retried or treated as a rejected task", a
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toBeDisabled();
     await page.keyboard.press("Enter");
     expect(await applies(page)).toHaveLength(1);
-    expect(await reads(page, operationId)).toBe(0);
+    await expect.poll(() => reads(page, operationId)).toBe(1);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeHidden();
     await page.getByRole("navigation", { name: "Utilities", exact: true }).locator("md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Tasks$/ }) }).click();
@@ -297,3 +297,12 @@ async function applies(page: Page) { return page.evaluate(() => window.templateR
 async function reads(page: Page, id: string) { return page.evaluate((ownedId) => window.templateRequests.filter((request) => request.method === "operations.get" && (request.params as { operationId: string }).operationId === ownedId).length, id); }
 async function listReads(page: Page) { return page.evaluate(() => window.templateRequests.filter((request) => request.method === "templates.list").length); }
 async function finish(page: Page, id: string, state = "succeeded") { await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("test-template-finish", { detail })), { operationId: id, state }); }
+
+async function retryProgress(page: Page, id: string) {
+    await expect.poll(() => reads(page, id)).toBe(1);
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => reads(page, id)).toBe(2);
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => reads(page, id)).toBe(3);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
+}
