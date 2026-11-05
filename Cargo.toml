@@ -15,6 +15,7 @@ members = [
     "crates/alcomd-client",
     "crates/alcomd-store",
     "crates/alcomd-platform",
+    "crates/alcomd-logging",
     "crates/alcomd-vpm",
     "crates/alcomd-extensions",
     "crates/alcomd-import",
@@ -65,6 +66,7 @@ tokio = { version = "1.0", features = ["fs", "io-util", "macros", "net", "rt-mul
 toml = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = { version = "=0.2.5", default-features = false }
 uuid = { version = "1.0", features = ["serde", "v4"] }
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled"] }
 reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
@@ -83,6 +85,7 @@ alcomd-protocol = { path = "crates/alcomd-protocol" }
 alcomd-client = { path = "crates/alcomd-client" }
 alcomd-store = { path = "crates/alcomd-store" }
 alcomd-platform = { path = "crates/alcomd-platform" }
+alcomd-logging = { path = "crates/alcomd-logging" }
 alcomd-vpm = { path = "crates/alcomd-vpm" }
 alcomd-extensions = { path = "crates/alcomd-extensions" }
 alcomd-updater = { path = "apps/alcomd-updater" }

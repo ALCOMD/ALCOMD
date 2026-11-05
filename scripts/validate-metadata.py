@@ -765,6 +765,7 @@ def main() -> int:
         "crates/alcomd-vpm",
         "crates/alcomd-extensions",
         "crates/alcomd-import",
+        "crates/alcomd-logging",
         "crates/alcomd-testing",
         "migrations/v3/app/alcomd-migrate-v3",
         "xtask",

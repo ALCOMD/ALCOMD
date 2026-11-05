@@ -19,6 +19,12 @@ tauri-build.workspace = true
 toml.workspace = true
 
 [dependencies]
+uuid.workspace = true
+alcomd-logging.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 alcomd-client.workspace = true
 alcomd-platform.workspace = true
 alcomd-protocol.workspace = true

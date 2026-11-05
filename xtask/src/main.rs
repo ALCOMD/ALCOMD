@@ -37,6 +37,7 @@ const MEMBERS: &[Member] = &[
         &[
             "alcomd-application",
             "alcomd-extensions",
+            "alcomd-logging",
             "alcomd-platform",
             "alcomd-protocol",
             "alcomd-store",
@@ -64,7 +65,12 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-gui/src-tauri",
         "alcomd-gui",
-        &["alcomd-client", "alcomd-platform", "alcomd-protocol"],
+        &[
+            "alcomd-client",
+            "alcomd-logging",
+            "alcomd-platform",
+            "alcomd-protocol",
+        ],
     ),
     ("crates/alcomd-domain", "alcomd-domain", &[]),
     (
@@ -84,6 +90,11 @@ const MEMBERS: &[Member] = &[
         &["alcomd-application", "alcomd-platform"],
     ),
     ("crates/alcomd-platform", "alcomd-platform", &[]),
+    (
+        "crates/alcomd-logging",
+        "alcomd-logging",
+        &["alcomd-platform"],
+    ),
     (
         "crates/alcomd-vpm",
         "alcomd-vpm",
