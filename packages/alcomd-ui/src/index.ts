@@ -16,6 +16,7 @@ import "@material/web/labs/segmentedbutton/outlined-segmented-button.js";
 import "@material/web/labs/segmentedbuttonset/outlined-segmented-button-set.js";
 import "@material/web/menu/menu-item.js";
 import "@material/web/menu/menu.js";
+import "@material/web/progress/circular-progress.js";
 import "@material/web/progress/linear-progress.js";
 import "@material/web/ripple/ripple.js";
 import "@material/web/radio/radio.js";
@@ -47,6 +48,7 @@ export const materialElements = {
     listItem: "md-list-item",
     menu: "md-menu",
     menuItem: "md-menu-item",
+    circularProgress: "md-circular-progress",
     progress: "md-linear-progress",
     ripple: "md-ripple",
     radio: "md-radio",

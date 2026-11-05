@@ -168,6 +168,13 @@ upstream_path = "symbols/web/play_arrow/materialsymbolsrounded/play_arrow_24px.s
 sha256 = "226815e34bc8589e63a3641fcf6b0fdac06fc87dd9d9feda539f133c514878cc"
 
 [[asset]]
+name = "flip_to_front"
+optical_size = 24
+path = "24/flip_to_front.svg"
+upstream_path = "symbols/web/flip_to_front/materialsymbolsrounded/flip_to_front_24px.svg"
+sha256 = "ea494e99f39dbbd62e740758041d1bc08aff4ab1eb59741428e95f388853a417"
+
+[[asset]]
 name = "public"
 optical_size = 24
 path = "24/public.svg"

@@ -77,6 +77,17 @@ samp {
     --md-text-button-container-height: var(--alcomd-button-height);
 }
 
+.alcomd-button-progress {
+    align-items: center;
+    justify-content: center;
+}
+
+.alcomd-button-progress md-circular-progress {
+    flex: none;
+    --md-circular-progress-size: 24px;
+    --md-circular-progress-active-indicator-color: currentColor;
+}
+
 .alcomd-split-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--alcomd-list-row-gap); }
 .alcomd-split-button-primary,
 .alcomd-split-button-menu {
@@ -106,6 +117,7 @@ samp {
 
 .alcomd-button-label {
     display: inline-grid;
+    text-align: center;
     white-space: nowrap;
 }
 

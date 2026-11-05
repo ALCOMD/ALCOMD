@@ -763,3 +763,9 @@ export function Progress({ label, max = 1, value }: { label: string; max?: numbe
         value: value ?? 0
     } as MaterialProps);
 }
+
+export function ButtonProgress({ slot }: { slot: "icon" }) {
+    return <span aria-hidden="true" className="alcomd-button-progress" slot={slot}>
+        {createElement(materialElements.circularProgress, { indeterminate: true })}
+    </span>;
+}

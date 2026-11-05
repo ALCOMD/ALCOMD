@@ -6,8 +6,18 @@ for (const route of ["/projects", "/projects/" + projectId + "/packages"]) {
     test("desktop window events change the Unity action in " + route, async ({ page }) => {
         await page.goto("/browser-harness.html?route=" + encodeURIComponent(route) + "&state=unity-automatic&unityWindows=1");
         const controls = route === "/projects" ? page.locator(".project-row-actions").first() : page.getByRole("navigation", { name: "Project actions" });
+        const launchButton = controls.locator(route === "/projects" ? ".project-open-unity-action" : ".alcomd-split-button-primary");
+        const alignment = () => launchButton.evaluate((button) => {
+            const icon = button.querySelector('[slot="icon"]')!.getBoundingClientRect();
+            const label = document.createRange();
+            label.selectNodeContents(button.querySelector(".alcomd-button-label > span:last-child")!);
+            const text = label.getBoundingClientRect();
+            return { iconLeft: icon.left, textCenter: text.left + text.width / 2, gap: text.left - icon.right };
+        });
         const open = controls.getByRole("button", { name: "Open Unity", exact: true });
         await expect(open).toBeEnabled();
+        const openAlignment = await alignment();
+        expect(openAlignment.gap).toBeGreaterThan(8);
         await expect.poll(() => page.evaluate(() => window.unityWindowEvidence?.reads)).toBe(1);
         const width = (await open.boundingBox())?.width;
         await page.clock.install();
@@ -17,11 +27,19 @@ for (const route of ["/projects", "/projects/" + projectId + "/packages"]) {
         await page.evaluate((id) => window.unityWindowEvidence!.set(id, "opening"), projectId);
         const opening = controls.getByRole("button", { name: "Opening…", exact: true });
         await expect(opening).toBeDisabled();
+        const openingAlignment = await alignment();
+        expect(openingAlignment.iconLeft).toBeCloseTo(openAlignment.iconLeft, 1);
+        expect(openingAlignment.textCenter).toBeCloseTo(openAlignment.textCenter, 1);
+        expect(openingAlignment.gap).toBeGreaterThan(8);
         expect((await opening.boundingBox())?.width).toBe(width);
 
         await page.evaluate((id) => window.unityWindowEvidence!.set(id, "ready"), projectId);
         const front = controls.getByRole("button", { name: "Bring to front", exact: true });
         await expect(front).toBeEnabled();
+        const frontAlignment = await alignment();
+        expect(frontAlignment.iconLeft).toBeCloseTo(openAlignment.iconLeft, 1);
+        expect(frontAlignment.textCenter).toBeCloseTo(openAlignment.textCenter, 1);
+        expect(frontAlignment.gap).toBeCloseTo(8, 1);
         expect((await front.boundingBox())?.width).toBe(width);
         await page.evaluate(() => {
             const windows = window.unityWindowEvidence!;

@@ -17,7 +17,6 @@ import {
     downloadIcon,
     helpIcon,
     moreVertIcon,
-    playArrowIcon,
     packagesIcon,
     publicIcon,
     starIcon,
@@ -513,7 +512,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const revision = project.revision;
     const workspace = context === "workspace";
     const unityLaunch = useProjectUnityLaunch({ client, navigate, onLaunchSettled: onChanged, project });
-    const { label: unityLaunchLabel, ...unityLaunchButton } = unityLaunch.action;
+    const { icon: unityLaunchIcon, label: unityLaunchLabel, ...unityLaunchButton } = unityLaunch.action;
 
     const observeDeletion = useCallback((next: Operation) => {
         setDeleteOperation(next);
@@ -628,7 +627,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
                 {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onRefresh={onChanged} project={project} />}
                 {workspace ? null : <Button {...unityLaunchButton} className="project-open-unity-action" type="button">
-                    {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
+                    {unityLaunchIcon}
                     {unityLaunchLabel}
                 </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} type="button" variant="tonal">{t("Manage")}</Button>}
@@ -639,7 +638,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     {menuItems}
                 </Menu>
-                </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
+                </> : <SplitButton {...launchAction} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
             </div>
             {workspace ? null : unityLaunch.dialogs}
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
@@ -1594,7 +1593,7 @@ function ActionDisclosure({ children, title }: { children: ReactNode; title: str
 }
 
 function BackTo({ label, navigate, path }: { label: string; navigate(path: string): void; path: string }) {
-    return <Button onClick={() => navigate(path)} type="button" variant="text"><Icon asset={arrowBackIcon} size={24} />{label}</Button>;
+    return <Button onClick={() => navigate(path)} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />{label}</Button>;
 }
 
 async function listAllUserPackages(client: GuiRpcClient): Promise<UserPackageRecord[]> {

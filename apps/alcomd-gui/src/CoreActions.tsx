@@ -453,12 +453,12 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     const unityWindow = useUnityWindowAction(client, project, () => void launch(),
         !canLaunch || projectRevision === undefined || launchInstallation === undefined,
         feedback.busy, capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t));
-    const { label: unityLabel, ...unityButton } = unityWindow.action;
+    const { icon: unityIcon, label: unityLabel, ...unityButton } = unityWindow.action;
     return (
         <ActionSection title={t("Unity actions")}>
             <p><Translated message="Project Unity version: {version}" values={{ version: <strong>{project.unityVersion}</strong> }} /></p>
             {effectiveLaunchOptions.exactMatchingInstallations.length > 1 ? <Select id="launch-installation" label={t("Unity installation for this launch")} onChange={setLaunchInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...effectiveLaunchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} /> : null}
-            <Button {...unityButton} type="button">{unityLabel}</Button>
+            <Button {...unityButton} type="button">{unityIcon}{unityLabel}</Button>
             {unityWindow.feedback}
             <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManage, capabilities.unityManage, t)} type="button" variant="tonal">{t("Edit launch arguments")}</Button>
             {!argumentsOpen || projectId === undefined ? null : <ProjectLaunchArgumentsDialog client={client} launchConfig={launchConfig} onChanged={onChanged} onClose={() => setArgumentsOpen(false)} projectId={projectId} />}

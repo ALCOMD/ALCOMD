@@ -1,9 +1,10 @@
 import { requestErrorMessage } from "./request-errors";
 import { useTranslation } from "./i18n";
 import type { RpcError } from "@alcomd/sdk";
-import { useEffect, useRef, useState } from "react";
+import { flipToFrontIcon, playArrowIcon, taskCenterIcon } from "@alcomd/ui/icons";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Button, Dialog, Select } from "./Material";
+import { Button, ButtonProgress, Dialog, Icon, Select } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
@@ -12,6 +13,7 @@ import { useUnityWindowState } from "./unity-window-observation";
 
 export interface ProjectUnityLaunchAction {
     disabled: boolean;
+    icon: ReactNode;
     label: string;
     onClick(): void;
     title?: string;
@@ -54,6 +56,8 @@ export function useUnityWindowAction(client: GuiRpcClient, project: ProjectSnaps
     const windowIsActive = state === "opening" || state === "open" || state === "ready";
     const action: ProjectUnityLaunchAction = {
         disabled: busy || state === "opening" || state === "open" || (state !== "ready" && launchDisabled),
+        icon: state === "opening" ? <ButtonProgress slot="icon" /> :
+            <Icon asset={state === "ready" ? flipToFrontIcon : state === "open" ? taskCenterIcon : playArrowIcon} slot="icon" />,
         label: state === "opening" ? opening : state === "open" ? alreadyOpen : state === "ready" ? front : open,
         onClick: state === "ready" ? () => void focus() : launch,
         title: windowIsActive ? undefined : title,

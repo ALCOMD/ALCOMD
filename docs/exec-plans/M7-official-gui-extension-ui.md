@@ -427,6 +427,8 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 
 2026-11-06 所有者确认 v3 能看到其他入口启动的 Unity，并能把已就绪的编辑器置于前台。v4 将此能力作为 Windows 本地桌面操作。Core 通过现有项目读取合同授权目标，启动判断和写者保护继续走原用例。桌面平台按项目目录身份、Editor 进程和主窗口确认按钮状态，Windows 目录通知、窗口事件及进程退出触发更新。共享适配一次等待一份最新状态，健康空闲时无周期读取。点击置前时再次通过 Core 核对目标项目及占用，再核对当前 HWND 的进程归属。Windows 拒绝或窗口消失时在操作对话框反馈。其他平台维持已有打开入口。本轮使用已有 `windows-sys` 增开窗口及可访问性 API 特性，无公共 RPC、数据结构或权限变更。目录启动提示有界，覆盖当前最多 20 个登记目标，其余项目通过窗口事件和初始快照更新。
 
+打开、启动中和置前三种按钮状态分别使用播放图标、Material 圆形进度和置前图标。按钮按最长文案定宽，图标固定在同一列，文案在预留区域居中。置前请求期间按钮保持可用，同一在途请求合并重复点击。所有者已在本地 GUI 确认三种状态的对齐效果。
+
 所有者明确：目的是防止重复打开同一项目，其他 Unity 或无法关联项目的进程不得形成全局启动禁令。本轮据此纠正 M5 行为，不增加再次确认或绕过开关。
 
 2026-11-06 所有者报告打开项目仅出现Hub、v3可以打开。只读核对登记为实际2022.3.22f1 Editor；Editor.log记录程序和-projectPath均为`\\?\`路径，切换到Test-Avatar后立即exit0。许可更新错误后仍有entitlements resolved，不能据此认定许可是根因。[官方启动参数](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)使用直接Editor和-projectPath；本次候选仅在执行边界复用已有Hub的DOS/UNC适配，重新解析仍为同一路径时才转换，保留数据库/RPC/锁身份，普通启动和迁移共用。先红后绿，平台53/0、严格Clippy/fmt及自有假Editor真实argv两例通过，覆盖中文/空格/引号及shell字符、不同对象和verbatim语义保留。所有者选择自行实测；尚未证明本次Hub现象的现场因果，也未启动真实Unity、修改真实项目或替换Core171196，不混入并行State21候选。补丁/结果位于`target/m7-launch-hub-20261106/`，不宣称原生问题已解决。
