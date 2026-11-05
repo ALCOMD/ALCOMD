@@ -943,10 +943,10 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canCreateProject} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
         </> : action === "create" ? <form onSubmit={(event) => void createPlan(event)}>
             <p>{t("Template:")}<strong>{template.displayName}</strong></p>
-            <TextField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
-            <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
             <CreateUnityVersionField disabled={feedback.busy} selection={unity} />
             <TextField disabled={feedback.busy} id="create-leaf" label={t("Project folder name")} onInput={(next) => update("leaf", next)} required value={fields.leaf} />
+            <TextField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
+            <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
             {projectDirectory.error === undefined ? null : <RequestReminder error={projectDirectory.error} title={t("Default project location could not be loaded.")} />}
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0 || unity.version.trim().length === 0} type="submit">{t("Review")}</Button></div>
         </form> : action === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple(); }}>

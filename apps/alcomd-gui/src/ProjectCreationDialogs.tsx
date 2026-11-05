@@ -225,12 +225,12 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                             {moreTemplatesFailed ? <p className="inline-error" role="alert">{t("Could not load more items. Your loaded items are still available.")}</p> : null}
                             <Button disabled={busy || moreTemplatesLoading} onClick={() => void loadMoreTemplates()} type="button" variant="text">{moreTemplatesFailed ? t("Retry loading more") : t("Load more templates")}</Button>
                         </div>}
+                        <CreateUnityVersionField disabled={busy} selection={unity} />
+                        <TextField disabled={busy} aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="project-target-picker">
                             <TextField disabled={busy} aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
-                        <CreateUnityVersionField disabled={busy} selection={unity} />
-                        <TextField disabled={busy} aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
                             <Button disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0 || unity.version.trim().length === 0} onClick={() => void review()} type="button">{t("Review creation")}</Button>
