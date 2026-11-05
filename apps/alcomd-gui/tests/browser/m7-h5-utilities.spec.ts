@@ -55,7 +55,7 @@ test("retired activity and diagnostic routes do not call their old interfaces", 
     for (const route of ["/activity", "/diagnostics"]) {
         await open(page, route);
         await expect(page.getByRole("heading", { name: "Page not found", exact: true })).toBeVisible();
-        await expect(page.getByRole("navigation", { name: "Utilities", exact: true }).getByText("Logs", { exact: true })).toBeVisible();
+        await expect(page.getByRole("navigation", { name: "Primary", exact: true }).getByText("Logs", { exact: true })).toBeVisible();
         expect(await requests(page, "activity.list")).toHaveLength(0);
         expect(await requests(page, "diagnostics.log.read")).toHaveLength(0);
     }

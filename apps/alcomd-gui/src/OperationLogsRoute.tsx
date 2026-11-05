@@ -141,12 +141,13 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
             if (generation.current === epoch) setPending(false);
         }
     }, [apply, client, events]);
-    const retry = useCoreInvalidation(`operation-logs:${id}`, scopes, () => read(failedDirection.current ?? "refresh"), true);
+    // A ready connection can start the initial read during registration.
     useEffect(() => {
         ++generation.current;
         if (!events) void read("refresh").catch(() => {});
         return () => { ++generation.current; };
     }, [events, read]);
+    const retry = useCoreInvalidation(`operation-logs:${id}`, scopes, () => read(failedDirection.current ?? "refresh"), true);
 
     const readAtEdge = useCallback((viewport: HTMLElement) => {
         if (active.current) return;

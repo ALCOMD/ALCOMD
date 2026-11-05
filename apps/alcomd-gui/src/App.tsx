@@ -1,5 +1,4 @@
 import { requestErrorMessage } from "./request-errors";
-import { logIcon } from "@alcomd/ui/icons";
 import { OperationLogsRoute } from "./OperationLogsRoute";
 import { createTranslator, LocaleProvider, preferredLocale, useTranslation } from "./i18n";
 import type {
@@ -19,6 +18,7 @@ import {
 import {
     extensionIcon,
     infoIcon,
+    logIcon,
     packagesIcon,
     projectsIcon,
     settingsIcon,
@@ -300,6 +300,7 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
         { icon: projectsIcon, label: navigationLabels.projects, path: "/projects", section: "projects" },
         { icon: packagesIcon, label: navigationLabels.resources, path: "/repositories", section: "packages" },
         { icon: settingsIcon, label: navigationLabels.settings, path: "/settings", section: "settings" },
+        { icon: logIcon, label: navigationLabels.logs, path: "/logs", section: "logs" },
     ];
     return (
         <aside className="primary-navigation" id="primary-navigation" ref={scrollRef}>
@@ -335,7 +336,7 @@ interface NavigationItem {
     readonly icon: IconAsset;
     readonly label: string;
     readonly path: string;
-    readonly section: "projects" | "packages" | "settings";
+    readonly section: "projects" | "packages" | "settings" | "logs";
 }
 
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
@@ -389,17 +390,6 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
                         {activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{activeTasks}</span>}
-                    </NavigationListItem>
-                    <NavigationListItem
-                        aria-label={t("Logs")}
-                        aria-current={routeSection(current) === "logs" ? "page" : undefined}
-                        className="navigation-item"
-                        onClick={() => navigate("/logs")}
-                        selected={routeSection(current) === "logs"}
-                        title={t("Logs")}
-                    >
-                        <Icon asset={logIcon} size={24} slot="start" />
-                        <span className="navigation-item-label" slot="headline">{t("Logs")}</span>
                     </NavigationListItem>
                     <NavigationListItem
                         aria-label={`${t(navigationLabels.about)} ${guiVersion}`}
@@ -884,7 +874,7 @@ function sectionLabel(section: string): string {
         case "extensions": return "Extensions";
         case "settings": return "Settings";
         case "tasks": return navigationLabels.taskCenter;
-        case "logs": return "Logs";
+        case "logs": return navigationLabels.logs;
         case "about": return "About";
         default: return productFamily;
     }

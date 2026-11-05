@@ -9,8 +9,12 @@ const fixtureRecord = (sequence: number, actor: string): OperationLogEntry => ({
 });
 
 test("Core change adds records with their initiator; idle time does not read again", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/logs&state=ready");
+    await page.goto("/browser-harness.html?route=/projects&state=ready");
+    const primary = page.getByRole("navigation", { name: "Primary", exact: true });
+    const entry = primary.locator('[title="Settings"] + [title="Logs"]');
+    await entry.click();
     await expect(page.getByRole("heading", { name: "Logs", exact: true })).toBeVisible();
+    await expect(entry).toHaveAttribute("data-aria-current", "page");
     await expect(page.getByText("No logs yet", { exact: true })).toBeVisible();
     await page.evaluate((records) => window.fixtureLogs.replace(records), [fixtureRecord(1, "GUI"), fixtureRecord(2, "CLI"), fixtureRecord(3, "MCP")]);
     const log = page.getByRole("table", { name: "Logs", exact: true });
