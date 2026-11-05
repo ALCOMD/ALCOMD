@@ -1319,7 +1319,7 @@ fn create_project(root: &Path) {
         b"{\"dependencies\":{}}",
     )
     .expect("manifest");
-    fs::write(root.join("Packages/vpm-manifest.json"), b"{\"dependencies\":{\"com.example.locked\":\"1.0.0\"},\"locked\":{\"com.example.locked\":{\"version\":\"1.0.0\"}}}").expect("vpm");
+    fs::write(root.join("Packages/vpm-manifest.json"), b"{\"dependencies\":{\"com.example.locked\":{\"version\":\"1.0.0\"}},\"locked\":{\"com.example.locked\":{\"version\":\"1.0.0\"}}}").expect("vpm");
     fs::write(root.join("Packages/com.example.locked/package.json"), b"{}").expect("locked");
     fs::write(
         root.join("Packages/com.example.embedded/package.json"),

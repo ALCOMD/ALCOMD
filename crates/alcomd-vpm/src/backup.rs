@@ -1689,7 +1689,7 @@ mod tests {
         std::fs::write(root.join("Packages/manifest.json"), b"{}").expect("manifest");
         std::fs::write(
             root.join("Packages/vpm-manifest.json"),
-            b"{\"dependencies\":{\"com.example.locked\":\"1.0.0\"},\"locked\":{\"com.example.locked\":{\"version\":\"1.0.0\"}}}",
+            b"{\"dependencies\":{\"com.example.locked\":{\"version\":\"1.0.0\"}},\"locked\":{\"com.example.locked\":{\"version\":\"1.0.0\"}}}",
         )
         .expect("vpm");
         std::fs::write(root.join("Packages/com.example.locked/package.json"), b"{}")
