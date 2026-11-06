@@ -102,7 +102,7 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 - 本批保持Config10、不增加SQL迁移（起始State18；并行日志修改另行记录，不由本计划授权）。store新增既有workspace依赖边toml 1.1.4与内部alcomd-platform；前者替换手写语法解析，后者复用目录同步。无新外部解析库；替代方案手写语法无法覆盖标准TOML，重复平台同步实现会扩大维护成本。toml跟随现有锁与升级检查，平台不支持及真实掉电保证单独列证据。
 - 必需创建输入unityVersion贯通RPC/CLI/SDK/GUI；TemplateRecord增加可选unity主次版本线以筛选已安装候选，创建Plan公开所选unityVersion及ProjectVersion摘要。新未接受Plan必须有证据，已接受历史Plan保留原冻结形状及恢复路径。这是未发布RPCmajor1的有意破坏性输入变更，不保留省略unityVersion的旧创建入口。
 - PackageChangeSet formatVersion=3标识本轮范围与完整写出依据；1/2未接受计划返回plan_stale，不重签。已接受1/2仅按原冻结摘要恢复旧输出（包括历史直接依赖字符串/对象的准确字节），不借此给新请求提供旧格式兼容入口。既有JSON列/权限/数据库结构不变。
-- legacy路径/GUID来自固定来源清单：仓库manifest按既有fingerprint校验后保存为有界、内容寻址的Core缓存证据，用户包沿原owned manifest。归档身份正确不等于index遗留信息相同；不能用缺失的归档字段推断index没有清理义务。Apply只读已冻结证据，缺失或不可排除义务时明确失败，不临时网络请求或静默当作无义务。
+- legacy 路径及 GUID 来自冻结的来源和归档清单。普通包管理确认框按 [M4 旧资产迁移合同](M4-package-transactions.md#普通安装的-vpm-旧资产迁移所有者已批准) 显示具体移除路径。清单无法安全复验时明确失败。
 
 | 格式/字段 | 来源与上下文 | 实施规则 |
 | --- | --- | --- |
@@ -170,6 +170,26 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 原始日志、源码清单、失败轮次、新旧库future量测、迁移逐行比较、IPC帧、物理记录及二进制hash统一保留在标准目录 `target/m7-full-gates-update-20261105/run-20261105T093004Z/`；关键结果为 `rust-test-counts.json`、`migration-row-preservation.json`、`native-pair-result.json`、`deployment-result.json`、`updated-after-gui-comparison.json` 和 `protected-final.json`。本节补齐此前独立批次声明未执行的完整Rust/固定用户端点IPC和原环境更新，不改写那些历史结果。
 
 ## 当前有效合同
+
+### v3 包管理行为对齐
+
+**全局代理（Config12，所有者已批准）。** 「设置 → 常规 → 网络」提供跟随系统、不使用代理、自定义 HTTP(S) 代理三种模式，默认跟随系统。代理属于 ALCOMD 的 Core 权威设置，适用于应用自行发起的出站 HTTP(S) 请求。当前实际网络入口是仓库索引、软件包 ZIP 及其相关的安装、恢复和迁移用例。更新器仍是占位，后续出站入口复用同一设置合同。外部浏览器、Unity、系统代理及本地 IPC 各自管理。代理地址不含账号密码。保存完成后新请求使用已接受的偏好，在途请求沿用原客户端。有效 Config11 只补默认值并保留其余设置和 revision，沿用设置权限、RPC 方法和 CAS，不改数据库。URL 校验复用锁文件中已有的 `url` 2.5.8，在 application 增加直接依赖边，避免手写 URL 解析。
+
+**剩余行为对齐（所有者已批准）。** VCC 链接和列表忽略未知查询参数。ZIP 请求头按不区分大小写的 HTTP 名称合并，同名时包头覆盖。仓库和 ZIP 启用 Reqwest 的 `system-proxy` 功能，复用平台代理检测。其 macOS 传递依赖使用现成的 System Configuration 封装，随 Reqwest 锁定与维护，替代方案是分别维护各平台代理检测。无发布方摘要的 HTTP(S) ZIP 使用现有首次下载、校验和固定摘要链路。认证仓库按 v3 文本格式导出为含明文头的 VCC 链接，保留本机所有者、显式保存、无覆盖和不记录凭据的边界。现有 RPC 方法和响应结构不变，导出及可接受包来源的行为有意改变。隔离验证保留真实系统关联。
+
+普通单包计划以项目现有 VPM 锁和直接依赖为依据。保留已安装且满足约束的锁定依赖，即使当前目录已不列出该版本。选定的变更不能使保留的锁定包失去有效依赖，无解时沿用现有冲突错误。批量计划优先保留仍满足约束的非显式目标版本。Resolve 检查实际包目录及其版本，按现有锁恢复缺失或不符的包，并保留原清单中的同版本锁记录。沿用现有 Plan/Apply、权限、Schema 和事务恢复。范围以 [VRChat VCC 2.1.3 行为记录](https://vcc.docs.vrchat.com/news/release-2.1.3/) 和 [Resolver 文档](https://vcc.docs.vrchat.com/vpm/resolver/#using-it) 为依据。
+
+**认证仓库合同已获所有者批准。** 支持 [VRChat CLI 的仓库自定义请求头](https://vcc.docs.vrchat.com/vpm/cli/#add-repo)。本机所有者通过现有仓库管理权限登记、替换和清除请求头，认证接入单仓登记、列表导入、刷新和包下载。公开写入仅承载请求头，读接口只返回是否配置凭据。凭据存放在 OS 凭据库，State25 保存引用及待清理引用。Windows 使用现有 windows-sys 的 Credential Manager API，macOS 直接复用 Cargo.lock 中已有的 Security Framework 封装，Linux 使用系统 Secret Service 的 `secret-tool`。凭据库不可用时返回错误。现有匿名入口继续可用。
+
+GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `repository inspect`、`register` 和 `set-credentials` 通过 `--credentials-stdin` 读取凭据 JSON，`set-credentials --clear` 清除。相同连接、地址和凭据的短期预览可用于确认登记。轮换先验证新凭据并使旧包计划失效，下一次成功刷新更新索引。
+
+**v3 对齐补项（所有者已批准 State26 与两个桌面依赖）。** [VRChat VCC 2.0.3](https://vcc.docs.vrchat.com/news/release-2.0.3/) 确认支持独立软件包的请求头。下载时，包清单的 `headers` 在同一请求中覆盖同名仓库请求头，按不区分大小写的 HTTP 名称比较。首跳和重定向的发送规则见下文。[State26](../../specs/storage/state-v26.md) 增加包头存在标记，冷缓存只为确有包头的条目取得并验证同一清单指纹，包头值仅在内存参与下载。已有带版本行的仓库需成功刷新一次。普通包无需额外下载索引，SQLite、清单证据缓存、计划和日志不写入包头明文。
+
+桌面 `vcc://vpm/addRepo` 激活复用现有添加对话框与 Core 检查、登记，收到链接只预填，用户确认前不联网。Windows 和 Linux 由系统以进程参数交付 URI，Tauri `single-instance` 直接转发至原生队列。macOS 通过应用包声明和系统 Open URL 事件交付。应用只向主窗口发无内容唤醒信号，原始 URI 不写入日志或路由。替代方案是分别维护三平台的 URI 注册和激活转发，涉及额外 OS IPC 与权限边界。采用官方插件增加两项桌面依赖及相应的供应链维护，绑定 Tauri 2。开发验证保留原 `vcc` 默认处理器。
+
+**v3 注册偏好（已获所有者批准）。** [Config11](../../specs/config/settings-v11.md) 默认开启 `settings.integrations.handleVccLinks`。Windows 正式构建启动时从 Core 取得已接受的偏好，通过 Tauri `deep-link` 注册用户级处理器。Linux AppImage 登记桌面处理器并更新 MIME 缓存，系统保留默认应用选择。Windows 关闭时只移除能确认属于当前 ALCOMD 可执行文件的用户级登记，Linux 移除本应用的桌面处理器。设置常规页提供开关，开启时保留手动注册入口。开发构建跳过自动应用，设置 `ALCOMD_DISABLE_VCC_REGISTRATION` 的隔离会话禁用系统注册操作。
+
+**v3 请求头发送规则（已获所有者批准）。** 索引与 ZIP 首跳直接附加请求头，ZIP 可以与索引不同源。重定向换协议、主机或端口时，按 v3 使用的 Reqwest 0.13.4 移除 `Authorization`、`Cookie`、`Cookie2`、`Proxy-Authorization` 和 `WWW-Authenticate`，后续跳不重新附加。自定义头继续发送，HTTP 可收到明文。无发布方摘要的 ZIP 可经 HTTP(S) 首次下载并固定摘要。移除公开 `allowedOrigins` 字段及相应 GUI 输入，认证仓库导出使用含请求头的 VCC 链接。旧凭据格式失效，认证仓库需重新输入凭据。State26 和权限不变。
 
 ### 模板系统清理与重建（公共合同与删除清单已获所有者批准）
 
@@ -261,7 +281,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config10**，含默认目录、项目自动发现、备份默认选项、Unity 全局参数及默认关闭的窗口记忆开关；保留已批准的紧凑模式及 `appearance.density` 删除。
+- 当前设置合同为 **Config12**，含默认目录、项目自动发现、备份默认选项、Unity 全局参数、默认关闭的窗口记忆、默认开启的 VCC 链接开关及默认跟随系统的全局代理；保留已批准的紧凑模式及 `appearance.density` 删除。
   application 持有权限、CAS、字段校验、候选缓存和取消一致性；
   `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–9→10 和
   原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
@@ -305,7 +325,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v10.*`（Config1–9 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v12.*`（Config1–11 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -1415,20 +1435,25 @@ list、register、refresh、unregister，尚无列表文件读写合同。GUI �
 最小用户行为与文件边界：
 
 - 工具栏 Add repository 的 split menu 提供添加、导入列表、导出列表，不新增导航。
-- 复用 v3 普通 UTF-8 URL 列表，支持 CRLF/LF、可选 UTF-8 BOM、注释及不带 headers 的 vcc 添加链接；
-  不是 repository manifest、package 导入或旧数据库迁移。带 headers/userinfo 的条目明确列为不支持，
-  不降级为匿名条目，不显示其秘密；其他 scheme、无效行都给行号和原因，不静默忽略。
+- 复用 v3 UTF-8 URL 列表，支持 CRLF/LF、可选 UTF-8 BOM、注释及含 `headers[]` 的 VCC 添加链接。
+  忽略 VCC 的未知查询参数，预览不显示凭据。含 userinfo、其他 scheme 或无效行给出行号和原因。
 - Core 解析文件并提供预览，GUI 确认后一次提交路径和预览摘要。Core 重新读取整份文件，摘要变化时在写入前拒绝。
   有下载空位就滚动补入，待按顺序提交的窗口最多 128 项。已存在条目在下载前跳过，成功项按文件顺序登记，
   逐条结果带原始行号。停止后已开始的任务继续返回结果，尚未开始的任务标为未处理。
-- 导出预览和实际文件覆盖 Core 全量登记快照，不能只导出 GUI 已加载的一页。保留 Core 已验证的
-  完整 http(s) URL，包括 query 的字节顺序与内容，不删除、重排或因存在 query 而排除。
-  预览明确提示文件包含完整地址，地址自身可能携带凭据、分享前需检查，显式确认后才导出。
-  不读取凭据库、不附带 headers/密码/token，不承诺 URL 已被认证为无秘密，不建立按参数名猜测
-  所有秘密的系统。当前无法表达的认证来源和本地来源明确排除，逐项说明，不称作完整备份。
-- 导出当前实际登记的远程来源。本地来源不伪装为 URL。
-- 仓库读取、仓库刷新和软件包归档下载共用 Core 的 64 路 HTTP 额度。
-- 项目包页的全部刷新一次调用 Core，滚动刷新并逐仓返回结果。
+- 导出预览和文件覆盖 Core 用户仓库快照，独立于 GUI 当前页。保留完整 HTTP(S) URL 和查询参数顺序。
+  认证仓库写为含明文请求头的 VCC 链接。预览提示文件可含凭据，用户显式确认后写入。
+  内置官方和精选来源排除，本地和其他不支持来源逐项给出排除原因。
+- Core 启动时在现有 registry 中补齐两个 VRChat 默认来源，使用 VRChat 发布的
+  `https://vrchat.github.io/packages/index.json` 与
+  `https://vrchat-community.github.io/vpm-listing-curated/index.json`。保留已登记的同源记录。
+  新增默认记录使用保留 ID，支持刷新，禁止移除。首次目录同步在后台复用既有刷新路径，失败时可重试。
+  导出用户登记的远程来源。
+- 大目录的版本通过既有分页读取，写入重试记录只保存对外返回的仓库摘要。选中未声明 ZIP 校验值的
+  HTTP(S) 包时，Core 在安装计划中固定首次验证下载的实际摘要，见 M4 修订。
+- 仓库读取、仓库刷新和软件包归档共用 Core 的 64 路 HTTP 额度，包解压独立最多 32 路。
+- 项目包页的全部刷新一次调用 Core，滚动刷新并逐仓返回结果。首屏取得第一批
+  候选即可显示，其余候选和名称、链接在后台补齐。全量摘要已包含锁定项，完整性核对通过后才开放
+  批量操作。Core 仅复用一份有界摘要，每页仍重验项目、来源和设置指纹。
 - 原生打开/保存只选择路径，Core 负责格式、全量查询和文件写入。保存只创建新文件，已有文件
   明确报冲突并允许另选路径，保存弹窗不承诺覆盖。失败不留下可被当作成功的半成品，且不能清理
   非本次创建的文件。普通成功轻提示，排除项/部分失败持续保留供用户处理。

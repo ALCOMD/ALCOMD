@@ -62,6 +62,24 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 
 ## 完成定义
 
+### M7 修订：按 VPM 规则锁定归档
+
+项目所有者批准：仓库声明 `zipSHA256` 时严格比对；缺省时仅为已求解选中的 HTTP(S) 归档执行有界首次下载，验证 ZIP 和包身份后计算摘要，确认安装前固定摘要。后续读取及 Apply 继续按固定摘要验证。`author.email` 缺省只影响展示。畸形的已声明摘要继续拒绝。权限、来源与项目重验、旧资产检查、缓存完整性及恢复规则继续生效。
+
+项目所有者批准 State24。放宽现有 resolver-ready 触发器对 `zip_sha256` 和 `author_email` 的非空约束，增加 `local_zip_sha256` 存放首次取得且验证过的摘要。只在同一 owner、仓库、包 ID、版本、归档 URL 与清单指纹的记录上复用，仓库刷新时仅保留仍匹配的绑定。仓库增加 `resolver_indexed`，区分已按新规则解析的快照和需要重新索引的旧快照，避免 HTTP 304 保留旧判定，也避免个别已知无效版本阻塞整库。新登记直接使用同次下载的索引。现有 Plan 与 RPC DTO 仍使用必填的已锁定摘要。迁移保留全部旧行，不新增表、权限或依赖。
+
+M7 获批的 [State26](../../specs/storage/state-v26.md) 在包索引中标识包级 `headers`。冷缓存从固定包声明取得请求头，同时保留原 ZIP 校验和计划边界。ZIP 首跳同名包头覆盖仓库头。跨来源重定向按当前 M7 认证合同处理，首次无摘要下载支持 HTTP(S)，校验后固定摘要。
+
+归档网络传输与仓库读取、刷新共用 Core 全进程 64 路 HTTP 额度，ZIP 解压及包身份校验独立最多 32 路。归档按固定摘要校验，同摘要对象共用缓存保护，缓存发布仍执行配额检查。各阶段等已启动工作结束后再进入下一阶段或处理失败。项目提交顺序、单事务、journal 与回滚保持原有语义。
+
+### 普通安装的 VPM 旧资产迁移（所有者已批准）
+
+[VRChat 官方 VPM 包清单](https://vcc.docs.vrchat.com/vpm/packages/#vpm-manifest-additions) 定义 `legacyFiles`、`legacyFolders` 用于迁移并移除匹配的旧资产，GUID 可定位移动后的资产，`legacyPackages` 用于从项目及清单移除被替代的旧包。此合同限于包 Plan/Apply 中由所选包清单声明的旧项。
+
+- Plan 并行获取拟安装或替换包的归档，读取固定摘要对应的包清单，与冻结的来源清单共同确定清理范围。Apply 复用缓存。按声明的项目相对路径匹配文件和目录，原路径未匹配时在 `Assets` 内按声明 GUID 查找移动后的资产。冻结实际命中的项目相对路径、类型、声明来源、目标身份与内容证据，包含随资产移走的 `.meta`。拒绝项目根外路径、链接或挂载跳转、歧义匹配、无法复验的对象和与写入目标重叠的清理路径。
+- 含旧资产清理的 ChangeSet 使用 `formatVersion: 4`。公共 `legacyRemovals` 显示 `path`、`kind`、`packageId`，安装确认列明拟移走项。`legacyPackages` 通过现有 remove mutation 更新包目录和清单。沿用现有 Plan/Apply、权限及 SQLite 表；身份与内容证据只保存在 Core。
+- Apply 先按冻结清单重新核对，再在现有事务中把旧项移入同卷隔离区。任何条目变化时重新生成 Plan。失败或中断按事务恢复，提交后再清理隔离区。用隔离项目验证声明路径、GUID 移动、旧包替换、确认取消、迟到变化与失败回滚。
+
 - 同一个 catalog、项目 snapshot 和请求在任意运行中产生 byte-stable、顺序稳定的 ChangeSet；同
   package/version 存在多个 source 时不会依赖 HashMap 或文件枚举顺序。
 - Plan 固定 package ID/version、source identity、archive URL、声明哈希、dependency graph、项目
@@ -69,8 +87,8 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
   静默采用新候选。
 - install、remove、upgrade、downgrade 与 resolve 都通过同一 resolver/ChangeSet；至少 install 与
   remove 完成真实 RPC -> Operation -> project mutation -> restart recovery 垂直验证。
-- remote package 缺少合法、已支持的强 hash 时 fail closed；下载、cache hit 与 offline hit 都在
-  使用前重新验证内容，不信任 sidecar 或文件名。
+- remote package 声明的强哈希必须合法并与归档匹配。HTTP(S) 包可按本节修订锁定首次取得的摘要；
+  下载、cache hit 与 offline hit 都按固定摘要重新验证内容。
 - archive 中的路径穿越、绝对路径、链接、设备路径、重复/大小写碰撞、超限 entry 和 zip bomb 在
   写入项目树前被拒绝；任何失败都不能写出已验证 staging/project/cache root。
 - project commit 的每个外部可观察步骤均有 durable phase 与恢复证据；在 download、extract、旧包
@@ -226,11 +244,9 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 ## Package download 与 cache
 
-- 复用 M3 受限 `reqwest` client 的 anonymous/no-proxy/no-cookie/no-credential 基线；package URL
-  只允许无 userinfo 的 HTTP/HTTPS。HTTPS -> HTTP redirect 拒绝，最多 5 次 redirect，connect
-  timeout 10 秒，单次下载总 timeout 10 分钟。
-- remote package 必须声明格式正确的强 digest；首个切片建议只接受 SHA-256 64 hex。缺失、畸形、
-  不支持算法与 hash mismatch 都 fail closed，不静默退化为“下载后自算即可”。
+- 仓库和包下载复用 Reqwest 的系统代理检测。包地址只允许无 userinfo 的 HTTP(S)，最多 10 次重定向，
+  连接超时 10 秒，单次下载超时 10 分钟。认证头按 M7 对齐规则发送。
+- 已声明的 SHA-256 必须合法并匹配归档。缺省时按当前合同验证首次归档并固定本地摘要。
 - 读取 `Content-Length` 只能提前拒绝，不能替代 streamed byte counter。达到上限、超时、中断或
   checksum 失败时删除/隔离 ALCOMD 自有 partial，不发布 cache object。
 - cache key 使用算法 + digest 的 versioned content-addressed key；package ID、URL、显示名不能单独

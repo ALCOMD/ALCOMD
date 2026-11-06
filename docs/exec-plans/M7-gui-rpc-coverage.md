@@ -2,7 +2,7 @@
 
 状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属。单页业务日志和模板重建后的现行清单共 84 项。当前阶段见 `../status.md`。H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
+本矩阵记录方法归属。含仓库认证写入的现行清单共 85 项。当前阶段见 `../status.md`。H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -43,6 +43,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `repositories.get` | `repositories.read.v1` | Repository detail | load repository | R | no | no | data | `gui.m7-core-surfaces` |
 | `repositories.packages` | `repositories.read.v1` | Repository detail, Project Packages | browse catalog | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `repositories.register` | `repositories.registry.v1` | Repositories add dialog | register inspected source | W | yes | no | mutation/idempotency | `gui.m7-operation-flows` |
+| `repositories.setCredentials` | `repositories.registry.v1` | Repositories authentication dialog | replace or clear write-only credentials | W | yes | no | local owner/revision/idempotency | `gui.m7-resource-lifecycle` |
 | `repositories.refresh` | `repositories.registry.v1` | Repository detail | refresh repository | W | no | no | refreshing/stale | `gui.m7-operation-flows` |
 | `repositories.unregister` | `repositories.registry.v1` | Repository detail | remove repository | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
 | `packages.planInstall` | `packages.plan.v1` | Project Packages | plan install | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |

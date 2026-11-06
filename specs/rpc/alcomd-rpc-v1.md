@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config10 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config12 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
 
 ## 1. M1 合同范围
 
@@ -263,8 +263,8 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v23 由 daemon 的存储
-组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 10，
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v26 由 daemon 的存储
+组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 12，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
 不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
@@ -472,7 +472,16 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 完整读取成功后写 registry/cache；同一连接可复用 60 秒内同一规范化远程来源的预览 |
 | `repositories.refresh` | `repositories.registry.v1` | `repositories.manage` | 条件刷新并保留 last-known-good |
 | `repositories.refreshAll` | `repositories.registry.v1` | `repositories.read` + `repositories.manage` | Core 滚动刷新调用者已登记的仓库，复用共享下载额度 |
-| `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，不删 local source |
+| `repositories.setCredentials` | `repositories.registry.v1` | 本机所有者及 `repositories.manage` | 用仓库 revision 和幂等键替换认证引用，显式 `credentials: null` 清除 |
+| `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，保留 local source；Core 的内置仓库返回 `permission_denied` |
+
+本机所有者可在 `repositories.inspect` 和 `repositories.register` 传入写入专用 `credentials`。
+`headers` 最多 16 项，完整凭据 JSON 上限 2560 字节。旧 `allowedOrigins` 字段被拒绝，旧凭据需重新输入。
+索引和 ZIP 首跳直接使用仓库头，ZIP 同名包头优先。重定向更换协议、主机或端口时移除
+`Authorization`、`Cookie`、`Cookie2`、`Proxy-Authorization` 和 `WWW-Authenticate`，其余已验证的头继续发送。
+首次下载缺少发布方摘要的 ZIP 可使用 HTTP(S)，验证后固定摘要。列表导入支持 `vcc://vpm/addRepo` 的 `headers[]`，
+内层仓库允许 HTTP(S)，忽略未知查询参数。
+读取只显示 `credentialsConfigured`，显式导出认证仓库时，文件包含该仓库的 VCC 链接及明文请求头。包计划固定仓库修订和内部引用，轮换使旧计划失效。
 
 `projects.inspect/register` 的 RPC path 必须绝对；CLI 可先解析相对路径。local repository path 同样
 必须绝对，remote URL 只允许无 userinfo 的 HTTP(S)。DTO、枚举、长度、cursor 与可选字段由
@@ -531,13 +540,13 @@ M4 在 RPC major 1 上冻结两个 capability：
 | `packages.apply.v1` | `packages.applyPlan` |
 
 本节同时约束已接入的 M4 最小生产垂直切片、hello capability 广告与 State Schema v3 自动
-migration。完整 GUI/CLI/MCP、credential、hashless/legacy VPM 和 v3 parity 仍未实现，不得因这些
+migration。完整 GUI/CLI/MCP、credential、完整 legacy VPM 和 v3 parity 仍未实现，不得因这些
 method 已接通而描述为完整 package manager。
 
 所有 Plan 方法是 bounded 同步 RPC，需要 `projects.read + repositories.read + packages.read` 及目标
-resource scope。它们可以保存 immutable durable Plan，但不得写 Unity 项目、下载 package、访问
-网络或触发 repository refresh。只使用最后一次显式 refresh 产生的 resolver-ready snapshot；否则
-返回 `repository_refresh_required`。
+resource scope。它们保存 immutable durable Plan，使用已登记的 resolver-ready snapshot，不写 Unity
+项目或触发 repository refresh。为验证旧资产声明可读取对应清单；选中 HTTP(S) 包缺少发布方摘要时，
+仅下载尚未锁定的归档以验证并固定实际 SHA-256。
 
 Plan 的 action 与 method 一一对应，返回 `planId`、`state=unapplied`、project revision、byte-stable
 ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 4,096 dependency edge，
@@ -565,9 +574,20 @@ identity、manifest fingerprint、package version、artifact URL 与 SHA-256。�
 请求连接断开不取消已返回的 OperationId。Apply Operation kind 是 `packages.apply`，复用 M2 state、
 revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phase，不含完整 path/URL/entry。
 
-M4 remote archive 只接受 64-lower-hex SHA-256，缺失/畸形均为 `package_hash_required`。这是 M4
-安全子集而非完整 VPM hashless 兼容。M4 不提供 yanked override 或 legacy cleanup；yanked 不参与
-新选择，legacy metadata 需要变更时返回 `package_legacy_cleanup_required`。
+仓库声明 `zipSHA256` 时接受 64-lower-hex SHA-256 并严格比对，畸形值返回 `package_hash_required`。
+字段缺省时首次下载后本地固定摘要。Apply 使用计划中的固定摘要核对实际归档。
+`author.email` 可省略。Yanked 版本不参与新选择。
+
+普通包安装、更新和解析计划处理 VPM 的 `legacyFiles`、`legacyFolders` 和
+`legacyPackages`。Plan 使用固定来源和归档清单，依据项目相对路径和 GUID 匹配旧资产，
+随资产纳入存在的 `.meta`，并为仍登记的旧包生成 remove mutation。若所选依赖仍需要
+待移除的旧包，返回 `package_dependency_conflict`。
+
+采用该迁移依据的 ChangeSet 使用 `formatVersion: 4`。非空 `legacyRemovals` 为最多
+4096 项的有序数组，每项包含项目相对 `path`、`kind`（`file` 或 `directory`）与
+声明来源 `packageId`。清单及内部身份、内容证据由 ChangeSet 摘要绑定。
+Apply 复验并在现有事务中隔离旧项。目标清单变化时返回 `plan_stale`，
+无法安全确认的路径返回 `package_legacy_cleanup_required`。
 
 M4 新增的稳定错误由 `rpc-error.schema.json` 枚举冻结，包括 package manifest/range/dependency/
 Unity/source/hash/cache/archive/path、Plan、refresh 与 project transaction 错误。普通 `error.data` 只
@@ -762,6 +782,10 @@ M7 保留设置 base methods 与独立 `unity.hub.open.v1`。所有者于2026-11
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
 | `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
 
+Config12 的 `settings.network.proxy` 是完整的代理模式对象。省略 `update.network` 保留当前偏好。
+显式更新复用 settings revision CAS，保存成功后新请求采用该偏好。模式、地址边界和迁移见
+[Config12](../config/settings-v12.md)。
+
 已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
 偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
 未知字段拒绝；无效显式路径与同行更新整次拒绝。Core 校验绝对路径、实际文件及可执行性，
@@ -940,9 +964,10 @@ P6 snake_case wire 的直接替换，不接受旧字段或混合格式，不增�
 | repositories.exportListFile | exportListFileParams / exportListFileResult | 已认证 local-owner + repositories.read |
 
 输入为最多 1 MiB、4096 个非空条目的 UTF-8 文本，接受可选 BOM、LF/CRLF、trim 与 `#` 行内注释。
-普通 http(s) URL 和无 headers 的 `vcc://vpm/addRepo?url=...` 可以成为 candidate；重复来源标为
-duplicate，无效或不支持条目保留行号/稳定原因。带 headers、userinfo 等不能完整表达的来源
-不降级为匿名 URL；不返回或记录原始无效行和认证秘密。`inspectListFile` 只读解析并返回文件精确
+普通 HTTP(S) URL 与 `vcc://vpm/addRepo?url=...` 可以成为 candidate。添加链接可通过 `headers[]`
+为内层 HTTP(S) 仓库携带请求头，预览只显示是否配置认证。重复来源标为 duplicate，无效或不支持条目
+保留行号和稳定原因。含 userinfo 或无法完整表达的认证项不降级为匿名 URL。不返回或记录原始无效行和认证秘密。
+`inspectListFile` 只读解析并返回文件精确
 字节的 SHA-256 fingerprint，不登记、不下载。
 GUI 确认一次后，将选定路径、预览 fingerprint 与本次幂等键交给 `importListFile`。
 Core 复用相同读取和解析边界，文件内容变化时返回 `repository_list_changed`，下载和登记均未开始。
@@ -952,12 +977,12 @@ Core 跳过已登记项，在共享的 64 路下载额度内滚动下载和解�
 `cancelListRegistration` 按本次幂等键请求停止接纳新条目。`stopped: true` 表示 Core 已记录停止，
 包括停止请求先于导入请求到达的情况。已开始项按原流程完成，原导入请求返回逐项结果。
 
-导出预览基于 Core 一致的全量登记快照，不能只取 GUI 当前页。fingerprint 绑定输出内容、登记
-范围和排除项；执行时变化即在创建文件前返回 repository_list_changed，要求重新预览。
-输出复用 v3 普通 URL 列表，保留 Core 已验证完整 URL，包含 query 的原内容与顺序；不因存在
-query 排除，也不删除或重排参数。GUI 必须说明地址本身可能包含凭据、分享前需检查，显式确认
-后才能导出。不会读取凭据存储或自动附带 headers/密码/token，不声称文件绝无秘密，不自动上传。
-本地或当前格式/权限不能表达的认证来源逐项列出排除原因。
+导出预览基于 Core 一致的用户仓库快照，范围独立于 GUI 当前页，排除 VRChat 官方及精选内置仓库。
+fingerprint 绑定输出字节数、范围、修订、内部凭据引用及排除项。执行时变化在创建文件前返回
+repository_list_changed，要求重新预览。
+无凭据的仓库直接写入完整 URL，保留查询参数及顺序。认证仓库由 Core 从凭据存储读取请求头，
+写入含明文凭据的 VCC 链接。GUI 提示并取得显式确认，RPC 响应和日志不返回明文，不自动上传。
+本地或不支持的来源逐项列出排除原因。
 
 仅允许新建输出文件：已存在目标返回 repository_list_target_exists 并保持原文件；Core 数据和
 已登记项目内目标拒绝。写入失败只清理本次创建且身份匹配的半成品，不删除其他文件；保存选择
