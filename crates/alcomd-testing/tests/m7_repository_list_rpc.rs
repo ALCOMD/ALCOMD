@@ -1,6 +1,6 @@
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
-use alcomd_protocol::{RepositoryListEntryStatus, RepositorySource};
+use alcomd_protocol::{RepositoryListEntryStatus, RepositoryListSource, RepositorySource};
 use std::fs;
 use std::path::PathBuf;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -41,30 +41,28 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     let address = listener.local_addr().expect("address");
     let url = format!("http://{address}/repository.json?z=2&a=1&a=3");
     let server = tokio::spawn(async move {
-        for _ in 0..2 {
-            let (mut stream, _) = listener.accept().await.expect("request");
-            let mut bytes = [0_u8; 4096];
-            let read = stream.read(&mut bytes).await.expect("read");
-            assert!(
-                String::from_utf8_lossy(&bytes[..read])
-                    .starts_with("GET /repository.json?z=2&a=1&a=3 HTTP/1.1")
-            );
-            let body = r#"{"id":"list-rpc-remote","name":"List RPC","packages":{}}"#;
-            stream
-                .write_all(
-                    format!(
-                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                        body.len()
-                    )
-                    .as_bytes(),
+        let (mut stream, _) = listener.accept().await.expect("request");
+        let mut bytes = [0_u8; 4096];
+        let read = stream.read(&mut bytes).await.expect("read");
+        assert!(
+            String::from_utf8_lossy(&bytes[..read])
+                .starts_with("GET /repository.json?z=2&a=1&a=3 HTTP/1.1")
+        );
+        let body = r#"{"id":"list-rpc-remote","name":"List RPC","packages":{}}"#;
+        stream
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
                 )
-                .await
-                .expect("response");
-        }
+                .as_bytes(),
+            )
+            .await
+            .expect("response");
     });
     let input = fixture.0.join("input.txt");
     let input_bytes = format!(
-        "# v3 export\r\n{url}\r\n{url}\r\nfile:///local\r\nvcc://vpm/addRepo?url=https%3A%2F%2Fexample.test&headers%5BX-Token%5D=fixture\r\ninvalid\r\n"
+        "# v3 export\r\n{url}\r\n{url}\r\nfile:///local\r\nvcc://vpm/addRepo?url=https%3A%2F%2Fexample.test&headers%5B%5D=X-Token%3Aprivate-preview-token\r\ninvalid\r\n"
     );
     fs::write(&input, &input_bytes).expect("input");
     let inspected = client
@@ -81,10 +79,19 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
             RepositoryListEntryStatus::Candidate,
             RepositoryListEntryStatus::Duplicate,
             RepositoryListEntryStatus::Unsupported,
-            RepositoryListEntryStatus::Unsupported,
+            RepositoryListEntryStatus::Candidate,
             RepositoryListEntryStatus::Invalid
         ]
     );
+    let authenticated = &inspected.entries[3];
+    assert!(authenticated.credentials_configured);
+    assert!(matches!(
+        &authenticated.source,
+        Some(RepositoryListSource::Remote { url }) if url == "https://example.test/"
+    ));
+    let preview_json = serde_json::to_string(&inspected).expect("public preview");
+    assert!(!preview_json.contains("X-Token"));
+    assert!(!preview_json.contains("private-preview-token"));
     assert!(
         client
             .repositories_list(None, None)
@@ -105,7 +112,7 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
     client
         .repository_register(source, "list-add-remote".into())
         .await
-        .expect("explicit append");
+        .expect("explicit append reuses the single remote response");
     server.await.expect("server");
     let old_preview = client
         .repository_list_preview_export()

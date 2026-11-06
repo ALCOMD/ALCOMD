@@ -225,8 +225,12 @@ fn vcc_list_headers_are_excluded_from_the_normalized_http_source() {
     link.query_pairs_mut()
         .append_pair("url", "http://repository.test/index.json")
         .append_pair("future", "ignored")
-        .append_pair("headers[]", "Authorization:obsolete")
         .append_pair("headers[]", "Authorization:Bearer private-fixture-token");
+    let mut duplicate = link.clone();
+    duplicate
+        .query_pairs_mut()
+        .append_pair("headers[]", "Authorization:obsolete");
+    assert!(parse_source(duplicate.as_str()).is_err());
     let (source, credentials) = parse_source(link.as_str()).expect("authenticated VCC link");
     let credentials = credentials.expect("write-only header");
     assert_eq!(source, "http://repository.test/index.json");
