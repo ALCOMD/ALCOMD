@@ -44,3 +44,44 @@ test("scrolling automatically reads older history on the same page", async ({ pa
     await expect(page.getByRole("tab")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Load more", exact: true })).toHaveCount(0);
 });
+
+test("the log page combines search, initiator, status and operation type within the loaded window", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/logs&state=ready");
+    await expect(page.getByText("No logs yet", { exact: true })).toBeVisible();
+    const records = Array.from({ length: 103 }, (_, index) => fixtureRecord(index + 1, "GUI"));
+    records[99] = { ...fixtureRecord(100, "CLI"), action: "projects.refresh", outcome: "failed", details: "Manifest missing" };
+    records[100] = { ...fixtureRecord(101, "CLI"), outcome: "failed", details: "Manifest missing" };
+    records[101] = { ...fixtureRecord(102, "CLI"), details: "Manifest validated" };
+    records[102] = { ...fixtureRecord(103, "GUI"), outcome: "failed", details: "Manifest missing" };
+    await page.evaluate((entries) => window.fixtureLogs.replace(entries), records);
+
+    const table = page.getByRole("table", { name: "Logs", exact: true });
+    await expect(table.locator("tbody tr")).toHaveCount(100);
+    const before = await page.evaluate(() => window.fixtureLogs.reads.length);
+    const toolbar = page.getByRole("group", { name: "Log filters" });
+    const search = page.locator(".page-header").getByRole("searchbox", { name: "Search loaded logs" });
+    await search.fill("MANIFEST");
+    await expect(table.locator("tbody tr")).toHaveCount(4);
+    await toolbar.getByRole("combobox", { name: "Initiator" }).click();
+    await page.getByRole("option", { name: "CLI", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(3);
+    await toolbar.getByRole("combobox", { name: "Status" }).click();
+    await page.getByRole("option", { name: "Failed", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(2);
+    const operationType = toolbar.getByRole("combobox", { name: "Operation type" });
+    await operationType.click();
+    await page.getByRole("option", { name: "Read", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.getByText("Fixture project 100", { exact: true })).toBeVisible();
+    await operationType.click();
+    await page.getByRole("option", { name: "Write", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.getByText("Fixture project 101", { exact: true })).toBeVisible();
+    await search.fill("c:\\isolated\\项目 101");
+    await expect(table.getByText("Fixture project 101", { exact: true })).toBeVisible();
+    await search.fill("not in the loaded window");
+    await expect(table.getByText("No matching logs in the loaded records")).toBeVisible();
+    await search.clear();
+    await expect(table.getByText("Fixture project 101", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.fixtureLogs.reads.length)).toBe(before);
+});

@@ -5,7 +5,7 @@ import { useReconnect } from "./capabilities";
 import { useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 import type { EventConnectionState } from "./core-events";
 import { useTranslation, type Translate } from "./i18n";
-import { OperationLogPage } from "./OperationLogPage";
+import { OperationLogPage, type OperationLogType } from "./OperationLogPage";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
 
@@ -78,6 +78,7 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
     const [model, setModel] = useState<LogWindow>(empty);
     const [pending, setPending] = useState(true);
     const [error, setError] = useState<string>();
+    const [filtering, setFiltering] = useState(false);
 
     const apply = useCallback((next: LogWindow) => {
         state.current = next;
@@ -163,22 +164,27 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
             const row = viewport.querySelector<HTMLElement>(`tr[data-row-key="${CSS.escape(before.id)}"]`);
             if (row) viewport.scrollTop += row.getBoundingClientRect().top - before.top;
         }
-        if (!pending && !error && viewport.scrollHeight <= viewport.clientHeight + 4) readAtEdge(viewport);
-    }, [error, model, pending, readAtEdge]);
+        if (!filtering && !pending && !error && viewport.scrollHeight <= viewport.clientHeight + 4) readAtEdge(viewport);
+    }, [error, filtering, model, pending, readAtEdge]);
 
     const disconnected = connection.kind === "disconnected" || connection.kind === "failed";
     const problem = error ?? (disconnected ? connection.error?.code ?? "daemon_unavailable" : undefined);
     const errorMessage = problem === undefined ? undefined : model.entries.length === 0
         ? t(requestErrorMessage(problem)) : t("Refresh failed. The last loaded result is still shown.");
-    return <OperationLogPage entries={model.entries.map((entry) => ({
-        id: `${entry.sequence}:${entry.entryId}`, actor: entry.actor, occurredAtMs: entry.occurredAtMs,
-        operation: label(t, actions, entry.action), step: label(t, steps, entry.step), outcome: entry.outcome,
-        target: entry.target === undefined ? undefined : {
-            name: entry.target.name ?? entry.target.path?.split(/[\\/]/).filter(Boolean).at(-1) ?? label(t, targets, entry.target.kind),
-            path: entry.target.path
-        },
-        details: entry.details
-    }))} pending={pending && !disconnected} error={errorMessage} listRef={root}
+    return <OperationLogPage entries={model.entries.map((entry) => {
+        const action = Object.hasOwn(actions, entry.action) ? actions[entry.action] : undefined;
+        // Core's discovery service uses the same registration action as manual registration.
+        const type = entry.action === "projects.register" && entry.actor === "Core" ? "passive" : action?.[1];
+        return {
+            id: `${entry.sequence}:${entry.entryId}`, actor: entry.actor, occurredAtMs: entry.occurredAtMs,
+            operation: t(action?.[0] ?? entry.action), type, step: label(t, steps, entry.step), outcome: entry.outcome,
+            target: entry.target === undefined ? undefined : {
+                name: entry.target.name ?? entry.target.path?.split(/[\\/]/).filter(Boolean).at(-1) ?? label(t, targets, entry.target.kind),
+                path: entry.target.path
+            },
+            details: entry.details
+        };
+    })} pending={pending && !disconnected} error={errorMessage} listRef={root} onFilterChange={setFiltering}
         onRetry={() => { if (disconnected || error === "daemon_unavailable") reconnect?.(); retry(); }}
         onWheel={(event) => {
             const viewport = scrollViewport(root.current);
@@ -193,23 +199,47 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
 }
 
 const label = (t: Translate, map: Readonly<Record<string, string>>, key: string) => t((Object.hasOwn(map, key) ? map[key] : undefined) ?? key);
-const actions = {
-    "projects.register": "Add project", "projects.refresh": "Read project content",
-    "projects.unregister": "Remove project registration", "projects.setFavorite": "Change project favorite",
-    "repositories.register": "Add repository", "repositories.refresh": "Fetch repository", "repositories.unregister": "Remove repository",
-    "repositories.exportListFile": "Export repository list",
-    "packages.apply": "Change packages", "packages.bulk": "Change packages", "packages.install": "Install packages",
-    "packages.remove": "Remove packages", "packages.upgrade": "Upgrade packages", "packages.downgrade": "Downgrade packages",
-    "packages.resolve": "Resolve packages", "packages.reinstall": "Reinstall packages",
-    "packages.userPackages.enroll": "Add user package", "packages.userPackages.refresh": "Read user package content", "packages.userPackages.remove": "Remove user package registration",
-    "backups.create": "Create backup", "backups.restore": "Restore backup",
-    "projects.create": "Create project", "projectTemplates.save": "Save template", "projectTemplates.remove": "Remove template",
-    "projects.copy": "Copy project", "projects.delete-directory": "Delete project directory", "projects.unity-migration": "Change project Unity version",
-    "extensions.install": "Install extension", "extensions.uninstall": "Uninstall extension", "state.check": "Check runtime status",
-    "extensions.enable": "Enable extension", "extensions.disable": "Disable extension", "extensions.permission": "Change extension permissions",
-    "unity.launch": "Request Unity launch", "unity.hub.open": "Open Unity Hub", "unity.projectLaunchConfig": "Change Unity launch arguments",
-    "unity.installations.register": "Add Unity installation", "unity.installations.remove": "Remove Unity installation",
-    "unity.installations.refresh": "Find Unity installations", "settings.update": "Save settings"
+const actions: Readonly<Record<string, readonly [label: string, type: OperationLogType]>> = {
+    "projects.register": ["Add project", "write"],
+    "projects.refresh": ["Read project content", "read"],
+    "projects.unregister": ["Remove project registration", "write"],
+    "projects.setFavorite": ["Change project favorite", "write"],
+    "repositories.register": ["Add repository", "write"],
+    "repositories.refresh": ["Fetch repository", "read"],
+    "repositories.unregister": ["Remove repository", "write"],
+    "repositories.exportListFile": ["Export repository list", "write"],
+    "packages.apply": ["Change packages", "write"],
+    "packages.bulk": ["Change packages", "write"],
+    "packages.install": ["Install packages", "write"],
+    "packages.remove": ["Remove packages", "write"],
+    "packages.upgrade": ["Upgrade packages", "write"],
+    "packages.downgrade": ["Downgrade packages", "write"],
+    "packages.resolve": ["Resolve packages", "write"],
+    "packages.reinstall": ["Reinstall packages", "write"],
+    "packages.userPackages.enroll": ["Add user package", "write"],
+    "packages.userPackages.refresh": ["Read user package content", "read"],
+    "packages.userPackages.remove": ["Remove user package registration", "write"],
+    "backups.create": ["Create backup", "write"],
+    "backups.restore": ["Restore backup", "write"],
+    "projects.create": ["Create project", "write"],
+    "projectTemplates.save": ["Save template", "write"],
+    "projectTemplates.remove": ["Remove template", "write"],
+    "projects.copy": ["Copy project", "write"],
+    "projects.delete-directory": ["Delete project directory", "write"],
+    "projects.unity-migration": ["Change project Unity version", "write"],
+    "extensions.install": ["Install extension", "write"],
+    "extensions.uninstall": ["Uninstall extension", "write"],
+    "state.check": ["Check runtime status", "maintenance"],
+    "extensions.enable": ["Enable extension", "write"],
+    "extensions.disable": ["Disable extension", "write"],
+    "extensions.permission": ["Change extension permissions", "write"],
+    "unity.launch": ["Request Unity launch", "open"],
+    "unity.hub.open": ["Open Unity Hub", "open"],
+    "unity.projectLaunchConfig": ["Change Unity launch arguments", "write"],
+    "unity.installations.register": ["Add Unity installation", "write"],
+    "unity.installations.remove": ["Remove Unity installation", "write"],
+    "unity.installations.refresh": ["Find Unity installations", "maintenance"],
+    "settings.update": ["Save settings", "write"]
 };
 const steps = {
     inspect_project: "Check project files", fetch_repository: "Fetch repository", registered: "Save registration",
