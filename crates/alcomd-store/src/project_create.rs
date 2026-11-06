@@ -124,7 +124,7 @@ pub(super) fn accept(
         if declaration
             .editor_version
             .as_ref()
-            .is_some_and(|version| version != &input.unity_version)
+            .is_none_or(|version| version != &input.unity_version)
         {
             return Err(error(ProjectCreateErrorCode::DependencyUnsatisfied));
         }

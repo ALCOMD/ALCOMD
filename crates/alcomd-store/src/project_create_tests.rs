@@ -102,6 +102,33 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
         ProjectCreateErrorCode::DependencyUnsatisfied
     );
 
+    let mut old = declaration("com.example.old", Vec::new());
+    old.editor_version = None;
+    let old = project_templates::save(&mut connection, &owner, old, None, 9)
+        .expect("existing template record without a version");
+    let old_reference = ProjectTemplateRef {
+        id: old.declaration.id.clone(),
+        revision: old.revision,
+    };
+    assert_eq!(
+        accept(
+            &mut connection,
+            acceptance(&owner, input(Some(old_reference))),
+            10
+        )
+        .expect_err("a template without a declared version cannot create a project")
+        .code(),
+        ProjectCreateErrorCode::DependencyUnsatisfied
+    );
+    project_templates::remove(
+        &mut connection,
+        &owner,
+        &old.declaration.id,
+        old.revision,
+        10,
+    )
+    .expect("retire fixture record before checking the catalogue");
+
     let accepted = accept(
         &mut connection,
         acceptance(&owner, input(Some(reference.clone()))),
@@ -176,7 +203,7 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
             .iter()
             .filter(|event| event.kind == "project-template.changed")
             .count(),
-        3
+        5
     );
     fail(
         &mut connection,
@@ -191,6 +218,36 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
         !project_templates::archive_references(&connection)
             .unwrap()
             .contains(&frozen_digest)
+    );
+}
+
+#[test]
+fn reseeding_replaces_retired_builtins_and_preserves_user_templates() {
+    let dir = crate::events_tests::Directory::new();
+    let mut connection = sqlite::initialize_connection(&dir.database()).expect("isolated store");
+    let owner = PrincipalId::local_owner();
+    let old = declaration("com.example.builtin", Vec::new());
+    project_templates::seed(&mut connection, &owner, vec![old.clone()]).expect("seed old ID");
+    let user = project_templates::save(
+        &mut connection,
+        &owner,
+        declaration("com.example.user", Vec::new()),
+        None,
+        1,
+    )
+    .expect("save user template");
+    let mut new = old;
+    new.id.push_str(".2022");
+    project_templates::seed(&mut connection, &owner, vec![new.clone()]).expect("seed yearly ID");
+    let page = project_templates::list(&connection, &owner, 100, None).expect("updated catalogue");
+    assert_eq!(page.templates.len(), 2);
+    assert_eq!(page.templates[0].declaration, new);
+    assert!(page.templates[0].locked);
+    assert_eq!(page.templates[1], user);
+    project_templates::seed(&mut connection, &owner, vec![new]).expect("repeat seeding");
+    assert_eq!(
+        project_templates::list(&connection, &owner, 100, None).unwrap(),
+        page
     );
 }
 

@@ -23,6 +23,7 @@ use crate::{
 
 const UPM_MANIFEST: &[u8] = b"{\"dependencies\":{}}\n";
 const VPM_MANIFEST: &[u8] = b"{\"dependencies\":{},\"locked\":{}}\n";
+const PROJECT_VERSION_PATH: &[&str] = &["ProjectSettings", "ProjectVersion.txt"];
 const OWNER_MARKER: &str = "project-create.json";
 
 #[derive(Clone)]
@@ -71,6 +72,8 @@ impl<S> ProjectCreateEngine<S> {
             Some(packages) => packages.change_set.vpm_manifest_sha256,
             None => expected_manifest("Packages/vpm-manifest.json", VPM_MANIFEST)?,
         };
+        let version = project_version(work);
+        let generated_version_digest: [u8; 32] = Sha256::digest(&version).into();
         let files = [
             (
                 &["Packages", "manifest.json"][..],
@@ -78,8 +81,8 @@ impl<S> ProjectCreateEngine<S> {
             ),
             (&["Packages", "vpm-manifest.json"][..], expected_vpm),
             (
-                &["ProjectSettings", "ProjectVersion.txt"][..],
-                Sha256::digest(project_version(work)).into(),
+                PROJECT_VERSION_PATH,
+                expected_manifest("ProjectSettings/ProjectVersion.txt", version.as_bytes())?,
             ),
         ];
         for (components, expected) in files {
@@ -90,7 +93,10 @@ impl<S> ProjectCreateEngine<S> {
             )
             .map_err(|cause| destination_changed(path).with_source(cause))?;
             let actual: [u8; 32] = Sha256::digest(bytes).into();
-            if actual != expected {
+            // Older workers could publish a version file without the template's revision line.
+            if actual != expected
+                && !(components == PROJECT_VERSION_PATH && actual == generated_version_digest)
+            {
                 return Err(destination_changed(path));
             }
         }
@@ -223,15 +229,15 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             }
         }
         if work.declaration.is_some() {
-            apply_product_name(&root, &work.input.name)?;
+            let product_guid = work.project_id.to_string().replace('-', "");
+            apply_product_name(&root, &work.input.name, &product_guid)?;
         }
         let upm_digest = scaffold_manifest(&root, "manifest.json", UPM_MANIFEST)?;
         let vpm_digest = scaffold_manifest(&root, "vpm-manifest.json", VPM_MANIFEST)?;
         let version = root.join("ProjectSettings/ProjectVersion.txt");
-        if exists(&version)? {
-            fs::remove_file(&version).map_err(|cause| filesystem_error(&version, cause))?;
+        if !exists(&version)? {
+            write_new(&version, project_version(work).as_bytes())?;
         }
-        write_new(&version, project_version(work).as_bytes())?;
         sync_stage(&root)?;
         alcomd_platform::sync_directory(&container)
             .map_err(|cause| filesystem_error(&container, cause))?;
@@ -486,7 +492,11 @@ fn scaffold_manifest(
     Ok(Sha256::digest(bytes).into())
 }
 
-fn apply_product_name(root: &Path, name: &str) -> Result<(), ProjectCreateError> {
+fn apply_product_name(
+    root: &Path,
+    name: &str,
+    product_guid: &str,
+) -> Result<(), ProjectCreateError> {
     let path = root.join("ProjectSettings/ProjectSettings.asset");
     let original = if exists(&path)? {
         Some(
@@ -504,7 +514,7 @@ fn apply_product_name(root: &Path, name: &str) -> Result<(), ProjectCreateError>
     } else {
         None
     };
-    let updated = crate::template_archive::player_settings(original.as_deref(), name)
+    let updated = crate::template_archive::player_settings(original.as_deref(), name, product_guid)
         .map_err(|cause| cause.with_path(path.display().to_string()))?;
     if original.is_some() {
         fs::remove_file(&path).map_err(|cause| filesystem_error(&path, cause))?;
@@ -831,6 +841,43 @@ mod tests {
     }
 
     #[test]
+    fn imported_template_requires_an_editor_version() {
+        let fixture = Fixture::new();
+        let path = fixture.root.join("no-version.alcomdtemplate");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&path).expect("fixture file"));
+        archive
+            .start_file("package.json", zip::write::SimpleFileOptions::default())
+            .expect("metadata entry");
+        archive
+            .write_all(br#"{"name":"com.example.no-version","displayName":"No version"}"#)
+            .expect("metadata");
+        archive.finish().expect("fixture archive");
+
+        let error = fixture
+            .engine
+            .prepare_template(
+                ProjectTemplateSource::File {
+                    source_file: path.to_str().expect("fixture path").to_owned(),
+                },
+                None,
+            )
+            .expect_err("a template without an editor version cannot be imported");
+        assert_eq!(error.code(), ProjectCreateErrorCode::InvalidInput);
+        assert_eq!(
+            std::error::Error::source(&error)
+                .expect("specific reason")
+                .to_string(),
+            "template requires ProjectSettings/ProjectVersion.txt"
+        );
+        assert_eq!(
+            fs::read_dir(fixture.root.join("templates"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
     fn capture_uses_scoped_roots_and_keeps_only_selected_package_policy() {
         let fixture = Fixture::new();
         let source = fixture.root.join("source");
@@ -1066,24 +1113,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn both_templates_materialize_three_unity_versions_with_distinct_archives() {
+    async fn each_builtin_year_materializes_its_fixed_unity_version() {
         let fixture = Fixture::new();
         let engine = &fixture.engine;
         let catalog = sdk_fixture(engine);
         let builtins = engine.builtin_templates().expect("builtins");
-        assert_eq!(builtins.len(), 6);
+        assert_eq!(builtins.len(), 4);
+        let mut ids = BTreeSet::new();
+        let mut v3 = zip::ZipArchive::new(std::io::Cursor::new(include_bytes!(
+            "../../../specs/templates/builtin-scaffolds/v3-projects.zip"
+        )))
+        .expect("frozen v3 project data");
         for (index, declaration) in builtins.into_iter().enumerate() {
             let direct = &declaration.dependencies[0].package_id;
+            assert_eq!(declaration.dependencies[0].version_range, "3.x");
             let version = declaration
                 .editor_version
                 .as_deref()
                 .expect("versioned builtin");
-            let expected = match version {
-                "2022.3.22f1" => "3.10.0",
-                "2022.3.6f1" => "3.9.0",
-                "2019.4.31f1" => "3.4.2",
+            let (year, expected) = match version {
+                "2022.3.22f1" => ("2022", "3.10.0"),
+                "2019.4.31f1" => ("2019", "3.4.2"),
                 other => panic!("unexpected Unity version {other}"),
             };
+            let family = direct.strip_prefix("com.vrchat.").expect("VRChat package");
+            assert_eq!(
+                declaration.id,
+                format!("com.vrclearn.alcomd.templates.vrchat.{family}.{year}")
+            );
+            assert!(declaration.name.ends_with(&format!(" ({year})")));
+            assert!(ids.insert(declaration.id.clone()));
             let id = OperationId::new();
             let mut work = fixture.work(
                 &format!("Project {index} {version}"),
@@ -1116,6 +1175,45 @@ mod tests {
                     .all(|value| value.value == expected)
             );
             let project = Path::new(&observation.root_path);
+            let prefix = format!("{family}-{version}/");
+            let mut compared = 0;
+            for index in 0..v3.len() {
+                let mut entry = v3.by_index(index).expect("v3 file");
+                let entry_name = entry.name().expect("v3 file name");
+                let Some(relative) = entry_name.strip_prefix(&prefix).map(str::to_owned) else {
+                    continue;
+                };
+                let actual =
+                    fs::read(project.join(&relative)).expect("v3 file in generated project");
+                if relative == "Packages/vpm-manifest.json" {
+                    continue;
+                }
+                let mut expected = Vec::new();
+                std::io::Read::read_to_end(&mut entry, &mut expected).expect("v3 file bytes");
+                if relative == "ProjectSettings/ProjectSettings.asset" {
+                    expected = String::from_utf8(expected)
+                        .expect("v3 settings UTF-8")
+                        .replace(
+                            &format!("  productName: vrc-get-template-{family}-{year}"),
+                            &format!("  productName: \"{}\"", work.input.name),
+                        )
+                        .replace(
+                            "  productGUID: 00000000000000000000000000000000",
+                            &format!(
+                                "  productGUID: {}",
+                                work.project_id.to_string().replace('-', "")
+                            ),
+                        )
+                        .into_bytes();
+                }
+                assert_eq!(actual, expected, "{relative}");
+                compared += 1;
+            }
+            assert_eq!(compared, if year == "2019" { 22 } else { 26 });
+            assert_eq!(
+                fs::read(project.join("LICENSE")).expect("template license"),
+                include_bytes!("../../../specs/templates/builtin-scaffolds/LICENSE")
+            );
             assert!(
                 project
                     .join("Packages/com.vrchat.base/package.json")

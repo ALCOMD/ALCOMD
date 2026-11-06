@@ -5,6 +5,7 @@ ALCOMD v4 自有代码统一使用 `AGPL-3.0-only`，但第三方依赖与资产
 
 当前仓库包含的独立第三方资产：
 
+- 内置 Unity 工程模板的数据文件来自 ALCOMD3 v3 的 `4aa98ae4f18d42c10137278997180dbede991e88` 提交，采用 MIT 许可。来源目录、归档摘要和模板中保留的许可见 `specs/templates/builtin-scaffolds/README.md`。
 - GUI 图标：Copyright (c) 2024 lilxyzw、anatawa12 及其他贡献者，采用
   Creative Commons Attribution 4.0 International；完整条款见
   `apps/alcomd-gui/icon-LICENSE`，来源提交、原始摘要与生成文件摘要见

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, Metadata, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -28,6 +28,10 @@ const VPM: &str = "Packages/vpm-manifest.json";
 const EDITOR: &str = "ProjectSettings/ProjectVersion.txt";
 const PLAYER: &str = "ProjectSettings/ProjectSettings.asset";
 const RESOLVER: &str = "com.vrchat.core.vpm-resolver";
+const BUILTIN_PROJECTS: &[u8] =
+    include_bytes!("../../../specs/templates/builtin-scaffolds/v3-projects.zip");
+const BUILTIN_PROJECT_LICENSE: &[u8] =
+    include_bytes!("../../../specs/templates/builtin-scaffolds/LICENSE");
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -42,7 +46,6 @@ struct BuiltinFamily {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct BuiltinVariant {
     editor_version: String,
-    id_suffix: String,
     locked_versions: BTreeMap<String, String>,
 }
 
@@ -103,56 +106,98 @@ impl TemplateArchiveStore {
                 self.publish(&path)
             }
             ProjectTemplateSource::File { source_file } => {
-                let source = template_path(&source_file)?;
-                let scratch = Scratch::new(&self.root)?;
-                let copy = scratch.path.join("input.zip");
-                copy_checked_file(source, &copy, LIMITS.archive_bytes)?;
-                let unpacked = scratch.path.join("input");
-                fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
-                unpack(&copy, &unpacked)?;
-                // Canonicalize container metadata and entry order without changing file content.
-                let mut contents = Inventory::default();
-                contents.add_file(&unpacked, "package.json")?;
-                for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
-                    let entry = entry.map_err(|error| io_error(&unpacked, error))?;
-                    if let Some(name) = entry
-                        .file_name()
-                        .to_str()
-                        .filter(|name| optional_root_file(name))
-                    {
-                        contents.add_file(&unpacked, name)?;
-                    }
-                }
-                for folder in ROOTS {
-                    contents.add_tree(&unpacked, folder)?;
-                }
-                let canonical = scratch.path.join("template.zip");
-                contents.write(&canonical)?;
-                self.publish(&canonical)
+                self.import_file(template_path(&source_file)?)
             }
         }
     }
 
+    fn import_file(&self, source: &Path) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        let scratch = Scratch::new(&self.root)?;
+        let copy = scratch.path.join("input.zip");
+        copy_checked_file(source, &copy, LIMITS.archive_bytes)?;
+        let unpacked = scratch.path.join("input");
+        fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
+        unpack(&copy, &unpacked)?;
+        // Canonicalize container metadata and entry order without changing file content.
+        let mut contents = Inventory::default();
+        contents.add_file(&unpacked, "package.json")?;
+        for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
+            let entry = entry.map_err(|error| io_error(&unpacked, error))?;
+            if let Some(name) = entry
+                .file_name()
+                .to_str()
+                .filter(|name| optional_root_file(name))
+            {
+                contents.add_file(&unpacked, name)?;
+            }
+        }
+        for folder in ROOTS {
+            contents.add_tree(&unpacked, folder)?;
+        }
+        let canonical = scratch.path.join("template.zip");
+        contents.write(&canonical)?;
+        self.publish(&canonical)
+    }
+
     pub(crate) fn builtins(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError> {
         self.verify_root()?;
-        let mut result = Vec::with_capacity(6);
+        let mut projects = zip::ZipArchive::new(Cursor::new(BUILTIN_PROJECTS))
+            .map_err(|error| invalid().with_source(error))?;
+        let mut result = Vec::with_capacity(4);
         for input in [
             include_str!("../../../specs/templates/vrchat-avatars.json"),
             include_str!("../../../specs/templates/vrchat-worlds.json"),
         ] {
             let family: BuiltinFamily =
                 serde_json::from_str(input).map_err(|error| invalid().with_source(error))?;
+            let kind = family
+                .package_id
+                .strip_prefix("com.vrchat.")
+                .ok_or_else(invalid)?;
             for variant in family.variants {
-                result.push(self.manual(
-                    format!("{}{}", family.id, variant.id_suffix),
-                    family.name.clone(),
-                    variant.editor_version,
-                    vec![ProjectTemplateDependency {
-                        package_id: family.package_id.clone(),
-                        version_range: "*".to_owned(),
-                    }],
-                    variant.locked_versions,
-                )?);
+                let (year, _) = variant.editor_version.split_once('.').ok_or_else(invalid)?;
+                let prefix = format!("{kind}-{}/", variant.editor_version);
+                let mut inventory = Inventory::default();
+                for index in 0..projects.len() {
+                    let mut entry = projects
+                        .by_index(index)
+                        .map_err(|error| invalid().with_source(error))?;
+                    let entry_name = entry.name().map_err(|error| invalid().with_source(error))?;
+                    let Some(relative) = entry_name.strip_prefix(&prefix).map(str::to_owned) else {
+                        continue;
+                    };
+                    let mut bytes = Vec::new();
+                    entry
+                        .read_to_end(&mut bytes)
+                        .map_err(|error| invalid().with_source(error))?;
+                    let bytes = match relative.as_str() {
+                        PLAYER => rewrite_product_name(Some(&bytes), "AlcomdTemplate", None)?,
+                        VPM if !variant.locked_versions.is_empty() => {
+                            let (direct, _, _) = read_vpm(&bytes)?;
+                            make_manifest(&direct, &variant.locked_versions)?
+                        }
+                        _ => bytes,
+                    };
+                    inventory.add_bytes(&relative, bytes)?;
+                }
+                if [UPM, VPM, EDITOR, PLAYER]
+                    .iter()
+                    .any(|file| !inventory.entries.contains_key(*file))
+                {
+                    return Err(invalid());
+                }
+                let id = format!("{}.{year}", family.id);
+                let name = format!("{} ({year})", family.name);
+                inventory.add_bytes("package.json", template_metadata(&id, &name)?)?;
+                inventory.add_bytes("LICENSE", BUILTIN_PROJECT_LICENSE.to_vec())?;
+                let scratch = Scratch::new(&self.root)?;
+                let archive = scratch.path.join("builtin.zip");
+                inventory.write(&archive)?;
+                let declaration = self.import_file(&archive)?;
+                if declaration.editor_version.as_deref() != Some(variant.editor_version.as_str()) {
+                    return Err(invalid());
+                }
+                result.push(declaration);
             }
         }
         Ok(result)
@@ -171,10 +216,17 @@ impl TemplateArchiveStore {
         let mut inventory = Inventory::default();
         inventory.add_bytes("package.json", template_metadata(&id, &name)?)?;
         // VCC replaces an unquoted token when giving the new project its name.
-        inventory.add_bytes(PLAYER, rewrite_product_name(None, "AlcomdTemplate")?)?;
+        inventory.add_bytes(PLAYER, rewrite_product_name(None, "AlcomdTemplate", None)?)?;
         inventory.add_bytes(UPM, b"{\"dependencies\":{}}\n".to_vec())?;
         inventory.add_bytes(VPM, make_manifest(&direct, &locked)?)?;
         inventory.add_bytes(EDITOR, format!("m_EditorVersion: {version}\n").into_bytes())?;
+        self.publish_inventory(inventory)
+    }
+
+    fn publish_inventory(
+        &self,
+        mut inventory: Inventory,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         let scratch = Scratch::new(&self.root)?;
         let path = scratch.path.join("template.zip");
         inventory.write(&path)?;
@@ -216,11 +268,9 @@ impl TemplateArchiveStore {
         unpack(&path, destination)?;
         for entry in fs::read_dir(destination).map_err(|error| io_error(destination, error))? {
             let entry = entry.map_err(|error| io_error(destination, error))?;
-            if entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| name == "package.json" || optional_root_file(name))
-            {
+            if entry.file_name().to_str().is_some_and(|name| {
+                name == "package.json" || (optional_root_file(name) && !license_root_file(name))
+            }) {
                 fs::remove_file(entry.path()).map_err(|error| io_error(&entry.path(), error))?;
             }
         }
@@ -387,14 +437,16 @@ fn is_archive_digest(digest: &str) -> bool {
 pub(crate) fn player_settings(
     original: Option<&[u8]>,
     name: &str,
+    product_guid: &str,
 ) -> Result<Vec<u8>, ProjectCreateError> {
     let name = serde_json::to_string(name).map_err(|error| invalid().with_source(error))?;
-    rewrite_product_name(original, &name)
+    rewrite_product_name(original, &name, Some(product_guid))
 }
 
 fn rewrite_product_name(
     original: Option<&[u8]>,
     yaml_scalar: &str,
+    product_guid: Option<&str>,
 ) -> Result<Vec<u8>, ProjectCreateError> {
     let name_line = format!("  productName: {yaml_scalar}");
     let Some(original) = original else {
@@ -430,6 +482,18 @@ fn rewrite_product_name(
             format!("{name_line}{end}")
         };
         updated.insert_str(offset, &inserted);
+    }
+    if let Some(guid) = product_guid {
+        const PLACEHOLDER: &str = "  productGUID: 00000000000000000000000000000000";
+        let mut offset = 0;
+        for line in updated.split_inclusive('\n') {
+            if line.trim_end_matches(['\r', '\n']) == PLACEHOLDER {
+                let start = offset + "  productGUID: ".len();
+                updated.replace_range(start..offset + PLACEHOLDER.len(), guid);
+                break;
+            }
+            offset += line.len();
+        }
     }
     Ok(updated.into_bytes())
 }
@@ -809,10 +873,13 @@ impl Inventory {
     }
 
     fn add_bytes(&mut self, name: &str, bytes: Vec<u8>) -> Result<(), ProjectCreateError> {
-        if let Some((parent, _)) = name.rsplit_once('/')
-            && !self.entries.contains_key(parent)
-        {
+        let mut child = name;
+        while let Some((parent, _)) = child.rsplit_once('/') {
+            if self.entries.contains_key(parent) {
+                break;
+            }
             self.insert(parent, Content::Directory)?;
+            child = parent;
         }
         self.insert(name, Content::Bytes(bytes))
     }
@@ -1033,14 +1100,11 @@ fn read_declaration(
         serde_json::from_slice(metadata.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&metadata))
             .map_err(|error| invalid().with_source(error))?;
     validate_metadata(&metadata.name, &metadata.display_name)?;
-    let editor_version = zip_bytes(&mut archive, EDITOR, crate::PROJECT_VERSION_LIMIT)?
-        .map(|bytes| {
-            let (version, _) = crate::parse_project_version(&bytes)
-                .map_err(|error| invalid().with_source(error))?;
-            validate_editor(&version)?;
-            Ok(version)
-        })
-        .transpose()?;
+    let version_file = zip_bytes(&mut archive, EDITOR, crate::PROJECT_VERSION_LIMIT)?
+        .ok_or_else(|| invalid_at(path, "template requires ProjectSettings/ProjectVersion.txt"))?;
+    let (editor_version, _) = crate::parse_project_version(&version_file)
+        .map_err(|error| invalid().with_source(error))?;
+    validate_editor(&editor_version)?;
     if let Some(upm) = zip_bytes(&mut archive, UPM, crate::PROJECT_MANIFEST_LIMIT)? {
         let upm = parse_json(&upm)?;
         if let Some(dependencies) = upm.get("dependencies") {
@@ -1070,7 +1134,7 @@ fn read_declaration(
     let declaration = ProjectTemplateDeclaration {
         id: metadata.name,
         name: metadata.display_name.trim().to_owned(),
-        editor_version,
+        editor_version: Some(editor_version),
         archive_sha256,
         dependencies,
         locked_versions,
@@ -1178,15 +1242,16 @@ fn validate_layout(planned: &ArchivePreflight) -> Result<(), ArchiveErrorCode> {
 }
 
 fn optional_root_file(name: &str) -> bool {
-    [
-        "README.md",
-        "LICENSE",
-        "LICENSE.md",
-        "LICENSE.txt",
-        ".gitignore",
-    ]
-    .iter()
-    .any(|candidate| name.eq_ignore_ascii_case(candidate))
+    license_root_file(name)
+        || ["README.md", ".gitignore"]
+            .iter()
+            .any(|candidate| name.eq_ignore_ascii_case(candidate))
+}
+
+fn license_root_file(name: &str) -> bool {
+    ["LICENSE", "LICENSE.md", "LICENSE.txt"]
+        .iter()
+        .any(|candidate| name.eq_ignore_ascii_case(candidate))
 }
 
 fn open_zip(path: &Path) -> Result<zip::ZipArchive<File>, ProjectCreateError> {

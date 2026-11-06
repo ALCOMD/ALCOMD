@@ -666,7 +666,8 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 `project-template.changed` 事件，内部 UUID 只用于关联事件。同 ID 同内容复用记录，
 同 ID 异内容需提供现有修订。锁定记录拒绝替换或删除。
 
-保存支持已选 `.alcomdtemplate` 文件、已登记项目及手动填写三种来源。
+保存支持已选 `.alcomdtemplate` 文件、已登记项目及手动填写三种来源。导入归档须在
+`ProjectSettings/ProjectVersion.txt` 声明一个完整 Unity 版本。
 项目来源要求所选项目的 `projects.read` 和当前修订，两个可选开关默认关闭。
 保存与导出使用持久幂等任务，接受后返回 `{operationId,replayed}`。
 保存成功结果为 `{template}`，导出成功结果为 `{id,revision}`。
@@ -674,7 +675,8 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 
 `projects.create` 以 `template: {id, revision}` 选择当前归档，在接受事务中冻结模板。
 过期引用返回 `revision_conflict`。使用模板依赖仍检查 `packages.read`、`repositories.read`
-和 `packages.manage`。模板有明确 Unity 版本时要求匹配，安装锁定或求解后的包后才发布。
+和 `packages.manage`。请求的 Unity 版本必须与模板声明精确匹配。以前登记的无版本模板须
+补全后替换才能用于创建项目。安装锁定或求解后的包后才发布。
 公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
 State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。
 

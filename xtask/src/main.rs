@@ -204,9 +204,8 @@ fn check_builtin_templates(
             "name": name,
             "packageId": package,
             "variants": [
-                {"editorVersion": "2022.3.22f1", "idSuffix": "", "lockedVersions": {}},
-                {"editorVersion": "2022.3.6f1", "idSuffix": ".2022-3-6f1", "lockedVersions": {}},
-                {"editorVersion": "2019.4.31f1", "idSuffix": ".2019-4-31f1", "lockedVersions": locked}
+                {"editorVersion": "2022.3.22f1", "lockedVersions": {}},
+                {"editorVersion": "2019.4.31f1", "lockedVersions": locked}
             ]
         });
         let declaration: serde_json::Value = read_json(&path)?;

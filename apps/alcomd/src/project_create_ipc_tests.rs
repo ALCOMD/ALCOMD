@@ -96,7 +96,7 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
             .collect::<std::collections::BTreeSet<_>>()
     };
     let builtins = installed();
-    assert_eq!(builtins.len(), 6);
+    assert_eq!(builtins.len(), 4);
     assert!(!root.join("project-templates").exists());
 
     let pipe = format!(r"\\.\pipe\alcomd-create-test-{}", OperationId::new());

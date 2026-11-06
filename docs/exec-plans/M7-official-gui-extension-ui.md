@@ -216,7 +216,10 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 
 - `projectTemplates.v2` 取代声明合同。本机所有者可用 `projectTemplates.list`、`save`、`export` 和 `remove`。列表记录为 `{id,name,editorVersion?,revision,locked}`。保存接收 `{source,expectedRevision?,idempotencyKey}`，来源是 `file{sourceFile}`、`project{projectId,expectedProjectRevision,id,name,includeAssets?,lockPackageVersions?}` 或 `manual{id,name,unityVersion,dependencies}`。导出接收 `{id,revision,destinationFile,idempotencyKey}`。保存和导出返回 `{operationId,replayed}`，终态成功分别返回 `{template}` 和 `{id,revision}`。同 ID 同内容复用记录，替换须提供当前修订。删除和建项目的模板引用沿用 ID 及修订。
 - 从项目创建检查 `projects.read` 及项目修订，按明确来源读取 Unity 版本、工程设置、软件包清单和可移植嵌入包。默认关闭 `includeAssets` 和 `lockPackageVersions`。勾选资产才读取 `Assets/` 及其中的 `.meta`。默认将直接 VPM 依赖写为 `*`，勾选锁定才保留实际版本与传递锁。手动填写创建填写模板 ID、显示名、Unity 版本和依赖范围。
-- Core 在数据根的 `templates/` 保存验证后的 ZIP，按摘要绑定目录记录和未终结任务。删除模板后清理无引用的内部归档，仍有任务使用则在最后一个引用释放后清理。导入原件和导出副本均独立于内部归档。从模板创建冻结归档及修订，校验路径、归档上限和完整性，在现有暂存中展开工程、补齐目录、更新项目名及版本、解析或恢复 VPM 依赖，再独占发布。导出也使用独占发布。内置 Avatar、World 与用户模板共用归档，保留三种 Unity 版本，`2022.3.22f1` 为默认入口。
+- 每个模板必须指定一个完整 Unity 版本。导入的归档必须在 `ProjectSettings/ProjectVersion.txt` 中声明版本，从模板创建项目必须精确匹配该版本。此前登记但缺少版本的模板需要补全后替换才能创建项目。
+- Core 在数据根的 `templates/` 保存验证后的 ZIP，按摘要绑定目录记录和未终结任务。删除模板后清理无引用的内部归档，仍有任务使用则在最后一个引用释放后清理。导入原件和导出副本均独立于内部归档。从模板创建冻结归档及修订，校验路径、归档上限和完整性，在现有暂存中展开工程、补齐目录、更新项目名及版本、解析或恢复 VPM 依赖，再独占发布。导出也使用独占发布。
+- 内置 Avatars 和 Worlds 各提供 2022 和 2019 两个条目，名称与 ID 均包含年份，固定版本分别为 `2022.3.22f1` 和 `2019.4.31f1`。Core 启动时按当前内置声明同步锁定记录，移除已退役的内置 ID，保留用户模板和已接受任务冻结的归档。列表显示名称、ID、来源和操作，完整 Unity 版本在详情中查看。
+- 按所有者要求，四个内置条目使用冻结 v3 对应版本的 MIT 工程数据，保留工程设置、UPM 清单、VPM `3.x` 依赖范围及完整 Unity 编辑器修订。2019 仍锁定 SDK 和 Base `3.4.2`。v4 独立生成归档元数据，创建时写入项目名和唯一 GUID，分发时保留模板许可。来源与许可见 `specs/templates/builtin-scaffolds/README.md`。
 - State28 清除旧模板记录、对应 `project-template` 事件和终态 `projects.create` 任务的旧冻结声明块。保留已创建项目、项目事件、任务、幂等记录、模板修订和事件水位。仍使用旧声明的活跃任务须先结束。新模板保存、导出加入持久任务种类。旧自建模板可通过新入口重新创建。
 
 #### 验收与交付边界

@@ -198,14 +198,41 @@ pub(super) fn seed(
     declarations: Vec<ProjectTemplateDeclaration>,
 ) -> Result<(), ProjectCreateError> {
     let transaction = begin(connection)?;
+    let mut retired = {
+        let mut statement = transaction
+            .prepare("SELECT template_id FROM project_templates WHERE owner_principal_id=?1 AND locked=1")
+            .map_err(db_error)?;
+        statement
+            .query_map([owner.as_str()], |row| row.get::<_, String>(0))
+            .map_err(db_error)?
+            .collect::<Result<BTreeSet<_>, _>>()
+            .map_err(db_error)?
+    };
+    let mut desired = BTreeSet::new();
     for declaration in declarations {
+        if !desired.insert(declaration.id.clone()) {
+            return Err(internal());
+        }
+        retired.remove(&declaration.id);
         if let Some((existing, _)) = get(&transaction, owner, &declaration.id)? {
-            if existing.locked && existing.declaration == declaration {
+            if !existing.locked {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::TemplateConflict,
+                ));
+            }
+            if existing.declaration == declaration {
                 continue;
             }
-            return Err(ProjectCreateError::new(
-                ProjectCreateErrorCode::TemplateConflict,
-            ));
+            let encoded = encode(&declaration)?;
+            let revision = allocate_revision(&transaction)?;
+            transaction
+                .execute(
+                    "UPDATE project_templates SET declaration_json=?1, revision=?2
+                     WHERE owner_principal_id=?3 AND template_id=?4 AND locked=1",
+                    params![encoded, integer(revision)?, owner.as_str(), declaration.id],
+                )
+                .map_err(db_error)?;
+            continue;
         }
         let encoded = encode(&declaration)?;
         let revision = allocate_revision(&transaction)?;
@@ -218,6 +245,14 @@ pub(super) fn seed(
             revision,
             true,
         )?;
+    }
+    for id in retired {
+        transaction
+            .execute(
+                "DELETE FROM project_templates WHERE owner_principal_id=?1 AND template_id=?2 AND locked=1",
+                params![owner.as_str(), id],
+            )
+            .map_err(db_error)?;
     }
     transaction.commit().map_err(db_error)
 }
