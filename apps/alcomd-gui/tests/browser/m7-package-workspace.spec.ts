@@ -219,6 +219,19 @@ test("Package source filter uses daemon source kinds and only changes presentati
     await expect(packageName(page, "Remote tools")).toBeVisible();
     await expect(packageName(page, "Local tools")).toHaveCount(0);
     await expect(page.getByText("2 packages")).toBeVisible();
+    await page.getByRole("combobox", { name: "Status", exact: true }).click();
+    await page.getByRole("option", { name: "Available", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("searchbox", { name: "Search packages" }).fill("EXAMPLE PACKAGES");
+    await expect(packageName(page, "Remote tools")).toBeVisible();
+    await expect(packageName(page, "Avatar tools")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.candidateRequests.some((request) =>
+        request.view.kind === "summary"
+        && request.view.filter?.search === "EXAMPLE PACKAGES"
+        && request.view.filter?.status === "available"
+        && request.view.filter?.source === "remote"
+        && request.expectedSnapshot !== undefined
+    ))).toBe(true);
 
     await openHarness(page, "package-multiple");
     await page.getByRole("button", { name: "Filter packages" }).click();

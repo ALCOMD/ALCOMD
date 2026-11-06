@@ -28,17 +28,92 @@ async function review(page: Page, candidateCount = 3) {
     return host;
 }
 
-test("built-in repositories show their names and sync state without a remove action", async ({ page }) => {
+test("repository rows show only browse, manage and remove, including disabled built-in removal", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
     const official = page.getByRole("row").filter({ hasText: "Official" });
     const curated = page.getByRole("row").filter({ hasText: "Curated" });
     await expect(official).toContainText("https://vrchat.github.io/packages/index.json");
     await expect(curated).toContainText("https://vrchat-community.github.io/vpm-listing-curated/index.json");
-    await expect(page.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
+    const rows = page.getByRole("table", { name: "Repositories" }).locator("tbody tr");
+    await expect(rows).toHaveCount(3);
+    for (const row of await rows.all()) {
+        const buttons = row.getByRole("button");
+        await expect(buttons).toHaveCount(3);
+        await expect(buttons.nth(0)).toHaveAccessibleName("Browse packages");
+        await expect(buttons.nth(1)).toHaveAccessibleName("Manage repository");
+        await expect(buttons.nth(2)).toHaveAccessibleName("Remove");
+    }
+    await expect(official.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+    await expect(curated.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+    await expect(official.getByRole("checkbox")).toBeChecked();
+    await expect(curated.getByRole("checkbox")).toBeChecked();
+    await expect(rows.nth(2).getByRole("button", { name: "Remove", exact: true })).toBeEnabled();
     await official.getByRole("button", { name: "Browse packages" }).click();
     await expect(page.getByRole("dialog", { name: "Official" })).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByText("Pending first sync")).toBeVisible();
     expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
+});
+
+test("repository visibility persists across resource sections and can be restored", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
+    const official = page.getByRole("checkbox", { name: "Show packages from Official", exact: true });
+    await expect(official).toBeChecked();
+    await official.click();
+    await expect(official).toBeEnabled();
+    await expect(official).not.toBeChecked();
+    await page.getByRole("button", { name: "User Packages", exact: true }).click();
+    await page.getByRole("button", { name: "Repositories", exact: true }).click();
+    await expect(official).not.toBeChecked();
+    await official.click();
+    await expect(official).toBeEnabled();
+    await expect(official).toBeChecked();
+    expect(await page.evaluate(() => window.settingsRequests.map(({ update }) => update.packages?.hiddenRepositoryIds))).toEqual([
+        ["7e2233c8-0b3f-4cf2-aeb4-57d3d240b101"], []
+    ]);
+    expect(await requests(page, "repositories.unregister")).toEqual([]);
+});
+
+test("the pencil saves and clears a built-in repository display name", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
+    const official = page.getByRole("row").filter({ hasText: "https://vrchat.github.io/packages/index.json" });
+    const edit = official.getByRole("button", { name: "Manage repository", exact: true });
+    await edit.click();
+    const dialog = page.locator("md-dialog[open]");
+    const name = dialog.getByRole("textbox", { name: "Display name", exact: true });
+    await name.fill("VRChat SDK");
+    await dialog.getByRole("button", { name: "Save name", exact: true }).click();
+    await expect(official.getByText("VRChat SDK", { exact: true })).toBeVisible();
+    await expect(official.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+    await edit.click();
+    await expect(name).toHaveValue("VRChat SDK");
+    await name.fill("");
+    await dialog.getByRole("button", { name: "Save name", exact: true }).click();
+    await expect(official.getByText("Official", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.setDisplayName")).toEqual([
+        { method: "repositories.setDisplayName", params: { repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", expectedRevision: 2, displayName: "VRChat SDK" } },
+        { method: "repositories.setDisplayName", params: { repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", expectedRevision: 3, displayName: null } }
+    ]);
+});
+
+test("repository visibility and the project package filter share the saved preference", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&state=package-multiple&raw-only-repository-package=1");
+    const repository = page.getByRole("checkbox", { name: "Show packages from Example packages", exact: true });
+    await expect(repository).toBeChecked();
+    await repository.click();
+    await expect(repository).toBeEnabled();
+    await expect(repository).not.toBeChecked();
+
+    await page.getByRole("navigation", { name: "Primary", exact: true }).getByText("Projects", { exact: true }).click();
+    await page.getByRole("button", { name: "Manage", exact: true }).first().click();
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    const filter = page.getByRole("dialog", { name: "Package filters" }).getByRole("checkbox", { name: "Example packages", exact: true });
+    await expect(filter).not.toBeChecked();
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(packages.getByText("Remote tools", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
+    await filter.click();
+    await expect(packages.getByText("Remote tools", { exact: true })).toBeVisible();
+    await expect(packages.getByText("Raw-only package", { exact: true })).toHaveCount(0);
 });
 
 test("long preview content scrolls independently of actions and closing restores the menu trigger", async ({ page }) => {

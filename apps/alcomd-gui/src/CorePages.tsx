@@ -6,7 +6,7 @@ import { OperationItems } from "./OperationItems";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
-import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
+import type { CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
 import { actionableVersion, candidateSource, candidateSourceKey, choiceText, finishCandidateSummary, intentForSummary, queryCandidates, readCandidateSummaryPage, reasonText, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
@@ -24,7 +24,7 @@ import {
     viewGridIcon,
     viewListIcon
 } from "@alcomd/ui/icons";
-import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
     OfficialSettings,
@@ -35,7 +35,6 @@ import type {
     ProjectDeletePlan,
     ProjectSnapshot,
     RegistryCursor,
-    RepositoryPackageVersion,
     RepositorySnapshot,
     UnityInstallation,
     UnityLaunchOptionsResult,
@@ -984,26 +983,14 @@ export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
     return <ProjectPackageWorkspace {...props} />;
 }
 
-type PackagePresentation = Pick<RepositoryPackageVersion, "packageId" | "version" | "displayName" | "links">;
-interface WorkspaceCatalogVersion extends PackagePresentation {
-    repositoryId?: string;
-}
-
 interface PackageWorkspaceRow {
     evidence?: PackageCandidateSummary;
     displayName: string;
+    links?: PackageCandidateSummary["links"];
     installedVersion?: string;
-    linkTarget?: {
-        changelog: boolean;
-        documentation: boolean;
-        repositoryId: string;
-        version: string;
-    };
     packageId: string;
     requestedRange?: string;
-    sourceKinds: Array<RepositorySnapshot["source"]["kind"] | "user-package">;
     sourceOptions: Array<{ key: string; label: string; selector: PackageSourceSelector }>;
-    sources: string[];
 }
 
 function PackageVersionPicker({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
@@ -1111,10 +1098,11 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     const [contentMounted, setContentMounted] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     const openLink = async (kind: "documentation" | "changelog") => {
-        if (row.linkTarget === undefined) return;
+        const url = row.links?.[kind];
+        if (url === undefined) return;
         setOpen(false);
         try {
-            await client.openPackageLink(row.linkTarget.repositoryId, row.packageId, row.linkTarget.version, kind);
+            await client.openPackageLink(url);
         } catch {}
     };
     return <>{(
@@ -1124,8 +1112,8 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
             </IconButton>
             {contentMounted ? <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall", anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
-                <MenuItem disabled={row.linkTarget?.documentation !== true} label={t("Documentation")} onClick={() => void openLink("documentation")} />
-                <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
+                <MenuItem disabled={row.links?.documentation === undefined} label={t("Documentation")} onClick={() => void openLink("documentation")} />
+                <MenuItem disabled={row.links?.changelog === undefined} label={t("Changelog")} onClick={() => void openLink("changelog")} />
                 <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove", anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
             </Menu> : null}
         </>
@@ -1151,16 +1139,67 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
 
 interface PackageWorkspaceValue {
     sourceSelectionKey: string;
-    sourceRegistry: Record<string, { label: string; kind: "local" | "remote" | "user-package" }>;
+    sourceRegistry: Record<string, string>;
     candidates?: CandidateSummaryPage;
     candidateRequest?: ProjectCandidateRequest;
     candidateError?: string;
-    catalog: WorkspaceCatalogVersion[];
     installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
     repositories: RepositorySnapshot[];
     settings: SettingsGetResult;
+}
+
+function usePackageDisplaySettings(client: GuiRpcClient, settings: SettingsGetResult | undefined, reloadSettings: () => void, onSaved?: () => void) {
+    const current = useActionScope(client);
+    const [saved, setSaved] = useState<SettingsGetResult>();
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<RpcError>();
+    const saving = useRef(false);
+    const snapshot = settings === undefined ? undefined
+        : saved !== undefined && saved.revision > settings.revision ? saved : settings;
+    const save = async (update: Partial<OfficialSettings["packages"]>) => {
+        if (snapshot === undefined || saving.current) return;
+        saving.current = true;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const next = await client.settingsUpdate(snapshot.revision, { packages: update });
+            if (current()) {
+                setSaved(next);
+                onSaved?.();
+            }
+        } catch (caught: unknown) {
+            if (current()) setError(normalizeRequestError(caught));
+        } finally {
+            saving.current = false;
+            if (current()) setBusy(false);
+        }
+    };
+    return { snapshot, busy, error, save, reload: () => { setError(undefined); reloadSettings(); } };
+}
+
+function RepositoryVisibility({ repository, display, labelHidden }: {
+    repository: RepositorySnapshot;
+    display: ReturnType<typeof usePackageDisplaySettings>;
+    labelHidden?: boolean;
+}) {
+    const { t, locale } = useTranslation();
+    const id = repository.repositoryId;
+    const hidden = display.snapshot?.settings.packages.hiddenRepositoryIds;
+    const checked = id !== undefined && hidden !== undefined && !hidden.includes(id);
+    const name = repositoryDisplayName(t, repository, sourceText(t, locale, repository));
+    return <Checkbox
+        checked={checked}
+        disabled={id === undefined || hidden === undefined || display.busy || checked && hidden.length >= 256}
+        label={labelHidden ? t("Show packages from {name}", { name }) : name}
+        labelHidden={labelHidden}
+        onChange={(shown) => {
+            if (id === undefined || hidden === undefined || shown === checked) return;
+            const hiddenRepositoryIds = shown ? hidden.filter((value) => value !== id) : [...hidden, id];
+            void display.save({ hiddenRepositoryIds });
+        }}
+    />;
 }
 
 function PackageFilters({ client, settings, repositories, onChanged, filter, setFilter, sourceFilter, setSourceFilter, canUseUserPackages }: {
@@ -1169,68 +1208,37 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
     repositories: RepositorySnapshot[];
     onChanged(): void;
     filter: string;
-    setFilter(value: string): void;
+    setFilter(value: "all" | NonNullable<CandidateFilter["status"]>): void;
     sourceFilter: string;
     setSourceFilter(value: "all" | "local" | "remote" | "user-package"): void;
     canUseUserPackages: boolean;
 }) {
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const [confirmPrerelease, setConfirmPrerelease] = useState(false);
-    const [snapshot, setSnapshot] = useState(settings);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<RpcError>();
+    const display = usePackageDisplaySettings(client, settings, onChanged, onChanged);
+    const { busy, error, save } = display;
+    const snapshot = display.snapshot ?? settings;
     const anchorRef = useRef<HTMLElement>(null);
-    const saving = useRef(false);
-    useEffect(() => setSnapshot(settings), [settings]);
-    const save = async (update: Partial<OfficialSettings["packages"]>) => {
-        if (saving.current) return;
-        saving.current = true;
-        setBusy(true);
-        setError(undefined);
-        try {
-            const next = await client.settingsUpdate(snapshot.revision, { packages: update });
-            setSnapshot(next);
-            onChanged();
-        } catch (caught: unknown) {
-            setError(safeError(t, locale, caught));
-        } finally {
-            saving.current = false;
-            setBusy(false);
-        }
-    };
     const failure = error === undefined ? null : <div role="alert">
         <p>{t(error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : requestErrorMessage(error.code))}</p>
         <code>{error.code}</code>
         {error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
-        <Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button>
+        <Button onClick={display.reload} type="button" variant="text">{t("Reload filters")}</Button>
     </div>;
     return <>
         <Button aria-expanded={open} aria-haspopup="dialog" className="package-filter-trigger" onClick={() => setOpen(!open)} ref={anchorRef} type="button" variant="tonal">{t("Filter packages")}</Button>
         <FilterPopover anchorRef={anchorRef} label={t("Package filters")} onClose={() => setOpen(false)} open={open}>
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Repositories")}</legend>
-                {repositories.map((repository) => repository.repositoryId === undefined ? null : <Checkbox
-                    checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                    disabled={busy || snapshot.settings.packages.hiddenRepositoryIds.length >= 256 && !snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                    key={repository.repositoryId}
-                    label={repositoryDisplayName(t, repository, sourceText(t, locale, repository))}
-                    onChange={(checked) => {
-                        const hidden = new Set(snapshot.settings.packages.hiddenRepositoryIds);
-                        if (checked) hidden.delete(repository.repositoryId as string);
-                        else {
-                            if (!hidden.has(repository.repositoryId as string) && hidden.size >= 256) return;
-                            hidden.add(repository.repositoryId as string);
-                        }
-                        void save({ hiddenRepositoryIds: [...hidden].sort() });
-                    }}
-                />)}
+                {repositories.map((repository) => repository.repositoryId === undefined ? null
+                    : <RepositoryVisibility display={display} key={repository.repositoryId} repository={repository} />)}
                 {canUseUserPackages ? <Checkbox checked={!snapshot.settings.packages.hideLocalUserPackages} disabled={busy} label={t("Local User Packages")} onChange={(checked) => void save({ hideLocalUserPackages: !checked })} /> : null}
             </fieldset>
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Other filters")}</legend>
                 <Checkbox checked={snapshot.settings.packages.showPrerelease} disabled={busy} label={t("Show prerelease versions")} onChange={(checked) => { if (checked) { setOpen(false); setConfirmPrerelease(true); } else void save({ showPrerelease: false }); }} />
-                <Select disabled={busy} label={t("Status")} onChange={setFilter} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
+                <Select disabled={busy} label={t("Status")} onChange={(value) => setFilter(value as "all" | NonNullable<CandidateFilter["status"]>)} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
                 <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
             {failure}
@@ -1280,53 +1288,31 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
         candidates = undefined;
         candidateError = "package_candidate_evidence_stale";
     }
-    const catalog: WorkspaceCatalogVersion[] = settings.settings.packages.hideLocalUserPackages ? [] : userPackages.map(({ packageId, version, displayName }) => ({
-        packageId, version, ...(displayName === undefined ? {} : { displayName })
-    }));
     const sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {};
-    for (const repository of repositories) if (repository.repositoryId) sourceRegistry["repository:" + repository.repositoryId] = { label: repositoryDisplayName(t, repository, sourceText(t, locale, repository)), kind: repository.source.kind };
-    for (const local of userPackages) sourceRegistry["user-package:" + local.userPackageId] = { label: local.displayName ?? t("Local / User Package"), kind: "user-package" };
-    return { project, catalog, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
+    for (const repository of repositories) if (repository.repositoryId) sourceRegistry["repository:" + repository.repositoryId] = repositoryDisplayName(t, repository, sourceText(t, locale, repository));
+    for (const local of userPackages) sourceRegistry["user-package:" + local.userPackageId] = local.displayName ?? t("Local / User Package");
+    return { project, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
 }
 
-const packagePresentationCache = new WeakMap<GuiRpcClient, Map<string, Promise<WorkspaceCatalogVersion[]>>>();
-function repositoryPackagePresentation(client: GuiRpcClient, repositoryId: string, revision: number | undefined, refreshedAtMs: number): Promise<WorkspaceCatalogVersion[]> {
-    let cache = packagePresentationCache.get(client);
-    if (!cache) {
-        cache = new Map();
-        packagePresentationCache.set(client, cache);
-    }
-    const key = repositoryId + ":" + revision + ":" + refreshedAtMs;
-    const cached = revision === undefined ? undefined : cache.get(key);
-    if (cached) {
-        cache.delete(key);
-        cache.set(key, cached);
-        return cached;
-    }
-    const read = client.repositoryPackages(repositoryId).then(({ packages }) => packages.map(({ packageId, version, displayName, links }) => ({
-        repositoryId, packageId, version, ...(displayName === undefined ? {} : { displayName }), ...(links === undefined ? {} : { links })
-    })));
-    if (revision !== undefined) {
-        const entries = cache;
-        entries.set(key, read);
-        if (entries.size > 16) {
-            const oldest = entries.keys().next().value;
-            if (oldest !== undefined) entries.delete(oldest);
-        }
-        void read.catch(() => { if (entries.get(key) === read) entries.delete(key); });
-    }
-    return read;
-}
-
-function PackageWorkspaceData({ client, value, children }: {
+function PackageWorkspaceData({ client, value, filter, children }: {
     client: GuiRpcClient;
     value: PackageWorkspaceValue;
-    children(data: { candidates: CandidateSummarySet | undefined; candidateError: string | undefined; catalog: WorkspaceCatalogVersion[]; candidatesPending: boolean; presentationPending: boolean }): ReactNode;
+    filter?: CandidateFilter;
+    children(data: {
+        candidates: CandidateSummarySet | undefined;
+        candidateError: string | undefined;
+        candidatesPending: boolean;
+        filteredItems: PackageCandidateSummary[] | undefined;
+        filterPending: boolean;
+        filterError: string | undefined;
+    }): ReactNode;
 }) {
     const [complete, setComplete] = useState<{ value: PackageWorkspaceValue; candidates?: CandidateSummarySet; error?: string }>();
-    const [presentation, setPresentation] = useState<{ value: PackageWorkspaceValue; rows: WorkspaceCatalogVersion[] }>();
+    const [filtered, setFiltered] = useState<{ value: PackageWorkspaceValue; filter: CandidateFilter; items?: PackageCandidateSummary[]; error?: string }>();
     const needsPages = value.candidates !== undefined && value.candidates.nextCursor !== null;
-    const hasPresentation = value.repositories.some(({ repositoryId }) => repositoryId !== undefined && !value.settings.settings.packages.hiddenRepositoryIds.includes(repositoryId));
+    const resolved = complete?.value === value ? complete : undefined;
+    const candidates = resolved === undefined ? value.candidates : resolved.candidates;
+    const candidatesPending = needsPages && resolved === undefined;
     useEffect(() => {
         const { candidates: first, candidateRequest } = value;
         if (!first || !candidateRequest || first.nextCursor === null) return;
@@ -1340,35 +1326,34 @@ function PackageWorkspaceData({ client, value, children }: {
         return () => { active = false; };
     }, [client, value]);
     useEffect(() => {
-        const hidden = new Set(value.settings.settings.packages.hiddenRepositoryIds);
-        const repositories = value.repositories.filter(({ repositoryId }) => repositoryId !== undefined && !hidden.has(repositoryId));
-        if (!repositories.length) return;
+        const { candidates: first, candidateRequest } = value;
+        if (!filter || !first || candidateRequest?.view.kind !== "summary") return;
+        const request: ProjectCandidateRequest = {
+            ...candidateRequest,
+            expectedSnapshot: first.snapshot.fingerprint,
+            view: { ...candidateRequest.view, filter }
+        };
         let active = true;
-        // Presentation is optional and never used as solver evidence. One outstanding
-        // request lets candidate paging and user commands share the IPC connection.
-        void (async () => {
-            const rows: WorkspaceCatalogVersion[] = [];
-            for (const { repositoryId, revision, refreshedAtMs } of repositories) {
+        const timeout = window.setTimeout(() => {
+            void readCandidateSummaryPage(client, request).then(async (page) => {
                 if (!active) return;
-                if (repositoryId === undefined) continue;
-                try {
-                    rows.push(...await repositoryPackagePresentation(client, repositoryId, revision, refreshedAtMs));
-                } catch {
-                    // Display package IDs if a repository cannot supply optional metadata.
-                }
-            }
-            if (active) setPresentation({ value, rows });
-        })();
-        return () => { active = false; };
-    }, [client, value]);
-    const resolved = complete?.value === value ? complete : undefined;
-    const display = presentation?.value === value ? presentation.rows : undefined;
+                const result = page.nextCursor === null
+                    ? page : await finishCandidateSummary(client, request, page, () => active);
+                if (active && result) setFiltered({ value, filter, items: result.items });
+            }).catch((caught: unknown) => {
+                if (active) setFiltered({ value, filter, error: normalizeRequestError(caught).code });
+            });
+        }, 120);
+        return () => { active = false; window.clearTimeout(timeout); };
+    }, [client, filter, value]);
+    const visible = filtered?.value === value && filtered.filter === filter ? filtered : undefined;
     return <>{children({
-        candidates: resolved === undefined ? value.candidates : resolved.candidates,
+        candidates,
         candidateError: resolved?.error ?? value.candidateError,
-        catalog: display === undefined ? value.catalog : [...display, ...value.catalog],
-        candidatesPending: needsPages && resolved === undefined,
-        presentationPending: hasPresentation && display === undefined
+        candidatesPending,
+        filteredItems: visible?.items,
+        filterPending: filter !== undefined && value.candidates !== undefined && visible === undefined,
+        filterError: visible?.error
     })}</>;
 }
 
@@ -1382,8 +1367,16 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
     const canQueryCandidates = useCapability(capabilities.packagesCandidates);
     const [search, setSearch] = useState("");
-    const [filter, setFilter] = useState("all");
+    const [filter, setFilter] = useState<"all" | NonNullable<CandidateFilter["status"]>>("all");
     const [sourceFilter, setSourceFilter] = useState<"all" | "local" | "remote" | "user-package">("all");
+    const candidateFilter = useMemo<CandidateFilter | undefined>(() => {
+        if (search === "" && filter === "all" && sourceFilter === "all") return undefined;
+        return {
+            ...(search === "" ? {} : { search }),
+            ...(filter === "all" ? {} : { status: filter }),
+            ...(sourceFilter === "all" ? {} : { source: sourceFilter })
+        };
+    }, [search, filter, sourceFilter]);
     const [sourceSelections, setSourceSelections] = useState<Record<string, string>>({});
     const load = useCallback(() => loadPackageWorkspace(t, locale, client, projectId, canUseUserPackages, canQueryCandidates, sourceSelections), [canUseUserPackages, canQueryCandidates, client, projectId, sourceSelections, t, locale]);
     const [evidenceInvalid, setEvidenceInvalid] = useState(false);
@@ -1434,13 +1427,14 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         }
     };
     return (
-        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} value={value}>{({ candidates, candidateError, catalog, candidatesPending, presentationPending }) => {
+        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError }) => {
             const { project, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
-            const workspaceRows = packageWorkspaceRows(project, catalog, candidates?.items, sourceRegistry);
+            const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
-            const evidenceFailure = candidateError ? t(requestErrorMessage(candidateError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
+            const readError = filterError ?? candidateError;
+            const evidenceFailure = readError ? t(requestErrorMessage(readError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
             const repositoryRefreshFailure = repositoryRefreshError === undefined ? undefined : t("Refresh failed: ") + t(requestErrorMessage(repositoryRefreshError.code));
             const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
@@ -1473,16 +1467,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                 if (!catalogReady || !intents.length || intents.length > 256) return;
                 setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents, exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
             };
-            const rows = workspaceRows.filter((row) => {
-                const query = search.toLocaleLowerCase();
-                const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
-                const matchesFilter = filter === "all"
-                    || (filter === "installed" && row.installedVersion !== undefined)
-                    || (filter === "available" && row.installedVersion === undefined && row.evidence !== undefined && row.evidence.providers.length > 0)
-                    || (filter === "missing" && row.installedVersion === undefined && row.evidence !== undefined && row.evidence.providers.length === 0 && row.evidence.latest.kind === "none");
-                const matchesSource = sourceFilter === "all" || row.sourceKinds.includes(sourceFilter);
-                return matchesSearch && matchesFilter && matchesSource;
-            });
+            const rows = candidateFilter === undefined ? workspaceRows : packageWorkspaceRows(project, filteredItems ?? [], sourceRegistry);
             return (
                 <section className="project-workspace">
                     <PageHeader
@@ -1531,8 +1516,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}
-                        <div aria-busy={candidatesPending || presentationPending} className="package-workspace-list-region">
-                            {rows.length === 0 ? candidatesPending || presentationPending ? <LoadingState title={t("Loading")} /> : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
+                        <div aria-busy={candidatesPending || filterPending} className="package-workspace-list-region">
+                            {rows.length === 0 ? candidatesPending || filterPending ? <LoadingState title={t("Loading")} /> : filterError ? <p role="alert">{evidenceFailure}</p> : readError ? null : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
                                  <DesktopList
                                      className="package-workspace-list"
                                      columns={[
@@ -1569,65 +1554,90 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     );
 }
 
-function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalogVersion[], summaries: PackageCandidateSummary[] = [], sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {}): PackageWorkspaceRow[] {
-    const catalogByPackage = new Map<string, WorkspaceCatalogVersion[]>();
-    for (const item of catalog) {
-        const versions = catalogByPackage.get(item.packageId) ?? [];
-        versions.push(item);
-        catalogByPackage.set(item.packageId, versions);
-    }
+function packageWorkspaceRows(project: ProjectSnapshot, summaries: PackageCandidateSummary[] | undefined, sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {}): PackageWorkspaceRow[] {
     const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
     const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
-    const evidenceById = new Map(summaries.map((item) => [item.packageId, item]));
-    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys(), ...evidenceById.keys()]);
-    return [...packageIds].sort((left, right) => left.localeCompare(right)).map((packageId) => {
-        const versions = catalogByPackage.get(packageId) ?? [];
+    const evidenceById = new Map(summaries?.map((item) => [item.packageId, item]));
+    const packageIds = summaries?.map((item) => item.packageId) ?? [...new Set([...installed.keys(), ...requested.keys()])];
+    return packageIds.map((packageId) => {
         const installedVersion = installed.get(packageId);
         const evidence = evidenceById.get(packageId);
-        const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key]?.label ?? key, selector: candidateSource(provider.source) }; });
-        const sources = sourceOptions.map((source) => source.label);
-        const sourceKinds = [...new Set((evidence?.providers ?? []).flatMap((provider) => { const key = candidateSourceKey(provider.source); const kind = sourceRegistry[key]?.kind; return kind ? [kind] : provider.source.kind === "user_package" ? ["user-package" as const] : []; }))];
-        const preferredVersion = installedVersion;
-        const linkVersion = versions
-            .filter((item): item is WorkspaceCatalogVersion & { repositoryId: string } => item.version === preferredVersion && item.links !== undefined && item.repositoryId !== undefined)
-            .sort((left, right) => left.repositoryId.localeCompare(right.repositoryId))[0];
+        const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key] ?? key, selector: candidateSource(provider.source) }; });
         return {
             ...(evidence ? { evidence } : {}),
-            displayName: versions.find((item) => item.displayName !== undefined)?.displayName ?? packageId,
+            displayName: evidence?.displayName ?? packageId,
+            ...(evidence?.links === undefined ? {} : { links: evidence.links }),
             ...(installedVersion === undefined ? {} : { installedVersion }),
-            ...(linkVersion === undefined ? {} : {
-                linkTarget: {
-                    changelog: linkVersion.links?.changelog !== undefined,
-                    documentation: linkVersion.links?.documentation !== undefined,
-                    repositoryId: linkVersion.repositoryId,
-                    version: linkVersion.version
-                }
-            }),
             packageId,
             ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
-            sourceKinds,
-            sourceOptions,
-            sources
+            sourceOptions
         };
     });
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
-    const { t, locale } = useTranslation();
-    const load = useCallback(() => listAllRepositories(client), [client]);
-    const [selectedId, setSelectedId] = useState<string>();
+    const { t } = useTranslation();
+    const load = useCallback(async () => {
+        const [repositories, displaySettings] = await Promise.all([
+            listAllRepositories(client),
+            client.settingsGet().then((settings) => ({ settings }), (caught: unknown) => ({ error: normalizeRequestError(caught) }))
+        ]);
+        return { repositories, ...displaySettings };
+    }, [client]);
     return <UtilityWorkspace changes={["repositories"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
-        {(repositories, refresh) => {
-            const selected = selectedId === undefined ? undefined : repositories.find((repository) => repository.repositoryId === selectedId);
-            return <>
-                {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList columns={[{ key: "repository", header: t("Repository"), width: "34%" }, { key: "source", header: t("Source") }, { key: "actions", header: t("Actions"), width: 280 }]} label={t("Repositories")} minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(t, locale, repository), cells: [<strong>{repositoryDisplayName(t, repository, t("Repository"))}</strong>, <span title={sourceText(t, locale, repository)}>{sourceText(t, locale, repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelectedId(repository.repositoryId)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
-                {selected === undefined || selectedId === undefined ? null : <Dialog wide open title={repositoryDisplayName(t, selected, t("Repository packages"))} onClose={() => setSelectedId(undefined)}>
-                    {isBuiltinRepository(selected) && selected.refreshedAtMs === 0 ? <p>{t("Pending first sync")}</p> : <RepositoryPackageList client={client} repositoryId={selectedId} />}
-                    <div className="dialog-actions"><Button onClick={() => setSelectedId(undefined)} type="button" variant="text">{t("Close")}</Button></div>
-                </Dialog>}
-            </>;
-        }}
+        {(value, refresh) => <RepositoryTable client={client} onChanged={refresh} {...value} />}
     </UtilityWorkspace>;
+}
+
+function RepositoryTable({ client, onChanged, repositories, settings, error }: {
+    client: GuiRpcClient;
+    onChanged(): void;
+    repositories: RepositorySnapshot[];
+    settings?: SettingsGetResult;
+    error?: RpcError;
+}) {
+    const { t, locale } = useTranslation();
+    const display = usePackageDisplaySettings(client, settings, onChanged);
+    const [selectedId, setSelectedId] = useState<string>();
+    const selected = selectedId === undefined ? undefined : repositories.find((repository) => repository.repositoryId === selectedId);
+    const failure = display.error ?? error;
+    return <>
+        {failure === undefined ? null : <div role="alert">
+            <p>{t(requestErrorMessage(failure.code))}</p>
+            <code>{failure.code}</code>
+            {failure.diagnosticId === undefined ? null : <p><code>{failure.diagnosticId}</code></p>}
+            <Button onClick={display.reload} type="button" variant="text">{t("Reload filters")}</Button>
+        </div>}
+        {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList
+            columns={[
+                { key: "visibility", header: <span className="visually-hidden">{t("Enabled")}</span>, width: 48 },
+                { key: "repository", header: t("Repository"), width: "34%" },
+                { key: "source", header: t("Source") },
+                { key: "actions", header: t("Actions"), width: 144 }
+            ]}
+            label={t("Repositories")}
+            minWidth={640}
+            rows={repositories.map((repository) => {
+                const source = sourceText(t, locale, repository);
+                return {
+                    key: repository.repositoryId ?? source,
+                    cells: [
+                        <RepositoryVisibility display={display} labelHidden repository={repository} />,
+                        <strong>{repositoryDisplayName(t, repository, t("Repository"))}</strong>,
+                        <span title={source}>{source}</span>,
+                        <div className="card-actions">
+                            <IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelectedId(repository.repositoryId)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton>
+                            <RepositoryActions client={client} onChanged={onChanged} repository={repository} />
+                        </div>
+                    ]
+                };
+            })}
+        />}
+        {selected === undefined || selectedId === undefined ? null : <Dialog wide open title={repositoryDisplayName(t, selected, t("Repository packages"))} onClose={() => setSelectedId(undefined)}>
+            {isBuiltinRepository(selected) && selected.refreshedAtMs === 0 ? <p>{t("Pending first sync")}</p> : <RepositoryPackageList client={client} repositoryId={selectedId} />}
+            <div className="dialog-actions"><Button onClick={() => setSelectedId(undefined)} type="button" variant="text">{t("Close")}</Button></div>
+        </Dialog>}
+    </>;
 }
 
 function RepositoryPackageList({ client, repositoryId }: { client: GuiRpcClient; repositoryId: string }) {

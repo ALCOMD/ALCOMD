@@ -1049,7 +1049,10 @@ fn package_links(
 }
 
 pub(crate) fn sanitized_package_link(value: Option<&Value>) -> Option<String> {
-    let text = value?.as_str()?;
+    normalize_package_link(value?.as_str()?)
+}
+
+pub(crate) fn normalize_package_link(text: &str) -> Option<String> {
     if text.is_empty() || text.len() > 2_048 {
         return None;
     }

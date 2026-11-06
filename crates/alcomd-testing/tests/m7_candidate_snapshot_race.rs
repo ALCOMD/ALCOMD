@@ -75,6 +75,7 @@ impl CandidateStore for PausedReadStore {
             entries: vec![],
             fingerprint_records: vec!["unchanged-project-and-source-snapshot".into()],
             catalog_complete: true,
+            source_metadata: Default::default(),
         })
     }
 }
@@ -134,11 +135,56 @@ impl CandidateStore for TrackingStore {
     ) -> Result<CandidateStoreSnapshot, CandidateQueryError> {
         self.full_reads.fetch_add(1, Ordering::SeqCst);
         let authority = self.authority(owner, project);
+        let remote = "11111111-1111-4111-8111-111111111111";
+        let local = "22222222-2222-4222-8222-222222222222";
+        let entries = [
+            ("com.example.a", remote, 1),
+            ("com.example.b", remote, 1),
+            ("com.example.b", local, 2),
+        ]
+        .into_iter()
+        .map(
+            |(package_id, repository_id, priority)| CandidateCatalogEntry {
+                package_id: package_id.into(),
+                version: "1.0.0".into(),
+                display_name: Some("Package name".into()),
+                links: CandidateLinks::default(),
+                source: PackageSourceSelector::Repository {
+                    repository_id: repository_id.into(),
+                },
+                source_revision: 1,
+                priority,
+                yanked: false,
+                unity: None,
+                unity_release: None,
+                metadata_ready: true,
+                legacy_metadata_present: false,
+            },
+        )
+        .collect();
         Ok(CandidateStoreSnapshot {
             project: self.project.clone(),
-            entries: vec![],
+            entries,
             fingerprint_records: authority.fingerprint_records,
             catalog_complete: authority.catalog_complete,
+            source_metadata: [
+                (
+                    format!("repository:{remote}"),
+                    CandidateSourceMetadata {
+                        kind: CandidateFilterSource::Remote,
+                        search_name: "remote registry".into(),
+                    },
+                ),
+                (
+                    format!("repository:{local}"),
+                    CandidateSourceMetadata {
+                        kind: CandidateFilterSource::Local,
+                        search_name: "local registry".into(),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
         })
     }
 }
@@ -201,6 +247,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         view: CandidateView::Summary {
             package_ids: None,
             sources: None,
+            filter: None,
         },
         limit: Some(1),
         expected_snapshot: None,
@@ -225,6 +272,59 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
     assert_eq!(store.authority_reads.load(Ordering::SeqCst), 1);
 
+    let filtered_request = |source| ProjectCandidateRequest {
+        view: CandidateView::Summary {
+            package_ids: None,
+            sources: None,
+            filter: Some(CandidateFilter {
+                search: Some("REMOTE Registry".into()),
+                status: Some(CandidateFilterStatus::Available),
+                source,
+            }),
+        },
+        expected_snapshot: Some(first.snapshot.fingerprint.clone()),
+        ..request.clone()
+    };
+    let filtered = application
+        .query(
+            &owner,
+            filtered_request(Some(CandidateFilterSource::Remote)),
+        )
+        .await
+        .expect("matching first filtered page");
+    assert_eq!(filtered.snapshot, first.snapshot);
+    assert_eq!(filtered.page, first.page);
+    let filtered_cursor = filtered.next_cursor.expect("filtered continuation");
+    assert_ne!(
+        Some(&filtered_cursor.query_fingerprint),
+        continuation
+            .cursor
+            .as_ref()
+            .map(|cursor| &cursor.query_fingerprint)
+    );
+    let local_request = filtered_request(Some(CandidateFilterSource::Local));
+    assert_eq!(
+        application
+            .query(
+                &owner,
+                ProjectCandidateRequest {
+                    cursor: Some(filtered_cursor),
+                    ..local_request.clone()
+                }
+            )
+            .await
+            .expect_err("cursor belongs to different filter"),
+        CandidateQueryError::InvalidInput,
+    );
+    let local_page = application
+        .query(&owner, local_request)
+        .await
+        .expect("local provider filter");
+    assert_eq!(local_page.page, second.page);
+    assert!(local_page.next_cursor.is_none());
+    assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 3);
+
     store.inventory_revision.fetch_add(1, Ordering::SeqCst);
     assert_eq!(
         application
@@ -234,7 +334,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         CandidateQueryError::EvidenceStale
     );
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
-    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 2);
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 4);
     let changed = application
         .query(&owner, request)
         .await
@@ -295,6 +395,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         view: CandidateView::Summary {
             package_ids: Some(vec!["com.example.absent".into()]),
             sources: None,
+            filter: None,
         },
         limit: None,
         expected_snapshot: None,
@@ -431,6 +532,7 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
                     view: CandidateView::Summary {
                         package_ids: None,
                         sources: None,
+                        filter: None,
                     },
                     limit: None,
                     expected_snapshot: None,
@@ -503,6 +605,7 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
                     view: CandidateView::Summary {
                         package_ids: None,
                         sources: None,
+                        filter: None,
                     },
                     limit: None,
                     expected_snapshot: None,

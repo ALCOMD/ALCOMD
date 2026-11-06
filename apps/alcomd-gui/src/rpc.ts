@@ -2,7 +2,7 @@ import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExport
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
-import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult } from "@alcomd/sdk";
+import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult, RepositorySetDisplayNameParams } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
@@ -54,9 +54,10 @@ export interface GuiRpcClient {
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
-    openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void>;
+    openPackageLink(url: string): Promise<void>;
     repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult>;
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult>;
+    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
     repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult>;
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
@@ -285,8 +286,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repository_packages", { params: { repositoryId, cursor, limit: 100 } });
     }
 
-    openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void> {
-        return invokeTyped("gui_open_package_link", { repositoryId, packageId, version, linkKind });
+    openPackageLink(url: string): Promise<void> {
+        return invokeTyped("gui_open_package_link", { url });
     }
 
     repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult> {
@@ -295,6 +296,11 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult> {
         return invokeTyped("gui_repository_set_credentials", { params: { repositoryId, expectedRevision, credentials, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): Promise<RepositoryWriteResult> {
+        const params: RepositorySetDisplayNameParams = { repositoryId, expectedRevision, displayName, idempotencyKey: crypto.randomUUID() };
+        return invokeTyped("gui_repository_set_display_name", { params });
     }
 
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult> {

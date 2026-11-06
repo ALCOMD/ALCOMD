@@ -1,7 +1,7 @@
 //! Bounded, side-effect-free candidate query orchestration.
 use crate::*;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 pub const MAX_CANDIDATE_RECORDS: usize = 100_000;
@@ -28,6 +28,8 @@ pub enum CandidateView {
         package_ids: Option<Vec<String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         sources: Option<Vec<CandidateSourceOverride>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        filter: Option<CandidateFilter>,
     },
     Versions {
         #[serde(rename = "packageId")]
@@ -35,6 +37,33 @@ pub enum CandidateView {
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<PackageSourceSelector>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateFilter {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<CandidateFilterStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<CandidateFilterSource>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateFilterStatus {
+    Installed,
+    Available,
+    Missing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CandidateFilterSource {
+    Local,
+    Remote,
+    UserPackage,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -91,6 +120,12 @@ pub struct CandidateStoreSnapshot {
     pub entries: Vec<CandidateCatalogEntry>,
     pub fingerprint_records: Vec<String>,
     pub catalog_complete: bool,
+    pub source_metadata: HashMap<String, CandidateSourceMetadata>,
+}
+
+pub struct CandidateSourceMetadata {
+    pub kind: CandidateFilterSource,
+    pub search_name: String,
 }
 
 pub struct CandidateStoreAuthority {
@@ -144,11 +179,16 @@ struct CachedSummary {
     owner: PrincipalId,
     query_fingerprint: String,
     snapshot_fingerprint: String,
-    items: Arc<Vec<CandidateSummary>>,
+    data: Arc<PreparedSummary>,
+}
+
+struct PreparedSummary {
+    items: Vec<CandidateSummary>,
+    source_metadata: HashMap<String, CandidateSourceMetadata>,
 }
 
 enum PreparedCandidates {
-    Summary(Arc<Vec<CandidateSummary>>),
+    Summary(Arc<PreparedSummary>),
     Versions {
         package_id: String,
         items: Vec<CandidateEvidence>,
@@ -191,8 +231,21 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         {
             return Err(CandidateQueryError::LimitExceeded);
         }
-        let query_records = validate_request(&request)?;
-        let query_fingerprint = self.engine.fingerprint(&query_records);
+        let mut query_records = validate_request(&request)?;
+        let base_query_fingerprint = self.engine.fingerprint(&query_records);
+        let filter = match &request.view {
+            CandidateView::Summary { filter, .. } => filter.as_ref(),
+            CandidateView::Versions { .. } => None,
+        };
+        let query_fingerprint = if let Some(filter) = filter {
+            query_records.push("filter".to_owned());
+            query_records.push(
+                serde_json::to_string(filter).map_err(|_| CandidateQueryError::InvalidInput)?,
+            );
+            self.engine.fingerprint(&query_records)
+        } else {
+            base_query_fingerprint.clone()
+        };
         if request
             .cursor
             .as_ref()
@@ -219,7 +272,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
                 .filter(|cached| {
-                    &cached.owner == owner && cached.query_fingerprint == query_fingerprint
+                    &cached.owner == owner && cached.query_fingerprint == base_query_fingerprint
                 })
                 .cloned()
         } else {
@@ -240,7 +293,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
             (cached.snapshot_fingerprint == fingerprint).then_some((
                 fingerprint,
                 authority.catalog_complete,
-                PreparedCandidates::Summary(cached.items),
+                PreparedCandidates::Summary(cached.data),
             ))
         } else {
             None
@@ -273,6 +326,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 CandidateView::Summary {
                     package_ids,
                     sources,
+                    ..
                 } => {
                     let items = self.engine.summarize(
                         &input,
@@ -301,21 +355,29 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                             return Err(CandidateQueryError::EvidenceStale);
                         }
                     }
-                    let items = Arc::new(items);
+                    let data = Arc::new(PreparedSummary {
+                        items,
+                        source_metadata: snapshot.source_metadata,
+                    });
                     // Retain one summary and cap both rows and their variable provider lists.
                     // Larger catalogues can still use the original bounded read path.
                     if cacheable_view
-                        && items.len() <= 8_192
-                        && items.iter().map(|item| item.providers.len()).sum::<usize>() <= 32_768
+                        && data.items.len() <= 8_192
+                        && data
+                            .items
+                            .iter()
+                            .map(|item| item.providers.len())
+                            .sum::<usize>()
+                            <= 32_768
                     {
                         cache_update = Some(CachedSummary {
                             owner: owner.clone(),
-                            query_fingerprint: query_fingerprint.clone(),
+                            query_fingerprint: base_query_fingerprint,
                             snapshot_fingerprint: fingerprint.clone(),
-                            items: Arc::clone(&items),
+                            data: Arc::clone(&data),
                         });
                     }
-                    PreparedCandidates::Summary(items)
+                    PreparedCandidates::Summary(data)
                 }
                 CandidateView::Versions { package_id, source } => PreparedCandidates::Versions {
                     package_id: package_id.clone(),
@@ -326,14 +388,35 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         };
         let offset = request.cursor.as_ref().map_or(0, |c| c.offset);
         let limit = request.limit.unwrap_or(64) as usize;
-        let (page, total) = match items {
-            PreparedCandidates::Summary(items) => (
+        let (page, total) = match (items, filter) {
+            (PreparedCandidates::Summary(data), None) => (
                 CandidatePageItems::Summary {
-                    items: items.iter().skip(offset).take(limit).cloned().collect(),
+                    items: data
+                        .items
+                        .iter()
+                        .skip(offset)
+                        .take(limit)
+                        .cloned()
+                        .collect(),
                 },
-                items.len(),
+                data.items.len(),
             ),
-            PreparedCandidates::Versions { package_id, items } => {
+            (PreparedCandidates::Summary(data), Some(filter)) => {
+                let search = filter.search.as_ref().map(|search| search.to_lowercase());
+                let mut total = 0;
+                let mut items = Vec::new();
+                for item in &data.items {
+                    if !matches_filter(item, &data.source_metadata, filter, search.as_deref()) {
+                        continue;
+                    }
+                    if (offset..offset + limit).contains(&total) {
+                        items.push(item.clone());
+                    }
+                    total += 1;
+                }
+                (CandidatePageItems::Summary { items }, total)
+            }
+            (PreparedCandidates::Versions { package_id, items }, _) => {
                 let total = items.len();
                 (
                     CandidatePageItems::Versions {
@@ -462,6 +545,45 @@ fn digest_valid(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+fn matches_filter(
+    item: &CandidateSummary,
+    sources: &HashMap<String, CandidateSourceMetadata>,
+    filter: &CandidateFilter,
+    search: Option<&str>,
+) -> bool {
+    let installed = !matches!(item.installed, CandidateInstalled::Absent);
+    let status_matches = match filter.status {
+        None => true,
+        Some(CandidateFilterStatus::Installed) => installed,
+        Some(CandidateFilterStatus::Available) => !installed && !item.providers.is_empty(),
+        Some(CandidateFilterStatus::Missing) => {
+            !installed
+                && item.providers.is_empty()
+                && matches!(item.latest, CandidateChoice::None { .. })
+        }
+    };
+    if !status_matches {
+        return false;
+    }
+    let provider_metadata = || {
+        item.providers
+            .iter()
+            .filter_map(|provider| sources.get(&source_key(&provider.source).ok()?))
+    };
+    filter
+        .source
+        .is_none_or(|kind| provider_metadata().any(|source| source.kind == kind))
+        && search.is_none_or(|search| {
+            item.package_id.to_lowercase().contains(search)
+                || item
+                    .display_name
+                    .as_ref()
+                    .is_some_and(|name| name.to_lowercase().contains(search))
+                || provider_metadata().any(|source| source.search_name.contains(search))
+        })
+}
+
 fn validate_request(request: &ProjectCandidateRequest) -> Result<Vec<String>, CandidateQueryError> {
     let invalid = CandidateQueryError::InvalidInput;
     if request.expected_revision == 0
@@ -493,7 +615,17 @@ fn validate_request(request: &ProjectCandidateRequest) -> Result<Vec<String>, Ca
         CandidateView::Summary {
             package_ids,
             sources,
+            filter,
         } => {
+            if filter
+                .as_ref()
+                .and_then(|filter| filter.search.as_ref())
+                .is_some_and(|search| {
+                    search.chars().count() > 256 || search.chars().any(char::is_control)
+                })
+            {
+                return Err(invalid);
+            }
             records.push("summary".to_owned());
             if let Some(ids) = package_ids {
                 if ids.is_empty() || ids.len() > 256 || ids.iter().any(|id| !package_valid(id)) {
@@ -561,6 +693,7 @@ mod tests {
             view: CandidateView::Summary {
                 package_ids: Some(vec!["com.example.b".into(), "com.example.a".into()]),
                 sources: None,
+                filter: None,
             },
             limit: None,
             expected_snapshot: None,
@@ -598,6 +731,7 @@ mod tests {
         r.view = CandidateView::Summary {
             package_ids: Some(vec!["com.example.a".into(); 2]),
             sources: None,
+            filter: None,
         };
         assert_eq!(validate_request(&r), Err(CandidateQueryError::InvalidInput));
         r = request();
@@ -625,6 +759,7 @@ mod tests {
         r.view = CandidateView::Summary {
             package_ids: Some((0..257).map(|i| format!("com.example.{i}")).collect()),
             sources: None,
+            filter: None,
         };
         assert_eq!(validate_request(&r), Err(CandidateQueryError::InvalidInput));
     }
@@ -815,6 +950,7 @@ mod tests {
         changed_ids.view = CandidateView::Summary {
             package_ids: Some(vec!["com.example.c".into()]),
             sources: None,
+            filter: None,
         };
         let mut changed_source = continued.clone();
         if let CandidateView::Summary { sources, .. } = &mut changed_source.view {

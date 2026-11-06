@@ -125,6 +125,10 @@ pub struct CandidateProvider {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSummary {
     pub package_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<CandidateLinks>,
     pub providers: Vec<CandidateProvider>,
     pub direct: bool,
     pub installed: CandidateInstalled,
@@ -134,6 +138,15 @@ pub struct CandidateSummary {
     pub project_latest_stable: CandidateChoice,
     pub update: CandidateUpdate,
     pub stable_update: CandidateUpdate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateLinks {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -185,6 +198,12 @@ pub enum CandidateView {
             deserialize_with = "nonnull_optional"
         )]
         sources: Option<Vec<CandidateSourceOverride>>,
+        #[serde(
+            skip_serializing_if = "Option::is_none",
+            default,
+            deserialize_with = "nonnull_optional"
+        )]
+        filter: Option<CandidateFilter>,
     },
     Versions {
         #[serde(rename = "packageId")]
@@ -196,6 +215,45 @@ pub enum CandidateView {
         )]
         source: Option<CandidateSource>,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateFilter {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "nonnull_optional"
+    )]
+    pub search: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "nonnull_optional"
+    )]
+    pub status: Option<CandidateFilterStatus>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "nonnull_optional"
+    )]
+    pub source: Option<CandidateFilterSource>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CandidateFilterStatus {
+    Installed,
+    Available,
+    Missing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CandidateFilterSource {
+    Local,
+    Remote,
+    UserPackage,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

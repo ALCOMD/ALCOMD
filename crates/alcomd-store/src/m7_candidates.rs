@@ -1,8 +1,8 @@
 use alcomd_application::{
-    CandidateCatalogEntry, CandidateQueryError as Error, CandidateStoreAuthority,
-    CandidateStoreSnapshot, M3ErrorCode, MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES,
-    PackageSourceSelector, PrincipalId, ProjectAuthorityFingerprint, ProjectId, ProjectRecord,
-    UserPackageId,
+    CandidateCatalogEntry, CandidateFilterSource, CandidateLinks, CandidateQueryError as Error,
+    CandidateSourceMetadata, CandidateStoreAuthority, CandidateStoreSnapshot, M3ErrorCode,
+    MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId,
+    ProjectAuthorityFingerprint, ProjectId, ProjectRecord, UserPackageId,
 };
 use rusqlite::{Connection, params};
 
@@ -21,7 +21,8 @@ pub(super) fn snapshot(
         .map_err(|_| Error::Unavailable)?;
     let mut statement = transaction.prepare(
         "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,
-                (r.resolver_indexed AND p.resolver_ready),p.legacy_metadata_present,p.unity_release_text
+                (r.resolver_indexed AND p.resolver_ready),p.legacy_metadata_present,p.unity_release_text,
+                p.display_name,p.documentation_url,p.changelog_url
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
          WHERE r.owner_principal_id=?1 AND (r.resolver_indexed=0 OR p.resolver_ready=1)
          AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
@@ -32,6 +33,11 @@ pub(super) fn snapshot(
             Ok(CandidateCatalogEntry {
                 package_id: row.get(0)?,
                 version: row.get(1)?,
+                display_name: row.get(10)?,
+                links: CandidateLinks {
+                    documentation: row.get(11)?,
+                    changelog: row.get(12)?,
+                },
                 source: PackageSourceSelector::Repository {
                     repository_id: row.get(2)?,
                 },
@@ -64,9 +70,20 @@ pub(super) fn snapshot(
             let manifest =
                 serde_json::from_str(&manifest).map_err(|_| rusqlite::Error::InvalidQuery)?;
             let metadata = crate::m4::user_manifest_metadata(&manifest)?;
+            let field = |key| {
+                manifest
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+            };
             Ok(CandidateCatalogEntry {
                 package_id: row.get(0)?,
                 version: row.get(1)?,
+                display_name: field("displayName"),
+                links: CandidateLinks {
+                    documentation: field("documentationUrl"),
+                    changelog: field("changelogUrl"),
+                },
                 source: PackageSourceSelector::UserPackage {
                     user_package_id: UserPackageId::parse(&id)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -99,7 +116,44 @@ pub(super) fn snapshot(
         entries,
         fingerprint_records: authority.fingerprint_records,
         catalog_complete: authority.catalog_complete,
+        source_metadata: source_metadata(&transaction, owner)?,
     })
+}
+
+fn source_metadata(
+    transaction: &Connection,
+    owner: &PrincipalId,
+) -> Result<std::collections::HashMap<String, CandidateSourceMetadata>, Error> {
+    let mut statement = transaction
+        .prepare(
+            "SELECT 'repository:' || repository_id, source_kind,
+                coalesce(display_name, name, declared_id, source_locator)
+         FROM repositories WHERE owner_principal_id=?1
+         UNION ALL
+         SELECT 'user_package:' || user_package_id, 'user-package',
+                coalesce(json_extract(manifest_json,'$.displayName'), 'Local / User Package')
+         FROM user_package_sources WHERE owner_principal_id=?1",
+        )
+        .map_err(|_| Error::Unavailable)?;
+    statement
+        .query_map([owner.as_str()], |row| {
+            let kind = match row.get::<_, String>(1)?.as_str() {
+                "local" => CandidateFilterSource::Local,
+                "remote" => CandidateFilterSource::Remote,
+                "user-package" => CandidateFilterSource::UserPackage,
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            Ok((
+                row.get(0)?,
+                CandidateSourceMetadata {
+                    kind,
+                    search_name: row.get::<_, String>(2)?.to_lowercase(),
+                },
+            ))
+        })
+        .map_err(|_| Error::Unavailable)?
+        .collect::<Result<_, _>>()
+        .map_err(|_| Error::Unavailable)
 }
 
 /// Revalidate a cached summary without loading any package version rows.

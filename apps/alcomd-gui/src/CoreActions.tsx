@@ -22,7 +22,7 @@ import type {
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
+import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
 import { FilePicker } from "./FilePicker";
 import { LoadingState, useDelayedPending } from "./LoadingState";
@@ -30,7 +30,7 @@ import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAct
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
-import { isBuiltinRepository } from "./repository-display";
+import { isBuiltinRepository, repositoryDefaultName, repositoryDisplayName } from "./repository-display";
 import type { RepositoryLinkDraft } from "./repository-link";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
@@ -162,36 +162,71 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [confirmRemove, setConfirmRemove] = useState(false);
-    const [editingAuthentication, setEditingAuthentication] = useState(false);
+    const [managing, setManaging] = useState(false);
+    const [nameDraft, setNameDraft] = useState<{ revision: number; initial: string; value: string }>();
     const [authentication, setAuthentication] = useState(EMPTY_REPOSITORY_AUTH);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const pending = useRef(false);
+    const pending = useRef<"refresh" | "remove" | "credentials" | "name" | undefined>(undefined);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
-    const closeAuthentication = () => {
-        setEditingAuthentication(false);
+    const builtin = isBuiltinRepository(repository);
+    const canEditAuthentication = repository.source.kind === "remote" && !builtin;
+    const savingSettings = feedback.busy && (pending.current === "credentials" || pending.current === "name");
+    const openManagement = () => {
+        if (repository.revision === undefined) return;
+        const value = repository.displayName ?? "";
+        setNameDraft({ revision: repository.revision, initial: value, value });
+        setManaging(true);
+    };
+    const closeManagement = () => {
+        setManaging(false);
+        setNameDraft(undefined);
         setAuthentication(EMPTY_REPOSITORY_AUTH);
-        setFeedback(INITIAL_FEEDBACK);
+        if (pending.current !== "refresh") setFeedback(INITIAL_FEEDBACK);
+    };
+    const saveName = async () => {
+        if (!available || pending.current || repository.repositoryId === undefined
+            || nameDraft === undefined || nameDraft.value === nameDraft.initial) return;
+        pending.current = "name";
+        setFeedback({ busy: true });
+        try {
+            await client.repositorySetDisplayName(repository.repositoryId, nameDraft.revision, nameDraft.value || null);
+            if (current()) { closeManagement(); onChanged?.(); }
+        } catch (caught: unknown) {
+            if (current()) {
+                const error = safeError(caught);
+                setFeedback({ busy: false, error });
+                if (error.code === "revision_conflict") onChanged?.();
+            }
+        } finally { pending.current = undefined; }
     };
     const changeAuthentication = async (clear: boolean) => {
-        if (!ready || !available || pending.current || repository.source.kind !== "remote"
+        if (!ready || !available || pending.current || !canEditAuthentication
             || (!clear && (authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)))) return;
-        pending.current = true;
+        pending.current = "credentials";
         setFeedback({ busy: true });
         try {
             const credentials = clear ? null : repositoryCredentials(authentication);
             if (credentials === undefined) return;
             await client.repositorySetCredentials(repository.repositoryId!, repository.revision!, credentials);
-            if (current()) { closeAuthentication(); onChanged?.(); }
+            if (current()) { closeManagement(); onChanged?.(); }
         } catch (caught: unknown) {
             if (current()) setFeedback({ busy: false, error: safeError(caught) });
-        } finally { pending.current = false; }
+        } finally { pending.current = undefined; }
     };
     const run = async (remove: boolean) => {
-        if (!ready || !available || pending.current) return;
-        pending.current = true;  setFeedback({ busy: true });
+        if (!ready || !available || pending.current || (remove && builtin)) return;
+        pending.current = remove ? "remove" : "refresh";
+        setFeedback({ busy: true });
         try {
             if (remove) await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
-            else await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
+            else {
+                const refreshed = await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
+                const revision = refreshed.repository.revision;
+                if (current() && revision !== undefined) {
+                    setNameDraft((draft) => draft !== undefined && draft.revision === repository.revision
+                        ? { ...draft, revision } : draft);
+                }
+            }
             if (!current()) return;
             setFeedback(INITIAL_FEEDBACK);
             setConfirmRemove(false); onChanged?.();
@@ -201,28 +236,36 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
             setFeedback({ busy: false, error: remove ? error : undefined });
             if (!remove && error.code === "revision_conflict") onChanged?.();
         }
-        finally { pending.current = false; }
+        finally { pending.current = undefined; }
     };
     return <div className="repository-row-actions">
-        <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove && !editingAuthentication} refreshingLabel={t("Refreshing repository")} />
-        {repository.source.kind === "remote" && !isBuiltinRepository(repository) ? <Button
-            disabled={!available || !ready || feedback.busy} type="button" variant="text"
-            onClick={() => { setFeedback(INITIAL_FEEDBACK); setEditingAuthentication(true); }}>{t("Authentication")}</Button> : null}
-        {!isBuiltinRepository(repository) ? <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => {  setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton> : null}
-        <MaterialDialog open={editingAuthentication} title={t("Repository authentication")} dismissible={!feedback.busy} onClose={closeAuthentication}>
-            {repository.credentialsConfigured ? <p>{t("Uses authentication")}</p> : null}
-            <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} />
+        <IconButton disabled={!available || !ready || feedback.busy} label={t("Manage repository")} onClick={openManagement} title={t("Manage repository")} type="button"><Icon asset={editIcon} /></IconButton>
+        <IconButton disabled={builtin || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
+        <MaterialDialog open={managing} title={t("Manage repository")} dismissible={!savingSettings} onClose={closeManagement}>
+            {nameDraft === undefined ? null : <form onSubmit={(event) => { event.preventDefault(); void saveName(); }}>
+                <TextField disabled={feedback.busy} label={t("Display name")}
+                    onInput={(value) => setNameDraft({ ...nameDraft, value })}
+                    placeholder={repositoryDefaultName(t, repository, t("Repository"))}
+                    supportingText={t("Leave blank to use the default name.")} value={nameDraft.value} />
+                <Button disabled={feedback.busy || nameDraft.value === nameDraft.initial} type="submit">{t("Save name")}</Button>
+            </form>}
+            <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && pending.current === "refresh"} refreshingLabel={t("Refreshing repository")} />
+            {canEditAuthentication ? <>
+                <h3>{t("Repository authentication")}</h3>
+                {repository.credentialsConfigured ? <p>{t("Uses authentication")}</p> : null}
+                <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} />
+            </> : null}
             <MutationFeedback client={client} feedback={feedback} />
             <div className="dialog-actions">
-                {repository.credentialsConfigured ? <Button disabled={feedback.busy} onClick={() => void changeAuthentication(true)}
+                {canEditAuthentication && repository.credentialsConfigured ? <Button disabled={feedback.busy} onClick={() => void changeAuthentication(true)}
                     type="button" variant="text">{t("Clear authentication")}</Button> : null}
-                <Button disabled={feedback.busy} onClick={closeAuthentication} type="button" variant="text">{t("Cancel")}</Button>
-                <Button disabled={feedback.busy || authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)}
-                    onClick={() => void changeAuthentication(false)} type="button">{t("Save")}</Button>
+                <Button disabled={savingSettings} onClick={closeManagement} type="button" variant="text">{t("Close")}</Button>
+                {canEditAuthentication ? <Button disabled={feedback.busy || authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)}
+                    onClick={() => void changeAuthentication(false)} type="button">{t("Save")}</Button> : null}
             </div>
         </MaterialDialog>
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
-            <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repository.name ?? repository.declaredId ?? t("this repository")}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
+            <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repositoryDisplayName(t, repository, t("this repository"))}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>

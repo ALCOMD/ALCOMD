@@ -7,6 +7,20 @@ grade = 0
 fill = 0
 
 [[asset]]
+name = "cancel"
+optical_size = 24
+path = "24/cancel.svg"
+upstream_path = "symbols/web/cancel/materialsymbolsrounded/cancel_24px.svg"
+sha256 = "b0478bdb7783de3ecf66e19c7d4458c5a1fe92f2402ae083be00c212cb7e947d"
+
+[[asset]]
+name = "edit"
+optical_size = 24
+path = "24/edit.svg"
+upstream_path = "symbols/web/edit/materialsymbolsrounded/edit_24px.svg"
+sha256 = "65d2e92a5a2d761c82125ecd95aa6fd8a389b6153a631ccc260c9aa658f65ef6"
+
+[[asset]]
 name = "extension"
 optical_size = 24
 path = "24/extension.svg"

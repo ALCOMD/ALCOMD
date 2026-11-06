@@ -675,7 +675,7 @@ export function Switch({
     );
 }
 
-export function Checkbox({ checked, disabled, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange?(checked: boolean): void }) {
+export function Checkbox({ checked, disabled, label, labelHidden = false, onChange }: { checked: boolean; disabled?: boolean; label: string; labelHidden?: boolean; onChange?(checked: boolean): void }) {
     const ref = useRef<MaterialElement>(null);
     // A Material checkbox changes its own property before dispatching change.
     // Reconcile even when the owner rejects the change (e.g. confirmation cancelled).
@@ -689,7 +689,7 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
                 ref,
                 onChange: (event: FormEvent<MaterialElement>) => onChange?.(Boolean(event.currentTarget.checked))
             } as MaterialProps)}
-            <span>{label}</span>
+            {labelHidden ? null : <span>{label}</span>}
         </label>
     );
 }

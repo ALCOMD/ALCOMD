@@ -196,19 +196,38 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
 });
 
-test("First candidate page renders before remaining evidence and presentation metadata", async ({ page }) => {
-    await open(page, "paged=1&deferCandidateSummary=1&deferPackagePresentation=1");
-    const first = page.getByRole("checkbox", { name: "Select com.example.avatar", exact: true });
-    const updateAll = page.getByRole("button", { name: "Update All (1)", exact: true });
+test("Candidate pages render names and preserve Core order without reading repository catalogs", async ({ page }) => {
+    await open(page, "paged=1&deferCandidateSummary=1&reverse-candidate-order=1");
+    const first = page.getByRole("checkbox", { name: "Select Local tools", exact: true });
+    const updateAll = page.getByRole("button", { name: /^Update All \(\d+\)$/ });
     await expect(first).toBeVisible();
     await expect(updateAll).toBeDisabled();
     await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSummary)).toBe("function");
     await page.evaluate(() => window.resumeCandidateSummary?.());
     await expect(updateAll).toBeEnabled();
     await expect(first).toBeVisible();
-    await expect.poll(() => page.evaluate(() => typeof window.resumePackagePresentation)).toBe("function");
-    await page.evaluate(() => window.resumePackagePresentation?.());
     await expect(page.getByRole("checkbox", { name: "Select Avatar tools", exact: true })).toBeVisible();
+    const table = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(table.locator("tbody tr").first()).toContainText("Local tools");
+    expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
+});
+
+test("A late Core search response cannot replace the current filtered rows", async ({ page }) => {
+    await open(page, "deferCandidateFilter=Remote");
+    const search = page.getByRole("searchbox", { name: "Search packages" });
+    await search.fill("Remote");
+    await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateFilter)).toBe("function");
+    await search.fill("Local");
+    const table = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.locator("tbody tr")).toContainText("Local tools");
+    await page.evaluate(async () => {
+        window.resumeCandidateFilter?.();
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+    });
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.locator("tbody tr")).toContainText("Local tools");
 });
 
 test("Mixed selected install and upgrade keeps search-hidden selected IDs in one Bulk Plan", async ({ page }) => {
@@ -365,7 +384,7 @@ for (const metadata of ["paged", "error"]) {
             await choosePackageStatus(page, "All packages");
             await expect(remote).toBeVisible();
 
-            expect(await page.evaluate(() => window.repositoryPackageRequests.every((request) => request.cursor === undefined))).toBe(true);
+            expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
             expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "versions"))).toBe(false);
             expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
         });

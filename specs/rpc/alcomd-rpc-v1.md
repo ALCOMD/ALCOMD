@@ -955,6 +955,13 @@ Plan/Apply DTO/结果/错误及 permissions 全部保留。候选 capability 缺
 最多4096、遵守已有响应字节上限），避免用获胜来源冒充完整来源集合或为来源筛选拉取全版本。
 它包含确认可见的非获胜/未知来源，不受单行显式来源选择缩窄；不改变 resolver 来源策略。
 
+候选摘要按 Core 的包 ID 顺序分页，并从同一快照返回可选的 `displayName` 和 `links`。
+Core 优先选取可见来源中与已锁定版本完全一致的记录，否则按项目候选、一般候选选择名称。
+已锁定包的链接仅取自精确版本，同优先级有多个来源时省略链接。未安装包使用所选候选的链接。
+Core 校验 HTTP(S) 地址，去掉含凭据或无效的链接。
+
+摘要请求可带 `view.filter`。Core 对 `search`（最多 256 个 Unicode 标量值）按包 ID、包显示名和可见来源的登记名称做不区分大小写的匹配，也可按 `status` 和 `source` 筛选。各条件同时生效。来源匹配覆盖完整的可见提供者，包括未被选中的提供者。`missing` 要求包未安装、没有可见提供者且 Core 明确返回无候选。Core 在分页前筛选，保留摘要原顺序。游标绑定筛选条件，快照标识仍与完整清单一致。
+
 Package mutation 与候选查询的 source DTO 分别遵守各自冻结 Schema。P6
 `m7-p6-package-closure.proposal.schema.json` 的 source selector 使用
 `repositoryId`/`userPackageId`，reinstall selection 使用 `packageIds`，bulk intent 使用
