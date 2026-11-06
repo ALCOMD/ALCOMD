@@ -1290,14 +1290,21 @@ fn m4_package_manifest_freezes_required_identity_and_unity_semantics() {
         json!(["name", "displayName", "version", "url", "author"])
     );
     assert_eq!(definitions["packageAuthor"]["required"], json!(["name"]));
+    let manifest = &definitions["packageManifest"];
+    assert!(manifest.get("if").is_none());
     assert_eq!(
-        definitions["packageManifest"]["if"]["not"]["required"],
-        json!(["zipSHA256"])
+        manifest["properties"]["url"]["pattern"],
+        "^[Hh][Tt][Tt][Pp][Ss]?://"
     );
-    assert_eq!(
-        definitions["packageManifest"]["then"]["properties"]["url"]["pattern"],
-        "^[Hh][Tt][Tt][Pp][Ss]://"
+    let publisher_digest = manifest["properties"]["zipSHA256"]
+        .as_object()
+        .expect("digest definition");
+    assert!(
+        !publisher_digest.contains_key("$ref")
+            && !publisher_digest.contains_key("type")
+            && !publisher_digest.contains_key("pattern")
     );
+    assert_eq!(definitions["sha256"]["pattern"], "^[0-9a-f]{64}$");
     assert_eq!(
         definitions["packageManifest"]["properties"]["unity"]["pattern"],
         "^[0-9]+\\.[0-9]+$"
@@ -1377,7 +1384,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 27
         ])
     );
 }
@@ -1472,7 +1479,7 @@ fn hello_schema_accepts_the_project_observation_removal_v16_store() {
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 27
         ])
     );
 }
@@ -1753,7 +1760,7 @@ fn hello_schema_adds_extension_api_and_config_schema_as_optional() {
     );
     assert_eq!(
         response["properties"]["result"]["properties"]["configSchema"]["const"],
-        10
+        alcomd_protocol::CONFIG_SCHEMA_VERSION
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

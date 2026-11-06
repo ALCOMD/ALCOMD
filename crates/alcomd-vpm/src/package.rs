@@ -40,6 +40,7 @@ pub struct ResolverReadyPackage {
     pub author_email: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
+    pub(crate) ignored_publisher_digest: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,7 +48,6 @@ pub enum PackageManifestErrorCode {
     DocumentInvalid,
     ManifestInvalid,
     IdentityMismatch,
-    HashRequired,
     SourceInvalid,
 }
 
@@ -197,16 +197,10 @@ pub(crate) fn parse_manifest(
     } else {
         false
     };
-    let archive_sha256 = manifest
-        .get("zipSHA256")
-        .map(|value| {
-            parse_sha256(
-                value
-                    .as_str()
-                    .ok_or_else(|| manifest_error(PackageManifestErrorCode::HashRequired))?,
-            )
-        })
-        .transpose()?;
+    let declared_digest = manifest.get("zipSHA256");
+    let archive_sha256 = declared_digest
+        .and_then(Value::as_str)
+        .and_then(parse_sha256);
     let author = manifest
         .get("author")
         .and_then(Value::as_object)
@@ -260,6 +254,7 @@ pub(crate) fn parse_manifest(
         author_email,
         unity_release,
         dependencies_json,
+        ignored_publisher_digest: declared_digest.is_some() && archive_sha256.is_none(),
     })
 }
 
@@ -344,26 +339,21 @@ fn parse_artifact_url(value: &str) -> Result<String, PackageManifestError> {
     Ok(url.to_string())
 }
 
-fn parse_sha256(value: &str) -> Result<[u8; 32], PackageManifestError> {
-    if value.len() != 64
-        || value
-            .bytes()
-            .any(|byte| !byte.is_ascii_digit() && !(b'a'..=b'f').contains(&byte))
-    {
-        return Err(manifest_error(PackageManifestErrorCode::HashRequired));
+fn parse_sha256(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
     }
     let mut digest = [0_u8; 32];
     for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
         digest[index] = (hex_nibble(pair[0]) << 4) | hex_nibble(pair[1]);
     }
-    Ok(digest)
+    Some(digest)
 }
 
 fn hex_nibble(value: u8) -> u8 {
-    match value {
+    match value.to_ascii_lowercase() {
         b'0'..=b'9' => value - b'0',
-        b'a'..=b'f' => value - b'a' + 10,
-        _ => 0,
+        lower => lower - b'a' + 10,
     }
 }
 
@@ -587,24 +577,36 @@ mod tests {
     }
 
     #[test]
-    fn malformed_or_uppercase_declared_hash_is_never_resolver_ready() {
-        for hash in [
-            Value::Null,
-            Value::String("bad".to_owned()),
-            Value::String("A".repeat(64)),
+    fn invalid_publisher_digest_is_ignored_and_hex_case_is_accepted() {
+        for (hash, expected, ignored) in [
+            (None, None, false),
+            (Some(Value::Null), None, true),
+            (Some(serde_json::json!(123)), None, true),
+            (Some(Value::String("bad".to_owned())), None, true),
+            (Some(Value::String("z".repeat(64))), None, true),
+            (
+                Some(Value::String("aB".repeat(32))),
+                Some([0xab; 32]),
+                false,
+            ),
         ] {
             let mut document: Value = serde_json::from_slice(READY).expect("fixture");
             let manifest = &mut document["packages"]["com.example.base"]["versions"]["1.2.3"];
-            manifest["zipSHA256"] = hash;
-            assert_eq!(
-                parse_resolver_ready_repository(
-                    &serde_json::to_vec(&document).expect("document"),
-                    &context(),
-                )
-                .expect_err("hash must fail")
-                .code(),
-                PackageManifestErrorCode::HashRequired
-            );
+            if let Some(hash) = hash {
+                manifest["zipSHA256"] = hash;
+            } else {
+                manifest
+                    .as_object_mut()
+                    .expect("manifest")
+                    .remove("zipSHA256");
+            }
+            let packages = parse_resolver_ready_repository(
+                &serde_json::to_vec(&document).expect("document"),
+                &context(),
+            )
+            .expect("package remains resolver-ready");
+            assert_eq!(packages[0].candidate.source.archive_sha256, expected);
+            assert_eq!(packages[0].ignored_publisher_digest, ignored);
         }
     }
 

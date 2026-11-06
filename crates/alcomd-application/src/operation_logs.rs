@@ -136,6 +136,34 @@ pub struct LogCall {
 }
 
 impl LogCall {
+    /// Queue a completed execution step with optional technical detail.
+    pub fn record_step(
+        &self,
+        action: &str,
+        step: &str,
+        outcome: LogOutcome,
+        target: Option<LogTarget>,
+        details: Option<String>,
+    ) {
+        let entry = OperationLogEntry {
+            sequence: 0,
+            entry_id: OperationId::new().to_string(),
+            execution_id: self.execution_id.clone(),
+            actor: self.actor.clone(),
+            operation_id: None,
+            occurred_at_ms: log_time_ms(),
+            action: action.to_owned(),
+            step: step.to_owned(),
+            outcome,
+            target,
+            details,
+        };
+        self.pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(entry);
+    }
+
     pub fn take_steps(&self) -> Vec<OperationLogEntry> {
         std::mem::take(
             &mut *self
@@ -318,24 +346,7 @@ pub async fn log_execution_step<T, E: Error + 'static>(
             )
         }
     };
-    let occurred_at_ms = log_time_ms();
-    let entry = OperationLogEntry {
-        sequence: 0,
-        entry_id: OperationId::new().to_string(),
-        execution_id: call.execution_id.clone(),
-        actor: call.actor.clone(),
-        operation_id: None,
-        occurred_at_ms,
-        action: action.to_owned(),
-        step: step.to_owned(),
-        outcome,
-        target,
-        details,
-    };
-    call.pending
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push(entry);
+    call.record_step(action, step, outcome, target, details);
     if result.is_err() {
         let entries = call.take_steps();
         if writer(call.owner, entries).await.is_err() {

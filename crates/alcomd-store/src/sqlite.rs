@@ -41,6 +41,7 @@ const MIGRATION_V23: &str = include_str!("../migrations/0023_project_templates.s
 const MIGRATION_V24: &str = include_str!("../migrations/0024_repository_archive_pins.sql");
 const MIGRATION_V25: &str = include_str!("../migrations/0025_repository_credentials.sql");
 const MIGRATION_V26: &str = include_str!("../migrations/0026_package_download_headers.sql");
+const MIGRATION_V27: &str = include_str!("../migrations/0027_http_archive_pins.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -209,6 +210,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 25 {
         connection
             .execute_batch(MIGRATION_V26)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 26 {
+        connection
+            .execute_batch(MIGRATION_V27)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -384,7 +390,7 @@ pub(super) fn state21_fixture(path: &Path) -> Connection {
 
 #[cfg(test)]
 #[test]
-fn state24_preserves_state23_rows_and_constrains_local_archive_pins() {
+fn state24_and_state27_preserve_existing_rows_and_constrain_local_archive_pins() {
     let mut connection = state21_fixture(Path::new(":memory:"));
     migrate_remove_templates(&mut connection).expect("State22");
     connection.execute_batch(MIGRATION_V23).expect("State23");
@@ -451,6 +457,59 @@ fn state24_preserves_state23_rows_and_constrains_local_archive_pins() {
             )
             .is_err()
     );
+
+    for migration in [MIGRATION_V25, MIGRATION_V26] {
+        connection
+            .execute_batch(migration)
+            .expect("historical schema");
+    }
+    connection
+        .execute_batch(
+            "UPDATE repositories SET revision=9, resolver_indexed=1, etag='fixture-etag';
+         UPDATE repository_package_versions SET download_headers_present=1;",
+        )
+        .expect("State26 repository metadata");
+    connection
+        .execute(
+            "UPDATE repository_package_versions SET local_zip_sha256=?1",
+            [vec![0xab_u8; 32]],
+        )
+        .expect("State26 archive pin");
+    connection.execute_batch(MIGRATION_V27).expect("State27");
+    assert_eq!(
+        connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .expect("schema version"),
+        27,
+    );
+    let fields = connection.query_row(
+        "SELECT r.revision, r.resolver_indexed, r.etag, p.local_zip_sha256, p.download_headers_present
+         FROM repositories r JOIN repository_package_versions p USING(repository_id)", [],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?, row.get::<_, String>(2)?,
+            row.get::<_, Vec<u8>>(3)?, row.get::<_, bool>(4)?)),
+    ).expect("preserved State26 repository and archive pin");
+    assert_eq!(
+        fields,
+        (9, true, "fixture-etag".into(), vec![0xab; 32], true)
+    );
+    connection.execute("UPDATE repository_package_versions SET artifact_url='http://fixture.invalid/archive.zip'", [])
+        .expect("HTTP package may retain a locally verified digest");
+    for update in [
+        "artifact_url='file:///archive.zip', local_zip_sha256=NULL",
+        "local_zip_sha256=zeroblob(31)",
+        "zip_sha256=printf('%064d', 1)",
+        "manifest_fingerprint=NULL",
+    ] {
+        assert!(
+            connection
+                .execute(
+                    &format!("UPDATE repository_package_versions SET {update}"),
+                    []
+                )
+                .is_err(),
+            "{update}"
+        );
+    }
 }
 
 #[cfg(test)]

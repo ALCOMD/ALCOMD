@@ -1564,6 +1564,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         let mut observation = self
             .read_repository_preview(source, credentials.clone())
             .await?;
+        flush_log_steps().await;
         // Retain only remote observations that this connection can register.
         // Local registration still rechecks the file at the selected path.
         if matches!(observation.source, RepositorySource::Remote { .. })

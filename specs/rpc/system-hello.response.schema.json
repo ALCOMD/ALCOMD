@@ -66,12 +66,13 @@
                         18,
                         21,
                         22,
-                        23
+                        23,
+                        27
                     ]
                 },
                 "configSchema": {
                     "type": "integer",
-                    "const": 10
+                    "const": 12
                 },
                 "extensionApi": {
                     "type": "object",

@@ -60,9 +60,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use alcomd_application::{
-    DependencyIdentity, M3Error, M3ErrorCode, M3ReadAdapter, ManifestState, ProjectDiscoveryMode,
-    ProjectObservation, ProjectType, ReadIssue, RepositoryObservation, RepositoryPackageVersion,
-    RepositoryReadOutcome, RepositorySource, RepositoryValidators, ResolverPackageMetadata,
+    DependencyIdentity, LogOutcome, LogTarget, M3Error, M3ErrorCode, M3ReadAdapter, ManifestState,
+    ProjectDiscoveryMode, ProjectObservation, ProjectType, ReadIssue, RepositoryObservation,
+    RepositoryPackageVersion, RepositoryReadOutcome, RepositorySource, RepositoryValidators,
+    ResolverPackageMetadata,
 };
 use reqwest::header::{CONTENT_LENGTH, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use reqwest::redirect::{Action, Attempt, Policy};
@@ -859,6 +860,8 @@ fn parse_repository(
     };
     let mut rows = Vec::new();
     let mut issues = Vec::new();
+    let mut ignored_digests = 0;
+    let mut ignored_digest_examples = Vec::new();
     if let Some(packages_value) = object.get("packages") {
         let packages = packages_value
             .as_object()
@@ -922,6 +925,12 @@ fn parse_repository(
                         &context,
                     ) {
                         Ok(package) => {
+                            if package.ignored_publisher_digest {
+                                ignored_digests += 1;
+                                if ignored_digest_examples.len() < 32 {
+                                    ignored_digest_examples.push(item);
+                                }
+                            }
                             let PackageSourceAuthority::Repository {
                                 artifact_url,
                                 download_headers_present,
@@ -968,6 +977,34 @@ fn parse_repository(
             .then_with(|| left.version.as_bytes().cmp(right.version.as_bytes()))
     });
     issues.sort();
+    if ignored_digests > 0
+        && let Some(log) = alcomd_application::log_write_context().call
+    {
+        let (repository, path) = match &source {
+            RepositorySource::Local { path } => (None, Some(path.clone())),
+            RepositorySource::Remote { url } => (
+                Url::parse(url)
+                    .ok()
+                    .map(|url| url.origin().ascii_serialization()),
+                None,
+            ),
+        };
+        log.record_step(
+            "repositories.read",
+            "ignore_invalid_zip_sha256",
+            LogOutcome::Succeeded,
+            Some(LogTarget {
+                kind: "repository".to_owned(),
+                id: declared_id.clone(),
+                name: repository,
+                path,
+            }),
+            Some(format!(
+                "Ignored invalid publisher ZIP SHA-256 for {ignored_digests} package version(s). Examples:\n{}",
+                ignored_digest_examples.join("\n")
+            )),
+        );
+    }
     Ok(RepositoryObservation {
         source,
         source_identity_key,

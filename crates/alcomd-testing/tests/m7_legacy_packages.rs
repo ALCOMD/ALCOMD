@@ -8,14 +8,16 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use alcomd_application::{
-    AccessContext, IdempotencyKey, M3Application, M4Application, M4ErrorCode, OperationId,
-    OperationRecord, OperationState, PackagePlanRequest, PackagePlanVersion, PlanAction,
-    PrincipalId, ProjectRecord, RepositorySource, StateStore,
+    AccessContext, IdempotencyKey, M3Application, M4Application, M4ErrorCode, M4Store, OperationId,
+    OperationLogQuery, OperationRecord, OperationState, PackagePlanRequest, PackagePlanVersion,
+    PlanAction, PrincipalId, ProjectRecord, RepositorySource, ResolverCatalogSource, StateStore,
+    read_operation_logs, with_log_caller,
 };
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::{PackageCache, PackageEngine, VpmReader};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _};
 use uuid::Uuid;
 
 const KEEP: &str = "com.example.keep";
@@ -711,6 +713,146 @@ async fn failed_package_publish_restores_quarantined_assets_without_touching_con
     assert!(fixture.project_root.join("Assets/Moved.txt.meta").is_file());
 }
 
+#[tokio::test]
+async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is_rejected() {
+    let fixture = Fixture::new(false, ExistingLegacy::None).await;
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(fixture.store.clone(), VpmReader::new().expect("reader"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("fixture listener");
+    let url = format!(
+        "http://{}/archive.zip",
+        listener.local_addr().expect("fixture address")
+    );
+    let package = "com.example.digest";
+    let mut accepted = json!({"name": package, "version": "1.0.0"});
+    let bytes = package_archive(&accepted);
+    let digest: [u8; 32] = Sha256::digest(&bytes).into();
+    let invalid_value = "fixture-invalid-digest-not-for-logs";
+    add_repository_fields(&mut accepted, &digest);
+    accepted["url"] = json!(url);
+    accepted["zipSHA256"] = json!(invalid_value);
+    let mut mismatched = accepted.clone();
+    mismatched["version"] = json!("2.0.0");
+    mismatched["zipSHA256"] = json!("FF".repeat(32));
+    let index = fixture._directory.0.join("digest-index.json");
+    fs::write(&index, serde_json::to_vec(&json!({
+        "id": "digest-fixture", "packages": {package: {"versions": {"1.0.0": accepted, "2.0.0": mismatched}}}
+    })).expect("index JSON")).expect("write index");
+    let source = RepositorySource::Local {
+        path: index.to_string_lossy().into_owned(),
+    };
+    with_log_caller(
+        fixture.store.clone(),
+        &access,
+        registry.inspect_repository(&access, "digest-fixture-preview", source.clone(), None),
+    )
+    .await
+    .expect("repository preview");
+    let log = read_operation_logs(
+        &fixture.store,
+        &access,
+        OperationLogQuery {
+            limit: 20,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("technical log");
+    let note = log
+        .entries
+        .iter()
+        .find(|entry| entry.step == "ignore_invalid_zip_sha256")
+        .expect("recorded ignored digest");
+    assert_eq!(
+        note.target.as_ref().and_then(|target| target.id.as_deref()),
+        Some("digest-fixture")
+    );
+    let details = note.details.as_deref().expect("log detail");
+    assert!(details.contains("com.example.digest@1.0.0"));
+    assert!(!details.contains(invalid_value));
+    let repository = registry
+        .register_repository(&access, source, key("register-digest-fixture"))
+        .await
+        .expect("register repository")
+        .value;
+
+    let server = tokio::spawn(async move {
+        for _ in 0..2 {
+            let (stream, _) = listener.accept().await.expect("archive request");
+            let mut reader = tokio::io::BufReader::new(stream);
+            let mut line = String::new();
+            while reader.read_line(&mut line).await.expect("request header") > 0 && line != "\r\n" {
+                line.clear();
+            }
+            let mut stream = reader.into_inner();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("response header");
+            stream.write_all(&bytes).await.expect("archive body");
+        }
+    });
+    let mut request = fixture.request();
+    request.package_id = Some(package.to_owned());
+    request.repository_id = Some(repository.repository_id.to_string());
+    request.version_range = Some("2.0.0".to_owned());
+    let error = fixture
+        .packages
+        .plan(&access, request.clone())
+        .await
+        .expect_err("reject mismatched valid digest");
+    assert_eq!(error.code(), M4ErrorCode::PackageIntegrityMismatch);
+
+    request.version_range = Some("1.0.0".to_owned());
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("plan from verified first download");
+    assert_eq!(plan.source_set[0].archive_sha256(), digest);
+    let catalog = fixture
+        .store
+        .resolver_catalog(access.principal().clone(), false)
+        .await
+        .expect("indexed catalog");
+    assert!(catalog.entries.iter().any(|entry| entry.package_id == package && entry.version == "1.0.0"
+        && matches!(&entry.source, ResolverCatalogSource::Repository { zip_sha256: None, local_zip_sha256: Some(pin), .. } if *pin == digest)));
+    let install = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("apply-digest-fixture"),
+        )
+        .await
+        .expect("accept install");
+    assert_eq!(
+        fixture.terminal(install.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert!(
+        fixture
+            .project_root
+            .join("Packages")
+            .join(package)
+            .join("package.json")
+            .is_file()
+    );
+    tokio::time::timeout(Duration::from_secs(5), server)
+        .await
+        .expect("both downloads completed")
+        .expect("fixture server");
+}
+
 fn add_legacy(manifest: &mut Value) {
     manifest["legacyFiles"] = json!({"Assets/Old.txt": FILE_GUID});
     manifest["legacyFolders"] = json!({"Assets/Legacy": FOLDER_GUID});
@@ -729,7 +871,7 @@ fn add_repository_fields(manifest: &mut Value, digest: &[u8; 32]) {
     );
 }
 
-fn cache_package(cache: &PackageCache, manifest: &Value) -> [u8; 32] {
+fn package_archive(manifest: &Value) -> Vec<u8> {
     let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     archive
         .start_file(
@@ -755,7 +897,11 @@ fn cache_package(cache: &PackageCache, manifest: &Value) -> [u8; 32] {
     archive
         .write_all(b"independently authored synthetic package content")
         .expect("payload");
-    let bytes = archive.finish().expect("archive").into_inner();
+    archive.finish().expect("archive").into_inner()
+}
+
+fn cache_package(cache: &PackageCache, manifest: &Value) -> [u8; 32] {
+    let bytes = package_archive(manifest);
     let digest: [u8; 32] = Sha256::digest(&bytes).into();
     let path = cache.object_path(&digest);
     fs::create_dir_all(path.parent().expect("cache parent")).expect("owned cache parent");

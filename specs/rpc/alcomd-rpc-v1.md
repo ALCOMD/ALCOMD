@@ -263,7 +263,7 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v26 由 daemon 的存储
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v27 由 daemon 的存储
 组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 12，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，

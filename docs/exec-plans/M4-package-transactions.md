@@ -64,11 +64,13 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 
 ### M7 修订：按 VPM 规则锁定归档
 
-项目所有者批准：仓库声明 `zipSHA256` 时严格比对；缺省时仅为已求解选中的 HTTP(S) 归档执行有界首次下载，验证 ZIP 和包身份后计算摘要，确认安装前固定摘要。后续读取及 Apply 继续按固定摘要验证。`author.email` 缺省只影响展示。畸形的已声明摘要继续拒绝。权限、来源与项目重验、旧资产检查、缓存完整性及恢复规则继续生效。
+项目所有者批准：仓库提供有效的 `zipSHA256` 时严格比对，接受大小写混合的 64 个十六进制字符。缺省或格式无效时，仅为已求解选中的 HTTP(S) 归档执行有界首次下载，验证 ZIP 和包身份后计算摘要，确认安装前固定摘要。仓库读取对忽略的无效值记录有界技术日志，包含仓库和受影响的包版本，不记录无效值。已有仓库在下一次完整读取索引时采用新规则。后续读取及 Apply 按固定摘要验证。`author.email` 缺省只影响展示。权限、来源与项目重验、旧资产检查、缓存完整性及恢复规则继续生效。
 
 项目所有者批准 State24。放宽现有 resolver-ready 触发器对 `zip_sha256` 和 `author_email` 的非空约束，增加 `local_zip_sha256` 存放首次取得且验证过的摘要。只在同一 owner、仓库、包 ID、版本、归档 URL 与清单指纹的记录上复用，仓库刷新时仅保留仍匹配的绑定。仓库增加 `resolver_indexed`，区分已按新规则解析的快照和需要重新索引的旧快照，避免 HTTP 304 保留旧判定，也避免个别已知无效版本阻塞整库。新登记直接使用同次下载的索引。现有 Plan 与 RPC DTO 仍使用必填的已锁定摘要。迁移保留全部旧行，不新增表、权限或依赖。
 
 M7 获批的 [State26](../../specs/storage/state-v26.md) 在包索引中标识包级 `headers`。冷缓存从固定包声明取得请求头，同时保留原 ZIP 校验和计划边界。ZIP 首跳同名包头覆盖仓库头。跨来源重定向按当前 M7 认证合同处理，首次无摘要下载支持 HTTP(S)，校验后固定摘要。
+
+项目所有者批准 [State27](../../specs/storage/state-v27.md)。将 State24 遗留的 HTTPS 限制扩展到 HTTP(S)，覆盖无有效发布方摘要的 resolver-ready 写入和本地摘要绑定。事务保留现有记录及摘要。新 Core 报告 State27，旧 Core 拒绝打开该数据库。
 
 归档网络传输与仓库读取、刷新共用 Core 全进程 64 路 HTTP 额度，ZIP 解压及包身份校验独立最多 32 路。归档按固定摘要校验，同摘要对象共用缓存保护，缓存发布仍执行配额检查。各阶段等已启动工作结束后再进入下一阶段或处理失败。项目提交顺序、单事务、journal 与回滚保持原有语义。
 
@@ -87,7 +89,7 @@ M7 获批的 [State26](../../specs/storage/state-v26.md) 在包索引中标识�
   静默采用新候选。
 - install、remove、upgrade、downgrade 与 resolve 都通过同一 resolver/ChangeSet；至少 install 与
   remove 完成真实 RPC -> Operation -> project mutation -> restart recovery 垂直验证。
-- remote package 声明的强哈希必须合法并与归档匹配。HTTP(S) 包可按本节修订锁定首次取得的摘要；
+- remote package 提供有效的强哈希时必须与归档匹配。缺省或格式无效的 HTTP(S) 包按本节锁定首次取得的摘要。
   下载、cache hit 与 offline hit 都按固定摘要重新验证内容。
 - archive 中的路径穿越、绝对路径、链接、设备路径、重复/大小写碰撞、超限 entry 和 zip bomb 在
   写入项目树前被拒绝；任何失败都不能写出已验证 staging/project/cache root。
@@ -246,7 +248,7 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 - 仓库和包下载复用 Reqwest 的系统代理检测。包地址只允许无 userinfo 的 HTTP(S)，最多 10 次重定向，
   连接超时 10 秒，单次下载超时 10 分钟。认证头按 M7 对齐规则发送。
-- 已声明的 SHA-256 必须合法并匹配归档。缺省时按当前合同验证首次归档并固定本地摘要。
+- 有效的发布方 SHA-256 必须匹配归档。缺省或格式无效时验证首次归档并固定本地摘要。
 - 读取 `Content-Length` 只能提前拒绝，不能替代 streamed byte counter。达到上限、超时、中断或
   checksum 失败时删除/隔离 ALCOMD 自有 partial，不发布 cache object。
 - cache key 使用算法 + digest 的 versioned content-addressed key；package ID、URL、显示名不能单独
@@ -516,7 +518,7 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
 
 - **来源不确定**：同版本不同 source 未冻结 precedence/digest 时必须阻塞，不得任意选取。
 - **Apply 漂移**：任何隐式 re-resolve 或 source fallback 都破坏审批和幂等合同。
-- **下载完整性**：缺失/畸形 hash、partial publish 与 offline 坏 cache 不能被当作可用 package。
+- **下载完整性**：缺失或格式无效的发布方摘要须在首次下载并验证后固定。下载不完整或离线缓存校验失败的包不可用。
 - **archive 逃逸/耗尽**：根外写、链接、case collision 或无配额 extraction 是 M4 blocker。
 - **package tree/manifest 半提交**：package directory 与 VPM manifest 不是单原子操作，必须由
   journal/补偿和 kill test 证明恢复；只测试普通错误返回不够。
