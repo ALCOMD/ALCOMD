@@ -47,7 +47,12 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
         integer(&connection, "PRAGMA user_version"),
         i64::from(CURRENT_DATA_SCHEMA)
     );
-    let retained = row_snapshot(&connection);
+    let mut retained = row_snapshot(&connection);
+    let cleanup = retained
+        .iter()
+        .position(|(name, _)| name == "repository_credential_cleanup")
+        .expect("State25 credential cleanup table");
+    assert!(retained.remove(cleanup).1.is_empty());
     assert_eq!(retained, before, "every pre-existing row remains unchanged");
     assert_eq!(
         integer(
