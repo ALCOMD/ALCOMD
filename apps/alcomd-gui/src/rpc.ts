@@ -2,7 +2,7 @@ import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesListRe
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
-import type { RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult } from "@alcomd/sdk";
+import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
@@ -37,7 +37,7 @@ export interface GuiRpcClient {
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
-    repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
+    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
     repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult>;
@@ -48,7 +48,8 @@ export interface GuiRpcClient {
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
     openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void>;
-    repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult>;
+    repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult>;
+    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
     repositoriesRefreshAll(): Promise<RepositoryRefreshAllResult>;
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
@@ -242,8 +243,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_apply_delete_directory", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
-    repositoriesInspect(source: RepositorySource): Promise<RepositoryResult> {
-        return invokeTyped("gui_repositories_inspect", { params: { source } });
+    repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult> {
+        return invokeTyped("gui_repositories_inspect", { params: { source, credentials } });
     }
 
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult> {
@@ -262,8 +263,12 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_package_link", { repositoryId, packageId, version, linkKind });
     }
 
-    repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult> {
-        return invokeTyped("gui_repository_register", { source, idempotencyKey: crypto.randomUUID() });
+    repositoryRegister(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_register", { source, credentials, idempotencyKey: crypto.randomUUID() });
+    }
+
+    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: RepositoryCredentials | null): Promise<RepositoryWriteResult> {
+        return invokeTyped("gui_repository_set_credentials", { params: { repositoryId, expectedRevision, credentials, idempotencyKey: crypto.randomUUID() } });
     }
 
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult> {

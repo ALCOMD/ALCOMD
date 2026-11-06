@@ -1075,7 +1075,7 @@ mod tests {
                 },
                 source_identity: "owned-user-package-fixture".to_owned(),
                 manifest_fingerprint: prepared.snapshot.manifest_fingerprint,
-                archive_sha256: prepared.snapshot.archive_sha256,
+                archive_sha256: Some(prepared.snapshot.archive_sha256),
             };
             let metadata = cache
                 .pin_legacy_manifest(

@@ -26,10 +26,11 @@ use alcomd_application::{
     ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
     ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
     ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
-    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, RegistryCursor, RepositoryId,
-    RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog,
-    RestoredProject, Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord,
-    SyncWrite, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, RegistryCursor,
+    RepositoryArchivePinStore, RepositoryId, RepositoryObservation, RepositoryPackageSourcePin,
+    RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject,
+    Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord, SyncWrite,
+    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
     UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
     UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
     UnityMigrationOperationRecord, UnityMigrationPhase, UnityMigrationPlanDraft,
@@ -69,7 +70,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 23;
+pub const CURRENT_DATA_SCHEMA: u32 = 26;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -178,6 +179,19 @@ impl StateStoreHandle {
     #[must_use]
     pub fn retired_legacy_template_state(&self) -> bool {
         self.inner.retired_legacy_template_state
+    }
+
+    /// Registers missing built-in repository sources and returns their metadata in input order.
+    pub async fn ensure_builtin_repositories(
+        &self,
+        owner: PrincipalId,
+        defaults: Vec<(RepositoryId, RepositoryObservation)>,
+        now_ms: u64,
+    ) -> Result<Vec<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::ensure_builtin_repositories(connection, &owner, defaults, now_ms)
+        })
+        .await
     }
 
     async fn request<T>(
@@ -362,7 +376,75 @@ impl M3RegistryStore for StateStoreHandle {
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         self.request_m3(move |connection| {
-            m3::register_repository(connection, &owner, observation, &key, now_ms)
+            m3::register_repository(connection, &owner, observation, None, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn register_repository_authenticated(
+        &self,
+        owner: PrincipalId,
+        observation: RepositoryObservation,
+        reference: String,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::register_repository(
+                connection,
+                &owner,
+                observation,
+                Some(&reference),
+                &key,
+                now_ms,
+            )
+        })
+        .await
+    }
+
+    async fn repository_credential_reference(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+    ) -> Result<Option<String>, M3Error> {
+        self.request_m3(move |connection| m3::credential_reference(connection, &owner, id))
+            .await
+    }
+
+    async fn queue_repository_credential_cleanup(&self, reference: String) -> Result<(), M3Error> {
+        self.request_m3(move |connection| m3::queue_credential_cleanup(connection, &reference))
+            .await
+    }
+
+    async fn finish_repository_credential_cleanup(&self, reference: String) -> Result<(), M3Error> {
+        self.request_m3(move |connection| m3::finish_credential_cleanup(connection, &reference))
+            .await
+    }
+
+    async fn pending_repository_credential_cleanup(&self) -> Result<Vec<String>, M3Error> {
+        self.request_m3(move |connection| m3::pending_credential_cleanup(connection))
+            .await
+    }
+
+    async fn set_repository_credential_reference(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        reference: Option<String>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::set_credential_reference(
+                connection,
+                &owner,
+                id,
+                expected,
+                reference.as_deref(),
+                &key,
+                now_ms,
+            )
         })
         .await
     }
@@ -447,6 +529,19 @@ impl M3RegistryStore for StateStoreHandle {
 }
 
 impl alcomd_application::CandidateStore for StateStoreHandle {
+    async fn candidate_authority(
+        &self,
+        owner: PrincipalId,
+        project: ProjectId,
+    ) -> Result<alcomd_application::CandidateStoreAuthority, alcomd_application::CandidateQueryError>
+    {
+        self.request_worker(
+            move |connection| m7_candidates::authority(connection, &owner, project),
+            || alcomd_application::CandidateQueryError::Unavailable,
+        )
+        .await
+    }
+
     async fn candidate_snapshot(
         &self,
         owner: PrincipalId,
@@ -457,6 +552,20 @@ impl alcomd_application::CandidateStore for StateStoreHandle {
         self.request_worker(
             move |connection| m7_candidates::snapshot(connection, &owner, project, package_ids),
             || alcomd_application::CandidateQueryError::Unavailable,
+        )
+        .await
+    }
+}
+
+impl RepositoryArchivePinStore for StateStoreHandle {
+    async fn pin_repository_archive(
+        &self,
+        owner: PrincipalId,
+        pin: RepositoryPackageSourcePin,
+    ) -> Result<(), M4Error> {
+        self.request_worker(
+            move |connection| m4::pin_repository_archive(connection, &owner, &pin),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
         )
         .await
     }

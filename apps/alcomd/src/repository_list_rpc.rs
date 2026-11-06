@@ -40,6 +40,7 @@ pub(super) async fn dispatch(
                             .into_iter()
                             .map(|entry| rpc::RepositoryListEntry {
                                 line: entry.line,
+                                credentials_configured: entry.credentials_configured,
                                 status: match entry.status {
                                     app::RepositoryListEntryStatus::Candidate => {
                                         rpc::RepositoryListEntryStatus::Candidate

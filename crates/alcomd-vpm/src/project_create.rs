@@ -7,8 +7,9 @@ use std::sync::Arc;
 use alcomd_application::{
     OperationId, PlanAction, ProjectCreateAdapter, ProjectCreateError, ProjectCreateErrorCode,
     ProjectCreateInput, ProjectCreatePackages, ProjectCreateWork, ProjectObservation,
-    ProjectRecord, ProjectTemplateDeclaration, ResolverCatalog, ResourceKey,
-    ResourceLockCoordinator, Revision, canonical_unity_version, valid_project_template_id,
+    ProjectRecord, ProjectTemplateDeclaration, RepositoryArchivePinStore, ResolverCatalog,
+    ResourceKey, ResourceLockCoordinator, Revision, canonical_unity_version,
+    valid_project_template_id,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,14 +28,16 @@ const MAX_DECLARATION_BYTES: usize = 24 * 1024;
 const OWNER_MARKER: &str = "project-create.json";
 
 #[derive(Clone)]
-pub struct ProjectCreateEngine {
+pub struct ProjectCreateEngine<S> {
+    store: S,
     reader: VpmReader,
     materializer: FrozenPackageMaterializer,
 }
 
-impl ProjectCreateEngine {
-    pub fn new(cache_root: PathBuf) -> Result<Self, ProjectCreateError> {
+impl<S> ProjectCreateEngine<S> {
+    pub fn new(store: S, cache_root: PathBuf) -> Result<Self, ProjectCreateError> {
         Ok(Self {
+            store,
             reader: VpmReader::new().map_err(|cause| internal().with_source(cause))?,
             materializer: FrozenPackageMaterializer::new(cache_root)
                 .map_err(|cause| internal().with_source(cause))?,
@@ -103,7 +106,7 @@ struct OwnerMarker {
     root_identity: Vec<u8>,
 }
 
-impl ProjectCreateAdapter for ProjectCreateEngine {
+impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<S> {
     type Stage = ProjectCreateStage;
 
     fn validate_declaration(
@@ -279,6 +282,8 @@ impl ProjectCreateAdapter for ProjectCreateEngine {
             .collect::<Vec<_>>();
         let resolution = crate::engine::resolve_project_packages(
             self.materializer.cache(),
+            &self.store,
+            &work.owner,
             &stage.root,
             &candidates,
             &requests,
@@ -599,7 +604,8 @@ mod tests {
     use std::io::Cursor;
 
     use alcomd_application::{
-        PrincipalId, ProjectId, ProjectTemplateRef, ResolverCatalogEntry, ResolverCatalogSource,
+        M4Error, PrincipalId, ProjectId, ProjectTemplateRef, RepositoryPackageSourcePin,
+        ResolverCatalogEntry, ResolverCatalogSource,
     };
 
     use super::*;
@@ -609,9 +615,22 @@ mod tests {
         include_str!("../../../specs/templates/vrchat-worlds.json"),
     ];
 
+    #[derive(Clone)]
+    struct FixturePinStore;
+
+    impl RepositoryArchivePinStore for FixturePinStore {
+        async fn pin_repository_archive(
+            &self,
+            _owner: PrincipalId,
+            _pin: RepositoryPackageSourcePin,
+        ) -> Result<(), M4Error> {
+            panic!("fixture archives already have a declared digest");
+        }
+    }
+
     struct Fixture {
         root: PathBuf,
-        engine: ProjectCreateEngine,
+        engine: ProjectCreateEngine<FixturePinStore>,
     }
 
     impl Fixture {
@@ -620,7 +639,8 @@ mod tests {
                 std::env::temp_dir().join(format!("alcomd-create-test-{}", OperationId::new()));
             fs::create_dir(&root).expect("isolated fixture");
             let root = fs::canonicalize(root).expect("canonical fixture");
-            let engine = ProjectCreateEngine::new(root.join("cache")).expect("create engine");
+            let engine = ProjectCreateEngine::new(FixturePinStore, root.join("cache"))
+                .expect("create engine");
             Self { root, engine }
         }
 
@@ -794,7 +814,7 @@ mod tests {
         }
     }
 
-    fn sdk_fixture(engine: &ProjectCreateEngine) -> ResolverCatalog {
+    fn sdk_fixture(engine: &ProjectCreateEngine<FixturePinStore>) -> ResolverCatalog {
         let mut entries = Vec::new();
         for package_id in ["com.vrchat.base", "com.vrchat.avatars", "com.vrchat.worlds"] {
             let dependencies = if package_id == "com.vrchat.base" {
@@ -835,8 +855,11 @@ mod tests {
                         repository_revision: 1,
                         repository_priority: 1,
                         source_identity: "fixture-sdk".to_owned(),
+                        credential_reference: None,
+                        download_headers_present: false,
                         artifact_url: "https://example.invalid/package.zip".to_owned(),
-                        zip_sha256: digest.iter().map(|byte| format!("{byte:02x}")).collect(),
+                        zip_sha256: Some(digest.iter().map(|byte| format!("{byte:02x}")).collect()),
+                        local_zip_sha256: None,
                         manifest_fingerprint: Sha256::digest(&manifest).into(),
                     },
                     package_id: package_id.to_owned(),
@@ -845,7 +868,7 @@ mod tests {
                     unity: unity.map(str::to_owned),
                     unity_release: release.map(str::to_owned),
                     author_name: String::new(),
-                    author_email: String::new(),
+                    author_email: None,
                     dependencies_json: dependencies.to_string(),
                     legacy_metadata_present: false,
                 });

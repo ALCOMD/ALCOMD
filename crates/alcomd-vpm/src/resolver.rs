@@ -16,7 +16,7 @@ pub struct PackageSource {
     pub authority: PackageSourceAuthority,
     pub source_identity: String,
     pub manifest_fingerprint: [u8; 32],
-    pub archive_sha256: [u8; 32],
+    pub archive_sha256: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +27,8 @@ pub enum PackageSourceAuthority {
         repository_revision: u64,
         priority: u64,
         artifact_url: String,
+        credential_reference: Option<String>,
+        download_headers_present: bool,
     },
     UserPackage {
         user_package_id: alcomd_application::UserPackageId,
@@ -35,6 +37,21 @@ pub enum PackageSourceAuthority {
 }
 
 impl PackageSource {
+    pub(crate) fn download_headers(&self) -> Option<alcomd_application::PackageDownloadHeaders> {
+        let PackageSourceAuthority::Repository {
+            repository_locator,
+            download_headers_present: true,
+            ..
+        } = &self.authority
+        else {
+            return None;
+        };
+        Some(alcomd_application::PackageDownloadHeaders {
+            local_path: repository_locator
+                .clone()
+                .filter(|_| self.source_identity.starts_with("local-fileid-v1:")),
+        })
+    }
     fn priority(&self) -> u64 {
         match self.authority {
             PackageSourceAuthority::Repository { priority, .. } => priority,
@@ -160,7 +177,7 @@ pub fn candidates_from_catalog(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let (source, manifest_fingerprint, archive_sha256) = match &row.source {
+        let source = match &row.source {
             ResolverCatalogSource::Repository {
                 repository_locator,
                 repository_id,
@@ -168,47 +185,46 @@ pub fn candidates_from_catalog(
                 repository_priority,
                 source_identity,
                 artifact_url,
+                credential_reference,
+                download_headers_present,
                 zip_sha256,
+                local_zip_sha256,
                 manifest_fingerprint,
-            } => (
-                PackageSource {
-                    authority: PackageSourceAuthority::Repository {
-                        repository_locator: (!repository_locator.is_empty())
-                            .then(|| repository_locator.clone()),
-                        repository_id: repository_id.clone(),
-                        repository_revision: *repository_revision,
-                        priority: *repository_priority,
-                        artifact_url: artifact_url.clone(),
-                    },
-                    source_identity: source_identity.clone(),
-                    manifest_fingerprint: *manifest_fingerprint,
-                    archive_sha256: parse_digest(zip_sha256)?,
+            } => PackageSource {
+                authority: PackageSourceAuthority::Repository {
+                    repository_locator: (!repository_locator.is_empty())
+                        .then(|| repository_locator.clone()),
+                    repository_id: repository_id.clone(),
+                    repository_revision: *repository_revision,
+                    priority: *repository_priority,
+                    artifact_url: artifact_url.clone(),
+                    credential_reference: credential_reference.clone(),
+                    download_headers_present: *download_headers_present,
                 },
-                *manifest_fingerprint,
-                parse_digest(zip_sha256)?,
-            ),
+                source_identity: source_identity.clone(),
+                manifest_fingerprint: *manifest_fingerprint,
+                archive_sha256: zip_sha256
+                    .as_deref()
+                    .map(parse_digest)
+                    .transpose()?
+                    .or(*local_zip_sha256),
+            },
             ResolverCatalogSource::UserPackage {
                 user_package_id,
                 source_revision,
                 source_identity,
                 archive_sha256,
                 manifest_fingerprint,
-            } => (
-                PackageSource {
-                    authority: PackageSourceAuthority::UserPackage {
-                        user_package_id: *user_package_id,
-                        source_revision: *source_revision,
-                    },
-                    source_identity: source_identity.clone(),
-                    manifest_fingerprint: *manifest_fingerprint,
-                    archive_sha256: *archive_sha256,
+            } => PackageSource {
+                authority: PackageSourceAuthority::UserPackage {
+                    user_package_id: *user_package_id,
+                    source_revision: *source_revision,
                 },
-                *manifest_fingerprint,
-                *archive_sha256,
-            ),
+                source_identity: source_identity.clone(),
+                manifest_fingerprint: *manifest_fingerprint,
+                archive_sha256: Some(*archive_sha256),
+            },
         };
-        debug_assert_eq!(source.manifest_fingerprint, manifest_fingerprint);
-        debug_assert_eq!(source.archive_sha256, archive_sha256);
         candidates.push(PackageCandidate {
             package_id: row.package_id.clone(),
             version,
@@ -294,8 +310,126 @@ struct Requirement {
 }
 
 struct Solved<'a> {
-    selected: BTreeMap<String, &'a PackageCandidate>,
+    selected: BTreeMap<String, Selection<'a>>,
     requirements: BTreeMap<String, Vec<Requirement>>,
+}
+
+#[derive(Clone, Copy)]
+enum Selection<'a> {
+    Catalog(&'a PackageCandidate),
+    Installed(&'a LockedPackage),
+}
+
+impl Selection<'_> {
+    fn version(&self) -> &Version {
+        match self {
+            Self::Catalog(candidate) => &candidate.version,
+            Self::Installed(locked) => &locked.version,
+        }
+    }
+
+    fn dependencies(&self) -> &[PackageDependency] {
+        match self {
+            Self::Catalog(candidate) => &candidate.dependencies,
+            Self::Installed(locked) => &locked.dependencies,
+        }
+    }
+
+    fn satisfies(&self, requirements: &[Requirement], options: SolveOptions<'_>) -> bool {
+        match self {
+            Self::Catalog(candidate) => candidate_satisfies(
+                candidate,
+                requirements,
+                options.include_prerelease,
+                options.unity_version,
+            ),
+            Self::Installed(locked) => requirements.iter().all(|requirement| {
+                requirement.source.is_none()
+                    && requirement.range.matches(
+                        &locked.version,
+                        options.include_prerelease || !locked.version.pre.is_empty(),
+                    )
+            }),
+        }
+    }
+}
+
+pub(super) struct LockedPackage {
+    pub version: Version,
+    pub dependencies: Vec<PackageDependency>,
+    pub installed: bool,
+}
+
+pub(super) struct ProjectResolutionRules {
+    pub locked: BTreeMap<String, LockedPackage>,
+    pub direct: BTreeMap<String, VpmRange>,
+    pub explicit: BTreeSet<String>,
+    // Complete bulk resolution already checks the selected graph itself.
+    pub preserve_unselected: bool,
+}
+
+impl ProjectResolutionRules {
+    fn validate_preserved(
+        &self,
+        selected: &BTreeMap<String, Selection<'_>>,
+        include_prerelease: bool,
+    ) -> Result<(), ResolveError> {
+        if !self.preserve_unselected {
+            return Ok(());
+        }
+        for (id, choice) in selected {
+            let version = choice.version();
+            if self
+                .locked
+                .get(id)
+                .is_some_and(|old| &old.version == version)
+            {
+                continue;
+            }
+            let conflict = || ResolveError::DependencyConflict {
+                package_id: id.clone(),
+            };
+            if !self.explicit.contains(id)
+                && self
+                    .direct
+                    .get(id)
+                    .is_some_and(|range| !range.matches(version, include_prerelease))
+            {
+                return Err(conflict());
+            }
+            for (dependent, locked) in &self.locked {
+                if selected
+                    .get(dependent)
+                    .is_some_and(|selected| selected.version() != &locked.version)
+                {
+                    continue;
+                }
+                for dependency in locked
+                    .dependencies
+                    .iter()
+                    .filter(|dependency| &dependency.package_id == id)
+                {
+                    let range = VpmRange::parse(&dependency.range)
+                        .map_err(|_| ResolveError::InvalidRange)?;
+                    if !range.matches(
+                        version,
+                        include_prerelease || !locked.version.pre.is_empty(),
+                    ) {
+                        return Err(conflict());
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SolveOptions<'a> {
+    include_prerelease: bool,
+    unity_version: Option<UnityVersion>,
+    legacy_handling: LegacyCandidateHandling,
+    project: Option<&'a ProjectResolutionRules>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -321,7 +455,7 @@ pub fn resolve_packages(
     catalog: &[PackageCandidate],
     requests: &[ResolveRequest],
 ) -> Result<Resolution, ResolveError> {
-    resolve_packages_internal(catalog, requests, LegacyCandidateHandling::Reject)
+    resolve_packages_internal(catalog, requests, LegacyCandidateHandling::Reject, None)
         .map(|resolved| resolved.resolution)
 }
 
@@ -333,6 +467,20 @@ pub(super) fn resolve_unity_migration_packages(
         catalog,
         requests,
         LegacyCandidateHandling::CollectCleanupObligations,
+        None,
+    )
+}
+
+pub(super) fn resolve_project_change(
+    catalog: &[PackageCandidate],
+    requests: &[ResolveRequest],
+    project: &ProjectResolutionRules,
+) -> Result<UnityMigrationResolution, ResolveError> {
+    resolve_packages_internal(
+        catalog,
+        requests,
+        LegacyCandidateHandling::CollectCleanupObligations,
+        Some(project),
     )
 }
 
@@ -340,6 +488,7 @@ fn resolve_packages_internal(
     catalog: &[PackageCandidate],
     requests: &[ResolveRequest],
     legacy_handling: LegacyCandidateHandling,
+    project: Option<&ProjectResolutionRules>,
 ) -> Result<UnityMigrationResolution, ResolveError> {
     if requests.is_empty() || requests.len() > MAX_REQUIREMENTS {
         return Err(ResolveError::TooManyRequirements);
@@ -383,9 +532,12 @@ fn resolve_packages_internal(
         &catalog_by_id,
         requirements.clone(),
         BTreeMap::new(),
-        include_prerelease,
-        unity_version,
-        legacy_handling,
+        SolveOptions {
+            include_prerelease,
+            unity_version,
+            legacy_handling,
+            project,
+        },
     )?;
     let direct_ids = requests
         .iter()
@@ -394,6 +546,10 @@ fn resolve_packages_internal(
     let legacy_cleanup_obligations = solved
         .selected
         .values()
+        .filter_map(|selection| match selection {
+            Selection::Catalog(candidate) => Some(*candidate),
+            Selection::Installed(_) => None,
+        })
         .filter(|candidate| candidate.legacy_metadata_present)
         .map(|candidate| LegacyCleanupObligation {
             package_id: candidate.package_id.clone(),
@@ -404,6 +560,10 @@ fn resolve_packages_internal(
     let packages = solved
         .selected
         .into_values()
+        .filter_map(|selection| match selection {
+            Selection::Catalog(candidate) => Some(candidate),
+            Selection::Installed(_) => None,
+        })
         .map(|candidate| ResolvedPackage {
             package_id: candidate.package_id.clone(),
             version: candidate.version.clone(),
@@ -439,19 +599,12 @@ fn resolve_packages_internal(
 fn solve<'a>(
     catalog: &BTreeMap<&str, Vec<&'a PackageCandidate>>,
     requirements: BTreeMap<String, Vec<Requirement>>,
-    selected: BTreeMap<String, &'a PackageCandidate>,
-    include_prerelease: bool,
-    unity_version: Option<UnityVersion>,
-    legacy_handling: LegacyCandidateHandling,
+    selected: BTreeMap<String, Selection<'a>>,
+    options: SolveOptions<'a>,
 ) -> Result<Solved<'a>, ResolveError> {
     for (package_id, package_requirements) in &requirements {
         if let Some(candidate) = selected.get(package_id)
-            && !candidate_satisfies(
-                candidate,
-                package_requirements,
-                include_prerelease,
-                unity_version,
-            )
+            && !candidate.satisfies(package_requirements, options)
         {
             return Err(ResolveError::PackageNotFound {
                 package_id: package_id.clone(),
@@ -463,12 +616,45 @@ fn solve<'a>(
         .iter()
         .find(|(package_id, _)| !selected.contains_key(*package_id))
     else {
+        if let Some(project) = options.project {
+            project.validate_preserved(&selected, options.include_prerelease)?;
+        }
         return Ok(Solved {
             selected,
             requirements,
         });
     };
 
+    let locked = options
+        .project
+        .filter(|project| !project.explicit.contains(package_id))
+        .and_then(|project| project.locked.get(package_id));
+    let mut last_error = None;
+    if let Some(locked) = locked.filter(|locked| locked.installed)
+        && options
+            .project
+            .is_some_and(|project| project.preserve_unselected)
+    {
+        let choice = Selection::Installed(locked);
+        if choice.satisfies(package_requirements, options) {
+            match solve_after_choice(
+                catalog,
+                &requirements,
+                &selected,
+                options,
+                package_id,
+                choice,
+            ) {
+                Ok(solution) => return Ok(solution),
+                Err(
+                    error @ (ResolveError::SourceAmbiguous { .. }
+                    | ResolveError::LegacyCleanupRequired { .. }
+                    | ResolveError::TooManyRequirements),
+                ) => return Err(error),
+                Err(error) => last_error = Some(error),
+            }
+        }
+    }
     let mut candidates = catalog
         .get(package_id.as_str())
         .into_iter()
@@ -478,23 +664,33 @@ fn solve<'a>(
             candidate_satisfies(
                 candidate,
                 package_requirements,
-                include_prerelease,
-                unity_version,
+                options.include_prerelease,
+                options.unity_version,
             )
         })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
-        return Err(classify_no_candidates(
-            catalog,
-            package_id,
-            package_requirements,
-            include_prerelease,
-            unity_version,
-        ));
+        return Err(last_error.unwrap_or_else(|| {
+            classify_no_candidates(
+                catalog,
+                package_id,
+                package_requirements,
+                options.include_prerelease,
+                options.unity_version,
+            )
+        }));
     }
-    candidates.sort_by(candidate_order);
+    let preferred = |candidate: &PackageCandidate| {
+        locked.is_some_and(|locked| {
+            compare_precedence(&locked.version, &candidate.version) == Ordering::Equal
+        })
+    };
+    candidates.sort_by(|left, right| {
+        preferred(right)
+            .cmp(&preferred(left))
+            .then_with(|| candidate_order(left, right))
+    });
 
-    let mut last_error = None;
     let mut index = 0;
     while index < candidates.len() {
         let precedence_end = candidates[index..]
@@ -542,44 +738,21 @@ fn solve<'a>(
             });
         }
         let candidate = preferred[0];
-        if candidate.legacy_metadata_present && legacy_handling == LegacyCandidateHandling::Reject {
+        if candidate.legacy_metadata_present
+            && options.legacy_handling == LegacyCandidateHandling::Reject
+        {
             return Err(ResolveError::LegacyCleanupRequired {
                 package_id: package_id.clone(),
             });
         }
 
-        let mut next_requirements = requirements.clone();
-        let mut too_many = false;
-        for dependency in &candidate.dependencies {
-            let ranges = next_requirements
-                .entry(dependency.package_id.clone())
-                .or_default();
-            let range =
-                VpmRange::parse(&dependency.range).map_err(|_| ResolveError::InvalidRange)?;
-            ranges.push(Requirement {
-                from_package_id: candidate.package_id.clone(),
-                range_text: range.canonical(),
-                range,
-                source: None,
-                direct: false,
-            });
-            if next_requirements.values().map(Vec::len).sum::<usize>() > MAX_REQUIREMENTS {
-                too_many = true;
-                break;
-            }
-        }
-        if too_many {
-            return Err(ResolveError::TooManyRequirements);
-        }
-        let mut next_selected = selected.clone();
-        next_selected.insert(package_id.clone(), candidate);
-        match solve(
+        match solve_after_choice(
             catalog,
-            next_requirements,
-            next_selected,
-            include_prerelease,
-            unity_version,
-            legacy_handling,
+            &requirements,
+            &selected,
+            options,
+            package_id,
+            Selection::Catalog(candidate),
         ) {
             Ok(solution) => return Ok(solution),
             Err(error @ ResolveError::SourceAmbiguous { .. })
@@ -593,6 +766,36 @@ fn solve<'a>(
     Err(last_error.unwrap_or_else(|| ResolveError::PackageNotFound {
         package_id: package_id.clone(),
     }))
+}
+
+fn solve_after_choice<'a>(
+    catalog: &BTreeMap<&str, Vec<&'a PackageCandidate>>,
+    requirements: &BTreeMap<String, Vec<Requirement>>,
+    selected: &BTreeMap<String, Selection<'a>>,
+    options: SolveOptions<'a>,
+    package_id: &str,
+    choice: Selection<'a>,
+) -> Result<Solved<'a>, ResolveError> {
+    let mut next_requirements = requirements.clone();
+    for dependency in choice.dependencies() {
+        let range = VpmRange::parse(&dependency.range).map_err(|_| ResolveError::InvalidRange)?;
+        next_requirements
+            .entry(dependency.package_id.clone())
+            .or_default()
+            .push(Requirement {
+                from_package_id: package_id.to_owned(),
+                range_text: range.canonical(),
+                range,
+                source: None,
+                direct: false,
+            });
+    }
+    if next_requirements.values().map(Vec::len).sum::<usize>() > MAX_REQUIREMENTS {
+        return Err(ResolveError::TooManyRequirements);
+    }
+    let mut next_selected = selected.clone();
+    next_selected.insert(package_id.to_owned(), choice);
+    solve(catalog, next_requirements, next_selected, options)
 }
 
 fn classify_no_candidates(
@@ -784,6 +987,8 @@ mod tests {
                 .collect(),
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present: false,
                     repository_locator: None,
                     repository_id: repository_id.to_owned(),
                     repository_revision: 1,
@@ -792,7 +997,7 @@ mod tests {
                 },
                 source_identity: format!("source:{repository_id}"),
                 manifest_fingerprint: [priority as u8; 32],
-                archive_sha256: [priority as u8; 32],
+                archive_sha256: Some([priority as u8; 32]),
             },
         }
     }
@@ -822,7 +1027,7 @@ mod tests {
                 },
                 source_identity: "user-package-source".to_owned(),
                 manifest_fingerprint: [8; 32],
-                archive_sha256: [9; 32],
+                archive_sha256: Some([9; 32]),
             },
         }
     }

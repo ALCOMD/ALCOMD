@@ -2,6 +2,7 @@
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 
 pub const MAX_CANDIDATE_RECORDS: usize = 100_000;
 pub const MAX_CANDIDATE_SOURCES: usize = 4_096;
@@ -91,7 +92,20 @@ pub struct CandidateStoreSnapshot {
     pub fingerprint_records: Vec<String>,
     pub catalog_complete: bool,
 }
+
+pub struct CandidateStoreAuthority {
+    pub project_revision: Revision,
+    pub fingerprint_records: Vec<String>,
+    pub catalog_complete: bool,
+}
+
 pub trait CandidateStore: Clone + Send + Sync + 'static {
+    fn candidate_authority(
+        &self,
+        owner: PrincipalId,
+        project: ProjectId,
+    ) -> impl std::future::Future<Output = Result<CandidateStoreAuthority, CandidateQueryError>> + Send;
+
     fn candidate_snapshot(
         &self,
         owner: PrincipalId,
@@ -122,13 +136,32 @@ pub struct ProjectCandidateApplication<S, E> {
     store: S,
     engine: E,
     config: M7OfficialApplication,
+    summary: Arc<Mutex<Option<CachedSummary>>>,
 }
+
+#[derive(Clone)]
+struct CachedSummary {
+    owner: PrincipalId,
+    query_fingerprint: String,
+    snapshot_fingerprint: String,
+    items: Arc<Vec<CandidateSummary>>,
+}
+
+enum PreparedCandidates {
+    Summary(Arc<Vec<CandidateSummary>>),
+    Versions {
+        package_id: String,
+        items: Vec<CandidateEvidence>,
+    },
+}
+
 impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<S, E> {
     pub fn new(store: S, engine: E, config: M7OfficialApplication) -> Self {
         Self {
             store,
             engine,
             config,
+            summary: Arc::new(Mutex::new(None)),
         }
     }
     pub async fn query(
@@ -172,87 +205,139 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
             .candidate_settings()
             .await
             .map_err(|_| CandidateQueryError::Unavailable)?;
-        let ids = match &request.view {
-            CandidateView::Summary { package_ids, .. } => package_ids.clone(),
-            CandidateView::Versions { package_id, .. } => Some(vec![package_id.clone()]),
-        };
-        let mut snapshot = self
-            .store
-            .candidate_snapshot(access.principal().clone(), project_id, ids)
-            .await?;
-        if snapshot.project.revision.get() != request.expected_revision {
-            return Err(
-                if request.cursor.is_some() || request.expected_snapshot.is_some() {
-                    CandidateQueryError::EvidenceStale
-                } else {
-                    CandidateQueryError::RevisionConflict
-                },
-            );
-        }
-        snapshot.fingerprint_records.extend([
-            access.principal().as_str().to_owned(),
-            config.revision.to_string(),
-            config.settings.packages.show_prerelease.to_string(),
-            config
-                .settings
-                .packages
-                .hide_local_user_packages
-                .to_string(),
-        ]);
-        let mut hidden = config.settings.packages.hidden_repository_ids.clone();
-        hidden.sort();
-        snapshot.fingerprint_records.extend(hidden);
-        let fingerprint = self.engine.fingerprint(&snapshot.fingerprint_records);
-        if request
-            .expected_snapshot
-            .as_ref()
-            .is_some_and(|v| v != &fingerprint)
-            || request
-                .cursor
+        let owner = access.principal();
+        let cacheable_view = matches!(
+            &request.view,
+            CandidateView::Summary {
+                package_ids: None,
+                ..
+            }
+        );
+        let cached = if cacheable_view {
+            self.summary
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
-                .is_some_and(|c| c.snapshot_fingerprint != fingerprint)
-        {
-            return Err(CandidateQueryError::EvidenceStale);
-        }
-        let input = CandidateEvidenceInput {
-            project: snapshot.project.observation,
-            entries: snapshot.entries,
-            settings: config.settings.packages.clone(),
+                .filter(|cached| {
+                    &cached.owner == owner && cached.query_fingerprint == query_fingerprint
+                })
+                .cloned()
+        } else {
+            None
+        };
+        let reused = if let Some(cached) = cached {
+            let authority = self
+                .store
+                .candidate_authority(owner.clone(), project_id)
+                .await?;
+            let fingerprint = self.validated_fingerprint(
+                &request,
+                owner,
+                &config,
+                authority.project_revision,
+                authority.fingerprint_records,
+            )?;
+            (cached.snapshot_fingerprint == fingerprint).then_some((
+                fingerprint,
+                authority.catalog_complete,
+                PreparedCandidates::Summary(cached.items),
+            ))
+        } else {
+            None
+        };
+        let mut cache_update = None;
+        let (fingerprint, catalog_complete, items) = if let Some(prepared) = reused {
+            prepared
+        } else {
+            let ids = match &request.view {
+                CandidateView::Summary { package_ids, .. } => package_ids.clone(),
+                CandidateView::Versions { package_id, .. } => Some(vec![package_id.clone()]),
+            };
+            let snapshot = self
+                .store
+                .candidate_snapshot(owner.clone(), project_id, ids)
+                .await?;
+            let fingerprint = self.validated_fingerprint(
+                &request,
+                owner,
+                &config,
+                snapshot.project.revision,
+                snapshot.fingerprint_records,
+            )?;
+            let input = CandidateEvidenceInput {
+                project: snapshot.project.observation,
+                entries: snapshot.entries,
+                settings: config.settings.packages.clone(),
+            };
+            let items = match &request.view {
+                CandidateView::Summary {
+                    package_ids,
+                    sources,
+                } => {
+                    let items = self.engine.summarize(
+                        &input,
+                        package_ids.as_deref(),
+                        sources.as_deref().unwrap_or_default(),
+                    );
+                    // Raw M3 identities may be wider than the public candidate DTO.
+                    if items.iter().any(|item| {
+                        item.package_id.len() > 128
+                            || matches!(&item.installed, CandidateInstalled::Locked { version } if version.len() > 256)
+                    }) {
+                        return Err(CandidateQueryError::LimitExceeded);
+                    }
+                    if package_ids.is_none() {
+                        let observed = items
+                            .iter()
+                            .map(|item| item.package_id.as_str())
+                            .collect::<BTreeSet<_>>();
+                        if observed.len() != items.len()
+                            || input
+                                .project
+                                .locked_dependencies
+                                .iter()
+                                .any(|locked| !observed.contains(locked.package_id.as_str()))
+                        {
+                            return Err(CandidateQueryError::EvidenceStale);
+                        }
+                    }
+                    let items = Arc::new(items);
+                    // Retain one summary and cap both rows and their variable provider lists.
+                    // Larger catalogues can still use the original bounded read path.
+                    if cacheable_view
+                        && items.len() <= 8_192
+                        && items.iter().map(|item| item.providers.len()).sum::<usize>() <= 32_768
+                    {
+                        cache_update = Some(CachedSummary {
+                            owner: owner.clone(),
+                            query_fingerprint: query_fingerprint.clone(),
+                            snapshot_fingerprint: fingerprint.clone(),
+                            items: Arc::clone(&items),
+                        });
+                    }
+                    PreparedCandidates::Summary(items)
+                }
+                CandidateView::Versions { package_id, source } => PreparedCandidates::Versions {
+                    package_id: package_id.clone(),
+                    items: self.engine.versions(&input, package_id, source.as_ref()),
+                },
+            };
+            (fingerprint, snapshot.catalog_complete, items)
         };
         let offset = request.cursor.as_ref().map_or(0, |c| c.offset);
         let limit = request.limit.unwrap_or(64) as usize;
-        let (page, total) = match &request.view {
-            CandidateView::Summary {
-                package_ids,
-                sources,
-            } => {
-                let items = self.engine.summarize(
-                    &input,
-                    package_ids.as_deref(),
-                    sources.as_deref().unwrap_or_default(),
-                );
-                // M3 observations intentionally allow wider raw identities than this
-                // read DTO. Reject an unrepresentable result without changing M3 data.
-                if items.iter().any(|item| {
-                    item.package_id.len() > 128
-                        || matches!(&item.installed, CandidateInstalled::Locked { version } if version.len() > 256)
-                }) {
-                    return Err(CandidateQueryError::LimitExceeded);
-                }
-                let total = items.len();
-                (
-                    CandidatePageItems::Summary {
-                        items: items.into_iter().skip(offset).take(limit).collect(),
-                    },
-                    total,
-                )
-            }
-            CandidateView::Versions { package_id, source } => {
-                let items = self.engine.versions(&input, package_id, source.as_ref());
+        let (page, total) = match items {
+            PreparedCandidates::Summary(items) => (
+                CandidatePageItems::Summary {
+                    items: items.iter().skip(offset).take(limit).cloned().collect(),
+                },
+                items.len(),
+            ),
+            PreparedCandidates::Versions { package_id, items } => {
                 let total = items.len();
                 (
                     CandidatePageItems::Versions {
-                        package_id: package_id.clone(),
+                        package_id,
                         items: items.into_iter().skip(offset).take(limit).collect(),
                     },
                     total,
@@ -287,7 +372,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 config_revision: config.revision,
             },
             show_prerelease: config.settings.packages.show_prerelease,
-            catalog_complete: snapshot.catalog_complete,
+            catalog_complete,
             page,
             next_cursor,
         };
@@ -298,7 +383,58 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         {
             return Err(CandidateQueryError::LimitExceeded);
         }
+        if let Some(update) = cache_update {
+            *self
+                .summary
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(update);
+        }
         Ok(page)
+    }
+
+    fn validated_fingerprint(
+        &self,
+        request: &ProjectCandidateRequest,
+        owner: &PrincipalId,
+        config: &ConfigSnapshot,
+        revision: Revision,
+        mut records: Vec<String>,
+    ) -> Result<String, CandidateQueryError> {
+        if revision.get() != request.expected_revision {
+            return Err(
+                if request.cursor.is_some() || request.expected_snapshot.is_some() {
+                    CandidateQueryError::EvidenceStale
+                } else {
+                    CandidateQueryError::RevisionConflict
+                },
+            );
+        }
+        records.extend([
+            owner.as_str().to_owned(),
+            config.revision.to_string(),
+            config.settings.packages.show_prerelease.to_string(),
+            config
+                .settings
+                .packages
+                .hide_local_user_packages
+                .to_string(),
+        ]);
+        let mut hidden = config.settings.packages.hidden_repository_ids.clone();
+        hidden.sort();
+        records.extend(hidden);
+        let fingerprint = self.engine.fingerprint(&records);
+        if request
+            .expected_snapshot
+            .as_ref()
+            .is_some_and(|v| v != &fingerprint)
+            || request
+                .cursor
+                .as_ref()
+                .is_some_and(|c| c.snapshot_fingerprint != fingerprint)
+        {
+            return Err(CandidateQueryError::EvidenceStale);
+        }
+        Ok(fingerprint)
     }
 }
 
@@ -495,6 +631,14 @@ mod tests {
     #[derive(Clone)]
     struct NeverRead;
     impl CandidateStore for NeverRead {
+        async fn candidate_authority(
+            &self,
+            _: PrincipalId,
+            _: ProjectId,
+        ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
+            panic!("unauthorized query reached store")
+        }
+
         async fn candidate_snapshot(
             &self,
             _: PrincipalId,

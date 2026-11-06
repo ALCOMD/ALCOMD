@@ -62,48 +62,39 @@ impl PackageCache {
         }
         let manifest = match &source.authority {
             PackageSourceAuthority::Repository {
-                repository_locator, ..
+                repository_locator,
+                credential_reference,
+                ..
             } => {
-                let bytes = if let Some(url) = source.source_identity.strip_prefix("remote:") {
-                    self.read_index(&parse_artifact_url(url)?).await?
-                } else if let Some(identity) =
-                    source.source_identity.strip_prefix("local-fileid-v1:")
-                {
-                    let locator = repository_locator
-                        .as_deref()
-                        .ok_or_else(|| cache_error(CacheErrorCode::OfflineMiss))?;
-                    let path = PathBuf::from(locator);
-                    if !path.is_absolute() {
-                        return Err(cache_error(CacheErrorCode::InvalidUrl));
-                    }
-                    let identity = parse_identity_hex(identity)?;
-                    tokio::task::spawn_blocking(move || {
-                        read_stable_file(&path, crate::REPOSITORY_DOCUMENT_LIMIT, Some(&identity))
-                    })
-                    .await
-                    .map_err(|_| cache_error(CacheErrorCode::Io))??
-                } else {
-                    return Err(cache_error(CacheErrorCode::OfflineMiss));
-                };
-                let index = bounded_json(&bytes)?;
-                index
-                    .get("packages")
-                    .and_then(|value| value.get(package_id))
-                    .and_then(|value| value.get("versions"))
-                    .and_then(|value| value.get(version))
-                    .cloned()
-                    .ok_or_else(|| cache_error(CacheErrorCode::IntegrityMismatch))?
+                self.read_repository_package_manifest(
+                    &source.source_identity,
+                    repository_locator.as_deref(),
+                    credential_reference.as_deref(),
+                    package_id,
+                    version,
+                )
+                .await?
             }
             PackageSourceAuthority::UserPackage { .. } => {
-                let archive = self.get(source.archive_sha256, "", true).await?;
+                let digest = source
+                    .archive_sha256
+                    .ok_or_else(|| cache_error(CacheErrorCode::InvalidDigest))?;
+                let archive = self.get(digest, "", true).await?;
                 tokio::task::spawn_blocking(move || read_archive_manifest(&archive))
                     .await
                     .map_err(|_| cache_error(CacheErrorCode::Io))??
             }
         };
         validate_identity(&manifest, package_id, version)?;
-        let bytes =
-            serde_json::to_vec(&manifest).map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
+        let bytes = match source.authority {
+            PackageSourceAuthority::Repository {
+                download_headers_present,
+                ..
+            } => repository_manifest_evidence(&manifest, download_headers_present)?,
+            PackageSourceAuthority::UserPackage { .. } => {
+                serde_json::to_vec(&manifest).map_err(|_| cache_error(CacheErrorCode::Corrupt))?
+            }
+        };
         if bytes.len() > MANIFEST_LIMIT {
             return Err(cache_error(CacheErrorCode::DownloadTooLarge));
         }
@@ -116,18 +107,90 @@ impl PackageCache {
         Ok(metadata)
     }
 
-    async fn read_index(&self, url: &Url) -> Result<Vec<u8>, CacheError> {
+    pub(super) async fn read_package_download_headers(
+        &self,
+        lookup: PackageHeaderLookup<'_>,
+        credential_reference: Option<&str>,
+        artifact: &Url,
+    ) -> Result<crate::repository_auth::RepositoryAuth, CacheError> {
+        let manifest = self
+            .read_repository_package_manifest(
+                lookup.source_identity,
+                lookup.local_path,
+                credential_reference,
+                lookup.package_id,
+                lookup.version,
+            )
+            .await?;
+        validate_identity(&manifest, lookup.package_id, lookup.version)?;
+        let declared_url = manifest
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| cache_error(CacheErrorCode::Corrupt))?;
+        if parse_artifact_url(declared_url)? != *artifact {
+            return Err(cache_error(CacheErrorCode::IntegrityMismatch));
+        }
+        let evidence = repository_manifest_evidence(&manifest, true)?;
+        if <[u8; 32]>::from(Sha256::digest(evidence)) != *lookup.fingerprint {
+            return Err(cache_error(CacheErrorCode::IntegrityMismatch));
+        }
+        crate::repository_auth::RepositoryAuth::for_package(manifest.get("headers"), artifact)
+            .map_err(|_| cache_error(CacheErrorCode::Corrupt))?
+            .ok_or_else(|| cache_error(CacheErrorCode::IntegrityMismatch))
+    }
+
+    async fn read_repository_package_manifest(
+        &self,
+        source_identity: &str,
+        repository_locator: Option<&str>,
+        credential_reference: Option<&str>,
+        package_id: &str,
+        version: &str,
+    ) -> Result<Value, CacheError> {
+        let bytes = if let Some(url) = source_identity.strip_prefix("remote:") {
+            self.read_index(&parse_artifact_url(url)?, credential_reference)
+                .await?
+        } else if let Some(identity) = source_identity.strip_prefix("local-fileid-v1:") {
+            let locator =
+                repository_locator.ok_or_else(|| cache_error(CacheErrorCode::OfflineMiss))?;
+            let path = PathBuf::from(locator);
+            if !path.is_absolute() {
+                return Err(cache_error(CacheErrorCode::InvalidUrl));
+            }
+            let identity = parse_identity_hex(identity)?;
+            tokio::task::spawn_blocking(move || {
+                read_stable_file(&path, crate::REPOSITORY_DOCUMENT_LIMIT, Some(&identity))
+            })
+            .await
+            .map_err(|_| cache_error(CacheErrorCode::Io))??
+        } else {
+            return Err(cache_error(CacheErrorCode::OfflineMiss));
+        };
+        let index = bounded_json(&bytes)?;
+        index
+            .get("packages")
+            .and_then(|value| value.get(package_id))
+            .and_then(|value| value.get("versions"))
+            .and_then(|value| value.get(version))
+            .cloned()
+            .ok_or_else(|| cache_error(CacheErrorCode::IntegrityMismatch))
+    }
+
+    async fn read_index(
+        &self,
+        url: &Url,
+        credential_reference: Option<&str>,
+    ) -> Result<Vec<u8>, CacheError> {
         let _transfer = crate::HTTP_DOWNLOADS
             .acquire()
             .await
             .map_err(|cause| cache_error(CacheErrorCode::DownloadFailed).with_source(cause))?;
-        let mut response = self
-            .client
-            .get(url.clone())
-            .timeout(crate::REQUEST_TIMEOUT)
-            .send()
-            .await
-            .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))?;
+        let mut response = tokio::time::timeout(
+            crate::REQUEST_TIMEOUT,
+            self.get_response(url, credential_reference, None),
+        )
+        .await
+        .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))??;
         if response.status() != StatusCode::OK {
             return Err(cache_error(CacheErrorCode::DownloadFailed));
         }
@@ -157,13 +220,6 @@ impl PackageCache {
             .parent()
             .ok_or_else(|| cache_error(CacheErrorCode::Io))?;
         prepare_cache_directory(&self.root, parent).await?;
-        if cache_size(&self.root)
-            .await?
-            .saturating_add(bytes.len() as u64)
-            > MAX_CACHE_BYTES
-        {
-            return Err(cache_error(CacheErrorCode::QuotaExceeded));
-        }
         let part = object.with_extension(format!(
             "json.{}.part",
             alcomd_application::OperationId::new()
@@ -184,17 +240,20 @@ impl PackageCache {
             .sync_all()
             .await
             .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        let publication = CACHE_PUBLICATION.lock().await;
         match self.read_pinned_manifest(digest) {
             Ok(_) => return Ok(()),
             Err(error) if error.code() == CacheErrorCode::OfflineMiss => {}
             Err(error) => return Err(error),
         }
+        ensure_cache_capacity(&self.root, bytes.len() as u64).await?;
         if tokio::fs::rename(&part, &object).await.is_err() {
             // A concurrent publisher may have installed the same immutable key.
             self.read_pinned_manifest(digest)?;
             return Ok(());
         }
         guard.published = true;
+        drop(publication);
         let parent = parent.to_owned();
         tokio::task::spawn_blocking(move || alcomd_platform::sync_directory(&parent))
             .await
@@ -202,6 +261,16 @@ impl PackageCache {
             .map_err(|_| cache_error(CacheErrorCode::Io))?;
         self.read_pinned_manifest(digest).map(|_| ())
     }
+}
+
+fn repository_manifest_evidence(manifest: &Value, headers: bool) -> Result<Vec<u8>, CacheError> {
+    crate::package::manifest_evidence_bytes(
+        manifest
+            .as_object()
+            .ok_or_else(|| cache_error(CacheErrorCode::Corrupt))?,
+        headers,
+    )
+    .map_err(|_| cache_error(CacheErrorCode::Corrupt))
 }
 
 fn bounded_json(bytes: &[u8]) -> Result<Value, CacheError> {
@@ -310,6 +379,26 @@ fn read_stable_file(
 }
 
 fn read_archive_manifest(archive: &Path) -> Result<Value, CacheError> {
+    let bytes = read_archive_manifest_bytes(archive)?;
+    let normalized = crate::user_package::normalized_manifest_json(&bytes)
+        .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
+    bounded_json(normalized.as_bytes())
+}
+
+pub(crate) fn read_archive_legacy(archive: &Path) -> Result<LegacyMetadata, CacheError> {
+    legacy(&bounded_json(&read_archive_manifest_bytes(archive)?)?)
+}
+
+pub(super) fn validate_archive_manifest_identity(
+    archive: &Path,
+    package_id: &str,
+    version: &str,
+) -> Result<(), CacheError> {
+    let manifest = bounded_json(&read_archive_manifest_bytes(archive)?)?;
+    validate_identity(&manifest, package_id, version)
+}
+
+fn read_archive_manifest_bytes(archive: &Path) -> Result<Vec<u8>, CacheError> {
     let file = std::fs::File::open(archive).map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
     let mut archive =
         zip::ZipArchive::new(file).map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
@@ -327,9 +416,7 @@ fn read_archive_manifest(archive: &Path) -> Result<Value, CacheError> {
     if bytes.len() > MANIFEST_LIMIT {
         return Err(cache_error(CacheErrorCode::Corrupt));
     }
-    let normalized = crate::user_package::normalized_manifest_json(&bytes)
-        .map_err(|_| cache_error(CacheErrorCode::Corrupt))?;
-    bounded_json(normalized.as_bytes())
+    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -354,6 +441,8 @@ mod tests {
                 .collect::<String>();
             PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present: false,
                     repository_locator: Some(index.to_string_lossy().into_owned()),
                     repository_id: "fixture-repository".to_owned(),
                     repository_revision: 1,
@@ -365,7 +454,7 @@ mod tests {
                     serde_json::to_vec(manifest).expect("canonical manifest"),
                 )
                 .into(),
-                archive_sha256: [0; 32],
+                archive_sha256: Some([0; 32]),
             }
         }
     }

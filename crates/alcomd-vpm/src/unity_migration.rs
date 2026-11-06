@@ -27,9 +27,10 @@ use crate::resolver::{
     LegacyCleanupObligation, PackageSourceAuthority, ResolveRequest,
     resolve_unity_migration_packages,
 };
+use crate::staging_package::{extract_package_objects, fetch_package_objects};
 use crate::{
-    PackageCache, VpmReader, build_bulk_plan, candidates_from_catalog, extract_archive,
-    inspect_package_project, materialize_vpm_manifest,
+    PackageCache, VpmReader, build_bulk_plan, candidates_from_catalog, inspect_package_project,
+    materialize_vpm_manifest,
 };
 
 const PROJECT_VERSION_LIMIT: u64 = 64 * 1024;
@@ -449,20 +450,6 @@ impl<S> UnityMigrationEngine<S>
 where
     S: M4Store,
 {
-    async fn cached_source(
-        &self,
-        source: &PackageSourcePin,
-    ) -> Result<PathBuf, M7UnityMigrationError> {
-        self.cache
-            .get(
-                source.archive_sha256(),
-                source.artifact_url().unwrap_or(""),
-                source.is_user_package(),
-            )
-            .await
-            .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))
-    }
-
     async fn inspect_planned_project(
         &self,
         plan: &UnityMigrationPlanRecord,
@@ -544,7 +531,7 @@ where
         let candidates = candidates_from_catalog(&catalog)
             .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
         let requests = migration_requests(&plan.draft.project, &plan.draft.target_unity_version)?;
-        let migration_resolution = if requests.is_empty() {
+        let mut migration_resolution = if requests.is_empty() {
             crate::resolver::UnityMigrationResolution {
                 resolution: crate::Resolution {
                     packages: Vec::new(),
@@ -557,6 +544,14 @@ where
                 .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?
         };
         validate_obligation_scope(&migration_resolution.legacy_cleanup_obligations)?;
+        crate::engine::pin_resolution_archives(
+            &self.cache,
+            &self.store,
+            &plan.owner,
+            &mut migration_resolution.resolution,
+        )
+        .await
+        .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         let package_plan = build_bulk_plan(
             &snapshot,
             &migration_resolution.resolution,
@@ -576,28 +571,26 @@ where
         write_new_synced_file(&materialized.join("vpm-manifest.new"), &next_vpm)?;
         write_new_synced_file(&materialized.join("upm-manifest.new"), &next_upm)?;
 
+        let archives = fetch_package_objects(
+            &self.cache,
+            None,
+            package_plan
+                .change_set
+                .mutations
+                .iter()
+                .filter_map(|mutation| mutation.source.clone())
+                .collect(),
+        )
+        .await
+        .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
+        extract_package_objects(&package_staging, &package_plan.change_set, &archives)
+            .await
+            .map_err(|cause| error(M7UnityMigrationErrorCode::Unsupported).with_source(cause))?;
         let mut prepared_package_trees = BTreeMap::new();
-        for mutation in &package_plan.change_set.mutations {
-            let Some(source) = &mutation.source else {
-                continue;
-            };
-            let archive = self.cached_source(source).await?;
-            let destination = package_staging.join(&mutation.package_id);
-            std::fs::create_dir(&destination)
-                .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
-            extract_archive(&archive, &destination).map_err(|cause| {
-                error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
-            })?;
-            let expected_version = mutation
-                .to_version
-                .as_deref()
-                .ok_or_else(|| error(M7UnityMigrationErrorCode::Internal))?;
-            validate_extracted_package(&destination, &mutation.package_id, expected_version)
-                .map_err(|cause| {
-                    error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
-                })?;
+        for package_id in archives.keys() {
+            let destination = package_staging.join(package_id);
             prepared_package_trees.insert(
-                mutation.package_id.clone(),
+                package_id.clone(),
                 tree_fingerprint(&destination).map_err(|cause| {
                     error(M7UnityMigrationErrorCode::Unsupported).with_source(cause)
                 })?,
@@ -622,13 +615,17 @@ where
         let mut legacy_packages = BTreeSet::new();
         let mut pinned_obligations = Vec::new();
         for obligation in &migration_resolution.legacy_cleanup_obligations {
+            let version = obligation.version.to_string();
+            let source = package_plan
+                .source_set
+                .iter()
+                .find(|source| {
+                    source.package_id() == obligation.package_id && source.version() == version
+                })
+                .ok_or_else(|| error(M7UnityMigrationErrorCode::SourceChanged))?;
             let metadata = self
                 .cache
-                .pin_legacy_manifest(
-                    &obligation.source,
-                    &obligation.package_id,
-                    &obligation.version.to_string(),
-                )
+                .pin_legacy_manifest(&obligation.source, &obligation.package_id, &version)
                 .await
                 .map_err(|cause| {
                     error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause)
@@ -651,7 +648,10 @@ where
                 }
             }
             legacy_paths.extend(sealed_legacy_paths(&root, &metadata)?);
-            pinned_obligations.push(PinnedLegacyObligation::from_obligation(obligation));
+            pinned_obligations.push(PinnedLegacyObligation::from_obligation(
+                obligation,
+                source.archive_sha256(),
+            ));
         }
         let legacy_paths = validate_legacy_paths(&root, legacy_paths)?;
         let unlocked_conflicts =
@@ -918,7 +918,7 @@ struct LegacyPathPlan {
 }
 
 impl PinnedLegacyObligation {
-    fn from_obligation(value: &LegacyCleanupObligation) -> Self {
+    fn from_obligation(value: &LegacyCleanupObligation, archive_sha256: [u8; 32]) -> Self {
         let (authority_kind, authority_id, authority_revision) = match &value.source.authority {
             PackageSourceAuthority::Repository {
                 repository_id,
@@ -946,7 +946,7 @@ impl PinnedLegacyObligation {
             authority_revision,
             source_identity: value.source.source_identity.clone(),
             manifest_fingerprint: value.source.manifest_fingerprint,
-            archive_sha256: value.source.archive_sha256,
+            archive_sha256,
         }
     }
 }

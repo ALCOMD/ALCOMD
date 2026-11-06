@@ -754,6 +754,7 @@ fn metadata_event_failure_rolls_back_the_public_value_and_does_not_consume_the_k
         &mut connection,
         &owner,
         repository_observation(),
+        None,
         &key("repository"),
         1,
     )

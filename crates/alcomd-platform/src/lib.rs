@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+mod credential_vault;
 mod external_path;
 mod process;
 mod project_delete;
@@ -15,6 +16,7 @@ mod unity;
 mod unity_hub;
 mod unity_hub_open;
 
+pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, prepare_storage_directory,
@@ -30,7 +32,7 @@ pub use unity_hub::{
 pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
 pub use project_delete::{
     ProjectDeleteFilesystemError, ProjectDeleteFilesystemErrorKind, project_delete_cleanup,
-    project_delete_preflight,
+    project_delete_preflight, verify_project_path_boundary,
 };
 pub use project_discovery::{
     DirectoryDiscovery, DiscoveredDirectory, discover_directories, discovered_directory_is_current,

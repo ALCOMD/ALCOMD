@@ -48,6 +48,7 @@ export interface UnityHubLocation {
     configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
 }
 
+
 export interface OfficialSettings {
     projects: { autoDiscover: boolean };
     backups: { compressionMode: BackupCompressionMode; includeVpmPackages: boolean; includeLibrary: boolean };
@@ -185,6 +186,7 @@ export type RepositorySource =
     | { kind: "remote"; url: string };
 
 export interface RepositorySnapshot {
+    credentialsConfigured?: boolean;
     repositoryId?: string;
     source: RepositorySource;
     declaredId?: string;
@@ -260,6 +262,7 @@ export interface PackageMutation {
 
 export interface PackageChangeSet {
     formatVersion: number;
+    legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];
     mutations: PackageMutation[];
     dependencyEdges: Array<{ fromPackageId: string; toPackageId: string; range: string; direct: boolean }>;
     vpmManifestSha256: string;

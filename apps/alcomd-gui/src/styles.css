@@ -1193,6 +1193,7 @@ md-linear-progress {
 .change-list li > span,
 .change-list li > small {
     display: block;
+    overflow-wrap: anywhere;
 }
 
 .change-list li > small {

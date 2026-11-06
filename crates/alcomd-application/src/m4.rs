@@ -56,8 +56,19 @@ pub struct RepositoryPackageSourcePin {
     pub package_id: String,
     pub version: String,
     pub artifact_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credential_reference: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_headers: Option<PackageDownloadHeaders>,
     #[serde(with = "sha256_hex")]
     pub archive_sha256: [u8; 32],
+}
+
+/// Locator only. The exact package fingerprint authorizes a transient read.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageDownloadHeaders {
+    pub local_path: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -155,21 +166,47 @@ pub struct PackageDependencyEdge {
     pub direct: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LegacyRemovalKind {
+    File,
+    Directory,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyRemoval {
+    pub path: String,
+    pub kind: LegacyRemovalKind,
+    pub package_id: String,
+    pub identity: Vec<u8>,
+    #[serde(with = "sha256_hex")]
+    pub fingerprint: [u8; 32],
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageChangeSet {
     pub format_version: u32,
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legacy_removals: Vec<LegacyRemoval>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legacy_packages: Vec<String>,
     #[serde(with = "sha256_hex")]
     pub vpm_manifest_sha256: [u8; 32],
 }
 
 impl PackageChangeSet {
     pub fn validate_bounds(&self) -> Result<(), M4Error> {
-        if !matches!(self.format_version, 1..=3)
+        if !matches!(self.format_version, 1..=4)
             || self.mutations.len() > MAX_PACKAGE_MUTATIONS
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
+            || self.legacy_removals.len() > 4096
+            || self.legacy_packages.len() > MAX_PACKAGE_MUTATIONS
+            || (self.format_version < 4
+                && (!self.legacy_removals.is_empty() || !self.legacy_packages.is_empty()))
             || (self.format_version == 1
                 && self.mutations.iter().any(|mutation| {
                     mutation
@@ -227,7 +264,10 @@ pub enum ResolverCatalogSource {
         repository_priority: u64,
         source_identity: String,
         artifact_url: String,
-        zip_sha256: String,
+        credential_reference: Option<String>,
+        download_headers_present: bool,
+        zip_sha256: Option<String>,
+        local_zip_sha256: Option<[u8; 32]>,
         manifest_fingerprint: [u8; 32],
     },
     UserPackage {
@@ -247,7 +287,7 @@ pub struct ResolverCatalogEntry {
     pub yanked: bool,
     pub unity: Option<String>,
     pub author_name: String,
-    pub author_email: String,
+    pub author_email: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
     pub legacy_metadata_present: bool,
@@ -631,7 +671,15 @@ impl From<StoreErrorKind> for M4Error {
     }
 }
 
-pub trait M4Store: Clone + Send + Sync + 'static {
+pub trait RepositoryArchivePinStore: Clone + Send + Sync + 'static {
+    fn pin_repository_archive(
+        &self,
+        owner: PrincipalId,
+        pin: RepositoryPackageSourcePin,
+    ) -> impl Future<Output = Result<(), M4Error>> + Send;
+}
+
+pub trait M4Store: RepositoryArchivePinStore {
     fn resolver_catalog(
         &self,
         owner: PrincipalId,
@@ -700,6 +748,7 @@ pub trait M4Store: Clone + Send + Sync + 'static {
 pub trait M4PackageAdapter: Clone + Send + Sync + 'static {
     fn prepare_plan(
         &self,
+        owner: PrincipalId,
         project: ProjectRecord,
         catalog: ResolverCatalog,
         request: PackagePlanRequest,
@@ -795,7 +844,8 @@ where
             &action,
             "resolve_dependencies",
             Some(target),
-            self.adapter.prepare_plan(project, catalog, request),
+            self.adapter
+                .prepare_plan(access.principal().clone(), project, catalog, request),
             |error| error.path().map(str::to_owned),
         )
         .await?;
@@ -1036,6 +1086,8 @@ mod tests {
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),
+            legacy_removals: Vec::new(),
+            legacy_packages: Vec::new(),
             vpm_manifest_sha256: [0; 32],
         };
         assert!(change_set.validate_bounds().is_ok());

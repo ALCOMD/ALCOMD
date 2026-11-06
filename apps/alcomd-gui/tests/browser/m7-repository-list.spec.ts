@@ -28,6 +28,19 @@ async function review(page: Page, candidateCount = 3) {
     return host;
 }
 
+test("built-in repositories show their names and sync state without a remove action", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
+    const official = page.getByRole("row").filter({ hasText: "Official" });
+    const curated = page.getByRole("row").filter({ hasText: "Curated" });
+    await expect(official).toContainText("https://vrchat.github.io/packages/index.json");
+    await expect(curated).toContainText("https://vrchat-community.github.io/vpm-listing-curated/index.json");
+    await expect(page.getByRole("button", { name: "Remove", exact: true })).toHaveCount(1);
+    await official.getByRole("button", { name: "Browse packages" }).click();
+    await expect(page.getByRole("dialog", { name: "Official" })).toBeVisible();
+    await expect(page.locator("md-dialog[open]").getByText("Pending first sync")).toBeVisible();
+    expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
+});
+
 test("long preview content scrolls independently of actions and closing restores the menu trigger", async ({ page }) => {
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto("/browser-harness.html?route=/repositories");
@@ -156,7 +169,7 @@ test("a repository without published checksums adds and displays packages normal
 test("cancelled native save selection never sends a Core file write", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-picker=cancel");
     const host = await openList(page, "Export list");
-    await host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true }).check();
+    await host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true }).check();
     await host.getByRole("button", { name: "Save new list file", exact: true }).click();
     await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.exportListFile")).toEqual([]);
@@ -165,7 +178,7 @@ test("cancelled native save selection never sends a Core file write", async ({ p
 test("export validates a new name near its field and binds it to folder selection", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Export list");
-    await host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true }).check();
+    await host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true }).check();
     await host.getByLabel("New list file name", { exact: true }).fill("../existing.txt");
     await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeDisabled();
     await expect(host.locator("#repository-list-file-name")).toHaveJSProperty("error", true);
@@ -183,7 +196,7 @@ test("export reviews full Core scope and exclusions and requires address-risk co
     await expect(host.getByText("Local source cannot be represented by this URL list.", { exact: true })).toBeVisible();
     await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeDisabled();
     expect(await requests(page, "repositories.exportListFile")).toEqual([]);
-    await host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true }).check();
+    await host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true }).check();
     await host.getByRole("button", { name: "Save new list file", exact: true }).click();
     await expect(host.getByText("Saved 230 repositories (12000 bytes).", { exact: true })).toBeVisible();
     expect(await requests(page, "repositories.exportListFile")).toEqual([{ method: "repositories.exportListFile", params: { targetPath: "C:/fixture/repositories.txt", expectedFingerprint: "1".repeat(64) } }]);
@@ -193,7 +206,7 @@ for (const code of ["repository_list_target_exists", "repository_list_changed", 
     test(`export preserves ${code} in context and never automatically writes again`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/repositories&list-export-error=${code}`);
         const host = await openList(page, "Export list");
-        const consent = host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true });
+        const consent = host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true });
         await consent.check();
         await host.getByRole("button", { name: "Save new list file", exact: true }).click();
         await expectRequestError(host.locator("[role=alert]"), code);

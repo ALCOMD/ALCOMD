@@ -142,6 +142,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
                 return <li key={entry.line}>
                     <div><strong>{t("Line {line}", { line: entry.line })}</strong><span>{t(labels[outcome?.status ?? entry.status])}</span></div>
                     {entry.source ? <code>{entry.source.url}</code> : null}
+                    {entry.credentialsConfigured ? <span>{t("Uses authentication")}</span> : null}
                     {entry.reason ? <span>{t(requestErrorMessage(entry.reason))}</span> : null}
                     {outcome === undefined || !("code" in outcome) ? null : <span className="repository-list-error">{t(requestErrorMessage(outcome.code))}</span>}
                 </li>;
@@ -186,11 +187,11 @@ function ExportRepositoryList({ client, onClose }: { client: GuiRpcClient; onClo
         {error ? <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {preview ? <>
             <p>{t("{count} repositories can be exported · {excluded} excluded · {bytes} bytes", { count: preview.exportableCount, excluded: preview.excluded.length, bytes: preview.byteCount })}</p>
-            <div>{t("This file contains complete repository addresses, which may contain credentials. Check it before sharing. Authentication headers and stored credentials are not included. This is not a complete backup.")}</div>
+            <div>{t("This file can contain repository credentials in plain text, including authentication headers. Keep it private.")}</div>
             {preview.excluded.length ? <ScrollArea className="repository-list-entries"><ul>{preview.excluded.map((entry) => <li key={entry.repositoryId}><code>{entry.repositoryId}</code><span>{t(reasonText[entry.reason])}</span></li>)}</ul></ScrollArea> : null}
             <p>{t("Only a new file can be created. Existing files are preserved; choose a different name if the destination exists.")}</p>
             {!saved ? <><TextField disabled={busy} error={!nameValid} errorText={!nameValid ? t("Enter a file name without path separators or reserved characters.") : undefined} id="repository-list-file-name" label={t("New list file name")} maxLength={255} onInput={(value) => { setFileName(value); setError(undefined); }} value={fileName} /><p>{t("Choose the destination folder. A new file with this name will be created there.")}</p></> : null}
-            {!saved ? <Checkbox checked={confirmed} disabled={busy} label={t("I have reviewed the export scope and the address-sharing risk.")} onChange={setConfirmed} /> : <div><p>{t("Saved {count} repositories ({bytes} bytes).", { count: saved.exportedCount, bytes: saved.byteCount })}</p><code>{saved.sha256}</code></div>}
+            {!saved ? <Checkbox checked={confirmed} disabled={busy} label={t("I have reviewed the export scope and understand the file can contain credentials.")} onChange={setConfirmed} /> : <div><p>{t("Saved {count} repositories ({bytes} bytes).", { count: saved.exportedCount, bytes: saved.byteCount })}</p><code>{saved.sha256}</code></div>}
         </> : null}
         {busy ? <Progress label={t("Repository list progress")} /> : null}
     </Dialog>;

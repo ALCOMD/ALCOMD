@@ -82,6 +82,8 @@ pub enum RepositoryListSource {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListEntry {
     pub line: u32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub credentials_configured: bool,
     pub status: RepositoryListEntryStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<RepositoryListSource>,

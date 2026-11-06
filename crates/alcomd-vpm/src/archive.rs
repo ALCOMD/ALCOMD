@@ -358,7 +358,7 @@ pub(crate) fn normalize_path(
     Ok((PathBuf::from(normalized), collision_key))
 }
 
-fn validate_segment(segment: &str) -> Result<(), ArchiveError> {
+pub(crate) fn validate_segment(segment: &str) -> Result<(), ArchiveError> {
     if matches!(segment, "." | "..")
         || segment.contains(':')
         || segment.ends_with('.')

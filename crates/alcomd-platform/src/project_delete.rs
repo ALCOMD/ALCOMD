@@ -65,6 +65,23 @@ pub fn project_delete_cleanup(root: &Path) -> Result<u64, ProjectDeleteFilesyste
     platform::cleanup(root)
 }
 
+/// Check an existing path below a trusted root without crossing links or mounts.
+pub fn verify_project_path_boundary(
+    root: &Path,
+    relative: &Path,
+) -> Result<(), ProjectDeleteFilesystemError> {
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+    {
+        return Err(ProjectDeleteFilesystemError::classified(
+            ProjectDeleteFilesystemErrorKind::UnsafeEntry,
+        ));
+    }
+    platform::verify_path(root, relative)
+}
+
 #[cfg(windows)]
 mod platform {
     use std::fs;
@@ -73,6 +90,23 @@ mod platform {
     use super::*;
 
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+
+    pub(super) fn verify_path(
+        root: &Path,
+        relative: &Path,
+    ) -> Result<(), ProjectDeleteFilesystemError> {
+        let mut path = root.to_owned();
+        for part in relative.components() {
+            path.push(part);
+            let metadata = fs::symlink_metadata(&path).map_err(ProjectDeleteFilesystemError::io)?;
+            if reparse(&metadata) || metadata.file_type().is_symlink() {
+                return Err(ProjectDeleteFilesystemError::classified(
+                    ProjectDeleteFilesystemErrorKind::UnsafeEntry,
+                ));
+            }
+        }
+        Ok(())
+    }
 
     pub(super) fn preflight(root: &Path) -> Result<u64, ProjectDeleteFilesystemError> {
         let metadata = fs::symlink_metadata(root).map_err(ProjectDeleteFilesystemError::io)?;
@@ -297,6 +331,21 @@ mod platform {
         .union(ResolveFlags::NO_MAGICLINKS)
         .union(ResolveFlags::NO_SYMLINKS);
 
+    pub(super) fn verify_path(
+        root: &Path,
+        relative: &Path,
+    ) -> Result<(), ProjectDeleteFilesystemError> {
+        openat2(
+            open_parent(root)?,
+            relative,
+            OFlags::PATH | OFlags::CLOEXEC,
+            Mode::empty(),
+            RESOLVE_FLAGS,
+        )
+        .map(|_| ())
+        .map_err(map_errno)
+    }
+
     pub(super) fn preflight(root: &Path) -> Result<u64, ProjectDeleteFilesystemError> {
         let (parent, leaf) = split_root(root)?;
         let parent_fd = open_parent(parent)?;
@@ -446,6 +495,30 @@ mod platform {
     struct MacMountToken {
         device: u64,
         mount_name: Vec<u8>,
+    }
+
+    pub(super) fn verify_path(
+        root: &Path,
+        relative: &Path,
+    ) -> Result<(), ProjectDeleteFilesystemError> {
+        let mut current = open_parent(root)?;
+        let token = mount_token(&current)?;
+        let mut parts = relative.components().peekable();
+        while let Some(part) = parts.next() {
+            current = if parts.peek().is_some() {
+                open_directory(&current, part.as_os_str())?
+            } else {
+                openat(
+                    &current,
+                    part.as_os_str(),
+                    OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+                    Mode::empty(),
+                )
+                .map_err(map_errno)?
+            };
+            verify_mount(&current, &token)?;
+        }
+        Ok(())
     }
 
     pub(super) fn preflight(root: &Path) -> Result<u64, ProjectDeleteFilesystemError> {

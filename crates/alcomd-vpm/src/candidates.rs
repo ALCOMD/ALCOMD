@@ -879,6 +879,8 @@ mod tests {
             dependencies: Vec::new(),
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present: false,
                     repository_locator: None,
                     repository_id: "repository-a".to_owned(),
                     repository_revision: 1,
@@ -887,7 +889,7 @@ mod tests {
                 },
                 source_identity: "repository-a".to_owned(),
                 manifest_fingerprint: [1; 32],
-                archive_sha256: [2; 32],
+                archive_sha256: Some([2; 32]),
             },
         };
         for (actual, compatible) in [
@@ -1137,6 +1139,8 @@ mod tests {
                 .collect(),
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present: false,
                     repository_locator: None,
                     repository_id: "repository-a".to_owned(),
                     repository_revision: 1,
@@ -1145,7 +1149,7 @@ mod tests {
                 },
                 source_identity: "repository-a".to_owned(),
                 manifest_fingerprint: [1; 32],
-                archive_sha256: [2; 32],
+                archive_sha256: Some([2; 32]),
             },
         };
         let catalog = [

@@ -2,7 +2,7 @@ import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
 import type { Translate } from "./i18n-types";
-import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
+import type { ExtensionRecord, RepositoryCredentials, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
 import { useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -29,6 +29,7 @@ import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAct
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
+import { isBuiltinRepository } from "./repository-display";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
@@ -45,6 +46,45 @@ interface FeedbackState {
 
 const INITIAL_FEEDBACK: FeedbackState = { busy: false };
 
+interface RepositoryAuthenticationDraft {
+    headers: Array<{ name: string; value: string }>;
+}
+
+const EMPTY_REPOSITORY_AUTH: RepositoryAuthenticationDraft = { headers: [] };
+
+function repositoryCredentials(draft: RepositoryAuthenticationDraft): RepositoryCredentials | undefined {
+    if (draft.headers.length === 0) return undefined;
+    return {
+        headers: Object.fromEntries(draft.headers.map(({ name, value }) => [name.trim(), value])),
+    };
+}
+
+function readyRepositoryHeaders(draft: RepositoryAuthenticationDraft): boolean {
+    const names = new Set(draft.headers.map(({ name }) => name.trim().toLowerCase()));
+    return names.size === draft.headers.length
+        && draft.headers.every(({ name, value }) => name.trim() !== "" && value !== "");
+}
+
+function RepositoryAuthenticationFields({ draft, onChange, disabled }: {
+    draft: RepositoryAuthenticationDraft;
+    onChange(value: RepositoryAuthenticationDraft): void;
+    disabled: boolean;
+}) {
+    const { t } = useTranslation();
+    return <>
+        {draft.headers.map((header, index) => <div key={index} className="form-row">
+            <TextField disabled={disabled} label={t("Header name")} value={header.name} maxLength={128} required
+                onInput={(name) => onChange({ ...draft, headers: draft.headers.map((row, i) => i === index ? { ...row, name } : row) })} />
+            <TextField disabled={disabled} label={t("Header value")} value={header.value} maxLength={2048} type="password" required
+                onInput={(value) => onChange({ ...draft, headers: draft.headers.map((row, i) => i === index ? { ...row, value } : row) })} />
+            <IconButton disabled={disabled} label={t("Remove request header")} type="button"
+                onClick={() => onChange({ ...draft, headers: draft.headers.filter((_, i) => i !== index) })}><Icon asset={closeIcon} /></IconButton>
+        </div>)}
+        <Button disabled={disabled || draft.headers.length >= 16} type="button" variant="text"
+            onClick={() => onChange({ ...draft, headers: [...draft.headers, { name: "", value: "" }] })}>{t("Add request header")}</Button>
+    </>;
+}
+
 export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const { t } = useTranslation();
 
@@ -53,6 +93,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const available = useCapability(capabilities.repositoriesRegistry);
     const [kind, setKind] = useState<"remote" | "local">("remote");
     const [value, setValue] = useState("");
+    const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(EMPTY_REPOSITORY_AUTH);
     const [preview, setPreview] = useState<RepositorySnapshot>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);
@@ -64,7 +105,9 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         pending.current = true;
          setFeedback({ busy: true });
         try {
-            const result = await client.repositoriesInspect(source());
+            const selected = source();
+            const result = await client.repositoriesInspect(selected,
+                selected.kind === "remote" ? repositoryCredentials(authentication) : undefined);
             if (current()) { setPreview(result.repository); setFeedback({ busy: false }); }
         }
         catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
@@ -75,9 +118,10 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            await client.repositoryRegister(preview.source);
+            await client.repositoryRegister(preview.source,
+                preview.source.kind === "remote" ? repositoryCredentials(authentication) : undefined);
             if (!current()) return;
-            setPreview(undefined); setValue("");
+            setPreview(undefined); setValue(""); setAuthentication(EMPTY_REPOSITORY_AUTH);
             setFeedback(INITIAL_FEEDBACK);  close(); onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
@@ -86,12 +130,14 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const error = feedback.error === undefined || fieldError !== undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     return <ActionSection title={t("Add repository")}>
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
-            <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
+            <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setAuthentication(EMPTY_REPOSITORY_AUTH); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
             <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type={kind === "remote" ? "url" : "text"} value={value} />
+            {kind === "remote" ? <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} /> : null}
             {error}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0 || !readyRepositoryHeaders(authentication)} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
             <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : displayPath(preview.source.path)}</dd></div></dl>
+            {authentication.headers.length > 0 ? <p>{t("Uses authentication")}</p> : null}
             {preview.issues.length === 0 ? null : <div>{t("This repository has {count} reported issues.", { count: preview.issues.length })}</div>}
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
@@ -105,9 +151,30 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [confirmRemove, setConfirmRemove] = useState(false);
+    const [editingAuthentication, setEditingAuthentication] = useState(false);
+    const [authentication, setAuthentication] = useState(EMPTY_REPOSITORY_AUTH);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef(false);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
+    const closeAuthentication = () => {
+        setEditingAuthentication(false);
+        setAuthentication(EMPTY_REPOSITORY_AUTH);
+        setFeedback(INITIAL_FEEDBACK);
+    };
+    const changeAuthentication = async (clear: boolean) => {
+        if (!ready || !available || pending.current || repository.source.kind !== "remote"
+            || (!clear && authentication.headers.length === 0)) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            const credentials = clear ? null : repositoryCredentials(authentication);
+            if (credentials === undefined) return;
+            await client.repositorySetCredentials(repository.repositoryId!, repository.revision!, credentials);
+            if (current()) { closeAuthentication(); onChanged?.(); }
+        } catch (caught: unknown) {
+            if (current()) setFeedback({ busy: false, error: safeError(caught) });
+        } finally { pending.current = false; }
+    };
     const run = async (remove: boolean) => {
         if (!ready || !available || pending.current) return;
         pending.current = true;  setFeedback({ busy: true });
@@ -126,8 +193,23 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         finally { pending.current = false; }
     };
     return <div className="repository-row-actions">
-        <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove} refreshingLabel={t("Refreshing repository")} />
-        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => {  setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
+        <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove && !editingAuthentication} refreshingLabel={t("Refreshing repository")} />
+        {repository.source.kind === "remote" && !isBuiltinRepository(repository) ? <Button
+            disabled={!available || !ready || feedback.busy} type="button" variant="text"
+            onClick={() => { setFeedback(INITIAL_FEEDBACK); setEditingAuthentication(true); }}>{t("Authentication")}</Button> : null}
+        {!isBuiltinRepository(repository) ? <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => {  setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton> : null}
+        <MaterialDialog open={editingAuthentication} title={t("Repository authentication")} dismissible={!feedback.busy} onClose={closeAuthentication}>
+            {repository.credentialsConfigured ? <p>{t("Uses authentication")}</p> : null}
+            <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} />
+            <MutationFeedback client={client} feedback={feedback} />
+            <div className="dialog-actions">
+                {repository.credentialsConfigured ? <Button disabled={feedback.busy} onClick={() => void changeAuthentication(true)}
+                    type="button" variant="text">{t("Clear authentication")}</Button> : null}
+                <Button disabled={feedback.busy} onClick={closeAuthentication} type="button" variant="text">{t("Cancel")}</Button>
+                <Button disabled={feedback.busy || authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)}
+                    onClick={() => void changeAuthentication(false)} type="button">{t("Save")}</Button>
+            </div>
+        </MaterialDialog>
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repository.name ?? repository.declaredId ?? t("this repository")}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
@@ -225,7 +307,8 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
         }
     };
     const closeChanges = () => { if (!feedback.busy) setPlan(undefined); };
-    const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0;
+    const legacyRemovals = plan?.changeSet.legacyRemovals ?? [];
+    const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0 || legacyRemovals.length > 0;
     return (
         <>
             <MaterialDialog onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
@@ -234,6 +317,12 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                     <div className="package-plan-review">
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>
                         <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{t(packageChangeLabel(mutation.kind))}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion, t)}</small>}</li>)}</ul>
+                        {legacyRemovals.length === 0 ? null : <>
+                            <p>{t("The following legacy files and folders will be removed.")}</p>
+                            <ul className="change-list">{legacyRemovals.map(({ path, packageId }) => (
+                                <li key={path}><span>{displayPath(path)}</span><small>{packageId}</small></li>
+                            ))}</ul>
+                        </>}
                         <div className="dialog-actions">
                             <Button disabled={feedback.busy} onClick={closeChanges} type="button" variant="text">{t("Cancel")}</Button>
                             <Button disabled={!canApply || feedback.busy} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button>

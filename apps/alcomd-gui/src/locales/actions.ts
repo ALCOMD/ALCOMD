@@ -2,6 +2,14 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Authentication": { "zh-CN": "认证", "ja-JP": "認証" },
+    "Repository authentication": { "zh-CN": "存储库认证", "ja-JP": "リポジトリの認証" },
+    "Uses authentication": { "zh-CN": "使用认证", "ja-JP": "認証を使用" },
+    "Header name": { "zh-CN": "请求头名称", "ja-JP": "ヘッダー名" },
+    "Header value": { "zh-CN": "请求头值", "ja-JP": "ヘッダー値" },
+    "Add request header": { "zh-CN": "添加请求头", "ja-JP": "リクエストヘッダーを追加" },
+    "Remove request header": { "zh-CN": "移除请求头", "ja-JP": "リクエストヘッダーを削除" },
+    "Clear authentication": { "zh-CN": "清除认证", "ja-JP": "認証を解除" },
     "No template": { "zh-CN": "不使用模板", "ja-JP": "テンプレートを使用しない" },
     "Edit template": { "zh-CN": "编辑模板", "ja-JP": "テンプレートを編集" },
     "Save template": { "zh-CN": "保存模板", "ja-JP": "テンプレートを保存" },
@@ -67,9 +75,9 @@ export const actionMessages: TranslationTable = {
     "The file already exists and was preserved. Choose another file name.": { "zh-CN": "文件已存在并已保留，请选择其他文件名。", "ja-JP": "既存のファイルは保持されました。別のファイル名を選んでください。" },
     "The repository snapshot changed. Preview again before saving.": { "zh-CN": "存储库快照已变化，请重新预览后保存。", "ja-JP": "リポジトリのスナップショットが変わりました。再度プレビューしてから保存してください。" },
     "{count} repositories can be exported · {excluded} excluded · {bytes} bytes": { "zh-CN": "可导出 {count} 个存储库 · 排除 {excluded} 个 · {bytes} 字节", "ja-JP": "エクスポート可能：{count}件 · 除外：{excluded}件 · {bytes}バイト" },
-    "This file contains complete repository addresses, which may contain credentials. Check it before sharing. Authentication headers and stored credentials are not included. This is not a complete backup.": { "zh-CN": "文件包含完整存储库地址，地址本身可能含有凭据，分享前请检查。不附带认证请求头或凭据存储中的秘密。这不是完整备份。", "ja-JP": "完全なリポジトリアドレスが含まれ、アドレス自体に認証情報が含まれる可能性があります。共有前に確認してください。認証ヘッダーや保存済みの資格情報は含めません。完全なバックアップではありません。" },
+    "This file can contain repository credentials in plain text, including authentication headers. Keep it private.": { "zh-CN": "文件可能包含明文存储库凭据，包括认证请求头。请妥善保管。", "ja-JP": "ファイルには認証ヘッダーなどのリポジトリ認証情報が平文で含まれる場合があります。取り扱いにご注意ください。" },
     "Only a new file can be created. Existing files are preserved; choose a different name if the destination exists.": { "zh-CN": "仅创建新文件。保留现有文件；目标已存在时请另选名称。", "ja-JP": "新規ファイルのみ作成できます。既存ファイルは保持するため、同名ファイルがある場合は別名を選んでください。" },
-    "I have reviewed the export scope and the address-sharing risk.": { "zh-CN": "我已核对导出范围及地址分享风险。", "ja-JP": "エクスポート範囲とアドレス共有のリスクを確認しました。" },
+    "I have reviewed the export scope and understand the file can contain credentials.": { "zh-CN": "我已核对导出范围，并了解文件可能包含凭据。", "ja-JP": "エクスポート範囲を確認し、ファイルに認証情報が含まれる可能性があることを理解しました。" },
     "Saved {count} repositories ({bytes} bytes).": { "zh-CN": "已保存 {count} 个存储库（{bytes} 字节）。", "ja-JP": "{count}件のリポジトリ（{bytes}バイト）を保存しました。" },
     "Preview again": { "zh-CN": "重新预览", "ja-JP": "再プレビュー" },
     "Save new list file": { "zh-CN": "保存新列表文件", "ja-JP": "新しい一覧ファイルを保存" },
@@ -479,6 +487,10 @@ export const actionMessages: TranslationTable = {
     "No package changes are required for this project.": {
         "zh-CN": "此项目无需更改软件包。",
         "ja-JP": "このプロジェクトのパッケージに変更は必要ありません。"
+    },
+    "The following legacy files and folders will be removed.": {
+        "zh-CN": "应用后将移除以下旧文件和文件夹。",
+        "ja-JP": "適用すると、次の旧ファイルとフォルダーが削除されます。"
     },
     "No package resolve is required.": {
         "zh-CN": "无需解析软件包依赖。",

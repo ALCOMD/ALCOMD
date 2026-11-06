@@ -1,4 +1,4 @@
-import type { CandidateChoice, CandidateSnapshot, CandidateSource, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidatePage, ProjectCandidateRequest, PackageUpdateEvidence } from "@alcomd/sdk";
+import type { CandidateChoice, CandidateCursor, CandidateSnapshot, CandidateSource, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidatePage, ProjectCandidateRequest, PackageUpdateEvidence } from "@alcomd/sdk";
 import type { PackageBulkIntent, PackageSourceSelector } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import type { Translate } from "./i18n-types";
@@ -44,17 +44,29 @@ export async function queryCandidates(client: GuiRpcClient, request: ProjectCand
     finally { const next = waiting.shift(); if (next) next(); else inFlight -= 1; }
 }
 export interface CandidateSummarySet { items: PackageCandidateSummary[]; snapshot: CandidateSnapshot; catalogComplete: boolean }
-export async function readCandidateSummary(client: GuiRpcClient, request: ProjectCandidateRequest): Promise<CandidateSummarySet> {
-    let cursor = request.cursor;
-    let snapshot: CandidateSnapshot | undefined;
-    let catalogComplete = true;
-    const items: PackageCandidateSummary[] = [];
-    const seenIds = new Set<string>();
-    for (let pageIndex = 0; pageIndex < 1563; pageIndex += 1) {
-        const page = await queryCandidates(client, { ...request, limit: 64, ...(snapshot === undefined ? {} : { expectedSnapshot: snapshot.fingerprint }), ...(cursor === undefined ? {} : { cursor }) });
-        if (page.view !== "summary" || page.projectId !== request.projectId || page.snapshot.projectRevision !== request.expectedRevision) throw { code: "package_candidate_evidence_stale" };
-        if ((snapshot && page.snapshot.fingerprint !== snapshot.fingerprint) || (request.expectedSnapshot && page.snapshot.fingerprint !== request.expectedSnapshot)) throw { code: "package_candidate_evidence_stale" };
-        snapshot = page.snapshot;
+export interface CandidateSummaryPage extends CandidateSummarySet { nextCursor: CandidateCursor | null }
+
+export async function readCandidateSummaryPage(client: GuiRpcClient, request: ProjectCandidateRequest): Promise<CandidateSummaryPage> {
+    const page = await queryCandidates(client, { ...request, limit: 64 });
+    const next = page.nextCursor;
+    if (page.view !== "summary" || page.projectId !== request.projectId || page.snapshot.projectRevision !== request.expectedRevision
+        || (request.expectedSnapshot !== undefined && page.snapshot.fingerprint !== request.expectedSnapshot)
+        || (next !== null && (next.offset <= (request.cursor?.offset ?? 0) || next.snapshotFingerprint !== page.snapshot.fingerprint))) {
+        throw { code: "package_candidate_evidence_stale" };
+    }
+    return page;
+}
+
+export async function finishCandidateSummary(client: GuiRpcClient, request: ProjectCandidateRequest, first: CandidateSummaryPage, isCurrent: () => boolean): Promise<CandidateSummarySet | undefined> {
+    let cursor = first.nextCursor;
+    let catalogComplete = first.catalogComplete;
+    const items = [...first.items];
+    const seenIds = new Set(items.map((item) => item.packageId));
+    if (seenIds.size !== items.length) throw { code: "package_candidate_evidence_stale" };
+    for (let pageIndex = 1; cursor !== null; pageIndex += 1) {
+        if (!isCurrent()) return undefined;
+        if (pageIndex >= 1563 || cursor.offset > 100000) throw { code: "package_candidate_limit_exceeded" };
+        const page = await readCandidateSummaryPage(client, { ...request, expectedSnapshot: first.snapshot.fingerprint, cursor });
         catalogComplete &&= page.catalogComplete;
         for (const item of page.items) {
             if (seenIds.has(item.packageId)) throw { code: "package_candidate_evidence_stale" };
@@ -62,11 +74,9 @@ export async function readCandidateSummary(client: GuiRpcClient, request: Projec
             items.push(item);
         }
         if (items.length > 100000) throw { code: "package_candidate_limit_exceeded" };
-        if (page.nextCursor === null) return { items, snapshot, catalogComplete };
-        if (page.nextCursor.offset <= (cursor?.offset ?? 0)) throw { code: "package_candidate_evidence_stale" };
         cursor = page.nextCursor;
     }
-    throw { code: "package_candidate_limit_exceeded" };
+    return { items, snapshot: first.snapshot, catalogComplete };
 }
 export function actionableVersion(candidate: PackageCandidateEvidence): boolean {
     return candidate.eligibility === "eligible" && ["not_installed", "newer", "older"].includes(candidate.relation);

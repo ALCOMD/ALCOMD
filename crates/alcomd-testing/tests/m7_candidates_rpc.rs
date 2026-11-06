@@ -560,7 +560,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         )
         .await
         .expect("register raw-only source");
-    let incomplete_summary = client
+    let summary_with_invalid_version = client
         .package_query_project_candidates(request(
             &project_id,
             2,
@@ -568,14 +568,14 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             64,
         ))
         .await
-        .expect("local evidence with unrelated incomplete catalog");
-    assert!(!incomplete_summary.catalog_complete);
+        .expect("local evidence with an unrelated rejected version");
+    assert!(summary_with_invalid_version.catalog_complete);
     assert_eq!(
-        wire(incomplete_summary)["items"][0]["update"]["kind"],
+        wire(summary_with_invalid_version)["items"][0]["update"]["kind"],
         "target",
-        "unrelated incomplete source must not erase local evidence"
+        "an unrelated rejected version must not erase local evidence"
     );
-    let remove_only = client
+    client
         .package_plan_bulk(alcomd_protocol::PackagePlanBulkParams {
             project_id,
             expected_revision: 2,
@@ -584,8 +584,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             }],
         })
         .await
-        .expect_err("remove-only Bulk retains existing completeness requirement");
-    assert_eq!(remote_code(remove_only), "repository_refresh_required");
+        .expect("an unrelated rejected version does not block bulk planning");
     shutdown.store(true, Ordering::Release);
     drop(client);
     daemon.await.expect("daemon task").expect("daemon shutdown");

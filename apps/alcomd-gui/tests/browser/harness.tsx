@@ -61,6 +61,8 @@ declare global {
         heldTemplateReads: number;
         resumeCandidateSource?: () => void;
         resumeCandidateVersions?: () => void;
+        resumeCandidateSummary?: () => void;
+        resumePackagePresentation?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
@@ -745,8 +747,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: this.beginOperation("projects.deleteDirectory", "00000000-0000-4000-8000-000000000064"), projectId: PROJECT_ID, replayed: false });
     }
 
-    async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
-        window.resourceRequests.push({ method: "repositories.inspect", params: { source } });
+    async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0], credentials?: Parameters<GuiRpcClient["repositoriesInspect"]>[1]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
+        window.resourceRequests.push({ method: "repositories.inspect", params: { source, ...(credentials && { credentialsConfigured: true }) } });
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository() });
         if (query.has("resource-invalid-source")) return Promise.reject({ code: "repository_document_invalid" });
         const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
@@ -771,6 +773,11 @@ class DeterministicGuiClient implements GuiRpcClient {
             repositoryId: `04000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
             name: `Repository ${index + 1}`
         })) });
+        if (query.has("builtin-repositories")) return this.value({ repositories: [
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", source: { kind: "remote", url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", source: { kind: "remote", url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
+            repository(),
+        ] });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
                 ? this.value({ repositories: [this.refreshedRepository(repository())], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
@@ -789,10 +796,13 @@ class DeterministicGuiClient implements GuiRpcClient {
             return record === undefined ? Promise.reject({ code: "repository_not_registered" }) : this.value({ repository: record });
         }
         const value = repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository();
-        return this.value({ repository: this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value });
+        return this.value({ repository: this.refreshedRepository(this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value) });
     }
-    repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
+    async repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
         window.repositoryPackageRequests.push({ repositoryId, ...(cursor === undefined ? {} : { cursor }) });
+        if (query.has("deferPackagePresentation") && repositoryId === REPOSITORY_ID && !window.resumePackagePresentation) {
+            await new Promise<void>((resolve) => { window.resumePackagePresentation = resolve; });
+        }
         if (query.has("resource-lifecycle")) return this.value({ packages: [{ packageId: cursor === undefined ? "com.example.first" : "com.example.second", version: "1.0.0", displayName: cursor === undefined ? (this.lifecycleRepositories.get(repositoryId)?.revision ?? 0) > 1 ? "Updated catalog package" : "First catalog package" : "Second catalog package", yanked: false, prerelease: false }], ...(cursor === undefined ? { nextCursor: { packageId: "com.example.first", version: "1.0.0" } } : {}) });
         if (query.get("metadata") === "error") return Promise.reject({ code: "repository_unavailable" });
         if (query.get("versions") === "1") return this.value({ packages: [
@@ -824,11 +834,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("package-link-error")) return Promise.reject({ code: "permission_denied" });
         return this.value(undefined);
     }
-    async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
-        window.resourceRequests.push({ method: "repositories.register", params: { source } });
+    async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0], credentials?: Parameters<GuiRpcClient["repositoryRegister"]>[1]): ReturnType<GuiRpcClient["repositoryRegister"]> {
+        window.resourceRequests.push({ method: "repositories.register", params: { source, ...(credentials && { credentialsConfigured: true }) } });
         if (query.has("resource-register-invalid")) throw { code: "repository_document_invalid" };
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
-        const record = this.resourceRepository(source);
+        const record = { ...this.resourceRepository(source), ...(credentials && { credentialsConfigured: true }) };
         if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });
         this.lifecycleRepositories.set(record.repositoryId!, record);
         return this.value({ repository: record, replayed: false });
@@ -846,6 +856,13 @@ class DeterministicGuiClient implements GuiRpcClient {
             this.refreshedRepositoryRevisions.set(LOCAL_REPOSITORY_ID, 3);
         }
         return this.value({ items });
+    }
+    repositorySetCredentials(repositoryId: string, expectedRevision: number, credentials: Parameters<GuiRpcClient["repositorySetCredentials"]>[2]): ReturnType<GuiRpcClient["repositorySetCredentials"]> {
+        window.resourceRequests.push({ method: "repositories.setCredentials", params: { repositoryId, expectedRevision, credentialsConfigured: credentials !== null } });
+        const current = this.lifecycleRepositories.get(repositoryId) ?? repository();
+        const next = { ...current, revision: expectedRevision + 1, credentialsConfigured: credentials !== null };
+        this.lifecycleRepositories.set(repositoryId, next);
+        return this.value({ repository: next, replayed: false });
     }
     async repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
         window.resourceRequests.push({ method: "repositories.refresh", params: { repositoryId, expectedRevision } });
@@ -884,6 +901,9 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
+        if (query.has("deferCandidateSummary") && params.view.kind === "summary" && params.cursor?.offset === 1) {
+            await new Promise<void>((resolve) => { window.resumeCandidateSummary = resolve; });
+        }
         if (query.get("delayVersions") && params.view.kind === "versions" && !params.cursor) {
             await new Promise<void>((resolve) => { window.resumeCandidateVersions = resolve; });
         }
@@ -956,6 +976,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
         const plan = packagePlan("install");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
+        if (query.has("legacy-removals")) {
+            plan.changeSet.formatVersion = 4;
+            plan.changeSet.legacyRemovals = [
+                { path: "Assets/OldTools", kind: "directory", packageId: params.packageId },
+                { path: "Assets/OldTools.meta", kind: "file", packageId: params.packageId }
+            ];
+        }
         return this.value(plan);
     }
     packagePlanRemove(): ReturnType<GuiRpcClient["packagePlanRemove"]> { return this.value(packagePlan("remove")); }

@@ -40,6 +40,8 @@ enum ExistingLegacy {
     File,
     Folder,
     MovedGuid,
+    Package,
+    MissingPackageDirectory,
 }
 
 impl Fixture {
@@ -75,6 +77,20 @@ impl Fixture {
         )
         .expect("existing package sentinel");
         seed_legacy(&project_root, existing);
+        if matches!(
+            existing,
+            ExistingLegacy::Package | ExistingLegacy::MissingPackageDirectory
+        ) {
+            let path = project_root.join("Packages/vpm-manifest.json");
+            let bytes = fs::read(&path).expect("read initial manifest");
+            let mut manifest: Value =
+                serde_json::from_slice(&bytes).expect("parse initial manifest");
+            manifest["dependencies"]["com.example.legacy"] = json!({"version": "1.0.0"});
+            manifest["locked"]["com.example.legacy"] =
+                json!({"version": "1.0.0", "dependencies": {}});
+            let bytes = serde_json::to_vec(&manifest).expect("serialize legacy package lock");
+            fs::write(path, bytes).expect("seed old package in the manifest");
+        }
 
         let cache_root = directory.0.join("package-cache");
         let cache = PackageCache::new(cache_root.clone()).expect("owned package cache");
@@ -202,6 +218,181 @@ impl Fixture {
         .await
         .expect("package worker terminates")
     }
+
+    async fn replace_project_manifest(&mut self, manifest: &Value) {
+        fs::write(
+            self.project_root.join("Packages/vpm-manifest.json"),
+            serde_json::to_vec(manifest).expect("serialize isolated manifest"),
+        )
+        .expect("write isolated manifest");
+        let registry = M3Application::new(self.store.clone(), VpmReader::new().expect("reader"));
+        self.project = registry
+            .refresh_project(
+                &AccessContext::local_owner(),
+                self.project.project_id,
+                self.project.revision,
+                key("refresh-isolated-graph"),
+            )
+            .await
+            .expect("refresh isolated project")
+            .value;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn install_cannot_downgrade_a_shared_dependency_past_an_existing_constraint() {
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    let manifest = json!({
+        "dependencies": {KEEP: {"version": "1.0.0"}},
+        "locked": {
+            KEEP: {"version": "1.0.0", "dependencies": {CHILD: "^2.0.0"}},
+            CHILD: {"version": "2.0.0", "dependencies": {}}
+        }
+    });
+    fixture.replace_project_manifest(&manifest).await;
+    let old = fixture.project_root.join("Packages").join(CHILD);
+    fs::create_dir(&old).expect("existing dependency");
+    fs::write(
+        old.join("package.json"),
+        serde_json::to_vec(&json!({
+            "name": CHILD, "version": "2.0.0"
+        }))
+        .expect("encode manifest"),
+    )
+    .expect("seed existing dependency");
+    let error = fixture
+        .packages
+        .plan(&AccessContext::local_owner(), fixture.request())
+        .await
+        .expect_err("the selected package cannot invalidate another installed package");
+    assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
+    assert!(!fixture.project_root.join("Packages").join(NEW).exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn install_preserves_a_satisfying_locked_dependency_missing_from_the_catalog() {
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    let manifest = json!({
+        "dependencies": {KEEP: {"version": "1.0.0"}},
+        "locked": {
+            KEEP: {"version": "1.0.0", "dependencies": {CHILD: "^1.0.0"}},
+            CHILD: {"version": "1.5.0", "dependencies": {}, "note": "preserve"}
+        }
+    });
+    fixture.replace_project_manifest(&manifest).await;
+    let old = fixture.project_root.join("Packages").join(CHILD);
+    fs::create_dir(&old).expect("existing dependency");
+    fs::write(
+        old.join("package.json"),
+        serde_json::to_vec(&json!({
+            "name": CHILD, "version": "1.5.0"
+        }))
+        .expect("encode manifest"),
+    )
+    .expect("seed unlisted dependency");
+    let access = AccessContext::local_owner();
+    let plan = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("keep unlisted installed dependency");
+    assert_eq!(plan.change_set.mutations.len(), 1);
+    assert_eq!(plan.change_set.mutations[0].package_id, NEW);
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("apply-with-retained-dependency"),
+        )
+        .await
+        .expect("accept install");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let bytes =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("result manifest");
+    let result: Value = serde_json::from_slice(&bytes).expect("parse result manifest");
+    assert_eq!(result["locked"][CHILD], manifest["locked"][CHILD]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn resolve_repairs_missing_and_wrong_versions_without_rewriting_the_lock() {
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    let manifest = json!({
+        "dependencies": {NEW: {"version": "^2.0.0"}},
+        "locked": {
+            NEW: {"version": "2.0.0", "dependencies": {CHILD: "^1.0.0"}, "note": "preserve"},
+            CHILD: {"version": "1.0.0", "dependencies": {}}
+        }
+    });
+    fixture.replace_project_manifest(&manifest).await;
+    let wrong = fixture.project_root.join("Packages").join(CHILD);
+    fs::create_dir(&wrong).expect("wrong version fixture");
+    fs::write(
+        wrong.join("package.json"),
+        serde_json::to_vec(&json!({
+            "name": CHILD, "version": "2.0.0"
+        }))
+        .expect("encode manifest"),
+    )
+    .expect("seed wrong version");
+    let access = AccessContext::local_owner();
+    let mut request = fixture.request();
+    request.action = PlanAction::Resolve;
+    request.package_id = None;
+    request.version_range = None;
+    let plan = fixture
+        .packages
+        .plan(&access, request.clone())
+        .await
+        .expect("plan exact repairs");
+    assert_eq!(plan.change_set.mutations.len(), 2);
+    let child = plan
+        .change_set
+        .mutations
+        .iter()
+        .find(|mutation| mutation.package_id == CHILD)
+        .expect("wrong version repair");
+    assert_eq!(child.from_version.as_deref(), Some("2.0.0"));
+    assert_eq!(child.to_version.as_deref(), Some("1.0.0"));
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("apply-exact-repair"),
+        )
+        .await
+        .expect("accept repair");
+    let operation = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(
+        operation.state,
+        OperationState::Succeeded,
+        "{:?}",
+        operation.error_code
+    );
+    let bytes =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("result manifest");
+    let result: Value = serde_json::from_slice(&bytes).expect("parse result manifest");
+    assert_eq!(result, manifest);
+    for (id, version) in [(NEW, "2.0.0"), (CHILD, "1.0.0")] {
+        let bytes = fs::read(
+            fixture
+                .project_root
+                .join("Packages")
+                .join(id)
+                .join("package.json"),
+        )
+        .expect("restored package");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).expect("parse package")["version"],
+            version
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -217,7 +408,8 @@ async fn absent_legacy_obligations_allow_real_install_and_preserve_frozen_lock_i
         .plan(&access, fixture.request())
         .await
         .expect("metadata alone does not forbid installation");
-    assert_eq!(plan.change_set.format_version, 3);
+    assert_eq!(plan.change_set.format_version, 4);
+    assert!(plan.change_set.legacy_removals.is_empty());
     let dependency = plan
         .change_set
         .dependency_edges
@@ -293,46 +485,101 @@ async fn absent_legacy_obligations_allow_real_install_and_preserve_frozen_lock_i
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn declared_existing_paths_or_moved_guids_refuse_planning_without_deletion() {
-    for existing in [
-        ExistingLegacy::File,
-        ExistingLegacy::Folder,
-        ExistingLegacy::MovedGuid,
+async fn ordinary_apply_removes_reviewed_paths_moved_assets_and_legacy_packages() {
+    for (existing, expected) in [
+        (ExistingLegacy::File, &["Assets/Old.txt"][..]),
+        (
+            ExistingLegacy::Folder,
+            &["Assets/Legacy", "Assets/Legacy.meta"][..],
+        ),
+        (
+            ExistingLegacy::MovedGuid,
+            &["Assets/Moved.txt", "Assets/Moved.txt.meta"][..],
+        ),
+        (
+            ExistingLegacy::Package,
+            &["Packages/com.example.legacy"][..],
+        ),
+        (ExistingLegacy::MissingPackageDirectory, &[][..]),
     ] {
         let fixture = Fixture::new(true, existing).await;
         let before = fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
             .expect("original manifest");
-        let error = fixture
+        let access = AccessContext::local_owner();
+        let plan = fixture
             .packages
-            .plan(&AccessContext::local_owner(), fixture.request())
+            .plan(&access, fixture.request())
             .await
-            .expect_err("cleanup is required or cannot be ruled out");
-        assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+            .expect("review normal installation");
+        assert_eq!(
+            plan.change_set
+                .legacy_removals
+                .iter()
+                .map(|entry| entry.path.as_str())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        for path in expected {
+            assert!(fixture.project_root.join(path).exists());
+        }
         assert_eq!(
             fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
                 .expect("untouched manifest"),
             before
         );
-        match existing {
-            ExistingLegacy::File => assert!(fixture.project_root.join("Assets/Old.txt").is_file()),
-            ExistingLegacy::Folder => assert!(fixture.project_root.join("Assets/Legacy").is_dir()),
-            ExistingLegacy::MovedGuid => {
-                assert!(fixture.project_root.join("Assets/Moved.txt.meta").is_file())
-            }
-            ExistingLegacy::None => unreachable!(),
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("apply-reviewed-legacy"),
+            )
+            .await
+            .expect("apply reviewed legacy cleanup");
+        let operation = fixture.terminal(accepted.operation_id).await;
+        assert_eq!(
+            operation.state,
+            OperationState::Succeeded,
+            "{:?}",
+            operation.error_code
+        );
+        for path in expected {
+            assert!(!fixture.project_root.join(path).exists());
         }
+        let manifest: Value = serde_json::from_slice(
+            &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("read the committed manifest"),
+        )
+        .expect("parse the committed manifest");
+        assert!(manifest["dependencies"].get("com.example.legacy").is_none());
+        assert!(manifest["locked"].get("com.example.legacy").is_none());
+        assert_eq!(manifest["locked"][NEW]["version"], "2.0.0");
+        let operation_dir = fixture
+            .project_root
+            .join("Library/ALCOMD/transactions")
+            .join(accepted.operation_id.to_string());
+        assert!(
+            fs::read_dir(operation_dir)
+                .expect("read the transaction directory")
+                .all(|entry| !entry
+                    .expect("read the transaction attempt")
+                    .path()
+                    .join("legacy-backup")
+                    .exists())
+        );
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn indexed_legacy_evidence_remains_authoritative_when_the_archive_omits_it() {
     let fixture = Fixture::new(false, ExistingLegacy::File).await;
-    let error = fixture
+    let plan = fixture
         .packages
         .plan(&AccessContext::local_owner(), fixture.request())
         .await
-        .expect_err("archive omission cannot erase indexed cleanup obligations");
-    assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+        .expect("archive omission cannot erase indexed cleanup obligations");
+    assert_eq!(plan.change_set.legacy_removals[0].path, "Assets/Old.txt");
     assert_eq!(
         fs::read(fixture.project_root.join("Assets/Old.txt")).expect("legacy file retained"),
         b"legacy content"
@@ -356,7 +603,7 @@ async fn cleanup_of_a_package_selected_by_the_same_plan_is_not_proven_absent() {
     fixture.replace_indexed_legacy_packages(&[CHILD]).await;
     let error = fixture.packages.plan(&AccessContext::local_owner(), fixture.request()).await
         .expect_err("a dependency selected for installation cannot simultaneously be discharged as absent legacy content");
-    assert_eq!(error.code(), M4ErrorCode::PackageLegacyCleanupRequired);
+    assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
     assert_eq!(fs::read(path).expect("original manifest retained"), before);
     for package in [NEW, CHILD] {
         assert!(!fixture.project_root.join("Packages").join(package).exists());
@@ -389,10 +636,7 @@ async fn a_legacy_target_created_after_planning_fails_apply_before_changing_pack
         .expect("accepted before execution rechecks target evidence");
     let operation = fixture.terminal(accepted.operation_id).await;
     assert_eq!(operation.state, OperationState::Failed);
-    assert_eq!(
-        operation.error_code.as_deref(),
-        Some("package_legacy_cleanup_required")
-    );
+    assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
     assert_eq!(
         fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
             .expect("original VPM preserved"),
@@ -429,6 +673,42 @@ async fn a_legacy_target_created_after_planning_fails_apply_before_changing_pack
             .expect("newly observed legacy file retained"),
         b"legacy content"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn failed_package_publish_restores_quarantined_assets_without_touching_conflict() {
+    let fixture = Fixture::new(true, ExistingLegacy::MovedGuid).await;
+    let access = AccessContext::local_owner();
+    let plan = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("plan");
+    let conflict = fixture.project_root.join("Packages").join(NEW);
+    fs::create_dir(&conflict).expect("create a conflicting package directory");
+    fs::write(conflict.join("sentinel"), b"external directory").expect("seed conflict sentinel");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("publish-conflict"),
+        )
+        .await
+        .expect("accepted apply");
+    let operation = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(
+        fs::read(conflict.join("sentinel")).expect("read untouched conflict"),
+        b"external directory"
+    );
+    assert!(!fixture.project_root.join("Packages").join(CHILD).exists());
+    assert_eq!(
+        fs::read(fixture.project_root.join("Assets/Moved.txt")).expect("read restored asset"),
+        b"moved legacy content"
+    );
+    assert!(fixture.project_root.join("Assets/Moved.txt.meta").is_file());
 }
 
 fn add_legacy(manifest: &mut Value) {
@@ -490,8 +770,25 @@ fn seed_legacy(root: &Path, existing: ExistingLegacy) {
             fs::write(root.join("Assets/Old.txt"), b"legacy content").expect("owned legacy file")
         }
         ExistingLegacy::Folder => {
-            fs::create_dir(root.join("Assets/Legacy")).expect("owned legacy directory")
+            fs::create_dir(root.join("Assets/Legacy")).expect("owned legacy directory");
+            fs::write(root.join("Assets/Legacy/data.txt"), b"nested legacy data")
+                .expect("seed nested legacy asset");
+            fs::write(
+                root.join("Assets/Legacy.meta"),
+                format!("guid: {FOLDER_GUID}\n"),
+            )
+            .expect("seed the old folder metadata");
         }
+        ExistingLegacy::Package => {
+            let package = root.join("Packages/com.example.legacy");
+            fs::create_dir(&package).expect("seed the old package directory");
+            fs::write(
+                package.join("package.json"),
+                br#"{"name":"com.example.legacy","version":"1.0.0"}"#,
+            )
+            .expect("seed the old package identity");
+        }
+        ExistingLegacy::MissingPackageDirectory => {}
         ExistingLegacy::MovedGuid => {
             fs::write(root.join("Assets/Moved.txt"), b"moved legacy content").expect("moved file");
             fs::write(

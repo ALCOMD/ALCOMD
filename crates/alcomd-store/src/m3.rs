@@ -40,6 +40,7 @@ const PROJECT_UNREGISTER: &str = "projects.unregister";
 const REPOSITORY_REGISTER: &str = "repositories.register";
 const REPOSITORY_REFRESH: &str = "repositories.refresh";
 const REPOSITORY_UNREGISTER: &str = "repositories.unregister";
+const REPOSITORY_SET_CREDENTIALS: &str = "repositories.setCredentials";
 
 pub(super) fn repository_list_snapshot(
     connection: &mut Connection,
@@ -48,7 +49,7 @@ pub(super) fn repository_list_snapshot(
     let transaction = connection.transaction().map_err(sql_failure)?;
     let mut statement = transaction
         .prepare(
-            "SELECT repository_id, revision, source_kind, source_locator FROM repositories
+            "SELECT repository_id, revision, source_kind, source_locator, credential_reference FROM repositories
          WHERE owner_principal_id=?1 ORDER BY repository_id",
         )
         .map_err(sql_failure)?;
@@ -59,12 +60,13 @@ pub(super) fn repository_list_snapshot(
                 row.get::<_, i64>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
         })
         .map_err(sql_failure)?;
     let mut repositories = Vec::new();
     for row in rows {
-        let (repository_id, rev, kind, locator) = row.map_err(sql_failure)?;
+        let (repository_id, rev, kind, locator, credential_reference) = row.map_err(sql_failure)?;
         let source = match kind.as_str() {
             "local" => RepositorySource::Local { path: locator },
             "remote" => RepositorySource::Remote { url: locator },
@@ -74,6 +76,7 @@ pub(super) fn repository_list_snapshot(
             repository_id,
             revision: revision(rev)?.get(),
             source,
+            credential_reference,
         });
         // One overflow item lets the application reject instead of silently truncating.
         if repositories.len() > alcomd_application::REPOSITORY_LIST_MAX_ENTRIES {
@@ -734,6 +737,7 @@ fn resolver_metadata(
         dependencies_json: row.get(offset + 6)?,
         manifest_fingerprint: row.get(offset + 7)?,
         legacy_metadata_present: row.get::<_, i64>(offset + 8)? != 0,
+        download_headers_present: row.get(offset + 12)?,
     }))
 }
 
@@ -746,7 +750,7 @@ fn load_packages(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
          FROM repository_package_versions WHERE repository_id=?1
          ORDER BY package_id ASC, version_text ASC",
         )
@@ -777,6 +781,16 @@ fn load_repository(
     owner: &PrincipalId,
     id: RepositoryId,
 ) -> Result<RepositoryRecord, M3Error> {
+    let mut record = load_repository_summary(connection, owner, id)?;
+    record.observation.packages = load_packages(connection, id)?;
+    Ok(record)
+}
+
+fn load_repository_summary(
+    connection: &Connection,
+    owner: &PrincipalId,
+    id: RepositoryId,
+) -> Result<RepositoryRecord, M3Error> {
     type Row = (
         String,
         String,
@@ -790,13 +804,16 @@ fn load_repository(
         i64,
         i64,
         i64,
+        bool,
+        bool,
     );
     let row: Row = connection.query_row(
         "SELECT source_kind, source_locator, source_identity_key, declared_id, name, declared_url,
-                etag, last_modified, issues_json, revision, registered_at_ms, refreshed_at_ms
+                etag, last_modified, issues_json, revision, registered_at_ms, refreshed_at_ms,
+                resolver_indexed, credential_reference IS NOT NULL
          FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
         params![owner.as_str(), id.to_string()],
-        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?,row.get(11)?)),
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?,row.get(9)?,row.get(10)?,row.get(11)?,row.get(12)?,row.get(13)?)),
     ).optional().map_err(sql_failure)?.ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryNotRegistered))?;
     let source = match row.0.as_str() {
         "local" => RepositorySource::Local { path: row.1 },
@@ -812,7 +829,7 @@ fn load_repository(
             name: row.4,
             declared_url: row.5,
             issues: parse_json(&row.8)?,
-            packages: load_packages(connection, id)?,
+            packages: Vec::new(),
             validators: RepositoryValidators {
                 etag: row.6,
                 last_modified: row.7,
@@ -821,64 +838,64 @@ fn load_repository(
         },
         revision: revision(row.9)?,
         registered_at_ms: u64::try_from(row.10).map_err(|_| internal())?,
+        resolver_indexed: row.12,
+        credentials_configured: row.13,
     })
 }
 
-fn replace_packages(
+fn insert_packages(
     transaction: &Transaction<'_>,
     id: RepositoryId,
     packages: &[RepositoryPackageVersion],
-    resolver_ready: bool,
+    resolver_indexed: bool,
 ) -> Result<(), M3Error> {
-    transaction
-        .execute(
-            "DELETE FROM repository_package_versions WHERE repository_id=?1",
-            params![id.to_string()],
+    let mut insert = transaction
+        .prepare(
+            "INSERT INTO repository_package_versions (
+                repository_id, package_id, version_text, display_name, description, yanked,
+                unity_text, semantic_version, author_name, author_email, artifact_url,
+                zip_sha256, unity_release_text, dependencies_json, manifest_fingerprint,
+                legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                       coalesce(?14, '{}'), ?15, ?16, ?17, ?18, ?19, ?20)",
         )
         .map_err(sql_failure)?;
+    let id = id.to_string();
     for package in packages {
-        let resolver = if resolver_ready {
+        let resolver = if resolver_indexed {
             package.resolver.as_ref()
         } else {
             None
         };
-        transaction
-            .execute(
-                "INSERT INTO repository_package_versions (
-                repository_id, package_id, version_text, display_name, description, yanked,
-                unity_text, semantic_version, author_name, author_email, artifact_url,
-                zip_sha256, unity_release_text, dependencies_json, manifest_fingerprint,
-                legacy_metadata_present, resolver_ready, documentation_url, changelog_url
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                       coalesce(?14, '{}'), ?15, ?16, ?17, ?18, ?19)",
-                params![
-                    id.to_string(),
-                    package.package_id,
-                    package.version,
-                    package.display_name,
-                    package.description,
-                    i64::from(package.yanked),
-                    package.unity,
-                    resolver.map(|value| value.semantic_version.as_str()),
-                    resolver.map(|value| value.author_name.as_str()),
-                    resolver.map(|value| value.author_email.as_str()),
-                    resolver.map(|value| value.artifact_url.as_str()),
-                    resolver.map(|value| value.zip_sha256.as_str()),
-                    resolver.and_then(|value| value.unity_release.as_deref()),
-                    resolver.map(|value| value.dependencies_json.as_str()),
-                    resolver.map(|value| value.manifest_fingerprint.as_slice()),
-                    i64::from(resolver.is_some_and(|value| value.legacy_metadata_present)),
-                    i64::from(resolver.is_some()),
-                    package
-                        .links
-                        .as_ref()
-                        .and_then(|value| value.documentation.as_deref()),
-                    package
-                        .links
-                        .as_ref()
-                        .and_then(|value| value.changelog.as_deref()),
-                ],
-            )
+        insert
+            .execute(params![
+                id,
+                package.package_id,
+                package.version,
+                package.display_name,
+                package.description,
+                i64::from(package.yanked),
+                package.unity,
+                resolver.map(|value| value.semantic_version.as_str()),
+                resolver.map(|value| value.author_name.as_str()),
+                resolver.and_then(|value| value.author_email.as_deref()),
+                resolver.map(|value| value.artifact_url.as_str()),
+                resolver.and_then(|value| value.zip_sha256.as_deref()),
+                resolver.and_then(|value| value.unity_release.as_deref()),
+                resolver.map(|value| value.dependencies_json.as_str()),
+                resolver.map(|value| value.manifest_fingerprint.as_slice()),
+                i64::from(resolver.is_some_and(|value| value.legacy_metadata_present)),
+                i64::from(resolver.is_some()),
+                package
+                    .links
+                    .as_ref()
+                    .and_then(|value| value.documentation.as_deref()),
+                package
+                    .links
+                    .as_ref()
+                    .and_then(|value| value.changelog.as_deref()),
+                resolver.is_some_and(|value| value.download_headers_present),
+            ])
             .map_err(sql_failure)?;
     }
     Ok(())
@@ -888,7 +905,18 @@ struct RepositoryInsertOptions {
     registered_at_ms: u64,
     now_ms: u64,
     priority: u64,
-    resolver_ready: bool,
+    resolver_indexed: bool,
+}
+
+fn next_repository_priority(connection: &Connection, owner: &PrincipalId) -> Result<u64, M3Error> {
+    let priority = connection
+        .query_row(
+            "SELECT coalesce(max(priority), 0) + 1 FROM repositories WHERE owner_principal_id=?1",
+            [owner.as_str()],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(sql_failure)?;
+    u64::try_from(priority).map_err(|_| internal())
 }
 
 fn insert_repository(
@@ -905,8 +933,8 @@ fn insert_repository(
             "INSERT INTO repositories (
             repository_id, owner_principal_id, source_kind, source_locator, source_identity_key,
             declared_id, name, declared_url, etag, last_modified, issues_json, revision,
-            registered_at_ms, refreshed_at_ms, updated_at_ms, priority
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+            registered_at_ms, refreshed_at_ms, updated_at_ms, priority, resolver_indexed
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 id.to_string(),
                 owner.as_str(),
@@ -923,29 +951,85 @@ fn insert_repository(
                 integer(options.registered_at_ms)?,
                 integer(observation.refreshed_at_ms)?,
                 integer(options.now_ms)?,
-                integer(options.priority)?
+                integer(options.priority)?,
+                options.resolver_indexed,
             ],
         )
         .map_err(sql_failure)?;
-    replace_packages(
+    insert_packages(
         transaction,
         id,
         &observation.packages,
-        options.resolver_ready,
+        options.resolver_indexed,
     )
+}
+
+pub(super) fn ensure_builtin_repositories(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    defaults: Vec<(RepositoryId, RepositoryObservation)>,
+    now_ms: u64,
+) -> Result<Vec<RepositoryRecord>, M3Error> {
+    let transaction = begin(connection)?;
+    let mut records = Vec::with_capacity(defaults.len());
+    for (id, observation) in defaults {
+        let existing = transaction
+            .query_row(
+                "SELECT repository_id FROM repositories
+                 WHERE owner_principal_id=?1 AND source_identity_key=?2",
+                params![owner.as_str(), observation.source_identity_key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(sql_failure)?;
+        let id = if let Some(existing) = existing {
+            RepositoryId::parse(&existing).map_err(|_| internal())?
+        } else {
+            insert_repository(
+                &transaction,
+                owner,
+                id,
+                &observation,
+                Revision::INITIAL,
+                RepositoryInsertOptions {
+                    registered_at_ms: now_ms,
+                    now_ms,
+                    priority: next_repository_priority(&transaction, owner)?,
+                    resolver_indexed: false,
+                },
+            )?;
+            insert_event(
+                &transaction,
+                owner,
+                "repository",
+                &id.to_string(),
+                Revision::INITIAL,
+                "repository.registered",
+                now_ms,
+            )?;
+            id
+        };
+        records.push(load_repository_summary(&transaction, owner, id)?);
+    }
+    transaction.commit().map_err(sql_failure)?;
+    Ok(records)
 }
 
 pub(super) fn register_repository(
     connection: &mut Connection,
     owner: &PrincipalId,
     mut observation: RepositoryObservation,
+    credential: Option<&str>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-    for package in &mut observation.packages {
-        package.resolver = None;
-    }
-    let fingerprint = repository_fingerprint(&observation)?;
+    let fingerprint = if credential.is_some() {
+        json(
+            &serde_json::json!({"source": observation.source, "authenticated": true, "version": 2}),
+        )?
+    } else {
+        repository_fingerprint(&observation)?
+    };
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
         &transaction,
@@ -955,6 +1039,7 @@ pub(super) fn register_repository(
         &fingerprint,
     )? {
         response.replayed = true;
+        response.value.observation.packages.clear();
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
@@ -971,13 +1056,6 @@ pub(super) fn register_repository(
         return Err(M3Error::new(M3ErrorCode::RepositoryAlreadyRegistered));
     }
     let id = RepositoryId::new();
-    let priority = transaction
-        .query_row(
-            "SELECT coalesce(max(priority), 0) + 1 FROM repositories WHERE owner_principal_id=?1",
-            [owner.as_str()],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(sql_failure)?;
     insert_repository(
         &transaction,
         owner,
@@ -987,15 +1065,28 @@ pub(super) fn register_repository(
         RepositoryInsertOptions {
             registered_at_ms: now_ms,
             now_ms,
-            priority: u64::try_from(priority).map_err(|_| internal())?,
-            resolver_ready: false,
+            priority: next_repository_priority(&transaction, owner)?,
+            resolver_indexed: true,
         },
     )?;
+    if let Some(reference) = credential {
+        transaction
+            .execute(
+                "UPDATE repositories SET credential_reference=?1 WHERE repository_id=?2",
+                params![reference, id.to_string()],
+            )
+            .map_err(sql_failure)?;
+        finish_credential_cleanup(&transaction, reference)?;
+    }
+    // The write result is repository metadata. Package versions are read separately by page.
+    observation.packages.clear();
     let record = RepositoryRecord {
         repository_id: id,
         observation,
         revision: Revision::INITIAL,
         registered_at_ms: now_ms,
+        resolver_indexed: true,
+        credentials_configured: credential.is_some(),
     };
     insert_event(
         &transaction,
@@ -1042,6 +1133,130 @@ pub(super) fn get_repository(
     load_repository(connection, owner, id)
 }
 
+pub(super) fn credential_reference(
+    connection: &Connection,
+    owner: &PrincipalId,
+    id: RepositoryId,
+) -> Result<Option<String>, M3Error> {
+    connection.query_row(
+        "SELECT credential_reference FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
+        params![owner.as_str(), id.to_string()],
+        |row| row.get(0),
+    ).optional().map_err(sql_failure)?.ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryNotRegistered))
+}
+
+pub(super) fn queue_credential_cleanup(
+    connection: &Connection,
+    reference: &str,
+) -> Result<(), M3Error> {
+    connection
+        .execute(
+            "INSERT OR IGNORE INTO repository_credential_cleanup(credential_reference) VALUES(?1)",
+            [reference],
+        )
+        .map_err(sql_failure)?;
+    Ok(())
+}
+
+pub(super) fn finish_credential_cleanup(
+    connection: &Connection,
+    reference: &str,
+) -> Result<(), M3Error> {
+    connection
+        .execute(
+            "DELETE FROM repository_credential_cleanup WHERE credential_reference=?1",
+            [reference],
+        )
+        .map_err(sql_failure)?;
+    Ok(())
+}
+
+pub(super) fn pending_credential_cleanup(connection: &Connection) -> Result<Vec<String>, M3Error> {
+    let mut statement = connection.prepare(
+        "SELECT c.credential_reference FROM repository_credential_cleanup c
+         WHERE NOT EXISTS (SELECT 1 FROM repositories r WHERE r.credential_reference=c.credential_reference)
+         ORDER BY c.credential_reference LIMIT 4096",
+    ).map_err(sql_failure)?;
+    statement
+        .query_map([], |row| row.get(0))
+        .map_err(sql_failure)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_failure)
+}
+
+pub(super) fn set_credential_reference(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    id: RepositoryId,
+    expected: Revision,
+    reference: Option<&str>,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    let fingerprint = json(&serde_json::json!({
+        "repositoryId": id.to_string(), "expectedRevision": expected.get(),
+        "authenticated": reference.is_some(), "version": 1
+    }))?;
+    let transaction = begin(connection)?;
+    if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
+        &transaction,
+        owner,
+        REPOSITORY_SET_CREDENTIALS,
+        key,
+        &fingerprint,
+    )? {
+        response.replayed = true;
+        transaction.commit().map_err(sql_failure)?;
+        return Ok(response);
+    }
+    let mut current = load_repository_summary(&transaction, owner, id)?;
+    if current.revision != expected {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+    if !matches!(current.observation.source, RepositorySource::Remote { .. }) {
+        return Err(M3Error::new(M3ErrorCode::RepositorySourceInvalid));
+    }
+    let next = expected.checked_next().ok_or_else(internal)?;
+    if let Some(old) = credential_reference(&transaction, owner, id)? {
+        queue_credential_cleanup(&transaction, &old)?;
+    }
+    transaction.execute(
+        "UPDATE repositories SET credential_reference=?1, revision=?2, etag=NULL, last_modified=NULL
+         WHERE owner_principal_id=?3 AND repository_id=?4",
+        params![reference, integer(next.get())?, owner.as_str(), id.to_string()],
+    ).map_err(sql_failure)?;
+    if let Some(reference) = reference {
+        finish_credential_cleanup(&transaction, reference)?;
+    }
+    current.revision = next;
+    current.credentials_configured = reference.is_some();
+    current.observation.validators = RepositoryValidators::default();
+    insert_event(
+        &transaction,
+        owner,
+        "repository",
+        &id.to_string(),
+        next,
+        "repository.refreshed",
+        now_ms,
+    )?;
+    let response = SyncWrite {
+        value: current,
+        replayed: false,
+    };
+    save_response(
+        &transaction,
+        owner,
+        REPOSITORY_SET_CREDENTIALS,
+        key,
+        &fingerprint,
+        &response,
+        now_ms,
+    )?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(response)
+}
+
 pub(super) fn list_repositories(
     connection: &Connection,
     owner: &PrincipalId,
@@ -1069,7 +1284,7 @@ pub(super) fn list_repositories(
     let mut repositories = Vec::new();
     for row in rows {
         let id = RepositoryId::parse(&row.map_err(sql_failure)?).map_err(|_| internal())?;
-        repositories.push(load_repository(connection, owner, id)?);
+        repositories.push(load_repository_summary(connection, owner, id)?);
     }
     let has_more = repositories.len() > limit as usize;
     if has_more {
@@ -1096,13 +1311,13 @@ pub(super) fn list_repository_packages(
     cursor: Option<PackageCursor>,
     limit: u32,
 ) -> Result<PackagePage, M3Error> {
-    let _ = load_repository(connection, owner, id)?;
+    load_repository_summary(connection, owner, id)?;
     let mut statement = connection
         .prepare(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
          FROM repository_package_versions WHERE repository_id=?1 AND
          (?2 IS NULL OR package_id > ?2 OR (package_id = ?2 AND version_text > ?3))
          ORDER BY package_id ASC, version_text ASC LIMIT ?4",
@@ -1166,12 +1381,77 @@ fn repository_package_links(
     )
 }
 
+struct RepositoryArchivePin {
+    package_id: String,
+    version: String,
+    manifest_fingerprint: Vec<u8>,
+    artifact_url: String,
+    digest: Vec<u8>,
+}
+
+fn load_repository_archive_pins(
+    transaction: &Transaction<'_>,
+    id: RepositoryId,
+) -> Result<Vec<RepositoryArchivePin>, M3Error> {
+    let mut select = transaction
+        .prepare(
+            "SELECT package_id, version_text, manifest_fingerprint, artifact_url, local_zip_sha256
+             FROM repository_package_versions WHERE repository_id=?1 AND local_zip_sha256 IS NOT NULL",
+        )
+        .map_err(sql_failure)?;
+    select
+        .query_map([id.to_string()], |row| {
+            Ok(RepositoryArchivePin {
+                package_id: row.get(0)?,
+                version: row.get(1)?,
+                manifest_fingerprint: row.get(2)?,
+                artifact_url: row.get(3)?,
+                digest: row.get(4)?,
+            })
+        })
+        .map_err(sql_failure)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(sql_failure)
+}
+
+fn restore_repository_archive_pins(
+    transaction: &Transaction<'_>,
+    id: RepositoryId,
+    pins: Vec<RepositoryArchivePin>,
+) -> Result<(), M3Error> {
+    if pins.is_empty() {
+        return Ok(());
+    }
+    let mut update = transaction
+        .prepare(
+            "UPDATE repository_package_versions SET local_zip_sha256=?1
+             WHERE repository_id=?2 AND package_id=?3 AND version_text=?4
+             AND manifest_fingerprint=?5 AND artifact_url=?6
+             AND zip_sha256 IS NULL AND resolver_ready=1",
+        )
+        .map_err(sql_failure)?;
+    let id = id.to_string();
+    for pin in pins {
+        update
+            .execute(params![
+                pin.digest,
+                id,
+                pin.package_id,
+                pin.version,
+                pin.manifest_fingerprint,
+                pin.artifact_url
+            ])
+            .map_err(sql_failure)?;
+    }
+    Ok(())
+}
+
 pub(super) fn refresh_repository(
     connection: &mut Connection,
     owner: &PrincipalId,
     id: RepositoryId,
     expected: Revision,
-    observation: RepositoryObservation,
+    mut observation: RepositoryObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
@@ -1185,6 +1465,7 @@ pub(super) fn refresh_repository(
         &fingerprint,
     )? {
         response.replayed = true;
+        response.value.observation.packages.clear();
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
@@ -1197,7 +1478,8 @@ pub(super) fn refresh_repository(
     }
     let changed = semantic_repository(current.observation.clone())
         != semantic_repository(observation.clone());
-    let observed = current.observation.refreshed_at_ms != observation.refreshed_at_ms;
+    let observed = current.observation.refreshed_at_ms != observation.refreshed_at_ms
+        || !current.resolver_indexed;
     let next = if changed {
         current.revision.checked_next().ok_or_else(internal)?
     } else {
@@ -1210,6 +1492,8 @@ pub(super) fn refresh_repository(
             |row| row.get::<_, i64>(0),
         )
         .map_err(sql_failure)?;
+    let pins = load_repository_archive_pins(&transaction, id)?;
+    let credential = credential_reference(&transaction, owner, id)?;
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
@@ -1226,9 +1510,18 @@ pub(super) fn refresh_repository(
             registered_at_ms: current.registered_at_ms,
             now_ms,
             priority: u64::try_from(priority).map_err(|_| internal())?,
-            resolver_ready: true,
+            resolver_indexed: true,
         },
     )?;
+    restore_repository_archive_pins(&transaction, id, pins)?;
+    if let Some(reference) = credential.as_deref() {
+        transaction
+            .execute(
+                "UPDATE repositories SET credential_reference=?1 WHERE repository_id=?2",
+                params![reference, id.to_string()],
+            )
+            .map_err(sql_failure)?;
+    }
     if changed {
         insert_event(
             &transaction,
@@ -1250,11 +1543,14 @@ pub(super) fn refresh_repository(
             now_ms,
         )?;
     }
+    observation.packages.clear();
     let record = RepositoryRecord {
         repository_id: id,
         observation,
         revision: next,
         registered_at_ms: current.registered_at_ms,
+        resolver_indexed: true,
+        credentials_configured: credential.is_some(),
     };
     committed(
         &transaction,
@@ -1303,12 +1599,16 @@ pub(super) fn update_repository_validators(
         &fingerprint,
     )? {
         response.replayed = true;
+        response.value.observation.packages.clear();
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let mut current = load_repository(&transaction, owner, id)?;
+    let mut current = load_repository_summary(&transaction, owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+    if !current.resolver_indexed {
+        return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
     }
     let observed = current.observation.refreshed_at_ms != now_ms;
     current.observation.validators = validators.clone();
@@ -1375,11 +1675,14 @@ pub(super) fn unregister_repository(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
-    let current = load_repository(&transaction, owner, id)?;
+    let current = load_repository_summary(&transaction, owner, id)?;
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
     let next = current.revision.checked_next().ok_or_else(internal)?;
+    if let Some(reference) = credential_reference(&transaction, owner, id)? {
+        queue_credential_cleanup(&transaction, &reference)?;
+    }
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",

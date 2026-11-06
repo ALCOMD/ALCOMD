@@ -855,9 +855,20 @@ impl AlcomdClient {
         &mut self,
         source: alcomd_protocol::RepositorySource,
     ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+        self.repository_inspect_with_credentials(source, None).await
+    }
+
+    pub async fn repository_inspect_with_credentials(
+        &mut self,
+        source: alcomd_protocol::RepositorySource,
+        credentials: Option<alcomd_protocol::RepositoryCredentials>,
+    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_INSPECT,
-            alcomd_protocol::RepositoryInspectParams { source },
+            alcomd_protocol::RepositoryInspectParams {
+                source,
+                credentials,
+            },
         )
         .await
     }
@@ -965,14 +976,33 @@ impl AlcomdClient {
         source: alcomd_protocol::RepositorySource,
         idempotency_key: String,
     ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
+        self.repository_register_with_credentials(source, idempotency_key, None)
+            .await
+    }
+
+    pub async fn repository_register_with_credentials(
+        &mut self,
+        source: alcomd_protocol::RepositorySource,
+        idempotency_key: String,
+        credentials: Option<alcomd_protocol::RepositoryCredentials>,
+    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_REGISTER,
             alcomd_protocol::RepositoryRegisterParams {
                 source,
                 idempotency_key,
+                credentials,
             },
         )
         .await
+    }
+
+    pub async fn repository_set_credentials(
+        &mut self,
+        params: alcomd_protocol::RepositorySetCredentialsParams,
+    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_REPOSITORIES_SET_CREDENTIALS, params)
+            .await
     }
 
     pub async fn repository_refresh(

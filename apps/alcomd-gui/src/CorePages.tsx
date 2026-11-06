@@ -6,8 +6,8 @@ import { OperationItems } from "./OperationItems";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
-import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
-import { actionableVersion, candidateSource, candidateSourceKey, choiceText, intentForSummary, queryCandidates, readCandidateSummary, reasonText, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummarySet } from "./package-candidates";
+import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
+import { actionableVersion, candidateSource, candidateSourceKey, choiceText, finishCandidateSummary, intentForSummary, queryCandidates, readCandidateSummaryPage, reasonText, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
     arrowBackIcon,
@@ -75,6 +75,7 @@ import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { RepositoryToolbar } from "./RepositoryListDialog";
+import { isBuiltinRepository, repositoryDisplayName } from "./repository-display";
 import { useProjectUnityLaunch, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { ProjectTemplatesWorkspace } from "./ProjectTemplatesWorkspace";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
@@ -983,12 +984,9 @@ export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
     return <ProjectPackageWorkspace {...props} />;
 }
 
-interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
+type PackagePresentation = Pick<RepositoryPackageVersion, "packageId" | "version" | "displayName" | "links">;
+interface WorkspaceCatalogVersion extends PackagePresentation {
     repositoryId?: string;
-    source: string;
-    sourceKey: string;
-    sourceKind: RepositorySnapshot["source"]["kind"] | "user-package";
-    sourceSelector: PackageSourceSelector;
 }
 
 interface PackageWorkspaceRow {
@@ -1154,7 +1152,8 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
 interface PackageWorkspaceValue {
     sourceSelectionKey: string;
     sourceRegistry: Record<string, { label: string; kind: "local" | "remote" | "user-package" }>;
-    candidates?: CandidateSummarySet;
+    candidates?: CandidateSummaryPage;
+    candidateRequest?: ProjectCandidateRequest;
     candidateError?: string;
     catalog: WorkspaceCatalogVersion[];
     installations: UnityInstallation[];
@@ -1215,7 +1214,7 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
                     checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
                     disabled={busy || snapshot.settings.packages.hiddenRepositoryIds.length >= 256 && !snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
                     key={repository.repositoryId}
-                    label={repository.name ?? repository.declaredId ?? sourceText(t, locale, repository)}
+                    label={repositoryDisplayName(t, repository, sourceText(t, locale, repository))}
                     onChange={(checked) => {
                         const hidden = new Set(snapshot.settings.packages.hiddenRepositoryIds);
                         if (checked) hidden.delete(repository.repositoryId as string);
@@ -1257,64 +1256,120 @@ async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnap
 async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, client: GuiRpcClient, projectId: string, includeUserPackages: boolean, canQuery: boolean, sourceSelections: Record<string, string>): Promise<PackageWorkspaceValue> {
     const project = (await client.projectGet(projectId)).project;
     if (project.revision === undefined) throw { code: "project_not_registered" };
-    const [repositories, settings, userPackages, installations, launchOptions] = await Promise.all([
+    const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
+    const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } };
+    const readFirstPage = async () => {
+        if (!canQuery) return { error: "capability_required" };
+        try {
+            return { page: await readCandidateSummaryPage(client, candidateRequest) };
+        } catch (caught) {
+            return { error: normalizeRequestError(caught).code };
+        }
+    };
+    const [repositories, settings, userPackages, installations, launchOptions, firstPage] = await Promise.all([
         listAllRepositories(client),
         client.settingsGet(),
         includeUserPackages ? listAllUserPackages(client) : Promise.resolve([]),
         loadAllUnityInstallations(client),
-        client.unityLaunchOptions(projectId, project.revision)
+        client.unityLaunchOptions(projectId, project.revision),
+        readFirstPage()
     ]);
-    let candidates: CandidateSummarySet | undefined;
-    let candidateError: string | undefined = canQuery ? undefined : "capability_required";
-    try {
-        if (canQuery) {
-            const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
-            if (sources.length > 256) throw { code: "package_candidate_limit_exceeded" };
-            candidates = await readCandidateSummary(client, { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } });
-            if (candidates.snapshot.configRevision !== settings.revision) throw { code: "package_candidate_evidence_stale" };
-            const lockedIds = project.lockedDependencies.map((item) => item.packageId);
-            if (lockedIds.length > 100000) throw { code: "package_candidate_limit_exceeded" };
-            const lockedRows: PackageCandidateSummary[] = [];
-            for (let offset = 0; offset < lockedIds.length; offset += 256) {
-                const packageIds = lockedIds.slice(offset, offset + 256);
-                const batch = await readCandidateSummary(client, { projectId, expectedRevision: project.revision, expectedSnapshot: candidates.snapshot.fingerprint, view: { kind: "summary", packageIds, sources: sources.filter((source) => packageIds.includes(source.packageId)) } });
-                if (batch.snapshot.fingerprint !== candidates.snapshot.fingerprint || batch.items.length !== packageIds.length || packageIds.some((id) => !batch.items.some((item) => item.packageId === id))) throw { code: "package_candidate_evidence_stale" };
-                candidates.catalogComplete &&= batch.catalogComplete;
-                lockedRows.push(...batch.items);
-            }
-            const lockedById = new Map(lockedRows.map((row) => [row.packageId, row]));
-            candidates.items = candidates.items.map((row) => lockedById.get(row.packageId) ?? row);
-        }
-    } catch (caught) { candidates = undefined; candidateError = safeError(t, locale, caught).code; }
-    const catalog: WorkspaceCatalogVersion[] = [];
-    // One existing bounded page per source supplies optional names/links only.
-    // Never drain catalog versions or use their order/classification as evidence.
     if (repositories.length > 4096) throw { code: "package_candidate_limit_exceeded" };
-    for (const repository of repositories) {
-        if (!repository.repositoryId || settings.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)) continue;
-        let page: Awaited<ReturnType<GuiRpcClient["repositoryPackages"]>>;
-        try { page = await client.repositoryPackages(repository.repositoryId); }
-        catch { continue; }
-        for (const item of page.packages) catalog.push({ ...item, repositoryId: repository.repositoryId, source: repository.name ?? repository.declaredId ?? sourceText(t, locale, repository), sourceKey: `repository:${repository.repositoryId}`, sourceKind: repository.source.kind, sourceSelector: { kind: "repository", repositoryId: repository.repositoryId } });
+    let { page: candidates, error: candidateError } = firstPage;
+    if (candidates !== undefined && candidates.snapshot.configRevision !== settings.revision) {
+        candidates = undefined;
+        candidateError = "package_candidate_evidence_stale";
     }
-    if (!settings.settings.packages.hideLocalUserPackages) for (const item of userPackages) catalog.push({ packageId: item.packageId, version: item.version, ...(item.displayName ? { displayName: item.displayName } : {}), yanked: false, source: item.displayName ?? t("Local / User Package"), sourceKey: `user-package:${item.userPackageId}`, sourceKind: "user-package", sourceSelector: { kind: "user_package", userPackageId: item.userPackageId } });
-    for (const row of candidates?.items ?? []) {
-        const choices = [row.latest, row.latestStable, row.projectLatest, row.projectLatestStable];
-        for (const choice of choices) {
-            if (choice.kind !== "candidate") continue;
-            const value = choice.candidate;
-            const sourceKey = candidateSourceKey(value.source);
-            if (catalog.some((entry) => entry.packageId === row.packageId && entry.sourceKey === sourceKey && entry.version === value.version)) continue;
-            const source = value.source;
-            const repository = source.kind === "repository" ? repositories.find((entry) => entry.repositoryId === source.repository_id) : undefined;
-            const local = source.kind === "user_package" ? userPackages.find((entry) => entry.userPackageId === source.user_package_id) : undefined;
-            catalog.push({ packageId: row.packageId, version: value.version, yanked: false, prerelease: value.classification === "prerelease", ...(local?.displayName ? { displayName: local.displayName } : {}), ...(repository?.repositoryId ? { repositoryId: repository.repositoryId } : {}), source: repository?.name ?? repository?.declaredId ?? local?.displayName ?? sourceKey, sourceKey, sourceKind: repository?.source.kind ?? "user-package", sourceSelector: candidateSource(value.source) });
-        }
-    }
+    const catalog: WorkspaceCatalogVersion[] = settings.settings.packages.hideLocalUserPackages ? [] : userPackages.map(({ packageId, version, displayName }) => ({
+        packageId, version, ...(displayName === undefined ? {} : { displayName })
+    }));
     const sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {};
-    for (const repository of repositories) if (repository.repositoryId) sourceRegistry[`repository:${repository.repositoryId}`] = { label: repository.name ?? repository.declaredId ?? sourceText(t, locale, repository), kind: repository.source.kind };
-    for (const local of userPackages) sourceRegistry[`user-package:${local.userPackageId}`] = { label: local.displayName ?? t("Local / User Package"), kind: "user-package" };
-    return { project, catalog, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates } : {}), ...(candidateError ? { candidateError } : {}) };
+    for (const repository of repositories) if (repository.repositoryId) sourceRegistry["repository:" + repository.repositoryId] = { label: repositoryDisplayName(t, repository, sourceText(t, locale, repository)), kind: repository.source.kind };
+    for (const local of userPackages) sourceRegistry["user-package:" + local.userPackageId] = { label: local.displayName ?? t("Local / User Package"), kind: "user-package" };
+    return { project, catalog, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
+}
+
+const packagePresentationCache = new WeakMap<GuiRpcClient, Map<string, Promise<WorkspaceCatalogVersion[]>>>();
+function repositoryPackagePresentation(client: GuiRpcClient, repositoryId: string, revision: number | undefined, refreshedAtMs: number): Promise<WorkspaceCatalogVersion[]> {
+    let cache = packagePresentationCache.get(client);
+    if (!cache) {
+        cache = new Map();
+        packagePresentationCache.set(client, cache);
+    }
+    const key = repositoryId + ":" + revision + ":" + refreshedAtMs;
+    const cached = revision === undefined ? undefined : cache.get(key);
+    if (cached) {
+        cache.delete(key);
+        cache.set(key, cached);
+        return cached;
+    }
+    const read = client.repositoryPackages(repositoryId).then(({ packages }) => packages.map(({ packageId, version, displayName, links }) => ({
+        repositoryId, packageId, version, ...(displayName === undefined ? {} : { displayName }), ...(links === undefined ? {} : { links })
+    })));
+    if (revision !== undefined) {
+        const entries = cache;
+        entries.set(key, read);
+        if (entries.size > 16) {
+            const oldest = entries.keys().next().value;
+            if (oldest !== undefined) entries.delete(oldest);
+        }
+        void read.catch(() => { if (entries.get(key) === read) entries.delete(key); });
+    }
+    return read;
+}
+
+function PackageWorkspaceData({ client, value, children }: {
+    client: GuiRpcClient;
+    value: PackageWorkspaceValue;
+    children(data: { candidates: CandidateSummarySet | undefined; candidateError: string | undefined; catalog: WorkspaceCatalogVersion[]; candidatesPending: boolean; presentationPending: boolean }): ReactNode;
+}) {
+    const [complete, setComplete] = useState<{ value: PackageWorkspaceValue; candidates?: CandidateSummarySet; error?: string }>();
+    const [presentation, setPresentation] = useState<{ value: PackageWorkspaceValue; rows: WorkspaceCatalogVersion[] }>();
+    const needsPages = value.candidates !== undefined && value.candidates.nextCursor !== null;
+    const hasPresentation = value.repositories.some(({ repositoryId }) => repositoryId !== undefined && !value.settings.settings.packages.hiddenRepositoryIds.includes(repositoryId));
+    useEffect(() => {
+        const { candidates: first, candidateRequest } = value;
+        if (!first || !candidateRequest || first.nextCursor === null) return;
+        let active = true;
+        void finishCandidateSummary(client, candidateRequest, first, () => active).then((candidates) => {
+            if (!active || candidates === undefined) return;
+            setComplete({ value, candidates });
+        }).catch((caught: unknown) => {
+            if (active) setComplete({ value, error: normalizeRequestError(caught).code });
+        });
+        return () => { active = false; };
+    }, [client, value]);
+    useEffect(() => {
+        const hidden = new Set(value.settings.settings.packages.hiddenRepositoryIds);
+        const repositories = value.repositories.filter(({ repositoryId }) => repositoryId !== undefined && !hidden.has(repositoryId));
+        if (!repositories.length) return;
+        let active = true;
+        // Presentation is optional and never used as solver evidence. One outstanding
+        // request lets candidate paging and user commands share the IPC connection.
+        void (async () => {
+            const rows: WorkspaceCatalogVersion[] = [];
+            for (const { repositoryId, revision, refreshedAtMs } of repositories) {
+                if (!active) return;
+                if (repositoryId === undefined) continue;
+                try {
+                    rows.push(...await repositoryPackagePresentation(client, repositoryId, revision, refreshedAtMs));
+                } catch {
+                    // Display package IDs if a repository cannot supply optional metadata.
+                }
+            }
+            if (active) setPresentation({ value, rows });
+        })();
+        return () => { active = false; };
+    }, [client, value]);
+    const resolved = complete?.value === value ? complete : undefined;
+    const display = presentation?.value === value ? presentation.rows : undefined;
+    return <>{children({
+        candidates: resolved === undefined ? value.candidates : resolved.candidates,
+        candidateError: resolved?.error ?? value.candidateError,
+        catalog: display === undefined ? value.catalog : [...display, ...value.catalog],
+        candidatesPending: needsPages && resolved === undefined,
+        presentationPending: hasPresentation && display === undefined
+    })}</>;
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
@@ -1379,10 +1434,11 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         }
     };
     return (
-        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
+        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} value={value}>{({ candidates, candidateError, catalog, candidatesPending, presentationPending }) => {
+            const { project, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
             const workspaceRows = packageWorkspaceRows(project, catalog, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
-            const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
+            const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
             const evidenceFailure = candidateError ? t(requestErrorMessage(candidateError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
             const repositoryRefreshFailure = repositoryRefreshError === undefined ? undefined : t("Refresh failed: ") + t(requestErrorMessage(repositoryRefreshError.code));
@@ -1401,7 +1457,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const canSelected = catalogReady && completeSelection && selectedLatest.length === selectedRows.length;
             const canSelectedStable = catalogReady && completeSelection && selectedStable.length === selectedRows.length;
             const stableSelectionDiffers = JSON.stringify(selectedLatest) !== JSON.stringify(selectedStable);
-            const lockedRows = workspaceRows.filter((row) => project.lockedDependencies.some((locked) => locked.packageId === row.packageId));
+            const lockedRows = workspaceRows.filter((row) => row.installedVersion !== undefined);
             const allUpdate = (stable: boolean) => {
                 const intents = lockedRows.flatMap((row) => row.evidence ? [intentForSummary(row.evidence, stable)].filter((intent) => intent?.kind === "upgrade") : []);
                 const blocked = lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, stable));
@@ -1475,8 +1531,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}
-                        <div className="package-workspace-list-region">
-                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
+                        <div aria-busy={candidatesPending || presentationPending} className="package-workspace-list-region">
+                            {rows.length === 0 ? candidatesPending || presentationPending ? <LoadingState title={t("Loading")} /> : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
                                  <DesktopList
                                      className="package-workspace-list"
                                      columns={[
@@ -1509,7 +1565,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} returnFocusReady={catalogReady} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
                 </section>
             );
-        }}</ResourcePage>
+        }}</PackageWorkspaceData>}</ResourcePage>
     );
 }
 
@@ -1522,11 +1578,12 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
     }
     const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
     const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
-    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys(), ...summaries.map((item) => item.packageId)]);
+    const evidenceById = new Map(summaries.map((item) => [item.packageId, item]));
+    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys(), ...evidenceById.keys()]);
     return [...packageIds].sort((left, right) => left.localeCompare(right)).map((packageId) => {
         const versions = catalogByPackage.get(packageId) ?? [];
         const installedVersion = installed.get(packageId);
-        const evidence = summaries.find((item) => item.packageId === packageId);
+        const evidence = evidenceById.get(packageId);
         const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key]?.label ?? key, selector: candidateSource(provider.source) }; });
         const sources = sourceOptions.map((source) => source.label);
         const sourceKinds = [...new Set((evidence?.providers ?? []).flatMap((provider) => { const key = candidateSourceKey(provider.source); const kind = sourceRegistry[key]?.kind; return kind ? [kind] : provider.source.kind === "user_package" ? ["user-package" as const] : []; }))];
@@ -1558,15 +1615,18 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
 export function RepositoriesPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => listAllRepositories(client), [client]);
-    const [selected, setSelected] = useState<RepositorySnapshot>();
+    const [selectedId, setSelectedId] = useState<string>();
     return <UtilityWorkspace changes={["repositories"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
-        {(repositories, refresh) => <>
-            {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList columns={[{ key: "repository", header: t("Repository"), width: "34%" }, { key: "source", header: t("Source") }, { key: "actions", header: t("Actions"), width: 280 }]} label={t("Repositories")} minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(t, locale, repository), cells: [<strong>{repository.name ?? repository.declaredId ?? t("Repository")}</strong>, <span title={sourceText(t, locale, repository)}>{sourceText(t, locale, repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelected(repository)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
-            {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? t("Repository packages")} onClose={() => setSelected(undefined)}>
-                <RepositoryPackageList client={client} repositoryId={selected.repositoryId} />
-                <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
-            </Dialog>}
-        </>}
+        {(repositories, refresh) => {
+            const selected = selectedId === undefined ? undefined : repositories.find((repository) => repository.repositoryId === selectedId);
+            return <>
+                {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList columns={[{ key: "repository", header: t("Repository"), width: "34%" }, { key: "source", header: t("Source") }, { key: "actions", header: t("Actions"), width: 280 }]} label={t("Repositories")} minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(t, locale, repository), cells: [<strong>{repositoryDisplayName(t, repository, t("Repository"))}</strong>, <span title={sourceText(t, locale, repository)}>{sourceText(t, locale, repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelectedId(repository.repositoryId)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
+                {selected === undefined || selectedId === undefined ? null : <Dialog wide open title={repositoryDisplayName(t, selected, t("Repository packages"))} onClose={() => setSelectedId(undefined)}>
+                    {isBuiltinRepository(selected) && selected.refreshedAtMs === 0 ? <p>{t("Pending first sync")}</p> : <RepositoryPackageList client={client} repositoryId={selectedId} />}
+                    <div className="dialog-actions"><Button onClick={() => setSelectedId(undefined)} type="button" variant="text">{t("Close")}</Button></div>
+                </Dialog>}
+            </>;
+        }}
     </UtilityWorkspace>;
 }
 
@@ -1722,7 +1782,17 @@ function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; u
 export function RepositoryDetailPage({ client, navigate, repositoryId }: PageProps & { repositoryId: string }) {
     const { t, locale } = useTranslation();
     const load = useCallback(async () => Promise.all([client.repositoryGet(repositoryId), client.repositoryPackages(repositoryId)]), [client, repositoryId]);
-    return <UtilityWorkspace changes={["repositories"]} title={t("Repository")} back={<BackTo label={t("Repositories")} navigate={navigate} path="/repositories" />} load={load}>{([detail, catalog], refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={detail.repository.name ?? t("Unnamed")} /><Detail label={t("Source")} value={sourceText(t, locale, detail.repository)} /><Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} /><Detail label={t("Issues")} value={String(detail.repository.issues.length)} /></dl><h2>{t("Packages")}</h2><PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>{(items) => <DataTable headers={[t("Package"), t("Version"), t("Status")]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? t("Yanked") : t("Available")])} />}</PagedItems><ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure></>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["repositories"]} title={t("Repository")} back={<BackTo label={t("Repositories")} navigate={navigate} path="/repositories" />} load={load}>{([detail, catalog], refresh) => <>
+        <dl className="detail-grid">
+            <Detail label={t("Name")} value={repositoryDisplayName(t, detail.repository, t("Unnamed"))} />
+            <Detail label={t("Source")} value={sourceText(t, locale, detail.repository)} />
+            <Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} />
+            <Detail label={t("Issues")} value={String(detail.repository.issues.length)} />
+        </dl>
+        <h2>{t("Packages")}</h2>
+        <PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>{(items) => <DataTable headers={[t("Package"), t("Version"), t("Status")]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? t("Yanked") : t("Available")])} />}</PagedItems>
+        <ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure>
+    </>}</UtilityWorkspace>;
 }
 
 export function TemplatesPage({ client, navigate }: PageProps) {

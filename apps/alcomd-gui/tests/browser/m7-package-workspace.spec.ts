@@ -3,6 +3,18 @@ import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
+test("Package confirmation lists legacy paths and Cancel does not apply", async ({ page }) => {
+    await openHarness(page, "ready&legacy-removals");
+    await page.getByRole("table", { name: "Packages", exact: true }).getByRole("button", { name: "Install", exact: true }).click();
+    const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(dialog.getByText("The following legacy files and folders will be removed.")).toBeVisible();
+    await expect(dialog.getByText("Assets/OldTools", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("Assets/OldTools.meta", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toHaveCount(0);
+    expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["install"]);
+});
+
 test("Package toolbar uses the shared search preset and keeps maintenance in overflow", async ({ page }) => {
     await openHarness(page, "ready");
     const toolbar = page.locator(".package-workspace-toolbar");

@@ -124,6 +124,8 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),
+            legacy_removals: Vec::new(),
+            legacy_packages: Vec::new(),
             vpm_manifest_sha256: [0; 32],
         },
         source_set: Vec::new(),

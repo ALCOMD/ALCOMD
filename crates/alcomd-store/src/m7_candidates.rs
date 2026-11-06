@@ -1,7 +1,8 @@
 use alcomd_application::{
-    CandidateCatalogEntry, CandidateQueryError as Error, CandidateStoreSnapshot, M3ErrorCode,
-    MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId,
-    ProjectAuthorityFingerprint, ProjectId, UserPackageId,
+    CandidateCatalogEntry, CandidateQueryError as Error, CandidateStoreAuthority,
+    CandidateStoreSnapshot, M3ErrorCode, MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES,
+    PackageSourceSelector, PrincipalId, ProjectAuthorityFingerprint, ProjectId, ProjectRecord,
+    UserPackageId,
 };
 use rusqlite::{Connection, params};
 
@@ -13,41 +14,17 @@ pub(super) fn snapshot(
 ) -> Result<CandidateStoreSnapshot, Error> {
     // DEFERRED read transaction gives every registry read one SQLite snapshot. No writes.
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
-    let project =
-        crate::m3::get_project(&transaction, owner, project_id).map_err(|e| match e.code() {
-            M3ErrorCode::ProjectNotRegistered => Error::ProjectNotRegistered,
-            M3ErrorCode::ProjectManifestInvalid => Error::ProjectManifestInvalid,
-            _ => Error::Unavailable,
-        })?;
-    let mut fingerprint_records = vec![
-        "project-candidates-snapshot-v1".to_owned(),
-        serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
-            .map_err(|_| Error::Unavailable)?,
-    ];
-    let mut statement = transaction.prepare(
-        "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key)) FROM repositories WHERE owner_principal_id=?1
-         UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1
-         ORDER BY 1 LIMIT 4097"
-    ).map_err(|_| Error::Unavailable)?;
-    let inventory = statement
-        .query_map([owner.as_str()], |row| row.get::<_, String>(0))
-        .map_err(|_| Error::Unavailable)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| Error::Unavailable)?;
-    if inventory.len() > MAX_CANDIDATE_SOURCES {
-        return Err(Error::LimitExceeded);
-    }
-    fingerprint_records.extend(inventory);
-    let incomplete: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id WHERE r.owner_principal_id=?1 AND p.resolver_ready=0)", [owner.as_str()], |row| row.get(0)).map_err(|_| Error::Unavailable)?;
-    fingerprint_records.push(incomplete.to_string());
+    let (project, authority) = read_authority(&transaction, owner, project_id)?;
     let ids_json = ids
         .map(|v| serde_json::to_string(&v))
         .transpose()
         .map_err(|_| Error::Unavailable)?;
     let mut statement = transaction.prepare(
-        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,p.resolver_ready,p.legacy_metadata_present,p.unity_release_text
+        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,
+                (r.resolver_indexed AND p.resolver_ready),p.legacy_metadata_present,p.unity_release_text
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
-         WHERE r.owner_principal_id=?1 AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
+         WHERE r.owner_principal_id=?1 AND (r.resolver_indexed=0 OR p.resolver_ready=1)
+         AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
          ORDER BY r.repository_id,p.package_id,p.version_text LIMIT 100001"
     ).map_err(|_| Error::Unavailable)?;
     let mut entries = statement
@@ -120,9 +97,61 @@ pub(super) fn snapshot(
     Ok(CandidateStoreSnapshot {
         project,
         entries,
+        fingerprint_records: authority.fingerprint_records,
+        catalog_complete: authority.catalog_complete,
+    })
+}
+
+/// Revalidate a cached summary without loading any package version rows.
+pub(super) fn authority(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    project_id: ProjectId,
+) -> Result<CandidateStoreAuthority, Error> {
+    let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
+    let (_, authority) = read_authority(&transaction, owner, project_id)?;
+    Ok(authority)
+}
+
+fn read_authority(
+    transaction: &Connection,
+    owner: &PrincipalId,
+    project_id: ProjectId,
+) -> Result<(ProjectRecord, CandidateStoreAuthority), Error> {
+    let project =
+        crate::m3::get_project(transaction, owner, project_id).map_err(|e| match e.code() {
+            M3ErrorCode::ProjectNotRegistered => Error::ProjectNotRegistered,
+            M3ErrorCode::ProjectManifestInvalid => Error::ProjectManifestInvalid,
+            _ => Error::Unavailable,
+        })?;
+    let mut fingerprint_records = vec![
+        "project-candidates-snapshot-v1".to_owned(),
+        serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
+            .map_err(|_| Error::Unavailable)?,
+    ];
+    let mut statement = transaction.prepare(
+        "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key),resolver_indexed) FROM repositories WHERE owner_principal_id=?1
+         UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1
+         ORDER BY 1 LIMIT 4097"
+    ).map_err(|_| Error::Unavailable)?;
+    let inventory = statement
+        .query_map([owner.as_str()], |row| row.get::<_, String>(0))
+        .map_err(|_| Error::Unavailable)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| Error::Unavailable)?;
+    if inventory.len() > MAX_CANDIDATE_SOURCES {
+        return Err(Error::LimitExceeded);
+    }
+    fingerprint_records.extend(inventory);
+    let incomplete = crate::m4::repository_catalog_needs_refresh(transaction, owner)
+        .map_err(|_| Error::Unavailable)?;
+    fingerprint_records.push(incomplete.to_string());
+    let authority = CandidateStoreAuthority {
+        project_revision: project.revision,
         fingerprint_records,
         catalog_complete: !incomplete,
-    })
+    };
+    Ok((project, authority))
 }
 
 #[cfg(test)]
@@ -400,6 +429,11 @@ mod tests {
         assert!(empty.entries.is_empty());
         assert!(!empty.catalog_complete);
         assert_eq!(all.fingerprint_records, empty.fingerprint_records);
+        let current = authority(&mut f.connection, &PrincipalId::local_owner(), f.project)
+            .expect("authority-only read");
+        assert_eq!(current.project_revision, all.project.revision);
+        assert_eq!(current.catalog_complete, all.catalog_complete);
+        assert_eq!(current.fingerprint_records, all.fingerprint_records);
     }
     #[test]
     fn real_source_and_record_work_caps_fail_without_partial_results() {

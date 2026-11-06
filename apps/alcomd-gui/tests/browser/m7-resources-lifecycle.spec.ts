@@ -140,6 +140,39 @@ for (const kind of ["remote", "local"] as const) {
     });
 }
 
+test("repository authentication is write-only through registration, replacement and clearing", async ({ page }) => {
+    const token = "fixture-credential-value";
+    await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1");
+    await page.getByRole("button", { name: "Add repository", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    await dialog.getByRole("textbox", { name: "Repository URL", exact: true }).fill("https://repository.test/index.json");
+    await dialog.getByRole("button", { name: "Add request header", exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Header name", exact: true }).fill("Authorization");
+    await dialog.locator("input[type=password]").fill(token);
+    await dialog.getByRole("button", { name: "Review repository", exact: true }).click();
+    await expect(dialog.getByText("Uses authentication", { exact: true })).toBeVisible();
+    await expect(dialog).not.toContainText(token);
+    await dialog.getByRole("button", { name: "Add repository", exact: true }).click();
+    const row = repositoryRow(page, "remote");
+    await row.getByRole("button", { name: "Authentication", exact: true }).click();
+    await expect(dialog.getByText("Uses authentication", { exact: true })).toBeVisible();
+    await expect(dialog.locator("input[type=password]")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Add request header", exact: true }).click();
+    await dialog.getByRole("textbox", { name: "Header name", exact: true }).fill("Authorization");
+    await dialog.locator("input[type=password]").fill(`${token}-new`);
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await row.getByRole("button", { name: "Authentication", exact: true }).click();
+    await dialog.getByRole("button", { name: "Clear authentication", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await row.getByRole("button", { name: "Authentication", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "Clear authentication", exact: true })).toHaveCount(0);
+    expect(await requests(page, "repositories.inspect")).toEqual([expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured: true }) })]);
+    expect(await requests(page, "repositories.register")).toEqual([expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured: true }) })]);
+    expect(await requests(page, "repositories.setCredentials")).toEqual([true, false].map((credentialsConfigured) => expect.objectContaining({ params: expect.objectContaining({ credentialsConfigured }) })));
+    expect(await page.evaluate(() => JSON.stringify(window.resourceRequests))).not.toContain(token);
+});
+
 test("repository refresh failure retains the last catalog until a successful explicit refresh", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1&resource-refresh-error=1");
     await registerRepository(page, "remote");

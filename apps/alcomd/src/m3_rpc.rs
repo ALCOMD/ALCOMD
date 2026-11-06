@@ -183,11 +183,13 @@ pub(super) async fn dispatch(
         rpc::METHOD_REPOSITORIES_INSPECT => {
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_READ_V1);
             let params: rpc::RepositoryInspectParams = parse!(request);
+            let source = repository_source(params.source);
             match application
                 .inspect_repository(
                     access,
                     &state.connection_id,
-                    repository_source(params.source),
+                    source,
+                    params.credentials.map(repository_credentials),
                 )
                 .await
             {
@@ -278,12 +280,14 @@ pub(super) async fn dispatch(
             require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
             let params: rpc::RepositoryRegisterParams = parse!(request);
             let key = key!(request, params.idempotency_key);
+            let source = repository_source(params.source);
             match application
                 .register_repository_for_connection(
                     access,
                     &state.connection_id,
-                    repository_source(params.source),
+                    source,
                     key,
+                    params.credentials.map(repository_credentials),
                 )
                 .await
             {
@@ -373,6 +377,37 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
+        rpc::METHOD_REPOSITORIES_SET_CREDENTIALS => {
+            require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
+            let params: rpc::RepositorySetCredentialsParams = parse!(request);
+            let key = key!(request, params.idempotency_key);
+            let Ok(id) = app::RepositoryId::parse(&params.repository_id) else {
+                return invalid(request.id);
+            };
+            let Some(expected) = app::Revision::new(params.expected_revision) else {
+                return invalid(request.id);
+            };
+            match application
+                .set_repository_credentials(
+                    access,
+                    id,
+                    expected,
+                    params.credentials.map(repository_credentials),
+                    key,
+                )
+                .await
+            {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::RepositoryWriteResult {
+                        repository: repository_record(value.value),
+                        replayed: value.replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m3_error(request.id, error),
+            }
+        }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }
@@ -388,6 +423,12 @@ fn repository_source(value: rpc::RepositorySource) -> app::RepositorySource {
     match value {
         rpc::RepositorySource::Local { path } => app::RepositorySource::Local { path },
         rpc::RepositorySource::Remote { url } => app::RepositorySource::Remote { url },
+    }
+}
+
+fn repository_credentials(value: rpc::RepositoryCredentials) -> app::RepositoryCredentials {
+    app::RepositoryCredentials {
+        headers: value.headers,
     }
 }
 
@@ -525,7 +566,7 @@ fn issue(value: app::ReadIssue) -> rpc::ReadIssue {
 }
 
 fn repository_observation(value: app::RepositoryObservation) -> rpc::RepositorySnapshot {
-    repository_snapshot(None, value, None)
+    repository_snapshot(None, value, None, false)
 }
 
 fn repository_record(value: app::RepositoryRecord) -> rpc::RepositorySnapshot {
@@ -533,6 +574,7 @@ fn repository_record(value: app::RepositoryRecord) -> rpc::RepositorySnapshot {
         Some(value.repository_id.to_string()),
         value.observation,
         Some(value.revision.get()),
+        value.credentials_configured,
     )
 }
 
@@ -540,6 +582,7 @@ fn repository_snapshot(
     repository_id: Option<String>,
     value: app::RepositoryObservation,
     revision: Option<u64>,
+    credentials_configured: bool,
 ) -> rpc::RepositorySnapshot {
     rpc::RepositorySnapshot {
         repository_id,
@@ -553,6 +596,7 @@ fn repository_snapshot(
         issues: value.issues.into_iter().map(issue).collect(),
         revision,
         refreshed_at_ms: value.refreshed_at_ms,
+        credentials_configured,
     }
 }
 

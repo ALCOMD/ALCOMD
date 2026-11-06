@@ -356,7 +356,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     let settings: Value = serde_json::from_str(include_str!(
         "../../../specs/config/settings-v10.schema.json"
     ))
-    .expect("Config Schema 9 must be valid JSON");
+    .expect("Config10 schema must be valid JSON");
     assert_eq!(
         settings["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -1024,7 +1024,7 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
     let settings: Value = serde_json::from_str(include_str!(
         "../../../specs/config/settings-v10.schema.json"
     ))
-    .expect("Config4");
+    .expect("Config10 schema");
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["required"],
         json!([
@@ -1285,29 +1285,52 @@ fn m4_package_manifest_freezes_required_identity_and_unity_semantics() {
     let definitions = contract["$defs"].as_object().expect("M4 definitions");
     assert_eq!(
         definitions["packageManifest"]["required"],
-        json!([
-            "name",
-            "displayName",
-            "version",
-            "url",
-            "zipSHA256",
-            "author"
-        ])
+        json!(["name", "displayName", "version", "url", "author"])
+    );
+    assert_eq!(definitions["packageAuthor"]["required"], json!(["name"]));
+    assert_eq!(
+        definitions["packageManifest"]["if"]["not"]["required"],
+        json!(["zipSHA256"])
     );
     assert_eq!(
-        definitions["packageAuthor"]["required"],
-        json!(["name", "email"])
+        definitions["packageManifest"]["then"]["properties"]["url"]["pattern"],
+        "^[Hh][Tt][Tt][Pp][Ss]://"
     );
     assert_eq!(
         definitions["packageManifest"]["properties"]["unity"]["pattern"],
         "^[0-9]+\\.[0-9]+$"
     );
-    for legacy in ["legacyFolders", "legacyFiles", "legacyPackages"] {
+    for legacy in ["legacyFolders", "legacyFiles"] {
         assert_eq!(
             definitions["packageManifest"]["properties"][legacy]["type"],
-            "array"
+            "object"
         );
     }
+    assert_eq!(
+        definitions["packageManifest"]["properties"]["legacyPackages"]["type"],
+        "array"
+    );
+}
+
+#[test]
+fn m4_package_change_set_exposes_only_reviewable_legacy_removal_fields() {
+    let contract = schema("m4-package-transaction");
+    let properties = &contract["$defs"]["changeSet"]["properties"];
+    assert_eq!(properties["formatVersion"]["enum"], json!([1, 2, 3, 4]));
+    let removal = &properties["legacyRemovals"]["items"];
+    assert_eq!(removal["additionalProperties"], false);
+    assert_eq!(removal["required"], json!(["path", "kind", "packageId"]));
+    let dto = alcomd_protocol::PackageLegacyRemoval {
+        path: "Assets/OldTools.meta".to_owned(),
+        kind: alcomd_protocol::PackageLegacyRemovalKind::File,
+        package_id: "com.example.tools".to_owned(),
+    };
+    assert_eq!(
+        serde_json::to_value(dto).expect("serialize the public removal DTO"),
+        json!({
+            "path": "Assets/OldTools.meta", "kind": "file", "packageId": "com.example.tools"
+        })
+    );
 }
 
 #[test]
@@ -2007,6 +2030,7 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
     );
     let entry = RepositoryListEntry {
         line: 1,
+        credentials_configured: false,
         status: RepositoryListEntryStatus::Candidate,
         source: Some(RepositoryListSource::Remote {
             url: "https://example.test/repo?z=2&a=1&a=3".into(),
@@ -2017,6 +2041,27 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
         serde_json::to_value(entry).expect("repository list entry wire"),
         json!({"line":1,"status":"candidate","source":{"kind":"remote","url":"https://example.test/repo?z=2&a=1&a=3"}})
     );
+}
+
+#[test]
+fn repository_credentials_are_write_only_and_clear_is_explicit() {
+    use alcomd_protocol::RepositorySetCredentialsParams;
+    let mut wire =
+        json!({"repositoryId":"fixture","expectedRevision":1,"idempotencyKey":"fixture"});
+    assert!(serde_json::from_value::<RepositorySetCredentialsParams>(wire.clone()).is_err());
+    wire["credentials"] = Value::Null;
+    assert!(
+        serde_json::from_value::<RepositorySetCredentialsParams>(wire.clone())
+            .expect("explicit clear")
+            .credentials
+            .is_none()
+    );
+    wire["credentials"] = json!({"headers":{"Authorization":"Bearer test-token"},"allowedOrigins":["https://example.test"]});
+    assert!(serde_json::from_value::<RepositorySetCredentialsParams>(wire.clone()).is_err());
+    wire["credentials"] = json!({"headers":{"Authorization":"Bearer test-token"}});
+    let configured =
+        serde_json::from_value::<RepositorySetCredentialsParams>(wire).expect("credential write");
+    assert!(!format!("{configured:?}").contains("test-token"));
 }
 
 #[test]

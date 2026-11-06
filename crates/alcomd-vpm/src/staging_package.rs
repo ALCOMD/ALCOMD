@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -7,12 +8,154 @@ use alcomd_application::{
     ResourceLockCoordinator,
 };
 use sha2::{Digest, Sha256};
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use crate::package::validate_extracted_package;
 use crate::{
     PROJECT_MANIFEST_LIMIT, PackageCache, extract_archive, materialize_vpm_manifest,
     parse_project_version,
 };
+
+pub(crate) use crate::cache::PACKAGE_DOWNLOAD_CONCURRENCY;
+const PACKAGE_STAGING_CONCURRENCY: usize = 32;
+static PACKAGE_STAGING_SLOTS: Semaphore = Semaphore::const_new(PACKAGE_STAGING_CONCURRENCY);
+
+pub(crate) async fn run_ordered_jobs<J, T, F>(
+    jobs: Vec<J>,
+    limit: usize,
+    prepare: impl Fn(J) -> F,
+) -> Result<Vec<T>, M4Error>
+where
+    T: Send + 'static,
+    F: Future<Output = Result<T, M4Error>> + Send + 'static,
+{
+    let mut remaining = jobs.into_iter().enumerate();
+    let mut workers = JoinSet::new();
+    let mut results = BTreeMap::new();
+    let mut failed = false;
+    let mut join_error = None;
+    loop {
+        while !failed && workers.len() < limit {
+            let Some((index, job)) = remaining.next() else {
+                break;
+            };
+            let future = prepare(job);
+            workers.spawn(async move { (index, future.await) });
+        }
+        match workers.join_next().await {
+            Some(Ok((index, result))) => {
+                failed |= result.is_err();
+                results.insert(index, result);
+            }
+            Some(Err(cause)) => {
+                failed = true;
+                join_error = Some(cause);
+            }
+            None => break,
+        }
+    }
+    if let Some(cause) = join_error {
+        return Err(M4Error::new(M4ErrorCode::Internal).with_source(cause));
+    }
+    // Blocking extraction may still be writing when another job fails. Join
+    // every admitted job before returning to transaction cleanup.
+    results.into_values().collect()
+}
+
+pub(crate) async fn fetch_package_objects(
+    cache: &PackageCache,
+    locks: Option<&Arc<ResourceLockCoordinator>>,
+    sources: Vec<PackageSourcePin>,
+) -> Result<BTreeMap<String, PathBuf>, M4Error> {
+    let objects = run_ordered_jobs(sources, PACKAGE_DOWNLOAD_CONCURRENCY, |source| {
+        let cache = cache.clone();
+        let locks = locks.cloned();
+        async move {
+            let digest = source.archive_sha256();
+            let _guard = match locks {
+                Some(locks) => Some(locks.acquire(vec![ResourceKey::PackageCache(digest)]).await),
+                None => None,
+            };
+            let archive = cache
+                .get_for_apply(
+                    digest,
+                    source.artifact_url().unwrap_or(""),
+                    source.is_user_package(),
+                    match &source {
+                        PackageSourcePin::Repository(pin) => crate::cache::ArchiveHeaders {
+                            repository: pin.credential_reference.as_deref(),
+                            package: pin.download_headers.as_ref().map(|headers| {
+                                crate::cache::PackageHeaderLookup {
+                                    source_identity: &pin.source_identity,
+                                    local_path: headers.local_path.as_deref(),
+                                    package_id: &pin.package_id,
+                                    version: &pin.version,
+                                    fingerprint: &pin.manifest_fingerprint,
+                                }
+                            }),
+                        },
+                        PackageSourcePin::UserPackage(_) => crate::cache::ArchiveHeaders::default(),
+                    },
+                )
+                .await
+                .map_err(crate::engine::map_cache_error)?;
+            Ok((source.package_id().to_owned(), archive))
+        }
+    })
+    .await?;
+    Ok(objects.into_iter().collect())
+}
+
+pub(crate) async fn extract_package_objects(
+    stage: &Path,
+    change_set: &PackageChangeSet,
+    objects: &BTreeMap<String, PathBuf>,
+) -> Result<(), M4Error> {
+    let jobs = change_set
+        .mutations
+        .iter()
+        .filter(|mutation| mutation.source.is_some())
+        .map(|mutation| {
+            let archive = objects
+                .get(&mutation.package_id)
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PlanStale))?;
+            let version = mutation
+                .to_version
+                .clone()
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PlanStale))?;
+            Ok((mutation.package_id.clone(), version, archive.clone()))
+        })
+        .collect::<Result<Vec<_>, M4Error>>()?;
+    run_ordered_jobs(
+        jobs,
+        PACKAGE_STAGING_CONCURRENCY,
+        |(package, version, archive)| {
+            let destination = stage.join(&package);
+            async move {
+                let slot = PACKAGE_STAGING_SLOTS
+                    .acquire()
+                    .await
+                    .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?;
+                tokio::task::spawn_blocking(move || {
+                    let _slot = slot;
+                    std::fs::create_dir(&destination).map_err(|cause| {
+                        M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                    })?;
+                    extract_archive(&archive, &destination)
+                        .map_err(crate::engine::map_archive_error)?;
+                    validate_extracted_package(&destination, &package, &version).map_err(|cause| {
+                        M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                    })
+                })
+                .await
+                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
+            }
+        },
+    )
+    .await?;
+    Ok(())
+}
 
 /// Frozen evidence for an operation-owned staging Unity project.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -67,24 +210,12 @@ impl FrozenPackageMaterializer {
     ) -> Result<PreparedFrozenPackages, M4Error> {
         change_set.validate_bounds()?;
         let required = validate_frozen_sources(&change_set, &source_set)?;
-        let mut objects = BTreeMap::new();
-        for source in required {
-            let digest = source.archive_sha256();
-            let guard = locks.acquire(vec![ResourceKey::PackageCache(digest)]).await;
-            let object = self
-                .cache
-                .get(
-                    digest,
-                    source.artifact_url().unwrap_or(""),
-                    source.is_user_package(),
-                )
-                .await
-                .map_err(|cause| {
-                    M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause)
-                })?;
-            drop(guard);
-            objects.insert(source.package_id().to_owned(), object);
-        }
+        let objects = fetch_package_objects(
+            &self.cache,
+            Some(&locks),
+            required.into_iter().cloned().collect(),
+        )
+        .await?;
         Ok(PreparedFrozenPackages {
             change_set,
             objects,
@@ -97,7 +228,12 @@ impl FrozenPackageMaterializer {
         prepared: PreparedFrozenPackages,
         evidence: StagingProjectEvidence,
     ) -> Result<StagingPackageEvidence, M4Error> {
-        tokio::task::spawn_blocking(move || materialize_blocking(prepared, evidence))
+        let (prepared, work) =
+            tokio::task::spawn_blocking(move || prepare_materialization(prepared, evidence))
+                .await
+                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
+        extract_package_objects(&work.stage, &prepared.change_set, &prepared.objects).await?;
+        tokio::task::spawn_blocking(move || finish_materialization(prepared.change_set, work))
             .await
             .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
     }
@@ -135,10 +271,17 @@ fn validate_frozen_sources<'a>(
     Ok(ordered)
 }
 
-fn materialize_blocking(
+struct PackageMaterialization {
+    stage: PathBuf,
+    packages: PathBuf,
+    initial_upm: Vec<u8>,
+    final_vpm: Vec<u8>,
+}
+
+fn prepare_materialization(
     prepared: PreparedFrozenPackages,
     evidence: StagingProjectEvidence,
-) -> Result<StagingPackageEvidence, M4Error> {
+) -> Result<(PreparedFrozenPackages, PackageMaterialization), M4Error> {
     validate_staging_root(&evidence)?;
     let packages = evidence.root.join("Packages");
     let vpm = packages.join("vpm-manifest.json");
@@ -175,31 +318,34 @@ fn materialize_blocking(
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     for mutation in &prepared.change_set.mutations {
         validate_existing_state(&packages, mutation)?;
-        let Some(object) = prepared.objects.get(&mutation.package_id) else {
-            if mutation.kind == PackageMutationKind::Remove {
-                continue;
-            }
-            return Err(M4Error::new(M4ErrorCode::PlanStale));
-        };
-        let destination = work.join(&mutation.package_id);
-        std::fs::create_dir(&destination)
-            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-        extract_archive(object, &destination)
-            .map_err(|cause| M4Error::new(M4ErrorCode::PackageArchiveInvalid).with_source(cause))?;
-        validate_extracted_package(
-            &destination,
-            &mutation.package_id,
-            mutation
-                .to_version
-                .as_deref()
-                .ok_or_else(|| M4Error::new(M4ErrorCode::PlanStale))?,
-        )
-        .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
     }
+    Ok((
+        prepared,
+        PackageMaterialization {
+            stage: work,
+            packages,
+            initial_upm,
+            final_vpm,
+        },
+    ))
+}
+
+fn finish_materialization(
+    change_set: PackageChangeSet,
+    materialization: PackageMaterialization,
+) -> Result<StagingPackageEvidence, M4Error> {
+    let PackageMaterialization {
+        stage: work,
+        packages,
+        initial_upm,
+        final_vpm,
+    } = materialization;
+    let vpm = packages.join("vpm-manifest.json");
+    let upm = packages.join("manifest.json");
     alcomd_platform::sync_directory(&work)
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
 
-    for mutation in &prepared.change_set.mutations {
+    for mutation in &change_set.mutations {
         let target = packages.join(&mutation.package_id);
         if target.exists() {
             std::fs::remove_dir_all(&target)
@@ -221,13 +367,13 @@ fn materialize_blocking(
     }
     alcomd_platform::sync_directory(&packages)
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-    verify_final_state(&packages, &prepared.change_set, &initial_upm)?;
+    verify_final_state(&packages, &change_set, &initial_upm)?;
     std::fs::remove_file(&vpm_old)
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     std::fs::remove_dir(&work)
         .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
     Ok(StagingPackageEvidence {
-        package_count: u32::try_from(prepared.change_set.mutations.len())
+        package_count: u32::try_from(change_set.mutations.len())
             .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?,
         vpm_manifest_sha256: digest(&read_regular_file(&vpm, PROJECT_MANIFEST_LIMIT)?),
         upm_manifest_sha256: digest(&read_regular_file(&upm, PROJECT_MANIFEST_LIMIT)?),
@@ -405,6 +551,89 @@ mod tests {
 
     static NEXT_TEMPORARY_PATH: AtomicU64 = AtomicU64::new(0);
 
+    #[tokio::test]
+    async fn package_jobs_are_bounded_and_return_in_input_order() {
+        let gates = Arc::new([Semaphore::new(0), Semaphore::new(0), Semaphore::new(0)]);
+        let (started, mut observed) = tokio::sync::mpsc::unbounded_channel();
+        let running = tokio::spawn({
+            let gates = Arc::clone(&gates);
+            async move {
+                run_ordered_jobs(vec![0, 1, 2], 2, |job| {
+                    let gates = Arc::clone(&gates);
+                    let started = started.clone();
+                    async move {
+                        started.send(job).expect("record start");
+                        let _gate = gates[job].acquire().await.expect("release job");
+                        Ok(job)
+                    }
+                })
+                .await
+            }
+        });
+        let mut first = [next_job(&mut observed).await, next_job(&mut observed).await];
+        first.sort_unstable();
+        assert_eq!(first, [0, 1]);
+        assert!(observed.try_recv().is_err());
+        gates[1].add_permits(1);
+        assert_eq!(next_job(&mut observed).await, 2);
+        gates[2].add_permits(1);
+        gates[0].add_permits(1);
+        assert_eq!(running.await.expect("join").expect("results"), [0, 1, 2]);
+    }
+
+    #[tokio::test]
+    async fn package_failure_drains_started_jobs_before_returning() {
+        let gates = Arc::new([Semaphore::new(0), Semaphore::new(0), Semaphore::new(0)]);
+        let (started, mut observed) = tokio::sync::mpsc::unbounded_channel();
+        let mut running = tokio::spawn({
+            let gates = Arc::clone(&gates);
+            async move {
+                run_ordered_jobs(vec![0, 1, 2], 2, |job| {
+                    let gates = Arc::clone(&gates);
+                    let started = started.clone();
+                    async move {
+                        started.send(job).expect("record start");
+                        let _gate = gates[job].acquire().await.expect("release job");
+                        if job == 0 {
+                            Err(M4Error::new(M4ErrorCode::PackageCacheCorrupt))
+                        } else {
+                            Ok(job)
+                        }
+                    }
+                })
+                .await
+            }
+        });
+        let mut first = [next_job(&mut observed).await, next_job(&mut observed).await];
+        first.sort_unstable();
+        assert_eq!(first, [0, 1]);
+        gates[0].add_permits(1);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut running)
+                .await
+                .is_err()
+        );
+        assert!(observed.try_recv().is_err());
+        gates[1].add_permits(1);
+        gates[2].add_permits(1);
+        assert_eq!(
+            running
+                .await
+                .expect("join")
+                .expect_err("package failure")
+                .code(),
+            M4ErrorCode::PackageCacheCorrupt
+        );
+        assert!(observed.try_recv().is_err());
+    }
+
+    async fn next_job(observed: &mut tokio::sync::mpsc::UnboundedReceiver<usize>) -> usize {
+        tokio::time::timeout(std::time::Duration::from_secs(2), observed.recv())
+            .await
+            .expect("job started before deadline")
+            .expect("job index")
+    }
+
     struct Fixture {
         root: PathBuf,
         cache_root: PathBuf,
@@ -476,6 +705,8 @@ mod tests {
         let archive = package_archive(payload);
         let archive_sha256: [u8; 32] = Sha256::digest(&archive).into();
         let source = PackageSourcePin::Repository(RepositoryPackageSourcePin {
+            credential_reference: None,
+            download_headers: None,
             repository_id: "repository-fixture".to_owned(),
             repository_revision: 7,
             source_identity: "fixture-source".to_owned(),
@@ -487,6 +718,8 @@ mod tests {
         });
         let mut change_set = PackageChangeSet {
             format_version: 1,
+            legacy_removals: Vec::new(),
+            legacy_packages: Vec::new(),
             mutations: vec![PackageMutation {
                 kind: PackageMutationKind::Install,
                 package_id: source.package_id().to_owned(),

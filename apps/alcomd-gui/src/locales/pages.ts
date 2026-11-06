@@ -604,7 +604,15 @@ export const pageMessages: TranslationTable = {
     },
     "Official": {
         "zh-CN": "官方",
-        "ja-JP": "Official"
+        "ja-JP": "公式"
+    },
+    "Curated": {
+        "zh-CN": "精选",
+        "ja-JP": "厳選"
+    },
+    "Pending first sync": {
+        "zh-CN": "待首次同步",
+        "ja-JP": "初回同期を待機中"
     },
     "Open": {
         "zh-CN": "打开",

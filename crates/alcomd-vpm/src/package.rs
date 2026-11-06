@@ -37,7 +37,7 @@ pub struct ResolverReadyPackage {
     pub display_name: String,
     pub description: Option<String>,
     pub author_name: String,
-    pub author_email: String,
+    pub author_email: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
 }
@@ -128,9 +128,19 @@ pub(crate) fn validate_extracted_package(
     expected_name: &str,
     expected_version: &str,
 ) -> Result<(), PackageManifestError> {
-    validate_package_id(expected_name)?;
     let expected_version = Version::parse(expected_version)
         .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+    if extracted_package_version(root, expected_name)? != expected_version {
+        return Err(manifest_error(PackageManifestErrorCode::IdentityMismatch));
+    }
+    Ok(())
+}
+
+pub(crate) fn extracted_package_version(
+    root: &Path,
+    expected_name: &str,
+) -> Result<Version, PackageManifestError> {
+    validate_package_id(expected_name)?;
     let path = root.join("package.json");
     let metadata = std::fs::symlink_metadata(&path)
         .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
@@ -155,10 +165,10 @@ pub(crate) fn validate_extracted_package(
     let name = required_string(object, "name", PACKAGE_ID_LIMIT)?;
     let version = Version::parse(required_string(object, "version", VERSION_LIMIT)?)
         .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
-    if name != expected_name || version != expected_version {
+    if name != expected_name {
         return Err(manifest_error(PackageManifestErrorCode::IdentityMismatch));
     }
-    Ok(())
+    Ok(version)
 }
 
 pub(crate) fn parse_manifest(
@@ -178,21 +188,31 @@ pub(crate) fn parse_manifest(
     let display_name = required_string(manifest, "displayName", DISPLAY_NAME_LIMIT)?.to_owned();
     let description = optional_string(manifest, "description", DESCRIPTION_LIMIT)?;
     let artifact_url = parse_artifact_url(required_string(manifest, "url", ARTIFACT_URL_LIMIT)?)?;
-    let archive_sha256 = parse_sha256(
-        manifest
-            .get("zipSHA256")
-            .and_then(Value::as_str)
-            .ok_or_else(|| manifest_error(PackageManifestErrorCode::HashRequired))?,
-    )?;
+    let download_headers_present = if manifest.contains_key("headers") {
+        let artifact = reqwest::Url::parse(&artifact_url)
+            .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+        crate::repository_auth::RepositoryAuth::for_package(manifest.get("headers"), &artifact)
+            .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?
+            .is_some()
+    } else {
+        false
+    };
+    let archive_sha256 = manifest
+        .get("zipSHA256")
+        .map(|value| {
+            parse_sha256(
+                value
+                    .as_str()
+                    .ok_or_else(|| manifest_error(PackageManifestErrorCode::HashRequired))?,
+            )
+        })
+        .transpose()?;
     let author = manifest
         .get("author")
         .and_then(Value::as_object)
         .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
     let author_name = required_string(author, "name", AUTHOR_FIELD_LIMIT)?.to_owned();
-    let author_email = required_string(author, "email", AUTHOR_FIELD_LIMIT)?;
-    if author_email.len() < 3 {
-        return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid));
-    }
+    let author_email = optional_string(author, "email", AUTHOR_FIELD_LIMIT)?;
     let unity = optional_string(manifest, "unity", UNITY_LIMIT)?;
     let unity_release = optional_string(manifest, "unityRelease", UNITY_RELEASE_LIMIT)?;
     let unity_minimum = package_minimum(unity.as_deref(), unity_release.as_deref())
@@ -206,7 +226,7 @@ pub(crate) fn parse_manifest(
     let legacy_metadata = LegacyMetadata::parse(manifest)?;
     let legacy_metadata_present = !legacy_metadata.is_empty();
     let manifest_fingerprint = Sha256::digest(
-        serde_json::to_vec(manifest)
+        manifest_evidence_bytes(manifest, download_headers_present)
             .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?,
     )
     .into();
@@ -221,6 +241,8 @@ pub(crate) fn parse_manifest(
             dependencies,
             source: PackageSource {
                 authority: PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present,
                     repository_locator: None,
                     repository_id: context.repository_id.clone(),
                     repository_revision: context.repository_revision,
@@ -235,10 +257,26 @@ pub(crate) fn parse_manifest(
         display_name,
         description,
         author_name,
-        author_email: author_email.to_owned(),
+        author_email,
         unity_release,
         dependencies_json,
     })
+}
+
+/// Seal the complete declaration while excluding the plaintext HTTP headers
+/// from any legacy-evidence file addressed by this fingerprint.
+pub(crate) fn manifest_evidence_bytes(
+    manifest: &Map<String, Value>,
+    download_headers_present: bool,
+) -> Result<Vec<u8>, serde_json::Error> {
+    if !download_headers_present {
+        return serde_json::to_vec(manifest);
+    }
+    let mut evidence = manifest.clone();
+    let headers = serde_json::to_vec(&evidence.remove("headers"))?;
+    let digest: [u8; 32] = Sha256::digest(headers).into();
+    evidence.insert("headers".into(), Value::String(crate::digest_text(&digest)));
+    serde_json::to_vec(&evidence)
 }
 
 fn validate_context(context: &RepositoryPackageContext) -> Result<(), PackageManifestError> {
@@ -508,8 +546,13 @@ mod tests {
             crate::UnityVersion::parse_editor("2022.3.22f1")
         );
         assert!(!base.candidate.legacy_metadata_present);
-        assert_eq!(base.candidate.source.archive_sha256[0], 0x01);
-        assert_eq!(base.candidate.source.archive_sha256[31], 0xef);
+        let digest = base
+            .candidate
+            .source
+            .archive_sha256
+            .expect("declared digest");
+        assert_eq!(digest[0], 0x01);
+        assert_eq!(digest[31], 0xef);
         assert_eq!(base.dependencies_json, "{}");
         let feature = &parsed[1];
         assert_eq!(feature.candidate.dependencies.len(), 1);
@@ -544,19 +587,15 @@ mod tests {
     }
 
     #[test]
-    fn missing_malformed_or_uppercase_hash_is_never_resolver_ready() {
-        for hash in [None, Some("bad"), Some(&"A".repeat(64))] {
+    fn malformed_or_uppercase_declared_hash_is_never_resolver_ready() {
+        for hash in [
+            Value::Null,
+            Value::String("bad".to_owned()),
+            Value::String("A".repeat(64)),
+        ] {
             let mut document: Value = serde_json::from_slice(READY).expect("fixture");
             let manifest = &mut document["packages"]["com.example.base"]["versions"]["1.2.3"];
-            match hash {
-                Some(value) => manifest["zipSHA256"] = Value::String(value.to_owned()),
-                None => {
-                    manifest
-                        .as_object_mut()
-                        .expect("manifest")
-                        .remove("zipSHA256");
-                }
-            }
+            manifest["zipSHA256"] = hash;
             assert_eq!(
                 parse_resolver_ready_repository(
                     &serde_json::to_vec(&document).expect("document"),
@@ -588,6 +627,31 @@ mod tests {
                 PackageManifestErrorCode::SourceInvalid
             );
         }
+    }
+
+    #[test]
+    fn evidence_seals_the_header_values_without_writing_them() {
+        let mut declaration = serde_json::json!({
+            "name": "com.example.package", "version": "1.0.0",
+            "legacyFolders": {"Assets/OldFixture": null},
+            "headers": {"Authorization": "fixture-package-secret"}
+        });
+        let original =
+            manifest_evidence_bytes(declaration.as_object().expect("fixture object"), true)
+                .expect("sealed evidence");
+        let sealed: Value = serde_json::from_slice(&original).expect("readable legacy evidence");
+        assert_eq!(sealed["legacyFolders"], declaration["legacyFolders"]);
+        assert!(
+            !String::from_utf8(original.clone())
+                .expect("UTF-8 evidence")
+                .contains("fixture-package-secret")
+        );
+        declaration["headers"]["Authorization"] = serde_json::json!("changed-fixture-secret");
+        assert_ne!(
+            original,
+            manifest_evidence_bytes(declaration.as_object().expect("fixture object"), true)
+                .expect("new header is bound")
+        );
     }
 
     #[test]

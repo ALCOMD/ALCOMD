@@ -23,7 +23,65 @@ pub struct ProjectPackageSnapshot {
     pub path_identity_key: Vec<u8>,
     pub fingerprint: [u8; 32],
     vpm_manifest: Value,
-    vpm_manifest_bytes: Vec<u8>,
+    pub(crate) vpm_manifest_bytes: Vec<u8>,
+}
+
+impl ProjectPackageSnapshot {
+    pub(super) fn resolution_rules(
+        &self,
+        explicit: BTreeSet<String>,
+        preserve_unselected: bool,
+    ) -> Result<crate::resolver::ProjectResolutionRules, M4Error> {
+        use crate::range::{ProjectDependencyRange, VpmRange};
+        use crate::resolver::{LockedPackage, ProjectResolutionRules};
+
+        let invalid = || M4Error::new(M4ErrorCode::PackageManifestInvalid);
+        let mut locked = BTreeMap::new();
+        for (id, version) in vpm_version_map(self.vpm_manifest.get("locked"))? {
+            let version: semver::Version = version
+                .parse()
+                .map_err(|cause| invalid().with_source(cause))?;
+            let installed = preserve_unselected
+                && installed_package_version(&self.root, &id)
+                    .is_ok_and(|actual| actual.as_ref() == Some(&version));
+            let mut dependencies = Vec::new();
+            if let Some(value) = self.vpm_manifest["locked"][&id].get("dependencies") {
+                for (package_id, range) in value.as_object().ok_or_else(invalid)? {
+                    validate_package_id(package_id)?;
+                    let range = VpmRange::parse(range.as_str().ok_or_else(invalid)?)
+                        .map_err(|cause| invalid().with_source(cause))?;
+                    dependencies.push(crate::PackageDependency {
+                        package_id: package_id.clone(),
+                        range: range.canonical(),
+                    });
+                }
+            }
+            locked.insert(
+                id,
+                LockedPackage {
+                    version,
+                    dependencies,
+                    installed,
+                },
+            );
+        }
+        let direct = vpm_version_map(self.vpm_manifest.get("dependencies"))?
+            .into_iter()
+            .map(|(id, range)| {
+                let range = ProjectDependencyRange::parse(&range)
+                    .map_err(|cause| invalid().with_source(cause))?;
+                let range = VpmRange::parse(&range.canonical())
+                    .map_err(|cause| invalid().with_source(cause))?;
+                Ok((id, range))
+            })
+            .collect::<Result<_, M4Error>>()?;
+        Ok(ProjectResolutionRules {
+            locked,
+            direct,
+            explicit,
+            preserve_unselected,
+        })
+    }
 }
 
 pub fn inspect_package_project(project: &ProjectRecord) -> Result<ProjectPackageSnapshot, M4Error> {
@@ -186,7 +244,7 @@ fn build_complete_resolution_plan(
                 let package = selected
                     .get(package_id.as_str())
                     .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
-                let source = source_pin(package);
+                let source = source_pin(package)?;
                 mutations.push(PackageMutation {
                     kind: if old.is_some() {
                         PackageMutationKind::Replace
@@ -204,7 +262,9 @@ fn build_complete_resolution_plan(
         }
     }
 
-    source_set.extend(resolution.packages.iter().map(source_pin));
+    for package in &resolution.packages {
+        source_set.push(source_pin(package)?);
+    }
     let manifest_bytes = if preserve_manifest_bytes {
         snapshot.vpm_manifest_bytes.clone()
     } else {
@@ -218,6 +278,7 @@ fn build_complete_resolution_plan(
             &new_locked,
             &frozen_edges(&resolution.dependency_edges),
             &mutations,
+            false,
         );
         serialize_manifest(&manifest)?
     };
@@ -257,16 +318,34 @@ pub fn build_resolution_plan(
         validate_package_id(&package.package_id)?;
         let target_version = package.version.to_string();
         let current_version = locked.get(&package.package_id).cloned();
-        if current_version.as_deref() != Some(target_version.as_str()) {
-            let source = source_pin(package);
+        let version_changed = current_version.as_deref() != Some(target_version.as_str());
+        let observed_version = if current_version.is_some()
+            && (version_changed || action == PlanAction::Resolve || !package.direct)
+        {
+            Some(installed_package_version(
+                &snapshot.root,
+                &package.package_id,
+            )?)
+        } else {
+            None
+        };
+        let needs_repair = observed_version
+            .as_ref()
+            .is_some_and(|actual| actual.as_ref() != Some(&package.version));
+        if version_changed || needs_repair {
+            let source = source_pin(package)?;
+            let from_version = match observed_version {
+                Some(actual) => actual.map(|version| version.to_string()),
+                None => current_version,
+            };
             mutations.push(PackageMutation {
-                kind: if current_version.is_some() {
+                kind: if from_version.is_some() {
                     PackageMutationKind::Replace
                 } else {
                     PackageMutationKind::Install
                 },
                 package_id: package.package_id.clone(),
-                from_version: current_version,
+                from_version,
                 to_version: Some(target_version.clone()),
                 source: Some(source.clone()),
             });
@@ -274,15 +353,14 @@ pub fn build_resolution_plan(
         }
         locked.insert(package.package_id.clone(), target_version.clone());
         if direct_ids.contains(package.package_id.as_str())
-            && (!direct.contains_key(&package.package_id)
-                || mutations
-                    .iter()
-                    .any(|mutation| mutation.package_id == package.package_id))
+            && (!direct.contains_key(&package.package_id) || version_changed)
         {
             direct.insert(package.package_id.clone(), target_version);
         }
     }
-    source_set.extend(resolution.packages.iter().map(source_pin));
+    for package in &resolution.packages {
+        source_set.push(source_pin(package)?);
+    }
     let mut edges = resolution.dependency_edges.clone();
     for (id, range) in &direct {
         if !edges
@@ -297,8 +375,40 @@ pub fn build_resolution_plan(
             });
         }
     }
-    write_manifest_maps(object, &direct, &locked, &frozen_edges(&edges), &mutations);
+    write_manifest_maps(
+        object,
+        &direct,
+        &locked,
+        &frozen_edges(&edges),
+        &mutations,
+        preserves_repaired_locks(action),
+    );
     build_draft(snapshot, action, manifest, mutations, edges, source_set)
+}
+
+pub(crate) fn preserves_repaired_locks(action: PlanAction) -> bool {
+    matches!(
+        action,
+        PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade | PlanAction::Resolve
+    )
+}
+
+fn installed_package_version(
+    root: &Path,
+    package_id: &str,
+) -> Result<Option<semver::Version>, M4Error> {
+    let directory = root.join("Packages").join(package_id);
+    match std::fs::symlink_metadata(&directory) {
+        Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {
+            crate::package::extracted_package_version(&directory, package_id)
+                .map(Some)
+                .map_err(|cause| {
+                    M4Error::new(M4ErrorCode::ProjectChangedDuringApply).with_source(cause)
+                })
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        _ => Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply)),
+    }
 }
 
 pub fn build_remove_plan(
@@ -340,7 +450,7 @@ pub fn build_remove_plan(
                 });
             }
             Some(package) if package.version.to_string() != installed_version => {
-                let source = source_pin(package);
+                let source = source_pin(package)?;
                 locked.insert(installed_id.clone(), package.version.to_string());
                 if direct.contains_key(&installed_id) {
                     direct.insert(installed_id.clone(), package.version.to_string());
@@ -359,7 +469,7 @@ pub fn build_remove_plan(
     }
     for package in selected.values() {
         if !locked.contains_key(&package.package_id) {
-            let source = source_pin(package);
+            let source = source_pin(package)?;
             locked.insert(package.package_id.clone(), package.version.to_string());
             mutations.push(PackageMutation {
                 kind: PackageMutationKind::Install,
@@ -372,7 +482,9 @@ pub fn build_remove_plan(
         }
     }
     if let Some(resolution) = remaining {
-        source_set.extend(resolution.packages.iter().map(source_pin));
+        for package in &resolution.packages {
+            source_set.push(source_pin(package)?);
+        }
     }
     write_manifest_maps(
         object,
@@ -382,6 +494,7 @@ pub fn build_remove_plan(
             .map(|resolution| frozen_edges(&resolution.dependency_edges))
             .unwrap_or_default(),
         &mutations,
+        false,
     );
     build_draft(
         snapshot,
@@ -398,6 +511,14 @@ pub fn build_remove_plan(
 pub fn materialize_vpm_manifest(
     current: &[u8],
     change_set: &PackageChangeSet,
+) -> Result<Vec<u8>, M4Error> {
+    materialize_plan_manifest(current, change_set, false)
+}
+
+pub(crate) fn materialize_plan_manifest(
+    current: &[u8],
+    change_set: &PackageChangeSet,
+    preserve_repaired_locks: bool,
 ) -> Result<Vec<u8>, M4Error> {
     if !change_set.mutations.is_empty()
         && change_set.mutations.iter().all(|mutation| {
@@ -429,8 +550,12 @@ pub fn materialize_vpm_manifest(
                     .to_version
                     .as_ref()
                     .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
-                locked.insert(mutation.package_id.clone(), version.clone());
-                if direct_ids.contains(mutation.package_id.as_str()) {
+                let previous = locked.insert(mutation.package_id.clone(), version.clone());
+                if direct_ids.contains(mutation.package_id.as_str())
+                    && !(preserve_repaired_locks
+                        && previous.as_ref() == Some(version)
+                        && direct.contains_key(&mutation.package_id))
+                {
                     direct.insert(mutation.package_id.clone(), version.clone());
                 }
             }
@@ -489,8 +614,117 @@ pub fn materialize_vpm_manifest(
         &locked,
         &change_set.dependency_edges,
         &change_set.mutations,
+        preserve_repaired_locks,
     );
     serialize_manifest(&manifest)
+}
+
+pub(crate) fn attach_legacy_removals(
+    snapshot: &ProjectPackageSnapshot,
+    draft: &mut PackagePlanDraft,
+    obsolete: BTreeSet<String>,
+    removals: Vec<alcomd_application::LegacyRemoval>,
+) -> Result<(), M4Error> {
+    let change = &mut draft.change_set;
+    let conflict = || M4Error::new(M4ErrorCode::PackageDependencyConflict);
+    let locked = snapshot.vpm_manifest.get("locked");
+    let direct = snapshot.vpm_manifest.get("dependencies");
+    if change.mutations.iter().any(|mutation| {
+        mutation.kind != PackageMutationKind::Remove && obsolete.contains(&mutation.package_id)
+    }) || change.dependency_edges.iter().any(|edge| {
+        !edge.direct
+            && !obsolete.contains(&edge.from_package_id)
+            && obsolete.contains(&edge.to_package_id)
+    }) {
+        return Err(conflict());
+    }
+    if let Some(entries) = locked.and_then(Value::as_object) {
+        for (id, entry) in entries {
+            if !obsolete.contains(id)
+                && !change
+                    .mutations
+                    .iter()
+                    .any(|mutation| &mutation.package_id == id)
+                && entry
+                    .get("dependencies")
+                    .and_then(Value::as_object)
+                    .is_some_and(|dependencies| {
+                        dependencies
+                            .keys()
+                            .any(|dependency| obsolete.contains(dependency))
+                    })
+            {
+                return Err(conflict());
+            }
+        }
+    }
+    for id in &obsolete {
+        validate_package_id(id)?;
+        if !change
+            .mutations
+            .iter()
+            .any(|mutation| &mutation.package_id == id)
+            && (direct.and_then(|entries| entries.get(id)).is_some()
+                || locked.and_then(|entries| entries.get(id)).is_some())
+        {
+            change.mutations.push(PackageMutation {
+                kind: PackageMutationKind::Remove,
+                package_id: id.clone(),
+                from_version: locked
+                    .and_then(|entries| entries.get(id))
+                    .and_then(|value| value.get("version"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                to_version: None,
+                source: None,
+            });
+        }
+    }
+    for removal in &removals {
+        let path = removal.path.to_ascii_lowercase();
+        for mutation in &change.mutations {
+            if mutation.kind == PackageMutationKind::Remove
+                && obsolete.contains(&mutation.package_id)
+            {
+                continue;
+            }
+            let package = format!("packages/{}", mutation.package_id.to_ascii_lowercase());
+            if path == package
+                || path
+                    .strip_prefix(&package)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+                || package
+                    .strip_prefix(&path)
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+            {
+                return Err(conflict());
+            }
+        }
+    }
+    change
+        .mutations
+        .sort_by(|left, right| left.package_id.cmp(&right.package_id));
+    change.dependency_edges.retain(|edge| {
+        !obsolete.contains(&edge.from_package_id) && !obsolete.contains(&edge.to_package_id)
+    });
+    draft
+        .source_set
+        .retain(|source| !obsolete.contains(source.package_id()));
+    change.format_version = 4;
+    change.legacy_removals = removals;
+    change.legacy_packages = obsolete.into_iter().collect();
+    change.validate_bounds()?;
+    change.vpm_manifest_sha256 = Sha256::digest(materialize_plan_manifest(
+        &snapshot.vpm_manifest_bytes,
+        change,
+        preserves_repaired_locks(draft.action),
+    )?)
+    .into();
+    draft.change_set_fingerprint = Sha256::digest(
+        serde_json::to_vec(change).map_err(|_| M4Error::new(M4ErrorCode::Internal))?,
+    )
+    .into();
+    Ok(())
 }
 
 fn build_draft(
@@ -547,6 +781,8 @@ fn build_draft_from_bytes(
         format_version: 3,
         mutations,
         dependency_edges: edges,
+        legacy_removals: Vec::new(),
+        legacy_packages: Vec::new(),
         vpm_manifest_sha256,
     };
     change_set.validate_bounds()?;
@@ -565,12 +801,17 @@ fn build_draft_from_bytes(
     })
 }
 
-fn source_pin(package: &ResolvedPackage) -> PackageSourcePin {
-    match &package.source.authority {
+fn source_pin(package: &ResolvedPackage) -> Result<PackageSourcePin, M4Error> {
+    let archive_sha256 = package
+        .source
+        .archive_sha256
+        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageHashRequired))?;
+    Ok(match &package.source.authority {
         crate::PackageSourceAuthority::Repository {
             repository_id,
             repository_revision,
             artifact_url,
+            credential_reference,
             ..
         } => PackageSourcePin::Repository(RepositoryPackageSourcePin {
             repository_id: repository_id.clone(),
@@ -580,7 +821,9 @@ fn source_pin(package: &ResolvedPackage) -> PackageSourcePin {
             package_id: package.package_id.clone(),
             version: package.version.to_string(),
             artifact_url: artifact_url.clone(),
-            archive_sha256: package.source.archive_sha256,
+            credential_reference: credential_reference.clone(),
+            download_headers: package.source.download_headers(),
+            archive_sha256,
         }),
         crate::PackageSourceAuthority::UserPackage {
             user_package_id,
@@ -592,9 +835,9 @@ fn source_pin(package: &ResolvedPackage) -> PackageSourcePin {
             manifest_fingerprint: package.source.manifest_fingerprint,
             package_id: package.package_id.clone(),
             version: package.version.to_string(),
-            archive_sha256: package.source.archive_sha256,
+            archive_sha256,
         }),
-    }
+    })
 }
 
 fn frozen_edges(edges: &[PackageDependencyEdge]) -> Vec<ChangeSetEdge> {
@@ -615,6 +858,7 @@ fn write_manifest_maps(
     locked: &BTreeMap<String, String>,
     edges: &[ChangeSetEdge],
     mutations: &[PackageMutation],
+    preserve_repaired_locks: bool,
 ) {
     // Preserve the original objects for entries untouched by this plan. A new
     // version receives only dependency evidence frozen by the solver.
@@ -627,6 +871,11 @@ fn write_manifest_maps(
                     .and_then(|entries| entries.get(name))
                     .and_then(Value::as_object);
                 let changed = key == "locked"
+                    && !(preserve_repaired_locks
+                        && old
+                            .and_then(|entry| entry.get("version"))
+                            .and_then(Value::as_str)
+                            == Some(version.as_str()))
                     && mutations.iter().any(|mutation| {
                         mutation.package_id == *name && mutation.kind != PackageMutationKind::Remove
                     });
@@ -726,6 +975,13 @@ pub(crate) fn read_regular_component(
 }
 
 pub(super) fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
+    checked_tree_fingerprint(root, |_, _| Ok(()))
+}
+
+pub(super) fn checked_tree_fingerprint(
+    root: &Path,
+    check_entry: impl Fn(&Path, &Path) -> Result<(), M4Error>,
+) -> Result<[u8; 32], M4Error> {
     let metadata = match std::fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -740,7 +996,7 @@ pub(super) fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
     let mut paths = Vec::new();
     while let Some(relative) = pending.pop() {
         let directory = root.join(&relative);
-        let mut children = std::fs::read_dir(directory)
+        let mut children = std::fs::read_dir(&directory)
             .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?
             .map(|entry| {
                 entry
@@ -750,6 +1006,10 @@ pub(super) fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
             .collect::<Result<Vec<_>, _>>()?;
         children.sort();
         for child in children.into_iter().rev() {
+            let name = child
+                .file_name()
+                .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+            check_entry(&directory, Path::new(name))?;
             let metadata = std::fs::symlink_metadata(root.join(&child))
                 .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
             if is_link_or_reparse(&metadata) {
@@ -784,6 +1044,7 @@ pub(super) fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
                 .checked_add(size)
                 .filter(|value| *value <= TREE_TOTAL_LIMIT)
                 .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
+            check_entry(root, Path::new(relative))?;
             let bytes = std::fs::read(root.join(relative))
                 .map_err(|_| M4Error::new(M4ErrorCode::ProjectChangedDuringApply))?;
             hash_field(&mut hasher, &bytes);
@@ -820,6 +1081,8 @@ mod tests {
         let mut change_set = PackageChangeSet {
             format_version: 1,
             mutations: Vec::new(),
+            legacy_removals: Vec::new(),
+            legacy_packages: Vec::new(),
             dependency_edges: vec![ChangeSetEdge {
                 from_package_id: "com.example.a".to_owned(),
                 to_package_id: "com.example.a".to_owned(),
@@ -942,6 +1205,8 @@ mod tests {
             direct,
             source: crate::PackageSource {
                 authority: crate::PackageSourceAuthority::Repository {
+                    credential_reference: None,
+                    download_headers_present: false,
                     repository_locator: None,
                     repository_id: "fixture".to_owned(),
                     repository_revision: 1,
@@ -950,7 +1215,7 @@ mod tests {
                 },
                 source_identity: "fixture".to_owned(),
                 manifest_fingerprint: [1; 32],
-                archive_sha256: [2; 32],
+                archive_sha256: Some([2; 32]),
             },
         }
     }
@@ -969,6 +1234,7 @@ mod tests {
             &locked,
             &[],
             &[],
+            false,
         );
         assert_eq!(
             manifest["dependencies"]["com.example.direct"]["version"],

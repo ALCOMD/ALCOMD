@@ -1558,7 +1558,7 @@
         {
             "id": "legacy-metadata",
             "given": "otherwise usable candidate has legacy metadata",
-            "expected": "metadata presence permits planning; frozen target proof allows only absent cleanup obligations; actual or unprovable obligations retain package_legacy_cleanup_required",
+            "expected": "metadata presence permits planning; format 4 freezes matched legacy paths and companion meta files for review; apply rechecks the frozen targets, and unprovable targets retain package_legacy_cleanup_required",
             "status": "implemented-test-reference",
             "testReferences": [
                 {

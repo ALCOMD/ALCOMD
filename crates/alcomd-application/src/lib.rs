@@ -176,12 +176,28 @@ pub struct ProjectRecord {
     pub favorite: bool,
 }
 
-/// Local file or anonymous remote repository source.
+/// Local file or remote repository source.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum RepositorySource {
     Local { path: String },
     Remote { url: String },
 }
+
+/// Write-only credentials. Debug deliberately omits all user-supplied fields.
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryCredentials {
+    pub headers: std::collections::BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for RepositoryCredentials {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RepositoryCredentials([redacted])")
+    }
+}
+
+pub const VRCHAT_OFFICIAL_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101";
+pub const VRCHAT_CURATED_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102";
 
 /// Conditional HTTP validators stored separately from semantic state.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -218,13 +234,14 @@ pub struct RepositoryPackageLinks {
 pub struct ResolverPackageMetadata {
     pub semantic_version: String,
     pub author_name: String,
-    pub author_email: String,
+    pub author_email: Option<String>,
     pub artifact_url: String,
-    pub zip_sha256: String,
+    pub zip_sha256: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
     pub manifest_fingerprint: Vec<u8>,
     pub legacy_metadata_present: bool,
+    pub download_headers_present: bool,
 }
 
 /// Completely parsed repository observation.
@@ -255,6 +272,10 @@ pub struct RepositoryRecord {
     pub observation: RepositoryObservation,
     pub revision: Revision,
     pub registered_at_ms: u64,
+    #[serde(default)]
+    pub credentials_configured: bool,
+    #[serde(skip)]
+    pub resolver_indexed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -394,10 +415,95 @@ pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
         source: RepositorySource,
         validators: Option<RepositoryValidators>,
     ) -> impl Future<Output = Result<RepositoryReadOutcome, M3Error>> + Send;
+
+    fn inspect_repository_authenticated(
+        &self,
+        source: RepositorySource,
+        validators: Option<RepositoryValidators>,
+        credentials: Option<RepositoryCredentials>,
+    ) -> impl Future<Output = Result<RepositoryReadOutcome, M3Error>> + Send {
+        async move {
+            if credentials.is_some() {
+                return Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported));
+            }
+            self.inspect_repository(source, validators).await
+        }
+    }
+
+    fn save_repository_credentials(
+        &self,
+        _reference: String,
+        _credentials: RepositoryCredentials,
+    ) -> impl Future<Output = Result<(), M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
+
+    fn load_repository_credentials(
+        &self,
+        _reference: String,
+    ) -> impl Future<Output = Result<RepositoryCredentials, M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
+
+    fn delete_repository_credentials(
+        &self,
+        _reference: String,
+    ) -> impl Future<Output = Result<(), M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
 }
 
 /// M3 persistence port implemented only by the authoritative state store.
 pub trait M3RegistryStore: Clone + Send + Sync + 'static {
+    fn queue_repository_credential_cleanup(
+        &self,
+        _reference: String,
+    ) -> impl Future<Output = Result<(), M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
+
+    fn finish_repository_credential_cleanup(
+        &self,
+        _reference: String,
+    ) -> impl Future<Output = Result<(), M3Error>> + Send {
+        async { Ok(()) }
+    }
+
+    fn pending_repository_credential_cleanup(
+        &self,
+    ) -> impl Future<Output = Result<Vec<String>, M3Error>> + Send {
+        async { Ok(Vec::new()) }
+    }
+    fn repository_credential_reference(
+        &self,
+        _owner: PrincipalId,
+        _id: RepositoryId,
+    ) -> impl Future<Output = Result<Option<String>, M3Error>> + Send {
+        async { Ok(None) }
+    }
+
+    fn register_repository_authenticated(
+        &self,
+        _owner: PrincipalId,
+        _observation: RepositoryObservation,
+        _reference: String,
+        _key: IdempotencyKey,
+        _now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
+
+    fn set_repository_credential_reference(
+        &self,
+        _owner: PrincipalId,
+        _id: RepositoryId,
+        _expected: Revision,
+        _reference: Option<String>,
+        _key: IdempotencyKey,
+        _now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send {
+        async { Err(M3Error::new(M3ErrorCode::RepositoryCredentialsUnsupported)) }
+    }
     fn register_project(
         &self,
         owner: PrincipalId,
@@ -1288,6 +1394,7 @@ struct RepositoryPreview {
     owner: PrincipalId,
     expires_at: Instant,
     observation: RepositoryObservation,
+    credentials: Option<RepositoryCredentials>,
 }
 
 impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
@@ -1447,15 +1554,16 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         access: &AccessContext,
         connection_id: &str,
         source: RepositorySource,
+        credentials: Option<RepositoryCredentials>,
     ) -> Result<RepositoryObservation, M3Error> {
         require_m3(access, Permission::RepositoriesRead)?;
+        if credentials.is_some() {
+            require_repository_credentials(access)?;
+        }
         self.forget_repository_preview(connection_id).await;
-        let mut observation = match self.reader.inspect_repository(source, None).await? {
-            RepositoryReadOutcome::Fresh(observation) => observation,
-            RepositoryReadOutcome::NotModified(_) => {
-                return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
-            }
-        };
+        let mut observation = self
+            .read_repository_preview(source, credentials.clone())
+            .await?;
         // Retain only remote observations that this connection can register.
         // Local registration still rechecks the file at the selected path.
         if matches!(observation.source, RepositorySource::Remote { .. })
@@ -1476,6 +1584,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                     packages,
                     ..observation.clone()
                 },
+                credentials,
             });
         }
         Ok(observation)
@@ -1487,6 +1596,142 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .lock()
             .await
             .retain(|preview| preview.connection_id != connection_id && preview.expires_at > now);
+    }
+
+    async fn read_repository_preview(
+        &self,
+        source: RepositorySource,
+        credentials: Option<RepositoryCredentials>,
+    ) -> Result<RepositoryObservation, M3Error> {
+        match self
+            .reader
+            .inspect_repository_authenticated(source, None, credentials)
+            .await?
+        {
+            RepositoryReadOutcome::Fresh(observation) => Ok(observation),
+            RepositoryReadOutcome::NotModified(_) => {
+                Err(M3Error::new(M3ErrorCode::RepositoryUnavailable))
+            }
+        }
+    }
+
+    async fn persist_authenticated_repository(
+        &self,
+        access: &AccessContext,
+        observation: RepositoryObservation,
+        credentials: RepositoryCredentials,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let now = m3_time_ms()?;
+        let reference = self.stage_repository_credentials(credentials).await?;
+        let result = self
+            .store
+            .register_repository_authenticated(
+                access.principal().clone(),
+                observation,
+                reference.clone(),
+                key,
+                now,
+            )
+            .await;
+        if unused_credential_reference(&result) {
+            self.discard_credential_reference(reference).await;
+        }
+        result
+    }
+
+    pub async fn set_repository_credentials(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        expected: Revision,
+        credentials: Option<RepositoryCredentials>,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        require_repository_credentials(access)?;
+        if matches!(
+            id.to_string().as_str(),
+            VRCHAT_OFFICIAL_REPOSITORY_ID | VRCHAT_CURATED_REPOSITORY_ID
+        ) {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        let owner = access.principal().clone();
+        let now = m3_time_ms()?;
+        let old = self
+            .store
+            .repository_credential_reference(owner.clone(), id)
+            .await?;
+        let reference = match credentials {
+            Some(credentials) => {
+                let record = self.store.get_repository(owner.clone(), id).await?;
+                self.read_repository_preview(record.observation.source, Some(credentials.clone()))
+                    .await?;
+                Some(self.stage_repository_credentials(credentials).await?)
+            }
+            None => None,
+        };
+        let result = self
+            .store
+            .set_repository_credential_reference(owner, id, expected, reference.clone(), key, now)
+            .await;
+        if result.as_ref().is_ok_and(|result| !result.replayed) {
+            if let Some(old) = old {
+                self.discard_credential_reference(old).await;
+            }
+        } else if let Some(reference) = reference.filter(|_| unused_credential_reference(&result)) {
+            self.discard_credential_reference(reference).await;
+        }
+        result
+    }
+
+    async fn stage_repository_credentials(
+        &self,
+        credentials: RepositoryCredentials,
+    ) -> Result<String, M3Error> {
+        let reference = OperationId::new().to_string();
+        self.store
+            .queue_repository_credential_cleanup(reference.clone())
+            .await?;
+        if let Err(error) = self
+            .reader
+            .save_repository_credentials(reference.clone(), credentials)
+            .await
+        {
+            self.discard_credential_reference(reference).await;
+            return Err(error);
+        }
+        Ok(reference)
+    }
+
+    async fn discard_credential_reference(&self, reference: String) {
+        if self
+            .reader
+            .delete_repository_credentials(reference.clone())
+            .await
+            .is_err()
+            || self
+                .store
+                .finish_repository_credential_cleanup(reference)
+                .await
+                .is_err()
+        {
+            eprintln!("could not remove an unreferenced repository credential");
+        }
+    }
+
+    /// Take this snapshot at startup, before any new references can be staged.
+    pub async fn recover_repository_credentials(&self) -> Result<(), M3Error> {
+        let references = self.store.pending_repository_credential_cleanup().await?;
+        if !references.is_empty() {
+            let application = self.clone();
+            tokio::spawn(async move {
+                for reference in references {
+                    application.discard_credential_reference(reference).await;
+                }
+            });
+        }
+        Ok(())
     }
 
     pub async fn list_repositories(
@@ -1561,8 +1806,12 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         connection_id: &str,
         source: RepositorySource,
         key: IdempotencyKey,
+        credentials: Option<RepositoryCredentials>,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
+        if credentials.is_some() {
+            require_repository_credentials(access)?;
+        }
         let preview = {
             let mut previews = self.repository_previews.lock().await;
             let now = Instant::now();
@@ -1574,17 +1823,26 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 })
                 .and_then(|index| previews.remove(index))
         };
-        if let Some(preview) = preview
+        let observation = if let Some(preview) = preview
+            && preview.credentials == credentials
             && let RepositorySource::Remote { url } = &source
             && self
                 .reader
                 .normalize_remote_repository_url(url)
                 .is_ok_and(|url| preview.observation.source == RepositorySource::Remote { url })
         {
-            self.persist_repository(access, preview.observation, key)
+            preview.observation
+        } else if credentials.is_some() {
+            self.read_repository_preview(source, credentials.clone())
+                .await?
+        } else {
+            return self.register_repository(access, source, key).await;
+        };
+        if let Some(credentials) = credentials {
+            self.persist_authenticated_repository(access, observation, credentials, key)
                 .await
         } else {
-            self.register_repository(access, source, key).await
+            self.persist_repository(access, observation, key).await
         }
     }
 
@@ -1619,6 +1877,25 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         access: &AccessContext,
         urls: Vec<String>,
         key: IdempotencyKey,
+        stop: Option<tokio::sync::watch::Receiver<bool>>,
+    ) -> Result<Vec<RepositoryBatchItem>, M3Error>
+    where
+        S: RepositoryListStore,
+    {
+        self.register_repository_list_with_credentials(
+            access,
+            urls.into_iter().map(|url| (url, None)).collect(),
+            key,
+            stop,
+        )
+        .await
+    }
+
+    pub async fn register_repository_list_with_credentials(
+        &self,
+        access: &AccessContext,
+        urls: Vec<(String, Option<RepositoryCredentials>)>,
+        key: IdempotencyKey,
         mut stop: Option<tokio::sync::watch::Receiver<bool>>,
     ) -> Result<Vec<RepositoryBatchItem>, M3Error>
     where
@@ -1638,7 +1915,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         let entries = urls
             .into_iter()
             .enumerate()
-            .map(|(index, url)| {
+            .map(|(index, (url, credentials))| {
                 if url.len() > 2048 {
                     return Err(invalid());
                 }
@@ -1648,7 +1925,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 }
                 let key = IdempotencyKey::parse(format!("list:{}:{index}", key.as_str()))
                     .map_err(|_| invalid())?;
-                Ok((url, key))
+                Ok((url, key, credentials))
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -1689,14 +1966,18 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                     .as_ref()
                     .is_some_and(|stop| *stop.borrow() || stop.has_changed().is_err())
             {
-                let (url, _) = &entries[admitted];
+                let (url, _, credentials) = &entries[admitted];
                 if known.contains(url) {
                     observations.insert(admitted, None);
                 } else {
                     let reader = self.reader.clone();
                     let source = RepositorySource::Remote { url: url.clone() };
-                    let task = downloads
-                        .spawn(async move { reader.inspect_repository(source, None).await });
+                    let credentials = credentials.clone();
+                    let task = downloads.spawn(async move {
+                        reader
+                            .inspect_repository_authenticated(source, None, credentials)
+                            .await
+                    });
                     download_indices.insert(task.id(), admitted);
                 }
                 admitted += 1;
@@ -1708,6 +1989,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 commit = Some(Box::pin(self.persist_repository_list_item(
                     access,
                     entries[outcomes.len()].1.clone(),
+                    entries[outcomes.len()].2.clone(),
                     observation,
                 )));
             }
@@ -1750,6 +2032,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         &self,
         access: &AccessContext,
         key: IdempotencyKey,
+        credentials: Option<RepositoryCredentials>,
         observation: Option<Result<RepositoryReadOutcome, M3Error>>,
     ) -> RepositoryBatchItem {
         let Some(observation) = observation else {
@@ -1765,7 +2048,14 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         .await
         {
             Ok(RepositoryReadOutcome::Fresh(value)) => {
-                match self.persist_repository(access, value, key).await {
+                let result = match credentials {
+                    Some(credentials) => {
+                        self.persist_authenticated_repository(access, value, credentials, key)
+                            .await
+                    }
+                    None => self.persist_repository(access, value, key).await,
+                };
+                match result {
                     Ok(_) => RepositoryBatchItem::Added,
                     Err(error) if error.code() == M3ErrorCode::RepositoryAlreadyRegistered => {
                         RepositoryBatchItem::Existing
@@ -1809,10 +2099,27 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             "repositories.refresh",
             "fetch_repository",
             target,
-            self.reader.inspect_repository(
-                current.observation.source,
-                Some(current.observation.validators),
-            ),
+            async {
+                let credentials = if current.credentials_configured {
+                    let reference = self
+                        .store
+                        .repository_credential_reference(access.principal().clone(), id)
+                        .await?
+                        .ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryUnavailable))?;
+                    Some(self.reader.load_repository_credentials(reference).await?)
+                } else {
+                    None
+                };
+                self.reader
+                    .inspect_repository_authenticated(
+                        current.observation.source,
+                        current
+                            .resolver_indexed
+                            .then_some(current.observation.validators),
+                        credentials,
+                    )
+                    .await
+            },
             |error| error.technical_path().map(str::to_owned),
         )
         .await?
@@ -1940,12 +2247,48 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
+        if matches!(
+            id.to_string().as_str(),
+            VRCHAT_OFFICIAL_REPOSITORY_ID | VRCHAT_CURATED_REPOSITORY_ID
+        ) {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        let old = match self
+            .store
+            .repository_credential_reference(access.principal().clone(), id)
+            .await
+        {
+            Ok(reference) => reference,
+            Err(error) if error.code() == M3ErrorCode::RepositoryNotRegistered => None,
+            Err(error) => return Err(error),
+        };
         let result = self
             .store
             .unregister_repository(access.principal().clone(), id, expected, key, m3_time_ms()?)
             .await?;
+        if let Some(reference) = old.filter(|_| !result.replayed) {
+            self.discard_credential_reference(reference).await;
+        }
         Ok(result)
+    }
+}
+
+fn require_repository_credentials(access: &AccessContext) -> Result<(), M3Error> {
+    require_m3(access, Permission::RepositoriesManage)?;
+    if access.principal() != &PrincipalId::local_owner() {
+        return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+    }
+    Ok(())
+}
+
+fn unused_credential_reference(result: &Result<SyncWrite<RepositoryRecord>, M3Error>) -> bool {
+    match result {
+        Ok(result) => result.replayed,
+        Err(error) => !matches!(
+            error.code(),
+            M3ErrorCode::Internal | M3ErrorCode::StoreUnavailable
+        ),
     }
 }
 

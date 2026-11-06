@@ -193,7 +193,22 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
     await expect(page.locator("md-dialog").filter({ hasText: "Apply package changes?" })).toContainText("Remote tools: installed newer");
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", source: { kind: "repository" } }] } }]);
-    expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote" && request.expectedSnapshot !== undefined))).toBe(true);
+    expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
+});
+
+test("First candidate page renders before remaining evidence and presentation metadata", async ({ page }) => {
+    await open(page, "paged=1&deferCandidateSummary=1&deferPackagePresentation=1");
+    const first = page.getByRole("checkbox", { name: "Select com.example.avatar", exact: true });
+    const updateAll = page.getByRole("button", { name: "Update All (1)", exact: true });
+    await expect(first).toBeVisible();
+    await expect(updateAll).toBeDisabled();
+    await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSummary)).toBe("function");
+    await page.evaluate(() => window.resumeCandidateSummary?.());
+    await expect(updateAll).toBeEnabled();
+    await expect(first).toBeVisible();
+    await expect.poll(() => page.evaluate(() => typeof window.resumePackagePresentation)).toBe("function");
+    await page.evaluate(() => window.resumePackagePresentation?.());
+    await expect(page.getByRole("checkbox", { name: "Select Avatar tools", exact: true })).toBeVisible();
 });
 
 test("Mixed selected install and upgrade keeps search-hidden selected IDs in one Bulk Plan", async ({ page }) => {
@@ -484,6 +499,7 @@ test("Changing source immediately invalidates the old target until the matching 
     await open(page, "versions=1&delaySource=1");
     await expect(page.getByRole("button", { name: "Update", exact: true })).toBeEnabled();
     await page.getByRole("combobox", { name: "Source for Avatar tools" }).click();
+    const initialMetadataRequests = await page.evaluate(() => window.repositoryPackageRequests.length);
     await page.getByRole("option", { name: "Local packages", exact: true }).click();
     await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSource)).toBe("function");
     await expect(page.getByRole("button", { name: "Update", exact: true })).toHaveCount(0);
@@ -492,5 +508,6 @@ test("Changing source immediately invalidates the old target until the matching 
     await page.evaluate(() => window.resumeCandidateSource?.());
     await page.getByRole("button", { name: "Update", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
+    expect(await page.evaluate(() => window.repositoryPackageRequests.length)).toBe(initialMetadataRequests);
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } }]);
 });

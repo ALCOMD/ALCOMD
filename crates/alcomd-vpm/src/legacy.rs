@@ -1,12 +1,12 @@
-//! Read-only, bounded evidence that the selected package requires no cleanup.
-//! Observed paths are never eligible for deletion through this module.
+//! Bounded discovery and filesystem evidence for VPM legacy declarations.
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::time::SystemTime;
 
-use alcomd_application::{M4Error, M4ErrorCode};
+use alcomd_application::{LegacyRemoval, LegacyRemovalKind, M4Error, M4ErrorCode};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::package::LegacyMetadata;
 
@@ -147,6 +147,253 @@ impl<'a> Snapshot<'a> {
     }
 }
 
+pub(crate) fn collect_removals(
+    root: &Path,
+    declarations: &BTreeMap<String, LegacyMetadata>,
+) -> Result<Vec<LegacyRemoval>, M4Error> {
+    if declarations.values().all(LegacyMetadata::is_empty) {
+        return Ok(Vec::new());
+    }
+    let mut snapshot = Snapshot::new(root)?;
+    let mut targets = BTreeMap::new();
+    let mut unresolved = Vec::new();
+    for (package_id, metadata) in declarations {
+        for (kind, entries) in [
+            (LegacyRemovalKind::File, &metadata.files),
+            (LegacyRemovalKind::Directory, &metadata.folders),
+        ] {
+            for (path, guid) in entries {
+                let path = removal_path(path)?;
+                if matches_kind(&mut snapshot, &path, kind)? {
+                    add_target(&mut snapshot, &mut targets, path, kind, package_id)?;
+                } else if !guid.is_empty() {
+                    unresolved.push((guid.as_str(), kind, package_id.as_str()));
+                }
+            }
+        }
+        for old_package in &metadata.packages {
+            let path = removal_path(&format!("Packages/{old_package}"))?;
+            if matches_kind(&mut snapshot, &path, LegacyRemovalKind::Directory)? {
+                add_target(
+                    &mut snapshot,
+                    &mut targets,
+                    path,
+                    LegacyRemovalKind::Directory,
+                    package_id,
+                )?;
+            } else if !snapshot.missing(Path::new(&path))? {
+                return Err(unsupported());
+            }
+        }
+    }
+    if !unresolved.is_empty() {
+        let guids = unresolved.iter().map(|(guid, _, _)| *guid).collect();
+        let found = find_moved_assets(&mut snapshot, &guids)?;
+        for (guid, kind, package_id) in unresolved {
+            if let Some(path) = found.get(guid)
+                && matches_kind(&mut snapshot, path, kind)?
+            {
+                add_target(&mut snapshot, &mut targets, path.clone(), kind, package_id)?;
+            }
+        }
+    }
+
+    // A directory already covers descendants. Keep its sibling .meta separately.
+    let mut removals = Vec::new();
+    let mut identities = BTreeSet::new();
+    for (path, (kind, package_id)) in &targets {
+        if path.match_indices('/').any(|(index, _)| {
+            targets
+                .get(&path[..index])
+                .is_some_and(|(kind, _)| *kind == LegacyRemovalKind::Directory)
+        }) {
+            continue;
+        }
+        if removals.len() >= 4096 {
+            return Err(unsupported());
+        }
+        verify_boundary(root, Path::new(path))?;
+        let absolute = root.join(path);
+        let identity = snapshot.observe(&absolute)?.identity.clone();
+        if !identities.insert(identity.clone()) {
+            return Err(unsupported());
+        }
+        removals.push(LegacyRemoval {
+            path: path.clone(),
+            kind: *kind,
+            package_id: package_id.clone(),
+            identity,
+            fingerprint: fingerprint(&absolute, *kind)?,
+        });
+    }
+    snapshot.verify()?;
+    Ok(removals)
+}
+
+fn add_target(
+    snapshot: &mut Snapshot<'_>,
+    targets: &mut BTreeMap<String, (LegacyRemovalKind, String)>,
+    path: String,
+    kind: LegacyRemovalKind,
+    package_id: &str,
+) -> Result<(), M4Error> {
+    let meta = removal_path(&format!("{path}.meta"))?;
+    targets
+        .entry(path)
+        .or_insert_with(|| (kind, package_id.to_owned()));
+    if !snapshot.missing(Path::new(&meta))? {
+        if !matches_kind(snapshot, &meta, LegacyRemovalKind::File)? {
+            return Err(unsupported());
+        }
+        targets
+            .entry(meta)
+            .or_insert_with(|| (LegacyRemovalKind::File, package_id.to_owned()));
+    }
+    Ok(())
+}
+
+fn matches_kind(
+    snapshot: &mut Snapshot<'_>,
+    path: &str,
+    kind: LegacyRemovalKind,
+) -> Result<bool, M4Error> {
+    if snapshot.missing(Path::new(path))? {
+        return Ok(false);
+    }
+    let stamp = snapshot.observe(&snapshot.root.join(path))?;
+    Ok(match kind {
+        LegacyRemovalKind::File => stamp.file,
+        LegacyRemovalKind::Directory => stamp.directory,
+    })
+}
+
+fn find_moved_assets(
+    snapshot: &mut Snapshot<'_>,
+    guids: &BTreeSet<&str>,
+) -> Result<BTreeMap<String, String>, M4Error> {
+    let mut found = BTreeMap::new();
+    let mut total_bytes = 0_usize;
+    if snapshot.missing(Path::new("Assets"))? {
+        return Ok(found);
+    }
+    let mut pending = vec![snapshot.root.join("Assets")];
+    let mut visited = 0;
+    while let Some(path) = pending.pop() {
+        visited += 1;
+        let relative = path
+            .strip_prefix(snapshot.root)
+            .map_err(|_| unsupported())?;
+        verify_boundary(snapshot.root, relative)?;
+        if snapshot.observe(&path)?.directory {
+            for child in std::fs::read_dir(&path).map_err(|_| unsupported())? {
+                pending.push(child.map_err(|_| unsupported())?.path());
+                if pending.len() + visited > ENTRY_LIMIT {
+                    return Err(unsupported());
+                }
+            }
+        } else if let Some(asset) = relative
+            .to_str()
+            .and_then(|path| path.strip_suffix(".meta"))
+        {
+            let bytes = snapshot.read_file(&path, META_BYTE_LIMIT)?;
+            total_bytes += bytes.len();
+            if total_bytes > TOTAL_META_BYTE_LIMIT {
+                return Err(unsupported());
+            }
+            let guid = meta_guid(&bytes)?;
+            if guids.contains(guid.as_str()) && found.insert(guid, removal_path(asset)?).is_some() {
+                return Err(unsupported());
+            }
+        }
+    }
+    Ok(found)
+}
+
+pub(crate) fn removal_path(value: &str) -> Result<String, M4Error> {
+    let normalized = value.replace('\\', "/");
+    if normalized.len() > 1024 {
+        return Err(unsupported());
+    }
+    for part in normalized.split('/') {
+        if part.is_empty()
+            || part.chars().any(char::is_control)
+            || part.contains(['<', '>', '"', '|', '?', '*'])
+            || crate::archive::validate_segment(part).is_err()
+        {
+            return Err(unsupported());
+        }
+    }
+    let lower = normalized.to_ascii_lowercase();
+    let root = lower.split('/').next().ok_or_else(unsupported)?;
+    if matches!(
+        root,
+        "library" | ".git" | ".hg" | ".svn" | "temp" | "obj" | "logs" | "usersettings"
+    ) || matches!(
+        lower.as_str(),
+        "assets"
+            | "packages"
+            | "projectsettings"
+            | "packages/manifest.json"
+            | "packages/vpm-manifest.json"
+            | "projectsettings/projectversion.txt"
+    ) {
+        return Err(unsupported());
+    }
+    Ok(normalized)
+}
+
+pub(crate) fn verify_boundary(root: &Path, relative: &Path) -> Result<(), M4Error> {
+    alcomd_platform::verify_project_path_boundary(root, relative)
+        .map_err(|cause| unsupported().with_source(cause))
+}
+
+pub(crate) fn verify_removal(path: &Path, removal: &LegacyRemoval) -> Result<(), M4Error> {
+    let before = EntryStamp::read(path)?;
+    if before.identity != removal.identity
+        || fingerprint(path, removal.kind)? != removal.fingerprint
+        || EntryStamp::read(path)? != before
+    {
+        return Err(unsupported());
+    }
+    Ok(())
+}
+
+fn fingerprint(path: &Path, kind: LegacyRemovalKind) -> Result<[u8; 32], M4Error> {
+    let before = EntryStamp::read(path)?;
+    let hash = match kind {
+        LegacyRemovalKind::Directory if before.directory => {
+            crate::plan::checked_tree_fingerprint(path, verify_boundary)?
+        }
+        LegacyRemovalKind::File if before.file && before.len <= 1_073_741_824 => {
+            let mut file = std::fs::File::open(path)
+                .map_err(|cause| unsupported().with_source(cause))?
+                .take(before.len + 1);
+            let mut digest = Sha256::new();
+            let mut buffer = [0; 64 * 1024];
+            let mut bytes = 0_u64;
+            loop {
+                let read = file
+                    .read(&mut buffer)
+                    .map_err(|cause| unsupported().with_source(cause))?;
+                if read == 0 {
+                    break;
+                }
+                bytes += read as u64;
+                digest.update(&buffer[..read]);
+            }
+            if bytes != before.len {
+                return Err(unsupported());
+            }
+            digest.finalize().into()
+        }
+        _ => return Err(unsupported()),
+    };
+    if EntryStamp::read(path)? != before {
+        return Err(unsupported());
+    }
+    Ok(hash)
+}
+
 pub(crate) fn verify_absent(root: &Path, metadata: &LegacyMetadata) -> Result<(), M4Error> {
     verify_absent_before_final_check(root, metadata, || {})
 }
@@ -161,20 +408,9 @@ fn verify_absent_before_final_check(
     }
     let mut snapshot = Snapshot::new(root)?;
     for path in metadata.folders.keys().chain(metadata.files.keys()) {
-        if path.contains(['\\', ':']) {
-            return Err(unsupported());
-        }
-        let path = Path::new(path);
-        if !path.starts_with("Assets")
-            || path.components().count() < 2
-            || path
-                .components()
-                .any(|part| !matches!(part, Component::Normal(_)))
-        {
-            return Err(unsupported());
-        }
-        if !snapshot.missing(path)?
-            || !snapshot.missing(&PathBuf::from(format!("{}.meta", path.to_string_lossy())))?
+        let path = legacy_relative_path(path)?;
+        if !snapshot.missing(Path::new(&path))?
+            || !snapshot.missing(Path::new(&format!("{path}.meta")))?
         {
             return Err(unsupported());
         }
@@ -249,6 +485,26 @@ fn verify_absent_before_final_check(
     }
     before_final_check();
     snapshot.verify()
+}
+
+/// Repository paths may use Windows separators. This is a read-only proof over
+/// the two project roots VPM uses for legacy assets and old package files.
+fn legacy_relative_path(value: &str) -> Result<String, M4Error> {
+    let normalized = value.replace('\\', "/");
+    let mut parts = normalized.split('/');
+    if !matches!(parts.next(), Some("Assets" | "Packages")) || !normalized.contains('/') {
+        return Err(unsupported());
+    }
+    for part in parts {
+        if part.is_empty()
+            || part.chars().any(char::is_control)
+            || part.contains(['<', '>', '"', '|', '?', '*'])
+            || crate::archive::validate_segment(part).is_err()
+        {
+            return Err(unsupported());
+        }
+    }
+    Ok(normalized)
 }
 
 /// Unity-generated meta files use one unquoted hexadecimal GUID. Other syntax
@@ -345,6 +601,73 @@ mod tests {
                 .expect("direct/lock evidence");
             assert!(verify_absent(root, &metadata).is_err());
         }
+    }
+
+    #[test]
+    fn windows_legacy_paths_are_checked_in_assets_and_packages_without_deleting() {
+        let fixture = Fixture::new();
+        let metadata = LegacyMetadata {
+            folders: BTreeMap::from([(r"Assets\Old".to_owned(), String::new())]),
+            files: BTreeMap::from([(r"Packages\old.tgz".to_owned(), String::new())]),
+            ..Default::default()
+        };
+        verify_absent(&fixture.0, &metadata).expect("clean project needs no cleanup");
+        let old = fixture.0.join("Packages/old.tgz");
+        std::fs::write(&old, b"keep").expect("old installation fixture");
+        assert!(verify_absent(&fixture.0, &metadata).is_err());
+        assert_eq!(std::fs::read(&old).expect("retained legacy file"), b"keep");
+        for invalid in [
+            r"Assets\..\outside",
+            r"C:\outside",
+            r"\\host\share",
+            r"Packages\CON",
+            "Assets//old",
+            "Packages/old.",
+        ] {
+            assert!(legacy_relative_path(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn standard_project_relative_paths_and_ambiguous_guids_are_handled_safely() {
+        let fixture = Fixture::new();
+        std::fs::write(fixture.0.join("ProjectVersion.txt"), b"legacy root file")
+            .expect("seed an old file at the project root");
+        let mut metadata = LegacyMetadata {
+            files: BTreeMap::from([("ProjectVersion.txt".to_owned(), String::new())]),
+            ..Default::default()
+        };
+        let collect = |metadata| {
+            collect_removals(
+                &fixture.0,
+                &BTreeMap::from([("com.example.fixture".to_owned(), metadata)]),
+            )
+        };
+        let plan = collect(metadata.clone()).expect("find the root-relative legacy file");
+        assert_eq!(plan[0].path, "ProjectVersion.txt");
+        assert!(fixture.0.join("ProjectVersion.txt").is_file());
+        for path in ["../outside", "Packages/vpm-manifest.json", "Library/ALCOMD"] {
+            assert!(removal_path(path).is_err());
+        }
+        let guid = "0123456789abcdef0123456789abcdef";
+        metadata
+            .files
+            .insert("Assets/Old.txt".to_owned(), guid.to_owned());
+        for name in ["Copy1", "Copy2"] {
+            std::fs::write(fixture.0.join(format!("Assets/{name}.txt")), b"asset")
+                .expect("seed duplicate-GUID asset");
+            std::fs::write(
+                fixture.0.join(format!("Assets/{name}.txt.meta")),
+                format!("guid: {guid}\n"),
+            )
+            .expect("write duplicate-GUID metadata");
+        }
+        assert_eq!(
+            collect(metadata)
+                .expect_err("duplicate GUID is ambiguous")
+                .code(),
+            M4ErrorCode::PackageLegacyCleanupRequired
+        );
     }
 
     #[test]

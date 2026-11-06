@@ -4,10 +4,12 @@ use std::thread;
 use std::time::Duration;
 
 use alcomd_application::{
-    DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M5UnityStore, ManifestState,
-    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ProjectType, RepositoryObservation,
-    RepositoryPackageLinks, RepositoryPackageVersion, RepositorySource, RepositoryValidators,
-    Revision, StateStore, SyncWrite, UnityInstallationId,
+    CandidateStore, DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M4ErrorCode,
+    M4Store, M5UnityStore, ManifestState, PrincipalId, ProjectId, ProjectObservation,
+    ProjectRecord, ProjectType, RepositoryArchivePinStore, RepositoryId, RepositoryObservation,
+    RepositoryPackageLinks, RepositoryPackageSourcePin, RepositoryPackageVersion, RepositorySource,
+    RepositoryValidators, ResolverCatalogSource, ResolverPackageMetadata, Revision, StateStore,
+    SyncWrite, UnityInstallationId,
 };
 use alcomd_store::StateStoreHandle;
 use rusqlite::{Connection, params};
@@ -705,4 +707,611 @@ async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
         .await
         .expect_err("reject duplicate source identity");
     assert_eq!(duplicate.code(), M3ErrorCode::RepositoryAlreadyRegistered);
+}
+
+#[tokio::test]
+async fn repository_credentials_follow_revision_and_orphan_cleanup() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let other = PrincipalId::parse("extension:fixture").expect("isolated principal");
+    let original = Uuid::new_v4().to_string();
+    let replacement = Uuid::new_v4().to_string();
+    for reference in [&original, &replacement] {
+        store
+            .queue_repository_credential_cleanup(reference.clone())
+            .await
+            .expect("stage reference");
+    }
+    let first = store
+        .register_repository_authenticated(
+            owner.clone(),
+            repository(1, 10),
+            original.clone(),
+            key("auth-register"),
+            10,
+        )
+        .await
+        .expect("register authenticated repository");
+    let id = first.value.repository_id;
+    assert!(first.value.credentials_configured);
+    assert!(
+        !serde_json::to_string(&first.value)
+            .expect("public record")
+            .contains(&original)
+    );
+    assert_eq!(
+        store
+            .pending_repository_credential_cleanup()
+            .await
+            .expect("orphans")
+            .as_slice(),
+        std::slice::from_ref(&replacement)
+    );
+    assert_eq!(
+        store
+            .repository_credential_reference(other, id)
+            .await
+            .expect_err("other owners cannot look up the reference")
+            .code(),
+        M3ErrorCode::RepositoryNotRegistered
+    );
+
+    let mut observation = repository(1, 20);
+    observation.name = Some("Changed".to_owned());
+    let refreshed = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            first.value.revision,
+            observation,
+            key("auth-refresh"),
+            20,
+        )
+        .await
+        .expect("refresh authenticated index");
+    assert!(refreshed.value.credentials_configured);
+    assert_eq!(
+        store
+            .repository_credential_reference(owner.clone(), id)
+            .await
+            .expect("active reference"),
+        Some(original.clone())
+    );
+
+    let rotated = store
+        .set_repository_credential_reference(
+            owner.clone(),
+            id,
+            refreshed.value.revision,
+            Some(replacement.clone()),
+            key("auth-rotate"),
+            30,
+        )
+        .await
+        .expect("rotate credentials");
+    assert_eq!(
+        rotated.value.revision.get(),
+        refreshed.value.revision.get() + 1
+    );
+    assert_eq!(
+        rotated.value.observation.validators,
+        RepositoryValidators::default()
+    );
+    assert_eq!(
+        store
+            .pending_repository_credential_cleanup()
+            .await
+            .expect("orphans")
+            .as_slice(),
+        std::slice::from_ref(&original)
+    );
+    store
+        .finish_repository_credential_cleanup(original)
+        .await
+        .expect("retire old reference");
+
+    let cleared = store
+        .set_repository_credential_reference(
+            owner.clone(),
+            id,
+            rotated.value.revision,
+            None,
+            key("auth-clear"),
+            40,
+        )
+        .await
+        .expect("clear credentials");
+    assert!(!cleared.value.credentials_configured);
+    assert_eq!(
+        store
+            .repository_credential_reference(owner, id)
+            .await
+            .expect("cleared reference"),
+        None
+    );
+    assert_eq!(
+        store
+            .pending_repository_credential_cleanup()
+            .await
+            .expect("orphans"),
+        [replacement]
+    );
+    drop(store);
+}
+
+#[tokio::test]
+async fn large_repository_write_replays_keep_metadata_and_paginate_package_versions() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let mut index = repository(1, 10);
+    let package = index.packages.pop().expect("fixture package");
+    index.packages = (0..1100)
+        .map(|version| RepositoryPackageVersion {
+            version: format!("1.0.{version}"),
+            ..package.clone()
+        })
+        .collect();
+    assert!(serde_json::to_vec(&index).expect("encode index").len() > 65_536);
+
+    let first = store
+        .register_repository(owner.clone(), index.clone(), key("large-register"), 10)
+        .await
+        .expect("register index above replay budget");
+    assert!(first.value.observation.packages.is_empty());
+    let id = first.value.repository_id;
+    let mut refreshed_index = index.clone();
+    refreshed_index.refreshed_at_ms = 20;
+    refreshed_index.packages[0].display_name = Some("Updated".to_owned());
+    let refreshed = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            first.value.revision,
+            refreshed_index.clone(),
+            key("large-refresh"),
+            20,
+        )
+        .await
+        .expect("refresh index above replay budget");
+    assert_eq!(refreshed.value.revision.get(), 2);
+    assert!(refreshed.value.observation.packages.is_empty());
+
+    let not_modified = store
+        .update_repository_validators(
+            owner.clone(),
+            id,
+            refreshed.value.revision,
+            RepositoryValidators::default(),
+            key("large-304"),
+            30,
+        )
+        .await
+        .expect("record 304 without serializing the index");
+    assert_eq!(not_modified.value.revision, refreshed.value.revision);
+    assert_eq!(not_modified.value.observation.refreshed_at_ms, 30);
+    assert!(not_modified.value.observation.packages.is_empty());
+
+    let register_replay = store
+        .register_repository(owner.clone(), index, key("large-register"), 40)
+        .await
+        .expect("replay registration after refresh");
+    let refresh_replay = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            first.value.revision,
+            refreshed_index,
+            key("large-refresh"),
+            40,
+        )
+        .await
+        .expect("replay original refresh after 304");
+    let validator_replay = store
+        .update_repository_validators(
+            owner.clone(),
+            id,
+            refreshed.value.revision,
+            RepositoryValidators::default(),
+            key("large-304"),
+            40,
+        )
+        .await
+        .expect("replay original 304");
+    for (original, replay) in [
+        (first, register_replay),
+        (refreshed, refresh_replay),
+        (not_modified, validator_replay),
+    ] {
+        assert!(replay.replayed);
+        assert_eq!(replay.value.repository_id, original.value.repository_id);
+        assert_eq!(replay.value.revision, original.value.revision);
+        assert_eq!(
+            replay.value.registered_at_ms,
+            original.value.registered_at_ms
+        );
+        assert_eq!(replay.value.observation, original.value.observation);
+    }
+
+    let mut cursor = None;
+    let mut count = 0;
+    loop {
+        let page = store
+            .list_repository_packages(owner.clone(), id, cursor, 100)
+            .await
+            .expect("read one package page");
+        if count == 0 {
+            assert_eq!(page.packages[0].display_name.as_deref(), Some("Updated"));
+        }
+        count += page.packages.len();
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            break;
+        }
+    }
+    assert_eq!(count, 1100);
+}
+
+fn resolver_index_fixture() -> RepositoryObservation {
+    let mut observation = repository(1, 10);
+    let valid = &mut observation.packages[0];
+    valid.resolver = Some(ResolverPackageMetadata {
+        semantic_version: valid.version.clone(),
+        author_name: "Fixture".into(),
+        author_email: None,
+        artifact_url: "https://example.invalid/package.zip".into(),
+        zip_sha256: None,
+        unity_release: None,
+        dependencies_json: "{}".into(),
+        manifest_fingerprint: vec![7; 32],
+        legacy_metadata_present: false,
+        download_headers_present: false,
+    });
+    observation.packages.push(RepositoryPackageVersion {
+        version: "2.0.0".into(),
+        resolver: None,
+        ..observation.packages[0].clone()
+    });
+    observation
+}
+
+#[tokio::test]
+async fn resolver_catalog_preserves_package_download_header_presence() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open isolated store");
+    let owner = PrincipalId::local_owner();
+    let mut observation = resolver_index_fixture();
+    observation.packages[0]
+        .resolver
+        .as_mut()
+        .expect("resolver metadata")
+        .download_headers_present = true;
+    let id = store
+        .register_repository(owner.clone(), observation, key("package-headers"), 10)
+        .await
+        .expect("register indexed source")
+        .value
+        .repository_id;
+    let catalog = store
+        .resolver_catalog(owner.clone(), false)
+        .await
+        .expect("catalog");
+    assert!(matches!(
+        catalog.entries[0].source,
+        ResolverCatalogSource::Repository {
+            download_headers_present: true,
+            ..
+        }
+    ));
+    let entries = store
+        .list_repository_packages(owner, id, None, 10)
+        .await
+        .expect("package rows");
+    assert!(
+        entries.packages[0]
+            .resolver
+            .as_ref()
+            .expect("resolver metadata")
+            .download_headers_present
+    );
+    drop(store);
+}
+
+#[tokio::test]
+async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open isolated store");
+    let owner = PrincipalId::local_owner();
+    let observation = resolver_index_fixture();
+    let repository = store
+        .register_repository(
+            owner.clone(),
+            observation.clone(),
+            key("hashless-register"),
+            10,
+        )
+        .await
+        .expect("register the first index")
+        .value;
+    assert!(repository.resolver_indexed);
+    let id = repository.repository_id;
+    let pin = RepositoryPackageSourcePin {
+        credential_reference: None,
+        download_headers: None,
+        repository_id: id.to_string(),
+        repository_revision: repository.revision.get(),
+        source_identity: "remote:https://example.invalid/1?channel=stable".into(),
+        manifest_fingerprint: [7; 32],
+        package_id: "com.example.package".into(),
+        version: "1.0.0".into(),
+        artifact_url: "https://example.invalid/package.zip".into(),
+        archive_sha256: [9; 32],
+    };
+    for stale in [
+        RepositoryPackageSourcePin {
+            source_identity: "remote:https://wrong.invalid".into(),
+            ..pin.clone()
+        },
+        RepositoryPackageSourcePin {
+            credential_reference: None,
+            download_headers: None,
+            artifact_url: "https://wrong.invalid/package.zip".into(),
+            ..pin.clone()
+        },
+        RepositoryPackageSourcePin {
+            manifest_fingerprint: [8; 32],
+            ..pin.clone()
+        },
+    ] {
+        assert_eq!(
+            store
+                .pin_repository_archive(owner.clone(), stale)
+                .await
+                .expect_err("reject mismatched binding")
+                .code(),
+            M4ErrorCode::PlanStale
+        );
+    }
+    let other = PrincipalId::parse("extension:other").expect("other principal");
+    assert_eq!(
+        store
+            .pin_repository_archive(other, pin.clone())
+            .await
+            .expect_err("reject different owner")
+            .code(),
+        M4ErrorCode::PlanStale
+    );
+    let concurrent = RepositoryPackageSourcePin {
+        archive_sha256: [10; 32],
+        ..pin.clone()
+    };
+    store
+        .pin_repository_archive(owner.clone(), pin.clone())
+        .await
+        .expect("bind the first digest");
+    assert_eq!(
+        store
+            .pin_repository_archive(owner.clone(), concurrent)
+            .await
+            .expect_err("reject a different digest")
+            .code(),
+        M4ErrorCode::PackageIntegrityMismatch
+    );
+    store
+        .pin_repository_archive(owner.clone(), pin.clone())
+        .await
+        .expect("same digest is idempotent");
+    drop(store);
+
+    let store = StateStoreHandle::open(directory.database()).expect("reopen pinned store");
+    let mut same_binding = observation.clone();
+    same_binding.name = Some("Updated repository display name".into());
+    let refreshed = store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            repository.revision,
+            same_binding,
+            key("same-binding-refresh"),
+            11,
+        )
+        .await
+        .expect("refresh existing binding")
+        .value;
+    assert_ne!(refreshed.revision, repository.revision);
+    let catalog = store
+        .resolver_catalog(owner.clone(), false)
+        .await
+        .expect("read indexed catalog");
+    assert!(catalog.complete);
+    assert_eq!(catalog.entries.len(), 1);
+    assert!(
+        matches!(catalog.entries[0].source, ResolverCatalogSource::Repository {
+        zip_sha256: None, local_zip_sha256: Some(digest), ..
+    } if digest == pin.archive_sha256)
+    );
+    let browse = store
+        .list_repository_packages(owner.clone(), id, None, 100)
+        .await
+        .expect("browse the entire index");
+    assert_eq!(browse.packages.len(), 2);
+    assert!(browse.packages[1].resolver.is_none());
+    let mut different_binding = observation;
+    different_binding.packages[0]
+        .resolver
+        .as_mut()
+        .expect("resolver metadata")
+        .artifact_url = "https://example.invalid/replaced.zip".into();
+    store
+        .refresh_repository(
+            owner.clone(),
+            id,
+            refreshed.revision,
+            different_binding,
+            key("new-binding-refresh"),
+            12,
+        )
+        .await
+        .expect("refresh with changed artifact binding");
+    let catalog = store
+        .resolver_catalog(owner, false)
+        .await
+        .expect("read new artifact binding");
+    assert!(matches!(
+        catalog.entries[0].source,
+        ResolverCatalogSource::Repository {
+            local_zip_sha256: None,
+            ..
+        }
+    ));
+}
+
+#[tokio::test]
+async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open isolated store");
+    let owner = PrincipalId::local_owner();
+    let observation = resolver_index_fixture();
+    let registered = store
+        .register_repository(
+            owner.clone(),
+            observation.clone(),
+            key("index-register"),
+            10,
+        )
+        .await
+        .expect("register full index")
+        .value;
+    let project = store
+        .register_project(owner.clone(), project(1), key("index-project"), 10)
+        .await
+        .expect("register candidate test project")
+        .value
+        .project_id;
+    let initial = store
+        .candidate_snapshot(owner.clone(), project, None)
+        .await
+        .expect("read valid candidates");
+    assert!(initial.catalog_complete);
+    assert_eq!(initial.entries.len(), 1);
+    assert_eq!(initial.entries[0].version, "1.0.0");
+    drop(store);
+    let connection = Connection::open(directory.database()).expect("open fixture directly");
+    connection
+        .execute("UPDATE repositories SET resolver_indexed=0", [])
+        .expect("fixture with a previous index");
+    drop(connection);
+
+    let store = StateStoreHandle::open(directory.database()).expect("open old index fixture");
+    assert!(
+        !store
+            .resolver_catalog(owner.clone(), false)
+            .await
+            .expect("read unindexed catalog")
+            .complete
+    );
+    let old = store
+        .candidate_snapshot(owner.clone(), project, None)
+        .await
+        .expect("read previous candidate snapshot");
+    assert!(!old.catalog_complete);
+    assert_eq!(old.entries.len(), 2);
+    assert!(old.entries.iter().all(|entry| !entry.metadata_ready));
+    assert_eq!(
+        store
+            .update_repository_validators(
+                owner.clone(),
+                registered.repository_id,
+                registered.revision,
+                RepositoryValidators::default(),
+                key("304-stale"),
+                11
+            )
+            .await
+            .expect_err("reject 304 until a full index has been read")
+            .code(),
+        M3ErrorCode::RepositoryUnavailable
+    );
+    let fresh = store
+        .refresh_repository(
+            owner.clone(),
+            registered.repository_id,
+            registered.revision,
+            observation,
+            key("200-fresh"),
+            12,
+        )
+        .await
+        .expect("accept unchanged full index under current rules")
+        .value;
+    assert!(fresh.resolver_indexed);
+    assert_eq!(fresh.revision, registered.revision);
+    let current = store
+        .candidate_snapshot(owner, project, None)
+        .await
+        .expect("read reindexed candidates");
+    assert!(current.catalog_complete);
+    assert_eq!(current.entries.len(), 1);
+    assert_eq!(current.entries[0].version, initial.entries[0].version);
+    assert_eq!(current.fingerprint_records, initial.fingerprint_records);
+}
+
+#[tokio::test]
+async fn builtin_repositories_reuse_canonical_sources_and_roll_back_on_conflict() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let mut existing = repository(1, 10);
+    existing.name = Some("Existing source".to_owned());
+    let existing = store
+        .register_repository(owner.clone(), existing, key("existing-repository"), 10)
+        .await
+        .expect("register source already owned by the caller")
+        .value;
+    let builtin_id = RepositoryId::new();
+    let defaults = vec![
+        (RepositoryId::new(), repository(1, 0)),
+        (builtin_id, repository(2, 0)),
+    ];
+
+    let added = store
+        .ensure_builtin_repositories(owner.clone(), defaults.clone(), 20)
+        .await
+        .expect("register missing default source");
+    assert_eq!(added[0], existing);
+    assert_eq!(added[1].repository_id, builtin_id);
+    assert_eq!(added[1].observation.refreshed_at_ms, 0);
+    assert_eq!(added[1].registered_at_ms, 20);
+    let replay = store
+        .ensure_builtin_repositories(owner.clone(), defaults, 30)
+        .await
+        .expect("idempotent startup");
+    assert_eq!(replay, added);
+
+    let rolled_back_id = RepositoryId::new();
+    store
+        .ensure_builtin_repositories(
+            owner.clone(),
+            vec![
+                (rolled_back_id, repository(3, 0)),
+                (builtin_id, repository(4, 0)),
+            ],
+            40,
+        )
+        .await
+        .expect_err("a different canonical source cannot take the existing stable ID");
+    let missing = store
+        .get_repository(owner.clone(), rolled_back_id)
+        .await
+        .expect_err("the whole seeding transaction was rolled back");
+    assert_eq!(missing.code(), M3ErrorCode::RepositoryNotRegistered);
+    let events = store
+        .list_events(owner, 0, 100)
+        .await
+        .expect("read persisted registrations")
+        .events;
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[1].kind, "repository.registered");
+    assert_eq!(events[1].aggregate_id, builtin_id.to_string());
 }

@@ -324,6 +324,21 @@ fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
                     direct: edge.direct,
                 })
                 .collect(),
+            legacy_removals: value
+                .change_set
+                .legacy_removals
+                .into_iter()
+                .map(|removal| rpc::PackageLegacyRemoval {
+                    path: removal.path,
+                    kind: match removal.kind {
+                        app::LegacyRemovalKind::File => rpc::PackageLegacyRemovalKind::File,
+                        app::LegacyRemovalKind::Directory => {
+                            rpc::PackageLegacyRemovalKind::Directory
+                        }
+                    },
+                    package_id: removal.package_id,
+                })
+                .collect(),
             vpm_manifest_sha256: hex(&value.change_set.vpm_manifest_sha256),
         },
     }

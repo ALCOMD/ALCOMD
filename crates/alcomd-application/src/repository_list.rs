@@ -38,6 +38,7 @@ pub struct RepositoryListRecord {
     pub repository_id: String,
     pub revision: u64,
     pub source: RepositorySource,
+    pub credential_reference: Option<String>,
 }
 
 /// One consistent database read, independent of presentation pagination.
@@ -61,6 +62,8 @@ pub struct RepositoryListEntry {
     pub status: RepositoryListEntryStatus,
     pub source: Option<RepositorySource>,
     pub reason: Option<&'static str>,
+    pub credentials_configured: bool,
+    pub credentials: Option<crate::RepositoryCredentials>,
 }
 
 #[derive(Clone, Debug)]
@@ -113,8 +116,8 @@ pub trait RepositoryListFiles: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<RepositoryListInspection, RepositoryListError>> + Send;
     fn prepare(
         &self,
-        snapshot: &RepositoryListSnapshot,
-    ) -> Result<PreparedRepositoryList, RepositoryListError>;
+        records: Vec<RepositoryListRecord>,
+    ) -> impl Future<Output = Result<PreparedRepositoryList, RepositoryListError>> + Send;
     fn create_new(
         &self,
         path: String,
@@ -146,7 +149,11 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
     ) -> Result<RepositoryListInspection, RepositoryListError> {
         require(access, true)?;
         let snapshot = self.snapshot(access).await?;
-        self.files.inspect(path, snapshot).await
+        let mut result = self.files.inspect(path, snapshot).await?;
+        for entry in &mut result.entries {
+            entry.credentials = None;
+        }
+        Ok(result)
     }
 
     pub async fn import<R: M3ReadAdapter>(
@@ -181,7 +188,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     Some(RepositorySource::Remote { url }),
                 ) = (entry.status, entry.source)
                 {
-                    Some((entry.line, url))
+                    Some((entry.line, (url, entry.credentials)))
                 } else {
                     None
                 }
@@ -191,7 +198,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             return Ok(Vec::new());
         }
         let items = registry
-            .register_repository_list(access, urls, key, Some(stop))
+            .register_repository_list_with_credentials(access, urls, key, Some(stop))
             .await
             .map_err(|error| {
                 RepositoryListError(match error.code() {
@@ -237,7 +244,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
     ) -> Result<RepositoryListPreview, RepositoryListError> {
         require(access, false)?;
         let snapshot = self.snapshot(access).await?;
-        Ok(self.files.prepare(&snapshot)?.preview)
+        Ok(self.files.prepare(snapshot.repositories).await?.preview)
     }
 
     pub async fn export(
@@ -248,7 +255,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
     ) -> Result<RepositoryListExport, RepositoryListError> {
         require(access, true)?;
         let snapshot = self.snapshot(access).await?;
-        let prepared = self.files.prepare(&snapshot)?;
+        let prepared = self.files.prepare(snapshot.repositories).await?;
         if prepared.preview.fingerprint != expected_fingerprint {
             return Err(RepositoryListError("repository_list_changed"));
         }

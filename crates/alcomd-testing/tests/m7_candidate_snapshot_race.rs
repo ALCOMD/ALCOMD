@@ -50,6 +50,14 @@ struct PausedReadStore {
 }
 
 impl CandidateStore for PausedReadStore {
+    async fn candidate_authority(
+        &self,
+        _: PrincipalId,
+        _: ProjectId,
+    ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
+        panic!("this test reads an uncached snapshot")
+    }
+
     async fn candidate_snapshot(
         &self,
         owner: PrincipalId,
@@ -86,6 +94,153 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+#[derive(Clone)]
+struct TrackingStore {
+    project: ProjectRecord,
+    full_reads: Arc<AtomicUsize>,
+    authority_reads: Arc<AtomicUsize>,
+    inventory_revision: Arc<AtomicUsize>,
+}
+
+impl TrackingStore {
+    fn authority(&self, owner: PrincipalId, project: ProjectId) -> CandidateStoreAuthority {
+        assert_eq!(owner, PrincipalId::local_owner());
+        assert_eq!(project, self.project.project_id);
+        CandidateStoreAuthority {
+            project_revision: self.project.revision,
+            fingerprint_records: vec![self.inventory_revision.load(Ordering::SeqCst).to_string()],
+            catalog_complete: true,
+        }
+    }
+}
+
+impl CandidateStore for TrackingStore {
+    async fn candidate_authority(
+        &self,
+        owner: PrincipalId,
+        project: ProjectId,
+    ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
+        self.authority_reads.fetch_add(1, Ordering::SeqCst);
+        Ok(self.authority(owner, project))
+    }
+
+    async fn candidate_snapshot(
+        &self,
+        owner: PrincipalId,
+        project: ProjectId,
+        _: Option<Vec<String>>,
+    ) -> Result<CandidateStoreSnapshot, CandidateQueryError> {
+        self.full_reads.fetch_add(1, Ordering::SeqCst);
+        let authority = self.authority(owner, project);
+        Ok(CandidateStoreSnapshot {
+            project: self.project.clone(),
+            entries: vec![],
+            fingerprint_records: authority.fingerprint_records,
+            catalog_complete: authority.catalog_complete,
+        })
+    }
+}
+
+#[tokio::test]
+async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority() {
+    let fixture = Fixture::new();
+    let project_id = ProjectId::new();
+    let store = TrackingStore {
+        project: ProjectRecord {
+            project_id,
+            observation: ProjectObservation {
+                root_path: fixture
+                    .0
+                    .join("unopened-project")
+                    .to_string_lossy()
+                    .into_owned(),
+                path_identity_key: vec![1],
+                project_type: ProjectType::Unknown,
+                unity_version: "2022.3.22f1".into(),
+                unity_revision: None,
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Missing,
+                direct_dependencies: ["com.example.a", "com.example.b"]
+                    .map(|id| DependencyIdentity {
+                        package_id: id.to_owned(),
+                        value: "1.0.0".into(),
+                    })
+                    .to_vec(),
+                locked_dependencies: vec![],
+                issues: vec![],
+            },
+            revision: Revision::INITIAL,
+            registered_at_ms: 1,
+            last_modified_at_ms: None,
+            favorite: false,
+        },
+        full_reads: Arc::new(AtomicUsize::new(0)),
+        authority_reads: Arc::new(AtomicUsize::new(0)),
+        inventory_revision: Arc::new(AtomicUsize::new(1)),
+    };
+    let config = M7OfficialApplication::new(
+        Arc::new(alcomd_store::FileConfigStore::new(
+            fixture.0.join("settings.toml"),
+        )),
+        Arc::new(NoHubInspection),
+        Arc::new(NoHubInspection),
+        Arc::new(NoHubInspection),
+    );
+    config
+        .initialize_settings()
+        .await
+        .expect("initialize settings");
+    let application =
+        ProjectCandidateApplication::new(store.clone(), ProjectCandidateEngine, config);
+    let owner = AccessContext::local_owner();
+    let request = ProjectCandidateRequest {
+        project_id: project_id.to_string(),
+        expected_revision: 1,
+        view: CandidateView::Summary {
+            package_ids: None,
+            sources: None,
+        },
+        limit: Some(1),
+        expected_snapshot: None,
+        cursor: None,
+    };
+    let first = application
+        .query(&owner, request.clone())
+        .await
+        .expect("first page");
+    let continuation = ProjectCandidateRequest {
+        cursor: first.next_cursor.clone(),
+        ..request.clone()
+    };
+    assert!(continuation.cursor.is_some());
+    let second = application
+        .query(&owner, continuation.clone())
+        .await
+        .expect("cached continuation");
+    assert_eq!(second.snapshot, first.snapshot);
+    assert!(second.next_cursor.is_none());
+    assert_ne!(first.page, second.page);
+    assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 1);
+
+    store.inventory_revision.fetch_add(1, Ordering::SeqCst);
+    assert_eq!(
+        application
+            .query(&owner, continuation)
+            .await
+            .expect_err("old cursor rejected"),
+        CandidateQueryError::EvidenceStale
+    );
+    assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 2);
+    let changed = application
+        .query(&owner, request)
+        .await
+        .expect("new snapshot");
+    assert_ne!(changed.snapshot, first.snapshot);
+    assert_eq!(store.full_reads.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -1,58 +1,138 @@
 use alcomd_application::{
     ApplyPlanOutcome, FilesystemJournalEntry, IdempotencyKey, M4Error, M4ErrorCode, OperationId,
     PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PackagePlanRecord,
-    PackageSourcePin, PlanAction, PlanId, PlanState, PrincipalId, ResolverCatalog,
-    ResolverCatalogEntry, ResolverCatalogSource, Revision, UserPackageId,
+    PackageSourcePin, PlanAction, PlanId, PlanState, PrincipalId, RepositoryPackageSourcePin,
+    ResolverCatalog, ResolverCatalogEntry, ResolverCatalogSource, Revision, UserPackageId,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
+
+pub(super) fn repository_catalog_needs_refresh(
+    connection: &Connection,
+    owner: &PrincipalId,
+) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM repositories r
+             WHERE r.owner_principal_id=?1 AND r.resolver_indexed=0
+             AND EXISTS (SELECT 1 FROM repository_package_versions p
+                         WHERE p.repository_id=r.repository_id)
+         )",
+        [owner.as_str()],
+        |row| row.get(0),
+    )
+}
+
+pub(super) fn pin_repository_archive(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    pin: &RepositoryPackageSourcePin,
+) -> Result<(), M4Error> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(store_error)?;
+    let (identity, existing) = transaction
+        .query_row(
+            "SELECT r.source_kind, r.source_locator, r.source_identity_key, p.local_zip_sha256
+             FROM repository_package_versions p
+             JOIN repositories r ON r.repository_id=p.repository_id
+             WHERE r.owner_principal_id=?1 AND r.repository_id=?2 AND r.revision=?3
+             AND r.resolver_indexed=1 AND p.package_id=?4 AND p.version_text=?5
+             AND p.artifact_url=?6 AND p.manifest_fingerprint=?7
+             AND p.resolver_ready=1 AND p.zip_sha256 IS NULL",
+            params![
+                owner.as_str(),
+                pin.repository_id,
+                sqlite_integer(pin.repository_revision)?,
+                pin.package_id,
+                pin.version,
+                pin.artifact_url,
+                pin.manifest_fingerprint.as_slice(),
+            ],
+            |row| {
+                Ok((
+                    repository_source_identity(row, 0)?,
+                    row.get::<_, Option<Vec<u8>>>(3)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(store_error)?
+        .ok_or_else(|| {
+            M4Error::with_subreason(M4ErrorCode::PlanStale, "repository_revision_changed")
+        })?;
+    if identity != pin.source_identity {
+        return Err(M4Error::with_subreason(
+            M4ErrorCode::PlanStale,
+            "source_identity_changed",
+        ));
+    }
+    if let Some(existing) = existing {
+        if existing.as_slice() != pin.archive_sha256 {
+            return Err(M4Error::new(M4ErrorCode::PackageIntegrityMismatch));
+        }
+    } else {
+        transaction
+            .execute(
+                "UPDATE repository_package_versions SET local_zip_sha256=?1
+                 WHERE repository_id=?2 AND package_id=?3 AND version_text=?4",
+                params![
+                    pin.archive_sha256.as_slice(),
+                    pin.repository_id,
+                    pin.package_id,
+                    pin.version
+                ],
+            )
+            .map_err(store_error)?;
+    }
+    transaction.commit().map_err(store_error)
+}
+
+fn repository_source_identity(row: &Row<'_>, offset: usize) -> rusqlite::Result<String> {
+    match row.get::<_, String>(offset)?.as_str() {
+        "remote" => Ok(format!("remote:{}", row.get::<_, String>(offset + 1)?)),
+        "local" => Ok(format!(
+            "local-fileid-v1:{}",
+            bytes_hex(&row.get::<_, Vec<u8>>(offset + 2)?)
+        )),
+        _ => Err(invalid_query()),
+    }
+}
 
 pub(super) fn resolver_catalog(
     connection: &Connection,
     owner: &PrincipalId,
     include_user_packages: bool,
 ) -> Result<ResolverCatalog, M4Error> {
-    let incomplete: i64 = connection
-        .query_row(
-            "SELECT count(*) FROM repository_package_versions p
-             JOIN repositories r ON r.repository_id=p.repository_id
-             WHERE r.owner_principal_id=?1 AND p.resolver_ready=0",
-            [owner.as_str()],
-            |row| row.get(0),
-        )
-        .map_err(store_error)?;
+    let incomplete = repository_catalog_needs_refresh(connection, owner).map_err(store_error)?;
     let mut statement = connection
         .prepare(
             "SELECT r.repository_id, r.revision, r.priority, r.source_kind, r.source_locator,
                     r.source_identity_key, p.package_id, p.semantic_version, p.yanked,
                     p.unity_text, p.author_name, p.author_email, p.artifact_url, p.zip_sha256,
                     p.unity_release_text, p.dependencies_json, p.manifest_fingerprint,
-                    p.legacy_metadata_present
+                    p.legacy_metadata_present, p.local_zip_sha256, r.credential_reference, p.download_headers_present
              FROM repository_package_versions p
              JOIN repositories r ON r.repository_id=p.repository_id
-             WHERE r.owner_principal_id=?1 AND p.resolver_ready=1
+             WHERE r.owner_principal_id=?1 AND r.resolver_indexed=1 AND p.resolver_ready=1
              ORDER BY p.package_id ASC, p.semantic_version ASC, r.priority ASC,
                       r.repository_id ASC",
         )
         .map_err(store_error)?;
     let rows = statement
         .query_map([owner.as_str()], |row| {
-            let source_kind: String = row.get(3)?;
             let source_locator: String = row.get(4)?;
-            let source_identity_key: Vec<u8> = row.get(5)?;
-            let source_identity = match source_kind.as_str() {
-                "remote" => format!("remote:{source_locator}"),
-                "local" => format!("local-fileid-v1:{}", bytes_hex(&source_identity_key)),
-                _ => return Err(invalid_query()),
-            };
             Ok(ResolverCatalogEntry {
                 source: ResolverCatalogSource::Repository {
                     repository_locator: source_locator.clone(),
                     repository_id: row.get(0)?,
                     repository_revision: nonnegative(row.get(1)?)?,
                     repository_priority: nonnegative(row.get(2)?)?,
-                    source_identity,
+                    source_identity: repository_source_identity(row, 3)?,
                     artifact_url: row.get(12)?,
+                    credential_reference: row.get(19)?,
+                    download_headers_present: row.get(20)?,
                     zip_sha256: row.get(13)?,
+                    local_zip_sha256: row.get::<_, Option<Vec<u8>>>(18)?.map(digest).transpose()?,
                     manifest_fingerprint: digest(row.get(16)?)?,
                 },
                 package_id: row.get(6)?,
@@ -107,7 +187,7 @@ pub(super) fn resolver_catalog(
                     yanked: false,
                     unity: metadata.unity,
                     author_name: String::new(),
-                    author_email: String::new(),
+                    author_email: None,
                     unity_release: metadata.unity_release,
                     dependencies_json,
                     legacy_metadata_present: metadata.legacy_present,
@@ -118,7 +198,7 @@ pub(super) fn resolver_catalog(
     }
     Ok(ResolverCatalog {
         entries,
-        complete: incomplete == 0,
+        complete: !incomplete,
     })
 }
 

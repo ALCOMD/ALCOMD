@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use alcomd_application::{RepositoryBatchItem, RepositorySource};
+use alcomd_application::{M4Store, RepositoryBatchItem, RepositorySource, ResolverCatalogSource};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, watch};
@@ -229,6 +229,12 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
             if index == 1 { 1 } else { 3 }
         );
     }
+    let catalogue = store
+        .resolver_catalog(access.principal().clone(), false)
+        .await
+        .expect("indexed catalogue");
+    assert!(catalogue.complete);
+    assert_eq!(catalogue.entries.len(), 2, "the full preview was indexed");
     server.abort();
 }
 
@@ -296,8 +302,25 @@ async fn repository_list_parallel_fetch_keeps_order_and_skips_existing() {
         assert_eq!(result, vec![RepositoryBatchItem::Added; limit]);
         assert_eq!(counters.requests.load(Ordering::SeqCst), limit);
         assert!((2..=limit).contains(&counters.peak.load(Ordering::SeqCst)));
-        let registered = registration_order(&store).await;
-        assert_eq!(registered, urls, "registration follows file order");
+        let catalogue = store
+            .resolver_catalog(access.principal().clone(), false)
+            .await
+            .expect("indexed catalogue");
+        assert!(catalogue.complete);
+        let indexed = catalogue
+            .entries
+            .into_iter()
+            .map(|entry| match entry.source {
+                ResolverCatalogSource::Repository {
+                    repository_locator, ..
+                } => repository_locator,
+                ResolverCatalogSource::UserPackage { .. } => unreachable!("fixture repository"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            indexed, urls,
+            "resolver precedence follows input, independent of fetch order"
+        );
         let repeated = urls.iter().map(|url| format!("{url}#ignored")).collect();
         let repeated = batch
             .register_repository_list(&access, repeated, key("repeat"), None)
@@ -378,7 +401,14 @@ async fn repository_list_refills_while_first_download_waits_and_stops_admission(
     })
     .await
     .expect("rolling scheduler refills freed slots");
-    assert!(registration_order(&store).await.is_empty());
+    assert!(
+        store
+            .resolver_catalog(AccessContext::local_owner().principal().clone(), false)
+            .await
+            .expect("catalogue before first response")
+            .entries
+            .is_empty()
+    );
     stop.send(true).expect("stop pending admissions");
     first.notify_one();
     let outcomes = tokio::time::timeout(Duration::from_secs(15), import)
@@ -392,36 +422,22 @@ async fn repository_list_refills_while_first_download_waits_and_stops_admission(
     assert_eq!(outcomes[2 * limit], RepositoryBatchItem::Unprocessed);
     assert_eq!(counters.requests.load(Ordering::SeqCst), 2 * limit);
     assert!(counters.peak.load(Ordering::SeqCst) <= limit);
-    assert_eq!(registration_order(&store).await, urls[..2 * limit]);
-    server.abort();
-}
-
-async fn registration_order(store: &StateStoreHandle) -> Vec<String> {
-    let access = AccessContext::local_owner();
-    let registry = M3ReadApplication::new(
-        store.clone(),
-        alcomd_vpm::VpmReader::new().expect("fixture reader"),
-    );
-    let events = Application::new(store.clone())
-        .list_events(&access, 0, 1000)
+    let catalogue = store
+        .resolver_catalog(AccessContext::local_owner().principal().clone(), false)
         .await
-        .expect("registration events");
-    let mut urls = Vec::new();
-    for event in events.events {
-        if event.kind == "repository.registered" {
-            let id = alcomd_application::RepositoryId::parse(&event.aggregate_id)
-                .expect("repository event ID");
-            let record = registry
-                .get_repository(&access, id)
-                .await
-                .expect("repository");
-            let RepositorySource::Remote { url } = record.observation.source else {
-                panic!("remote fixture source expected");
-            };
-            urls.push(url);
-        }
-    }
-    urls
+        .expect("indexed catalogue");
+    let indexed = catalogue
+        .entries
+        .into_iter()
+        .map(|entry| match entry.source {
+            ResolverCatalogSource::Repository {
+                repository_locator, ..
+            } => repository_locator,
+            ResolverCatalogSource::UserPackage { .. } => unreachable!("fixture repository"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(indexed, urls[..2 * limit]);
+    server.abort();
 }
 
 #[derive(Default)]

@@ -29,6 +29,7 @@ use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod builtin_repositories;
 mod events_rpc;
 mod hub_platform;
 mod legacy_template_cleanup;
@@ -54,6 +55,8 @@ mod storage_platform;
 
 #[cfg(test)]
 mod repository_batch_tests;
+#[cfg(test)]
+mod vrcfury_install_test;
 
 #[cfg(feature = "test-kill-gates")]
 pub mod test_support;
@@ -72,8 +75,10 @@ type RepositoryListApplication = alcomd_application::RepositoryListApplication<
 type M4PackageApplication =
     M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
 type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
-type ProjectCreateApplication =
-    alcomd_application::ProjectCreateApplication<StateStoreHandle, alcomd_vpm::ProjectCreateEngine>;
+type ProjectCreateApplication = alcomd_application::ProjectCreateApplication<
+    StateStoreHandle,
+    alcomd_vpm::ProjectCreateEngine<StateStoreHandle>,
+>;
 type BackupApplication =
     BackupService<StateStoreHandle, alcomd_vpm::BackupEngine, M5UnityApplication>;
 type M6ExtensionApplication = M6Application<
@@ -133,9 +138,20 @@ where
     F: Future<Output = ()>,
 {
     let (mut listener, applications) = initialize_daemon(ipc, data).await?;
-    run_listener(&mut listener, applications, shutdown)
+    applications
+        .m3
+        .recover_repository_credentials()
         .await
-        .map_err(BindError::Io)
+        .map_err(|_| {
+            BindError::Io(std::io::Error::other(
+                "repository credential recovery unavailable",
+            ))
+        })?;
+    let mut initial_repository_sync =
+        builtin_repositories::start(&applications.store, &applications.m3).await?;
+    let result = run_listener(&mut listener, applications, shutdown).await;
+    initial_repository_sync.shutdown().await;
+    result.map_err(BindError::Io)
 }
 
 async fn initialize_daemon(
@@ -220,7 +236,7 @@ async fn initialize_daemon_with_directories(
         .await
         .map_err(|_| BindError::Io(io::Error::other("Unity migration recovery failed")))?;
     let project_create_engine =
-        alcomd_vpm::ProjectCreateEngine::new(cache_root.clone()).map_err(|_| {
+        alcomd_vpm::ProjectCreateEngine::new(store.clone(), cache_root.clone()).map_err(|_| {
             BindError::Io(io::Error::other(
                 "Project create engine initialization failed",
             ))

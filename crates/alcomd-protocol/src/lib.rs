@@ -97,6 +97,7 @@ pub const METHOD_REPOSITORIES_REGISTER: &str = "repositories.register";
 pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
 pub const METHOD_REPOSITORIES_REFRESH_ALL: &str = "repositories.refreshAll";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
+pub const METHOD_REPOSITORIES_SET_CREDENTIALS: &str = "repositories.setCredentials";
 pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
 pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
 pub const METHOD_PACKAGES_PLAN_UPGRADE: &str = "packages.planUpgrade";
@@ -1178,6 +1179,8 @@ pub struct RepositorySnapshot {
     pub issues: Vec<ReadIssue>,
     pub revision: Option<u64>,
     pub refreshed_at_ms: u64,
+    #[serde(default)]
+    pub credentials_configured: bool,
 }
 
 /// M3 raw package/version display model.
@@ -1275,6 +1278,8 @@ pub struct ProjectSetFavoriteParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryInspectParams {
     pub source: RepositorySource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<RepositoryCredentials>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1298,6 +1303,30 @@ pub struct RepositoryPackagesParams {
 pub struct RepositoryRegisterParams {
     pub source: RepositorySource,
     pub idempotency_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credentials: Option<RepositoryCredentials>,
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryCredentials {
+    pub headers: std::collections::BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for RepositoryCredentials {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RepositoryCredentials([redacted])")
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositorySetCredentialsParams {
+    pub repository_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub credentials: Option<RepositoryCredentials>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1470,12 +1499,29 @@ pub struct PackageDependencyEdge {
     pub direct: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageLegacyRemovalKind {
+    File,
+    Directory,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageLegacyRemoval {
+    pub path: String,
+    pub kind: PackageLegacyRemovalKind,
+    pub package_id: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageChangeSet {
     pub format_version: u32,
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legacy_removals: Vec<PackageLegacyRemoval>,
     pub vpm_manifest_sha256: String,
 }
 

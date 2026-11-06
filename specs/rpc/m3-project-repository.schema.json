@@ -88,6 +88,7 @@
                 "declaredId": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024},
                 "name": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096},
                 "declaredUrl": {"type": ["string", "null"], "minLength": 1, "maxLength": 32768},
+                "credentialsConfigured": {"type": "boolean"},
                 "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}, "maxItems": 1024},
                 "revision": {"oneOf": [{"$ref": "#/$defs/revision"}, {"type": "null"}]},
                 "refreshedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
@@ -174,7 +175,10 @@
         },
         "repositoryInspectParams": {
             "type": "object", "additionalProperties": false, "required": ["source"],
-            "properties": {"source": {"$ref": "#/$defs/repositorySource"}}
+            "properties": {
+                "source": {"$ref": "#/$defs/repositorySource"},
+                "credentials": {"$ref": "#/$defs/repositoryCredentials"}
+            }
         },
         "repositoryIdParams": {
             "type": "object", "additionalProperties": false, "required": ["repositoryId"],
@@ -192,7 +196,26 @@
             "type": "object", "additionalProperties": false, "required": ["source", "idempotencyKey"],
             "properties": {
                 "source": {"$ref": "#/$defs/repositorySource"},
+                "credentials": {"$ref": "#/$defs/repositoryCredentials"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "repositoryCredentials": {
+            "type": "object", "additionalProperties": false, "writeOnly": true,
+            "required": ["headers"],
+            "properties": {
+                "headers": {"type": "object", "minProperties": 1, "maxProperties": 16,
+                    "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 2560}}
+            }
+        },
+        "repositorySetCredentialsParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["repositoryId", "expectedRevision", "idempotencyKey", "credentials"],
+            "properties": {
+                "repositoryId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"},
+                "credentials": {"oneOf": [{"$ref": "#/$defs/repositoryCredentials"}, {"type": "null"}]}
             }
         },
         "repositoryMutationParams": {

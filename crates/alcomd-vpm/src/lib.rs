@@ -12,6 +12,7 @@ mod project_copy;
 mod project_create;
 mod project_delete;
 mod range;
+mod repository_auth;
 mod repository_list;
 mod resolver;
 mod staging_package;
@@ -80,7 +81,7 @@ pub const ISSUE_LIMIT: usize = 1_024;
 pub const DEPENDENCY_LIMIT: usize = 4_096;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
-const REDIRECT_LIMIT: usize = 5;
+const REDIRECT_LIMIT: usize = 10;
 const HTTP_DOWNLOAD_CONCURRENCY: usize = alcomd_application::DOWNLOAD_CONCURRENCY;
 static HTTP_DOWNLOADS: Semaphore = Semaphore::const_new(HTTP_DOWNLOAD_CONCURRENCY);
 
@@ -105,22 +106,27 @@ pub fn project_creation_resource(
     }
 }
 
-/// Bounded M3 reader. It owns one anonymous no-proxy HTTP client.
+/// Bounded M3 reader with anonymous and authenticated HTTP clients.
 #[derive(Clone)]
 pub struct VpmReader {
     client: Client,
+    authenticated_client: Client,
 }
 
 impl VpmReader {
     pub fn new() -> Result<Self, M3Error> {
         let client = Client::builder()
-            .no_proxy()
             .referer(false)
             .timeout(REQUEST_TIMEOUT)
             .redirect(Policy::custom(validate_redirect))
             .build()
             .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
-        Ok(Self { client })
+        let authenticated_client = repository_auth::client(REQUEST_TIMEOUT, REQUEST_TIMEOUT)
+            .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
+        Ok(Self {
+            client,
+            authenticated_client,
+        })
     }
 
     pub async fn find_project_root(
@@ -262,26 +268,59 @@ impl VpmReader {
         validators: Option<RepositoryValidators>,
         refreshed_at_ms: u64,
     ) -> Result<RepositoryReadOutcome, M3Error> {
+        self.read_remote_repository(registration_url, validators, refreshed_at_ms, None)
+            .await
+    }
+
+    async fn read_remote_repository(
+        &self,
+        registration_url: String,
+        validators: Option<RepositoryValidators>,
+        refreshed_at_ms: u64,
+        auth: Option<&repository_auth::RepositoryAuth>,
+    ) -> Result<RepositoryReadOutcome, M3Error> {
         let normalized = normalize_remote_url(&registration_url)?;
-        let mut request = self.client.get(normalized.clone());
-        if let Some(validators) = &validators {
-            if let Some(etag) = &validators.etag {
-                request = request.header(IF_NONE_MATCH, etag);
-            }
-            if let Some(last_modified) = &validators.last_modified {
-                request = request.header(IF_MODIFIED_SINCE, last_modified);
-            }
+        if auth.is_some_and(|auth| auth.contains_url_secret(&normalized)) {
+            return Err(M3Error::new(M3ErrorCode::RepositorySourceInvalid));
         }
+        let request = |client: &Client, url: Url| {
+            let same_origin = url.origin() == normalized.origin();
+            let mut request = client.get(url);
+            if let Some(validators) = validators.as_ref().filter(|_| same_origin) {
+                if let Some(etag) = &validators.etag {
+                    request = request.header(IF_NONE_MATCH, etag);
+                }
+                if let Some(last_modified) = &validators.last_modified {
+                    request = request.header(IF_MODIFIED_SINCE, last_modified);
+                }
+            }
+            request
+        };
         let transfer = HTTP_DOWNLOADS
             .acquire()
             .await
             .map_err(|cause| M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(cause))?;
-        let mut response = request.send().await.map_err(|error| {
-            M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(error.without_url())
-        })?;
+        let mut response = if let Some(auth) = auth {
+            repository_auth::send(normalized.clone(), &[auth], |url| {
+                request(&self.authenticated_client, url)
+            })
+            .await?
+        } else {
+            request(&self.client, normalized.clone())
+                .send()
+                .await
+                .map_err(|error| {
+                    M3Error::new(M3ErrorCode::RepositoryUnavailable)
+                        .with_source(error.without_url())
+                })?
+        };
+        let validator = |value| {
+            bounded_header(value)
+                .filter(|value| !auth.is_some_and(|auth| auth.contains_secret(value)))
+        };
         let response_validators = RepositoryValidators {
-            etag: bounded_header(response.headers().get(ETAG)),
-            last_modified: bounded_header(response.headers().get(LAST_MODIFIED)),
+            etag: validator(response.headers().get(ETAG)),
+            last_modified: validator(response.headers().get(LAST_MODIFIED)),
         };
         if response.status() == StatusCode::NOT_MODIFIED {
             let previous =
@@ -313,6 +352,9 @@ impl VpmReader {
             bytes.extend_from_slice(&chunk);
         }
         drop(transfer);
+        if let Some(auth) = auth {
+            auth.check_document(&bytes)?;
+        }
         let source_text = normalized.to_string();
         Ok(RepositoryReadOutcome::Fresh(parse_repository(
             &bytes,
@@ -327,6 +369,42 @@ impl VpmReader {
 }
 
 impl M3ReadAdapter for VpmReader {
+    async fn inspect_repository_authenticated(
+        &self,
+        source: RepositorySource,
+        validators: Option<RepositoryValidators>,
+        credentials: Option<alcomd_application::RepositoryCredentials>,
+    ) -> Result<RepositoryReadOutcome, M3Error> {
+        let Some(credentials) = credentials else {
+            return self.inspect_repository(source, validators).await;
+        };
+        let RepositorySource::Remote { url } = source else {
+            return Err(M3Error::new(M3ErrorCode::RepositorySourceInvalid));
+        };
+        let auth = repository_auth::RepositoryAuth::new(&credentials)?;
+        self.read_remote_repository(url, validators, unix_time_ms()?, Some(&auth))
+            .await
+    }
+
+    async fn save_repository_credentials(
+        &self,
+        reference: String,
+        credentials: alcomd_application::RepositoryCredentials,
+    ) -> Result<(), M3Error> {
+        repository_auth::save(reference, credentials).await
+    }
+
+    async fn load_repository_credentials(
+        &self,
+        reference: String,
+    ) -> Result<alcomd_application::RepositoryCredentials, M3Error> {
+        repository_auth::load(reference).await
+    }
+
+    async fn delete_repository_credentials(&self, reference: String) -> Result<(), M3Error> {
+        repository_auth::delete(reference).await
+    }
+
     fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error> {
         normalize_remote_url(url).map(|url| url.to_string())
     }
@@ -415,13 +493,6 @@ fn validate_redirect(attempt: Attempt<'_>) -> Action {
         || next.password().is_some()
     {
         return attempt.error("redirect target is not an anonymous HTTP(S) URL");
-    }
-    if attempt
-        .previous()
-        .last()
-        .is_some_and(|previous| previous.scheme() == "https" && next.scheme() == "http")
-    {
-        return attempt.error("HTTPS downgrade redirect is forbidden");
     }
     attempt.follow()
 }
@@ -825,8 +896,11 @@ fn parse_repository(
                         &context,
                     ) {
                         Ok(package) => {
-                            let PackageSourceAuthority::Repository { artifact_url, .. } =
-                                package.candidate.source.authority
+                            let PackageSourceAuthority::Repository {
+                                artifact_url,
+                                download_headers_present,
+                                ..
+                            } = package.candidate.source.authority
                             else {
                                 unreachable!("repository context")
                             };
@@ -835,7 +909,12 @@ fn parse_repository(
                                 author_name: package.author_name,
                                 author_email: package.author_email,
                                 artifact_url,
-                                zip_sha256: digest_text(&package.candidate.source.archive_sha256),
+                                zip_sha256: package
+                                    .candidate
+                                    .source
+                                    .archive_sha256
+                                    .as_ref()
+                                    .map(digest_text),
                                 unity_release: package.unity_release,
                                 dependencies_json: package.dependencies_json,
                                 manifest_fingerprint: package
@@ -844,6 +923,7 @@ fn parse_repository(
                                     .manifest_fingerprint
                                     .to_vec(),
                                 legacy_metadata_present: package.candidate.legacy_metadata_present,
+                                download_headers_present,
                             })
                         }
                         Err(_) => {
@@ -1093,6 +1173,50 @@ mod tests {
             3
         );
         assert!(parsed.packages.iter().all(|row| row.resolver.is_none()));
+    }
+
+    #[test]
+    fn large_repository_without_archive_checksums_indexes_install_candidates() {
+        let versions = (0..1_456)
+            .map(|index| {
+                let version = format!("1.{index}.0");
+                let manifest = serde_json::json!({
+                    "name": "com.example.tool",
+                    "version": version,
+                    "displayName": "Example Tool",
+                    "url": "https://example.invalid/tool.zip",
+                    "author": {"name": "Example"}
+                });
+                (version, manifest)
+            })
+            .collect::<Map<_, _>>();
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "packages": {"com.example.tool": {"versions": versions}}
+        }))
+        .expect("fixture repository");
+        let parsed = parse_repository(
+            &bytes,
+            RepositorySource::Remote {
+                url: "https://example.invalid/index.json".to_owned(),
+            },
+            vec![1],
+            RepositoryValidators::default(),
+            1,
+        )
+        .expect("missing checksums do not make the listing unreadable");
+        assert_eq!(parsed.packages.len(), 1_456);
+        assert!(
+            parsed
+                .packages
+                .iter()
+                .all(|row| row
+                    .resolver
+                    .as_ref()
+                    .is_some_and(
+                        |metadata| metadata.zip_sha256.is_none() && metadata.author_email.is_none()
+                    ))
+        );
+        assert!(parsed.issues.is_empty());
     }
 
     #[test]

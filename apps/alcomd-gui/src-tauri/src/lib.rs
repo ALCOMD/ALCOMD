@@ -586,7 +586,11 @@ async fn gui_repositories_inspect(
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.repository_inspect(params.source).await,
+        Some(client) => {
+            client
+                .repository_inspect_with_credentials(params.source, params.credentials)
+                .await
+        }
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -710,11 +714,30 @@ async fn gui_repository_register(
     state: State<'_, GuiClientState>,
     source: alcomd_protocol::RepositorySource,
     idempotency_key: String,
+    credentials: Option<alcomd_protocol::RepositoryCredentials>,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.repository_register(source, idempotency_key).await,
+        Some(client) => {
+            client
+                .repository_register_with_credentials(source, idempotency_key, credentials)
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_set_credentials(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::RepositorySetCredentialsParams,
+) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_set_credentials(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1619,6 +1642,7 @@ pub fn run() {
             gui_repository_packages,
             gui_open_package_link,
             gui_repository_register,
+            gui_repository_set_credentials,
             gui_repository_refresh,
             gui_repositories_refresh_all,
             gui_repository_unregister,

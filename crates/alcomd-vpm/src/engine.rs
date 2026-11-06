@@ -6,18 +6,21 @@ use alcomd_application::{
     FilesystemJournalEntry, FilesystemPhase, JournalState, M3ReadAdapter, M4Error, M4ErrorCode,
     M4PackageAdapter, M4Store, OperationId, PackageApplyCompletion, PackageBulkIntent,
     PackageMutationKind, PackagePlanDraft, PackagePlanRecord, PackagePlanRequest,
-    PackageSourceSelector, PlanAction, ProjectDiscoveryMode, ProjectRecord, ReinstallSelection,
-    ResolverCatalog, ResourceKey, ResourceLockCoordinator, StateStore,
+    PackageSourceSelector, PlanAction, PrincipalId, ProjectDiscoveryMode, ProjectRecord,
+    ReinstallSelection, RepositoryArchivePinStore, RepositoryPackageSourcePin, ResolverCatalog,
+    ResourceKey, ResourceLockCoordinator, StateStore,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::package::validate_extracted_package;
+use crate::package::{LegacyMetadata, validate_extracted_package};
+use crate::staging_package::{
+    PACKAGE_DOWNLOAD_CONCURRENCY, extract_package_objects, fetch_package_objects, run_ordered_jobs,
+};
 use crate::{
     PackageCache, ResolveError, ResolveRequest, VpmReader, build_bulk_plan, build_reinstall_plan,
-    build_remove_plan, build_resolution_plan, candidates_from_catalog, extract_archive,
-    inspect_package_project, materialize_vpm_manifest,
+    build_remove_plan, build_resolution_plan, candidates_from_catalog, inspect_package_project,
 };
 
 #[derive(Clone)]
@@ -42,6 +45,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
 impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
     async fn prepare_plan(
         &self,
+        owner: PrincipalId,
         project: ProjectRecord,
         catalog: ResolverCatalog,
         request: PackagePlanRequest,
@@ -52,13 +56,29 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         })
         .await
         .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
-        if request.action == PlanAction::Reinstall {
-            return prepare_reinstall(&self.cache, &snapshot, &project, &catalog, &request).await;
-        }
-        if request.action == PlanAction::Bulk {
-            return prepare_bulk(&self.cache, &snapshot, &project, &catalog, &request).await;
-        }
-        if request.action == PlanAction::Remove {
+        let draft = if request.action == PlanAction::Reinstall {
+            prepare_reinstall(
+                &self.cache,
+                &self.store,
+                &owner,
+                &snapshot,
+                &project,
+                &catalog,
+                &request,
+            )
+            .await?
+        } else if request.action == PlanAction::Bulk {
+            prepare_bulk(
+                &self.cache,
+                &self.store,
+                &owner,
+                &snapshot,
+                &project,
+                &catalog,
+                &request,
+            )
+            .await?
+        } else if request.action == PlanAction::Remove {
             let package_id = request
                 .package_id
                 .as_deref()
@@ -90,6 +110,8 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 Some(
                     resolve_project_packages(
                         &self.cache,
+                        &self.store,
+                        &owner,
                         &snapshot.root,
                         &candidates,
                         &remaining_requests,
@@ -98,14 +120,51 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 )
             };
             return build_remove_plan(&snapshot, package_id, remaining.as_ref());
-        }
-        let candidates = candidates_from_catalog(&catalog).map_err(map_resolve_error)?;
-        let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
-        let requests = resolution_requests(&project, &request, unity_version)?;
-        let resolution =
-            resolve_project_packages(&self.cache, &snapshot.root, &candidates, &requests).await?;
-        validate_action_direction(&project, &request, &resolution)?;
-        build_resolution_plan(&snapshot, request.action, &resolution)
+        } else {
+            let mut candidates = candidates_from_catalog(&catalog).map_err(map_resolve_error)?;
+            let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
+            let requests = resolution_requests(&project, &request, unity_version)?;
+            if request.action == PlanAction::Resolve {
+                let locked = project
+                    .observation
+                    .locked_dependencies
+                    .iter()
+                    .map(|entry| (entry.package_id.as_str(), entry.value.as_str()))
+                    .collect::<BTreeMap<_, _>>();
+                candidates.retain(|candidate| {
+                    locked
+                        .get(candidate.package_id.as_str())
+                        .is_none_or(|version| candidate.version.to_string() == *version)
+                });
+            }
+            let protected: BTreeSet<_> = request.package_id.iter().cloned().collect();
+            let rules = (request.action != PlanAction::Resolve)
+                .then(|| snapshot.resolution_rules(protected.clone(), true))
+                .transpose()?;
+            let mut resolution = if requests.is_empty() {
+                crate::Resolution {
+                    packages: Vec::new(),
+                    dependency_edges: Vec::new(),
+                }
+            } else {
+                resolve_migrating_packages(
+                    &self.cache,
+                    &self.store,
+                    &owner,
+                    &candidates,
+                    &requests,
+                    &protected,
+                    rules.as_ref(),
+                )
+                .await?
+            };
+            if request.action == PlanAction::Resolve {
+                normalize_direct_authority(&project, &mut resolution);
+            }
+            validate_action_direction(&project, &request, &resolution)?;
+            build_resolution_plan(&snapshot, request.action, &resolution)?
+        };
+        prepare_legacy_removals(&self.cache, &snapshot, &catalog, draft).await
     }
 
     async fn revalidate_plan(
@@ -133,6 +192,8 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
 
 async fn prepare_reinstall(
     cache: &PackageCache,
+    store: &impl RepositoryArchivePinStore,
+    owner: &PrincipalId,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -193,15 +254,34 @@ async fn prepare_reinstall(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_project_packages(cache, &snapshot.root, &candidates, &requests).await?
+        resolve_migrating_packages(cache, store, owner, &candidates, &requests, &targets, None)
+            .await?
     };
     normalize_direct_authority(project, &mut resolution);
-    validate_locked_versions(&locked, &resolution)?;
-    build_reinstall_plan(snapshot, &resolution, &targets)
+    let remaining = locked
+        .iter()
+        .filter(|(id, _)| {
+            resolution
+                .packages
+                .iter()
+                .any(|package| package.package_id == **id)
+        })
+        .map(|(id, version)| (id.clone(), version.clone()))
+        .collect::<BTreeMap<_, _>>();
+    validate_locked_versions(&remaining, &resolution)?;
+    if remaining.len() == locked.len() {
+        build_reinstall_plan(snapshot, &resolution, &targets)
+    } else {
+        let mut draft = build_bulk_plan(snapshot, &resolution, &targets)?;
+        draft.action = PlanAction::Reinstall;
+        Ok(draft)
+    }
 }
 
 async fn prepare_bulk(
     cache: &PackageCache,
+    store: &impl RepositoryArchivePinStore,
+    owner: &PrincipalId,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -342,7 +422,18 @@ async fn prepare_bulk(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_project_packages(cache, &snapshot.root, &candidates, &requests).await?
+        let explicit = intents.keys().cloned().collect();
+        let rules = snapshot.resolution_rules(explicit, false)?;
+        resolve_migrating_packages(
+            cache,
+            store,
+            owner,
+            &candidates,
+            &requests,
+            &rules.explicit,
+            Some(&rules),
+        )
+        .await?
     };
     let desired_ids = desired.keys().map(String::as_str).collect::<BTreeSet<_>>();
     for package in &mut resolution.packages {
@@ -486,24 +577,16 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         sync_directories(&[&attempt, &transaction_root])?;
 
-        let mut archives = BTreeMap::<String, PathBuf>::new();
-        for mutation in &plan.change_set.mutations {
-            let Some(source) = &mutation.source else {
-                continue;
-            };
-            let digest = source.archive_sha256();
-            let _cache_guard = locks.acquire(vec![ResourceKey::PackageCache(digest)]).await;
-            let archive = self
-                .cache
-                .get(
-                    digest,
-                    source.artifact_url().unwrap_or(""),
-                    source.is_user_package(),
-                )
-                .await
-                .map_err(map_cache_error)?;
-            archives.insert(mutation.package_id.clone(), archive);
-        }
+        let archives = fetch_package_objects(
+            &self.cache,
+            Some(&locks),
+            plan.change_set
+                .mutations
+                .iter()
+                .filter_map(|mutation| mutation.source.clone())
+                .collect(),
+        )
+        .await?;
         append_phase(
             &self.store,
             &plan,
@@ -527,27 +610,10 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         )?;
         test_kill_gate(&attempt, "archive_ready")?;
 
-        for (package_id, archive) in archives {
-            let destination = staging.join(&package_id);
-            std::fs::create_dir(&destination)
-                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-            let extraction_destination = destination.clone();
-            tokio::task::spawn_blocking(move || extract_archive(&archive, &extraction_destination))
-                .await
-                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
-                .map_err(map_archive_error)?;
-            let expected_version = plan
-                .change_set
-                .mutations
-                .iter()
-                .find(|mutation| mutation.package_id == package_id)
-                .and_then(|mutation| mutation.to_version.as_deref())
-                .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
-            validate_extracted_package(&destination, &package_id, expected_version).map_err(
-                |cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause),
-            )?;
-            if plan.change_set.format_version >= 3 {
-                verify_extracted_legacy(&root, &destination)?;
+        extract_package_objects(&staging, &plan.change_set, &archives).await?;
+        if plan.change_set.format_version == 3 {
+            for package_id in archives.keys() {
+                verify_extracted_legacy(&root, &staging.join(package_id))?;
             }
         }
         append_phase(
@@ -613,7 +679,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         let upm_path = packages_root.join("manifest.json");
         let upm_before = hash_file(&upm_path)?;
         let current_manifest = read_regular_file(&manifest_path, crate::PROJECT_MANIFEST_LIMIT)?;
-        let new_manifest = materialize_vpm_manifest(&current_manifest, &plan.change_set)?;
+        let new_manifest = crate::plan::materialize_plan_manifest(
+            &current_manifest,
+            &plan.change_set,
+            crate::plan::preserves_repaired_locks(plan.action),
+        )?;
         if Sha256::digest(&new_manifest).as_slice() != plan.change_set.vpm_manifest_sha256 {
             if plan.change_set.format_version < 3 {
                 return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
@@ -669,8 +739,10 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             next_step - 1,
         )?;
         // No awaited work separates this proof from the first project write.
-        verify_plan_legacy(&self.cache, &root, &staging, &catalog, &plan)?;
-        if let Err(error) = replace_packages(&packages_root, &staging, &backup, &attempt, &plan) {
+        verify_plan_legacy(&self.cache, &root, &staging, &catalog, &plan, false)?;
+        let replaced = quarantine_legacy(&root, &attempt, &plan)
+            .and_then(|()| replace_packages(&packages_root, &staging, &backup, &attempt, &plan));
+        if let Err(error) = replaced {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
                 &self.store,
@@ -731,7 +803,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         )?;
         // Core's package swap must not introduce or conceal a cleanup obligation.
         // A late target change uses the same established rollback path.
-        let commit = verify_plan_legacy(&self.cache, &root, &packages_root, &catalog, &plan)
+        let commit = verify_plan_legacy(&self.cache, &root, &packages_root, &catalog, &plan, true)
             .and_then(|()| commit_manifest(&manifest_path, &attempt));
         if let Err(error) = commit {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
@@ -772,9 +844,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         )?;
         test_kill_gate(&attempt, "vpm_manifest_committed")?;
 
-        if hash_file(&upm_path)? != upm_before
-            || hash_file(&manifest_path)? != plan.change_set.vpm_manifest_sha256
-        {
+        if let Err(error) = verify_final_state(&root, &attempt, &plan) {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
                 &self.store,
@@ -788,9 +858,8 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             )
             .await
             .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
-            return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply));
+            return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply).with_source(error));
         }
-        verify_final_state(&root, &attempt, &plan)?;
         append_phase(
             &self.store,
             &plan,
@@ -813,6 +882,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             next_step - 1,
         )?;
         test_kill_gate(&attempt, "filesystem_committed")?;
+        cleanup_legacy(&root, &attempt, &plan)?;
         append_phase(
             &self.store,
             &plan,
@@ -866,7 +936,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                         ResourceKey::Operation(operation_id),
                     ])
                     .await;
-                verify_final_state(Path::new(&project.observation.root_path), &attempt, plan)?;
+                let root = Path::new(&project.observation.root_path);
+                verify_final_state(root, &attempt, plan)?;
+                cleanup_legacy(root, &attempt, plan)?;
                 return self
                     .completion(Path::new(&project.observation.root_path), plan)
                     .await
@@ -983,10 +1055,14 @@ async fn revalidate(
         match (&row.source, source) {
             (
                 alcomd_application::ResolverCatalogSource::Repository {
+                    repository_locator,
                     repository_revision,
                     source_identity,
                     artifact_url,
+                    credential_reference,
+                    download_headers_present,
                     zip_sha256,
+                    local_zip_sha256,
                     manifest_fingerprint,
                     ..
                 },
@@ -1004,7 +1080,27 @@ async fn revalidate(
                 if artifact_url != &pin.artifact_url {
                     return stale("artifact_url_changed");
                 }
-                if parse_digest(zip_sha256)? != pin.archive_sha256 {
+                if credential_reference != &pin.credential_reference {
+                    return stale("repository_revision_changed");
+                }
+                let local_path = source_identity
+                    .starts_with("local-fileid-v1:")
+                    .then_some(repository_locator.as_str());
+                if *download_headers_present != pin.download_headers.is_some()
+                    || pin
+                        .download_headers
+                        .as_ref()
+                        .is_some_and(|headers| headers.local_path.as_deref() != local_path)
+                {
+                    return stale("manifest_fingerprint_changed");
+                }
+                if zip_sha256
+                    .as_deref()
+                    .map(parse_digest)
+                    .transpose()?
+                    .or(*local_zip_sha256)
+                    != Some(pin.archive_sha256)
+                {
                     return stale("archive_digest_changed");
                 }
             }
@@ -1043,10 +1139,17 @@ fn resolution_requests(
     unity_version: Option<crate::UnityVersion>,
 ) -> Result<Vec<ResolveRequest>, M4Error> {
     if request.action == PlanAction::Resolve {
-        let requests = project
+        let mut requests = project
             .observation
             .direct_dependencies
             .iter()
+            .filter(|dependency| {
+                !project
+                    .observation
+                    .locked_dependencies
+                    .iter()
+                    .any(|locked| locked.package_id == dependency.package_id)
+            })
             .map(|dependency| {
                 Ok(ResolveRequest {
                     package_id: dependency.package_id.clone(),
@@ -1061,9 +1164,21 @@ fn resolution_requests(
                 })
             })
             .collect::<Result<Vec<_>, M4Error>>()?;
-        if requests.is_empty() {
-            return Err(M4Error::new(M4ErrorCode::PackageNotFound));
-        }
+        requests.extend(
+            project
+                .observation
+                .locked_dependencies
+                .iter()
+                .map(|dependency| ResolveRequest {
+                    package_id: dependency.package_id.clone(),
+                    range: format!("={}", dependency.value),
+                    source: None,
+                    include_prerelease: request.include_prerelease
+                        || Version::parse(&dependency.value)
+                            .is_ok_and(|version| !version.pre.is_empty()),
+                    unity_version,
+                }),
+        );
         return Ok(requests);
     }
     let package_id = request
@@ -1132,11 +1247,13 @@ pub(crate) fn parse_unity_editor_version(
 /// its cleanup obligations. The package archive is pinned by its approved hash.
 pub(crate) async fn resolve_project_packages(
     cache: &PackageCache,
+    store: &impl RepositoryArchivePinStore,
+    owner: &PrincipalId,
     root: &Path,
     candidates: &[crate::PackageCandidate],
     requests: &[ResolveRequest],
 ) -> Result<crate::Resolution, M4Error> {
-    let resolved = crate::resolver::resolve_unity_migration_packages(candidates, requests)
+    let mut resolved = crate::resolver::resolve_unity_migration_packages(candidates, requests)
         .map_err(map_resolve_error)?;
     let selected_ids = resolved
         .resolution
@@ -1172,20 +1289,304 @@ pub(crate) async fn resolve_project_packages(
             crate::legacy::verify_absent(root, &metadata)?;
         }
     }
+    pin_resolution_archives(cache, store, owner, &mut resolved.resolution).await?;
     Ok(resolved.resolution)
 }
 
-fn verify_extracted_legacy(root: &Path, extracted: &Path) -> Result<(), M4Error> {
+async fn resolve_migrating_packages(
+    cache: &PackageCache,
+    store: &impl RepositoryArchivePinStore,
+    owner: &PrincipalId,
+    candidates: &[crate::PackageCandidate],
+    requests: &[ResolveRequest],
+    protected: &BTreeSet<String>,
+    rules: Option<&crate::resolver::ProjectResolutionRules>,
+) -> Result<crate::Resolution, M4Error> {
+    let mut remaining = requests.to_vec();
+    let mut omitted = BTreeSet::new();
+    let mut first_error = None;
+    loop {
+        let result = match rules {
+            Some(rules) => crate::resolver::resolve_project_change(candidates, &remaining, rules),
+            None => crate::resolver::resolve_unity_migration_packages(candidates, &remaining),
+        };
+        let solved = match result {
+            Ok(solved) => solved,
+            Err(error) => {
+                let id = match &error {
+                    ResolveError::PackageNotFound { package_id }
+                    | ResolveError::DependencyMissing { package_id }
+                    | ResolveError::DependencyConflict { package_id } => package_id,
+                    _ => return Err(map_resolve_error(error)),
+                };
+                if protected.contains(id)
+                    || !remaining.iter().any(|request| &request.package_id == id)
+                {
+                    return Err(map_resolve_error(error));
+                }
+                omitted.insert(id.clone());
+                remaining.retain(|request| &request.package_id != id);
+                first_error.get_or_insert(error);
+                continue;
+            }
+        };
+        let mut obsolete = BTreeSet::new();
+        for package in &solved.resolution.packages {
+            if solved
+                .legacy_cleanup_obligations
+                .iter()
+                .any(|item| item.package_id == package.package_id)
+                || matches!(
+                    package.source.authority,
+                    crate::PackageSourceAuthority::UserPackage { .. }
+                )
+            {
+                let metadata = cache
+                    .pin_legacy_manifest(
+                        &package.source,
+                        &package.package_id,
+                        &package.version.to_string(),
+                    )
+                    .await
+                    .map_err(map_cache_error)?;
+                if metadata.packages.contains(&package.package_id) {
+                    return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+                }
+                obsolete.extend(metadata.packages);
+            }
+        }
+        let conflicts = solved
+            .resolution
+            .packages
+            .iter()
+            .filter(|package| obsolete.contains(&package.package_id))
+            .map(|package| package.package_id.clone())
+            .collect::<BTreeSet<_>>();
+        if conflicts.is_empty() {
+            if !omitted.is_subset(&obsolete) {
+                return Err(first_error.map_or_else(
+                    || M4Error::new(M4ErrorCode::PackageDependencyConflict),
+                    map_resolve_error,
+                ));
+            }
+            let mut resolution = solved.resolution;
+            pin_resolution_archives(cache, store, owner, &mut resolution).await?;
+            return Ok(resolution);
+        }
+        if conflicts.iter().any(|id| {
+            protected.contains(id) || !remaining.iter().any(|request| &request.package_id == id)
+        }) {
+            return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+        }
+        remaining.retain(|request| !conflicts.contains(&request.package_id));
+        omitted.extend(conflicts);
+    }
+}
+
+async fn prepare_legacy_removals(
+    cache: &PackageCache,
+    snapshot: &crate::ProjectPackageSnapshot,
+    catalog: &ResolverCatalog,
+    mut draft: PackagePlanDraft,
+) -> Result<PackagePlanDraft, M4Error> {
+    let mut declarations = pinned_legacy_declarations(cache, catalog, &draft.source_set)?;
+    let archives = fetch_package_objects(
+        cache,
+        None,
+        draft
+            .change_set
+            .mutations
+            .iter()
+            .filter_map(|mutation| mutation.source.clone())
+            .collect(),
+    )
+    .await?;
+    let snapshot = snapshot.clone();
+    tokio::task::spawn_blocking(move || {
+        for (id, archive) in archives {
+            let metadata = crate::cache::read_archive_legacy(&archive).map_err(map_cache_error)?;
+            merge_legacy(&mut declarations, &id, metadata)?;
+        }
+        if declarations.values().all(LegacyMetadata::is_empty) {
+            return Ok(draft);
+        }
+        let obsolete = legacy_package_ids(&declarations)?;
+        let removals = crate::legacy::collect_removals(&snapshot.root, &declarations)?;
+        crate::plan::attach_legacy_removals(&snapshot, &mut draft, obsolete, removals)?;
+        Ok(draft)
+    })
+    .await
+    .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
+}
+
+fn merge_legacy(
+    declarations: &mut BTreeMap<String, LegacyMetadata>,
+    id: &str,
+    metadata: LegacyMetadata,
+) -> Result<(), M4Error> {
+    let combined = declarations.entry(id.to_owned()).or_default();
+    for (target, incoming) in [
+        (&mut combined.files, metadata.files),
+        (&mut combined.folders, metadata.folders),
+    ] {
+        for (path, guid) in incoming {
+            let path = crate::legacy::removal_path(&path)?;
+            let previous = target.entry(path).or_default();
+            if previous.is_empty() {
+                *previous = guid;
+            } else if !guid.is_empty() && *previous != guid {
+                return Err(M4Error::new(M4ErrorCode::PackageLegacyCleanupRequired));
+            }
+        }
+    }
+    combined.packages.extend(metadata.packages);
+    Ok(())
+}
+
+fn legacy_package_ids(
+    declarations: &BTreeMap<String, LegacyMetadata>,
+) -> Result<BTreeSet<String>, M4Error> {
+    let mut obsolete = BTreeSet::new();
+    for (source, metadata) in declarations {
+        for id in &metadata.packages {
+            if source.eq_ignore_ascii_case(id) {
+                return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+            }
+            obsolete.insert(id.clone());
+        }
+    }
+    Ok(obsolete)
+}
+
+pub(crate) async fn pin_resolution_archives(
+    cache: &PackageCache,
+    store: &impl RepositoryArchivePinStore,
+    owner: &PrincipalId,
+    resolution: &mut crate::Resolution,
+) -> Result<(), M4Error> {
+    let mut pending = Vec::new();
+    for (index, package) in resolution.packages.iter().enumerate() {
+        if package.source.archive_sha256.is_some() {
+            continue;
+        }
+        pending.push((index, package.clone()));
+    }
+    let downloaded = run_ordered_jobs(pending, PACKAGE_DOWNLOAD_CONCURRENCY, |(index, package)| {
+        let cache = cache.clone();
+        async move {
+            let download_headers = package.source.download_headers();
+            let crate::PackageSourceAuthority::Repository {
+                repository_id,
+                repository_revision,
+                artifact_url,
+                credential_reference,
+                ..
+            } = package.source.authority
+            else {
+                return Err(M4Error::new(M4ErrorCode::PackageHashRequired));
+            };
+            let version = package.version.to_string();
+            let archive_sha256 = cache
+                .download_first(
+                    &artifact_url,
+                    &package.package_id,
+                    &version,
+                    crate::cache::ArchiveHeaders {
+                        repository: credential_reference.as_deref(),
+                        package: download_headers.as_ref().map(|headers| {
+                            crate::cache::PackageHeaderLookup {
+                                source_identity: &package.source.source_identity,
+                                local_path: headers.local_path.as_deref(),
+                                package_id: &package.package_id,
+                                version: &version,
+                                fingerprint: &package.source.manifest_fingerprint,
+                            }
+                        }),
+                    },
+                )
+                .await
+                .map_err(map_cache_error)?;
+            Ok((
+                index,
+                RepositoryPackageSourcePin {
+                    repository_id,
+                    repository_revision,
+                    source_identity: package.source.source_identity,
+                    manifest_fingerprint: package.source.manifest_fingerprint,
+                    package_id: package.package_id,
+                    version,
+                    artifact_url,
+                    credential_reference,
+                    download_headers,
+                    archive_sha256,
+                },
+            ))
+        }
+    })
+    .await?;
+    for (index, pin) in downloaded {
+        let digest = pin.archive_sha256;
+        store.pin_repository_archive(owner.clone(), pin).await?;
+        resolution.packages[index].source.archive_sha256 = Some(digest);
+    }
+    Ok(())
+}
+
+fn extracted_legacy(extracted: &Path) -> Result<LegacyMetadata, M4Error> {
     let bytes = read_regular_file(&extracted.join("package.json"), 4 * 1024 * 1024)?;
     let manifest: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
-    let metadata = crate::package::LegacyMetadata::parse(
+    LegacyMetadata::parse(
         manifest
             .as_object()
             .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
     )
-    .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))?;
-    crate::legacy::verify_absent(root, &metadata)
+    .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))
+}
+
+fn verify_extracted_legacy(root: &Path, extracted: &Path) -> Result<(), M4Error> {
+    crate::legacy::verify_absent(root, &extracted_legacy(extracted)?)
+}
+
+fn pinned_legacy_declarations(
+    cache: &PackageCache,
+    catalog: &ResolverCatalog,
+    sources: &[alcomd_application::PackageSourcePin],
+) -> Result<BTreeMap<String, LegacyMetadata>, M4Error> {
+    let mut declarations = BTreeMap::new();
+    for source in sources {
+        let fingerprint = match source {
+            alcomd_application::PackageSourcePin::Repository(pin) => pin.manifest_fingerprint,
+            alcomd_application::PackageSourcePin::UserPackage(pin) => pin.manifest_fingerprint,
+        };
+        let requires_pin = source.is_user_package()
+            || catalog.entries.iter().any(|entry| {
+                entry.legacy_metadata_present
+                    && entry.package_id == source.package_id()
+                    && entry.version == source.version()
+                    && match (&entry.source, source) {
+                        (
+                            alcomd_application::ResolverCatalogSource::Repository {
+                                repository_id,
+                                manifest_fingerprint,
+                                ..
+                            },
+                            alcomd_application::PackageSourcePin::Repository(pin),
+                        ) => {
+                            repository_id == &pin.repository_id
+                                && manifest_fingerprint == &pin.manifest_fingerprint
+                        }
+                        _ => false,
+                    }
+            });
+        if requires_pin {
+            let metadata = cache
+                .read_pinned_legacy(&fingerprint)
+                .map_err(map_cache_error)?;
+            declarations.insert(source.package_id().to_owned(), metadata);
+        }
+    }
+    Ok(declarations)
 }
 
 fn verify_plan_legacy(
@@ -1194,44 +1595,42 @@ fn verify_plan_legacy(
     payload_root: &Path,
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
+    after_replace: bool,
 ) -> Result<(), M4Error> {
-    if plan.change_set.format_version >= 3 {
-        for source in &plan.source_set {
-            let fingerprint = match source {
-                alcomd_application::PackageSourcePin::Repository(pin) => pin.manifest_fingerprint,
-                alcomd_application::PackageSourcePin::UserPackage(pin) => pin.manifest_fingerprint,
-            };
-            let requires_pin = source.is_user_package()
-                || catalog.entries.iter().any(|entry| {
-                    entry.legacy_metadata_present
-                        && entry.package_id == source.package_id()
-                        && entry.version == source.version()
-                        && match (&entry.source, source) {
-                            (
-                                alcomd_application::ResolverCatalogSource::Repository {
-                                    repository_id,
-                                    manifest_fingerprint,
-                                    ..
-                                },
-                                alcomd_application::PackageSourcePin::Repository(pin),
-                            ) => {
-                                repository_id == &pin.repository_id
-                                    && manifest_fingerprint == &pin.manifest_fingerprint
-                            }
-                            _ => false,
-                        }
-                });
-            if requires_pin {
-                let metadata = cache
-                    .read_pinned_legacy(&fingerprint)
-                    .map_err(map_cache_error)?;
+    if plan.change_set.format_version < 3 {
+        return Ok(());
+    }
+    let mut declarations = pinned_legacy_declarations(cache, catalog, &plan.source_set)?;
+    if plan.change_set.format_version == 3 {
+        for metadata in declarations.values() {
+            crate::legacy::verify_absent(root, metadata)?;
+        }
+    }
+    for mutation in &plan.change_set.mutations {
+        if mutation.source.is_some() {
+            let metadata = extracted_legacy(&payload_root.join(&mutation.package_id))?;
+            if plan.change_set.format_version == 3 {
                 crate::legacy::verify_absent(root, &metadata)?;
+            } else {
+                merge_legacy(&mut declarations, &mutation.package_id, metadata)?;
             }
         }
-        for mutation in &plan.change_set.mutations {
-            if mutation.source.is_some() {
-                verify_extracted_legacy(root, &payload_root.join(&mutation.package_id))?;
-            }
+    }
+    if plan.change_set.format_version == 4 {
+        let actual = crate::legacy::collect_removals(root, &declarations)?;
+        let expected = if after_replace {
+            &[][..]
+        } else {
+            &plan.change_set.legacy_removals[..]
+        };
+        if actual != expected
+            || !legacy_package_ids(&declarations)?.into_iter().eq(plan
+                .change_set
+                .legacy_packages
+                .iter()
+                .cloned())
+        {
+            return stale("project_snapshot_changed");
         }
     }
     Ok(())
@@ -1281,6 +1680,15 @@ fn replace_packages(
 ) -> Result<(), M4Error> {
     for mutation in &plan.change_set.mutations {
         let target = packages_root.join(&mutation.package_id);
+        if mutation.kind == PackageMutationKind::Remove
+            && plan
+                .change_set
+                .legacy_packages
+                .contains(&mutation.package_id)
+        {
+            require_absent(&target)?;
+            continue;
+        }
         let backup_target = backup.join(&mutation.package_id);
         match std::fs::symlink_metadata(&target) {
             Ok(_) if mutation.kind == PackageMutationKind::Install => {
@@ -1355,6 +1763,132 @@ fn commit_manifest(manifest_path: &Path, attempt: &Path) -> Result<(), M4Error> 
     .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))
 }
 
+fn legacy_vault(attempt: &Path) -> PathBuf {
+    attempt.join("legacy-backup")
+}
+
+fn checked_boundary(root: &Path, path: &Path) -> Result<(), M4Error> {
+    if root != path {
+        crate::legacy::verify_boundary(
+            root,
+            path.strip_prefix(root)
+                .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?,
+        )?;
+    }
+    Ok(())
+}
+
+fn require_absent(path: &Path) -> Result<(), M4Error> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        _ => Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply)),
+    }
+}
+
+fn quarantine_legacy(root: &Path, attempt: &Path, plan: &PackagePlanRecord) -> Result<(), M4Error> {
+    if plan.change_set.legacy_removals.is_empty() {
+        return Ok(());
+    }
+    checked_boundary(root, attempt)?;
+    let vault = legacy_vault(attempt);
+    std::fs::create_dir(&vault)
+        .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+    sync_directories(&[attempt])?;
+    for (index, removal) in plan.change_set.legacy_removals.iter().enumerate() {
+        let source = root.join(crate::legacy::removal_path(&removal.path)?);
+        let parent = source
+            .parent()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
+        checked_boundary(root, &source)?;
+        crate::legacy::verify_removal(&source, removal)?;
+        let slot = vault.join(index.to_string());
+        alcomd_platform::publish_path_no_replace(&source, &slot)
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+        sync_directories(&[parent, &vault])?;
+        if crate::legacy::verify_removal(&slot, removal).is_err() {
+            // A concurrent writer changed what the rename moved. Restore it without
+            // replacing anything at the original path, then reject the stale plan.
+            checked_boundary(root, &slot).map_err(legacy_recovery_error)?;
+            checked_boundary(root, parent).map_err(legacy_recovery_error)?;
+            alcomd_platform::publish_path_no_replace(&slot, &source)
+                .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+            sync_directories(&[parent, &vault])?;
+            return stale("project_snapshot_changed");
+        }
+        test_kill_gate(attempt, "legacy_asset_quarantined")?;
+    }
+    Ok(())
+}
+
+fn restore_legacy(root: &Path, attempt: &Path, plan: &PackagePlanRecord) -> Result<(), M4Error> {
+    if plan.change_set.legacy_removals.is_empty() {
+        return Ok(());
+    }
+    let vault = legacy_vault(attempt);
+    if require_absent(&vault).is_ok() {
+        return Ok(());
+    }
+    checked_boundary(root, &vault).map_err(legacy_recovery_error)?;
+    for (index, removal) in plan.change_set.legacy_removals.iter().enumerate().rev() {
+        let slot = vault.join(index.to_string());
+        if require_absent(&slot).is_ok() {
+            continue;
+        }
+        checked_boundary(root, &slot).map_err(legacy_recovery_error)?;
+        crate::legacy::verify_removal(&slot, removal).map_err(legacy_recovery_error)?;
+        let target =
+            root.join(crate::legacy::removal_path(&removal.path).map_err(legacy_recovery_error)?);
+        let parent = target
+            .parent()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+        checked_boundary(root, parent).map_err(legacy_recovery_error)?;
+        alcomd_platform::publish_path_no_replace(&slot, &target)
+            .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
+        sync_directories(&[parent, &vault])?;
+    }
+    Ok(())
+}
+
+fn cleanup_legacy(root: &Path, attempt: &Path, plan: &PackagePlanRecord) -> Result<(), M4Error> {
+    if plan.change_set.legacy_removals.is_empty() {
+        return Ok(());
+    }
+    let vault = legacy_vault(attempt);
+    if require_absent(&vault).is_ok() {
+        return Ok(());
+    }
+    checked_boundary(root, &vault).map_err(legacy_recovery_error)?;
+    let recovery =
+        |cause: std::io::Error| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause);
+    for (index, removal) in plan.change_set.legacy_removals.iter().enumerate() {
+        let slot = vault.join(index.to_string());
+        if require_absent(&slot).is_ok() {
+            continue;
+        }
+        checked_boundary(root, &slot).map_err(legacy_recovery_error)?;
+        if alcomd_platform::file_identity_key(&slot).map_err(recovery)? != removal.identity {
+            return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+        }
+        match removal.kind {
+            alcomd_application::LegacyRemovalKind::File => {
+                std::fs::remove_file(&slot).map_err(recovery)?
+            }
+            alcomd_application::LegacyRemovalKind::Directory => {
+                alcomd_platform::project_delete_cleanup(&slot).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+                })?;
+            }
+        }
+        sync_directories(&[&vault])?;
+    }
+    std::fs::remove_dir(&vault).map_err(recovery)?;
+    sync_directories(&[attempt])
+}
+
+fn legacy_recovery_error(cause: M4Error) -> M4Error {
+    M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause)
+}
+
 fn verify_final_state(
     root: &Path,
     attempt: &Path,
@@ -1367,6 +1901,9 @@ fn verify_final_state(
     let expected_upm = read_regular_file(&attempt.join("upm-manifest.sha256"), 64)?;
     if expected_upm != hex(&hash_file(&packages_root.join("manifest.json"))?).as_bytes() {
         return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+    }
+    for removal in &plan.change_set.legacy_removals {
+        require_absent(&root.join(crate::legacy::removal_path(&removal.path)?))?;
     }
     for mutation in &plan.change_set.mutations {
         let target = packages_root.join(&mutation.package_id);
@@ -1443,6 +1980,13 @@ fn rollback_attempt(
                 .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         }
     }
+    restore_legacy(
+        packages_root
+            .parent()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::RecoveryRequired))?,
+        attempt,
+        plan,
+    )?;
     sync_directories(&[packages_root, attempt])
 }
 
@@ -1664,7 +2208,7 @@ fn map_resolve_error(error: ResolveError) -> M4Error {
     .with_source(error)
 }
 
-fn map_cache_error(error: crate::CacheError) -> M4Error {
+pub(crate) fn map_cache_error(error: crate::CacheError) -> M4Error {
     use crate::CacheErrorCode as C;
     (match error.code() {
         C::Corrupt => M4Error::new(M4ErrorCode::PackageCacheCorrupt),
@@ -1679,7 +2223,7 @@ fn map_cache_error(error: crate::CacheError) -> M4Error {
     .with_source(error)
 }
 
-fn map_archive_error(error: crate::ArchiveError) -> M4Error {
+pub(crate) fn map_archive_error(error: crate::ArchiveError) -> M4Error {
     use crate::ArchiveErrorCode as C;
     (match error.code() {
         C::UnsupportedCompression => {
@@ -1718,6 +2262,19 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone)]
+    struct UnexpectedArchivePin;
+
+    impl RepositoryArchivePinStore for UnexpectedArchivePin {
+        async fn pin_repository_archive(
+            &self,
+            _: PrincipalId,
+            _: RepositoryPackageSourcePin,
+        ) -> Result<(), M4Error> {
+            panic!("fixture candidates all have declared checksums")
+        }
+    }
 
     #[tokio::test]
     async fn old_unaccepted_plan_is_stale_before_filesystem_or_source_reads() {
@@ -1816,6 +2373,59 @@ mod tests {
     }
 
     #[test]
+    fn recovery_restores_a_partially_quarantined_plan_and_is_repeatable() {
+        let root = temporary_root("legacy-partial");
+        let attempt = root.join("Library/ALCOMD/transactions/operation/attempt-1");
+        let vault = legacy_vault(&attempt);
+        let assets = root.join("Assets");
+        let packages = root.join("Packages");
+        std::fs::create_dir_all(&vault).expect("create quarantine fixture");
+        std::fs::create_dir(&assets).expect("create assets fixture");
+        std::fs::create_dir(&packages).expect("create packages fixture");
+        for name in ["first.txt", "second.txt"] {
+            std::fs::write(assets.join(name), name.as_bytes()).expect("seed a legacy asset");
+        }
+        let mut plan = plan(PackageMutationKind::Install);
+        plan.change_set.format_version = 4;
+        plan.change_set.mutations.clear();
+        plan.change_set.legacy_removals = crate::legacy::collect_removals(
+            &root,
+            &BTreeMap::from([(
+                "com.example.fixture".to_owned(),
+                LegacyMetadata {
+                    files: BTreeMap::from([
+                        ("Assets/first.txt".to_owned(), String::new()),
+                        ("Assets/second.txt".to_owned(), String::new()),
+                    ]),
+                    ..Default::default()
+                },
+            )]),
+        )
+        .expect("freeze both legacy assets");
+        // Model an interrupted Apply after the first atomic quarantine move.
+        alcomd_platform::publish_path_no_replace(&assets.join("first.txt"), &vault.join("0"))
+            .expect("simulate the first quarantine move");
+        for _ in 0..2 {
+            rollback_attempt(
+                &packages,
+                &packages.join("vpm-manifest.json"),
+                &attempt,
+                &plan,
+            )
+            .expect("restore the partially quarantined plan");
+            assert_eq!(
+                std::fs::read(assets.join("first.txt")).expect("read restored asset"),
+                b"first.txt"
+            );
+            assert_eq!(
+                std::fs::read(assets.join("second.txt")).expect("read untouched asset"),
+                b"second.txt"
+            );
+        }
+        std::fs::remove_dir_all(&root).expect("clean the owned fixture");
+    }
+
+    #[test]
     fn recovery_marker_is_append_only_and_latest_intent_is_visible() {
         let root = temporary_root("marker");
         std::fs::create_dir(&root).expect("attempt");
@@ -1891,9 +2501,17 @@ mod tests {
         request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
             "com.example.transitive".to_owned(),
         ]));
-        let transitive = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
-            .await
-            .expect("reinstall transitive package");
+        let transitive = prepare_reinstall(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect("reinstall transitive package");
         assert_eq!(transitive.change_set.mutations.len(), 1);
         assert_eq!(
             transitive.change_set.mutations[0].kind,
@@ -1909,9 +2527,17 @@ mod tests {
         );
 
         request.reinstall_selection = Some(ReinstallSelection::All);
-        let all = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
-            .await
-            .expect("reinstall all locked packages");
+        let all = prepare_reinstall(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect("reinstall all locked packages");
         assert_eq!(all.change_set.mutations.len(), 2);
         assert!(all.change_set.mutations.iter().all(|mutation| {
             mutation.kind == PackageMutationKind::Replace
@@ -1922,10 +2548,18 @@ mod tests {
             "com.example.missing".to_owned(),
         ]));
         assert_eq!(
-            prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
-                .await
-                .expect_err("uninstalled target must fail")
-                .code(),
+            prepare_reinstall(
+                &cache,
+                &UnexpectedArchivePin,
+                &PrincipalId::local_owner(),
+                &snapshot,
+                &project,
+                &catalog,
+                &request
+            )
+            .await
+            .expect_err("uninstalled target must fail")
+            .code(),
             M4ErrorCode::PackageNotInstalled
         );
         std::fs::remove_dir_all(root).expect("remove fixture");
@@ -1934,6 +2568,8 @@ mod tests {
         request.reinstall_selection = Some(ReinstallSelection::All);
         let empty = prepare_reinstall(
             &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
             &empty_snapshot,
             &empty_project,
             &ResolverCatalog {
@@ -1995,9 +2631,17 @@ mod tests {
             package_id: "com.example.beta".to_owned(),
             source: None,
         }];
-        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
-            .await
-            .expect("transitive reinstall");
+        let plan = prepare_bulk(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect("transitive reinstall");
         assert!(
             !plan
                 .change_set
@@ -2006,7 +2650,8 @@ mod tests {
                 .any(|edge| !edge.direct && edge.from_package_id == edge.to_package_id)
         );
         let before = std::fs::read(root.join("Packages/vpm-manifest.json")).expect("manifest");
-        let after = materialize_vpm_manifest(&before, &plan.change_set).expect("frozen output");
+        let after =
+            crate::materialize_vpm_manifest(&before, &plan.change_set).expect("frozen output");
         assert_eq!(
             <[u8; 32]>::from(Sha256::digest(&after)),
             plan.change_set.vpm_manifest_sha256
@@ -2058,9 +2703,17 @@ mod tests {
             },
         ];
 
-        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
-            .await
-            .expect("one atomic mixed plan");
+        let plan = prepare_bulk(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect("one atomic mixed plan");
         assert_eq!(plan.action, PlanAction::Bulk);
         assert_eq!(
             plan.change_set
@@ -2089,9 +2742,17 @@ mod tests {
             ]
         );
         request.bulk_intents.reverse();
-        let reversed = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
-            .await
-            .expect("caller order must not change the Plan");
+        let reversed = prepare_bulk(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect("caller order must not change the Plan");
         assert_eq!(reversed.change_set, plan.change_set);
         assert_eq!(reversed.change_set_fingerprint, plan.change_set_fingerprint);
         std::fs::remove_dir_all(root).expect("remove fixture");
@@ -2119,6 +2780,8 @@ mod tests {
             .collect();
         let plan = prepare_bulk(
             &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -2139,6 +2802,8 @@ mod tests {
         });
         let too_many = prepare_bulk(
             &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -2164,6 +2829,8 @@ mod tests {
         assert_eq!(
             prepare_bulk(
                 &cache,
+                &UnexpectedArchivePin,
+                &PrincipalId::local_owner(),
                 &snapshot,
                 &project,
                 &ResolverCatalog {
@@ -2194,6 +2861,8 @@ mod tests {
         reinstall.reinstall_selection = Some(ReinstallSelection::All);
         let too_many = prepare_reinstall(
             &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
             &over_snapshot,
             &over_project,
             &ResolverCatalog {
@@ -2261,6 +2930,8 @@ mod tests {
                 version: Version::parse(version).expect("version"),
                 source: crate::PackageSource {
                     authority: crate::PackageSourceAuthority::Repository {
+                        credential_reference: None,
+                        download_headers_present: false,
                         repository_locator: None,
                         repository_id: "repo".to_owned(),
                         repository_revision: 1,
@@ -2269,7 +2940,7 @@ mod tests {
                     },
                     source_identity: "repo-source".to_owned(),
                     manifest_fingerprint: [4; 32],
-                    archive_sha256: [5; 32],
+                    archive_sha256: Some([5; 32]),
                 },
                 direct: true,
             }],
@@ -2365,8 +3036,11 @@ mod tests {
                         repository_revision: 1,
                         repository_priority: 1,
                         source_identity: "fixture-repository".to_owned(),
+                        credential_reference: None,
+                        download_headers_present: false,
                         artifact_url: format!("https://example.invalid/{package_id}/{version}.zip"),
-                        zip_sha256: format!("{index:064x}"),
+                        zip_sha256: Some(format!("{index:064x}")),
+                        local_zip_sha256: None,
                         manifest_fingerprint: [u8::try_from(index % 255).expect("byte"); 32],
                     },
                     package_id: (*package_id).to_owned(),
@@ -2374,7 +3048,7 @@ mod tests {
                     yanked: false,
                     unity: None,
                     author_name: "Fixture".to_owned(),
-                    author_email: "fixture@example.invalid".to_owned(),
+                    author_email: Some("fixture@example.invalid".to_owned()),
                     unity_release: None,
                     dependencies_json: "{}".to_owned(),
                     legacy_metadata_present: false,
@@ -2396,6 +3070,8 @@ mod tests {
             change_set_fingerprint: [2; 32],
             change_set: PackageChangeSet {
                 format_version: 1,
+                legacy_removals: Vec::new(),
+                legacy_packages: Vec::new(),
                 mutations: vec![PackageMutation {
                     kind,
                     package_id: "com.example.fixture".to_owned(),

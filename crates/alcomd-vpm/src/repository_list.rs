@@ -7,9 +7,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     PreparedRepositoryList, REPOSITORY_LIST_MAX_BYTES, REPOSITORY_LIST_MAX_ENTRIES,
-    RepositoryListEntry, RepositoryListEntryStatus as Status, RepositoryListError as Error,
-    RepositoryListExclusion, RepositoryListFiles, RepositoryListInspection, RepositoryListPreview,
-    RepositoryListSnapshot, RepositorySource,
+    RepositoryCredentials, RepositoryListEntry, RepositoryListEntryStatus as Status,
+    RepositoryListError as Error, RepositoryListExclusion, RepositoryListFiles,
+    RepositoryListInspection, RepositoryListPreview, RepositoryListRecord, RepositoryListSnapshot,
+    RepositorySource, VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
 use alcomd_platform::file_identity_key;
 use reqwest::Url;
@@ -64,8 +65,15 @@ impl RepositoryListFiles for RepositoryListFileAdapter {
         .map_err(|_| Error("repository_list_io_error"))?
     }
 
-    fn prepare(&self, snapshot: &RepositoryListSnapshot) -> Result<PreparedRepositoryList, Error> {
-        prepare_list(snapshot)
+    async fn prepare(
+        &self,
+        records: Vec<RepositoryListRecord>,
+    ) -> Result<PreparedRepositoryList, Error> {
+        tokio::task::spawn_blocking(move || {
+            prepare_list(&records, crate::repository_auth::load_from_vault)
+        })
+        .await
+        .map_err(|_| Error("repository_list_io_error"))?
     }
 
     async fn create_new(
@@ -116,15 +124,19 @@ fn parse_list(
             status: Status::Invalid,
             source: None,
             reason: None,
+            credentials_configured: false,
+            credentials: None,
         };
         match parse_source(line) {
-            Ok(url) => {
+            Ok((url, credentials)) => {
                 entry.status = if seen.insert(url.clone()) {
                     Status::Candidate
                 } else {
                     Status::Duplicate
                 };
                 entry.source = Some(RepositorySource::Remote { url });
+                entry.credentials_configured = credentials.is_some();
+                entry.credentials = credentials;
                 if entry.status == Status::Duplicate {
                     entry.reason = Some("duplicate_source");
                 }
@@ -143,8 +155,10 @@ fn parse_list(
     })
 }
 
-fn parse_source(text: &str) -> Result<String, (Status, &'static str)> {
-    if text.len() > 2048 || text.chars().any(char::is_control) {
+fn parse_source(
+    text: &str,
+) -> Result<(String, Option<alcomd_application::RepositoryCredentials>), (Status, &'static str)> {
+    if text.len() > 16 * 1024 || text.chars().any(char::is_control) {
         return Err((Status::Invalid, "source_invalid"));
     }
     let url = Url::parse(text).map_err(|_| (Status::Invalid, "source_invalid"))?;
@@ -156,12 +170,21 @@ fn parse_source(text: &str) -> Result<String, (Status, &'static str)> {
             return Err((Status::Unsupported, "vcc_link_not_supported"));
         }
         let mut source = None;
+        let mut headers = std::collections::BTreeMap::new();
         for (key, value) in url.query_pairs() {
-            if key != "url" {
-                return Err((Status::Unsupported, "authentication_not_supported"));
-            }
-            if source.replace(value.into_owned()).is_some() {
-                return Err((Status::Invalid, "source_invalid"));
+            match key.as_ref() {
+                "url" => {
+                    if source.replace(value.into_owned()).is_some() {
+                        return Err((Status::Invalid, "source_invalid"));
+                    }
+                }
+                "headers[]" => {
+                    let (name, value) = value
+                        .split_once(':')
+                        .ok_or((Status::Invalid, "source_invalid"))?;
+                    headers.insert(name.to_owned(), value.to_owned());
+                }
+                _ => {}
             }
         }
         let source = source.ok_or((Status::Invalid, "source_invalid"))?;
@@ -170,7 +193,17 @@ fn parse_source(text: &str) -> Result<String, (Status, &'static str)> {
         if !matches!(nested.scheme(), "http" | "https") {
             return Err((Status::Unsupported, "scheme_not_supported"));
         }
-        return parse_source(&source);
+        let (normalized, _) = parse_source(&source)?;
+        if headers.is_empty() {
+            return Ok((normalized, None));
+        }
+        let credentials = alcomd_application::RepositoryCredentials { headers };
+        let auth = crate::repository_auth::RepositoryAuth::new(&credentials)
+            .map_err(|_| (Status::Invalid, "source_invalid"))?;
+        if auth.contains_url_secret(&nested) {
+            return Err((Status::Invalid, "source_invalid"));
+        }
+        return Ok((normalized, Some(credentials)));
     }
     if !matches!(url.scheme(), "http" | "https") {
         return Err((Status::Unsupported, "scheme_not_supported"));
@@ -181,32 +214,84 @@ fn parse_source(text: &str) -> Result<String, (Status, &'static str)> {
     if normalized.len() > 2048 {
         return Err((Status::Invalid, "source_invalid"));
     }
-    Ok(normalized)
+    Ok((normalized, None))
 }
 
-fn prepare_list(snapshot: &RepositoryListSnapshot) -> Result<PreparedRepositoryList, Error> {
-    if snapshot.repositories.len() > REPOSITORY_LIST_MAX_ENTRIES {
+#[test]
+fn vcc_list_headers_are_excluded_from_the_normalized_http_source() {
+    let mut link = Url::parse("vcc://vpm/addRepo").expect("VCC link");
+    link.query_pairs_mut()
+        .append_pair("url", "http://repository.test/index.json")
+        .append_pair("future", "ignored")
+        .append_pair("headers[]", "Authorization:obsolete")
+        .append_pair("headers[]", "Authorization:Bearer private-fixture-token");
+    let (source, credentials) = parse_source(link.as_str()).expect("authenticated VCC link");
+    let credentials = credentials.expect("write-only header");
+    assert_eq!(source, "http://repository.test/index.json");
+    assert_eq!(
+        credentials.headers["Authorization"],
+        "Bearer private-fixture-token"
+    );
+    assert!(!format!("{credentials:?}").contains("private-fixture-token"));
+
+    for unsafe_source in [
+        "https://repository.test/private%2Dfixture-token",
+        "https://repository.test/?key=private%2Dfixture-token",
+    ] {
+        link.set_query(None);
+        link.query_pairs_mut()
+            .append_pair("url", unsafe_source)
+            .append_pair("headers[]", "Authorization: Bearer private-fixture-token");
+        assert!(parse_source(link.as_str()).is_err());
+    }
+}
+
+fn prepare_list(
+    records: &[RepositoryListRecord],
+    load_credentials: impl Fn(&str) -> Result<RepositoryCredentials, alcomd_application::M3Error>,
+) -> Result<PreparedRepositoryList, Error> {
+    if records.len() > REPOSITORY_LIST_MAX_ENTRIES {
         return Err(Error("repository_list_invalid"));
     }
-    let mut records: Vec<_> = snapshot.repositories.iter().collect();
+    let mut records: Vec<_> = records.iter().collect();
     records.sort_by(|left, right| left.repository_id.cmp(&right.repository_id));
     let mut bytes = Vec::new();
     let mut excluded = Vec::new();
     let mut scope = Vec::new();
     let mut exportable_count = 0;
     for record in records {
+        if matches!(
+            record.repository_id.as_str(),
+            VRCHAT_OFFICIAL_REPOSITORY_ID | VRCHAT_CURATED_REPOSITORY_ID
+        ) {
+            continue;
+        }
         // The fingerprint includes scope and revisions, including excluded sources.
         scope.push(serde_json::json!([
             record.repository_id,
             record.revision,
-            record.source
+            record.source,
+            record.credential_reference
         ]));
         let reason = match &record.source {
             RepositorySource::Local { .. } => Some("local_source"),
             RepositorySource::Remote { url } => match parse_source(url) {
                 Ok(_) if !url.contains(['#', '\r', '\n']) => {
-                    // Use the stored Core-validated URL, never reconstruct or reorder its query.
-                    bytes.extend_from_slice(url.as_bytes());
+                    if let Some(reference) = &record.credential_reference {
+                        let credentials = load_credentials(reference)
+                            .map_err(|_| Error("repository_list_io_error"))?;
+                        let mut link =
+                            Url::parse("vcc://vpm/addRepo").expect("constant export URL");
+                        let mut query = link.query_pairs_mut();
+                        query.append_pair("url", url);
+                        for (name, value) in credentials.headers {
+                            query.append_pair("headers[]", &format!("{name}:{value}"));
+                        }
+                        drop(query);
+                        bytes.extend_from_slice(link.as_str().as_bytes());
+                    } else {
+                        bytes.extend_from_slice(url.as_bytes());
+                    }
                     bytes.push(b'\n');
                     exportable_count += 1;
                     None
@@ -221,16 +306,15 @@ fn prepare_list(snapshot: &RepositoryListSnapshot) -> Result<PreparedRepositoryL
                 reason,
             });
         }
-    }
-    if bytes.len() > REPOSITORY_LIST_MAX_BYTES {
-        return Err(Error("repository_list_invalid"));
+        if bytes.len() > REPOSITORY_LIST_MAX_BYTES {
+            return Err(Error("repository_list_invalid"));
+        }
     }
     let binding = serde_json::to_vec(&serde_json::json!({"format":"alcomd-repository-list-v1", "scope":scope,
         "exclusions":excluded.iter().map(|entry| (&entry.repository_id, entry.reason)).collect::<Vec<_>>() }))
         .map_err(|_| Error("repository_list_invalid"))?;
     let mut fingerprint = Sha256::new();
     fingerprint.update((bytes.len() as u64).to_le_bytes());
-    fingerprint.update(&bytes);
     fingerprint.update(binding);
     Ok(PreparedRepositoryList {
         preview: RepositoryListPreview {
@@ -376,14 +460,21 @@ fn create_new_list_with(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_application::RepositoryListRecord;
 
     fn remote(id: &str, url: &str) -> RepositoryListRecord {
         RepositoryListRecord {
             repository_id: id.into(),
             revision: 1,
             source: RepositorySource::Remote { url: url.into() },
+            credential_reference: None,
         }
+    }
+
+    fn prepare_public(snapshot: &RepositoryListSnapshot) -> PreparedRepositoryList {
+        prepare_list(&snapshot.repositories, |_| {
+            panic!("anonymous export must not load credentials")
+        })
+        .expect("repository list fixture")
     }
 
     #[test]
@@ -401,17 +492,17 @@ mod tests {
                 Status::Candidate,
                 Status::Candidate,
                 Status::Duplicate,
-                Status::Unsupported,
+                Status::Candidate,
                 Status::Unsupported,
                 Status::Invalid
             ]
         );
-        assert!(parsed.entries[3].source.is_none());
+        assert!(!parsed.entries[3].credentials_configured);
         let snapshot = RepositoryListSnapshot {
             repositories: vec![remote("a", "https://example.test/index.json?z=2&a=1&a=3")],
             project_roots: vec![],
         };
-        let prepared = prepare_list(&snapshot).expect("repository list fixture");
+        let prepared = prepare_public(&snapshot);
         assert_eq!(
             prepared.bytes,
             b"https://example.test/index.json?z=2&a=1&a=3\n"
@@ -422,6 +513,36 @@ mod tests {
                 .entries[0]
                 .status,
             Status::Duplicate
+        );
+    }
+
+    #[test]
+    fn authenticated_export_reimports_exact_headers_and_binds_the_credential_revision() {
+        let mut record = remote("a", "https://example.test/index.json?z=2&a=1");
+        record.credential_reference = Some("current-reference".into());
+        let credentials = RepositoryCredentials {
+            headers: std::collections::BTreeMap::from([
+                (
+                    "Authorization".into(),
+                    "Bearer isolated-export-fixture".into(),
+                ),
+                ("X-Token".into(), "#%& value".repeat(200)),
+            ]),
+        };
+        let export = |record| {
+            prepare_list(&[record], |_| Ok(credentials.clone())).expect("authenticated export")
+        };
+        let prepared = export(record.clone());
+        assert!(prepared.bytes.len() > 2048);
+        let parsed = parse_list(&prepared.bytes, &RepositoryListSnapshot::default())
+            .expect("export can be reimported");
+        assert_eq!(parsed.entries[0].source, Some(record.source.clone()));
+        assert_eq!(parsed.entries[0].credentials, Some(credentials.clone()));
+        assert!(!format!("{:?}", prepared.preview).contains("isolated-export-fixture"));
+        record.credential_reference = Some("rotated-reference".into());
+        assert_ne!(
+            prepared.preview.fingerprint,
+            export(record).preview.fingerprint
         );
     }
 
@@ -444,8 +565,19 @@ mod tests {
             source: RepositorySource::Local {
                 path: "/local".into(),
             },
+            credential_reference: None,
         });
-        let prepared = prepare_list(&snapshot).expect("repository list fixture");
+        snapshot.repositories.extend([
+            remote(
+                VRCHAT_OFFICIAL_REPOSITORY_ID,
+                "https://official.test/index.json",
+            ),
+            remote(
+                VRCHAT_CURATED_REPOSITORY_ID,
+                "https://curated.test/index.json",
+            ),
+        ]);
+        let prepared = prepare_public(&snapshot);
         assert_eq!(prepared.preview.exportable_count, 230);
         assert_eq!(prepared.preview.excluded[0].reason, "local_source");
         assert_eq!(
@@ -454,15 +586,13 @@ mod tests {
         );
         snapshot
             .repositories
-            .last_mut()
+            .iter_mut()
+            .find(|record| record.repository_id == "local")
             .expect("repository list fixture")
             .revision += 1;
         assert_ne!(
             prepared.preview.fingerprint,
-            prepare_list(&snapshot)
-                .expect("repository list fixture")
-                .preview
-                .fingerprint
+            prepare_public(&snapshot).preview.fingerprint
         );
     }
 

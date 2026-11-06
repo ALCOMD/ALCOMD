@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -244,15 +244,15 @@ enum ProjectCommand {
 enum RepositoryCommand {
     Inspect {
         source: String,
+        #[arg(long)]
+        credentials_stdin: bool,
     },
     List {
         #[arg(long)]
         limit: Option<u32>,
     },
     #[command(visible_alias = "info")]
-    Get {
-        repository_id: String,
-    },
+    Get { repository_id: String },
     Packages {
         repository_id: String,
         #[arg(long)]
@@ -262,7 +262,24 @@ enum RepositoryCommand {
     Register {
         source: String,
         #[arg(long)]
+        credentials_stdin: bool,
+        #[arg(long)]
         idempotency_key: String,
+    },
+    SetCredentials {
+        repository_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(
+            long,
+            required_unless_present = "credentials_stdin",
+            conflicts_with = "credentials_stdin"
+        )]
+        clear: bool,
+        #[arg(long)]
+        credentials_stdin: bool,
     },
     Refresh {
         repository_id: String,
@@ -810,9 +827,15 @@ async fn execute(
             ),
         },
         Command::Repository { command } => match command {
-            RepositoryCommand::Inspect { source } => serde_json::to_value(
+            RepositoryCommand::Inspect {
+                source,
+                credentials_stdin,
+            } => serde_json::to_value(
                 client
-                    .repository_inspect(repository_source(source)?)
+                    .repository_inspect_with_credentials(
+                        repository_source(source)?,
+                        repository_credentials_from_stdin(credentials_stdin)?,
+                    )
                     .await?,
             ),
             RepositoryCommand::List { limit } => {
@@ -832,9 +855,32 @@ async fn execute(
             RepositoryCommand::Register {
                 source,
                 idempotency_key,
+                credentials_stdin,
             } => serde_json::to_value(
                 client
-                    .repository_register(repository_source(source)?, idempotency_key)
+                    .repository_register_with_credentials(
+                        repository_source(source)?,
+                        idempotency_key,
+                        repository_credentials_from_stdin(credentials_stdin)?,
+                    )
+                    .await?,
+            ),
+            RepositoryCommand::SetCredentials {
+                repository_id,
+                expected_revision,
+                idempotency_key,
+                clear,
+                credentials_stdin,
+            } => serde_json::to_value(
+                client
+                    .repository_set_credentials(alcomd_protocol::RepositorySetCredentialsParams {
+                        repository_id,
+                        expected_revision,
+                        idempotency_key,
+                        credentials: repository_credentials_from_stdin(
+                            !clear && credentials_stdin,
+                        )?,
+                    })
                     .await?,
             ),
             RepositoryCommand::Refresh {
@@ -1239,6 +1285,7 @@ impl Command {
                 RepositoryCommand::Get { .. } => "repository get",
                 RepositoryCommand::Packages { .. } => "repository packages",
                 RepositoryCommand::Register { .. } => "repository register",
+                RepositoryCommand::SetCredentials { .. } => "repository set-credentials",
                 RepositoryCommand::Refresh { .. } => "repository refresh",
                 RepositoryCommand::Unregister { .. } => "repository unregister",
             },
@@ -1465,6 +1512,31 @@ fn repository_source(
             absolute_path(PathBuf::from(source)).map_err(alcomd_client::ClientError::Transport)?;
         Ok(alcomd_protocol::RepositorySource::Local { path })
     }
+}
+
+fn repository_credentials_from_stdin(
+    enabled: bool,
+) -> Result<Option<alcomd_protocol::RepositoryCredentials>, CliError> {
+    if !enabled {
+        return Ok(None);
+    }
+    let input = io::stdin();
+    let invalid = |message| CliError::LocalIo(io::Error::new(io::ErrorKind::InvalidInput, message));
+    if input.is_terminal() {
+        return Err(invalid("pipe the credentials JSON into standard input"));
+    }
+    let mut bytes = Vec::new();
+    input
+        .lock()
+        .take(8193)
+        .read_to_end(&mut bytes)
+        .map_err(CliError::LocalIo)?;
+    if bytes.len() > 8192 {
+        return Err(invalid("repository credentials input is too large"));
+    }
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| invalid("invalid repository credentials JSON"))
 }
 
 fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {

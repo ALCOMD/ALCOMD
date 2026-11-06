@@ -223,7 +223,7 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: [&str; 7] = [
+    const APPROVED: &[&str] = &[
         // AUMID: process identity only, documented input/output ownership.
         "crates/alcomd-platform/src/windows_app_identity.rs",
         "crates/alcomd-platform/src/windows_security.rs",
@@ -235,6 +235,7 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_unity_window.rs",
         // Config5: one documented MoveFileExW(flags=0) call; never replaces a destination.
         "crates/alcomd-platform/src/windows_file_publish.rs",
+        "crates/alcomd-platform/src/credential_vault/windows.rs",
     ];
     let unsafe_word = ["un", "safe"].concat();
     let allowance = format!("allow({unsafe_word}_code)");
