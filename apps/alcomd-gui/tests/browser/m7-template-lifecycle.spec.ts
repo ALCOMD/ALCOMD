@@ -54,7 +54,7 @@ test("file import waits for a selected archive and an explicit confirmation", as
     const dialog = page.locator("md-dialog[open]");
     const submit = dialog.getByRole("button", { name: "Import template", exact: true });
     await expect(submit).toBeDisabled();
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await expect(dialog.getByLabel("Template file", { exact: true })).toHaveValue("C:\\Fixture\\input.alcomdtemplate");
     expect(await request(page, "projectTemplates.save")).toBeUndefined();
     await submit.click();
@@ -65,13 +65,48 @@ test("file import waits for a selected archive and an explicit confirmation", as
     });
 });
 
+test("template file picker keeps one editable path for typing and targeted drops", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/browser-harness.html?route=/templates");
+    await openSource(page, "Import template");
+    const dialog = page.locator("md-dialog[open]");
+    const input = dialog.getByLabel("Template file", { exact: true });
+    const target = dialog.getByRole("button", { name: "Drop a file here or click to select", exact: true });
+    await target.click({ position: { x: 12, y: 12 } });
+    await expect(input).toHaveValue("C:\\Fixture\\input.alcomdtemplate");
+    await input.fill("C:\\Fixture\\typed.alcomdtemplate");
+    const box = await target.boundingBox();
+    if (box === null) throw new Error("Missing file drop zone");
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const dropped = "C:\\Fixture\\dropped.alcomdtemplate";
+    await page.evaluate(({ x, y, dropped }) => {
+        window.dispatchEvent(new CustomEvent("fixture-file-drag", { detail: { type: "drop", x: 0, y: 0, paths: [dropped] } }));
+        window.dispatchEvent(new CustomEvent("fixture-file-drag", { detail: { type: "hover", x, y } }));
+    }, { x, y, dropped });
+    await expect(input).toHaveValue("C:\\Fixture\\typed.alcomdtemplate");
+    await expect(dialog.getByText("Release to select the file", { exact: true })).toBeVisible();
+    await page.evaluate(({ x, y, dropped }) => window.dispatchEvent(new CustomEvent("fixture-file-drag", {
+        detail: { type: "drop", x, y, paths: [dropped, "C:\\Fixture\\second.alcomdtemplate"] }
+    })), { x, y, dropped });
+    await expect(dialog.getByRole("alert")).toHaveText("Select one file at a time.");
+    await expect(input).toHaveValue("C:\\Fixture\\typed.alcomdtemplate");
+    await page.evaluate(({ x, y, dropped }) => window.dispatchEvent(new CustomEvent("fixture-file-drag", {
+        detail: { type: "drop", x, y, paths: [dropped] }
+    })), { x, y, dropped });
+    await expect(input).toHaveValue(dropped);
+    expect(await request(page, "projectTemplates.save")).toBeUndefined();
+    await dialog.getByRole("button", { name: "Import template", exact: true }).click();
+    expect(await request(page, "projectTemplates.save")).toMatchObject({ source: { kind: "file", sourceFile: dropped } });
+});
+
 test("user template replacement binds the selected revision and supports removal", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-existing=1&template-file-replace=1");
     await row(page, userId).getByRole("button", { name: "More actions for Existing fixture", exact: true }).click();
     await page.getByRole("menuitem", { name: "Replace template", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog).toContainText(userId);
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await dialog.getByRole("button", { name: "Replace template", exact: true }).click();
     await expect(row(page, userId)).toContainText("Imported replacement");
     expect(await request(page, "projectTemplates.save")).toEqual({
@@ -121,10 +156,10 @@ test("retrying a lost import response sends the same file and idempotency key", 
     await page.goto("/browser-harness.html?route=/templates&template-operation-unknown=1");
     await openSource(page, "Import template");
     const dialog = page.locator("md-dialog[open]");
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await dialog.getByRole("button", { name: "Import template", exact: true }).click();
     await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
-    await expect(dialog.getByRole("button", { name: "Choose file", exact: true })).toBeDisabled();
+    await expect(dialog.getByRole("button", { name: "Select", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(row(page, "com.example.imported")).toHaveCount(1);

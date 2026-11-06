@@ -3,6 +3,7 @@ import type { RepositoryListImportItem, RepositoryListInspection, RepositoryList
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
 import { Button, Checkbox, Dialog, MenuItem, Progress, TextField } from "./Material";
+import { FilePicker } from "./FilePicker";
 import { SplitButton } from "./SplitButton";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { ScrollArea } from "./ScrollArea";
@@ -41,6 +42,7 @@ const safeError = (caught: unknown): RpcError => ({ code: typeof caught === "obj
 function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcClient; onChanged(): void; onClose(): void }) {
     const { t } = useTranslation();
     const current = useActionScope(client);
+    const [path, setPath] = useState("");
     const [preview, setPreview] = useState<{ path: string; inspection: RepositoryListInspection }>();
     const [results, setResults] = useState<RepositoryListImportItem[]>();
     const [finished, setFinished] = useState(false);
@@ -67,17 +69,17 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
         setError(undefined);
     };
     const end = () => { pending.current = false; if (current()) setBusyAction(undefined); };
-    const read = async () => {
-        if (pending.current) return;
+    const read = async (selectedPath: string) => {
+        if (pending.current || selectedPath.trim() === "") return;
+        setPath(selectedPath);
+        setPreview(undefined);
+        setResults(undefined);
+        setFinished(false);
         begin("reading");
         try {
-            const path = await client.selectRepositoryListFile("open");
-            if (!current() || cancelRead.current || path === undefined) return;
-            const inspection = await client.repositoryListInspectFile(path);
+            const inspection = await client.repositoryListInspectFile(selectedPath);
             if (!current() || cancelRead.current) return;
-            setPreview({ path, inspection });
-            setResults(undefined);
-            setFinished(false);
+            setPreview({ path: selectedPath, inspection });
         } catch (caught) { if (current() && !cancelRead.current) setError(normalizeRequestError(caught)); }
         finally { end(); }
     };
@@ -126,10 +128,19 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const labels = { candidate: "To import", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", failed: "Failed", added: "Added", unknown: "Result unknown", existing: "Already added", unprocessed: "Not processed" } as const;
     return <Dialog wide open dismissible={!busy} title={t("Import list")} onClose={onClose} actions={<>
         {busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button> : <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button>}
-        {!busy ? <Button onClick={() => void read()} type="button" variant="text">{t("Choose list file")}</Button> : null}
+        {!busy && path.trim() !== "" && !inspection ? <Button onClick={() => void read(path)} type="button" variant="text">{t("Review list")}</Button> : null}
         {!busy && !finished && inspection ? <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button> : null}
     </>}>
         <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
+        <FilePicker client={client} chooseFile={() => client.selectRepositoryListFile("open")} disabled={busy}
+            label={t("Repository list file")} value={path} onPicked={(picked) => void read(picked)}
+            onInput={(next) => { setPath(next); setPreview(undefined); setResults(undefined); setFinished(false); setError(undefined); }}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                    event.preventDefault();
+                    if (!inspection) void read(path);
+                }
+            }} />
         {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>
             <p>{t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>

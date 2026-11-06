@@ -26,7 +26,7 @@ import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-m
 import { App } from "../../src/App";
 import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
-import type { GuiRpcClient } from "../../src/rpc";
+import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
@@ -262,6 +262,14 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationSequence = 0;
     private listExportAttempts = 0;
     private listPreviewReads = 0;
+    selectFile(kind: NativeFileKind): ReturnType<GuiRpcClient["selectFile"]> {
+        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdext" }[kind]);
+    }
+    async subscribeFileDrag(receive: (event: FileDrag) => void) {
+        const listener = (event: Event) => receive((event as CustomEvent<FileDrag>).detail);
+        window.addEventListener("fixture-file-drag", listener);
+        return () => window.removeEventListener("fixture-file-drag", listener);
+    }
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);

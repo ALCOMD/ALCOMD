@@ -16,7 +16,7 @@ function expectedImport() {
 }
 async function review(page: Page, candidateCount = 3) {
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Choose list file", exact: true }).click();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByText("Duplicate", { exact: true })).toBeVisible();
     await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
     await expect(host.getByText("Unsupported", { exact: true })).toBeVisible();
@@ -45,8 +45,8 @@ test("long preview content scrolls independently of actions and closing restores
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Choose list file", exact: true }).click();
-    for (const name of ["Close", "Choose list file", "Add 3 repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
+    for (const name of ["Close", "Select", "Add 3 repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
     await host.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("button", { name: "Repository list actions", exact: true })).toBeFocused();
     const exportHost = await openList(page, "Export list");
@@ -129,7 +129,25 @@ test("transport loss shows an unresolved import without inventing per-line outco
 test("cancelled list file picker performs no inspection or registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-picker=cancel");
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Choose list file", exact: true }).click();
+test("a typed repository list path must be reviewed again when it changes", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories");
+    const host = await openList(page, "Import list");
+    const input = host.getByLabel("Repository list file", { exact: true });
+    await input.fill("C:/fixture/typed.txt");
+    await input.press("Enter");
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
+    await input.fill("C:/fixture/changed.txt");
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toHaveCount(0);
+    await host.getByRole("button", { name: "Review list", exact: true }).click();
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
+    expect(await requests(page, "repositories.inspectListFile")).toEqual([
+        { method: "repositories.inspectListFile", params: { path: "C:/fixture/typed.txt" } },
+        { method: "repositories.inspectListFile", params: { path: "C:/fixture/changed.txt" } }
+    ]);
+    expect(await requests(page, "repositories.importListFile")).toEqual([]);
+});
+
+    await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByRole("button", { name: "Close", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
     expect(await requests(page, "repositories.importListFile")).toEqual([]);
@@ -147,7 +165,7 @@ test("an already registered source is skipped and the batch continues", async ({
 test("lists with no candidates cannot start registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=invalid");
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Choose list file", exact: true }).click();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
     await expect(host.getByRole("button", { name: "Add 0 repositories", exact: true })).toBeDisabled();
     expect(await requests(page, "repositories.importListFile")).toEqual([]);

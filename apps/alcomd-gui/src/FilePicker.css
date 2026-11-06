@@ -1,0 +1,45 @@
+.file-picker {
+    display: grid;
+    gap: 12px;
+    min-inline-size: 0;
+    padding: 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.file-picker > .file-picker__drop {
+    --md-text-button-container-shape: var(--md-sys-shape-corner-medium);
+    --md-text-button-label-text-color: var(--md-sys-color-on-surface-variant);
+    block-size: 120px;
+    padding: 0;
+    border: 1px dashed var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.file-picker__drop-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    text-align: center;
+    white-space: normal;
+}
+
+.file-picker > .file-picker__drop[data-dragging="true"] {
+    --md-text-button-label-text-color: var(--md-sys-color-on-primary-container);
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary-container);
+}
+
+.file-picker__path {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+}
+
+.file-picker__path > md-outlined-text-field { width: 100%; min-inline-size: 0; }
+.file-picker__path > md-filled-tonal-button { margin-block-start: calc((56px - var(--alcomd-button-height)) / 2); }
+.file-picker__error { margin: 0; color: var(--md-sys-color-error); }
