@@ -466,14 +466,22 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | `projects.refresh` | `projects.registry.v1` | `projects.manage` | 刷新 normalized snapshot，不写项目 |
 | `projects.unregister` | `projects.registry.v1` | `projects.manage` | 只删 registry row，不删目录 |
 | `repositories.inspect` | `repositories.read.v1` | `repositories.read` | 读取 local/remote source，不修改 registry；远程预览可供同一连接确认登记时复用 |
-| `repositories.list` | `repositories.read.v1` | `repositories.read` | 注册 source 稳定分页 |
+| `repositories.list` | `repositories.read.v1` | `repositories.read` | 官方、精选内置仓库在前，其余按登记顺序分页 |
 | `repositories.get` | `repositories.read.v1` | `repositories.read` | 读取一个 last-known-good snapshot |
 | `repositories.packages` | `repositories.read.v1` | `repositories.read` | raw package/version identity 分页 |
 | `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 完整读取成功后写 registry/cache；同一连接可复用 60 秒内同一规范化远程来源的预览 |
 | `repositories.refresh` | `repositories.registry.v1` | `repositories.manage` | 条件刷新并保留 last-known-good |
 | `repositories.refreshAll` | `repositories.registry.v1` | `repositories.read` + `repositories.manage` | Core 滚动刷新调用者已登记的仓库，复用共享下载额度 |
 | `repositories.setCredentials` | `repositories.registry.v1` | 本机所有者及 `repositories.manage` | 用仓库 revision 和幂等键替换认证引用，显式 `credentials: null` 清除 |
+| `repositories.setDisplayName` | `repositories.registry.v1` | `repositories.manage` | 设置已登记仓库的本地显示名，显式 `displayName: null` 清除 |
 | `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，保留 local source；Core 的内置仓库返回 `permission_denied` |
+
+仓库列表继续使用返回的 `nextCursor`。若游标对应的仓库在分页期间被移除，
+Core 返回 `revision_conflict`，客户端可从首页重读。
+
+显示名适用于内置与用户仓库。输入最多 128 个 Unicode 标量值，拒绝控制字符。
+Core 去掉首尾空白，空值恢复默认名称。读取及写入结果中的 `displayName` 仅在设置覆盖值时出现。
+沿用仓库修订及幂等键，只有实际变化才写入 `repository.display-name-changed` 事件。
 
 本机所有者可在 `repositories.inspect` 和 `repositories.register` 传入写入专用 `credentials`。
 `headers` 最多 16 项，完整凭据 JSON 上限 2560 字节。旧 `allowedOrigins` 字段被拒绝，旧凭据需重新输入。

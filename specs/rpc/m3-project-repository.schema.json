@@ -87,6 +87,7 @@
                 "source": {"$ref": "#/$defs/repositorySource"},
                 "declaredId": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024},
                 "name": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096},
+                "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
                 "declaredUrl": {"type": ["string", "null"], "minLength": 1, "maxLength": 32768},
                 "credentialsConfigured": {"type": "boolean"},
                 "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}, "maxItems": 1024},
@@ -216,6 +217,16 @@
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"},
                 "credentials": {"oneOf": [{"$ref": "#/$defs/repositoryCredentials"}, {"type": "null"}]}
+            }
+        },
+        "repositorySetDisplayNameParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["repositoryId", "expectedRevision", "idempotencyKey", "displayName"],
+            "properties": {
+                "repositoryId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"},
+                "displayName": {"type": ["string", "null"], "maxLength": 128, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"}
             }
         },
         "repositoryMutationParams": {

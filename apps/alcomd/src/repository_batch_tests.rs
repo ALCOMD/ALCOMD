@@ -1,7 +1,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use alcomd_application::{M4Store, RepositoryBatchItem, RepositorySource, ResolverCatalogSource};
+use alcomd_application::{
+    M4Store, Permission, RepositoryBatchItem, RepositorySource, ResolverCatalogSource,
+};
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::sync::{Notify, watch};
@@ -228,6 +230,32 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
             counters.requests.load(Ordering::SeqCst),
             if index == 1 { 1 } else { 3 }
         );
+        if index == 1 {
+            let repository = &registered.response["result"]["repository"];
+            let rename = |display_name: &str| RequestEnvelope {
+                id: "rename".to_owned(),
+                method: rpc::METHOD_REPOSITORIES_SET_DISPLAY_NAME.to_owned(),
+                params: json!({
+                    "repositoryId": repository["repositoryId"],
+                    "expectedRevision": repository["revision"],
+                    "idempotencyKey": "rename-fixture",
+                    "displayName": display_name
+                }),
+            };
+            let read_only =
+                AccessContext::new(access.principal().clone(), [Permission::RepositoriesRead]);
+            let denied = m3_rpc::dispatch(rename("Name"), &first, &registry, &read_only).await;
+            assert_eq!(denied.response["error"]["code"], "permission_denied");
+            let invalid = m3_rpc::dispatch(rename("A\nB"), &first, &registry, &access).await;
+            assert_eq!(invalid.response["error"]["code"], "invalid_request");
+            let renamed =
+                m3_rpc::dispatch(rename("  社区软件包  "), &first, &registry, &access).await;
+            let renamed = &renamed.response["result"]["repository"];
+            assert_eq!(renamed["displayName"], "社区软件包");
+            assert_eq!(renamed["name"], repository["name"]);
+            assert_eq!(renamed["source"], repository["source"]);
+            assert_eq!(counters.requests.load(Ordering::SeqCst), 1);
+        }
     }
     let catalogue = store
         .resolver_catalog(access.principal().clone(), false)

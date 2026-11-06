@@ -9,7 +9,7 @@ use alcomd_application::{
     ProjectRecord, ProjectType, RepositoryArchivePinStore, RepositoryId, RepositoryObservation,
     RepositoryPackageLinks, RepositoryPackageSourcePin, RepositoryPackageVersion, RepositorySource,
     RepositoryValidators, ResolverCatalogSource, ResolverPackageMetadata, Revision, StateStore,
-    SyncWrite, UnityInstallationId,
+    SyncWrite, UnityInstallationId, VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
 use alcomd_store::StateStoreHandle;
 use rusqlite::{Connection, params};
@@ -56,6 +56,76 @@ impl Drop for TestDirectory {
 
 fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("valid key")
+}
+
+#[tokio::test]
+async fn repository_pages_keep_builtins_first_and_users_in_registration_order() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("repository list fixture");
+    let owner = PrincipalId::local_owner();
+    let older = store
+        .register_repository(owner.clone(), repository(1, 1), key("older"), 10)
+        .await
+        .expect("register first user repository")
+        .value
+        .repository_id;
+    let official = RepositoryId::parse(VRCHAT_OFFICIAL_REPOSITORY_ID).expect("official ID");
+    let curated = RepositoryId::parse(VRCHAT_CURATED_REPOSITORY_ID).expect("curated ID");
+    store
+        .ensure_builtin_repositories(
+            owner.clone(),
+            vec![(curated, repository(2, 1)), (official, repository(3, 1))],
+            10,
+        )
+        .await
+        .expect("register built-ins after an existing user repository");
+    let newer = store
+        .register_repository(owner.clone(), repository(4, 1), key("newer"), 10)
+        .await
+        .expect("register second user repository in the same millisecond")
+        .value
+        .repository_id;
+
+    let mut ids = Vec::new();
+    let mut cursor = None;
+    for _ in 0..4 {
+        let page = store
+            .list_repositories(owner.clone(), cursor, 1)
+            .await
+            .expect("list one repository at a time");
+        ids.extend(
+            page.repositories
+                .into_iter()
+                .map(|record| record.repository_id),
+        );
+        cursor = page.next_cursor;
+    }
+    assert_eq!(ids, [official, curated, older, newer]);
+    assert!(cursor.is_none());
+
+    let page = store
+        .list_repositories(owner.clone(), None, 3)
+        .await
+        .expect("read through the first user repository");
+    let cursor = page.next_cursor.expect("the newer repository remains");
+    store
+        .unregister_repository(
+            owner.clone(),
+            older,
+            Revision::INITIAL,
+            key("remove-older"),
+            11,
+        )
+        .await
+        .expect("remove the repository at the pagination boundary");
+    assert_eq!(
+        store
+            .list_repositories(owner, Some(cursor), 1)
+            .await
+            .expect_err("report the lost pagination boundary")
+            .code(),
+        M3ErrorCode::RevisionConflict,
+    );
 }
 
 #[tokio::test]
@@ -707,6 +777,118 @@ async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
         .await
         .expect_err("reject duplicate source identity");
     assert_eq!(duplicate.code(), M3ErrorCode::RepositoryAlreadyRegistered);
+}
+
+#[tokio::test]
+async fn repository_display_name_survives_refresh_and_only_emits_events_for_changes() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let official = RepositoryId::parse(VRCHAT_OFFICIAL_REPOSITORY_ID).expect("official ID");
+    store
+        .ensure_builtin_repositories(owner.clone(), vec![(official, repository(1, 1))], 1)
+        .await
+        .expect("register built-in");
+
+    let name = Some("My VRChat source".to_owned());
+    let renamed = store
+        .set_repository_display_name(
+            owner.clone(),
+            official,
+            Revision::INITIAL,
+            name.clone(),
+            key("rename"),
+            2,
+        )
+        .await
+        .expect("set a built-in display name");
+    assert_eq!(renamed.value.display_name, name);
+    let replay = store
+        .set_repository_display_name(
+            owner.clone(),
+            official,
+            Revision::INITIAL,
+            name.clone(),
+            key("rename"),
+            3,
+        )
+        .await
+        .expect("replay the accepted rename");
+    assert!(replay.replayed);
+    assert_eq!(replay.value.revision, renamed.value.revision);
+    let unchanged = store
+        .set_repository_display_name(
+            owner.clone(),
+            official,
+            renamed.value.revision,
+            name.clone(),
+            key("unchanged"),
+            4,
+        )
+        .await
+        .expect("save the same name");
+    assert_eq!(unchanged.value.revision, renamed.value.revision);
+
+    let mut remote = repository(1, 5);
+    remote.name = Some("Updated feed name".to_owned());
+    let refreshed = store
+        .refresh_repository(
+            owner.clone(),
+            official,
+            renamed.value.revision,
+            remote,
+            key("refresh-renamed"),
+            5,
+        )
+        .await
+        .expect("refresh repository");
+    assert_eq!(refreshed.value.display_name, name);
+    assert_eq!(
+        refreshed.value.observation.name.as_deref(),
+        Some("Updated feed name")
+    );
+    let stale = store
+        .set_repository_display_name(
+            owner.clone(),
+            official,
+            renamed.value.revision,
+            None,
+            key("stale-clear"),
+            6,
+        )
+        .await
+        .expect_err("reject a stale edit");
+    assert_eq!(stale.code(), M3ErrorCode::RevisionConflict);
+    let cleared = store
+        .set_repository_display_name(
+            owner.clone(),
+            official,
+            refreshed.value.revision,
+            None,
+            key("clear"),
+            7,
+        )
+        .await
+        .expect("restore the default name");
+    assert!(cleared.value.display_name.is_none());
+    let record = store
+        .get_repository(owner.clone(), official)
+        .await
+        .expect("read saved repository");
+    assert!(record.display_name.is_none());
+    assert_eq!(record.observation.name, refreshed.value.observation.name);
+    let events = store
+        .list_events(owner, 0, 100)
+        .await
+        .expect("read committed events");
+    assert_eq!(
+        events
+            .events
+            .iter()
+            .filter(|event| event.kind == "repository.display-name-changed")
+            .count(),
+        2,
+    );
 }
 
 #[tokio::test]

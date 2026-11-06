@@ -408,6 +408,31 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
+        rpc::METHOD_REPOSITORIES_SET_DISPLAY_NAME => {
+            require!(request, state, rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1);
+            let params: rpc::RepositorySetDisplayNameParams = parse!(request);
+            let key = key!(request, params.idempotency_key);
+            let Ok(id) = app::RepositoryId::parse(&params.repository_id) else {
+                return invalid(request.id);
+            };
+            let Some(expected) = app::Revision::new(params.expected_revision) else {
+                return invalid(request.id);
+            };
+            match application
+                .set_repository_display_name(access, id, expected, params.display_name, key)
+                .await
+            {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::RepositoryWriteResult {
+                        repository: repository_record(value.value),
+                        replayed: value.replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m3_error(request.id, error),
+            }
+        }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }
@@ -566,7 +591,7 @@ fn issue(value: app::ReadIssue) -> rpc::ReadIssue {
 }
 
 fn repository_observation(value: app::RepositoryObservation) -> rpc::RepositorySnapshot {
-    repository_snapshot(None, value, None, false)
+    repository_snapshot(None, value, None, false, None)
 }
 
 fn repository_record(value: app::RepositoryRecord) -> rpc::RepositorySnapshot {
@@ -575,6 +600,7 @@ fn repository_record(value: app::RepositoryRecord) -> rpc::RepositorySnapshot {
         value.observation,
         Some(value.revision.get()),
         value.credentials_configured,
+        value.display_name,
     )
 }
 
@@ -583,6 +609,7 @@ fn repository_snapshot(
     value: app::RepositoryObservation,
     revision: Option<u64>,
     credentials_configured: bool,
+    display_name: Option<String>,
 ) -> rpc::RepositorySnapshot {
     rpc::RepositorySnapshot {
         repository_id,
@@ -592,6 +619,7 @@ fn repository_snapshot(
         },
         declared_id: value.declared_id,
         name: value.name,
+        display_name,
         declared_url: value.declared_url,
         issues: value.issues.into_iter().map(issue).collect(),
         revision,
@@ -627,6 +655,7 @@ fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
         C::PermissionDenied => rpc::RpcError::permission_denied(),
         C::RevisionConflict => rpc::RpcError::revision_conflict(),
         C::IdempotencyConflict => rpc::RpcError::idempotency_conflict(),
+        C::InvalidInput => rpc::RpcError::invalid_request(),
         C::StoreUnavailable => rpc::RpcError::store_unavailable(),
         C::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
         code => rpc::RpcError::m3_resource(m3_code(code)),
@@ -654,6 +683,7 @@ pub(super) fn m3_code(code: app::M3ErrorCode) -> &'static str {
         C::RepositoryDocumentInvalid => rpc::error_code::REPOSITORY_DOCUMENT_INVALID,
         C::RepositoryDocumentTooLarge => rpc::error_code::REPOSITORY_DOCUMENT_TOO_LARGE,
         C::RepositoryCredentialsUnsupported => rpc::error_code::REPOSITORY_CREDENTIALS_UNSUPPORTED,
+        C::InvalidInput => rpc::error_code::INVALID_REQUEST,
         C::RevisionConflict => rpc::error_code::REVISION_CONFLICT,
         C::IdempotencyConflict => rpc::error_code::IDEMPOTENCY_CONFLICT,
         C::PermissionDenied => rpc::error_code::PERMISSION_DENIED,

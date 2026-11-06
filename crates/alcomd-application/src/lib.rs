@@ -270,6 +270,7 @@ pub enum RepositoryReadOutcome {
 pub struct RepositoryRecord {
     pub repository_id: RepositoryId,
     pub observation: RepositoryObservation,
+    pub display_name: Option<String>,
     pub revision: Revision,
     pub registered_at_ms: u64,
     #[serde(default)]
@@ -341,6 +342,7 @@ pub enum M3ErrorCode {
     RepositoryDocumentInvalid,
     RepositoryDocumentTooLarge,
     RepositoryCredentialsUnsupported,
+    InvalidInput,
     RevisionConflict,
     IdempotencyConflict,
     PermissionDenied,
@@ -560,6 +562,15 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         id: RepositoryId,
     ) -> impl Future<Output = Result<RepositoryRecord, M3Error>> + Send;
+    fn set_repository_display_name(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        display_name: Option<String>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
     fn list_repositories(
         &self,
         owner: PrincipalId,
@@ -1639,6 +1650,39 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             self.discard_credential_reference(reference).await;
         }
         result
+    }
+
+    pub async fn set_repository_display_name(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        expected: Revision,
+        display_name: Option<String>,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        if display_name
+            .as_ref()
+            .is_some_and(|name| name.chars().count() > 128 || name.chars().any(char::is_control))
+        {
+            return Err(M3Error::new(M3ErrorCode::InvalidInput));
+        }
+        let display_name = display_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_owned);
+        let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        self.store
+            .set_repository_display_name(
+                access.principal().clone(),
+                id,
+                expected,
+                display_name,
+                key,
+                m3_time_ms()?,
+            )
+            .await
     }
 
     pub async fn set_repository_credentials(

@@ -11,6 +11,12 @@ export interface RepositoryListEntry {
 export interface RepositoryCredentials {
     headers: Record<string, string>;
 }
+export interface RepositorySetDisplayNameParams {
+    repositoryId: string;
+    expectedRevision: number;
+    idempotencyKey: string;
+    displayName: string | null;
+}
 export interface RepositoryListInspection { entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
 export interface RepositoryListImportParams { path: string; expectedFingerprint: string; idempotencyKey: string }
 export type RepositoryListImportItem =

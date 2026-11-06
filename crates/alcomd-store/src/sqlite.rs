@@ -43,6 +43,7 @@ const MIGRATION_V25: &str = include_str!("../migrations/0025_repository_credenti
 const MIGRATION_V26: &str = include_str!("../migrations/0026_package_download_headers.sql");
 const MIGRATION_V27: &str = include_str!("../migrations/0027_http_archive_pins.sql");
 const MIGRATION_V28: &str = include_str!("../migrations/0028_project_template_archives.sql");
+const MIGRATION_V29: &str = include_str!("../migrations/0029_repository_display_name.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -223,6 +224,11 @@ pub(super) fn initialize_connection_with_report(
     }
     if version <= 27 {
         migrate_template_archives(&mut connection)?;
+    }
+    if version <= 28 {
+        connection
+            .execute_batch(MIGRATION_V29)
+            .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
