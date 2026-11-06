@@ -382,7 +382,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("test-user-details-readable", () => { this.userDetailsUnavailable = false; });
         window.addEventListener("test-user-package-advance", () => { this.userPackageRevision += 1; });
         window.addEventListener("test-resource-repository-advance", () => {
-            for (const [id, record] of this.lifecycleRepositories) this.lifecycleRepositories.set(id, { ...record, revision: (record.revision ?? 0) + 1 });
+            for (const [id, record] of this.lifecycleRepositories) {
+                this.lifecycleRepositories.set(id, { ...record, name: `${record.name} (updated)`, revision: (record.revision ?? 0) + 1 });
+            }
         });
         window.addEventListener("test-template-advance", () => {
             this.projectTemplates = this.projectTemplates.map((template) => template.declaration.id === USER_TEMPLATE_ID

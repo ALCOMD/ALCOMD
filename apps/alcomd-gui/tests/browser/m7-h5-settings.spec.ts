@@ -2,6 +2,7 @@ import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { H5_HIDDEN_ID, H5_HUB_PATH, H5_REPOSITORY_CURSOR, H5_SETTINGS_SECRET, H5_VISIBLE_ID } from "./h5-settings-client";
 
+const H5_HUB_DISPLAY_PATH = "C:\\H5 fixture\\Unity Hub.exe";
 const hub = (page: Page) => page.getByRole("region", { name: "Unity Hub Path", exact: true });
 const filters = (page: Page) => page.getByRole("dialog", { name: "Package filters", exact: true });
 const changes = (page: Page) => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.update"));
@@ -145,7 +146,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await retryHub.click();
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_PATH);
+    await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_DISPLAY_PATH);
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
 });
@@ -157,9 +158,9 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
-    await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_PATH);
+    await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_DISPLAY_PATH);
     await expect(hub(page).getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
-    expect(await changes(page)).toHaveLength(1);
+    expect((await changes(page)).map((request) => request.params)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: H5_HUB_PATH } } }]);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     await expect(page.getByRole("button", { name: "Refresh Unity installations", exact: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Unity installations", exact: true }).getByRole("alert")).toHaveCount(0);

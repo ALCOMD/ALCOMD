@@ -88,17 +88,15 @@ test("User Package enrollment, current details, refresh and confirmed removal us
     expect(await requests(page, "packages.userPackages.remove")).toEqual([{ method: "packages.userPackages.remove", params: { userPackageId, expectedRevision: 2 } }]);
 });
 
-test("User Package revision conflicts require an explicit list read before a new refresh", async ({ page }) => {
+test("User Package revision conflicts reload the list without retrying the mutation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&state=package-user-source&resource-lifecycle=1");
     const row = userRow(page);
     await expect(row).toContainText("revision 1");
     await page.evaluate(() => window.dispatchEvent(new Event("test-user-package-advance")));
     await row.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expectRequestError(page.getByRole("alert"), "revision_conflict");
-    expect(await requests(page, "packages.userPackages.refresh")).toHaveLength(1);
-    await expect(row).toContainText("revision 1");
-    await page.getByRole("alert").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(row).toContainText("revision 2");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    expect(await requests(page, "packages.userPackages.refresh")).toHaveLength(1);
     await row.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(row).toContainText("revision 3");
     expect((await requests(page, "packages.userPackages.refresh")).map((request) => request.params)).toEqual([{ userPackageId, expectedRevision: 1 }, { userPackageId, expectedRevision: 2 }]);
@@ -177,8 +175,11 @@ test("repository refresh failure retains the last catalog until a successful exp
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1&resource-refresh-error=1");
     await registerRepository(page, "remote");
     const row = repositoryRow(page, "remote");
-    await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expectRequestError(page.getByRole("alert"), "repository_unavailable");
+    const refresh = row.getByRole("button", { name: "Refresh repository", exact: true });
+    await refresh.click();
+    await expect.poll(() => requests(page, "repositories.refresh")).toHaveLength(1);
+    await expect(refresh).toBeEnabled();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     await expect(page.locator("md-dialog[open]").getByText("First catalog package", { exact: true })).toBeVisible();
@@ -189,15 +190,14 @@ test("repository refresh failure retains the last catalog until a successful exp
     expect(await requests(page, "repositories.refresh")).toHaveLength(2);
 });
 
-test("repository CAS conflicts do not auto-retry or replace a stale revision", async ({ page }) => {
+test("repository revision conflicts reload the list without retrying the mutation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1");
     await registerRepository(page, "remote");
     const row = repositoryRow(page, "remote");
     await page.evaluate(() => window.dispatchEvent(new Event("test-resource-repository-advance")));
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expectRequestError(page.getByRole("alert"), "revision_conflict");
+    await expect(row).toContainText("Example packages (updated)");
     expect(await requests(page, "repositories.refresh")).toHaveLength(1);
-    await page.getByRole("alert").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveCount(0);
