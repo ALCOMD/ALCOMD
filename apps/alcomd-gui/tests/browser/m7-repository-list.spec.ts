@@ -54,6 +54,24 @@ test("long preview content scrolls independently of actions and closing restores
     expect(await exportHost.locator(".material-dialog-content").evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
 });
 
+test("a typed repository list path must be reviewed again when it changes", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories");
+    const host = await openList(page, "Import list");
+    const input = host.getByLabel("Repository list file", { exact: true });
+    await input.fill("C:/fixture/typed.txt");
+    await input.press("Enter");
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
+    await input.fill("C:/fixture/changed.txt");
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toHaveCount(0);
+    await host.getByRole("button", { name: "Review list", exact: true }).click();
+    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
+    expect(await requests(page, "repositories.inspectListFile")).toEqual([
+        { method: "repositories.inspectListFile", params: { path: "C:/fixture/typed.txt" } },
+        { method: "repositories.inspectListFile", params: { path: "C:/fixture/changed.txt" } }
+    ]);
+    expect(await requests(page, "repositories.importListFile")).toEqual([]);
+});
+
 test("one confirmation adds every candidate once without downloading a preview", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=success");
     const host = await review(page);
@@ -129,24 +147,6 @@ test("transport loss shows an unresolved import without inventing per-line outco
 test("cancelled list file picker performs no inspection or registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-picker=cancel");
     const host = await openList(page, "Import list");
-test("a typed repository list path must be reviewed again when it changes", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/repositories");
-    const host = await openList(page, "Import list");
-    const input = host.getByLabel("Repository list file", { exact: true });
-    await input.fill("C:/fixture/typed.txt");
-    await input.press("Enter");
-    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
-    await input.fill("C:/fixture/changed.txt");
-    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toHaveCount(0);
-    await host.getByRole("button", { name: "Review list", exact: true }).click();
-    await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
-    expect(await requests(page, "repositories.inspectListFile")).toEqual([
-        { method: "repositories.inspectListFile", params: { path: "C:/fixture/typed.txt" } },
-        { method: "repositories.inspectListFile", params: { path: "C:/fixture/changed.txt" } }
-    ]);
-    expect(await requests(page, "repositories.importListFile")).toEqual([]);
-});
-
     await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByRole("button", { name: "Close", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
