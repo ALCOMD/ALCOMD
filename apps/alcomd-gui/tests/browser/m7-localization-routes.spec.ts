@@ -179,8 +179,8 @@ async function assertExternalFixtureText(page: Page, path: string) {
         await expect(table).toContainText("com.example.avatar");
         await expect(table).toContainText("1.2.3");
     } else if (path === "/templates") {
-        await expect(page.getByRole("table")).toContainText("Avatar starter");
-        await expect(page.getByRole("table")).toContainText("com.vrclearn.alcomd.templates.vrchat.avatars");
+        await expect(page.getByRole("table")).toContainText("VRChat Avatars (2022)");
+        await expect(page.getByRole("table")).toContainText("com.vrclearn.alcomd.templates.vrchat.avatars.2022");
     } else if (path === "/unity") {
         await expect(page.getByRole("table")).toContainText("2022.3.22f1");
         await expect(page.getByRole("table")).toContainText("x86_64");

@@ -26,7 +26,7 @@ test("project and template action menus use one compact style including every en
     await expect(projectTrigger).toBeFocused();
 
     await page.goto("/browser-harness.html?route=/templates");
-    const templateTrigger = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars", exact: true }) }).getByRole("button", { name: "More actions for Avatar starter", exact: true });
+    const templateTrigger = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars.2022", exact: true }) }).getByRole("button", { name: "More actions for VRChat Avatars (2022)", exact: true });
     await templateTrigger.click();
     await actionMenu(page.locator('md-menu[data-menu-kind="actions"][open]'));
     await expect(page.locator('md-menu[open] > md-menu-item').filter({ hasText: "Remove template" })).toHaveJSProperty("disabled", true);

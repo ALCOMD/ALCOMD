@@ -7,9 +7,8 @@ test("a lost creation reply retries the identical request after a catalog change
     const dialog = page.locator("md-dialog[open]");
     const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await template.click();
-    await dialog.getByRole("option", { name: "Existing fixture", exact: true }).click();
-    await dialog.getByRole("combobox", { name: "Unity version", exact: true }).click();
-    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
+    await dialog.getByRole("option", { name: "Existing fixture · 2022.3.22f1", exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
     await dialog.getByLabel("Create project name", { exact: true }).fill("Retry fixture");
     const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await submit.click();
@@ -42,9 +41,7 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await expect(submit).toBeDisabled();
     await chooseTemplate();
-    const version = dialog.getByRole("combobox", { name: "Unity version", exact: true });
-    await version.click();
-    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
     await submit.click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests.find(({ method }) => method === "projects.create")?.params))

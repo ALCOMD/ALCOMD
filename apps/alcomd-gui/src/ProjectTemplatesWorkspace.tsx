@@ -58,15 +58,15 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
                 {(templates) => templates.length === 0 ? <p>{t("No templates available")}</p> : <DesktopList
                     label={t("Templates")} minWidth={640}
                     columns={[
-                        { key: "name", header: t("Template") },
+                        { key: "name", header: t("Template name") },
                         { key: "id", header: t("Template ID") },
-                        { key: "editor", header: t("Unity version") },
+                        { key: "source", header: t("Template source") },
                         { key: "actions", header: t("Actions") }
                     ]}
                     rows={templates.map((template) => ({ key: template.id, cells: [
-                        <><strong>{template.name}</strong>{template.locked ? <small>{t("Built-in")}</small> : null}</>,
+                        <strong>{template.name}</strong>,
                         <span className="template-id">{template.id}</span>,
-                        template.editorVersion ?? "—",
+                        t(template.locked ? "Built-in" : "User template"),
                         <TemplateRowActions onSelect={select} template={template} />
                     ] }))} />}
             </PagedItems>

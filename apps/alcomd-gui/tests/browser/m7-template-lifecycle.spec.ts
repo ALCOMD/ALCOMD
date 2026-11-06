@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
-const avatarId = "com.vrclearn.alcomd.templates.vrchat.avatars";
+const avatarId = "com.vrclearn.alcomd.templates.vrchat.avatars.2022";
 const userId = "com.example.fixture";
 
 test("manual creation submits one exact editor and the package list as a tracked operation", async ({ page }) => {
@@ -14,7 +14,9 @@ test("manual creation submits one exact editor and the package list as a tracked
     await dialog.getByRole("button", { name: "Save template", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(row(page, "com.example.avatar-tools")).toContainText("Avatar starter");
-    await expect(row(page, avatarId)).toContainText("Avatar starter");
+    await expect(row(page, "com.example.avatar-tools").getByRole("cell", { name: "User template", exact: true })).toBeVisible();
+    await expect(row(page, avatarId)).toContainText("VRChat Avatars (2022)");
+    await expect(row(page, avatarId).getByRole("cell", { name: "Built-in", exact: true })).toBeVisible();
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "manual", id: "com.example.avatar-tools", name: "Avatar starter", unityVersion: "2022.3.22f1",
             dependencies: [{ packageId: "com.example.avatar", versionRange: "^1.2.3" }] },
@@ -103,7 +105,7 @@ test("saving a different template under an existing ID reports a task conflict",
     await expectRequestError(dialog.getByRole("alert"), "template_conflict");
     await dialog.getByRole("button", { name: "Back", exact: true }).click();
     await expect(dialog.getByLabel("Display name", { exact: true })).toHaveValue("Unrelated template");
-    await expect(row(page, avatarId)).toContainText("Avatar starter");
+    await expect(row(page, avatarId)).toContainText("VRChat Avatars (2022)");
 });
 
 test("a failed template operation shows the package reported by Core", async ({ page }) => {

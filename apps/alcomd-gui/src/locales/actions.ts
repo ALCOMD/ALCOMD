@@ -32,6 +32,8 @@ export const actionMessages: TranslationTable = {
     "Replace template": { "zh-CN": "替换模板", "ja-JP": "テンプレートを置き換え" },
     "More template creation options": { "zh-CN": "更多模板创建选项", "ja-JP": "テンプレート作成のその他の操作" },
     "Template source": { "zh-CN": "模板来源", "ja-JP": "テンプレートのソース" },
+    "Template name": { "zh-CN": "模板名称", "ja-JP": "テンプレート名" },
+    "User template": { "zh-CN": "用户模板", "ja-JP": "ユーザーテンプレート" },
     "Template file": { "zh-CN": "模板文件", "ja-JP": "テンプレートファイル" },
     "Choose file": { "zh-CN": "选择文件", "ja-JP": "ファイルを選択" },
     "File name": { "zh-CN": "文件名", "ja-JP": "ファイル名" },

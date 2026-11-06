@@ -38,21 +38,21 @@ test("the catalog exposes each built-in Editor variant and creation uses its fix
     const dialog = page.locator("md-dialog[open]");
     const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await expect(template).toContainText("No template");
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(8);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(6);
     await template.click();
-    for (const version of ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"]) {
-        for (const kind of ["Avatar", "World"]) {
-            await expect(dialog.getByRole("option", { name: new RegExp("^" + kind + " starter · " + version) })).toHaveCount(1);
+    for (const [year, version] of [["2022", "2022.3.22f1"], ["2019", "2019.4.31f1"]]) {
+        for (const kind of ["Avatars", "Worlds"]) {
+            await expect(dialog.getByRole("option", { name: `VRChat ${kind} (${year}) · ${version}`, exact: true })).toHaveCount(1);
         }
     }
-    await dialog.getByRole("option", { name: /^Avatar starter · 2019.4.31f1/ }).click();
+    await dialog.getByRole("option", { name: "VRChat Avatars (2019) · 2019.4.31f1", exact: true }).click();
     await expect(dialog.getByRole("combobox", { name: "Unity version", exact: true })).toHaveCount(0);
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2019.4.31f1");
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
     await dialog.getByLabel("Create project name").fill("Legacy Avatar");
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params))
-        .toMatchObject({ unityVersion: "2019.4.31f1", template: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019-4-31f1", revision: 4 } });
+        .toMatchObject({ unityVersion: "2019.4.31f1", template: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019", revision: 3 } });
 });
 
 test("creation prefills one compatible Editor but requires a choice for multiple installations", async ({ page }) => {

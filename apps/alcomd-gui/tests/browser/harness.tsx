@@ -370,7 +370,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
     private projectTemplates = [...builtinTemplates(), ...(query.has("template-existing")
-        ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "Avatar starter" : "Existing fixture")] : [])];
+        ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "VRChat Avatars (2022)" : "Existing fixture")] : [])];
     private templateRevision = 8;
     private templateRequestsByKey = new Map<string, string>();
     private creationRequests = new Map<string, { fingerprint: string; projectId: string; operationId: string }>();
@@ -1176,8 +1176,8 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
             if (expectedRevision !== undefined && existing?.revision !== expectedRevision) throw { code: "revision_conflict" };
             if (existing?.locked) throw { code: "template_builtin_immutable" };
             if (source.kind === "project" && (source.projectId !== PROJECT_ID || source.expectedProjectRevision !== this.currentProjectRevision)) throw { code: "revision_conflict" };
-            const editorVersion = source.kind === "manual" ? source.unityVersion : source.kind === "project" ? this.currentUnityVersion : undefined;
-            const template = { id: archive.id, name: archive.name, ...(editorVersion === undefined ? {} : { editorVersion }),
+            const editorVersion = source.kind === "manual" ? source.unityVersion : source.kind === "project" ? this.currentUnityVersion : "2022.3.22f1";
+            const template = { id: archive.id, name: archive.name, editorVersion,
                 revision: ++this.templateRevision, locked: false };
             this.projectTemplates = [...this.projectTemplates.filter((item) => item.id !== template.id), template];
             browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", template.revision);
@@ -1356,17 +1356,18 @@ function migrationInstallation() { return { ...installation(), installationId: M
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
 function builtinTemplates(): ProjectTemplateRecord[] {
-    const versions = ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"];
+    const versions = ["2022.3.22f1", "2019.4.31f1"];
     return [false, true].flatMap((worlds) => versions.map((editorVersion, index) => {
         const id = worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID;
-        return { id: index === 0 ? id : id + "." + editorVersion.replaceAll(".", "-"),
-            name: worlds ? "World starter" : "Avatar starter", editorVersion,
+        const year = editorVersion.slice(0, 4);
+        return { id: id + "." + year,
+            name: `${worlds ? "VRChat Worlds" : "VRChat Avatars"} (${year})`, editorVersion,
             revision: 2 + index + (worlds ? versions.length : 0), locked: true };
     }));
 }
 
 function userTemplate(id: string, name: string): ProjectTemplateRecord {
-    return { id, name, revision: 8, locked: false };
+    return { id, name, editorVersion: "2022.3.22f1", revision: 8, locked: false };
 }
 
 function catalogTemplate(index: number) {
