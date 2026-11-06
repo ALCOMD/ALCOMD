@@ -32,7 +32,8 @@ pub struct PackageEngine<S: M4Store + StateStore> {
 
 impl<S: M4Store + StateStore> PackageEngine<S> {
     pub fn new(store: S, reader: VpmReader, cache_root: PathBuf) -> Result<Self, M4Error> {
-        let cache = PackageCache::new(cache_root)
+        let cache = reader
+            .package_cache(cache_root)
             .map_err(|cause| M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause))?;
         Ok(Self {
             store,

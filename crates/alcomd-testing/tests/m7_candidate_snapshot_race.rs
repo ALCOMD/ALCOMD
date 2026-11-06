@@ -316,6 +316,8 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
             ConfigUpdate {
                 projects: None,
                 backups: None,
+                integrations: None,
+                network_proxy: None,
                 window: None,
                 paths: None,
                 unity: None,

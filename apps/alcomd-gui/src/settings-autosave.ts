@@ -1,4 +1,4 @@
-import type { OfficialSettings, SettingsGetResult, SettingsUpdate } from "./core-models";
+import type { NetworkProxy, OfficialSettings, SettingsGetResult, SettingsUpdate } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
@@ -54,6 +54,22 @@ export class SettingsAutosave {
         this.pending = merge(this.pending, structuredClone(update));
         this.publish();
         this.schedule();
+    }
+
+    saveNetworkProxy(proxy: NetworkProxy, previous: NetworkProxy): Promise<void> {
+        return this.enqueue(async () => {
+            await this.drain();
+            this.requireActive();
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
+            const current = await this.client.settingsGet();
+            this.requireActive();
+            this.apply(current);
+            if (sameValue(current.settings.network.proxy, proxy)) return;
+            if (!sameValue(current.settings.network.proxy, previous)) throw { code: "revision_conflict", message: "" };
+            const updated = await this.client.settingsUpdate(current.revision, { network: { proxy } });
+            this.requireActive();
+            this.apply(updated);
+        });
     }
 
     retry(): Promise<void> {
@@ -292,6 +308,12 @@ function sameValue(first: unknown, second: unknown): boolean { return JSON.strin
 
 function difference(intent: SettingsUpdate, accepted: OfficialSettings): SettingsUpdate {
     const result: SettingsUpdate = {};
+    if (intent.network !== undefined && !sameValue(intent.network, accepted.network)) {
+        result.network = intent.network;
+    }
+    if (intent.integrations !== undefined && intent.integrations.handleVccLinks !== accepted.integrations.handleVccLinks) {
+        result.integrations = intent.integrations;
+    }
     if (intent.locale !== undefined && intent.locale !== accepted.locale) result.locale = intent.locale;
     if (intent.window !== undefined) {
         const window = Object.fromEntries(Object.entries(intent.window).filter(([key, value]) => value !== accepted.window[key as keyof typeof intent.window]));

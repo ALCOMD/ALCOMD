@@ -82,6 +82,16 @@ pub(super) async fn dispatch(
                     include_vpm_packages: value.include_vpm_packages,
                     include_library: value.include_library,
                 }),
+                integrations: params.update.integrations.map(|value| {
+                    app::ConfigIntegrationSettings {
+                        handle_vcc_links: value.handle_vcc_links,
+                    }
+                }),
+                network_proxy: params.update.network.map(|network| match network.proxy {
+                    rpc::NetworkProxy::System {} => app::ConfigProxy::System,
+                    rpc::NetworkProxy::Direct {} => app::ConfigProxy::Direct,
+                    rpc::NetworkProxy::Custom { url } => app::ConfigProxy::Custom { url },
+                }),
                 window: params.update.window.map(|value| app::ConfigWindowUpdate {
                     remember_state: value.remember_state,
                     fullscreen: value.fullscreen,
@@ -214,6 +224,16 @@ fn settings_result(
                 },
                 include_vpm_packages: value.settings.backups.include_vpm_packages,
                 include_library: value.settings.backups.include_library,
+            },
+            integrations: rpc::IntegrationSettings {
+                handle_vcc_links: value.settings.integrations.handle_vcc_links,
+            },
+            network: rpc::NetworkSettings {
+                proxy: match value.settings.network_proxy {
+                    app::ConfigProxy::System => rpc::NetworkProxy::System {},
+                    app::ConfigProxy::Direct => rpc::NetworkProxy::Direct {},
+                    app::ConfigProxy::Custom { url } => rpc::NetworkProxy::Custom { url },
+                },
             },
             window: rpc::WindowSettings {
                 remember_state: value.settings.window.remember_state,
@@ -412,7 +432,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 10);
+        assert_eq!(result.config_schema, 12);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

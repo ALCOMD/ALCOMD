@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 use crate::archive::MAX_ARCHIVE_BYTES;
+use crate::http_clients::{ClientPair, HttpClients, with_proxy};
 
 #[path = "legacy_manifest_cache.rs"]
 mod legacy_manifest;
@@ -105,32 +106,42 @@ impl std::error::Error for CacheError {
 #[derive(Clone)]
 pub struct PackageCache {
     root: PathBuf,
-    client: Client,
-    authenticated_client: Client,
+    http: HttpClients,
 }
 
 impl PackageCache {
     pub fn new(root: PathBuf) -> Result<Self, CacheError> {
+        Self::with_proxy_source(root, None)
+    }
+
+    pub(crate) fn with_proxy_source(
+        root: PathBuf,
+        settings: Option<alcomd_application::M7OfficialApplication>,
+    ) -> Result<Self, CacheError> {
         if !root.is_absolute() {
             return Err(cache_error(CacheErrorCode::Io));
         }
-        let client = Client::builder()
-            .referer(false)
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(DOWNLOAD_TIMEOUT)
-            .redirect(Policy::custom(validate_redirect))
-            .build()
-            .map_err(|cause| {
-                cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
-            })?;
-        let authenticated_client =
-            crate::repository_auth::client(DOWNLOAD_TIMEOUT, CONNECT_TIMEOUT)
-                .map_err(|_| cache_error(CacheErrorCode::DownloadFailed))?;
-        Ok(Self {
-            root,
-            client,
-            authenticated_client,
+        let http = HttpClients::new(settings, |proxy| {
+            let anonymous = with_proxy(
+                Client::builder()
+                    .referer(false)
+                    .connect_timeout(CONNECT_TIMEOUT)
+                    .timeout(DOWNLOAD_TIMEOUT)
+                    .redirect(Policy::custom(validate_redirect)),
+                proxy,
+            )?
+            .build()?;
+            let authenticated =
+                crate::repository_auth::client(DOWNLOAD_TIMEOUT, CONNECT_TIMEOUT, proxy)?;
+            Ok(ClientPair {
+                anonymous,
+                authenticated,
+            })
         })
+        .map_err(|cause| {
+            cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
+        })?;
+        Ok(Self { root, http })
     }
 
     #[must_use]
@@ -451,20 +462,30 @@ impl PackageCache {
         } else {
             None
         };
+        let clients = self
+            .http
+            .for_request()
+            .await
+            .map_err(|()| cache_error(CacheErrorCode::DownloadFailed))?;
         if repository.is_some() || package.is_some() {
             let layers = [repository.as_ref(), package]
                 .into_iter()
                 .flatten()
                 .collect::<Vec<_>>();
             return crate::repository_auth::send(url.clone(), &layers, |url| {
-                self.authenticated_client.get(url)
+                clients.authenticated.get(url)
             })
             .await
             .map_err(|cause| cache_error(CacheErrorCode::DownloadFailed).with_source(cause));
         }
-        self.client.get(url.clone()).send().await.map_err(|cause| {
-            cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
-        })
+        clients
+            .anonymous
+            .get(url.clone())
+            .send()
+            .await
+            .map_err(|cause| {
+                cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
+            })
     }
 }
 
@@ -804,8 +825,8 @@ mod tests {
             .timeout(Duration::from_secs(5))
             .build()
             .expect("isolated loopback TLS client");
-        let mut reader = crate::VpmReader::new().expect("repository reader");
-        reader.authenticated_client = client.clone();
+        let reader = crate::VpmReader::new().expect("repository reader");
+        reader.http.set_authenticated(client.clone()).await;
         let source = |path| RepositorySource::Remote {
             url: format!("{first}/{path}"),
         };
@@ -854,8 +875,8 @@ mod tests {
             .await
             .expect("store test credential");
         let root = temporary_root("authenticated-https");
-        let mut cache = PackageCache::new(root.clone()).expect("package cache");
-        cache.authenticated_client = client.clone();
+        let cache = PackageCache::new(root.clone()).expect("package cache");
+        cache.http.set_authenticated(client.clone()).await;
         let digest = cache
             .download_first(
                 &format!("{first}/archive.zip"),
@@ -953,8 +974,8 @@ mod tests {
         assert_eq!(selected, digest);
 
         let recovery_root = temporary_root("package-headers-recovery");
-        let mut recovery = PackageCache::new(recovery_root.clone()).expect("empty recovery cache");
-        recovery.authenticated_client = client.clone();
+        let recovery = PackageCache::new(recovery_root.clone()).expect("empty recovery cache");
+        recovery.http.set_authenticated(client.clone()).await;
         let bad_fingerprint = [0; 32];
         let stale = ArchiveHeaders {
             package: Some(PackageHeaderLookup {
@@ -977,8 +998,8 @@ mod tests {
             .expect("cold pinned archive download");
         assert!(recovered.is_file());
         let http_root = temporary_root("checksummed-http");
-        let mut checksummed = PackageCache::new(http_root.clone()).expect("empty HTTP cache");
-        checksummed.authenticated_client = client;
+        let checksummed = PackageCache::new(http_root.clone()).expect("empty HTTP cache");
+        checksummed.http.set_authenticated(client).await;
         assert!(
             checksummed
                 .get_for_apply(
@@ -1037,6 +1058,183 @@ mod tests {
             .expect("first archive download uses the same proxy and verifies the ZIP");
         assert!(cache.object_path(&digest).is_file());
         std::fs::remove_dir_all(root).expect("remove owned proxy fixture");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires isolated system, custom and direct HTTP fixtures"]
+    async fn saved_global_proxy_routes_new_index_and_zip_requests_without_replacing_in_flight_clients()
+     {
+        use alcomd_application::{
+            AccessContext, ConfigProxy, ConfigSnapshot, ConfigStore, ConfigStoreError,
+            ConfigUpdate, M3ReadAdapter, M7OfficialApplication, OfficialGuiError,
+            RepositoryReadOutcome, RepositorySource, StorageDirectories, StorageDirectoryPlatform,
+            UnityHubLauncher, UnityHubLocation, UnityHubOpenError, UnityHubPlatform,
+        };
+        use std::sync::Arc;
+
+        #[derive(Default)]
+        struct Config(std::sync::Mutex<ConfigSnapshot>);
+        impl ConfigStore for Config {
+            fn initialize(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
+                self.load()
+            }
+            fn load(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
+                Ok(self.0.lock().expect("fixture config").clone())
+            }
+            fn publish(&self, snapshot: &ConfigSnapshot) -> Result<(), ConfigStoreError> {
+                *self.0.lock().expect("fixture config") = snapshot.clone();
+                Ok(())
+            }
+        }
+
+        struct Platform(PathBuf);
+        impl StorageDirectoryPlatform for Platform {
+            fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
+                Ok(StorageDirectories {
+                    project_directory: self.0.join("projects").to_string_lossy().into_owned(),
+                    backup_directory: self.0.join("backups").to_string_lossy().into_owned(),
+                })
+            }
+            fn normalize_directory(&self, _: &str) -> Result<String, OfficialGuiError> {
+                unreachable!("the fixture does not update directories")
+            }
+        }
+        impl UnityHubPlatform for Platform {
+            fn normalize_path(&self, _: &str) -> Result<String, OfficialGuiError> {
+                unreachable!("the fixture does not set a Hub path")
+            }
+            fn inspect(&self, _: Option<&str>) -> UnityHubLocation {
+                unreachable!("the fixture does not inspect Unity Hub")
+            }
+        }
+        impl UnityHubLauncher for Platform {
+            fn launch(&self, _: &str) -> Result<(), UnityHubOpenError> {
+                unreachable!("the fixture does not launch Unity Hub")
+            }
+        }
+
+        let root = temporary_root("config12-proxy");
+        let platform = Arc::new(Platform(root.clone()));
+        let settings = M7OfficialApplication::new(
+            Arc::new(Config::default()),
+            platform.clone(),
+            platform.clone(),
+            platform,
+        );
+        settings
+            .initialize_settings()
+            .await
+            .expect("initialize isolated settings");
+        let reader = crate::VpmReader::with_settings(settings.clone()).expect("reader");
+        let cache = reader.package_cache(root.clone()).expect("cache");
+        let pending = reader
+            .http
+            .for_request()
+            .await
+            .expect("in-flight system client");
+        let proxy_target = "http://config12-proxy.invalid";
+        let custom = std::env::var("ALCOMD_CONFIG12_CUSTOM").expect("custom proxy");
+        let direct = std::env::var("ALCOMD_CONFIG12_DIRECT").expect("direct origin");
+        let mut revision = 1;
+        for (index, (mode, origin, route)) in [
+            (ConfigProxy::System, proxy_target, "system"),
+            (
+                ConfigProxy::custom(&custom).expect("custom"),
+                proxy_target,
+                "custom",
+            ),
+            (ConfigProxy::Direct, direct.as_str(), "direct"),
+            (ConfigProxy::System, proxy_target, "system"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index > 0 {
+                revision = settings
+                    .update_settings(
+                        &AccessContext::local_owner(),
+                        revision,
+                        ConfigUpdate {
+                            network_proxy: Some(mode),
+                            ..ConfigUpdate::default()
+                        },
+                    )
+                    .await
+                    .expect("save proxy")
+                    .revision;
+            }
+            let RepositoryReadOutcome::Fresh(observation) = reader
+                .inspect_repository(
+                    RepositorySource::Remote {
+                        url: format!("{origin}/index"),
+                    },
+                    None,
+                )
+                .await
+                .expect("new request reaches the selected proxy or origin")
+            else {
+                panic!("fresh fixture index");
+            };
+            assert_eq!(observation.name.as_deref(), Some(route));
+            let digest = cache
+                .download_first(
+                    &format!("{origin}/{route}.zip"),
+                    "com.example.fixture",
+                    "1.0.0",
+                    ArchiveHeaders::default(),
+                )
+                .await
+                .expect("only the selected route serves its ZIP");
+            assert!(cache.object_path(&digest).is_file());
+        }
+        let inflight = tokio::spawn(async move {
+            pending
+                .anonymous
+                .get(format!("{proxy_target}/held"))
+                .send()
+                .await
+        });
+        let control = Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("fixture control client");
+        control
+            .get(format!("{direct}/arrived"))
+            .send()
+            .await
+            .expect("wait for the old request to reach the system proxy")
+            .error_for_status()
+            .expect("old request entered the fixture");
+        let direct_settings = settings
+            .update_settings(
+                &AccessContext::local_owner(),
+                revision,
+                ConfigUpdate {
+                    network_proxy: Some(ConfigProxy::Direct),
+                    ..ConfigUpdate::default()
+                },
+            )
+            .await
+            .expect("switch before an existing request completes");
+        assert_eq!(direct_settings.settings.network_proxy, ConfigProxy::Direct);
+        assert!(!inflight.is_finished());
+        control
+            .get(format!("{direct}/release"))
+            .send()
+            .await
+            .expect("release the old request")
+            .error_for_status()
+            .expect("fixture released");
+        assert!(
+            inflight
+                .await
+                .expect("in-flight task")
+                .expect("in-flight response")
+                .status()
+                .is_success()
+        );
+        std::fs::remove_dir_all(root).expect("remove isolated cache");
     }
 
     #[tokio::test]

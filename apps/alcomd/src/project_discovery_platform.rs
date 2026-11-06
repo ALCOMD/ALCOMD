@@ -250,6 +250,8 @@ mod tests {
             packages: None,
             unity: None,
             paths: None,
+            integrations: None,
+            network_proxy: None,
             window: None,
             projects: None,
             backups: None,

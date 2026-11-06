@@ -37,8 +37,12 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
         .join(format!("alcomd-create-ipc-{}", OperationId::new()));
     std::fs::create_dir(&root).expect("owned test directory");
     let store = StateStoreHandle::open(root.join("state.db")).expect("test store");
-    let engine = alcomd_vpm::ProjectCreateEngine::new(store.clone(), root.join("package-cache"))
-        .expect("project create engine");
+    let engine = alcomd_vpm::ProjectCreateEngine::new(
+        store.clone(),
+        alcomd_vpm::VpmReader::new().expect("reader"),
+        root.join("package-cache"),
+    )
+    .expect("project create engine");
     let application = ProjectCreateApplication::with_locks(
         store.clone(),
         engine,

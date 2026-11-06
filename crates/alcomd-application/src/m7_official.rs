@@ -56,8 +56,91 @@ pub struct ConfigSettings {
     pub unity: ConfigUnitySettings,
     pub paths: ConfigPathSettings,
     pub window: ConfigWindowSettings,
+    pub integrations: ConfigIntegrationSettings,
+    pub network_proxy: ConfigProxy,
     pub projects: ConfigProjectSettings,
     pub backups: ConfigBackupSettings,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum ConfigProxy {
+    #[default]
+    System,
+    Direct,
+    Custom {
+        url: String,
+    },
+}
+
+impl ConfigProxy {
+    pub fn custom(value: &str) -> Result<Self, OfficialGuiError> {
+        let Some((scheme, authority)) = value.split_once("://") else {
+            return Err(OfficialGuiError::InvalidInput);
+        };
+        let authority = authority.strip_suffix('/').unwrap_or(authority);
+        if value.len() > 2048
+            || authority.is_empty()
+            || authority.contains(['/', '@', '\\', '?', '#'])
+            || value
+                .chars()
+                .any(|character| character.is_whitespace() || character.is_control())
+            || !(scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+        {
+            return Err(OfficialGuiError::InvalidInput);
+        }
+        let url = url::Url::parse(value).map_err(|_| OfficialGuiError::InvalidInput)?;
+        if !url.has_host() || url.path() != "/" || url.query().is_some() || url.fragment().is_some()
+        {
+            return Err(OfficialGuiError::InvalidInput);
+        }
+        let url = url.to_string();
+        if url.len() > 2048 {
+            return Err(OfficialGuiError::InvalidInput);
+        }
+        Ok(Self::Custom { url })
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn global_proxy_accepts_only_uncredentialed_http_authorities() {
+    assert_eq!(
+        ConfigProxy::custom("HTTPS://Proxy.Example:8443"),
+        Ok(ConfigProxy::Custom {
+            url: "https://proxy.example:8443/".into()
+        }),
+    );
+    for address in [
+        "proxy.example:8080",
+        "socks5://proxy.example",
+        "https://",
+        "http://@proxy.example",
+        "http://user:password@proxy.example",
+        "http://proxy.example/path",
+        "http://proxy.example?q=secret",
+        "http://proxy.example/#token",
+        "http://proxy.example:65536",
+        "http://proxy.example\n",
+        "http://proxy.example\\",
+    ] {
+        assert_eq!(
+            ConfigProxy::custom(address),
+            Err(OfficialGuiError::InvalidInput)
+        );
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigIntegrationSettings {
+    pub handle_vcc_links: bool,
+}
+
+impl Default for ConfigIntegrationSettings {
+    fn default() -> Self {
+        Self {
+            handle_vcc_links: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -269,6 +352,11 @@ impl Default for ConfigSnapshot {
 impl ConfigSettings {
     /// Validates normalized settings independently of their transport or storage representation.
     pub fn validate(&self) -> Result<(), OfficialGuiError> {
+        if let ConfigProxy::Custom { url } = &self.network_proxy
+            && ConfigProxy::custom(url)? != self.network_proxy
+        {
+            return Err(OfficialGuiError::InvalidInput);
+        }
         if let Some(arguments) = &self.unity.default_launch_arguments {
             crate::m5::validate_arguments(arguments).map_err(|_| OfficialGuiError::InvalidInput)?;
         }
@@ -310,7 +398,7 @@ pub struct ConfigAppearanceUpdate {
     pub motion: Option<ConfigAppearanceMotion>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ConfigUpdate {
     pub appearance: Option<ConfigAppearanceUpdate>,
     pub locale: Option<ConfigLocale>,
@@ -318,6 +406,8 @@ pub struct ConfigUpdate {
     pub unity: Option<ConfigUnityUpdate>,
     pub paths: Option<ConfigPathUpdate>,
     pub window: Option<ConfigWindowUpdate>,
+    pub integrations: Option<ConfigIntegrationSettings>,
+    pub network_proxy: Option<ConfigProxy>,
     pub projects: Option<ConfigProjectUpdate>,
     pub backups: Option<ConfigBackupUpdate>,
 }
@@ -424,6 +514,16 @@ impl M7OfficialApplication {
             .lock()
             .await
             .clone()
+            .ok_or(OfficialGuiError::Unavailable)
+    }
+
+    /// Read the last confirmed proxy preference without opening the settings file.
+    pub async fn network_proxy(&self) -> Result<ConfigProxy, OfficialGuiError> {
+        self.settings_lock
+            .lock()
+            .await
+            .as_ref()
+            .map(|snapshot| snapshot.settings.network_proxy.clone())
             .ok_or(OfficialGuiError::Unavailable)
     }
 
@@ -742,6 +842,8 @@ fn changed_settings_groups(before: &ConfigSettings, after: &ConfigSettings) -> V
         ("packages", before.packages != after.packages),
         ("unity", before.unity != after.unity),
         ("window", before.window != after.window),
+        ("integrations", before.integrations != after.integrations),
+        ("network", before.network_proxy != after.network_proxy),
         ("paths", before.paths != after.paths),
         ("projects", before.projects != after.projects),
         ("backups", before.backups != after.backups),
@@ -769,6 +871,8 @@ fn default_snapshot() -> ConfigSnapshot {
             },
             unity: ConfigUnitySettings::default(),
             window: ConfigWindowSettings::default(),
+            integrations: ConfigIntegrationSettings::default(),
+            network_proxy: ConfigProxy::default(),
             paths: ConfigPathSettings::default(),
             projects: ConfigProjectSettings::default(),
             backups: ConfigBackupSettings::default(),
@@ -828,6 +932,15 @@ fn apply_update(
         if let Some(value) = backups.include_library {
             settings.backups.include_library = value;
         }
+    }
+    if let Some(integrations) = update.integrations {
+        settings.integrations = integrations;
+    }
+    if let Some(proxy) = update.network_proxy {
+        settings.network_proxy = match proxy {
+            ConfigProxy::Custom { url } => ConfigProxy::custom(&url)?,
+            proxy => proxy,
+        };
     }
     if let Some(window) = update.window {
         if let Some(value) = window.remember_state {
@@ -907,6 +1020,8 @@ fn apply_update(
 
 fn update_is_empty(update: &ConfigUpdate) -> bool {
     update.locale.is_none()
+        && update.integrations.is_none()
+        && update.network_proxy.is_none()
         && update.window.as_ref().is_none_or(window_update_is_empty)
         && update.projects.is_none()
         && update.backups.as_ref().is_none_or(backup_update_is_empty)
@@ -1446,6 +1561,8 @@ mod tests {
         ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: None,
             paths: None,
             appearance: None,
@@ -1469,6 +1586,8 @@ mod tests {
         let window_update = |remember_state| ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: Some(ConfigWindowUpdate {
                 remember_state: Some(remember_state),
                 fullscreen: None,
@@ -1529,6 +1648,8 @@ mod tests {
         ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory,
@@ -2019,6 +2140,8 @@ mod tests {
         ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: None,
             paths: None,
             appearance: None,
@@ -2400,6 +2523,8 @@ mod tests {
                 ConfigUpdate {
                     projects: None,
                     backups: None,
+                    integrations: None,
+                    network_proxy: None,
                     window: None,
                     paths: None,
                     appearance: None,
@@ -2464,6 +2589,8 @@ mod tests {
         let bad = ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: None,
             paths: None,
             appearance: Some(ConfigAppearanceUpdate {
@@ -2599,6 +2726,8 @@ mod tests {
         let update = |window| ConfigUpdate {
             projects: None,
             backups: None,
+            integrations: None,
+            network_proxy: None,
             window: Some(window),
             paths: None,
             unity: None,

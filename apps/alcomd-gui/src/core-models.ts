@@ -48,6 +48,7 @@ export interface UnityHubLocation {
     configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
 }
 
+export type NetworkProxy = { mode: "system" } | { mode: "direct" } | { mode: "custom"; url: string };
 
 export interface OfficialSettings {
     projects: { autoDiscover: boolean };
@@ -55,6 +56,8 @@ export interface OfficialSettings {
     paths: { projectDirectory: string | null; backupDirectory: string | null };
     unity: { hubPath: string | null; defaultLaunchArguments: string[] | null };
     window: { rememberState: boolean; fullscreen: boolean };
+    integrations: { handleVccLinks: boolean };
+    network: { proxy: NetworkProxy };
     appearance: {
         mode: AppearanceMode;
         sourceColor: string | null;
@@ -72,7 +75,7 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 10;
+    configSchema: 12;
     revision: number;
     settings: OfficialSettings;
 }
@@ -83,6 +86,8 @@ export interface SettingsUpdate {
     paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
     unity?: { hubPath?: string | null; defaultLaunchArguments?: string[] | null };
     window?: { rememberState?: boolean; fullscreen?: boolean };
+    integrations?: { handleVccLinks: boolean };
+    network?: OfficialSettings["network"];
     appearance?: {
         mode?: AppearanceMode;
         sourceColor?: string | null;

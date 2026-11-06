@@ -91,6 +91,8 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                         packages: { ...previous.settings.packages, ...update.packages },
                         unity: { ...previous.settings.unity, ...update.unity },
                         window: { ...previous.settings.window, ...update.window },
+                        integrations: update.integrations ?? previous.settings.integrations,
+                        network: update.network ?? previous.settings.network,
                         locale: update.locale ?? previous.settings.locale
                     }
                 };

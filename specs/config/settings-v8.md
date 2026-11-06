@@ -1,9 +1,9 @@
 # settings.toml Config Schema 8
 
-状态：Config8历史迁移输入；当前合同为[Config10](settings-v10.md)。项目所有者于2026-11-03批准项目自动发现及备份默认选项，该版本保留原三档压缩枚举。
+状态：Config8历史迁移输入；当前合同为[Config12](settings-v12.md)。项目所有者于2026-11-03批准项目自动发现及备份默认选项，该版本保留原三档压缩枚举。
 
 Config8 保留 Config7 的全部字段及语义，新增 `projects`、`backups` 两个闭合设置对象。
-本版合同实施时 `system.hello.configSchema`、settings.get和成功settings.update均返回8；当前版本见Config10。
+本版合同实施时 `system.hello.configSchema`、settings.get和成功settings.update均返回8；当前版本见Config12。
 State17、RPC v1、方法名、capability、权限名称保持；严格消费者必须同步新增必需设置对象。
 
 ```toml

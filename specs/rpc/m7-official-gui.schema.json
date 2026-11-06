@@ -147,7 +147,7 @@
                     ]
                 },
                 "path": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/hubPath"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/hubPath"
                 },
                 "configuredPathStatus": {
                     "enum": [
@@ -256,19 +256,19 @@
             ],
             "properties": {
                 "configSchema": {
-                    "const": 10
+                    "const": 12
                 },
                 "revision": {
                     "$ref": "#/$defs/revision"
                 },
                 "settings": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/settings"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/settings"
                 },
                 "unityHub": {
                     "$ref": "#/$defs/unityHubLocation"
                 },
                 "directories": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/storageDirectories"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/storageDirectories"
                 }
             }
         },
@@ -284,7 +284,7 @@
                     "$ref": "#/$defs/revision"
                 },
                 "update": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/partialUpdate"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/partialUpdate"
                 }
             }
         },

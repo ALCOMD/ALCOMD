@@ -3,14 +3,14 @@ import type { RpcError } from "@alcomd/sdk";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
 import { StorageDirectoryConflictError, UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
-import type { OfficialSettings, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
+import type { NetworkProxy, OfficialSettings, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, PathField, SegmentedButtons, Select } from "./Material";
+import { Button, Checkbox, PathField, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
@@ -92,12 +92,64 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                         <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
                         <UnityDefaultArgumentsSettings settingsWriter={settingsWriter} snapshot={snapshot} />
                     </div>
+                    <NetworkProxySettings hidden={category !== "general"} proxy={accepted.settings.network.proxy}
+                        settingsWriter={settingsWriter} disabled={saving.saving || saving.failed} />
                     <SettingsEditor category={category} settingsWriter={settingsWriter} snapshot={snapshot} onApplied={onApplied} />
                 </div>
                 );
             }}
         </UtilityWorkspace></SettingsResetBoundary>
     );
+}
+
+function NetworkProxySettings({ hidden, proxy, settingsWriter, disabled }: {
+    hidden: boolean; proxy: NetworkProxy; settingsWriter: SettingsAutosave; disabled: boolean;
+}) {
+    const { t } = useTranslation();
+    const [draft, setDraft] = useState<NetworkProxy>();
+    const [error, setError] = useState<RpcError>();
+    const selected = draft ?? proxy;
+    const save = async (next: NetworkProxy) => {
+        setDraft(next);
+        setError(undefined);
+        try {
+            await settingsWriter.saveNetworkProxy(next, proxy);
+            setDraft(undefined);
+        } catch (cause) {
+            setError(normalizeRequestError(cause));
+        }
+    };
+    const select = (mode: string) => {
+        setError(undefined);
+        if (mode === "custom") {
+            setDraft({ mode, url: proxy.mode === "custom" ? proxy.url : "" });
+        } else if (mode === "system" || mode === "direct") {
+            void save({ mode });
+        }
+    };
+    return <SettingsSection title={t("Network")} hidden={hidden}>
+        <div className="settings-row">
+            <label htmlFor="settings-network-proxy">{t("Global proxy")}</label>
+            <Select id="settings-network-proxy" label={t("Global proxy")} value={selected.mode}
+                disabled={disabled} onChange={select} options={[
+                    { value: "system", label: t("Follow system proxy") },
+                    { value: "direct", label: t("Do not use a proxy") },
+                    { value: "custom", label: t("Custom proxy") },
+                ]} />
+        </div>
+        {selected.mode === "custom" ? <form className="settings-row" onSubmit={(event) => {
+            event.preventDefault();
+            if (!disabled && selected.url.trim() !== "") void save({ mode: "custom", url: selected.url.trim() });
+        }}>
+            <TextField label={t("Proxy address")} value={selected.url} maxLength={2048}
+                supportingText={t("Enter an HTTP or HTTPS proxy address, such as http://127.0.0.1:7890.")}
+                disabled={disabled} onInput={(url) => { setDraft({ mode: "custom", url }); setError(undefined); }} />
+            <Button type="submit" disabled={disabled || selected.url.trim() === "" ||
+                (proxy.mode === "custom" && selected.url === proxy.url && error === undefined)}>{t("Save")}</Button>
+        </form> : error === undefined ? null :
+            <Button type="button" disabled={disabled} onClick={() => void save(selected)}>{t("Retry")}</Button>}
+        {error === undefined ? null : <p role="alert">{t(requestErrorMessage(error.code))}</p>}
+    </SettingsSection>;
 }
 
 function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden }: {

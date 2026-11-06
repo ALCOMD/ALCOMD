@@ -193,12 +193,9 @@ impl FrozenPackageMaterializer {
         &self.cache
     }
 
-    pub fn new(cache_root: PathBuf) -> Result<Self, M4Error> {
-        Ok(Self {
-            cache: PackageCache::new(cache_root).map_err(|cause| {
-                M4Error::new(M4ErrorCode::PackageCacheCorrupt).with_source(cause)
-            })?,
-        })
+    #[must_use]
+    pub fn new(cache: PackageCache) -> Self {
+        Self { cache }
     }
 
     /// Acquires and verifies every frozen archive before any ProjectCreate lock is taken.
@@ -739,7 +736,7 @@ mod tests {
             .expect("materialize expected manifest");
         change_set.vpm_manifest_sha256 = digest(&final_vpm);
         let materializer =
-            FrozenPackageMaterializer::new(cache_root.clone()).expect("materializer");
+            FrozenPackageMaterializer::new(PackageCache::new(cache_root.clone()).expect("cache"));
         let object = materializer.object_path(&archive_sha256);
         std::fs::create_dir_all(object.parent().expect("cache parent")).expect("cache directory");
         std::fs::write(object, archive).expect("cache object");

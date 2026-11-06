@@ -323,7 +323,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
-        configSchema: 10,
+        configSchema: 12,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
@@ -333,6 +333,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             paths: { projectDirectory: query.get("project-directory"), backupDirectory: null },
             unity: { hubPath: null, defaultLaunchArguments: query.has("default-arguments") ? JSON.parse(query.get("default-arguments")!) as string[] : null },
             window: { rememberState: false, fullscreen: query.has("window-fullscreen") },
+            integrations: { handleVccLinks: true },
+            network: { proxy: { mode: "system" } },
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US",
             packages: {
@@ -567,7 +569,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 10,
+            configSchema: 12,
             directories: {
                 projectDirectory: update.paths?.projectDirectory === undefined ? this.settings.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
                 backupDirectory: update.paths?.backupDirectory === undefined ? this.settings.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
@@ -580,6 +582,8 @@ class DeterministicGuiClient implements GuiRpcClient {
                 paths: { ...this.settings.settings.paths, ...update.paths },
                 unity: { ...this.settings.settings.unity, ...update.unity },
                 window: { ...this.settings.settings.window, ...update.window },
+                integrations: update.integrations ?? this.settings.settings.integrations,
+                network: update.network ?? this.settings.settings.network,
                 appearance: { ...this.settings.settings.appearance, ...update.appearance },
                 locale: update.locale ?? this.settings.settings.locale,
                 packages: { ...this.settings.settings.packages, ...update.packages }

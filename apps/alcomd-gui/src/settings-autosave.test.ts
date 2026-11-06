@@ -2,7 +2,7 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 10, revision: 7,
+    configSchema: 12, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
@@ -11,6 +11,8 @@ const initial: SettingsGetResult = {
         paths: { projectDirectory: null, backupDirectory: null },
         unity: { hubPath: null, defaultLaunchArguments: null },
         window: { rememberState: false, fullscreen: false },
+        integrations: { handleVccLinks: true },
+        network: { proxy: { mode: "system" } },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
         packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
@@ -38,7 +40,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 10, revision: expectedRevision + 1,
+                configSchema: 12, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -459,6 +461,8 @@ function customizedModel() {
         paths: { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" },
         unity: { hubPath: "C:\\Tools\\Unity Hub.exe", defaultLaunchArguments: ["-logFile", " C:\\Logs\\Editor.log ", ""] },
         window: { rememberState: true, fullscreen: true },
+        integrations: { handleVccLinks: true },
+        network: { proxy: { mode: "system" } },
         locale: "zh-CN",
         appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive", motion: "full" },
         packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"] }

@@ -1,6 +1,6 @@
 # settings.toml Config Schema 4
 
-状态：历史 Config4 启动迁移输入。当前设置合同为 [Config10](settings-v10.md)；本文件保留 Config4 的验证形状，不作为当前写入或公开返回格式。
+状态：历史 Config4 启动迁移输入。当前设置合同为 [Config12](settings-v12.md)；本文件保留 Config4 的验证形状，不作为当前写入或公开返回格式。
 
 Config4 删除紧凑模式及 `appearance.density`；当前文件、公开完整设置和 partial update 均不含该字段。
 显式提供 `density`，包括旧 `default` / `compact` 值或 null，均作为未知字段整次拒绝；不提供别名、

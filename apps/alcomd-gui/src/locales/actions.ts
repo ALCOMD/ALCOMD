@@ -2,6 +2,13 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Network": { "zh-CN": "网络", "ja-JP": "ネットワーク" },
+    "Global proxy": { "zh-CN": "全局代理", "ja-JP": "グローバルプロキシ" },
+    "Follow system proxy": { "zh-CN": "跟随系统代理", "ja-JP": "システムプロキシに従う" },
+    "Do not use a proxy": { "zh-CN": "不使用代理", "ja-JP": "プロキシを使用しない" },
+    "Custom proxy": { "zh-CN": "自定义代理", "ja-JP": "カスタムプロキシ" },
+    "Proxy address": { "zh-CN": "代理地址", "ja-JP": "プロキシアドレス" },
+    "Enter an HTTP or HTTPS proxy address, such as http://127.0.0.1:7890.": { "zh-CN": "请输入 HTTP 或 HTTPS 代理地址，例如 http://127.0.0.1:7890。", "ja-JP": "http://127.0.0.1:7890 のような HTTP または HTTPS プロキシアドレスを入力してください。" },
     "Authentication": { "zh-CN": "认证", "ja-JP": "認証" },
     "Repository authentication": { "zh-CN": "存储库认证", "ja-JP": "リポジトリの認証" },
     "Uses authentication": { "zh-CN": "使用认证", "ja-JP": "認証を使用" },

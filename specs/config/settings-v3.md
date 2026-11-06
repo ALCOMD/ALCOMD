@@ -2,7 +2,7 @@
 
 状态：保留的 Config Schema 3 历史合同，仅作为启动迁移输入；当前唯一写入及公开 RPC 合同见 [Config Schema 10](settings-v10.md)。
 
-下文冻结 Config3 生效时的字段、响应和交互背景，不再定义当前 GUI 或公开响应。载入有效 Config3 时移除旧 `appearance.density`，保留其余设置及 revision，按当前迁移器迁入 Config10；不保留旧字段别名或第二套当前模型。
+下文冻结 Config3 生效时的字段、响应和交互背景，不再定义当前 GUI 或公开响应。载入有效 Config3 时移除旧 `appearance.density`，保留其余设置及 revision，按当前迁移器迁入 Config11；不保留旧字段别名或第二套当前模型。
 
 Config Schema 3 在既有 daemon 唯一 writer、strict UTF-8、16 KiB 上限、checked revision CAS、
 same-directory `.new`/`.bak` 原子替换与恢复纪律之上，增加 `appearance.scheme`：

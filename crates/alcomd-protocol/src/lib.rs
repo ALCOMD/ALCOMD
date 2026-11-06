@@ -2359,7 +2359,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 10;
+pub const CONFIG_SCHEMA_VERSION: u32 = 12;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2422,6 +2422,8 @@ pub struct Settings {
     pub unity: UnitySettings,
     pub paths: PathSettings,
     pub window: WindowSettings,
+    pub integrations: IntegrationSettings,
+    pub network: NetworkSettings,
     pub projects: ProjectSettings,
     pub backups: BackupSettings,
 }
@@ -2487,6 +2489,26 @@ impl<'de> Deserialize<'de> for BackupSettingsUpdate {
             include_library: value.include_library,
         })
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct IntegrationSettings {
+    pub handle_vcc_links: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkSettings {
+    pub proxy: NetworkProxy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum NetworkProxy {
+    System {},
+    Direct {},
+    Custom { url: String },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2740,6 +2762,18 @@ pub struct SettingsUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub window: Option<WindowSettingsUpdate>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub integrations: Option<IntegrationSettings>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub network: Option<NetworkSettings>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",

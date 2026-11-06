@@ -5,6 +5,7 @@ mod backup;
 mod cache;
 mod candidates;
 mod engine;
+mod http_clients;
 mod legacy;
 mod package;
 mod plan;
@@ -109,24 +110,44 @@ pub fn project_creation_resource(
 /// Bounded M3 reader with anonymous and authenticated HTTP clients.
 #[derive(Clone)]
 pub struct VpmReader {
-    client: Client,
-    authenticated_client: Client,
+    http: http_clients::HttpClients,
 }
 
 impl VpmReader {
     pub fn new() -> Result<Self, M3Error> {
-        let client = Client::builder()
-            .referer(false)
-            .timeout(REQUEST_TIMEOUT)
-            .redirect(Policy::custom(validate_redirect))
-            .build()
-            .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
-        let authenticated_client = repository_auth::client(REQUEST_TIMEOUT, REQUEST_TIMEOUT)
-            .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
-        Ok(Self {
-            client,
-            authenticated_client,
+        Self::with_proxy_source(None)
+    }
+
+    pub fn with_settings(
+        settings: alcomd_application::M7OfficialApplication,
+    ) -> Result<Self, M3Error> {
+        Self::with_proxy_source(Some(settings))
+    }
+
+    fn with_proxy_source(
+        settings: Option<alcomd_application::M7OfficialApplication>,
+    ) -> Result<Self, M3Error> {
+        let http = http_clients::HttpClients::new(settings, |proxy| {
+            let anonymous = http_clients::with_proxy(
+                Client::builder()
+                    .referer(false)
+                    .timeout(REQUEST_TIMEOUT)
+                    .redirect(Policy::custom(validate_redirect)),
+                proxy,
+            )?
+            .build()?;
+            let authenticated = repository_auth::client(REQUEST_TIMEOUT, REQUEST_TIMEOUT, proxy)?;
+            Ok(http_clients::ClientPair {
+                anonymous,
+                authenticated,
+            })
         })
+        .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
+        Ok(Self { http })
+    }
+
+    fn package_cache(&self, root: PathBuf) -> Result<PackageCache, CacheError> {
+        PackageCache::with_proxy_source(root, self.http.settings())
     }
 
     pub async fn find_project_root(
@@ -300,13 +321,18 @@ impl VpmReader {
             .acquire()
             .await
             .map_err(|cause| M3Error::new(M3ErrorCode::RepositoryUnavailable).with_source(cause))?;
+        let clients = self
+            .http
+            .for_request()
+            .await
+            .map_err(|()| M3Error::new(M3ErrorCode::RepositoryUnavailable))?;
         let mut response = if let Some(auth) = auth {
             repository_auth::send(normalized.clone(), &[auth], |url| {
-                request(&self.authenticated_client, url)
+                request(&clients.authenticated, url)
             })
             .await?
         } else {
-            request(&self.client, normalized.clone())
+            request(&clients.anonymous, normalized.clone())
                 .send()
                 .await
                 .map_err(|error| {

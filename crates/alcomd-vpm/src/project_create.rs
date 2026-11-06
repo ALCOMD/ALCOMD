@@ -35,12 +35,18 @@ pub struct ProjectCreateEngine<S> {
 }
 
 impl<S> ProjectCreateEngine<S> {
-    pub fn new(store: S, cache_root: PathBuf) -> Result<Self, ProjectCreateError> {
+    pub fn new(
+        store: S,
+        reader: VpmReader,
+        cache_root: PathBuf,
+    ) -> Result<Self, ProjectCreateError> {
+        let cache = reader
+            .package_cache(cache_root)
+            .map_err(|cause| internal().with_source(cause))?;
         Ok(Self {
             store,
-            reader: VpmReader::new().map_err(|cause| internal().with_source(cause))?,
-            materializer: FrozenPackageMaterializer::new(cache_root)
-                .map_err(|cause| internal().with_source(cause))?,
+            reader,
+            materializer: FrozenPackageMaterializer::new(cache),
         })
     }
 
@@ -639,8 +645,12 @@ mod tests {
                 std::env::temp_dir().join(format!("alcomd-create-test-{}", OperationId::new()));
             fs::create_dir(&root).expect("isolated fixture");
             let root = fs::canonicalize(root).expect("canonical fixture");
-            let engine = ProjectCreateEngine::new(FixturePinStore, root.join("cache"))
-                .expect("create engine");
+            let engine = ProjectCreateEngine::new(
+                FixturePinStore,
+                VpmReader::new().expect("reader"),
+                root.join("cache"),
+            )
+            .expect("create engine");
             Self { root, engine }
         }
 

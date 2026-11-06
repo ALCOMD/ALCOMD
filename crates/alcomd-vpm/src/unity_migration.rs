@@ -69,7 +69,8 @@ impl<S> UnityMigrationEngine<S> {
         if !recovery_root.is_absolute() {
             return Err(error(M7UnityMigrationErrorCode::Internal));
         }
-        let cache = PackageCache::new(cache_root)
+        let cache = reader
+            .package_cache(cache_root)
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         Ok(Self {
             store,

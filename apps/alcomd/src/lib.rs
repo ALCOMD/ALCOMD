@@ -192,15 +192,6 @@ async fn initialize_daemon_with_directories(
     m2.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
-    let reader = alcomd_vpm::VpmReader::new()
-        .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
-    let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root.clone())
-        .map_err(|_| BindError::Io(io::Error::other("M4 package engine initialization failed")))?;
-    let locks = Arc::new(ResourceLockCoordinator::default());
-    let m4 = M4PackageApplication::with_locks(store.clone(), engine, Arc::clone(&locks));
-    m4.recover()
-        .await
-        .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let official_gui = M7OfficialApplication::new(
         Arc::new(alcomd_store::FileConfigStore::new(
             data_root.join("config").join("settings.toml"),
@@ -213,6 +204,15 @@ async fn initialize_daemon_with_directories(
         .initialize_settings()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
+    let reader = alcomd_vpm::VpmReader::with_settings(official_gui.clone())
+        .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
+    let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root.clone())
+        .map_err(|_| BindError::Io(io::Error::other("M4 package engine initialization failed")))?;
+    let locks = Arc::new(ResourceLockCoordinator::default());
+    let m4 = M4PackageApplication::with_locks(store.clone(), engine, Arc::clone(&locks));
+    m4.recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let unity = M5Application::new(
         store.clone(),
         m5_platform::PlatformUnityAdapter,
@@ -236,11 +236,12 @@ async fn initialize_daemon_with_directories(
         .await
         .map_err(|_| BindError::Io(io::Error::other("Unity migration recovery failed")))?;
     let project_create_engine =
-        alcomd_vpm::ProjectCreateEngine::new(store.clone(), cache_root.clone()).map_err(|_| {
-            BindError::Io(io::Error::other(
-                "Project create engine initialization failed",
-            ))
-        })?;
+        alcomd_vpm::ProjectCreateEngine::new(store.clone(), reader.clone(), cache_root.clone())
+            .map_err(|_| {
+                BindError::Io(io::Error::other(
+                    "Project create engine initialization failed",
+                ))
+            })?;
     let project_create = alcomd_application::ProjectCreateApplication::with_locks(
         store.clone(),
         project_create_engine,

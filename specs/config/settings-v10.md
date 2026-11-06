@@ -1,6 +1,6 @@
 # Config10：持久全屏模式
 
-状态：2026-11-03项目所有者批准；当前有效设置合同。State18保持。
+状态：历史迁移输入。当前设置合同为 [Config12](settings-v12.md)。
 
 Config10在Config9基础上增加`window.fullscreen: boolean = false`，TOML为`[window] fullscreen = false`。它是Core权威偏好，跨GUI启动保留；GUI仅通过既有settings.get/update、settings.read/manage与串行CAS保存。全屏切换由GUI主窗口薄适配器应用，不增加Core窗口业务或数据库结构。
 

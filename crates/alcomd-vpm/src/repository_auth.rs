@@ -176,13 +176,17 @@ impl RepositoryAuth {
 pub(crate) fn client(
     timeout: Duration,
     connect_timeout: Duration,
+    proxy: &alcomd_application::ConfigProxy,
 ) -> Result<Client, reqwest::Error> {
-    Client::builder()
-        .referer(false)
-        .timeout(timeout)
-        .connect_timeout(connect_timeout)
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
+    crate::http_clients::with_proxy(
+        Client::builder()
+            .referer(false)
+            .timeout(timeout)
+            .connect_timeout(connect_timeout)
+            .redirect(reqwest::redirect::Policy::none()),
+        proxy,
+    )?
+    .build()
 }
 
 pub(crate) async fn send(

@@ -36,7 +36,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 10);
+    assert_eq!(defaults.config_schema, 12);
     assert_eq!(defaults.revision, 1);
     assert!(defaults.settings.projects.auto_discover);
     assert_eq!(
@@ -47,6 +47,11 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     assert!(!defaults.settings.backups.include_library);
     assert!(!defaults.settings.window.remember_state);
     assert!(!defaults.settings.window.fullscreen);
+    assert!(defaults.settings.integrations.handle_vcc_links);
+    assert_eq!(
+        defaults.settings.network.proxy,
+        alcomd_protocol::NetworkProxy::System {}
+    );
     assert_eq!(defaults.settings.unity.default_launch_arguments, None);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
@@ -69,6 +74,12 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
                 window: Some(alcomd_protocol::WindowSettingsUpdate {
                     remember_state: Some(true),
                     fullscreen: None,
+                }),
+                network: Some(alcomd_protocol::NetworkSettings {
+                    proxy: alcomd_protocol::NetworkProxy::Direct {},
+                }),
+                integrations: Some(alcomd_protocol::IntegrationSettings {
+                    handle_vcc_links: false,
                 }),
                 paths: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
@@ -100,6 +111,11 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         .expect("update settings");
     assert_eq!(updated.revision, 2);
     assert!(updated.settings.window.remember_state);
+    assert!(!updated.settings.integrations.handle_vcc_links);
+    assert_eq!(
+        updated.settings.network.proxy,
+        alcomd_protocol::NetworkProxy::Direct {}
+    );
     assert!(!updated.settings.projects.auto_discover);
     assert_eq!(
         updated.settings.backups.compression_mode,
@@ -580,10 +596,10 @@ include_library = true
         wait_for_shutdown(Arc::clone(&restarted_shutdown)),
     )
     .await
-    .expect("migrate owned Config9 daemon to Config10");
+    .expect("migrate owned Config9 daemon to Config12");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
-    assert_eq!(persisted.config_schema, 10);
+    assert_eq!(persisted.config_schema, 12);
     assert_eq!(persisted.revision, 14);
     assert_eq!(persisted.settings, hub_cleared.settings);
     assert!(!persisted.settings.window.fullscreen);
@@ -617,7 +633,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     .expect("owned daemon");
     let mut client = connect_with_retry(config.clone()).await;
     let defaults = client.settings_get().await.expect("defaults");
-    assert_eq!(defaults.config_schema, 10);
+    assert_eq!(defaults.config_schema, 12);
     assert!(!defaults.settings.window.fullscreen);
     let enabled = client
         .settings_update(SettingsUpdateParams {

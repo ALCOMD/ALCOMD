@@ -17,6 +17,7 @@ alcomd-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+url = "=2.5.8"
 
 [dev-dependencies]
 
