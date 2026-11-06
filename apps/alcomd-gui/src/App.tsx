@@ -48,6 +48,7 @@ import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListI
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 import { nativeWindowStateMemory } from "./native-window-state";
+import { RepositoryLinkDialog, nativeRepositoryLinks, type RepositoryLinkInbox } from "./RepositoryLinkDialog";
 import type { WindowStateMemory } from "./window-state";
 import {
     capabilities,
@@ -84,9 +85,10 @@ type Route =
 
 interface AppProps {
     client?: GuiRpcClient;
+    repositoryLinks?: RepositoryLinkInbox;
 }
 
-export function App({ client: sourceClient = guiRpcClient }: AppProps) {
+export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nativeRepositoryLinks }: AppProps) {
     const [connectionGeneration, setConnectionGeneration] = useState(0);
     const events = useMemo(() => new CoreEvents(sourceClient), [sourceClient]);
     const client = events.client;
@@ -287,6 +289,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                         <Button onClick={discardAndNavigate} type="button">{t("Discard changes")}</Button>
                     </div>
                 </MaterialDialog>
+                {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
             </div>
             </CoreEventsProvider>
         </CapabilityProvider></LocaleProvider>

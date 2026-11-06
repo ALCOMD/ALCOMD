@@ -22,6 +22,7 @@ import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
 import { useCoreInvalidation } from "./core-events-ui";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -61,6 +62,10 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                 const accepted = saving.accepted ?? snapshot;
                 return (
                 <div className="settings-workspace">
+                    {isTauri() ? <VccLinkRegistration hidden={category !== "general"}
+                        enabled={settings.integrations.handleVccLinks}
+                        disabled={saving.saving || saving.failed}
+                        onChange={(handleVccLinks) => settingsWriter.change({ integrations: { handleVccLinks } })} /> : null}
                     <SettingsSection title={t("Projects")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Projects")} disabled={!canManageProjects || saving.saving || saving.failed || (!projectDirty && settings.paths.projectDirectory === null && settings.projects.autoDiscover)} onRestore={async () => {
                         await settingsWriter.restoreDefaults({ paths: { projectDirectory: null }, projects: { autoDiscover: true } },
                             { paths: { projectDirectory: accepted.settings.paths.projectDirectory }, projects: { autoDiscover: accepted.settings.projects.autoDiscover } });
@@ -149,6 +154,40 @@ function NetworkProxySettings({ hidden, proxy, settingsWriter, disabled }: {
         </form> : error === undefined ? null :
             <Button type="button" disabled={disabled} onClick={() => void save(selected)}>{t("Retry")}</Button>}
         {error === undefined ? null : <p role="alert">{t(requestErrorMessage(error.code))}</p>}
+    </SettingsSection>;
+}
+
+function VccLinkRegistration({ hidden, enabled, disabled, onChange }: {
+    hidden: boolean; enabled: boolean; disabled: boolean; onChange(enabled: boolean): void;
+}) {
+    const { t } = useTranslation();
+    const [available, setAvailable] = useState(false);
+    const [status, setStatus] = useState<"ready" | "busy" | "registered" | "failed">("ready");
+    useEffect(() => {
+        let active = true;
+        void invoke<boolean>("gui_vcc_registration_available").then((value) => {
+            if (active) setAvailable(value);
+        }, () => {});
+        return () => { active = false; };
+    }, []);
+    const register = async () => {
+        setStatus("busy");
+        try {
+            await invoke("gui_register_vcc_links");
+            setStatus("registered");
+        } catch {
+            setStatus("failed");
+        }
+    };
+    if (!available) return null;
+    return <SettingsSection title={t("VCC links")} hidden={hidden}>
+        <Checkbox checked={enabled} disabled={disabled || status === "busy"} label={t("Handle VCC links")}
+            onChange={(value) => { setStatus("ready"); onChange(value); }} />
+        {enabled ? <div className="settings-row">
+            <Button disabled={disabled || status === "busy"} onClick={() => void register()} type="button">{t("Register ALCOMD for VCC links")}</Button>
+            {status === "registered" ? <span role="status">{t("ALCOMD was registered for VCC links.")}</span> : null}
+            {status === "failed" ? <span role="alert">{t("Could not register ALCOMD for VCC links.")}</span> : null}
+        </div> : null}
     </SettingsSection>;
 }
 

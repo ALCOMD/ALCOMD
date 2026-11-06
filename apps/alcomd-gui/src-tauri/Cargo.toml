@@ -28,6 +28,8 @@ alcomd-protocol.workspace = true
 open.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+tauri-plugin-deep-link = "=2.4.10"
+tauri-plugin-single-instance = "=2.4.5"
 
 [lints]
 workspace = true

@@ -9,6 +9,7 @@ use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 mod events;
+mod repository_links;
 mod unity_windows;
 mod window_state;
 
@@ -112,6 +113,7 @@ async fn gui_operation_cancel(
 
 #[tauri::command]
 async fn gui_settings_get(
+    app: tauri::AppHandle,
     state: State<'_, GuiClientState>,
 ) -> Result<alcomd_protocol::SettingsGetResult, RpcError> {
     let mut client = state.client.lock().await;
@@ -120,11 +122,17 @@ async fn gui_settings_get(
         Some(client) => client.settings_get().await,
         None => return Err(daemon_unavailable()),
     };
-    finish_call(&mut client, result)
+    let settings = finish_call(&mut client, result)?;
+    repository_links::accept_registration_preference(
+        &app,
+        settings.settings.integrations.handle_vcc_links,
+    );
+    Ok(settings)
 }
 
 #[tauri::command]
 async fn gui_settings_update(
+    app: tauri::AppHandle,
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::SettingsUpdateParams,
 ) -> Result<alcomd_protocol::SettingsGetResult, RpcError> {
@@ -134,7 +142,12 @@ async fn gui_settings_update(
         Some(client) => client.settings_update(params).await,
         None => return Err(daemon_unavailable()),
     };
-    finish_call(&mut client, result)
+    let settings = finish_call(&mut client, result)?;
+    repository_links::accept_registration_preference(
+        &app,
+        settings.settings.integrations.handle_vcc_links,
+    );
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -1578,8 +1591,16 @@ pub fn run() {
     alcomd_platform::set_current_process_app_user_model_id(env!("ALCOMD_WINDOWS_AUMID"))
         .expect("failed to initialize Windows application identity");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
+        .manage(repository_links::RepositoryLinks::from_arguments())
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
+            repository_links::forward_arguments(app, arguments);
+        }));
+    #[cfg(any(windows, target_os = "linux"))]
+    let builder = builder.plugin(tauri_plugin_deep_link::init());
+    builder
         .plugin(tauri_plugin_dialog::init())
+        .manage(repository_links::VccRegistration::default())
         .manage(GuiClientState::default())
         .manage(events::EventsClient::default())
         .manage(unity_windows::UnityWindows::default())
@@ -1600,6 +1621,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            repository_links::gui_take_repository_link,
+            repository_links::gui_vcc_registration_available,
+            repository_links::gui_register_vcc_links,
             window_state::gui_window_state_configure,
             gui_system_status,
             gui_state_check,
@@ -1702,7 +1726,12 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("failed to build alcomd-gui")
-        .run(|_, _| {});
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = _event {
+                repository_links::forward(_app, urls.into_iter().map(|url| url.to_string()));
+            }
+        });
 }
 
 #[cfg(test)]

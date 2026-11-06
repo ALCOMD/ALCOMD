@@ -30,6 +30,7 @@ import { capabilities, capabilityUnavailableTitle, useCapability } from "./capab
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
 import { isBuiltinRepository } from "./repository-display";
+import type { RepositoryLinkDraft } from "./repository-link";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
@@ -85,15 +86,16 @@ function RepositoryAuthenticationFields({ draft, onChange, disabled }: {
     </>;
 }
 
-export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
+export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionProps & { initial?: RepositoryLinkDraft }) {
     const { t } = useTranslation();
 
     const close = useUtilityDialogClose();
     const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [kind, setKind] = useState<"remote" | "local">("remote");
-    const [value, setValue] = useState("");
-    const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(EMPTY_REPOSITORY_AUTH);
+    const [value, setValue] = useState(initial?.url ?? "");
+    const [authentication, setAuthentication] = useState<RepositoryAuthenticationDraft>(() => initial
+        ? { headers: initial.headers } : EMPTY_REPOSITORY_AUTH);
     const [preview, setPreview] = useState<RepositorySnapshot>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);

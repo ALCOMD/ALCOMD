@@ -226,6 +226,8 @@ fn check_unsafe_boundary(
     const APPROVED: &[&str] = &[
         // AUMID: process identity only, documented input/output ownership.
         "crates/alcomd-platform/src/windows_app_identity.rs",
+        // VCC opt-out: remove only the current executable's user registration.
+        "crates/alcomd-platform/src/windows_url_handler.rs",
         "crates/alcomd-platform/src/windows_security.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",
         "crates/alcomd-platform/src/windows_file_identity.rs",

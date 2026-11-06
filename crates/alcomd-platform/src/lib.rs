@@ -53,6 +53,8 @@ mod windows;
 mod windows_app_identity;
 #[cfg(windows)]
 mod windows_unity_window;
+#[cfg(windows)]
+mod windows_url_handler;
 
 #[cfg(windows)]
 pub use windows_app_identity::set_current_process_app_user_model_id;
@@ -61,6 +63,8 @@ pub use windows_unity_window::{
     UnityWindowFocus, UnityWindowMonitor, UnityWindowReader, UnityWindowSnapshot, UnityWindowState,
     focus_unity_window,
 };
+#[cfg(windows)]
+pub use windows_url_handler::unregister_owned_url_handler;
 
 #[cfg(unix)]
 pub use unix::{

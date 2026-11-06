@@ -1349,11 +1349,37 @@ const browserClient = query.has("h4-portable") ? withH4PortableClient(management
 const utilitiesClient = query.has("h5-utilities") ? withH5UtilitiesClient(browserClient, query) : browserClient;
 const settingsClient = query.has("h5-settings") ? withH5SettingsClient(utilitiesClient, query) : utilitiesClient;
 window.fixtureCore = withBrowserCoreEvents(settingsClient);
+if (query.has("vcc-settings-fixture")) {
+    const { mockIPC, mockWindows } = await import("@tauri-apps/api/mocks");
+    mockWindows("main");
+    mockIPC((command) => {
+        if (command === "gui_vcc_registration_available") return true;
+        if (command === "gui_register_vcc_links" || command === "gui_window_state_configure") return undefined;
+        throw new Error(`Unexpected native fixture command: ${command}`);
+    });
+    Object.defineProperty(window, "isTauri", { value: true });
+}
+const pendingRepositoryLinks = query.has("repository-link-fixture") ? [
+    "vcc://vpm/addRepo?url=https%3A%2F%2Frepository.test%2Findex.json&headers%5B%5D=Authorization%3ABearer%20fixture-link-token"
+] : undefined;
+const repositoryLinks = pendingRepositoryLinks ? {
+    take: async () => pendingRepositoryLinks.shift() ?? null,
+    listen: async (available: () => void) => {
+        const receive = (event: Event) => {
+            if (event instanceof CustomEvent && typeof event.detail === "string") {
+                pendingRepositoryLinks.push(event.detail);
+                available();
+            }
+        };
+        window.addEventListener("fixture-repository-link", receive);
+        return () => window.removeEventListener("fixture-repository-link", receive);
+    },
+} : undefined;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
         {materialEvidence
             ? <MaterialFoundationEvidence />
             : operationLogEvidence ? <OperationLogEvidence />
-            : <App client={window.fixtureCore} />}
+            : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}
     </React.StrictMode>
 );
