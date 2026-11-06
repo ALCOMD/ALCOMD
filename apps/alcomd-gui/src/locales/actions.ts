@@ -18,6 +18,7 @@ export const actionMessages: TranslationTable = {
     "Repository authentication": { "zh-CN": "存储库认证", "ja-JP": "リポジトリの認証" },
     "Uses authentication": { "zh-CN": "使用认证", "ja-JP": "認証を使用" },
     "Header name": { "zh-CN": "请求头名称", "ja-JP": "ヘッダー名" },
+    "Request header names must be unique, regardless of case.": { "zh-CN": "请求头名称不区分大小写，不能重复。", "ja-JP": "大文字と小文字を区別せず、同じヘッダー名は重複できません。" },
     "Header value": { "zh-CN": "请求头值", "ja-JP": "ヘッダー値" },
     "Add request header": { "zh-CN": "添加请求头", "ja-JP": "リクエストヘッダーを追加" },
     "Remove request header": { "zh-CN": "移除请求头", "ja-JP": "リクエストヘッダーを削除" },

@@ -19,14 +19,14 @@ export function parseRepositoryLink(input: string): RepositoryLinkDraft | undefi
         if ((source.protocol !== "https:" && source.protocol !== "http:")
             || source.username || source.password) return undefined;
 
-        const headers = new Map<string, string>();
+        const headers: RepositoryLinkDraft["headers"] = [];
         for (const [key, entry] of link.searchParams) {
             if (key !== "headers[]") continue;
             const separator = entry.indexOf(":");
             if (separator < 1) return undefined;
-            headers.set(entry.slice(0, separator), entry.slice(separator + 1));
+            headers.push({ name: entry.slice(0, separator), value: entry.slice(separator + 1) });
         }
-        return { url: source.href, headers: Array.from(headers, ([name, value]) => ({ name, value })) };
+        return { url: source.href, headers };
     } catch {
         return undefined;
     }

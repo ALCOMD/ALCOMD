@@ -88,7 +88,7 @@ impl RepositoryAuth {
             value.to_str().map_err(|_| invalid())?;
             value.set_sensitive(true);
             if headers.insert(name, value).is_some() {
-                return Err(invalid());
+                return Err(invalid().with_reason("duplicate HTTP request header name"));
             }
         }
         Ok(Self { headers })
@@ -301,12 +301,17 @@ mod tests {
         .expect("package layer");
         let layers = [&repository, &package];
         let zipped = request_headers(&layers);
+        assert_eq!(zipped.get_all("authorization").iter().count(), 1);
         assert_eq!(zipped["authorization"], "Bearer package-fixture");
         assert_eq!(zipped["x-repository"], "repository-fixture");
         assert_eq!(zipped.get_all("x-shared").iter().count(), 1);
         assert_eq!(zipped["x-shared"], "package-shared-fixture");
         assert_eq!(zipped["x-package"], "package-fixture");
         assert!(zipped["x-package"].is_sensitive());
+        assert_eq!(
+            request_headers(&[&repository])["authorization"],
+            "Bearer repository-fixture"
+        );
     }
 
     #[test]
@@ -322,6 +327,7 @@ mod tests {
             json!({"Host": "fixture"}),
             json!({"X-Example": 42}),
             json!({"X-Example": "newline\nfixture"}),
+            json!({"Authorization": "first-fixture", "authorization": "second-fixture"}),
         ] {
             assert!(RepositoryAuth::for_package(Some(&invalid), &secure).is_err());
         }

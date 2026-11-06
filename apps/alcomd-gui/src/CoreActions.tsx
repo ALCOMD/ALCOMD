@@ -60,9 +60,13 @@ function repositoryCredentials(draft: RepositoryAuthenticationDraft): Repository
     };
 }
 
+function hasDuplicateRepositoryHeaderNames(draft: RepositoryAuthenticationDraft): boolean {
+    const names = draft.headers.map(({ name }) => name.trim().toLowerCase()).filter(Boolean);
+    return new Set(names).size !== names.length;
+}
+
 function readyRepositoryHeaders(draft: RepositoryAuthenticationDraft): boolean {
-    const names = new Set(draft.headers.map(({ name }) => name.trim().toLowerCase()));
-    return names.size === draft.headers.length
+    return !hasDuplicateRepositoryHeaderNames(draft)
         && draft.headers.every(({ name, value }) => name.trim() !== "" && value !== "");
 }
 
@@ -81,6 +85,7 @@ function RepositoryAuthenticationFields({ draft, onChange, disabled }: {
             <IconButton disabled={disabled} label={t("Remove request header")} type="button"
                 onClick={() => onChange({ ...draft, headers: draft.headers.filter((_, i) => i !== index) })}><Icon asset={closeIcon} /></IconButton>
         </div>)}
+        {hasDuplicateRepositoryHeaderNames(draft) ? <p role="alert">{t("Request header names must be unique, regardless of case.")}</p> : null}
         <Button disabled={disabled || draft.headers.length >= 16} type="button" variant="text"
             onClick={() => onChange({ ...draft, headers: [...draft.headers, { name: "", value: "" }] })}>{t("Add request header")}</Button>
     </>;
@@ -103,7 +108,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
     const source = () => kind === "remote" ? { kind, url: value } as const : { kind, path: value } as const;
     const inspect = async (event: FormEvent) => {
         event.preventDefault();
-        if (pending.current || !available) return;
+        if (pending.current || !available || !readyRepositoryHeaders(authentication)) return;
         pending.current = true;
          setFeedback({ busy: true });
         try {
@@ -165,7 +170,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     };
     const changeAuthentication = async (clear: boolean) => {
         if (!ready || !available || pending.current || repository.source.kind !== "remote"
-            || (!clear && authentication.headers.length === 0)) return;
+            || (!clear && (authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)))) return;
         pending.current = true;
         setFeedback({ busy: true });
         try {

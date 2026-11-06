@@ -182,7 +182,9 @@ fn parse_source(
                     let (name, value) = value
                         .split_once(':')
                         .ok_or((Status::Invalid, "source_invalid"))?;
-                    headers.insert(name.to_owned(), value.to_owned());
+                    if headers.insert(name.to_owned(), value.to_owned()).is_some() {
+                        return Err((Status::Invalid, "source_invalid"));
+                    }
                 }
                 _ => {}
             }
@@ -514,6 +516,21 @@ mod tests {
                 .status,
             Status::Duplicate
         );
+    }
+
+    #[test]
+    fn import_rejects_repeated_http_header_names() {
+        for second in ["Authorization", "authorization"] {
+            let mut link = Url::parse("vcc://vpm/addRepo").expect("VCC URL");
+            link.query_pairs_mut()
+                .append_pair("url", "https://example.test/index.json")
+                .append_pair("headers[]", "Authorization:Bearer first-fixture")
+                .append_pair("headers[]", &format!("{second}:Bearer second-fixture"));
+            let parsed = parse_list(link.as_str().as_bytes(), &RepositoryListSnapshot::default())
+                .expect("list preview");
+            assert_eq!(parsed.entries[0].status, Status::Invalid);
+            assert!(parsed.entries[0].credentials.is_none());
+        }
     }
 
     #[test]

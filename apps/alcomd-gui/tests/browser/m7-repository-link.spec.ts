@@ -28,6 +28,31 @@ test("repository links prefill the shared review, queue and require explicit reg
     expect(JSON.stringify(await requests())).not.toContain("fixture-link-token");
 });
 
+test("duplicate request headers in a repository link must be corrected before review", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&resource-lifecycle=1&repository-link-fixture=1");
+    const dialog = page.locator("md-dialog[open]");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await page.evaluate(() => {
+        const link = new URL("vcc://vpm/addRepo?url=https://repository.test/index.json");
+        link.searchParams.append("headers[]", "Authorization:Bearer first-fixture");
+        link.searchParams.append("headers[]", "Authorization:Bearer second-fixture");
+        window.dispatchEvent(new CustomEvent("fixture-repository-link", { detail: link.href }));
+    });
+    const headers = dialog.getByRole("textbox", { name: "Header name", exact: true });
+    const review = dialog.getByRole("button", { name: "Review repository", exact: true });
+    const duplicate = dialog.getByRole("alert").filter({ hasText: "Request header names must be unique" });
+    await expect(headers).toHaveCount(2);
+    await expect(duplicate).toBeVisible();
+    await headers.nth(1).fill("authorization");
+    await expect(review).toBeDisabled();
+    await expect(duplicate).toBeVisible();
+    await headers.nth(1).fill("X-Token");
+    await expect(duplicate).toHaveCount(0);
+    await expect(review).toBeEnabled();
+    expect(await page.evaluate(() => window.resourceRequests.some(({ method }) => method === "repositories.inspect"))).toBe(false);
+});
+
 test("VCC handling defaults on and saves a narrow preference without using the OS", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&vcc-settings-fixture=1");
     const card = page.getByRole("region", { name: "VCC links", exact: true });
