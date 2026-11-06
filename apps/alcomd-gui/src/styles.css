@@ -510,8 +510,9 @@ md-linear-progress {
     border-radius: 12px;
 }
 .template-declarations > .alcomd-button--standard { justify-self: start; }
-.template-declaration-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.template-declaration-row { display: flex; flex-wrap: wrap; align-items: start; gap: 8px; }
 .template-declaration-row > md-outlined-text-field { flex: 1 1 140px; min-width: 0; }
+.template-declaration-row > md-icon-button { margin-block-start: calc((56px - var(--alcomd-icon-button-size)) / 2); }
 .project-target-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
 .project-target-picker md-outlined-text-field { width: 100%; }
 .project-copy-review { display: grid; width: 100%; min-width: 0; gap: 16px; }
@@ -736,6 +737,8 @@ md-linear-progress {
 .settings-section .desktop-list tr { --desktop-list-row-background: var(--md-sys-color-surface-container-high); }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; }
 .settings-row md-filled-select { width: 280px; flex: none; }
+.settings-row.settings-proxy-row { align-items: start; }
+.settings-proxy-row > md-filled-button { margin-block-start: calc((56px - var(--alcomd-button-height)) / 2); }
 .settings-path-row { display: flex; align-items: center; gap: 16px; }
 .settings-path-row md-outlined-text-field { flex: 1; min-width: 0; }
 .settings-path-row > :last-child { flex: none; }

@@ -142,7 +142,7 @@ function NetworkProxySettings({ hidden, proxy, settingsWriter, disabled }: {
                     { value: "custom", label: t("Custom proxy") },
                 ]} />
         </div>
-        {selected.mode === "custom" ? <form className="settings-row" onSubmit={(event) => {
+        {selected.mode === "custom" ? <form className="settings-row settings-proxy-row" onSubmit={(event) => {
             event.preventDefault();
             if (!disabled && selected.url.trim() !== "") void save({ mode: "custom", url: selected.url.trim() });
         }}>
