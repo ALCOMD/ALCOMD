@@ -114,7 +114,6 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
-    readonly unityWindows: GuiUnityWindows = {
     selectFile(kind: NativeFileKind): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_file", { kind }).then((path) => path ?? undefined);
     }
@@ -129,6 +128,7 @@ class TauriGuiRpcClient implements GuiRpcClient {
         });
     }
 
+    readonly unityWindows: GuiUnityWindows = {
         start: (token, targets) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_start", { token, targets }),
         next: (token, after) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_next", { token, after }),
         stop: (token) => invokeTyped<void>("gui_unity_windows_stop", { token }),
