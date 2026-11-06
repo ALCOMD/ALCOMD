@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
 import { DesktopList } from "./DesktopList";
 import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
-import { FilePicker } from "./FilePicker";
 import { PagedItems } from "./PagedItems";
 import { SplitButton } from "./SplitButton";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -149,10 +148,11 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
 
     const retrying = attempt.current !== undefined && operationRequestOutcomeUnknown(error);
     const formDisabled = busy || retrying;
-    const selectDestination = () => run(async () => {
-        const path = await client.selectProjectTemplateFile("save", fileName.trim());
+    const selectFile = (mode: "open" | "save") => run(async () => {
+        const path = await client.selectProjectTemplateFile(mode, mode === "save" ? fileName.trim() : undefined);
         if (!current() || path === undefined) return;
-        setDestinationFile(path);
+        if (mode === "save") setDestinationFile(path);
+        else setSourceFile(path);
     });
 
     function saveSource(): ProjectTemplateSource | undefined {
@@ -232,7 +232,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                         <TextField disabled={formDisabled} label={t("File name")} onInput={(value) => { setFileName(value); setDestinationFile(""); }} required value={fileName} />
                         <div className="project-target-picker">
                             <PathField label={t("Destination file")} readOnly value={destinationFile} />
-                            <Button disabled={formDisabled || fileName.trim() === ""} onClick={() => void selectDestination()} type="button" variant="tonal">{t("Choose directory")}</Button>
+                            <Button disabled={formDisabled || fileName.trim() === ""} onClick={() => void selectFile("save")} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
                     </> : <>
                         {record === undefined ? null : <>
@@ -240,8 +240,10 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                             <Select disabled={formDisabled} label={t("Template source")} onChange={(value) => setSource(value as SourceKind)}
                                 options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
                         </>}
-                        {source === "file" ? <FilePicker client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
-                            chooseFile={() => client.selectProjectTemplateFile("open")} onInput={(path) => { setSourceFile(path); setError(undefined); }} /> : <>
+                        {source === "file" ? <div className="project-target-picker">
+                            <PathField label={t("Template file")} readOnly value={sourceFile} />
+                            <Button disabled={formDisabled} onClick={() => void selectFile("open")} type="button" variant="tonal">{t("Choose file")}</Button>
+                        </div> : <>
                             <div className="template-declaration-row">
                                 <TextField disabled={formDisabled} label={t("Template ID")} maxLength={128} onInput={setId}
                                     placeholder={t("For example, com.example.my-template")} readOnly={record !== undefined} required value={id} />

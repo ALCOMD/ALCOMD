@@ -134,7 +134,6 @@ export function withBrowserCoreEvents(client: GuiRpcClient): GuiRpcClient {
     return new Proxy(client, { get(target, key, receiver) {
         if (key === "subscribeEvents") return browserCoreEvents.subscribe;
         const value: unknown = Reflect.get(target, key, receiver);
-        if (key === "subscribeFileDrag") return target.subscribeFileDrag?.bind(target);
         if (typeof value !== "function") return value;
         if (!methods.has(key)) methods.set(key, async (...args: unknown[]) => {
             browserCoreEvents.rpcRequests.push({ method: String(key), args: structuredClone(args) });
