@@ -687,53 +687,9 @@ async fn gui_repository_packages(
 }
 
 #[tauri::command]
-async fn gui_open_package_link(
-    state: State<'_, GuiClientState>,
-    repository_id: String,
-    package_id: String,
-    version: String,
-    link_kind: String,
-) -> Result<(), RpcError> {
-    let current_url = {
-        let mut client = state.client.lock().await;
-        connect_if_needed(&mut client).await?;
-        let mut cursor = None;
-        let mut selected = None;
-        loop {
-            let result = match client.as_mut() {
-                Some(client) => {
-                    client
-                        .repository_packages(repository_id.clone(), cursor, Some(100))
-                        .await
-                }
-                None => return Err(daemon_unavailable()),
-            };
-            let page = finish_call(&mut client, result)?;
-            if let Some(package) = page
-                .packages
-                .into_iter()
-                .find(|item| item.package_id == package_id && item.version == version)
-            {
-                selected = Some(package);
-                break;
-            }
-            match page.next_cursor {
-                Some(next) => cursor = Some(next),
-                None => break,
-            }
-        }
-        let links = selected
-            .and_then(|package| package.links)
-            .ok_or_else(|| RpcError::extension("package_link_not_found"))?;
-        match link_kind.as_str() {
-            "documentation" => links.documentation.map(|link| link.url),
-            "changelog" => links.changelog.map(|link| link.url),
-            _ => return Err(RpcError::extension("package_link_kind_invalid")),
-        }
-        .ok_or_else(|| RpcError::extension("package_link_not_found"))?
-    };
-    validate_package_link_expectation(&current_url)?;
-    open::that(current_url).map_err(|_| RpcError::extension("package_link_open_failed"))
+fn gui_open_package_link(url: String) -> Result<(), RpcError> {
+    validate_package_link_expectation(&url)?;
+    open::that(url).map_err(|_| RpcError::extension("package_link_open_failed"))
 }
 
 fn validate_package_link_expectation(url: &str) -> Result<(), RpcError> {
@@ -742,8 +698,9 @@ fn validate_package_link_expectation(url: &str) -> Result<(), RpcError> {
         .or_else(|| url.strip_prefix("http://"))
         .ok_or_else(|| RpcError::extension("package_link_invalid"))?;
     let authority = remainder.split(['/', '?', '#']).next().unwrap_or_default();
-    if authority.is_empty()
-        || authority.contains('@')
+    if url.len() > 2_048
+        || authority.is_empty()
+        || authority.contains(['@', '\\'])
         || url
             .bytes()
             .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
@@ -782,6 +739,20 @@ async fn gui_repository_set_credentials(
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_set_credentials(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_set_display_name(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::RepositorySetDisplayNameParams,
+) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_set_display_name(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1713,6 +1684,7 @@ pub fn run() {
             gui_open_package_link,
             gui_repository_register,
             gui_repository_set_credentials,
+            gui_repository_set_display_name,
             gui_repository_refresh,
             gui_repositories_refresh_all,
             gui_repository_unregister,

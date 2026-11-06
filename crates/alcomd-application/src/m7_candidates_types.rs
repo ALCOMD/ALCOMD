@@ -9,6 +9,8 @@ use crate::{ConfigPackageSettings, PackageSourceSelector, ProjectObservation};
 pub struct CandidateCatalogEntry {
     pub package_id: String,
     pub version: String,
+    pub display_name: Option<String>,
+    pub links: CandidateLinks,
     pub source: PackageSourceSelector,
     pub source_revision: u64,
     pub priority: u64,
@@ -137,6 +139,10 @@ pub struct CandidateProvider {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSummary {
     pub package_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links: Option<CandidateLinks>,
     pub providers: Vec<CandidateProvider>,
     pub direct: bool,
     pub installed: CandidateInstalled,
@@ -146,6 +152,15 @@ pub struct CandidateSummary {
     pub project_latest_stable: CandidateChoice,
     pub update: CandidateUpdate,
     pub stable_update: CandidateUpdate,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CandidateLinks {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

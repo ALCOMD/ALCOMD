@@ -13,7 +13,11 @@ export function isBuiltinRepository(repository: RepositorySnapshot): boolean {
     return builtinRepositoryName(repository.repositoryId) !== undefined;
 }
 
-export function repositoryDisplayName(t: Translate, repository: RepositorySnapshot, fallback: string): string {
+export function repositoryDefaultName(t: Translate, repository: RepositorySnapshot, fallback: string): string {
     const name = builtinRepositoryName(repository.repositoryId);
     return name === undefined ? repository.name ?? repository.declaredId ?? fallback : t(name);
+}
+
+export function repositoryDisplayName(t: Translate, repository: RepositorySnapshot, fallback: string): string {
+    return repository.displayName ?? repositoryDefaultName(t, repository, fallback);
 }

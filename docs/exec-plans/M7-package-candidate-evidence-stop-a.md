@@ -109,7 +109,11 @@ Versions view also echoes packageId. All rows in all accumulated pages must shar
 unrelated repositories. False is a known Plan blocker, NOT proof a given package has no
 candidate; do not call Plan simply to rediscover this blocker.
 
-`PackageCandidateSummary`: packageId, `direct` boolean, `installed`, `providers`,
+The owner approved optional `view.filter` for summary requests. Core applies search,
+status, and source filters before paging. Filtered and complete summaries share a
+snapshot and use separate cursors. Bulk actions continue to use the complete summary.
+
+`PackageCandidateSummary`: packageId, optional `displayName` and `links`, `direct` boolean, `installed`, `providers`,
 `latest`, `latestStable`, `projectLatest`, `projectLatestStable`, `update`, `stableUpdate`.
 `providers` is a bounded array of `{source: CandidateSource, sourceRevision}`,
 unique by source identity and sorted by source kind/ID bytes. It contains **all visible recorded

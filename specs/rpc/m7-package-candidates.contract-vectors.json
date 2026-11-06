@@ -19,6 +19,19 @@
             }
         },
         {
+            "id": "filtered-summary-request",
+            "definition": "Request",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "filter": { "search": "Registry", "status": "available", "source": "local" }
+                }
+            }
+        },
+        {
             "id": "versions-request",
             "definition": "Request",
             "valid": true,

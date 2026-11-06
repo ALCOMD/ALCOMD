@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use alcomd_application::{
     CandidateCatalogEntry, CandidateChoice, CandidateClassification, CandidateEligibility,
-    CandidateEvidence, CandidateEvidenceInput, CandidateInstalled, CandidateNoUpdateReason,
-    CandidateProvider, CandidateReason, CandidateRelation, CandidateSourceOverride,
-    CandidateSummary, CandidateUnity, CandidateUpdate, PackageSourceSelector,
+    CandidateEvidence, CandidateEvidenceInput, CandidateInstalled, CandidateLinks,
+    CandidateNoUpdateReason, CandidateProvider, CandidateReason, CandidateRelation,
+    CandidateSourceOverride, CandidateSummary, CandidateUnity, CandidateUpdate,
+    PackageSourceSelector,
 };
 use semver::{BuildMetadata, Version};
 use sha2::{Digest, Sha256};
@@ -161,8 +162,16 @@ pub fn evaluate_candidate_summary(
             );
             let update = update_evidence(&project_latest, &installed);
             let stable_update = update_evidence(&project_latest_stable, &installed);
+            let (display_name, links) = summary_presentation(
+                &rows,
+                locked.get(package_id).copied(),
+                &project_latest,
+                &latest,
+            );
             CandidateSummary {
                 package_id: package_id.to_owned(),
+                display_name,
+                links,
                 providers: providers.into_values().collect(),
                 direct: direct.contains(package_id),
                 installed,
@@ -175,6 +184,65 @@ pub fn evaluate_candidate_summary(
             }
         })
         .collect()
+}
+
+fn summary_presentation(
+    rows: &[Observed<'_>],
+    locked_version: Option<&str>,
+    project_latest: &CandidateChoice,
+    latest: &CandidateChoice,
+) -> (Option<String>, Option<CandidateLinks>) {
+    let installed_entry = locked_version.and_then(|version| {
+        rows.iter()
+            .filter(|row| row.entry.version == version)
+            .min_by(|left, right| display_order(left, right))
+    });
+    let latest_entry = [project_latest, latest].into_iter().find_map(|choice| {
+        let CandidateChoice::Candidate { candidate } = choice else {
+            return None;
+        };
+        rows.iter().find(|row| {
+            row.entry.source == candidate.source && row.entry.version == candidate.version
+        })
+    });
+    let display_name = installed_entry
+        .or(latest_entry)
+        .and_then(|row| row.entry.display_name.clone())
+        .or_else(|| {
+            rows.iter()
+                .filter(|row| row.entry.display_name.is_some())
+                .min_by(|left, right| display_order(left, right))
+                .and_then(|row| row.entry.display_name.clone())
+        });
+    let link_entry = if locked_version.is_some() {
+        installed_entry.filter(|preferred| {
+            rows.iter()
+                .filter(|row| {
+                    row.entry.version == preferred.entry.version
+                        && priority(row) == priority(preferred)
+                })
+                .take(2)
+                .count()
+                == 1
+        })
+    } else {
+        latest_entry
+    };
+    let links = link_entry.and_then(|row| {
+        let links = &row.entry.links;
+        let links = CandidateLinks {
+            documentation: links
+                .documentation
+                .as_deref()
+                .and_then(crate::normalize_package_link),
+            changelog: links
+                .changelog
+                .as_deref()
+                .and_then(crate::normalize_package_link),
+        };
+        (links.documentation.is_some() || links.changelog.is_some()).then_some(links)
+    });
+    (display_name, links)
 }
 
 /// Source/build ambiguity is determined on the complete set, never on one page.
@@ -601,6 +669,8 @@ mod tests {
 
     fn entry(version: &str) -> CandidateCatalogEntry {
         CandidateCatalogEntry {
+            display_name: None,
+            links: CandidateLinks::default(),
             package_id: PACKAGE.to_owned(),
             version: version.to_owned(),
             source: PackageSourceSelector::Repository {
@@ -650,6 +720,36 @@ mod tests {
 
     fn summary(input: &CandidateEvidenceInput) -> CandidateSummary {
         evaluate_candidate_summary(input, Some(&[PACKAGE.to_owned()]), &[]).remove(0)
+    }
+
+    #[test]
+    fn presentation_uses_exact_locked_version_and_respects_hidden_sources() {
+        let mut input = input(&["2.0.0", "1.0.0"], Some("1.0.0"));
+        input.entries[0].source = PackageSourceSelector::Repository {
+            repository_id: "repository-b".to_owned(),
+        };
+        input.entries[0].display_name = Some("New name".to_owned());
+        input.entries[0].links.documentation = Some("https://example.invalid/new".to_owned());
+        input.entries[1].display_name = Some("Installed name".to_owned());
+        input.entries[1].links.documentation = Some("https://example.invalid/installed".to_owned());
+        input.entries[1].links.changelog = Some("https://user@example.invalid/private".to_owned());
+
+        let installed = summary(&input);
+        assert_eq!(installed.display_name.as_deref(), Some("Installed name"));
+        let links = installed.links.expect("validated installed links");
+        assert_eq!(
+            links.documentation.as_deref(),
+            Some("https://example.invalid/installed")
+        );
+        assert!(links.changelog.is_none());
+
+        input
+            .settings
+            .hidden_repository_ids
+            .push("repository-a".to_owned());
+        let hidden = summary(&input);
+        assert_eq!(hidden.display_name.as_deref(), Some("New name"));
+        assert!(hidden.links.is_none());
     }
 
     fn candidate(choice: &CandidateChoice) -> &CandidateEvidence {

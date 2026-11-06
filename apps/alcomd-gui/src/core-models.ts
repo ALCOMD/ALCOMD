@@ -196,6 +196,7 @@ export interface RepositorySnapshot {
     source: RepositorySource;
     declaredId?: string;
     name?: string;
+    displayName?: string;
     declaredUrl?: string;
     issues: ReadIssue[];
     revision?: number;

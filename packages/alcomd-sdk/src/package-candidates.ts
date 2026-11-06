@@ -3,10 +3,15 @@ export type CandidateSource = { kind: "repository"; repository_id: string } | { 
 export type CandidateReason = "no_visible_candidate" | "source_unavailable" | "all_yanked" | "prerelease_excluded" | "stable_unavailable" | "unity_incompatible" | "project_unity_unknown" | "catalog_incomplete" | "metadata_invalid" | "classification_unknown" | "installed_evidence_unknown" | "legacy_metadata" | "source_ambiguous";
 export interface CandidateCursor { snapshotFingerprint: string; queryFingerprint: string; offset: number }
 export interface CandidateSnapshot { fingerprint: string; projectRevision: number; configRevision: number }
+export interface CandidateFilter {
+    search?: string;
+    status?: "installed" | "available" | "missing";
+    source?: "local" | "remote" | "user-package";
+}
 export interface ProjectCandidateRequest {
     projectId: string;
     expectedRevision: number;
-    view: { kind: "summary"; packageIds?: string[]; sources?: Array<{ packageId: string; source: CandidateSource }> } | { kind: "versions"; packageId: string; source?: CandidateSource };
+    view: { kind: "summary"; packageIds?: string[]; sources?: Array<{ packageId: string; source: CandidateSource }>; filter?: CandidateFilter } | { kind: "versions"; packageId: string; source?: CandidateSource };
     limit?: number;
     expectedSnapshot?: string;
     cursor?: CandidateCursor;
@@ -25,6 +30,8 @@ export type CandidateChoice = { kind: "candidate"; candidate: PackageCandidateEv
 export type PackageUpdateEvidence = { kind: "target"; candidate: PackageCandidateEvidence } | { kind: "no_update"; reason: "same_precedence" | "installed_newer" | "not_installed" } | { kind: "unavailable"; reasons: CandidateReason[] };
 export interface PackageCandidateSummary {
     packageId: string;
+    displayName?: string;
+    links?: { documentation?: string; changelog?: string };
     providers: Array<{ source: CandidateSource; sourceRevision: number }>;
     direct: boolean;
     installed: { kind: "absent" } | { kind: "locked"; version: string } | { kind: "unknown"; reason: "installed_evidence_unknown" };

@@ -137,8 +137,10 @@ test("business updates never start page animations or replace current rows with 
     await expect(rows).toBeVisible();
     const table = await rows.elementHandle();
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
-    await rows.getByRole("button", { name: "Refresh repository", exact: true }).first().click();
-    await expect(rows.getByRole("button", { name: "Refresh repository", exact: true }).first()).toBeEnabled();
+    await rows.getByRole("button", { name: "Manage repository", exact: true }).first().click();
+    const refresh = page.locator("md-dialog[open]").getByRole("button", { name: "Refresh repository", exact: true });
+    await refresh.click();
+    await expect(refresh).toBeEnabled();
     expect(await table!.evaluate((element) => element.isConnected)).toBe(true);
     expect(await page.evaluate(() => window.pageAnimationCalls)).toBe(0);
     await expect(page.locator(".loading-state")).toHaveCount(0);

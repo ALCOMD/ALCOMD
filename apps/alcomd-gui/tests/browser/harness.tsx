@@ -62,7 +62,7 @@ declare global {
         resumeCandidateSource?: () => void;
         resumeCandidateVersions?: () => void;
         resumeCandidateSummary?: () => void;
-        resumePackagePresentation?: () => void;
+        resumeCandidateFilter?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
@@ -782,10 +782,10 @@ class DeterministicGuiClient implements GuiRpcClient {
             name: `Repository ${index + 1}`
         })) });
         if (query.has("builtin-repositories")) return this.value({ repositories: [
-            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", source: { kind: "remote", url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
-            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", source: { kind: "remote", url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", source: { kind: "remote" as const, url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", source: { kind: "remote" as const, url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
             repository(),
-        ] });
+        ].map((record) => this.lifecycleRepositories.get(record.repositoryId) ?? record) });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
                 ? this.value({ repositories: [this.refreshedRepository(repository())], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
@@ -808,9 +808,6 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     async repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
         window.repositoryPackageRequests.push({ repositoryId, ...(cursor === undefined ? {} : { cursor }) });
-        if (query.has("deferPackagePresentation") && repositoryId === REPOSITORY_ID && !window.resumePackagePresentation) {
-            await new Promise<void>((resolve) => { window.resumePackagePresentation = resolve; });
-        }
         if (query.has("resource-lifecycle")) return this.value({ packages: [{ packageId: cursor === undefined ? "com.example.first" : "com.example.second", version: "1.0.0", displayName: cursor === undefined ? (this.lifecycleRepositories.get(repositoryId)?.revision ?? 0) > 1 ? "Updated catalog package" : "First catalog package" : "Second catalog package", yanked: false, prerelease: false }], ...(cursor === undefined ? { nextCursor: { packageId: "com.example.first", version: "1.0.0" } } : {}) });
         if (query.get("metadata") === "error") return Promise.reject({ code: "repository_unavailable" });
         if (query.get("versions") === "1") return this.value({ packages: [
@@ -827,6 +824,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 { packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" },
                 { packageId: "com.example.avatar", version: "1.3.0", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" },
                 { packageId: "com.example.remote", version: "1.0.0", displayName: "Remote tools", yanked: false },
+                ...(query.has("raw-only-repository-package") ? [{ packageId: "com.example.raw-only", version: "legacy", displayName: "Raw-only package", yanked: false }] : []),
                 ...(this.repositoryRefreshCompleted ? [{ packageId: "com.example.refreshed", version: "1.0.0", displayName: "Refreshed package", yanked: false }] : [])
             ];
         if (query.get("metadata") === "paged" && repositoryId === REPOSITORY_ID) {
@@ -872,6 +870,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         this.lifecycleRepositories.set(repositoryId, next);
         return this.value({ repository: next, replayed: false });
     }
+    async repositorySetDisplayName(repositoryId: string, expectedRevision: number, displayName: string | null): ReturnType<GuiRpcClient["repositorySetDisplayName"]> {
+        window.resourceRequests.push({ method: "repositories.setDisplayName", params: { repositoryId, expectedRevision, displayName } });
+        const current = this.lifecycleRepositories.get(repositoryId) ?? (await this.repositoriesList()).repositories.find((record) => record.repositoryId === repositoryId);
+        if (current === undefined) throw { code: "repository_not_registered" };
+        if (current.revision !== expectedRevision) throw { code: "revision_conflict" };
+        const next = { ...current, revision: expectedRevision + 1, displayName: displayName?.trim() || undefined };
+        this.lifecycleRepositories.set(repositoryId, next);
+        return this.value({ repository: next, replayed: false });
+    }
     async repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
         window.resourceRequests.push({ method: "repositories.refresh", params: { repositoryId, expectedRevision } });
         if (query.has("hold-resource-refresh")) await new Promise<void>((resolve) => window.addEventListener("test-resource-refresh-ready", () => resolve(), { once: true }));
@@ -909,6 +916,10 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
+        if (params.view.kind === "summary" && params.view.filter?.search
+            && params.view.filter.search === query.get("deferCandidateFilter")) {
+            await new Promise<void>((resolve) => { window.resumeCandidateFilter = resolve; });
+        }
         if (query.has("deferCandidateSummary") && params.view.kind === "summary" && params.cursor?.offset === 1) {
             await new Promise<void>((resolve) => { window.resumeCandidateSummary = resolve; });
         }
@@ -972,11 +983,39 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (query.get("stableAlternate") && installed) { target.version = "2.0.0-beta.1"; target.classification = "prerelease"; }
             const stableChoice: CandidateChoice = query.get("stableAlternate") && installed ? { kind: "candidate", candidate: stableCandidate } : choice;
             const stableUpdate: PackageCandidateSummary["update"] = query.get("stableAlternate") && installed ? { kind: "target", candidate: stableCandidate } : update;
-            return { packageId, providers, direct: (installed && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+            const displayNames: Record<string, string> = {
+                "com.example.avatar": "Avatar tools",
+                "com.example.remote": "Remote tools",
+                "com.example.local": "Local tools",
+                "com.example.refreshed": "Refreshed package"
+            };
+            const hasFixtureName = !query.has("metadata") && (query.get("versions") !== "1" || packageId === "com.example.avatar");
+            const displayName = providers.length > 0 && hasFixtureName ? displayNames[packageId] : undefined;
+            const links = visibleRemote && query.has("package-link-error") && packageId === "com.example.avatar"
+                ? { documentation: "https://fixture.example/docs" } : undefined;
+            return { packageId, displayName, links, providers, direct: (installed && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+        });
+        if (query.has("reverse-candidate-order")) items.reverse();
+        const filter = params.view.filter;
+        const matches = filter === undefined ? items : items.filter((item) => {
+            const providers = item.providers.map(({ source }) => source.kind === "user_package"
+                ? { kind: "user-package", label: "Local avatar tools" }
+                : source.repository_id === LOCAL_REPOSITORY_ID
+                    ? { kind: "local", label: "Local packages" }
+                    : { kind: "remote", label: "Example packages" });
+            const installed = item.installed.kind !== "absent";
+            const search = filter.search?.toLowerCase();
+            const matchesSearch = search === undefined || [item.packageId, item.displayName ?? "", ...providers.map(({ label }) => label)]
+                .some((name) => name.toLowerCase().includes(search));
+            const matchesStatus = filter.status === undefined
+                || (filter.status === "installed" && installed)
+                || (filter.status === "available" && !installed && providers.length > 0)
+                || (filter.status === "missing" && !installed && providers.length === 0 && item.latest.kind === "none");
+            return matchesSearch && matchesStatus && (filter.source === undefined || providers.some(({ kind }) => kind === filter.source));
         });
         const offset = params.cursor?.offset ?? 0;
         const count = query.get("paged") ? 1 : params.limit ?? 64;
-        return this.value({ ...base, nextCursor: offset + count < items.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "summary", items: items.slice(offset, offset + count) });
+        return this.value({ ...base, nextCursor: offset + count < matches.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "summary", items: matches.slice(offset, offset + count) });
     }
     async packagePlanInstall(params: Parameters<GuiRpcClient["packagePlanInstall"]>[0]): ReturnType<GuiRpcClient["packagePlanInstall"]> {
         window.packageRequests.push({ method: "install", params });

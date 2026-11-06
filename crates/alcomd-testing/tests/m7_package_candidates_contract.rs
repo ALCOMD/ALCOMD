@@ -84,6 +84,9 @@ fn candidate_request_rejects_unknown_fields_and_foreign_source_shape() {
         serde_json::json!({"projectId":"p","expectedRevision":1,"view":{"kind":"summary"},"refresh":true}),
         serde_json::json!({"projectId":"p","view":{"kind":"summary"}}),
         serde_json::json!({"projectId":"p","expectedRevision":1,"view":{"kind":"versions","packageId":"com.example","source":{"kind":"user_package","path":"private"}}}),
+        serde_json::json!({"projectId":"p","expectedRevision":1,"view":{"kind":"versions","packageId":"com.example","filter":{"search":"name"}}}),
+        serde_json::json!({"projectId":"p","expectedRevision":1,"view":{"kind":"summary","filter":{"status":null}}}),
+        serde_json::json!({"projectId":"p","expectedRevision":1,"view":{"kind":"summary","filter":{"source":"anything"}}}),
     ] {
         assert!(serde_json::from_value::<ProjectCandidateRequest>(params).is_err());
     }

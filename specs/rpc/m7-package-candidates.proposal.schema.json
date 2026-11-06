@@ -113,6 +113,15 @@
                 "kind": {
                     "const": "summary"
                 },
+                "filter": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "search": { "type": "string", "maxLength": 256, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$" },
+                        "status": { "enum": ["installed", "available", "missing"] },
+                        "source": { "enum": ["local", "remote", "user-package"] }
+                    }
+                },
                 "packageIds": {
                     "type": "array",
                     "items": {
@@ -565,6 +574,20 @@
                         "$ref": "#/$defs/Provider"
                     },
                     "maxItems": 4096
+                },
+                "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                },
+                "links": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": false,
+                    "properties": {
+                        "documentation": { "type": "string", "maxLength": 2048, "pattern": "^https?://" },
+                        "changelog": { "type": "string", "maxLength": 2048, "pattern": "^https?://" }
+                    }
                 }
             },
             "required": [
