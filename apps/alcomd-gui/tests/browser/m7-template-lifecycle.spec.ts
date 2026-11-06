@@ -15,7 +15,7 @@ test("manual creation submits one exact editor and the package list as a tracked
     await expect(dialog).toHaveCount(0);
     await expect(row(page, "com.example.avatar-tools")).toContainText("Avatar starter");
     await expect(row(page, "com.example.avatar-tools").getByRole("cell", { name: "User template", exact: true })).toBeVisible();
-    await expect(row(page, avatarId)).toContainText("VRChat Avatars (2022)");
+    await expect(row(page, avatarId)).toContainText("VRChat Avatars 2022");
     await expect(row(page, avatarId).getByRole("cell", { name: "Built-in", exact: true })).toBeVisible();
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "manual", id: "com.example.avatar-tools", name: "Avatar starter", unityVersion: "2022.3.22f1",
@@ -105,7 +105,7 @@ test("saving a different template under an existing ID reports a task conflict",
     await expectRequestError(dialog.getByRole("alert"), "template_conflict");
     await dialog.getByRole("button", { name: "Back", exact: true }).click();
     await expect(dialog.getByLabel("Display name", { exact: true })).toHaveValue("Unrelated template");
-    await expect(row(page, avatarId)).toContainText("VRChat Avatars (2022)");
+    await expect(row(page, avatarId)).toContainText("VRChat Avatars 2022");
 });
 
 test("a failed template operation shows the package reported by Core", async ({ page }) => {

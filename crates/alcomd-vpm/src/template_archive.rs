@@ -187,7 +187,7 @@ impl TemplateArchiveStore {
                     return Err(invalid());
                 }
                 let id = format!("{}.{year}", family.id);
-                let name = format!("{} ({year})", family.name);
+                let name = format!("{} {year}", family.name);
                 inventory.add_bytes("package.json", template_metadata(&id, &name)?)?;
                 inventory.add_bytes("LICENSE", BUILTIN_PROJECT_LICENSE.to_vec())?;
                 let scratch = Scratch::new(&self.root)?;

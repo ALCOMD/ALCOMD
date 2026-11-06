@@ -12,7 +12,7 @@ test("the first delivery keeps the Templates route empty without reading the cat
 test("locked templates show their declaration and have no edit or remove action", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
     const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars.2022", exact: true }) });
-    const trigger = row.getByRole("button", { name: "More actions for VRChat Avatars (2022)", exact: true });
+    const trigger = row.getByRole("button", { name: "More actions for VRChat Avatars 2022", exact: true });
     await trigger.click();
     await expect(page.locator("md-menu[open] md-menu-item").filter({ hasText: "Replace template" })).toHaveJSProperty("disabled", true);
     await expect(page.locator("md-menu[open] md-menu-item").filter({ hasText: "Remove template" })).toHaveJSProperty("disabled", true);
@@ -46,8 +46,8 @@ test("the project template picker displays IDs when names are equal", async ({ p
     await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(6);
     const select = dialog.getByRole("combobox", { name: "Project template", exact: true });
     await select.click();
-    await expect(dialog.getByRole("option", { name: "VRChat Avatars (2022) · 2022.3.22f1 (com.vrclearn.alcomd.templates.vrchat.avatars.2022)", exact: true })).toBeVisible();
-    await expect(dialog.getByRole("option", { name: "VRChat Worlds (2022) · 2022.3.22f1", exact: true })).toBeVisible();
-    await dialog.getByRole("option", { name: "VRChat Avatars (2022) · 2022.3.22f1 (com.example.fixture)", exact: true }).click();
+    await expect(dialog.getByRole("option", { name: "VRChat Avatars 2022 · 2022.3.22f1 (com.vrclearn.alcomd.templates.vrchat.avatars.2022)", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("option", { name: "VRChat Worlds 2022 · 2022.3.22f1", exact: true })).toBeVisible();
+    await dialog.getByRole("option", { name: "VRChat Avatars 2022 · 2022.3.22f1 (com.example.fixture)", exact: true }).click();
     await expect(select).toContainText("com.example.fixture");
 });

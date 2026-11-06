@@ -370,7 +370,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
     private projectTemplates = [...builtinTemplates(), ...(query.has("template-existing")
-        ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "VRChat Avatars (2022)" : "Existing fixture")] : [])];
+        ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "VRChat Avatars 2022" : "Existing fixture")] : [])];
     private templateRevision = 8;
     private templateRequestsByKey = new Map<string, string>();
     private creationRequests = new Map<string, { fingerprint: string; projectId: string; operationId: string }>();
@@ -1361,7 +1361,7 @@ function builtinTemplates(): ProjectTemplateRecord[] {
         const id = worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID;
         const year = editorVersion.slice(0, 4);
         return { id: id + "." + year,
-            name: `${worlds ? "VRChat Worlds" : "VRChat Avatars"} (${year})`, editorVersion,
+            name: `${worlds ? "VRChat Worlds" : "VRChat Avatars"} ${year}`, editorVersion,
             revision: 2 + index + (worlds ? versions.length : 0), locked: true };
     }));
 }

@@ -247,7 +247,7 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expect(resources.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template name", "Template ID", "Template source", "Actions"]);
     await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars.2022", exact: true }) })
-        .getByRole("button", { name: "More actions for VRChat Avatars (2022)", exact: true }).click();
+        .getByRole("button", { name: "More actions for VRChat Avatars 2022", exact: true }).click();
     await page.getByRole("menuitem", { name: "View template", exact: true }).click();
     const templateDialog = page.getByRole("dialog", { name: "View template", exact: true });
     await expect(templateDialog).toBeVisible();

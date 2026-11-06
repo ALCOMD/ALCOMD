@@ -1141,7 +1141,7 @@ mod tests {
                 declaration.id,
                 format!("com.vrclearn.alcomd.templates.vrchat.{family}.{year}")
             );
-            assert!(declaration.name.ends_with(&format!(" ({year})")));
+            assert!(declaration.name.ends_with(&format!(" {year}")));
             assert!(ids.insert(declaration.id.clone()));
             let id = OperationId::new();
             let mut work = fixture.work(

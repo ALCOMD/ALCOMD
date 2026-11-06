@@ -42,10 +42,10 @@ test("the catalog exposes each built-in Editor variant and creation uses its fix
     await template.click();
     for (const [year, version] of [["2022", "2022.3.22f1"], ["2019", "2019.4.31f1"]]) {
         for (const kind of ["Avatars", "Worlds"]) {
-            await expect(dialog.getByRole("option", { name: `VRChat ${kind} (${year}) · ${version}`, exact: true })).toHaveCount(1);
+            await expect(dialog.getByRole("option", { name: `VRChat ${kind} ${year} · ${version}`, exact: true })).toHaveCount(1);
         }
     }
-    await dialog.getByRole("option", { name: "VRChat Avatars (2019) · 2019.4.31f1", exact: true }).click();
+    await dialog.getByRole("option", { name: "VRChat Avatars 2019 · 2019.4.31f1", exact: true }).click();
     await expect(dialog.getByRole("combobox", { name: "Unity version", exact: true })).toHaveCount(0);
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2019.4.31f1");
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
