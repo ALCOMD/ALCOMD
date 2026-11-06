@@ -311,13 +311,44 @@ async fn gui_select_repository_list_file(
     mode: String,
     file_name: Option<String>,
 ) -> Result<Option<String>, RpcError> {
+    select_local_file(
+        app,
+        &mode,
+        file_name.as_deref(),
+        "Repository list (*.txt)",
+        "txt",
+    )
+}
+
+#[tauri::command]
+async fn gui_select_project_template_file(
+    app: tauri::AppHandle,
+    mode: String,
+    file_name: Option<String>,
+) -> Result<Option<String>, RpcError> {
+    select_local_file(
+        app,
+        &mode,
+        file_name.as_deref(),
+        "ALCOMD template (*.alcomdtemplate)",
+        "alcomdtemplate",
+    )
+}
+
+fn select_local_file(
+    app: tauri::AppHandle,
+    mode: &str,
+    file_name: Option<&str>,
+    filter: &str,
+    extension: &str,
+) -> Result<Option<String>, RpcError> {
     // The existing save dialog cannot suppress its overwrite promise. Pick a parent
     // folder instead; the GUI supplies the reviewed new name and Core creates the file.
-    let selected = match mode.as_str() {
+    let selected = match mode {
         "open" => app
             .dialog()
             .file()
-            .add_filter("Repository list (*.txt)", &["txt"])
+            .add_filter(filter, &[extension])
             .blocking_pick_file(),
         "save" => app.dialog().file().blocking_pick_folder(),
         _ => return Err(RpcError::invalid_request()),
@@ -328,7 +359,7 @@ async fn gui_select_repository_list_file(
                 .ok()
                 .and_then(|path| {
                     if mode == "save" {
-                        let name = file_name.as_deref()?;
+                        let name = file_name?;
                         if name.is_empty()
                             || name.chars().count() > 255
                             || name == "."
@@ -1254,6 +1285,20 @@ async fn gui_project_templates_save(
 }
 
 #[tauri::command]
+async fn gui_project_templates_export(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectTemplatesExportParams,
+) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_templates_export(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_project_templates_remove(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesRemoveParams,
@@ -1642,6 +1687,7 @@ pub fn run() {
             gui_open_project_directory,
             gui_select_directory,
             gui_select_repository_list_file,
+            gui_select_project_template_file,
             gui_repository_list_inspect_file,
             gui_repository_list_import_file,
             gui_repository_list_cancel_registration,
@@ -1702,6 +1748,7 @@ pub fn run() {
             gui_projects_create,
             gui_project_templates_list,
             gui_project_templates_save,
+            gui_project_templates_export,
             gui_project_templates_remove,
             gui_backups_list,
             gui_backup_get,

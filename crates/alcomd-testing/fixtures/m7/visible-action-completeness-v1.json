@@ -44,6 +44,7 @@
         {"id":"user-packages.remove-enrollment","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"projectTemplates.list","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"projectTemplates.save","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
+        {"id":"projectTemplates.export","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"projectTemplates.remove","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"packages.refresh-repositories","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"packages.search","ownerMilestone":"M7","classification":"implemented","releaseBlocker":false},

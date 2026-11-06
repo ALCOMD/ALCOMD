@@ -1,4 +1,4 @@
-import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
+import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
@@ -26,6 +26,7 @@ export interface GuiRpcClient {
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
+    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
@@ -82,6 +83,7 @@ export interface GuiRpcClient {
     projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult>;
     projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult>;
     projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult>;
+    projectTemplatesExport(params: ProjectTemplatesExportParams): Promise<ProjectTemplatesExportResult>;
     projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult>;
     backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
     backupGet(backupId: string): Promise<BackupRecord>;
@@ -125,6 +127,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
     }
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_repository_list_file", { mode, fileName }).then((path) => path ?? undefined);
+    }
+
+    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_project_template_file", { mode, fileName }).then((path) => path ?? undefined);
     }
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection> {
         return invokeTyped("gui_repository_list_inspect_file", { path });
@@ -398,6 +404,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult> {
         return invokeTyped("gui_project_templates_save", { params });
+    }
+
+    projectTemplatesExport(params: ProjectTemplatesExportParams): Promise<ProjectTemplatesExportResult> {
+        return invokeTyped("gui_project_templates_export", { params });
     }
 
     projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult> {

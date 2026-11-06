@@ -32,31 +32,27 @@ test("creation accepts an explicit uninstalled Editor version", async ({ page })
     expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params)).toMatchObject({ unityVersion: "2022.3.99f1" });
 });
 
-test("Core presets include the selected legacy version even without an installed Editor", async ({ page }) => {
+test("the catalog exposes each built-in Editor variant and creation uses its fixed version", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&state=unity-zero&template-existing=1");
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
-    const version = dialog.getByRole("combobox", { name: "Unity version", exact: true });
     await expect(template).toContainText("No template");
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(8);
     await template.click();
-    await dialog.getByRole("option", { name: /Existing fixture/ }).click();
-    await version.click();
-    await expect(dialog.getByRole("option", { name: "2019.4.31f1", exact: true })).toHaveCount(0);
-    await dialog.getByRole("option", { name: "2022.3.6f1", exact: true }).click();
-    await template.click();
-    await dialog.getByRole("option", { name: /Avatar starter/ }).click();
-    await dialog.getByLabel("Create project name").fill("Legacy Preset");
-    await expect(dialog.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
-    await version.click();
-    for (const value of ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1", "Custom"]) {
-        await expect(dialog.getByRole("option", { name: value, exact: true })).toHaveCount(1);
+    for (const version of ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"]) {
+        for (const kind of ["Avatar", "World"]) {
+            await expect(dialog.getByRole("option", { name: new RegExp("^" + kind + " starter · " + version) })).toHaveCount(1);
+        }
     }
-    await dialog.getByRole("option", { name: "2019.4.31f1", exact: true }).click();
-    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveCount(0);
+    await dialog.getByRole("option", { name: /^Avatar starter · 2019.4.31f1/ }).click();
+    await expect(dialog.getByRole("combobox", { name: "Unity version", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2019.4.31f1");
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
+    await dialog.getByLabel("Create project name").fill("Legacy Avatar");
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params))
-        .toMatchObject({ unityVersion: "2019.4.31f1", template: { id: "com.vrclearn.alcomd.templates.vrchat.avatars", revision: 2 } });
+        .toMatchObject({ unityVersion: "2019.4.31f1", template: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019-4-31f1", revision: 4 } });
 });
 
 test("creation prefills one compatible Editor but requires a choice for multiple installations", async ({ page }) => {

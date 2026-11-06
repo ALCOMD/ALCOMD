@@ -9,7 +9,7 @@ test("a lost creation reply retries the identical request after a catalog change
     await template.click();
     await dialog.getByRole("option", { name: "Existing fixture", exact: true }).click();
     await dialog.getByRole("combobox", { name: "Unity version", exact: true }).click();
-    await dialog.getByRole("option", { name: "2022.3.6f1", exact: true }).click();
+    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
     await dialog.getByLabel("Create project name", { exact: true }).fill("Retry fixture");
     const submit = dialog.getByRole("button", { name: "Create project", exact: true });
     await submit.click();
@@ -44,9 +44,9 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     await chooseTemplate();
     const version = dialog.getByRole("combobox", { name: "Unity version", exact: true });
     await version.click();
-    await dialog.getByRole("option", { name: "2022.3.6f1", exact: true }).click();
+    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
     await submit.click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests.find(({ method }) => method === "projects.create")?.params))
-        .toMatchObject({ name: "Selected again", template: { id: "com.example.fixture", revision: 5 } });
+        .toMatchObject({ name: "Selected again", template: { id: "com.example.fixture", revision: 9 } });
 });

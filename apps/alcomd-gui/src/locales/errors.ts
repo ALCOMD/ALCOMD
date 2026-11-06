@@ -61,7 +61,7 @@ export const errorMessages: TranslationTable = {
     "The package manifest is invalid. Check the selected package folder.": { "zh-CN": "软件包清单无效，请检查所选的软件包目录。", "ja-JP": "パッケージのマニフェストが無効です。選択したパッケージのフォルダーを確認してください。" },
     "The user package exceeds supported limits. Reduce its contents before checking it again.": { "zh-CN": "用户软件包超出支持的限制，请缩减内容后重新检查。", "ja-JP": "ユーザーパッケージが対応範囲の上限を超えています。内容を減らしてから確認してください。" },
     "Built-in templates cannot be edited or removed.": { "zh-CN": "内置模板不可编辑或移除。", "ja-JP": "組み込みテンプレートは編集・削除できません。" },
-    "A different template uses this ID. Choose another template ID.": { "zh-CN": "已有其他模板使用此 ID，请更换模板 ID。", "ja-JP": "この ID は別のテンプレートで使用されています。別のテンプレート ID を選んでください。" },
+    "A template uses this ID. Choose a different ID or replace the existing user template.": { "zh-CN": "已有模板使用此 ID，请更换 ID 或替换已有的用户模板。", "ja-JP": "この ID は使用済みです。別の ID を選ぶか、既存のユーザーテンプレートを置き換えてください。" },
     "The template packages could not be resolved. Check the package ranges, repositories and Unity version.": { "zh-CN": "无法解析模板的软件包，请检查包版本范围、存储库和 Unity 版本。", "ja-JP": "テンプレートのパッケージを解決できませんでした。バージョン範囲、リポジトリ、Unity バージョンを確認してください。" },
     "The destination folder changed during creation. Check the location and try again.": { "zh-CN": "创建期间目标目录发生变化，请核对位置后重试。", "ja-JP": "作成中に保存先フォルダーが変更されました。場所を確認してから再試行してください。" },
     "The content failed its integrity check. Use a verified source before continuing.": { "zh-CN": "内容完整性校验未通过，请使用已验证的来源后再继续。", "ja-JP": "内容の整合性検証に失敗しました。検証済みの取得元を使用してください。" },

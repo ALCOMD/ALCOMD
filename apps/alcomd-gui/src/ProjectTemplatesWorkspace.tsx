@@ -1,33 +1,41 @@
-import type { ProjectTemplateConstraint, ProjectTemplateDeclaration, ProjectTemplateDependency, ProjectTemplateRecord, RpcError } from "@alcomd/sdk";
-import { moreVertIcon } from "@alcomd/ui/icons";
+import type { ProjectTemplateDependency, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
+import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import { useActionScope } from "./CoreActions";
+import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
 import { DesktopList } from "./DesktopList";
-import { Button, Dialog, Icon, IconButton, Menu, MenuItem, TextField, type DialogOrigin } from "./Material";
+import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
 import { PagedItems } from "./PagedItems";
+import { SplitButton } from "./SplitButton";
 import { UtilityWorkspace } from "./UtilityWorkspace";
+import type { ProjectSnapshot, ProjectsListResult } from "./core-models";
+import { displayPath } from "./display-path";
 import { useTranslation } from "./i18n";
 import { navigationLabels } from "./navigation-labels";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
+import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-unity-version";
 
-type Selection = { kind: "create" } | { kind: "view" | "edit" | "remove"; template: ProjectTemplateRecord };
-type Row<T> = T & { key: string };
+type SourceKind = ProjectTemplateSource["kind"];
+type Selection = { kind: "save"; source: SourceKind; template?: ProjectTemplateRecord }
+    | { kind: "view" | "export" | "remove"; template: ProjectTemplateRecord };
+type Request =
+    | { kind: "save"; params: Omit<ProjectTemplatesSaveParams, "idempotencyKey"> }
+    | { kind: "export"; params: Omit<ProjectTemplatesExportParams, "idempotencyKey"> };
+type SelectedProject = ProjectSnapshot & { projectId: string; revision: number };
 
-function rows<T extends object>(values: T[]): Row<T>[] {
-    return values.map((value) => ({ ...value, key: crypto.randomUUID() }));
-}
-
-function splitVersions(value: string): string[] {
-    return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
+const sourceLabels = {
+    manual: "Create template",
+    file: "Import template",
+    project: "Create template from project"
+};
 
 export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiRpcClient; navigation: ReactNode }) {
     const { t } = useTranslation();
     const [selection, setSelection] = useState<(Selection & { origin: DialogOrigin; key: number; closed: boolean })>();
     const session = useRef(0);
     const createButton = useRef<HTMLElement>(null);
+    const createMenu = useRef<HTMLElement>(null);
     const load = useCallback(() => client.projectTemplatesList(), [client]);
 
     useEffect(() => { setSelection(undefined); }, [client]);
@@ -37,7 +45,11 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
     }
 
     return <UtilityWorkspace changes={["templates"]} title={t(navigationLabels.resources)} navigation={navigation} load={load}
-        tools={() => <Button ref={createButton} type="button" onClick={() => select({ kind: "create" }, createButton.current)}>{t("Create template")}</Button>}>
+        tools={() => <SplitButton label={t("Create template")} menuButtonRef={createMenu} menuLabel={t("More template creation options")}
+            primaryRef={createButton} onClick={() => select({ kind: "save", source: "manual" }, createButton.current)}>
+            <MenuItem label={t("Create template from project")} onClick={() => select({ kind: "save", source: "project" }, createMenu.current)} />
+            <MenuItem label={t("Import template")} onClick={() => select({ kind: "save", source: "file" }, createMenu.current)} />
+        </SplitButton>}>
         {(value, refresh) => <>
             <PagedItems initialItems={value.templates} initialCursor={value.nextCursor} loadMore={async (cursor) => {
                 const next = await client.projectTemplatesList(cursor);
@@ -48,18 +60,17 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
                     columns={[
                         { key: "name", header: t("Template") },
                         { key: "id", header: t("Template ID") },
+                        { key: "editor", header: t("Unity version") },
                         { key: "actions", header: t("Actions") }
                     ]}
-                    rows={templates.map((template) => {
-                        const { id, name } = template.declaration;
-                        return { key: id, cells: [
-                            <><strong>{name}</strong>{template.locked ? <small>{t("Built-in")}</small> : null}</>,
-                            <span className="template-id">{id}</span>,
-                            <TemplateRowActions onSelect={select} template={template} />
-                        ] };
-                    })} />}
+                    rows={templates.map((template) => ({ key: template.id, cells: [
+                        <><strong>{template.name}</strong>{template.locked ? <small>{t("Built-in")}</small> : null}</>,
+                        <span className="template-id">{template.id}</span>,
+                        template.editorVersion ?? "—",
+                        <TemplateRowActions onSelect={select} template={template} />
+                    ] }))} />}
             </PagedItems>
-            {selection === undefined ? null : <TemplateEditor
+            {selection === undefined ? null : <TemplateDialog
                 client={client}
                 key={selection.key}
                 onChanged={refresh}
@@ -76,21 +87,23 @@ function TemplateRowActions({ onSelect, template }: { onSelect(selection: Select
     const { t } = useTranslation();
     const anchor = useRef<HTMLElement>(null);
     const [open, setOpen] = useState(false);
-    function select(kind: "view" | "edit" | "remove") {
+    function select(selection: Selection) {
         setOpen(false);
-        onSelect({ kind, template }, anchor.current);
+        onSelect(selection, anchor.current);
     }
     return <div className="card-actions">
-        <IconButton aria-expanded={open} label={t("More actions for {name}", { name: template.declaration.name })}
+        <IconButton aria-expanded={open} label={t("More actions for {name}", { name: template.name })}
             onClick={() => setOpen(true)} ref={anchor} type="button"><Icon asset={moreVertIcon} size={24} /></IconButton>
         <Menu anchorRef={anchor} onClose={() => setOpen(false)} open={open}>
-            <MenuItem label={t(template.locked ? "View template" : "Edit template")} onClick={() => select(template.locked ? "view" : "edit")} />
-            <MenuItem disabled={template.locked} label={t("Remove template")} onClick={() => select("remove")} />
+            <MenuItem label={t("View template")} onClick={() => select({ kind: "view", template })} />
+            <MenuItem label={t("Export template")} onClick={() => select({ kind: "export", template })} />
+            <MenuItem disabled={template.locked} label={t("Replace template")} onClick={() => select({ kind: "save", source: "file", template })} />
+            <MenuItem disabled={template.locked} label={t("Remove template")} onClick={() => select({ kind: "remove", template })} />
         </Menu>
     </div>;
 }
 
-function TemplateEditor({ client, onChanged, onClose, open, origin, selection }: {
+function TemplateDialog({ client, onChanged, onClose, open, origin, selection }: {
     client: GuiRpcClient;
     onChanged(): void;
     onClose(): void;
@@ -99,110 +112,216 @@ function TemplateEditor({ client, onChanged, onClose, open, origin, selection }:
     selection: Selection;
 }) {
     const { t } = useTranslation();
-    const record = selection.kind === "create" ? undefined : selection.template;
-    const view = selection.kind === "view";
-    const removing = selection.kind === "remove";
-    const [id, setId] = useState(record?.declaration.id ?? "");
-    const [name, setName] = useState(record?.declaration.name ?? "");
-    const [series, setSeries] = useState(record?.declaration.unity.series.join(", ") ?? "");
-    const [presets, setPresets] = useState(record?.declaration.unity.presets.join(", ") ?? "");
-    const [dependencies, setDependencies] = useState(() => rows(record?.declaration.dependencies ?? []));
-    const [constraints, setConstraints] = useState(() => rows(record?.declaration.constraints ?? []));
+    const record = selection.template;
+    const [source, setSource] = useState<SourceKind>(selection.kind === "save" ? selection.source : "manual");
+    const [id, setId] = useState(record?.id ?? "");
+    const [name, setName] = useState(record?.name ?? "");
+    const [dependencies, setDependencies] = useState<(ProjectTemplateDependency & { key: string })[]>([]);
+    const [project, setProject] = useState<SelectedProject>();
+    const [includeAssets, setIncludeAssets] = useState(false);
+    const [lockPackageVersions, setLockPackageVersions] = useState(false);
+    const [sourceFile, setSourceFile] = useState("");
+    const [destinationFile, setDestinationFile] = useState("");
+    const [fileName, setFileName] = useState(record === undefined ? "" : record.id + ".alcomdtemplate");
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError>();
+    const [operationId, setOperationId] = useState<string>();
     const pending = useRef(false);
+    const attempt = useRef<{ request: Request; idempotencyKey: string } | undefined>(undefined);
     const current = useActionScope(client, open);
+    const operations = useAcceptedOperations(client);
+    const operation = operationId === undefined ? undefined : operations.snapshot(operationId)?.operation;
+    const unity = useCreateUnityVersion(client, undefined, open && selection.kind === "save" && source === "manual");
 
-    async function submit(event: FormEvent) {
-        event.preventDefault();
-        if (view || pending.current) return;
+    async function run(action: () => Promise<void>) {
+        if (pending.current) return;
         pending.current = true;
         setBusy(true);
         setError(undefined);
-        try {
-            if (removing && record !== undefined) {
-                await client.projectTemplatesRemove({ id: record.declaration.id, expectedRevision: record.revision });
-            } else {
-                const declaration: ProjectTemplateDeclaration = {
-                    id: id.trim(),
-                    name: name.trim(),
-                    unity: { series: splitVersions(series), presets: splitVersions(presets) },
-                    dependencies: dependencies.map(({ packageId, versionRange }) => ({ packageId: packageId.trim(), versionRange: versionRange.trim() })),
-                    constraints: constraints.map(({ unityVersion, packageId, versionRange }) => ({
-                        unityVersion: unityVersion.trim(), packageId: packageId.trim(), versionRange: versionRange.trim()
-                    }))
-                };
-                await client.projectTemplatesSave({ declaration, ...(record === undefined ? {} : { expectedRevision: record.revision }) });
-            }
-            if (current()) {
-                onChanged();
-                onClose();
-            }
-        } catch (caught: unknown) {
-            if (current()) setError(normalizeRequestError(caught));
-        } finally {
+        try { await action(); }
+        catch (caught: unknown) { if (current()) setError(normalizeRequestError(caught)); }
+        finally {
             pending.current = false;
             if (current()) setBusy(false);
         }
     }
 
-    const title = selection.kind === "create" ? "Create template"
-        : view ? "View template" : removing ? "Remove template" : "Edit template";
-    const valid = id.trim().length > 0 && name.trim().length > 0
-        && dependencies.every(({ packageId, versionRange }) => packageId.trim().length > 0 && versionRange.trim().length > 0)
-        && constraints.every(({ unityVersion, packageId, versionRange }) => unityVersion.trim().length > 0 && packageId.trim().length > 0 && versionRange.trim().length > 0);
+    const retrying = attempt.current !== undefined && operationRequestOutcomeUnknown(error);
+    const formDisabled = busy || retrying;
+    const selectFile = (mode: "open" | "save") => run(async () => {
+        const path = await client.selectProjectTemplateFile(mode, mode === "save" ? fileName.trim() : undefined);
+        if (!current() || path === undefined) return;
+        if (mode === "save") setDestinationFile(path);
+        else setSourceFile(path);
+    });
 
-    return <Dialog dismissible={!busy} onClose={onClose} open={open} returnFocus={origin} title={t(title)} wide>
-        {open ? <form className="project-create-flow" onSubmit={(event) => void submit(event)}>
-            {removing ? <p>{t("Remove {name} from your templates?", { name })} <code className="template-id">{id}</code></p> : <>
-                <TextField disabled={busy} label={t("Template ID")} maxLength={128} onInput={setId} readOnly={record !== undefined} required value={id}
-                    supportingText={record === undefined ? t("For example, com.example.my-template") : undefined} />
-                <TextField disabled={busy} label={t("Name")} onInput={setName} readOnly={view} required value={name} />
-                <TextField disabled={busy} label={t("Unity version series")} onInput={setSeries} placeholder="2022.3, 6000.0" readOnly={view} value={series} />
-                <TextField disabled={busy} label={t("Unity version presets")} onInput={setPresets} readOnly={view} value={presets}
-                    supportingText={view ? undefined : t("For example, 2022.3.22f1, 2022.3.6f1")}/>
-                <fieldset className="template-declarations">
-                    <legend>{t("VPM dependencies")}</legend>
-                    {dependencies.map((dependency) => <div className="template-declaration-row" key={dependency.key}>
-                        <DependencyFields busy={busy} dependency={dependency} readOnly={view} onInput={(patch) => {
-                            setDependencies((current) => current.map((row) => row.key === dependency.key ? { ...row, ...patch } : row));
-                        }} />
-                        {view ? null : <Button disabled={busy} onClick={() => setDependencies((current) => current.filter(({ key }) => key !== dependency.key))} type="button" variant="text">{t("Remove")}</Button>}
-                    </div>)}
-                    {view ? null : <Button disabled={busy} onClick={() => setDependencies((current) => [...current, ...rows([{ packageId: "", versionRange: "" }])])} type="button" variant="text">{t("Add dependency")}</Button>}
-                </fieldset>
-                <fieldset className="template-declarations">
-                    <legend>{t("Package constraints by Unity version")}</legend>
-                    {constraints.map((constraint) => <div className="template-declaration-row" key={constraint.key}>
-                        <TextField disabled={busy} label={t("Unity version")} onInput={(unityVersion) => {
-                            setConstraints((current) => current.map((row) => row.key === constraint.key ? { ...row, unityVersion } : row));
-                        }} readOnly={view} required value={constraint.unityVersion} />
-                        <DependencyFields busy={busy} dependency={constraint} readOnly={view} onInput={(patch) => {
-                            setConstraints((current) => current.map((row) => row.key === constraint.key ? { ...row, ...patch } : row));
-                        }} />
-                        {view ? null : <Button disabled={busy} onClick={() => setConstraints((current) => current.filter(({ key }) => key !== constraint.key))} type="button" variant="text">{t("Remove")}</Button>}
-                    </div>)}
-                    {view ? null : <Button disabled={busy} onClick={() => setConstraints((current) => [...current, ...rows<ProjectTemplateConstraint>([{ unityVersion: "", packageId: "", versionRange: "" }])])} type="button" variant="text">{t("Add constraint")}</Button>}
-                </fieldset>
-            </>}
-            {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code></div>}
-            <div className="dialog-actions">
-                <Button disabled={busy} onClick={onClose} type="button" variant="text">{t(view ? "Close" : "Cancel")}</Button>
-                {view ? null : <Button disabled={busy || !removing && !valid} type="submit">{t(removing ? "Remove template" : "Save template")}</Button>}
-            </div>
-        </form> : null}
-    </Dialog>;
+    function saveSource(): ProjectTemplateSource | undefined {
+        if (source === "file") return sourceFile === "" ? undefined : { kind: "file", sourceFile };
+        if (id.trim() === "" || name.trim() === "") return undefined;
+        if (source === "project") return project === undefined ? undefined : {
+            kind: "project", projectId: project.projectId, expectedProjectRevision: project.revision,
+            id: id.trim(), name: name.trim(), includeAssets, lockPackageVersions
+        };
+        if (unity.version.trim() === "" || dependencies.some(({ packageId, versionRange }) => packageId.trim() === "" || versionRange.trim() === "")) return undefined;
+        return { kind: "manual", id: id.trim(), name: name.trim(), unityVersion: unity.version.trim(),
+            dependencies: dependencies.map(({ packageId, versionRange }) => ({ packageId: packageId.trim(), versionRange: versionRange.trim() })) };
+    }
+
+    const selectedSource = selection.kind === "save" ? saveSource() : undefined;
+    const request: Request | undefined = selection.kind === "export" && destinationFile !== "" ? {
+        kind: "export", params: { id: selection.template.id, revision: selection.template.revision, destinationFile }
+    } : selectedSource === undefined ? undefined : {
+        kind: "save", params: { source: selectedSource, ...(record === undefined ? {} : { expectedRevision: record.revision }) }
+    };
+
+    function submit(event: FormEvent) {
+        event.preventDefault();
+        if (selection.kind === "view" || operationId !== undefined) return;
+        void run(async () => {
+            if (selection.kind === "remove") {
+                await client.projectTemplatesRemove({ id: selection.template.id, expectedRevision: selection.template.revision });
+                if (current()) { onChanged(); onClose(); }
+                return;
+            }
+            const submitted = retrying ? attempt.current : request === undefined ? undefined : { request, idempotencyKey: crypto.randomUUID() };
+            if (submitted === undefined) return;
+            attempt.current = submitted;
+            let accepted;
+            try {
+                accepted = submitted.request.kind === "save"
+                    ? await client.projectTemplatesSave({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey })
+                    : await client.projectTemplatesExport({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey });
+            } catch (caught: unknown) {
+                if (!operationRequestOutcomeUnknown(normalizeRequestError(caught))) attempt.current = undefined;
+                throw caught;
+            }
+            if (!current()) return;
+            operations.accept(accepted.operationId, () => {
+                if (current() && submitted.request.kind === "save") { onChanged(); onClose(); }
+            });
+            attempt.current = undefined;
+            setOperationId(accepted.operationId);
+        });
+    }
+
+    const title = selection.kind === "view" ? "View template" : selection.kind === "remove" ? "Remove template"
+        : selection.kind === "export" ? "Export template" : record !== undefined ? "Replace template" : sourceLabels[source];
+    const submitLabel = selection.kind === "remove" || selection.kind === "export" || record !== undefined ? title
+        : source === "file" ? "Import template" : "Save template";
+    const terminalFailure = operation?.state === "failed" || operation?.state === "cancelled";
+    const failedPackage = operation?.state === "failed" && typeof operation.result === "object" && operation.result !== null
+        && "packageId" in operation.result && typeof operation.result.packageId === "string" ? operation.result.packageId : undefined;
+
+    return <>
+        <Dialog dismissible={!busy} onClose={onClose} open={open} returnFocus={origin} title={t(title)} wide>
+            {!open ? null : operationId !== undefined ? <div className="project-create-flow">
+                <AcceptedOperationProgress operationId={operationId} operations={operations} />
+                {failedPackage === undefined ? null : <p>{t("Package ID")} <code>{failedPackage}</code></p>}
+                {selection.kind === "export" ? <PathField label={t("Destination file")} readOnly value={destinationFile} /> : null}
+                <div className="dialog-actions">
+                    {terminalFailure ? <Button onClick={() => setOperationId(undefined)} type="button" variant="text">{t("Back")}</Button> : null}
+                    <Button onClick={onClose} type="button">{t("Close")}</Button>
+                </div>
+            </div> : <form className="project-create-flow" onSubmit={submit}>
+                {selection.kind === "view" ? <>
+                    <TextField label={t("Template ID")} readOnly value={selection.template.id} />
+                    <TextField label={t("Display name")} readOnly value={selection.template.name} />
+                    {selection.template.editorVersion === undefined ? null : <TextField label={t("Unity version")} readOnly value={selection.template.editorVersion} />}
+                </> : selection.kind === "remove" ? <p>{t("Remove {name} from your templates?", { name })} <code className="template-id">{id}</code></p>
+                    : selection.kind === "export" ? <>
+                        <TextField disabled={formDisabled} label={t("File name")} onInput={(value) => { setFileName(value); setDestinationFile(""); }} required value={fileName} />
+                        <div className="project-target-picker">
+                            <PathField label={t("Destination file")} readOnly value={destinationFile} />
+                            <Button disabled={formDisabled || fileName.trim() === ""} onClick={() => void selectFile("save")} type="button" variant="tonal">{t("Choose directory")}</Button>
+                        </div>
+                    </> : <>
+                        {record === undefined ? null : <>
+                            <p>{t("Replace the contents of {name}?", { name })} <code className="template-id">{id}</code></p>
+                            <Select disabled={formDisabled} label={t("Template source")} onChange={(value) => setSource(value as SourceKind)}
+                                options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
+                        </>}
+                        {source === "file" ? <div className="project-target-picker">
+                            <PathField label={t("Template file")} readOnly value={sourceFile} />
+                            <Button disabled={formDisabled} onClick={() => void selectFile("open")} type="button" variant="tonal">{t("Choose file")}</Button>
+                        </div> : <>
+                            <div className="template-declaration-row">
+                                <TextField disabled={formDisabled} label={t("Template ID")} maxLength={128} onInput={setId}
+                                    placeholder={t("For example, com.example.my-template")} readOnly={record !== undefined} required value={id} />
+                                <TextField disabled={formDisabled} label={t("Display name")} onInput={setName} required value={name} />
+                            </div>
+                            {source === "project" ? <>
+                                <TemplateProjectPicker client={client} disabled={formDisabled} onSelect={setProject} value={project?.projectId ?? ""} />
+                                <Checkbox checked={includeAssets} disabled={formDisabled} label={t("Include project assets")} onChange={setIncludeAssets} />
+                                <Checkbox checked={lockPackageVersions} disabled={formDisabled} label={t("Lock package versions")} onChange={setLockPackageVersions} />
+                            </> : <>
+                                <CreateUnityVersionField disabled={formDisabled} selection={unity} />
+                                <fieldset className="template-declarations">
+                                    <legend>{t("Packages")}</legend>
+                                    {dependencies.map((dependency) => <div className="template-declaration-row" key={dependency.key}>
+                                        <TextField disabled={formDisabled} label={t("Package ID")} onInput={(packageId) => setDependencies((rows) => rows.map((row) =>
+                                            row.key === dependency.key ? { ...row, packageId } : row))} required value={dependency.packageId} />
+                                        <TextField disabled={formDisabled} label={t("Version")} onInput={(versionRange) => setDependencies((rows) => rows.map((row) =>
+                                            row.key === dependency.key ? { ...row, versionRange } : row))} required value={dependency.versionRange} />
+                                        <IconButton disabled={formDisabled} label={t("Remove package")} title={t("Remove package")}
+                                            onClick={() => setDependencies((rows) => rows.filter(({ key }) => key !== dependency.key))} type="button"><Icon asset={closeIcon} /></IconButton>
+                                    </div>)}
+                                    <Button disabled={formDisabled} onClick={() => setDependencies((rows) => [...rows, { key: crypto.randomUUID(), packageId: "", versionRange: "" }])}
+                                        type="button" variant="text">{t("Add package")}</Button>
+                                </fieldset>
+                            </>}
+                        </>}
+                    </>}
+                {error === undefined ? null : <TemplateFailure error={error} />}
+                <div className="dialog-actions">
+                    <Button disabled={busy} onClick={onClose} type="button" variant="text">{t(selection.kind === "view" ? "Close" : "Cancel")}</Button>
+                    {selection.kind === "view" ? null : <Button disabled={busy || !retrying && request === undefined && selection.kind !== "remove"}
+                        type="submit">{t(retrying ? "Retry" : submitLabel)}</Button>}
+                </div>
+            </form>}
+        </Dialog>
+        {operations.follow()}
+    </>;
 }
 
-function DependencyFields({ busy, dependency, onInput, readOnly }: {
-    busy: boolean;
-    dependency: ProjectTemplateDependency;
-    onInput(patch: Partial<ProjectTemplateDependency>): void;
-    readOnly: boolean;
+function TemplateFailure({ error }: { error: RpcError }) {
+    const { t } = useTranslation();
+    return <div role="alert">
+        <p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>
+        {error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
+    </div>;
+}
+
+function TemplateProjectPicker({ client, disabled, onSelect, value }: {
+    client: GuiRpcClient;
+    disabled: boolean;
+    onSelect(project: SelectedProject | undefined): void;
+    value: string;
 }) {
     const { t } = useTranslation();
-    return <>
-        <TextField disabled={busy} label={t("Package ID")} onInput={(packageId) => onInput({ packageId })} readOnly={readOnly} required value={dependency.packageId} />
-        <TextField disabled={busy} label={t("Version range")} onInput={(versionRange) => onInput({ versionRange })} readOnly={readOnly} required value={dependency.versionRange} />
-    </>;
+    const [page, setPage] = useState<ProjectsListResult>();
+    const [error, setError] = useState<RpcError>();
+    const [retry, setRetry] = useState(0);
+    useEffect(() => {
+        let active = true;
+        setPage(undefined);
+        setError(undefined);
+        void client.projectsList().then((result) => { if (active) setPage(result); })
+            .catch((caught: unknown) => { if (active) setError(normalizeRequestError(caught)); });
+        return () => { active = false; };
+    }, [client, retry]);
+
+    if (error !== undefined) return <><TemplateFailure error={error} /><Button disabled={disabled} onClick={() => setRetry((previous) => previous + 1)}
+        type="button" variant="text">{t("Retry")}</Button></>;
+    if (page === undefined) return <p role="status">{t("Loading…")}</p>;
+    return <PagedItems initialItems={page.projects} initialCursor={page.nextCursor} loadMore={async (cursor) => {
+        const next = await client.projectsList(cursor);
+        return { items: next.projects, nextCursor: next.nextCursor };
+    }}>
+        {(projects) => {
+            const registered = projects.filter((item): item is SelectedProject => item.projectId !== undefined && item.revision !== undefined);
+            return <Select disabled={disabled || registered.length === 0} label={t("Source project")} value={value}
+                options={registered.map((item) => ({ value: item.projectId, label: displayPath(item.rootPath) }))}
+                onChange={(id) => onSelect(registered.find((item) => item.projectId === id))} />;
+        }}
+    </PagedItems>;
 }

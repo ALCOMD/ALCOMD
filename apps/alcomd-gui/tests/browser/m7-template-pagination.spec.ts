@@ -34,7 +34,7 @@ test("Projects can select template 101 and create the project returned by Core",
     await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([
-        { method: "projects.create", params: { template: { id: lastTemplateId, revision: 4 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
+        { method: "projects.create", params: { template: { id: lastTemplateId, revision: 111 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
     ]);
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     await page.getByRole("button", { name: "Back", exact: true }).click();
@@ -98,7 +98,7 @@ test("A template read failure stays distinct from an empty catalog and can be ex
     await expect.poll(() => page.evaluate(() => window.heldTemplateReads)).toBe(1);
     await expect(dialog).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-templates-ready")));
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(3);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(7);
     await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 

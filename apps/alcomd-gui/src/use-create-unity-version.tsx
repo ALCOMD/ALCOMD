@@ -1,5 +1,5 @@
 import { requestErrorMessage } from "./request-errors";
-import type { ProjectTemplateDeclaration, RpcError } from "@alcomd/sdk";
+import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
 import type { UnityInstallation } from "./core-models";
@@ -8,7 +8,7 @@ import { useTranslation } from "./i18n";
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
 
-export function useCreateUnityVersion(client: GuiRpcClient, template: ProjectTemplateDeclaration | undefined, open: boolean) {
+export function useCreateUnityVersion(client: GuiRpcClient, fixedVersion: string | undefined, open: boolean) {
     const [version, setVersion] = useState("");
     const [custom, setCustom] = useState(false);
     const [installations, setInstallations] = useState<UnityInstallation[]>([]);
@@ -19,9 +19,9 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: ProjectTem
         edited.current = false;
         setVersion("");
         setCustom(false);
-    }, [client, open, template?.id]);
+    }, [client, open, fixedVersion]);
     useEffect(() => {
-        if (!open) return;
+        if (!open || fixedVersion !== undefined) return;
         let active = true;
         setInstallations([]);
         setError(undefined);
@@ -40,22 +40,15 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: ProjectTem
             if (active) setInstallations(rows);
         })().catch((caught: unknown) => { if (active) setError(normalizeRequestError(caught)); });
         return () => { active = false; };
-    }, [client, open, retry]);
-    const presets = template?.unity.presets ?? [];
-    const series = template?.unity.series ?? [];
-    const unrestricted = series.length === 0 && presets.length === 0;
-    const allowCustom = unrestricted || series.length > 0;
-    const acceptsVersion = (candidate: string) => {
-        const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)[abfpx][1-9]\d*(?:c[1-9]\d*)?$/.exec(candidate);
-        return match !== null && (unrestricted || presets.includes(candidate) || series.includes(match[1] + "." + match[2]));
-    };
-    const versions = [...new Set([...presets, ...installations.map((installation) => installation.unityVersion).filter(acceptsVersion)])];
+    }, [client, fixedVersion, open, retry]);
+    const versions = [...new Set(installations.map((installation) => installation.unityVersion))];
     const suggested = versions.length === 1 ? versions[0]! : "";
     useEffect(() => {
         if (!edited.current) setVersion(suggested);
-    }, [suggested, template?.id]);
+    }, [client, fixedVersion, open, suggested]);
     return {
-        version,
+        version: fixedVersion ?? version,
+        fixedVersion,
         custom,
         chooseVersion: (value: string) => {
             edited.current = true;
@@ -64,20 +57,21 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: ProjectTem
         },
         setVersion: (value: string) => { edited.current = true; setVersion(value); },
         versions,
-        allowCustom,
-        valid: acceptsVersion(version.trim()),
-        error,
+        error: fixedVersion === undefined ? error : undefined,
         retry: () => setRetry((current) => current + 1)
     };
 }
 
 export function CreateUnityVersionField({ disabled, selection }: { disabled: boolean; selection: ReturnType<typeof useCreateUnityVersion> }) {
     const { t } = useTranslation();
+    if (selection.fixedVersion !== undefined) {
+        return <TextField label={t("Unity version")} readOnly value={selection.fixedVersion} />;
+    }
     return <>
         <div className="project-create-unity-version">
             <span>{t("Unity version:")}</span>
             <Select disabled={disabled} label={t("Unity version")} onChange={selection.chooseVersion}
-                options={[...selection.versions.map((version) => ({ label: version, value: version })), ...(selection.allowCustom ? [{ label: t("Custom"), value: "custom" }] : [])]}
+                options={[...selection.versions.map((version) => ({ label: version, value: version })), { label: t("Custom"), value: "custom" }]}
                 value={selection.custom ? "custom" : selection.version} />
         </div>
         {selection.custom ? <TextField disabled={disabled} label={t("Unity version")} onInput={selection.setVersion} required value={selection.version} /> : null}

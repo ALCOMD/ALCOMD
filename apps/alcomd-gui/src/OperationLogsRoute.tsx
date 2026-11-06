@@ -224,6 +224,7 @@ const actions: Readonly<Record<string, readonly [label: string, type: OperationL
     "projects.create": ["Create project", "write"],
     "projectTemplates.save": ["Save template", "write"],
     "projectTemplates.remove": ["Remove template", "write"],
+    "projectTemplates.export": ["Export template", "write"],
     "projects.copy": ["Copy project", "write"],
     "projects.delete-directory": ["Delete project directory", "write"],
     "projects.unity-migration": ["Change project Unity version", "write"],

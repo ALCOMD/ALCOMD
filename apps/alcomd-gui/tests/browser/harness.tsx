@@ -163,7 +163,7 @@ const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.repositoriesListImport,
     "state.check.v1",
     "projects.create.v1",
-    "projectTemplates.v1",
+    "projectTemplates.v2",
     "unity.hub.open.v1",
     "unity.launch.v1",
     "unity.manage.v1",
@@ -369,15 +369,17 @@ class DeterministicGuiClient implements GuiRpcClient {
     private lifecycleRepositories = new Map<string, RepositorySnapshot>();
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
-    private projectTemplates = [template(), template(true), ...(query.has("template-existing")
+    private projectTemplates = [...builtinTemplates(), ...(query.has("template-existing")
         ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "Avatar starter" : "Existing fixture")] : [])];
-    private templateRevision = 4;
+    private templateRevision = 8;
+    private templateRequestsByKey = new Map<string, string>();
     private creationRequests = new Map<string, { fingerprint: string; projectId: string; operationId: string }>();
 
     private connectionRestored = false;
 
     constructor(private readonly mode: HarnessMode) {
         this.userPackageEnrolled = mode === "package-user-source";
+        if (mode === "empty") this.projectTemplates = [];
         if (initialRoute.startsWith("/operations") && mode !== "empty" && !query.has("h5-utilities") && !query.has("h4-management")) this.beginOperation();
         window.addEventListener("test-user-details-readable", () => { this.userDetailsUnavailable = false; });
         window.addEventListener("test-user-package-advance", () => { this.userPackageRevision += 1; });
@@ -387,7 +389,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             }
         });
         window.addEventListener("test-template-advance", () => {
-            this.projectTemplates = this.projectTemplates.map((template) => template.declaration.id === USER_TEMPLATE_ID
+            this.projectTemplates = this.projectTemplates.map((template) => template.id === USER_TEMPLATE_ID
                 ? { ...template, revision: ++this.templateRevision } : template);
             browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", this.templateRevision);
         });
@@ -435,7 +437,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v1"))
+                : SUPPORTED_CAPABILITIES.filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1") && !(query.has("noProjectTemplates") && capability === "projectTemplates.v2"))
         });
     }
 
@@ -1151,28 +1153,71 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
             window.templatePageCompletions += 1;
             return this.value({ templates: [catalogTemplate(101)] });
         }
-        return this.value({ templates: this.mode === "empty" ? [] : this.projectTemplates });
+        return this.value({ templates: this.projectTemplates });
+    }
+
+
+    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectProjectTemplateFile"]> {
+        window.templateRequests.push({ method: "selectProjectTemplateFile", params: { mode, fileName } });
+        if (query.has("template-file-cancel")) return this.value(undefined);
+        return this.value(mode === "open" ? "C:\\Fixture\\input.alcomdtemplate" : "C:\\Fixture\\" + fileName);
     }
 
     projectTemplatesSave(params: Parameters<GuiRpcClient["projectTemplatesSave"]>[0]): ReturnType<GuiRpcClient["projectTemplatesSave"]> {
         window.templateRequests.push({ method: "projectTemplates.save", params: structuredClone(params) });
-        const { declaration, expectedRevision } = params;
-        const existing = this.projectTemplates.find((item) => item.declaration.id === declaration.id);
-        if (expectedRevision === undefined && existing !== undefined) {
-            return JSON.stringify(existing.declaration) === JSON.stringify(declaration)
-                ? this.value({ template: existing }) : Promise.reject({ code: "template_conflict" });
-        }
-        if (expectedRevision !== undefined && existing?.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
-        if (existing?.locked) return Promise.reject({ code: "template_builtin_immutable" });
-        const template = { declaration, revision: ++this.templateRevision, locked: false };
-        this.projectTemplates = [...this.projectTemplates.filter((item) => item.declaration.id !== declaration.id), template];
-        browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", template.revision);
-        return this.value({ template });
+        return this.beginTemplateOperation("projectTemplates.save", params.idempotencyKey, () => {
+            const { source, expectedRevision } = params;
+            if (query.has("template-package-error")) throw { code: "template_dependency_unsatisfied", packageId: "com.example.missing" };
+            const archive = source.kind === "file"
+                ? query.has("template-file-replace") ? { id: USER_TEMPLATE_ID, name: "Imported replacement" } : { id: "com.example.imported", name: "Imported template" }
+                : source;
+            const existing = this.projectTemplates.find((item) => item.id === archive.id);
+            if (expectedRevision === undefined && existing !== undefined) throw { code: "template_conflict" };
+            if (expectedRevision !== undefined && existing?.revision !== expectedRevision) throw { code: "revision_conflict" };
+            if (existing?.locked) throw { code: "template_builtin_immutable" };
+            if (source.kind === "project" && (source.projectId !== PROJECT_ID || source.expectedProjectRevision !== this.currentProjectRevision)) throw { code: "revision_conflict" };
+            const editorVersion = source.kind === "manual" ? source.unityVersion : source.kind === "project" ? this.currentUnityVersion : undefined;
+            const template = { id: archive.id, name: archive.name, ...(editorVersion === undefined ? {} : { editorVersion }),
+                revision: ++this.templateRevision, locked: false };
+            this.projectTemplates = [...this.projectTemplates.filter((item) => item.id !== template.id), template];
+            browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", template.revision);
+            return { template };
+        });
+    }
+
+    projectTemplatesExport(params: Parameters<GuiRpcClient["projectTemplatesExport"]>[0]): ReturnType<GuiRpcClient["projectTemplatesExport"]> {
+        window.templateRequests.push({ method: "projectTemplates.export", params: structuredClone(params) });
+        return this.beginTemplateOperation("projectTemplates.export", params.idempotencyKey, () => {
+            if (!this.projectTemplates.some((item) => item.id === params.id && item.revision === params.revision)) throw { code: "revision_conflict" };
+            return { id: params.id, revision: params.revision };
+        });
+    }
+
+    private beginTemplateOperation(kind: string, key: string, complete: () => object) {
+        const previous = this.templateRequestsByKey.get(key);
+        if (previous !== undefined) return this.value({ operationId: previous, replayed: true });
+        const operationId = crypto.randomUUID();
+        const operation: Operation = { ...runningOperation(), operationId, kind, revision: 1 };
+        this.genericTasks.set(operationId, operation);
+        this.templateRequestsByKey.set(key, operationId);
+        browserCoreEvents.emit("operation", operationId, "operation.created", 1);
+        setTimeout(() => {
+            let next: Operation;
+            try { next = { ...operation, state: "succeeded", revision: 2, result: complete() }; }
+            catch (caught: unknown) {
+                const failure = caught as { code?: string; packageId?: string };
+                next = { ...operation, state: "failed", revision: 2, errorCode: failure.code ?? "internal_error",
+                    ...(failure.packageId === undefined ? {} : { result: { packageId: failure.packageId } }) };
+            }
+            this.genericTasks.set(operationId, next);
+            browserCoreEvents.emit("operation", operationId, `operation.${next.state}`, next.revision);
+        }, 250);
+        return query.has("template-operation-unknown") ? Promise.reject({ code: "daemon_unavailable" }) : this.value({ operationId, replayed: false });
     }
 
     projectTemplatesRemove(params: Parameters<GuiRpcClient["projectTemplatesRemove"]>[0]): ReturnType<GuiRpcClient["projectTemplatesRemove"]> {
         window.templateRequests.push({ method: "projectTemplates.remove", params });
-        const existing = this.projectTemplates.find((item) => item.declaration.id === params.id);
+        const existing = this.projectTemplates.find((item) => item.id === params.id);
         if (existing?.revision !== params.expectedRevision) return Promise.reject({ code: "revision_conflict" });
         if (existing.locked) return Promise.reject({ code: "template_builtin_immutable" });
         this.projectTemplates = this.projectTemplates.filter((item) => item !== existing);
@@ -1196,9 +1241,10 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
         if (this.mode === "create-error") throw { code: "project_create_target_exists" };
         if (input.template !== undefined) {
             const requested = input.template;
-            const record = this.projectTemplates.find(({ declaration }) => declaration.id === requested.id)
-                ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ declaration }) => declaration.id === requested.id) : undefined);
+            const record = this.projectTemplates.find(({ id }) => id === requested.id)
+                ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ id }) => id === requested.id) : undefined);
             if (record?.revision !== requested.revision) throw { code: "revision_conflict" };
+            if (record.editorVersion !== undefined && record.editorVersion !== input.unityVersion) throw { code: "invalid_request" };
         }
         const projectId = this.creationRequests.size === 0 ? CREATED_PROJECT_ID : crypto.randomUUID();
         const created = project(projectId, input.name);
@@ -1309,32 +1355,23 @@ function installation() { return { installationId: INSTALLATION_ID, executablePa
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
-function template(worlds = false): ProjectTemplateRecord {
-    const packageId = worlds ? "com.vrchat.worlds" : "com.vrchat.avatars";
-    return {
-        declaration: {
-            id: worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID,
-            name: worlds ? "World starter" : "Avatar starter",
-            unity: { series: ["2022.3"], presets: ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"] },
-            dependencies: [{ packageId, versionRange: "*" }],
-            constraints: ["com.vrchat.base", packageId].map((id) => ({ unityVersion: "2019.4.31f1", packageId: id, versionRange: "<=3.4.2" }))
-        },
-        revision: worlds ? 3 : 2,
-        locked: true
-    };
+function builtinTemplates(): ProjectTemplateRecord[] {
+    const versions = ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"];
+    return [false, true].flatMap((worlds) => versions.map((editorVersion, index) => {
+        const id = worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID;
+        return { id: index === 0 ? id : id + "." + editorVersion.replaceAll(".", "-"),
+            name: worlds ? "World starter" : "Avatar starter", editorVersion,
+            revision: 2 + index + (worlds ? versions.length : 0), locked: true };
+    }));
 }
 
 function userTemplate(id: string, name: string): ProjectTemplateRecord {
-    return {
-        declaration: { id, name, unity: { series: ["2022.3"], presets: ["2022.3.22f1", "2022.3.6f1"] }, dependencies: [], constraints: [] },
-        revision: 4,
-        locked: false
-    };
+    return { id, name, revision: 8, locked: false };
 }
 
 function catalogTemplate(index: number) {
     const suffix = String(index).padStart(3, "0");
-    return userTemplate("com.example.catalog-" + suffix, "Catalog template " + suffix);
+    return { ...userTemplate("com.example.catalog-" + suffix, "Catalog template " + suffix), revision: 10 + index };
 }
 
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }

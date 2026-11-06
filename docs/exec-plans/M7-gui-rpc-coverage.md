@@ -72,9 +72,10 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
 | `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
 | `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
-| `projectTemplates.list` | `projectTemplates.v1` | Resources / Templates, Projects / New project | page the template catalog by ID | R | no | no | keyset, retained data, committed invalidation | `gui.m7-core-surfaces` |
-| `projectTemplates.save` | `projectTemplates.v1` | Resources / Templates editor | create or edit a declaration | W | explicit save | no | same ID and content, conflict, revision, locked record | `gui.m7-operation-flows` |
-| `projectTemplates.remove` | `projectTemplates.v1` | Resources / Templates | remove a user template by ID and revision | W | yes | no | revision, locked record, committed invalidation | `gui.m7-operation-flows` |
+| `projectTemplates.list` | `projectTemplates.v2` | Resources / Templates, Projects / New project | page the template catalog by ID | R | no | no | keyset, retained data, committed invalidation | `gui.m7-core-surfaces` |
+| `projectTemplates.save` | `projectTemplates.v2` | Resources / Templates editor | create, import or replace a template archive | W | explicit save | no | same ID and content, conflict, revision, locked record | `gui.m7-operation-flows` |
+| `projectTemplates.export` | `projectTemplates.v2` | Resources / Templates | export a template archive | W | explicit export | no | immutable revision, destination collision | `gui.m7-operation-flows` |
+| `projectTemplates.remove` | `projectTemplates.v2` | Resources / Templates | remove a user template by ID and revision | W | yes | no | revision, locked record, committed invalidation | `gui.m7-operation-flows` |
 | `backups.list` | `backups.read.v1` | Project Backups | page backups | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `backups.get` | `backups.read.v1` | Backup detail | load backup | R | no | no | data | `gui.m7-core-surfaces` |
 | `backups.create` | `backups.create.v1` | Project Backups | create backup | W | yes | yes | mutation/recovery | `gui.m7-operation-flows` |

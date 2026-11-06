@@ -245,8 +245,9 @@ test("Resources sections and detail return controls work through ordinary clicks
     await resources.getByRole("button", { name: "Templates", exact: true }).click();
     await expectHeading(page, "Resources");
     await expect(resources.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "Template ID", "Actions"]);
-    await page.getByRole("button", { name: "More actions for Avatar starter", exact: true }).click();
+    await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "Template ID", "Unity version", "Actions"]);
+    await page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars", exact: true }) })
+        .getByRole("button", { name: "More actions for Avatar starter", exact: true }).click();
     await page.getByRole("menuitem", { name: "View template", exact: true }).click();
     const templateDialog = page.getByRole("dialog", { name: "View template", exact: true });
     await expect(templateDialog).toBeVisible();

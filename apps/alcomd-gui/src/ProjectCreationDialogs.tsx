@@ -43,9 +43,9 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const catalogRequest = useRef<object | undefined>(undefined);
     const catalogDepth = useRef(1);
     const [selection, setSelection] = useState<ProjectTemplateRef>();
-    const selected = catalog?.templates.find(({ declaration }) => declaration.id === selection?.id);
+    const selected = catalog?.templates.find(({ id }) => id === selection?.id);
     const staleSelection = selection !== undefined && selected?.revision !== selection.revision;
-    const unity = useCreateUnityVersion(client, selected?.declaration, open);
+    const unity = useCreateUnityVersion(client, selected?.editorVersion, open);
     const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
     const [name, setName] = useState("");
     const [operationId, setOperationId] = useState<string>();
@@ -153,7 +153,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         if (ownsDraft() && directory !== undefined) setTargetParent(directory);
     });
     const retrying = operationRequestOutcomeUnknown(error) && attempt.current?.client === client;
-    const ready = retrying || (!staleSelection && name.trim().length > 0 && targetParent.length > 0 && unity.valid);
+    const ready = retrying || (!staleSelection && name.trim().length > 0 && targetParent.length > 0 && unity.version.trim().length > 0);
     const formDisabled = busy || retrying;
     const create = () => run(async (ownsDraft) => {
         if (!ready) return;
@@ -198,15 +198,15 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
 
     const terminal = operation !== undefined && !ACTIVE_OPERATION_STATES.has(operation.state);
     const nameCounts = new Map<string, number>();
-    for (const { declaration } of catalog?.templates ?? []) {
-        nameCounts.set(declaration.name, (nameCounts.get(declaration.name) ?? 0) + 1);
+    for (const { name } of catalog?.templates ?? []) {
+        nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
     }
     const options = [
         { label: t("No template"), value: "none" },
-        ...(catalog?.templates ?? []).map(({ declaration }) => ({
-            label: nameCounts.get(declaration.name) === 1 ? declaration.name : declaration.name + " (" + declaration.id + ")",
-            value: declaration.id
-        }))
+        ...(catalog?.templates ?? []).map(({ id, name, editorVersion }) => {
+            const label = editorVersion === undefined ? name : name + " · " + editorVersion;
+            return { label: nameCounts.get(name) === 1 ? label : label + " (" + id + ")", value: id };
+        })
     ];
     return <>
         <Dialog dismissible={!busy} onClose={close} open={open} title={t("Create project")}>
@@ -215,7 +215,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                     {canUseTemplates ? <>
                         <Select disabled={formDisabled} aria-label={t("Project template")} id="project-create-template" label={t("Template")}
                             onChange={(id) => {
-                                const next = catalog?.templates.find(({ declaration }) => declaration.id === id);
+                                const next = catalog?.templates.find((record) => record.id === id);
                                 setSelection(next === undefined ? undefined : { id, revision: next.revision });
                             }}
                             options={options} value={staleSelection ? "" : selection?.id ?? "none"} />

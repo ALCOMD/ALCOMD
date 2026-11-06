@@ -28,7 +28,7 @@ export const capabilities = {
     repositoriesRegistry: "repositories.registry.v1",
     stateCheck: "state.check.v1",
     projectsCreate: "projects.create.v1",
-    projectTemplates: "projectTemplates.v1",
+    projectTemplates: "projectTemplates.v2",
     unityLaunch: "unity.launch.v1",
     unityHubOpen: "unity.hub.open.v1",
     unityManage: "unity.manage.v1",

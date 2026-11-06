@@ -158,7 +158,7 @@ export function requestErrorMessage(code: string): string {
         case "template_builtin_immutable":
             return "Built-in templates cannot be edited or removed.";
         case "template_conflict":
-            return "A different template uses this ID. Choose another template ID.";
+            return "A template uses this ID. Choose a different ID or replace the existing user template.";
         case "template_dependency_unsatisfied":
             return "The template packages could not be resolved. Check the package ranges, repositories and Unity version.";
         case "package_integrity_mismatch":

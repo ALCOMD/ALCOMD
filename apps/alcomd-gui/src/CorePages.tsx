@@ -2009,6 +2009,7 @@ function humanize(t: Translate, value: string): string {
         "user-package.add": "Add user package",
         "projectTemplates.remove": "Remove template",
         "projectTemplates.save": "Save template",
+        "projectTemplates.export": "Export template",
         "unity.launch": "Request Unity launch",
         "unity.launch-config.change": "Change Unity launch arguments",
         "unity.installation.remove": "Remove Unity installation",
