@@ -251,7 +251,7 @@ fn check_unsafe_boundary(
         }
     }
 
-    scan_rust_sources(root, root, &APPROVED, errors)?;
+    scan_rust_sources(root, root, APPROVED, errors)?;
 
     let platform_manifest: toml::Value =
         read_toml(&root.join("crates/alcomd-platform/Cargo.toml"))?;
