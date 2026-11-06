@@ -71,7 +71,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 28;
+pub const CURRENT_DATA_SCHEMA: u32 = 29;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -457,6 +457,29 @@ impl M3RegistryStore for StateStoreHandle {
     ) -> Result<RepositoryRecord, M3Error> {
         self.request_m3(move |connection| m3::get_repository(connection, &owner, id))
             .await
+    }
+
+    async fn set_repository_display_name(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        display_name: Option<String>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::set_repository_display_name(
+                connection,
+                &owner,
+                id,
+                expected,
+                display_name,
+                &key,
+                now_ms,
+            )
+        })
+        .await
     }
 
     async fn list_repositories(

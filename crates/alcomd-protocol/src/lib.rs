@@ -98,6 +98,7 @@ pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
 pub const METHOD_REPOSITORIES_REFRESH_ALL: &str = "repositories.refreshAll";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
 pub const METHOD_REPOSITORIES_SET_CREDENTIALS: &str = "repositories.setCredentials";
+pub const METHOD_REPOSITORIES_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
 pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
 pub const METHOD_PACKAGES_PLAN_UPGRADE: &str = "packages.planUpgrade";
@@ -1176,6 +1177,8 @@ pub struct RepositorySnapshot {
     pub source: RepositorySource,
     pub declared_id: Option<String>,
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub declared_url: Option<String>,
     pub issues: Vec<ReadIssue>,
     pub revision: Option<u64>,
@@ -1328,6 +1331,16 @@ pub struct RepositorySetCredentialsParams {
     pub idempotency_key: String,
     #[serde(deserialize_with = "Deserialize::deserialize")]
     pub credentials: Option<RepositoryCredentials>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositorySetDisplayNameParams {
+    pub repository_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub display_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

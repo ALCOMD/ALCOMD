@@ -2078,6 +2078,43 @@ fn repository_credentials_are_write_only_and_clear_is_explicit() {
 }
 
 #[test]
+fn repository_display_name_contract_requires_an_explicit_value_or_clear() {
+    use alcomd_protocol::{METHOD_REPOSITORIES_SET_DISPLAY_NAME, RepositorySetDisplayNameParams};
+    assert_eq!(
+        METHOD_REPOSITORIES_SET_DISPLAY_NAME,
+        "repositories.setDisplayName"
+    );
+    let contract = schema("m3-project-repository");
+    let params = &contract["$defs"]["repositorySetDisplayNameParams"];
+    assert_eq!(
+        params["required"],
+        json!([
+            "repositoryId",
+            "expectedRevision",
+            "idempotencyKey",
+            "displayName"
+        ])
+    );
+    assert_eq!(params["properties"]["displayName"]["maxLength"], 128);
+    assert_eq!(
+        contract["$defs"]["repository"]["properties"]["displayName"]["maxLength"],
+        128
+    );
+    let mut wire =
+        json!({"repositoryId":"fixture","expectedRevision":1,"idempotencyKey":"fixture"});
+    assert!(serde_json::from_value::<RepositorySetDisplayNameParams>(wire.clone()).is_err());
+    for name in [Value::Null, json!("VRChat SDK")] {
+        wire["displayName"] = name;
+        let typed: RepositorySetDisplayNameParams =
+            serde_json::from_value(wire.clone()).expect("display name update");
+        assert_eq!(
+            serde_json::to_value(typed).expect("serialize display name update"),
+            wire
+        );
+    }
+}
+
+#[test]
 fn config10_fullscreen_is_required_in_snapshots_and_optional_nonnullable_in_narrow_updates() {
     use alcomd_protocol::{SettingsUpdate, WindowSettings};
     for fullscreen in [false, true] {

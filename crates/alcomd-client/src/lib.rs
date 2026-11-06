@@ -1013,6 +1013,17 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn repository_set_display_name(
+        &mut self,
+        params: alcomd_protocol::RepositorySetDisplayNameParams,
+    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_SET_DISPLAY_NAME,
+            params,
+        )
+        .await
+    }
+
     pub async fn repository_refresh(
         &mut self,
         repository_id: String,
