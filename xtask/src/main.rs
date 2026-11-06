@@ -195,19 +195,19 @@ fn check_builtin_templates(
     for (kind, name) in [("avatars", "VRChat Avatars"), ("worlds", "VRChat Worlds")] {
         let path = root.join(format!("specs/templates/vrchat-{kind}.json"));
         let package = format!("com.vrchat.{kind}");
-        let mut packages = [package.as_str(), "com.vrchat.base"];
-        packages.sort_unstable();
+        let locked = serde_json::Map::from_iter([
+            (package.clone(), serde_json::json!("3.4.2")),
+            ("com.vrchat.base".to_owned(), serde_json::json!("3.4.2")),
+        ]);
         let expected = serde_json::json!({
             "id": format!("com.vrclearn.alcomd.templates.vrchat.{kind}"),
             "name": name,
-            "unity": {
-                "series": ["2022.3"],
-                "presets": ["2022.3.22f1", "2022.3.6f1", "2019.4.31f1"]
-            },
-            "dependencies": [{"packageId": package, "versionRange": "*"}],
-            "constraints": packages.map(|package_id| serde_json::json!({
-                "unityVersion": "2019.4.31f1", "packageId": package_id, "versionRange": "<=3.4.2"
-            }))
+            "packageId": package,
+            "variants": [
+                {"editorVersion": "2022.3.22f1", "idSuffix": "", "lockedVersions": {}},
+                {"editorVersion": "2022.3.6f1", "idSuffix": ".2022-3-6f1", "lockedVersions": {}},
+                {"editorVersion": "2019.4.31f1", "idSuffix": ".2019-4-31f1", "lockedVersions": locked}
+            ]
         });
         let declaration: serde_json::Value = read_json(&path)?;
         if declaration != expected {

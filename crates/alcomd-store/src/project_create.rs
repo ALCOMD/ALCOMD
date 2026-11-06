@@ -1,14 +1,17 @@
+use std::collections::BTreeSet;
+
 use alcomd_application::{
     IdempotencyKey, OperationId, OperationState, PrincipalId, ProjectCreateAcceptance,
     ProjectCreateAccepted, ProjectCreateError, ProjectCreateErrorCode, ProjectCreateInput,
     ProjectCreatePackages, ProjectCreateStore, ProjectCreateWork, ProjectId, ProjectObservation,
-    ProjectTemplateDeclaration, ProjectTemplatePage, ProjectTemplateRecord, Revision,
+    ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateJobAccepted,
+    ProjectTemplateJobRequest, ProjectTemplateJobWork, ProjectTemplatePage, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{project_templates, sqlite};
+use super::{project_template_jobs, project_templates, sqlite};
 
 #[cfg(test)]
 #[path = "project_create_tests.rs"]
@@ -113,10 +116,16 @@ pub(super) fn accept(
         .map(|reference| project_templates::frozen(&transaction, &owner, reference))
         .transpose()?;
     if let Some(declaration) = &declaration {
-        if !allow_package_changes && !declaration.dependencies.is_empty() {
+        if !allow_package_changes
+            && (!declaration.dependencies.is_empty() || !declaration.locked_versions.is_empty())
+        {
             return Err(error(ProjectCreateErrorCode::PermissionDenied));
         }
-        if !declaration.unity.allows(&input.unity_version) {
+        if declaration
+            .editor_version
+            .as_ref()
+            .is_some_and(|version| version != &input.unity_version)
+        {
             return Err(error(ProjectCreateErrorCode::DependencyUnsatisfied));
         }
     }
@@ -387,6 +396,7 @@ pub(super) fn fail(
     id: OperationId,
     error_code: &str,
     diagnostic_id: &str,
+    package_id: Option<&str>,
     now_ms: u64,
 ) -> Result<(), ProjectCreateError> {
     let transaction = begin(connection)?;
@@ -400,6 +410,7 @@ pub(super) fn fail(
         Completion::Failed {
             error_code,
             diagnostic_id,
+            package_id,
         }
     };
     terminal(&transaction, id, context, completion, integer(now_ms)?)?;
@@ -572,6 +583,7 @@ enum Completion<'a> {
     Failed {
         error_code: &'a str,
         diagnostic_id: &'a str,
+        package_id: Option<&'a str>,
     },
     Cancelled,
 }
@@ -583,6 +595,13 @@ fn terminal(
     completion: Completion<'_>,
     timestamp: i64,
 ) -> Result<(), ProjectCreateError> {
+    let error_details = match &completion {
+        Completion::Failed {
+            package_id: Some(package_id),
+            ..
+        } => Some(serde_json::json!({ "packageId": package_id }).to_string()),
+        _ => None,
+    };
     let (state, result, error_code, diagnostic_id) = match completion {
         Completion::Succeeded(result) => {
             context.journal.phase = Phase::StateCommitted;
@@ -591,9 +610,10 @@ fn terminal(
         Completion::Failed {
             error_code,
             diagnostic_id,
+            ..
         } => (
             OperationState::Failed,
-            None,
+            error_details.as_deref(),
             Some(error_code),
             Some(diagnostic_id),
         ),
@@ -713,6 +733,29 @@ fn read_chunks(
         encoded.push_str(&chunk);
     }
     Ok((!encoded.is_empty()).then_some(encoded))
+}
+
+pub(super) fn add_archive_references(
+    connection: &Connection,
+    referenced: &mut BTreeSet<String>,
+) -> Result<(), ProjectCreateError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT DISTINCT o.operation_id FROM operations o
+             JOIN operation_journal j ON j.operation_id=o.operation_id AND j.kind=?1
+             WHERE o.kind=?2 AND o.state NOT IN ('succeeded','failed','cancelled')",
+        )
+        .map_err(db_error)?;
+    let rows = statement
+        .query_map(params![DECLARATION, KIND], |row| row.get::<_, String>(0))
+        .map_err(db_error)?;
+    for row in rows {
+        let id = OperationId::parse(&row.map_err(db_error)?).map_err(|_| internal())?;
+        let encoded = read_chunks(connection, id, DECLARATION)?.ok_or_else(internal)?;
+        let declaration: ProjectTemplateDeclaration = decode(&encoded)?;
+        referenced.insert(declaration.archive_sha256);
+    }
+    Ok(())
 }
 
 fn next_revision(context: &Context) -> Result<Revision, ProjectCreateError> {
@@ -849,10 +892,20 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         id: OperationId,
         error_code: String,
         diagnostic_id: String,
+        package_id: Option<String>,
         now_ms: u64,
     ) -> Result<(), ProjectCreateError> {
         self.request_worker(
-            move |connection| fail(connection, id, &error_code, &diagnostic_id, now_ms),
+            move |connection| {
+                fail(
+                    connection,
+                    id,
+                    &error_code,
+                    &diagnostic_id,
+                    package_id.as_deref(),
+                    now_ms,
+                )
+            },
             unavailable,
         )
         .await
@@ -891,22 +944,6 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         .await
     }
 
-    async fn project_templates_save(
-        &self,
-        owner: PrincipalId,
-        declaration: ProjectTemplateDeclaration,
-        expected_revision: Option<u64>,
-        now_ms: u64,
-    ) -> Result<ProjectTemplateRecord, ProjectCreateError> {
-        self.request_worker(
-            move |connection| {
-                project_templates::save(connection, &owner, declaration, expected_revision, now_ms)
-            },
-            unavailable,
-        )
-        .await
-    }
-
     async fn project_templates_remove(
         &self,
         owner: PrincipalId,
@@ -930,6 +967,150 @@ impl ProjectCreateStore for crate::StateStoreHandle {
     ) -> Result<(), ProjectCreateError> {
         self.request_worker(
             move |connection| project_templates::seed(connection, &owner, declarations),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_archive_references(
+        &self,
+    ) -> Result<BTreeSet<String>, ProjectCreateError> {
+        self.request_worker(
+            |connection| project_templates::archive_references(connection),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_templates_source_project(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+    ) -> Result<ProjectRecord, ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::source_project(connection, &owner, project_id),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_accept(
+        &self,
+        owner: PrincipalId,
+        request: ProjectTemplateJobRequest,
+        key: IdempotencyKey,
+        fingerprint: String,
+        now_ms: u64,
+    ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
+        self.request_worker(
+            move |connection| {
+                project_template_jobs::accept(
+                    connection,
+                    &owner,
+                    request,
+                    &key,
+                    &fingerprint,
+                    now_ms,
+                )
+            },
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_begin(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> Result<Option<ProjectTemplateJobWork>, ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::begin_work(connection, id, now_ms),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_publish_intent(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> Result<bool, ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::publish_intent(connection, id, now_ms),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_finish_save(
+        &self,
+        id: OperationId,
+        declaration: ProjectTemplateDeclaration,
+        now_ms: u64,
+    ) -> Result<(), ProjectCreateError> {
+        self.request_worker(
+            move |connection| {
+                project_template_jobs::finish_save(connection, id, declaration, now_ms)
+            },
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_finish_export(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::finish_export(connection, id, now_ms),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_fail(
+        &self,
+        id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        package_id: Option<String>,
+        now_ms: u64,
+    ) -> Result<(), ProjectCreateError> {
+        self.request_worker(
+            move |connection| {
+                project_template_jobs::fail(
+                    connection,
+                    id,
+                    &error_code,
+                    &diagnostic_id,
+                    package_id.as_deref(),
+                    now_ms,
+                )
+            },
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_cancel(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::cancel(connection, id, now_ms),
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_job_pending(
+        &self,
+        now_ms: u64,
+    ) -> Result<Vec<OperationId>, ProjectCreateError> {
+        self.request_worker(
+            move |connection| project_template_jobs::pending(connection, now_ms),
             unavailable,
         )
         .await

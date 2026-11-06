@@ -132,7 +132,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_LOGS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
@@ -650,6 +650,14 @@ impl AlcomdClient {
         params: alcomd_protocol::ProjectTemplatesRemoveParams,
     ) -> Result<alcomd_protocol::ProjectTemplatesRemoveResult, ClientError> {
         self.call(alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE, params)
+            .await
+    }
+
+    pub async fn project_templates_export(
+        &mut self,
+        params: alcomd_protocol::ProjectTemplatesExportParams,
+    ) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECT_TEMPLATES_EXPORT, params)
             .await
     }
 

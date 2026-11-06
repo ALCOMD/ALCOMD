@@ -23,32 +23,9 @@
     "list": {
         "templates": [
             {
-                "declaration": {
-                    "id": "com.example.avatar-tools",
-                    "name": "Avatar Tools",
-                    "unity": {
-                        "series": [
-                            "2022.3"
-                        ],
-                        "presets": [
-                            "2022.3.22f1",
-                            "2019.4.31f1"
-                        ]
-                    },
-                    "dependencies": [
-                        {
-                            "packageId": "com.vrchat.avatars",
-                            "versionRange": "*"
-                        }
-                    ],
-                    "constraints": [
-                        {
-                            "unityVersion": "2019.4.31f1",
-                            "packageId": "com.vrchat.base",
-                            "versionRange": "<=3.4.2"
-                        }
-                    ]
-                },
+                "id": "com.example.avatar",
+                "name": "Avatar kit",
+                "editorVersion": "2022.3.22f1",
                 "revision": 3,
                 "locked": false
             }
@@ -56,64 +33,23 @@
         "nextCursor": "com.example.avatar-tools"
     },
     "save": {
-        "declaration": {
-            "id": "com.example.avatar-tools",
-            "name": "Avatar Tools",
-            "unity": {
-                "series": [
-                    "2022.3"
-                ],
-                "presets": [
-                    "2022.3.22f1",
-                    "2019.4.31f1"
-                ]
-            },
+        "source": {
+            "kind": "manual",
+            "id": "com.example.avatar",
+            "name": "Avatar kit",
+            "unityVersion": "2022.3.22f1",
             "dependencies": [
                 {
                     "packageId": "com.vrchat.avatars",
-                    "versionRange": "*"
-                }
-            ],
-            "constraints": [
-                {
-                    "unityVersion": "2019.4.31f1",
-                    "packageId": "com.vrchat.base",
-                    "versionRange": "<=3.4.2"
+                    "versionRange": "^3.10.0"
                 }
             ]
-        }
+        },
+        "idempotencyKey": "template-manual"
     },
     "saved": {
-        "template": {
-            "declaration": {
-                "id": "com.example.avatar-tools",
-                "name": "Avatar Tools",
-                "unity": {
-                    "series": [
-                        "2022.3"
-                    ],
-                    "presets": [
-                        "2022.3.22f1",
-                        "2019.4.31f1"
-                    ]
-                },
-                "dependencies": [
-                    {
-                        "packageId": "com.vrchat.avatars",
-                        "versionRange": "*"
-                    }
-                ],
-                "constraints": [
-                    {
-                        "unityVersion": "2019.4.31f1",
-                        "packageId": "com.vrchat.base",
-                        "versionRange": "<=3.4.2"
-                    }
-                ]
-            },
-            "revision": 3,
-            "locked": false
-        }
+        "operationId": "2b11880f-a07c-42d6-984b-2707edab9b98",
+        "replayed": false
     },
     "remove": {
         "id": "com.example.avatar-tools",
@@ -122,5 +58,31 @@
     "removed": {
         "id": "com.example.avatar-tools",
         "revision": 4
+    },
+    "saveFile": {
+        "source": {
+            "kind": "file",
+            "sourceFile": "C:\\Templates\\avatar.alcomdtemplate"
+        },
+        "expectedRevision": 3,
+        "idempotencyKey": "template-file"
+    },
+    "saveProject": {
+        "source": {
+            "kind": "project",
+            "projectId": "61bc6782-74e1-41de-9cca-75bd5d3b95e8",
+            "expectedProjectRevision": 4,
+            "id": "com.example.avatar",
+            "name": "Avatar kit",
+            "includeAssets": false,
+            "lockPackageVersions": true
+        },
+        "idempotencyKey": "template-project"
+    },
+    "export": {
+        "id": "com.example.avatar",
+        "revision": 3,
+        "destinationFile": "C:\\Templates\\avatar.alcomdtemplate",
+        "idempotencyKey": "template-export"
     }
 }

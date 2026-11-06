@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use alcomd_application::{M3RegistryStore, StateStore};
+use alcomd_application::{M3RegistryStore, ProjectCreateStore, StateStore};
 use alcomd_platform::IpcStream;
 use alcomd_store::StateStoreHandle;
 use serde_json::{Value, json};
@@ -29,6 +29,41 @@ async fn exchange(stream: &mut IpcStream, id: &str, method: &str, params: Value)
     response
 }
 
+async fn completed(store: &StateStoreHandle, accepted: &Value) -> app::OperationRecord {
+    let id = OperationId::parse(
+        accepted["result"]["operationId"]
+            .as_str()
+            .expect("operation ID"),
+    )
+    .expect("valid operation ID");
+    let mut commits = store.event_commits();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            commits.borrow_and_update();
+            let operation = store
+                .get_operation(app::PrincipalId::local_owner(), id)
+                .await
+                .expect("owned task");
+            if operation.state.is_terminal() {
+                break operation;
+            }
+            commits.changed().await.expect("committed change");
+        }
+    })
+    .await
+    .expect("bounded task completion")
+}
+
+fn successful_result(operation: &app::OperationRecord) -> Value {
+    assert_eq!(
+        operation.state,
+        crate::DomainState::Succeeded,
+        "{operation:?}"
+    );
+    serde_json::from_str(operation.result_json.as_deref().expect("task result"))
+        .expect("result JSON")
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_pipe() {
     let root = std::env::temp_dir()
@@ -52,6 +87,17 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
         .seed_builtin_templates()
         .await
         .expect("register builtins");
+    let recovery = application.clone();
+    let template_root = root.join("templates");
+    let installed = || {
+        std::fs::read_dir(&template_root)
+            .expect("managed template directory")
+            .map(|entry| entry.expect("managed archive").path())
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let builtins = installed();
+    assert_eq!(builtins.len(), 6);
+    assert!(!root.join("project-templates").exists());
 
     let pipe = format!(r"\\.\pipe\alcomd-create-test-{}", OperationId::new());
     let server = ServerOptions::new()
@@ -101,12 +147,12 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
     let hello = exchange(&mut client, "hello", rpc::METHOD_SYSTEM_HELLO, json!({
         "rpcVersion": 1,
         "client": {"name":"alcomd-cli","version":"test","instanceId":"isolated"},
-        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V1,"templates.read.v1"],
+        "capabilities": [rpc::CAPABILITY_PROJECTS_CREATE_V1,rpc::CAPABILITY_PROJECT_TEMPLATES_V2,"templates.read.v1"],
     })).await;
     assert_eq!(
         hello["result"]["capabilities"],
         json!([
-            rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
+            rpc::CAPABILITY_PROJECT_TEMPLATES_V2,
             rpc::CAPABILITY_PROJECTS_CREATE_V1
         ])
     );
@@ -126,7 +172,7 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
         &mut client,
         "second",
         rpc::METHOD_PROJECT_TEMPLATES_LIST,
-        json!({"cursor":catalog["result"]["nextCursor"]}),
+        json!({"cursor":catalog["result"]["nextCursor"], "limit":1}),
     )
     .await;
     assert_eq!(
@@ -136,41 +182,126 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
             .len(),
         1
     );
-    let same = exchange(
-        &mut client,
-        "same",
-        rpc::METHOD_PROJECT_TEMPLATES_SAVE,
-        json!({"declaration":builtin["declaration"]}),
-    )
-    .await;
-    assert_eq!(same["result"]["template"], *builtin);
     let locked = exchange(
         &mut client,
         "locked",
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
-        json!({"id":builtin["declaration"]["id"], "expectedRevision":builtin["revision"]}),
+        json!({"id":builtin["id"], "expectedRevision":builtin["revision"]}),
     )
     .await;
     assert_eq!(locked["error"]["code"], "template_builtin_immutable");
 
-    let declaration = json!({"id":"com.example.local","name":builtin["declaration"]["name"],"unity":{"series":[],"presets":[]},"dependencies":[],"constraints":[]});
+    let source = json!({"kind":"manual","id":"com.example.local","name":builtin["name"],"unityVersion":"2022.3.22f1","dependencies":[]});
     let saved = exchange(
         &mut client,
         "save",
         rpc::METHOD_PROJECT_TEMPLATES_SAVE,
-        json!({"declaration":declaration}),
+        json!({"source":source,"idempotencyKey":"manual"}),
     )
     .await;
-    let custom = &saved["result"]["template"];
+    let saved_result = successful_result(&completed(&store, &saved).await);
+    let custom = &saved_result["template"];
     assert_eq!(custom["locked"], false);
+    let saved_archives = installed();
+    let mut added = saved_archives.difference(&builtins);
+    let internal_archive = added.next().expect("managed copy");
+    assert!(added.next().is_none());
+    let archive = root.join("fixture.alcomdtemplate");
+    let exported = exchange(
+        &mut client,
+        "export",
+        rpc::METHOD_PROJECT_TEMPLATES_EXPORT,
+        json!({"id":custom["id"], "revision":custom["revision"], "destinationFile":archive, "idempotencyKey":"export"}),
+    ).await;
+    assert_eq!(
+        successful_result(&completed(&store, &exported).await)["id"],
+        custom["id"]
+    );
+    assert!(archive.is_file());
+    let import_source = root.join("import-source.alcomdtemplate");
+    std::fs::copy(&archive, &import_source).expect("independent import source");
+    let duplicate = exchange(
+        &mut client,
+        "import",
+        rpc::METHOD_PROJECT_TEMPLATES_SAVE,
+        json!({"source":{"kind":"file","sourceFile":import_source},"idempotencyKey":"import"}),
+    )
+    .await;
+    assert_eq!(
+        successful_result(&completed(&store, &duplicate).await)["template"],
+        *custom
+    );
+    std::fs::remove_file(&import_source).expect("delete only the external file");
+    let from_archive = exchange(
+        &mut client,
+        "create-from-template",
+        rpc::METHOD_PROJECTS_CREATE,
+        json!({"name":"From archive","targetParent":root,"unityVersion":"2022.3.22f1","idempotencyKey":"archive-create",
+            "template":{"id":custom["id"],"revision":custom["revision"]}}),
+    ).await;
+    assert_eq!(
+        successful_result(&completed(&store, &from_archive).await)["projectId"],
+        from_archive["result"]["projectId"]
+    );
     let removed = exchange(
         &mut client,
         "remove",
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
-        json!({"id":declaration["id"],"expectedRevision":custom["revision"]}),
+        json!({"id":custom["id"],"expectedRevision":custom["revision"]}),
     )
     .await;
-    assert_eq!(removed["result"]["id"], declaration["id"]);
+    assert_eq!(removed["result"]["id"], custom["id"]);
+    assert_eq!(installed(), builtins);
+    assert!(archive.is_file());
+
+    let reimport = exchange(
+        &mut client,
+        "reimport",
+        rpc::METHOD_PROJECT_TEMPLATES_SAVE,
+        json!({"source":{"kind":"file","sourceFile":archive},"idempotencyKey":"reimport"}),
+    )
+    .await;
+    let imported = successful_result(&completed(&store, &reimport).await);
+    let reference = app::ProjectTemplateRef {
+        id: imported["template"]["id"]
+            .as_str()
+            .expect("template ID")
+            .to_owned(),
+        revision: imported["template"]["revision"].as_u64().expect("revision"),
+    };
+    let deferred_export = root.join("pending-export.alcomdtemplate");
+    store
+        .project_template_job_accept(
+            app::PrincipalId::local_owner(),
+            app::ProjectTemplateJobRequest::Export {
+                reference: reference.clone(),
+                destination_file: deferred_export.to_str().expect("fixture path").to_owned(),
+            },
+            app::IdempotencyKey::parse("deferred-export").expect("fixture key"),
+            "{}".to_owned(),
+            1,
+        )
+        .await
+        .expect("persist a queued export without starting its worker");
+    let removed = exchange(
+        &mut client,
+        "remove-pinned",
+        rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
+        json!({"id":reference.id,"expectedRevision":reference.revision}),
+    )
+    .await;
+    assert_eq!(removed["result"]["id"], custom["id"]);
+    assert!(
+        internal_archive.is_file(),
+        "queued export still pins the archive"
+    );
+    recovery.recover().await.expect("run the pending export");
+    drop(recovery);
+    assert_eq!(installed(), builtins);
+    assert_eq!(
+        std::fs::read(&deferred_export).unwrap(),
+        std::fs::read(&archive).unwrap()
+    );
 
     let mut params = json!({"name":"Created IPC","targetParent":root.to_string_lossy(),"idempotencyKey":"isolated-create"});
     let missing = exchange(
@@ -183,11 +314,10 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
     assert_eq!(missing["error"]["code"], "invalid_request");
     params["unityVersion"] = json!("2022.3.22f1");
     let mut stale = params.clone();
-    stale["template"] = json!({"id":declaration["id"],"revision":custom["revision"]});
+    stale["template"] = json!({"id":custom["id"],"revision":custom["revision"]});
     let stale = exchange(&mut client, "stale", rpc::METHOD_PROJECTS_CREATE, stale).await;
     assert_eq!(stale["error"]["code"], "revision_conflict");
     assert!(!root.join("Created IPC").exists());
-    let mut commits = store.event_commits();
     let accepted = exchange(
         &mut client,
         "create",
@@ -201,29 +331,7 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
             .expect("operation ID"),
     )
     .expect("operation ID");
-    let operation = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            commits.borrow_and_update();
-            let operation = store
-                .get_operation(app::PrincipalId::local_owner(), operation_id)
-                .await
-                .expect("owned task");
-            if operation.state.is_terminal() {
-                break operation;
-            }
-            commits.changed().await.expect("committed change");
-        }
-    })
-    .await
-    .expect("bounded task completion");
-    assert_eq!(
-        operation.state,
-        crate::DomainState::Succeeded,
-        "{operation:?}"
-    );
-    let result: Value =
-        serde_json::from_str(operation.result_json.as_deref().expect("task result"))
-            .expect("result JSON");
+    let result = successful_result(&completed(&store, &accepted).await);
     assert_eq!(result["projectId"], accepted["result"]["projectId"]);
     let project_id = app::ProjectId::parse(result["projectId"].as_str().expect("project ID"))
         .expect("project ID");
@@ -232,6 +340,74 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
         .await
         .expect("registered project");
     assert_eq!(project.observation.unity_version, "2022.3.22f1");
+    let source_root = root.join("Created IPC");
+    std::fs::write(source_root.join("Assets/example.txt"), "fixture asset").expect("asset");
+    std::fs::write(source_root.join("Assets/example.txt.meta"), "fixture meta").expect("metadata");
+    std::fs::write(
+        source_root.join("ProjectSettings/Fixture.asset"),
+        "fixture settings",
+    )
+    .expect("settings");
+    for (id, include_assets) in [("without", false), ("with", true)] {
+        let template_id = format!("com.example.{id}-assets");
+        let mut source = json!({"kind":"project","projectId":project_id.to_string(),
+            "expectedProjectRevision":project.revision.get(),"id":template_id,"name":template_id});
+        if include_assets {
+            source["includeAssets"] = json!(true);
+        }
+        let response = exchange(
+            &mut client,
+            id,
+            rpc::METHOD_PROJECT_TEMPLATES_SAVE,
+            json!({"source":source,"idempotencyKey":format!("capture-{id}")}),
+        )
+        .await;
+        let captured = successful_result(&completed(&store, &response).await);
+        let path = root.join(format!("{id}.alcomdtemplate"));
+        let response = exchange(
+            &mut client,
+            id,
+            rpc::METHOD_PROJECT_TEMPLATES_EXPORT,
+            json!({"id":template_id,"revision":captured["template"]["revision"],
+                "destinationFile":path,"idempotencyKey":format!("export-{id}")}),
+        )
+        .await;
+        successful_result(&completed(&store, &response).await);
+        let preflight = alcomd_vpm::preflight_archive(&path).expect("valid project template");
+        let has = |name: &str| {
+            preflight
+                .entries
+                .iter()
+                .any(|item| item.relative_path == std::path::Path::new(name))
+        };
+        assert!(has("ProjectSettings/Fixture.asset"));
+        assert_eq!(has("Assets/example.txt"), include_assets);
+        assert_eq!(has("Assets/example.txt.meta"), include_assets);
+    }
+    if let Some(destination) = std::env::var_os("ALCOMD_TEST_TEMPLATE_EXPORT") {
+        let mut output = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(destination)
+            .expect("unused acceptance fixture path");
+        std::io::copy(
+            &mut std::fs::File::open(&archive).expect("exported fixture"),
+            &mut output,
+        )
+        .expect("copy acceptance fixture");
+    }
+    if let Some(source) = std::env::var_os("ALCOMD_TEST_VCC_TEMPLATE_IMPORT") {
+        let response = exchange(
+            &mut client,
+            "official-vcc-template",
+            rpc::METHOD_PROJECT_TEMPLATES_SAVE,
+            json!({"source":{"kind":"file","sourceFile":source.to_str().expect("fixture path")},
+                "idempotencyKey":"import-official-vcc"}),
+        )
+        .await;
+        let result = successful_result(&completed(&store, &response).await);
+        assert_eq!(result["template"]["id"], "com.vrchat.template.avatar");
+    }
     let replay = exchange(
         &mut client,
         "replay",

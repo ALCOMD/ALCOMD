@@ -162,12 +162,28 @@ pub fn extract_archive_with_limits(
     destination: &Path,
     limits: ArchiveLimits,
 ) -> Result<ArchivePreflight, ArchiveError> {
+    extract_archive_checked(archive_path, destination, limits, |_| Ok(()))
+}
+
+pub(crate) fn extract_archive_checked(
+    archive_path: &Path,
+    destination: &Path,
+    limits: ArchiveLimits,
+    validate: impl FnOnce(&ArchivePreflight) -> Result<(), ArchiveErrorCode>,
+) -> Result<ArchivePreflight, ArchiveError> {
     validate_empty_destination(destination)?;
-    let preflight = preflight_archive_with_limits(archive_path, limits)?;
     let file = File::open(archive_path)
         .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
+    let metadata = file
+        .metadata()
+        .map_err(|cause| archive_error(ArchiveErrorCode::Io).with_source(cause))?;
+    if !metadata.is_file() || metadata.len() > limits.archive_bytes {
+        return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
+    }
     let mut archive = ZipArchive::new(file)
         .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
+    let preflight = preflight_zip(&mut archive, limits)?;
+    validate(&preflight).map_err(archive_error)?;
     let mut streamed_total = 0_u64;
     for planned in &preflight.entries {
         let mut entry = archive
@@ -231,6 +247,13 @@ fn preflight_reader<R: Read + Seek>(
 ) -> Result<ArchivePreflight, ArchiveError> {
     let mut archive = ZipArchive::new(reader)
         .map_err(|cause| archive_error(ArchiveErrorCode::Invalid).with_source(cause))?;
+    preflight_zip(&mut archive, limits)
+}
+
+fn preflight_zip<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    limits: ArchiveLimits,
+) -> Result<ArchivePreflight, ArchiveError> {
     if archive.len() > limits.entries {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
@@ -409,7 +432,11 @@ pub(crate) fn validate_collision(
     }
     if !directory {
         let prefix = format!("{collision_key}/");
-        if normalized_paths.keys().any(|key| key.starts_with(&prefix)) {
+        if normalized_paths
+            .range(prefix.clone()..)
+            .next()
+            .is_some_and(|(key, _)| key.starts_with(&prefix))
+        {
             return Err(archive_error(ArchiveErrorCode::PathCollision));
         }
     }

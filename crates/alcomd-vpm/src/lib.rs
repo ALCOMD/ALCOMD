@@ -17,6 +17,7 @@ mod repository_auth;
 mod repository_list;
 mod resolver;
 mod staging_package;
+mod template_archive;
 mod unity_migration;
 mod unity_version;
 mod user_package;

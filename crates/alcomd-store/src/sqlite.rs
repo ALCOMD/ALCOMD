@@ -42,6 +42,7 @@ const MIGRATION_V24: &str = include_str!("../migrations/0024_repository_archive_
 const MIGRATION_V25: &str = include_str!("../migrations/0025_repository_credentials.sql");
 const MIGRATION_V26: &str = include_str!("../migrations/0026_package_download_headers.sql");
 const MIGRATION_V27: &str = include_str!("../migrations/0027_http_archive_pins.sql");
+const MIGRATION_V28: &str = include_str!("../migrations/0028_project_template_archives.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -62,6 +63,9 @@ pub(super) fn initialize_connection_with_report(
         });
     }
     if (5..=21).contains(&version) && legacy_template_operations_active(&connection)? {
+        return Err(StoreOpenError::LegacyTemplateOperationsActive);
+    }
+    if (23..=27).contains(&version) && template_declaration_operations_active(&connection)? {
         return Err(StoreOpenError::LegacyTemplateOperationsActive);
     }
     connection
@@ -217,6 +221,9 @@ pub(super) fn initialize_connection_with_report(
             .execute_batch(MIGRATION_V27)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
+    if version <= 27 {
+        migrate_template_archives(&mut connection)?;
+    }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -291,6 +298,35 @@ fn legacy_template_operations_active(connection: &Connection) -> Result<bool, St
         .map_err(|_| StoreOpenError::Unavailable)
 }
 
+fn migrate_template_archives(connection: &mut Connection) -> Result<(), StoreOpenError> {
+    with_foreign_keys_suspended(connection, |transaction| {
+        if template_declaration_operations_active(transaction)? {
+            return Err(StoreOpenError::LegacyTemplateOperationsActive);
+        }
+        transaction
+            .execute_batch(MIGRATION_V28)
+            .map_err(|_| StoreOpenError::Unavailable)
+    })
+}
+
+fn template_declaration_operations_active(connection: &Connection) -> Result<bool, StoreOpenError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM operations o
+                WHERE o.kind='projects.create'
+                  AND o.state NOT IN ('succeeded','failed','cancelled')
+                  AND (json_type(o.request_json,'$.template')='object'
+                       OR EXISTS(SELECT 1 FROM operation_journal j
+                                 WHERE j.operation_id=o.operation_id
+                                   AND j.kind='projects.create.declaration'))
+            )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| StoreOpenError::Unavailable)
+}
+
 fn with_foreign_keys_suspended(
     connection: &mut Connection,
     migrate: impl FnOnce(&Transaction<'_>) -> Result<(), StoreOpenError>,
@@ -352,6 +388,10 @@ mod backup_compression_migration_tests;
 #[cfg(test)]
 #[path = "sqlite_template_removal_tests.rs"]
 mod template_removal_migration_tests;
+
+#[cfg(test)]
+#[path = "sqlite_template_archives_tests.rs"]
+mod template_archives_migration_tests;
 
 #[cfg(test)]
 pub(super) fn state21_fixture(path: &Path) -> Connection {
@@ -702,19 +742,20 @@ pub(super) fn cancel_operation(
     if operation.state.is_terminal() {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
-    if matches!(operation.kind.as_str(), "projects.copy" | "projects.create")
-        && matches!(
-            operation.progress_phase,
-            Some(
-                FilesystemPhase::PublishIntent
-                    | FilesystemPhase::TargetPublished
-                    | FilesystemPhase::ProjectRegistryCommitIntent
-                    | FilesystemPhase::StateCommitted
-                    | FilesystemPhase::CleanupComplete
-                    | FilesystemPhase::RecoveryRequired
-            )
+    if matches!(
+        operation.kind.as_str(),
+        "projects.copy" | "projects.create" | "projectTemplates.export"
+    ) && matches!(
+        operation.progress_phase,
+        Some(
+            FilesystemPhase::PublishIntent
+                | FilesystemPhase::TargetPublished
+                | FilesystemPhase::ProjectRegistryCommitIntent
+                | FilesystemPhase::StateCommitted
+                | FilesystemPhase::CleanupComplete
+                | FilesystemPhase::RecoveryRequired
         )
-    {
+    ) {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
     if operation.kind == "projects.delete-directory"
@@ -1004,6 +1045,8 @@ pub(super) fn recover(
                     | "projects.copy"
                     | "projects.delete-directory"
                     | "projects.unity-migration"
+                    | "projectTemplates.save"
+                    | "projectTemplates.export"
             )
         {
             continue;
@@ -1161,7 +1204,8 @@ pub(super) fn load_owned_operation(
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-              WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
+              WHERE j.operation_id=operations.operation_id AND j.kind IN (
+                  'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1 AND owner_principal_id=?2",
         params![operation_id.to_string(), owner.as_str()],
@@ -1186,7 +1230,8 @@ fn load_operation(
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-              WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
+              WHERE j.operation_id=operations.operation_id AND j.kind IN (
+                  'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
               ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1",
         [operation_id.to_string()],
@@ -1269,7 +1314,8 @@ pub(super) fn list_operations(
                  (SELECT phase FROM backup_restore_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
-                  WHERE j.operation_id=operations.operation_id AND j.kind IN ('backups.create','projects.create')
+                  WHERE j.operation_id=operations.operation_id AND j.kind IN (
+                      'backups.create','projects.create','projectTemplates.save','projectTemplates.export')
                   ORDER BY step DESC LIMIT 1))
              FROM operations
              WHERE owner_principal_id=?1

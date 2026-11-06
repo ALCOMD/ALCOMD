@@ -620,7 +620,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
         alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
-        alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1,
+        alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2,
         alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
@@ -904,6 +904,7 @@ async fn dispatch_m2(
         alcomd_protocol::METHOD_PROJECTS_CREATE
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE
+        | alcomd_protocol::METHOD_PROJECT_TEMPLATES_EXPORT
         | alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE => {
             project_create_rpc::dispatch(request, state, &applications.project_create, access).await
         }

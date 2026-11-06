@@ -225,10 +225,29 @@ impl FrozenPackageMaterializer {
         prepared: PreparedFrozenPackages,
         evidence: StagingProjectEvidence,
     ) -> Result<StagingPackageEvidence, M4Error> {
-        let (prepared, work) =
-            tokio::task::spawn_blocking(move || prepare_materialization(prepared, evidence))
-                .await
-                .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
+        self.materialize_with_ranges(prepared, evidence, false)
+            .await
+    }
+
+    pub(crate) async fn materialize_template(
+        &self,
+        prepared: PreparedFrozenPackages,
+        evidence: StagingProjectEvidence,
+    ) -> Result<StagingPackageEvidence, M4Error> {
+        self.materialize_with_ranges(prepared, evidence, true).await
+    }
+
+    async fn materialize_with_ranges(
+        &self,
+        prepared: PreparedFrozenPackages,
+        evidence: StagingProjectEvidence,
+        preserve_input_ranges: bool,
+    ) -> Result<StagingPackageEvidence, M4Error> {
+        let (prepared, work) = tokio::task::spawn_blocking(move || {
+            prepare_materialization(prepared, evidence, preserve_input_ranges)
+        })
+        .await
+        .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
         extract_package_objects(&work.stage, &prepared.change_set, &prepared.objects).await?;
         tokio::task::spawn_blocking(move || finish_materialization(prepared.change_set, work))
             .await
@@ -278,6 +297,7 @@ struct PackageMaterialization {
 fn prepare_materialization(
     prepared: PreparedFrozenPackages,
     evidence: StagingProjectEvidence,
+    preserve_input_ranges: bool,
 ) -> Result<(PreparedFrozenPackages, PackageMaterialization), M4Error> {
     validate_staging_root(&evidence)?;
     let packages = evidence.root.join("Packages");
@@ -297,7 +317,11 @@ fn prepare_materialization(
     {
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }
-    let final_vpm = materialize_vpm_manifest(&initial_vpm, &prepared.change_set)?;
+    let final_vpm = if preserve_input_ranges {
+        crate::plan::materialize_template_manifest(&initial_vpm, &prepared.change_set)?
+    } else {
+        materialize_vpm_manifest(&initial_vpm, &prepared.change_set)?
+    };
     if digest(&final_vpm) != evidence.final_vpm_manifest_sha256 {
         return Err(M4Error::new(M4ErrorCode::PlanStale));
     }

@@ -1,13 +1,16 @@
-use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
     AccessContext, IdempotencyKey, M4Store, OperationId, PackageChangeSet, PackageSourcePin,
-    Permission, PrincipalId, ProjectId, ProjectObservation, ResolverCatalog, ResourceKey,
-    ResourceLockCoordinator, TechnicalErrorContext,
+    Permission, PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ResolverCatalog,
+    ResourceKey, ResourceLockCoordinator, TechnicalErrorContext,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -32,28 +35,11 @@ pub struct ProjectTemplateRef {
 pub struct ProjectTemplateDeclaration {
     pub id: String,
     pub name: String,
-    pub unity: ProjectTemplateUnity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_version: Option<String>,
+    pub archive_sha256: String,
     pub dependencies: Vec<ProjectTemplateDependency>,
-    pub constraints: Vec<ProjectTemplateConstraint>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProjectTemplateUnity {
-    pub series: Vec<String>,
-    pub presets: Vec<String>,
-}
-
-impl ProjectTemplateUnity {
-    #[must_use]
-    pub fn allows(&self, version: &str) -> bool {
-        if self.series.is_empty() && self.presets.is_empty() {
-            return true;
-        }
-        let series = version.rsplit_once('.').map(|(series, _)| series);
-        self.presets.iter().any(|preset| preset == version)
-            || self.series.iter().any(|line| Some(line.as_str()) == series)
-    }
+    pub locked_versions: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -64,11 +50,63 @@ pub struct ProjectTemplateDependency {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectTemplateConstraint {
-    pub unity_version: String,
-    pub package_id: String,
-    pub version_range: String,
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ProjectTemplateSource {
+    File {
+        source_file: String,
+    },
+    Project {
+        project_id: ProjectId,
+        expected_project_revision: u64,
+        id: String,
+        name: String,
+        include_assets: bool,
+        lock_package_versions: bool,
+    },
+    Manual {
+        id: String,
+        name: String,
+        unity_version: String,
+        dependencies: Vec<ProjectTemplateDependency>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ProjectTemplateJobRequest {
+    Save {
+        source: ProjectTemplateSource,
+        expected_revision: Option<u64>,
+    },
+    Export {
+        reference: ProjectTemplateRef,
+        destination_file: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct ProjectTemplateJobWork {
+    pub owner: PrincipalId,
+    pub request: ProjectTemplateJobRequest,
+    pub export_declaration: Option<ProjectTemplateDeclaration>,
+    pub cancel_requested: bool,
+    pub publishing: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectTemplateJobAccepted {
+    pub operation_id: OperationId,
+    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -142,6 +180,7 @@ pub struct ProjectCreateError {
     code: ProjectCreateErrorCode,
     context: TechnicalErrorContext,
     diagnostic_id: Option<String>,
+    package_id: Option<String>,
     recover_on_restart: bool,
 }
 
@@ -152,6 +191,7 @@ impl ProjectCreateError {
             code,
             context: TechnicalErrorContext::default(),
             diagnostic_id: None,
+            package_id: None,
             recover_on_restart: false,
         }
     }
@@ -176,6 +216,17 @@ impl ProjectCreateError {
     #[must_use]
     pub fn path(&self) -> Option<&str> {
         self.context.path.as_deref()
+    }
+
+    #[must_use]
+    pub fn with_package_id(mut self, package_id: String) -> Self {
+        self.package_id = Some(package_id);
+        self
+    }
+
+    #[must_use]
+    pub fn package_id(&self) -> Option<&str> {
+        self.package_id.as_deref()
     }
 
     #[must_use]
@@ -204,6 +255,9 @@ impl fmt::Display for ProjectCreateError {
         formatter.write_str(project_create_error_name(self.code))?;
         if let Some(path) = self.path() {
             write!(formatter, " at {path}")?;
+        }
+        if let Some(package_id) = self.package_id() {
+            write!(formatter, " ({package_id})")?;
         }
         Ok(())
     }
@@ -277,6 +331,7 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
         id: OperationId,
         error_code: String,
         diagnostic_id: String,
+        package_id: Option<String>,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
 
@@ -298,14 +353,6 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
         cursor: Option<String>,
     ) -> impl Future<Output = Result<ProjectTemplatePage, ProjectCreateError>> + Send;
 
-    fn project_templates_save(
-        &self,
-        owner: PrincipalId,
-        declaration: ProjectTemplateDeclaration,
-        expected_revision: Option<u64>,
-        now_ms: u64,
-    ) -> impl Future<Output = Result<ProjectTemplateRecord, ProjectCreateError>> + Send;
-
     fn project_templates_remove(
         &self,
         owner: PrincipalId,
@@ -319,15 +366,105 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
         owner: PrincipalId,
         declarations: Vec<ProjectTemplateDeclaration>,
     ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
+
+    fn project_template_archive_references(
+        &self,
+    ) -> impl Future<Output = Result<BTreeSet<String>, ProjectCreateError>> + Send;
+
+    fn project_templates_source_project(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+    ) -> impl Future<Output = Result<ProjectRecord, ProjectCreateError>> + Send;
+
+    fn project_template_job_accept(
+        &self,
+        owner: PrincipalId,
+        request: ProjectTemplateJobRequest,
+        key: IdempotencyKey,
+        fingerprint: String,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<ProjectTemplateJobAccepted, ProjectCreateError>> + Send;
+
+    fn project_template_job_begin(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<Option<ProjectTemplateJobWork>, ProjectCreateError>> + Send;
+
+    fn project_template_job_publish_intent(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<bool, ProjectCreateError>> + Send;
+
+    fn project_template_job_finish_save(
+        &self,
+        id: OperationId,
+        declaration: ProjectTemplateDeclaration,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
+
+    fn project_template_job_finish_export(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
+
+    fn project_template_job_fail(
+        &self,
+        id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        package_id: Option<String>,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
+
+    fn project_template_job_cancel(
+        &self,
+        id: OperationId,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(), ProjectCreateError>> + Send;
+
+    fn project_template_job_pending(
+        &self,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<Vec<OperationId>, ProjectCreateError>> + Send;
 }
 
 pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
     type Stage: Send + Sync;
 
-    fn validate_declaration(
+    fn prepare_template(
         &self,
-        declaration: ProjectTemplateDeclaration,
+        source: ProjectTemplateSource,
+        project: Option<ProjectRecord>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError>;
+
+    fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError>;
+
+    fn prune_template_archives(
+        &self,
+        referenced: &BTreeSet<String>,
+    ) -> Result<(), ProjectCreateError>;
+
+    fn template_job_fingerprint(
+        &self,
+        request: &ProjectTemplateJobRequest,
+    ) -> Result<String, ProjectCreateError>;
+
+    fn export_template(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+        destination_file: &str,
+        id: OperationId,
+    ) -> Result<(), ProjectCreateError>;
+
+    fn finish_template_export(
+        &self,
+        destination_file: &str,
+        id: OperationId,
+    ) -> Result<(), ProjectCreateError>;
 
     fn prepare_destination(
         &self,
@@ -379,6 +516,8 @@ pub struct ProjectCreateApplication<S, A> {
     store: S,
     adapter: A,
     locks: Arc<ResourceLockCoordinator>,
+    // Archive publication and its catalogue commit must be indivisible to pruning.
+    template_archive_writes: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S, A> {
@@ -388,22 +527,14 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             store,
             adapter,
             locks,
+            template_archive_writes: Arc::default(),
         }
     }
 
     pub async fn seed_builtin_templates(&self) -> Result<(), ProjectCreateError> {
-        let declarations = [
-            include_str!("../../../specs/templates/vrchat-avatars.json"),
-            include_str!("../../../specs/templates/vrchat-worlds.json"),
-        ]
-        .into_iter()
-        .map(|json| {
-            let declaration = serde_json::from_str(json).map_err(|cause| {
-                ProjectCreateError::new(ProjectCreateErrorCode::Internal).with_source(cause)
-            })?;
-            self.adapter.validate_declaration(declaration)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        let _archive_write = self.template_archive_writes.lock().await;
+        let adapter = self.adapter.clone();
+        let declarations = template_io(move || adapter.builtin_templates()).await?;
         self.store
             .project_templates_seed(PrincipalId::local_owner(), declarations)
             .await
@@ -500,22 +631,118 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
     pub async fn save_template(
         &self,
         access: &AccessContext,
-        declaration: ProjectTemplateDeclaration,
+        source: ProjectTemplateSource,
         expected_revision: Option<u64>,
-    ) -> Result<ProjectTemplateRecord, ProjectCreateError> {
+        key: IdempotencyKey,
+    ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
         require_owner(access)?;
         if let Some(revision) = expected_revision {
-            validate_template_reference(&declaration.id, revision)?;
+            validate_safe_revision(revision)?;
         }
-        let declaration = self.adapter.validate_declaration(declaration)?;
-        self.store
-            .project_templates_save(
-                access.principal().clone(),
-                declaration,
+        match &source {
+            ProjectTemplateSource::File { source_file } => validate_template_path(source_file)?,
+            ProjectTemplateSource::Project {
+                project_id,
+                expected_project_revision,
+                id,
+                name,
+                ..
+            } => {
+                access
+                    .require_project_read_scope(&project_id.to_string())
+                    .map_err(|cause| {
+                        ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied)
+                            .with_source(cause)
+                    })?;
+                validate_safe_revision(*expected_project_revision)?;
+                validate_template_metadata(id, name)?;
+            }
+            ProjectTemplateSource::Manual {
+                id,
+                name,
+                unity_version,
+                dependencies,
+            } => {
+                validate_template_metadata(id, name)?;
+                crate::canonical_unity_version(unity_version).map_err(|cause| {
+                    ProjectCreateError::new(ProjectCreateErrorCode::InvalidInput).with_source(cause)
+                })?;
+                if dependencies.len() > 128
+                    || dependencies.iter().any(|entry| {
+                        entry.package_id.len() > 128 || entry.version_range.len() > 1024
+                    })
+                {
+                    return Err(ProjectCreateError::new(
+                        ProjectCreateErrorCode::InvalidInput,
+                    ));
+                }
+            }
+        }
+        self.start_template_job(
+            access,
+            ProjectTemplateJobRequest::Save {
+                source,
                 expected_revision,
+            },
+            key,
+        )
+        .await
+    }
+
+    pub async fn export_template(
+        &self,
+        access: &AccessContext,
+        reference: ProjectTemplateRef,
+        destination_file: String,
+        key: IdempotencyKey,
+    ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
+        require_owner(access)?;
+        validate_template_reference(&reference.id, reference.revision)?;
+        validate_template_path(&destination_file)?;
+        self.start_template_job(
+            access,
+            ProjectTemplateJobRequest::Export {
+                reference,
+                destination_file,
+            },
+            key,
+        )
+        .await
+    }
+
+    async fn start_template_job(
+        &self,
+        access: &AccessContext,
+        request: ProjectTemplateJobRequest,
+        key: IdempotencyKey,
+    ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
+        let serialized = serde_json::to_vec(&request).map_err(|cause| {
+            ProjectCreateError::new(ProjectCreateErrorCode::Internal).with_source(cause)
+        })?;
+        if serialized.len() > 48 * 1024 {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::InvalidInput,
+            ));
+        }
+        let fingerprint = self.adapter.template_job_fingerprint(&request)?;
+        let accepted = self
+            .store
+            .project_template_job_accept(
+                access.principal().clone(),
+                request,
+                key,
+                fingerprint,
                 now_ms()?,
             )
-            .await
+            .await?;
+        if !accepted.replayed {
+            let application = self.clone();
+            let id = accepted.operation_id;
+            tokio::spawn(async move {
+                let _ = application.run_template_job(id).await;
+            });
+        }
+        Ok(accepted)
     }
 
     pub async fn remove_template(
@@ -526,20 +753,146 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
     ) -> Result<u64, ProjectCreateError> {
         require_owner(access)?;
         validate_template_reference(&id, expected_revision)?;
-        self.store
+        let revision = self
+            .store
             .project_templates_remove(access.principal().clone(), id, expected_revision, now_ms()?)
-            .await
+            .await?;
+        self.prune_template_archives().await;
+        Ok(revision)
+    }
+
+    async fn prune_template_archives(&self) {
+        let _archive_write = self.template_archive_writes.lock().await;
+        let result = async {
+            // A newly accepted create/export can only pin an archive still in the catalogue.
+            let referenced = self.store.project_template_archive_references().await?;
+            let adapter = self.adapter.clone();
+            template_io(move || adapter.prune_template_archives(&referenced)).await
+        }
+        .await;
+        if let Err(cause) = result {
+            // Catalogue changes are already committed; startup retries orphan cleanup.
+            eprintln!("Could not prune unused template archives: {cause}");
+        }
     }
 
     pub async fn recover(&self) -> Result<(), ProjectCreateError> {
         for id in self.store.project_create_pending(now_ms()?).await? {
             self.run(id).await?;
         }
+        for id in self.store.project_template_job_pending(now_ms()?).await? {
+            self.run_template_job(id).await?;
+        }
+        self.prune_template_archives().await;
         Ok(())
+    }
+
+    async fn run_template_job(&self, id: OperationId) -> Result<(), ProjectCreateError> {
+        let Some(work) = self.store.project_template_job_begin(id, now_ms()?).await? else {
+            self.prune_template_archives().await;
+            return Ok(());
+        };
+        let result = if work.cancel_requested && !work.publishing {
+            self.store.project_template_job_cancel(id, now_ms()?).await
+        } else {
+            self.run_template_work(id, work).await
+        };
+        if let Err(cause) = result {
+            if cause.recover_on_restart || cause.code() == ProjectCreateErrorCode::StoreUnavailable
+            {
+                return Err(cause);
+            }
+            let (cause, diagnostic_id) = cause.ensure_diagnostic_id();
+            crate::with_operation_log_failure(
+                id,
+                crate::operation_log_error(&cause, cause.path()),
+                self.store.project_template_job_fail(
+                    id,
+                    project_create_error_name(cause.code()).to_owned(),
+                    diagnostic_id,
+                    cause.package_id().map(str::to_owned),
+                    now_ms()?,
+                ),
+            )
+            .await?;
+        }
+        self.prune_template_archives().await;
+        Ok(())
+    }
+
+    async fn run_template_work(
+        &self,
+        id: OperationId,
+        work: ProjectTemplateJobWork,
+    ) -> Result<(), ProjectCreateError> {
+        let adapter = self.adapter.clone();
+        match work.request {
+            ProjectTemplateJobRequest::Save { source, .. } => {
+                let mut project_guard = None;
+                let project = if let ProjectTemplateSource::Project {
+                    project_id,
+                    expected_project_revision,
+                    ..
+                } = &source
+                {
+                    project_guard = Some(
+                        self.locks
+                            .acquire(vec![ResourceKey::Project(*project_id)])
+                            .await,
+                    );
+                    let record = self
+                        .store
+                        .project_templates_source_project(work.owner, *project_id)
+                        .await?;
+                    if record.revision.get() != *expected_project_revision {
+                        return Err(ProjectCreateError::new(
+                            ProjectCreateErrorCode::TemplateStale,
+                        ));
+                    }
+                    Some(record)
+                } else {
+                    None
+                };
+                let _archive_write = self.template_archive_writes.lock().await;
+                let declaration =
+                    template_io(move || adapter.prepare_template(source, project)).await?;
+                let result = self
+                    .store
+                    .project_template_job_finish_save(id, declaration, now_ms()?)
+                    .await;
+                drop(project_guard);
+                result
+            }
+            ProjectTemplateJobRequest::Export {
+                destination_file, ..
+            } => {
+                let declaration = work
+                    .export_declaration
+                    .ok_or_else(|| ProjectCreateError::new(ProjectCreateErrorCode::Internal))?;
+                if !self
+                    .store
+                    .project_template_job_publish_intent(id, now_ms()?)
+                    .await?
+                {
+                    return self.store.project_template_job_cancel(id, now_ms()?).await;
+                }
+                let destination = destination_file.clone();
+                template_io(move || adapter.export_template(&declaration, &destination, id))
+                    .await?;
+                self.store
+                    .project_template_job_finish_export(id, now_ms()?)
+                    .await?;
+                let adapter = self.adapter.clone();
+                let _ = template_io(move || adapter.finish_template_export(&destination_file, id))
+                    .await;
+                Ok(())
+            }
+        }
     }
 
     async fn run(&self, id: OperationId) -> Result<(), ProjectCreateError> {
         let Some(work) = self.store.project_create_begin(id, now_ms()?).await? else {
+            self.prune_template_archives().await;
             return Ok(());
         };
         if let Err(cause) = self.run_work(id, work.clone()).await {
@@ -556,10 +909,14 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     id,
                     project_create_error_name(cause.code()).to_owned(),
                     diagnostic_id,
+                    cause.package_id().map(str::to_owned),
                     now_ms()?,
                 ),
             )
             .await?;
+        }
+        if work.declaration.is_some() {
+            self.prune_template_archives().await;
         }
         Ok(())
     }
@@ -584,11 +941,9 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             }
         }
         let stage = self.adapter.stage(id, &work)?;
-        if work
-            .declaration
-            .as_ref()
-            .is_some_and(|value| !value.dependencies.is_empty())
-        {
+        if work.declaration.as_ref().is_some_and(|value| {
+            !value.dependencies.is_empty() || !value.locked_versions.is_empty()
+        }) {
             if work.packages.is_none() {
                 let catalog = self
                     .store
@@ -648,12 +1003,51 @@ pub fn valid_project_template_id(id: &str) -> bool {
 }
 
 fn validate_template_reference(id: &str, revision: u64) -> Result<(), ProjectCreateError> {
-    if !valid_project_template_id(id) || !(1..=9_007_199_254_740_991).contains(&revision) {
+    if !valid_project_template_id(id) {
+        return Err(ProjectCreateError::new(
+            ProjectCreateErrorCode::InvalidInput,
+        ));
+    }
+    validate_safe_revision(revision)
+}
+
+fn validate_safe_revision(revision: u64) -> Result<(), ProjectCreateError> {
+    if !(1..=9_007_199_254_740_991).contains(&revision) {
         return Err(ProjectCreateError::new(
             ProjectCreateErrorCode::InvalidInput,
         ));
     }
     Ok(())
+}
+
+fn validate_template_metadata(id: &str, name: &str) -> Result<(), ProjectCreateError> {
+    if !valid_project_template_id(id)
+        || name.trim().is_empty()
+        || name.len() > 128
+        || name.chars().any(char::is_control)
+    {
+        return Err(ProjectCreateError::new(
+            ProjectCreateErrorCode::InvalidInput,
+        ));
+    }
+    Ok(())
+}
+
+fn validate_template_path(path: &str) -> Result<(), ProjectCreateError> {
+    if path.is_empty() || path.len() > 32_768 || path.contains('\0') {
+        return Err(ProjectCreateError::new(
+            ProjectCreateErrorCode::InvalidInput,
+        ));
+    }
+    Ok(())
+}
+
+async fn template_io<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, ProjectCreateError> + Send + 'static,
+) -> Result<T, ProjectCreateError> {
+    tokio::task::spawn_blocking(work).await.map_err(|cause| {
+        ProjectCreateError::new(ProjectCreateErrorCode::Internal).with_source(cause)
+    })?
 }
 
 fn now_ms() -> Result<u64, ProjectCreateError> {

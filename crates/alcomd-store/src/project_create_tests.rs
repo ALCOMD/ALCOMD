@@ -1,6 +1,6 @@
 use alcomd_application::{
-    ManifestState, PackageChangeSet, ProjectTemplateDependency, ProjectTemplateRef,
-    ProjectTemplateUnity, ProjectType, StoreErrorKind,
+    ManifestState, PackageChangeSet, ProjectTemplateDependency, ProjectTemplateRef, ProjectType,
+    StoreErrorKind,
 };
 
 use super::*;
@@ -12,12 +12,10 @@ fn declaration(
     ProjectTemplateDeclaration {
         id: id.to_owned(),
         name: "同名模板".to_owned(),
-        unity: ProjectTemplateUnity {
-            series: vec!["2022.3".to_owned()],
-            presets: Vec::new(),
-        },
+        editor_version: Some("2022.3.22f1".to_owned()),
+        archive_sha256: "ab".repeat(32),
         dependencies,
-        constraints: Vec::new(),
+        locked_versions: Default::default(),
     }
 }
 
@@ -66,13 +64,15 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
             .code(),
         ProjectCreateErrorCode::TemplateConflict
     );
-    let user = declaration(
+    let mut user = declaration(
         "com.example.user",
         vec![ProjectTemplateDependency {
             package_id: "com.example.package".to_owned(),
             version_range: "^1.0.0".to_owned(),
         }],
     );
+    user.archive_sha256 = "cd".repeat(32);
+    let frozen_digest = user.archive_sha256.clone();
     let saved = project_templates::save(&mut connection, &owner, user.clone(), None, 3)
         .expect("same display name is allowed");
     let reference = ProjectTemplateRef {
@@ -112,9 +112,15 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
         .expect("remove selected declaration");
     let mut replacement = user.clone();
     replacement.dependencies.clear();
+    replacement.archive_sha256 = "ef".repeat(32);
     let recreated = project_templates::save(&mut connection, &owner, replacement, None, 21)
         .expect("reuse public ID");
     assert!(recreated.revision > deletion && deletion > saved.revision);
+    assert!(
+        project_templates::archive_references(&connection)
+            .unwrap()
+            .contains(&frozen_digest)
+    );
     let work = begin_work(&mut connection, accepted.operation_id, 23)
         .expect("start accepted work")
         .expect("pending work");
@@ -171,6 +177,20 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
             .filter(|event| event.kind == "project-template.changed")
             .count(),
         3
+    );
+    fail(
+        &mut connection,
+        accepted.operation_id,
+        "internal_error",
+        &OperationId::new().to_string(),
+        None,
+        29,
+    )
+    .expect("finish failed create");
+    assert!(
+        !project_templates::archive_references(&connection)
+            .unwrap()
+            .contains(&frozen_digest)
     );
 }
 
@@ -302,6 +322,7 @@ fn accepted_cancel_survives_restart_and_wins_against_pre_publish_failure() {
         operation,
         "internal_error",
         &Uuid::new_v4().to_string(),
+        None,
         16,
     )
     .expect("finalize prior cancellation");

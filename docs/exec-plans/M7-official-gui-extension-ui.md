@@ -210,6 +210,15 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 - State23 新增模板目录和目录修订分配状态。记录保存 owner、公开模板 ID、内部 UUID、规范声明 JSON、正整数修订和锁定标记，按 owner 和公开 ID 唯一。修订在同一事务分配，跨删除和重建不重用。预置 Avatars 和 Worlds 使用与用户声明完全相同的结构和校验，分别使用 `com.vrclearn.alcomd.templates.vrchat.avatars` 和 `com.vrclearn.alcomd.templates.vrchat.worlds`。预设依次为 `2022.3.22f1`、`2022.3.6f1`、`2019.4.31f1`，2019 对应 SDK 与 Base 上限 `3.4.2` 由条件约束表达。内置锁仅影响编辑及删除。普通表单可生成与内置逐字节一致的声明，同名不同 ID 可分别保存。
 - `projects.create` 请求增加可选 `template: {id, revision}`。Core 接受任务时在事务内校验修订并冻结声明，旧修订或已删除记录提示重新选择。使用模板依赖的创建还检查现有 `packages.read`、`repositories.read` 和 `packages.manage` 权限，通过同一求解器锁定来源、版本和内容后再发布。GUI 默认不使用模板，无独立 Blank。模板创建、更新和删除同事务写入 `project-template.changed`，沿用当前事件入口，事件 aggregate ID 用内部 UUID，GUI 按模板目录失效处理。
 
+#### 单文件 VCC 模板与两种创建方式（所有者已批准）
+
+每个模板为一个 `.alcomdtemplate` 文件。标准 ZIP 根层使用 VCC 的 `package.json`、`Assets/`、`Packages/` 与 `ProjectSettings/` 约定，按实际内容包含目录。根清单的 `name` 与 `displayName` 分别提供 ID 和显示名。依赖使用 `Packages/vpm-manifest.json`。参见 [VCC 用户模板](https://vcc.docs.vrchat.com/vpm/templates/#user-templates)和 [VPM 文件约定](https://vcc.docs.vrchat.com/vpm/source-control/)。
+
+- `projectTemplates.v2` 取代声明合同。本机所有者可用 `projectTemplates.list`、`save`、`export` 和 `remove`。列表记录为 `{id,name,editorVersion?,revision,locked}`。保存接收 `{source,expectedRevision?,idempotencyKey}`，来源是 `file{sourceFile}`、`project{projectId,expectedProjectRevision,id,name,includeAssets?,lockPackageVersions?}` 或 `manual{id,name,unityVersion,dependencies}`。导出接收 `{id,revision,destinationFile,idempotencyKey}`。保存和导出返回 `{operationId,replayed}`，终态成功分别返回 `{template}` 和 `{id,revision}`。同 ID 同内容复用记录，替换须提供当前修订。删除和建项目的模板引用沿用 ID 及修订。
+- 从项目创建检查 `projects.read` 及项目修订，按明确来源读取 Unity 版本、工程设置、软件包清单和可移植嵌入包。默认关闭 `includeAssets` 和 `lockPackageVersions`。勾选资产才读取 `Assets/` 及其中的 `.meta`。默认将直接 VPM 依赖写为 `*`，勾选锁定才保留实际版本与传递锁。手动填写创建填写模板 ID、显示名、Unity 版本和依赖范围。
+- Core 在数据根的 `templates/` 保存验证后的 ZIP，按摘要绑定目录记录和未终结任务。删除模板后清理无引用的内部归档，仍有任务使用则在最后一个引用释放后清理。导入原件和导出副本均独立于内部归档。从模板创建冻结归档及修订，校验路径、归档上限和完整性，在现有暂存中展开工程、补齐目录、更新项目名及版本、解析或恢复 VPM 依赖，再独占发布。导出也使用独占发布。内置 Avatar、World 与用户模板共用归档，保留三种 Unity 版本，`2022.3.22f1` 为默认入口。
+- State28 清除旧模板记录、对应 `project-template` 事件和终态 `projects.create` 任务的旧冻结声明块。保留已创建项目、项目事件、任务、幂等记录、模板修订和事件水位。仍使用旧声明的活跃任务须先结束。新模板保存、导出加入持久任务种类。旧自建模板可通过新入口重新创建。
+
 #### 验收与交付边界
 
 第一批在隔离 profile 验证旧入口消失、空页零模板请求、State21 定向清理与中断拒绝、外键和水位保留、GUI/CLI 无模板创建、目录冲突、幂等及发布恢复，并回归登记、复制、备份还原。第二批验证权限、同名不同 ID、同 ID 的重用和冲突、删除后重建的旧修订、内置不可编辑删除、普通表单与内置字节一致、六组内置模板与 Unity 版本组合、依赖约束及事件更新。同步协议规范、Schema、SDK 和契约向量，分别记录验证。H2–H6 历史材料保留，M7/H7 最终确认由所有者完成。

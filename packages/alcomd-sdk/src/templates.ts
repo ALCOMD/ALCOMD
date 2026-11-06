@@ -3,33 +3,23 @@ export interface ProjectTemplateRef {
     revision: number;
 }
 
-export interface ProjectTemplateUnity {
-    series: string[];
-    presets: string[];
-}
-
 export interface ProjectTemplateDependency {
     packageId: string;
     versionRange: string;
 }
 
-export interface ProjectTemplateConstraint extends ProjectTemplateDependency {
-    unityVersion: string;
-}
-
-export interface ProjectTemplateDeclaration {
+export interface ProjectTemplateRecord {
     id: string;
     name: string;
-    unity: ProjectTemplateUnity;
-    dependencies: ProjectTemplateDependency[];
-    constraints: ProjectTemplateConstraint[];
-}
-
-export interface ProjectTemplateRecord {
-    declaration: ProjectTemplateDeclaration;
+    editorVersion?: string;
     revision: number;
     locked: boolean;
 }
+
+export type ProjectTemplateSource =
+    | { kind: "file"; sourceFile: string }
+    | { kind: "project"; projectId: string; expectedProjectRevision: number; id: string; name: string; includeAssets?: boolean; lockPackageVersions?: boolean }
+    | { kind: "manual"; id: string; name: string; unityVersion: string; dependencies: ProjectTemplateDependency[] };
 
 export interface ProjectsCreateParams {
     name: string;
@@ -56,12 +46,34 @@ export interface ProjectTemplatesListResult {
 }
 
 export interface ProjectTemplatesSaveParams {
-    declaration: ProjectTemplateDeclaration;
+    source: ProjectTemplateSource;
     expectedRevision?: number;
+    idempotencyKey: string;
 }
 
-export interface ProjectTemplatesSaveResult {
+export interface ProjectTemplateOperationAccepted {
+    operationId: string;
+    replayed: boolean;
+}
+
+export type ProjectTemplatesSaveResult = ProjectTemplateOperationAccepted;
+
+export interface ProjectTemplateSaveOperationResult {
     template: ProjectTemplateRecord;
+}
+
+export interface ProjectTemplatesExportParams {
+    id: string;
+    revision: number;
+    destinationFile: string;
+    idempotencyKey: string;
+}
+
+export type ProjectTemplatesExportResult = ProjectTemplateOperationAccepted;
+
+export interface ProjectTemplateExportOperationResult {
+    id: string;
+    revision: number;
 }
 
 export interface ProjectTemplatesRemoveParams {

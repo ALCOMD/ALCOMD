@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use alcomd_application::{
     LogTarget, PrincipalId, ProjectCreateError, ProjectCreateErrorCode, ProjectTemplateDeclaration,
     ProjectTemplatePage, ProjectTemplateRecord, ProjectTemplateRef,
@@ -9,6 +11,22 @@ use super::operation_logs::{self, CommittedStep};
 use super::project_create::{begin, db_error, integer, internal};
 
 const MAX_DECLARATION_BYTES: usize = 24 * 1024;
+
+pub(super) fn archive_references(
+    connection: &Connection,
+) -> Result<BTreeSet<String>, ProjectCreateError> {
+    let mut statement = connection
+        .prepare("SELECT DISTINCT json_extract(declaration_json,'$.archiveSha256') FROM project_templates")
+        .map_err(db_error)?;
+    let mut referenced = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(db_error)?
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(db_error)?;
+    super::project_create::add_archive_references(connection, &mut referenced)?;
+    super::project_template_jobs::add_archive_references(connection, &mut referenced)?;
+    Ok(referenced)
+}
 
 pub(super) fn list(
     connection: &Connection,
@@ -62,6 +80,7 @@ pub(super) fn frozen(
     }
 }
 
+#[cfg(test)]
 pub(super) fn save(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -70,7 +89,19 @@ pub(super) fn save(
     now_ms: u64,
 ) -> Result<ProjectTemplateRecord, ProjectCreateError> {
     let transaction = begin(connection)?;
-    let existing = get(&transaction, owner, &declaration.id)?;
+    let saved = save_in_transaction(&transaction, owner, declaration, expected_revision, now_ms)?;
+    transaction.commit().map_err(db_error)?;
+    Ok(saved)
+}
+
+pub(super) fn save_in_transaction(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    declaration: ProjectTemplateDeclaration,
+    expected_revision: Option<u64>,
+    now_ms: u64,
+) -> Result<ProjectTemplateRecord, ProjectCreateError> {
+    let existing = get(transaction, owner, &declaration.id)?;
     let encoded = encode(&declaration)?;
     let aggregate_id = if let Some(expected) = expected_revision {
         let (current, aggregate_id) = editable(existing, expected)?;
@@ -89,7 +120,7 @@ pub(super) fn save(
         }
         Uuid::new_v4().to_string()
     };
-    let revision = allocate_revision(&transaction)?;
+    let revision = allocate_revision(transaction)?;
     if expected_revision.is_some() {
         transaction
             .execute(
@@ -100,7 +131,7 @@ pub(super) fn save(
             .map_err(db_error)?;
     } else {
         insert(
-            &transaction,
+            transaction,
             owner,
             &declaration,
             &encoded,
@@ -110,7 +141,7 @@ pub(super) fn save(
         )?;
     }
     changed(
-        &transaction,
+        transaction,
         owner,
         &aggregate_id,
         revision,
@@ -118,14 +149,13 @@ pub(super) fn save(
         now_ms,
     )?;
     log_change(
-        &transaction,
+        transaction,
         owner,
         &declaration,
         "projectTemplates.save",
         "saved",
         now_ms,
     )?;
-    transaction.commit().map_err(db_error)?;
     Ok(ProjectTemplateRecord {
         declaration,
         revision,

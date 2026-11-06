@@ -1,30 +1,28 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use alcomd_application::{
-    OperationId, PlanAction, ProjectCreateAdapter, ProjectCreateError, ProjectCreateErrorCode,
+    OperationId, ProjectCreateAdapter, ProjectCreateError, ProjectCreateErrorCode,
     ProjectCreateInput, ProjectCreatePackages, ProjectCreateWork, ProjectObservation,
-    ProjectRecord, ProjectTemplateDeclaration, RepositoryArchivePinStore, ResolverCatalog,
-    ResourceKey, ResourceLockCoordinator, Revision, canonical_unity_version,
-    valid_project_template_id,
+    ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateJobRequest, ProjectTemplateSource,
+    RepositoryArchivePinStore, ResolverCatalog, ResourceKey, ResourceLockCoordinator, Revision,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::range::VpmRange;
+use crate::template_archive::TemplateArchiveStore;
 use crate::{
     FrozenPackageMaterializer, ResolveRequest, StagingProjectEvidence, UnityVersion, VpmReader,
-    build_resolution_plan, candidates_from_catalog, inspect_package_project,
-    project_creation_resource,
+    candidates_from_catalog, inspect_package_project, project_creation_resource,
 };
 
 const UPM_MANIFEST: &[u8] = b"{\"dependencies\":{}}\n";
 const VPM_MANIFEST: &[u8] = b"{\"dependencies\":{},\"locked\":{}}\n";
-const MAX_DECLARATION_BYTES: usize = 24 * 1024;
 const OWNER_MARKER: &str = "project-create.json";
 
 #[derive(Clone)]
@@ -32,6 +30,7 @@ pub struct ProjectCreateEngine<S> {
     store: S,
     reader: VpmReader,
     materializer: FrozenPackageMaterializer,
+    templates: TemplateArchiveStore,
 }
 
 impl<S> ProjectCreateEngine<S> {
@@ -40,6 +39,8 @@ impl<S> ProjectCreateEngine<S> {
         reader: VpmReader,
         cache_root: PathBuf,
     ) -> Result<Self, ProjectCreateError> {
+        let templates =
+            TemplateArchiveStore::new(cache_root.parent().ok_or_else(invalid)?.join("templates"))?;
         let cache = reader
             .package_cache(cache_root)
             .map_err(|cause| internal().with_source(cause))?;
@@ -47,6 +48,7 @@ impl<S> ProjectCreateEngine<S> {
             store,
             reader,
             materializer: FrozenPackageMaterializer::new(cache),
+            templates,
         })
     }
 
@@ -59,14 +61,20 @@ impl<S> ProjectCreateEngine<S> {
         if directory_identity(path)? != identity {
             return Err(destination_changed(path));
         }
-        let expected_vpm = work.packages.as_ref().map_or_else(
-            || Sha256::digest(VPM_MANIFEST).into(),
-            |packages| packages.change_set.vpm_manifest_sha256,
-        );
+        let expected_manifest = |name, default: &[u8]| {
+            work.declaration.as_ref().map_or_else(
+                || Ok(Sha256::digest(default).into()),
+                |declaration| self.templates.manifest_digest(declaration, name, default),
+            )
+        };
+        let expected_vpm = match &work.packages {
+            Some(packages) => packages.change_set.vpm_manifest_sha256,
+            None => expected_manifest("Packages/vpm-manifest.json", VPM_MANIFEST)?,
+        };
         let files = [
             (
                 &["Packages", "manifest.json"][..],
-                Sha256::digest(UPM_MANIFEST).into(),
+                expected_manifest("Packages/manifest.json", UPM_MANIFEST)?,
             ),
             (&["Packages", "vpm-manifest.json"][..], expected_vpm),
             (
@@ -102,6 +110,8 @@ impl<S> ProjectCreateEngine<S> {
 pub struct ProjectCreateStage {
     root: PathBuf,
     identity: Vec<u8>,
+    vpm_digest: [u8; 32],
+    upm_digest: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq)]
@@ -115,69 +125,47 @@ struct OwnerMarker {
 impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<S> {
     type Stage = ProjectCreateStage;
 
-    fn validate_declaration(
+    fn prepare_template(
         &self,
-        mut declaration: ProjectTemplateDeclaration,
+        source: ProjectTemplateSource,
+        project: Option<ProjectRecord>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
-        declaration.name = declaration.name.trim().to_owned();
-        if !valid_project_template_id(&declaration.id)
-            || declaration.name.is_empty()
-            || declaration.name.len() > 128
-            || declaration.name.chars().any(char::is_control)
-            || declaration.unity.series.len() > 64
-            || declaration.unity.presets.len() > 64
-            || declaration.dependencies.len() > 128
-            || declaration.constraints.len() > 256
-        {
-            return Err(invalid());
-        }
-        let mut series = BTreeSet::new();
-        for value in &declaration.unity.series {
-            let valid = value.len() <= 64
-                && UnityVersion::minimum(value, None).is_some()
-                && series.insert(value);
-            if !valid {
-                return Err(invalid());
-            }
-        }
-        declaration.unity.series.sort();
-        let mut presets = BTreeSet::new();
-        for value in &declaration.unity.presets {
-            if canonical_unity_version(value).is_err() || !presets.insert(value) {
-                return Err(invalid());
-            }
-        }
-        declaration
-            .dependencies
-            .sort_by(|a, b| a.package_id.cmp(&b.package_id));
-        let mut packages = BTreeSet::new();
-        for entry in &mut declaration.dependencies {
-            validate_package_id(&entry.package_id)?;
-            if !packages.insert(&entry.package_id) {
-                return Err(invalid());
-            }
-            entry.version_range = canonical_range(&entry.version_range)?;
-        }
-        declaration.constraints.sort_by(|a, b| {
-            (&a.unity_version, &a.package_id).cmp(&(&b.unity_version, &b.package_id))
-        });
-        let mut constraints = BTreeSet::new();
-        for entry in &mut declaration.constraints {
-            validate_package_id(&entry.package_id)?;
-            if canonical_unity_version(&entry.unity_version).is_err()
-                || !declaration.unity.allows(&entry.unity_version)
-                || !constraints.insert((&entry.unity_version, &entry.package_id))
-            {
-                return Err(invalid());
-            }
-            entry.version_range = canonical_range(&entry.version_range)?;
-        }
-        let bytes =
-            serde_json::to_vec(&declaration).map_err(|cause| internal().with_source(cause))?;
-        if bytes.len() > MAX_DECLARATION_BYTES {
-            return Err(invalid());
-        }
-        Ok(declaration)
+        self.templates.prepare(source, project)
+    }
+
+    fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError> {
+        self.templates.builtins()
+    }
+
+    fn prune_template_archives(
+        &self,
+        referenced: &BTreeSet<String>,
+    ) -> Result<(), ProjectCreateError> {
+        self.templates.prune_unreferenced(referenced)
+    }
+
+    fn template_job_fingerprint(
+        &self,
+        request: &ProjectTemplateJobRequest,
+    ) -> Result<String, ProjectCreateError> {
+        fingerprint(request)
+    }
+
+    fn export_template(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+        destination_file: &str,
+        id: OperationId,
+    ) -> Result<(), ProjectCreateError> {
+        self.templates.export(declaration, destination_file, id)
+    }
+
+    fn finish_template_export(
+        &self,
+        destination_file: &str,
+        id: OperationId,
+    ) -> Result<(), ProjectCreateError> {
+        self.templates.finish_export(destination_file, id)
     }
 
     fn prepare_destination(
@@ -194,13 +182,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
     }
 
     fn fingerprint(&self, input: &ProjectCreateInput) -> Result<String, ProjectCreateError> {
-        let bytes = serde_json::to_vec(input).map_err(|cause| internal().with_source(cause))?;
-        let digest = Sha256::digest(bytes);
-        let hash = digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        Ok(format!(r#"{{"sha256":"{hash}"}}"#))
+        fingerprint(input)
     }
 
     fn target_resource(&self, work: &ProjectCreateWork) -> ResourceKey {
@@ -224,6 +206,9 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         let root = container.join("project");
         fs::create_dir(&root).map_err(|cause| filesystem_error(&root, cause))?;
         let identity = directory_identity(&root)?;
+        if let Some(declaration) = &work.declaration {
+            self.templates.expand(declaration, &root)?;
+        }
         for relative in ["Library", "Library/ALCOMD"] {
             let path = root.join(relative);
             fs::create_dir(&path).map_err(|cause| filesystem_error(&path, cause))?;
@@ -233,18 +218,29 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         write_new(&root.join("Library/ALCOMD").join(OWNER_MARKER), &marker)?;
         for relative in ["Assets", "Packages", "ProjectSettings"] {
             let path = root.join(relative);
-            fs::create_dir(&path).map_err(|cause| filesystem_error(&path, cause))?;
+            if !exists(&path)? {
+                fs::create_dir(&path).map_err(|cause| filesystem_error(&path, cause))?;
+            }
         }
-        write_new(&root.join("Packages/manifest.json"), UPM_MANIFEST)?;
-        write_new(&root.join("Packages/vpm-manifest.json"), VPM_MANIFEST)?;
-        write_new(
-            &root.join("ProjectSettings/ProjectVersion.txt"),
-            project_version(work).as_bytes(),
-        )?;
+        if work.declaration.is_some() {
+            apply_product_name(&root, &work.input.name)?;
+        }
+        let upm_digest = scaffold_manifest(&root, "manifest.json", UPM_MANIFEST)?;
+        let vpm_digest = scaffold_manifest(&root, "vpm-manifest.json", VPM_MANIFEST)?;
+        let version = root.join("ProjectSettings/ProjectVersion.txt");
+        if exists(&version)? {
+            fs::remove_file(&version).map_err(|cause| filesystem_error(&version, cause))?;
+        }
+        write_new(&version, project_version(work).as_bytes())?;
         sync_stage(&root)?;
         alcomd_platform::sync_directory(&container)
             .map_err(|cause| filesystem_error(&container, cause))?;
-        Ok(ProjectCreateStage { root, identity })
+        Ok(ProjectCreateStage {
+            root,
+            identity,
+            vpm_digest,
+            upm_digest,
+        })
     }
 
     async fn resolve(
@@ -254,28 +250,39 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         catalog: ResolverCatalog,
     ) -> Result<ProjectCreatePackages, ProjectCreateError> {
         let declaration = work.declaration.as_ref().ok_or_else(internal)?;
-        if !catalog.complete || !declaration.unity.allows(&work.input.unity_version) {
+        if !catalog.complete
+            || declaration
+                .editor_version
+                .as_deref()
+                .is_some_and(|version| version != work.input.unity_version)
+        {
             return Err(dependency_error());
         }
-        let constraints = declaration
-            .constraints
-            .iter()
-            .filter(|entry| entry.unity_version == work.input.unity_version)
-            .map(|entry| {
-                let range = VpmRange::parse(&entry.version_range)
-                    .map_err(|cause| dependency_error().with_source(cause))?;
-                Ok((entry.package_id.as_str(), range))
-            })
-            .collect::<Result<BTreeMap<_, _>, ProjectCreateError>>()?;
         let mut candidates = candidates_from_catalog(&catalog)
             .map_err(|cause| dependency_error().with_source(cause))?;
-        candidates.retain(|candidate| {
-            constraints
-                .get(candidate.package_id.as_str())
-                .is_none_or(|range| range.matches(&candidate.version, false))
-        });
         let unity_version = UnityVersion::parse_editor(&work.input.unity_version);
-        let requests = declaration
+        let direct = declaration
+            .dependencies
+            .iter()
+            .map(|dependency| dependency.package_id.as_str())
+            .collect::<BTreeSet<_>>();
+        for (id, version) in &declaration.locked_versions {
+            let version = version.parse::<semver::Version>().map_err(|cause| {
+                dependency_error()
+                    .with_source(cause)
+                    .with_package_id(id.clone())
+            })?;
+            if !candidates.iter().any(|candidate| {
+                &candidate.package_id == id
+                    && candidate.version == version
+                    && crate::unity_version::meets_minimum(unity_version, candidate.unity_minimum)
+            }) {
+                return Err(dependency_error().with_package_id(id.clone()));
+            }
+            candidates
+                .retain(|candidate| &candidate.package_id != id || candidate.version == version);
+        }
+        let mut requests = declaration
             .dependencies
             .iter()
             .map(|dependency| ResolveRequest {
@@ -286,7 +293,33 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
                 unity_version,
             })
             .collect::<Vec<_>>();
-        let resolution = crate::engine::resolve_project_packages(
+        for (id, version) in &declaration.locked_versions {
+            if let Some(request) = requests
+                .iter_mut()
+                .find(|request| request.package_id == *id)
+            {
+                let actual = version.parse::<semver::Version>().map_err(|cause| {
+                    dependency_error()
+                        .with_source(cause)
+                        .with_package_id(id.clone())
+                })?;
+                if !VpmRange::parse(&request.range).is_ok_and(|range| range.matches(&actual, true))
+                {
+                    return Err(dependency_error().with_package_id(id.clone()));
+                }
+                request.range = format!("={version}");
+                request.include_prerelease = true;
+            } else {
+                requests.push(ResolveRequest {
+                    package_id: id.clone(),
+                    range: format!("={version}"),
+                    source: None,
+                    include_prerelease: true,
+                    unity_version,
+                });
+            }
+        }
+        let mut resolution = crate::engine::resolve_project_packages(
             self.materializer.cache(),
             &self.store,
             &work.owner,
@@ -295,7 +328,11 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             &requests,
         )
         .await
-        .map_err(|cause| dependency_error().with_source(cause))?;
+        .map_err(map_template_resolve_error)?;
+        for package in &mut resolution.packages {
+            package.direct = direct.contains(package.package_id.as_str());
+        }
+        resolution.dependency_edges.retain(|edge| !edge.direct);
         let observation = self
             .reader
             .inspect_project_root(stage.root.clone(), stage.identity.clone())
@@ -310,11 +347,20 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             favorite: false,
         })
         .map_err(|cause| internal().with_source(cause))?;
-        let plan = build_resolution_plan(&snapshot, PlanAction::Install, &resolution)
+        let plan = crate::plan::build_template_resolution_plan(&snapshot, &resolution)
             .map_err(|cause| dependency_error().with_source(cause))?;
         Ok(ProjectCreatePackages {
+            source_set: plan
+                .source_set
+                .into_iter()
+                .filter(|source| {
+                    plan.change_set
+                        .mutations
+                        .iter()
+                        .any(|mutation| mutation.source.as_ref() == Some(source))
+                })
+                .collect(),
             change_set: plan.change_set,
-            source_set: plan.source_set,
         })
     }
 
@@ -331,13 +377,13 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             .await
             .map_err(|cause| dependency_error().with_source(cause))?;
         self.materializer
-            .materialize(
+            .materialize_template(
                 prepared,
                 StagingProjectEvidence {
                     root: stage.root.clone(),
                     root_identity: stage.identity.clone(),
-                    initial_vpm_manifest_sha256: Sha256::digest(VPM_MANIFEST).into(),
-                    initial_upm_manifest_sha256: Sha256::digest(UPM_MANIFEST).into(),
+                    initial_vpm_manifest_sha256: stage.vpm_digest,
+                    initial_upm_manifest_sha256: stage.upm_digest,
                     final_vpm_manifest_sha256,
                 },
             )
@@ -409,6 +455,61 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
 
 fn project_version(work: &ProjectCreateWork) -> String {
     format!("m_EditorVersion: {}\n", work.input.unity_version)
+}
+
+fn fingerprint(value: &impl Serialize) -> Result<String, ProjectCreateError> {
+    let bytes = serde_json::to_vec(value).map_err(|cause| internal().with_source(cause))?;
+    let digest = Sha256::digest(bytes);
+    let hash = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(format!(r#"{{"sha256":"{hash}"}}"#))
+}
+
+fn scaffold_manifest(
+    root: &Path,
+    name: &str,
+    default: &[u8],
+) -> Result<[u8; 32], ProjectCreateError> {
+    let path = root.join("Packages").join(name);
+    if !exists(&path)? {
+        write_new(&path, default)?;
+        return Ok(Sha256::digest(default).into());
+    }
+    let bytes = crate::plan::read_regular_component(
+        root,
+        &["Packages", name],
+        crate::PROJECT_MANIFEST_LIMIT,
+    )
+    .map_err(|cause| destination_changed(&path).with_source(cause))?;
+    Ok(Sha256::digest(bytes).into())
+}
+
+fn apply_product_name(root: &Path, name: &str) -> Result<(), ProjectCreateError> {
+    let path = root.join("ProjectSettings/ProjectSettings.asset");
+    let original = if exists(&path)? {
+        Some(
+            crate::plan::read_regular_component(
+                root,
+                &["ProjectSettings", "ProjectSettings.asset"],
+                crate::PROJECT_MANIFEST_LIMIT,
+            )
+            .map_err(|cause| {
+                invalid()
+                    .with_source(cause)
+                    .with_path(path.display().to_string())
+            })?,
+        )
+    } else {
+        None
+    };
+    let updated = crate::template_archive::player_settings(original.as_deref(), name)
+        .map_err(|cause| cause.with_path(path.display().to_string()))?;
+    if original.is_some() {
+        fs::remove_file(&path).map_err(|cause| filesystem_error(&path, cause))?;
+    }
+    write_new(&path, &updated)
 }
 
 fn target_path(work: &ProjectCreateWork) -> PathBuf {
@@ -541,27 +642,6 @@ fn validate_leaf(value: &str) -> Result<(), ProjectCreateError> {
     Ok(())
 }
 
-fn validate_package_id(value: &str) -> Result<(), ProjectCreateError> {
-    if value.len() > 128
-        || !value
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-    {
-        return Err(invalid());
-    }
-    Ok(())
-}
-
-fn canonical_range(value: &str) -> Result<String, ProjectCreateError> {
-    VpmRange::parse(value)
-        .map(|range| range.canonical())
-        .map_err(|cause| invalid().with_source(cause))
-}
-
 fn exists(path: &Path) -> Result<bool, ProjectCreateError> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -605,21 +685,38 @@ fn dependency_error() -> ProjectCreateError {
     ProjectCreateError::new(ProjectCreateErrorCode::DependencyUnsatisfied)
 }
 
+fn map_template_resolve_error(cause: alcomd_application::M4Error) -> ProjectCreateError {
+    use crate::ResolveError::*;
+    let package = std::error::Error::source(&cause).and_then(|error| {
+        match error.downcast_ref::<crate::ResolveError>()? {
+            PackageNotFound { package_id }
+            | DependencyMissing { package_id }
+            | DependencyConflict { package_id }
+            | UnityIncompatible { package_id }
+            | VersionYanked { package_id }
+            | SourceAmbiguous { package_id, .. }
+            | LegacyCleanupRequired { package_id } => Some(package_id.clone()),
+            _ => None,
+        }
+    });
+    let error = dependency_error().with_source(cause);
+    if let Some(package) = package {
+        error.with_package_id(package)
+    } else {
+        error
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
 
     use alcomd_application::{
-        M4Error, PrincipalId, ProjectId, ProjectTemplateRef, RepositoryPackageSourcePin,
-        ResolverCatalogEntry, ResolverCatalogSource,
+        DependencyIdentity, M4Error, ManifestState, PrincipalId, ProjectId, ProjectTemplateRef,
+        ProjectType, RepositoryPackageSourcePin, ResolverCatalogEntry, ResolverCatalogSource,
     };
 
     use super::*;
-
-    const BUILTINS: [&str; 2] = [
-        include_str!("../../../specs/templates/vrchat-avatars.json"),
-        include_str!("../../../specs/templates/vrchat-worlds.json"),
-    ];
 
     #[derive(Clone)]
     struct FixturePinStore;
@@ -695,18 +792,225 @@ mod tests {
     }
 
     #[test]
-    fn both_builtin_files_use_the_normal_declaration_serializer() {
+    fn builtins_export_and_import_with_the_same_archive_format() {
         let fixture = Fixture::new();
-        for bytes in BUILTINS {
-            let input = serde_json::from_str(bytes).expect("ordinary authoring input");
-            let declaration = fixture
+        for declaration in fixture.engine.builtin_templates().expect("builtins") {
+            let path = fixture
+                .root
+                .join(format!("{}.alcomdtemplate", declaration.id));
+            let path = path.to_str().expect("fixture path");
+            let operation = OperationId::new();
+            fixture
                 .engine
-                .validate_declaration(input)
-                .expect("validate");
-            assert_eq!(
-                serde_json::to_string(&declaration).expect("canonical"),
-                bytes
+                .export_template(&declaration, path, operation)
+                .expect("export");
+            fixture
+                .engine
+                .export_template(&declaration, path, operation)
+                .expect("recover published export");
+            let collision = fixture
+                .engine
+                .export_template(&declaration, path, OperationId::new())
+                .expect_err("unique path");
+            assert_eq!(collision.code(), ProjectCreateErrorCode::TargetExists);
+            fixture
+                .engine
+                .finish_template_export(path, operation)
+                .expect("finish export");
+            let imported = fixture
+                .engine
+                .prepare_template(
+                    ProjectTemplateSource::File {
+                        source_file: path.to_owned(),
+                    },
+                    None,
+                )
+                .expect("import");
+            assert_eq!(imported, declaration);
+        }
+    }
+
+    #[test]
+    fn capture_uses_scoped_roots_and_keeps_only_selected_package_policy() {
+        let fixture = Fixture::new();
+        let source = fixture.root.join("source");
+        fs::create_dir(&source).expect("project root");
+        for relative in [
+            "ProjectSettings",
+            "Packages",
+            "Packages/com.example.local",
+            "Packages/com.example.direct",
+            "Packages/com.example.transitive",
+            "Library",
+        ] {
+            fs::create_dir(source.join(relative)).expect("project directories");
+        }
+        for (relative, data) in [
+            ("Assets", "ordinary file that would fail any traversal"),
+            ("Library/cache", "must remain outside archive"),
+            (
+                "ProjectSettings/ProjectVersion.txt",
+                "m_EditorVersion: 2022.3.22f1\n",
+            ),
+            ("ProjectSettings/TagManager.asset", "custom tags"),
+            (
+                "Packages/manifest.json",
+                r#"{"dependencies":{"com.example.local":"file:com.example.local"}}"#,
+            ),
+            (
+                "Packages/vpm-manifest.json",
+                r#"{"dependencies":{"com.example.direct":{"version":"^1.0.0"}},"locked":{"com.example.direct":{"version":"1.2.0","dependencies":{"com.example.transitive":"^2.0.0"}},"com.example.transitive":{"version":"2.1.0"}}}"#,
+            ),
+            ("Packages/com.example.direct/cache", "managed package"),
+            (
+                "Packages/com.example.transitive/cache",
+                "managed transitive package",
+            ),
+            (
+                "Packages/com.example.local/package.json",
+                r#"{"name":"com.example.local","version":"1.0.0"}"#,
+            ),
+        ] {
+            fs::write(source.join(relative), data).expect("fixture file");
+        }
+        let (source, path_identity_key) =
+            alcomd_platform::resolve_directory_identity(&source).expect("canonical source");
+        let record = ProjectRecord {
+            project_id: ProjectId::new(),
+            observation: ProjectObservation {
+                root_path: source.to_str().expect("source path").to_owned(),
+                path_identity_key,
+                project_type: ProjectType::VpmStarter,
+                unity_version: "2022.3.22f1".to_owned(),
+                unity_revision: None,
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Valid,
+                direct_dependencies: vec![DependencyIdentity {
+                    package_id: "com.example.direct".to_owned(),
+                    value: "^1.0.0".to_owned(),
+                }],
+                locked_dependencies: vec![
+                    DependencyIdentity {
+                        package_id: "com.example.direct".to_owned(),
+                        value: "1.2.0".to_owned(),
+                    },
+                    DependencyIdentity {
+                        package_id: "com.example.transitive".to_owned(),
+                        value: "2.1.0".to_owned(),
+                    },
+                ],
+                issues: vec![],
+            },
+            revision: Revision::INITIAL,
+            registered_at_ms: 0,
+            last_modified_at_ms: None,
+            favorite: false,
+        };
+        let prepare = |include_assets, lock_package_versions| {
+            fixture.engine.prepare_template(
+                ProjectTemplateSource::Project {
+                    project_id: record.project_id,
+                    expected_project_revision: record.revision.get(),
+                    id: "com.example.captured".to_owned(),
+                    name: "Captured project".to_owned(),
+                    include_assets,
+                    lock_package_versions,
+                },
+                Some(record.clone()),
+            )
+        };
+        let flexible = prepare(false, false).expect("unread Assets is harmless");
+        assert_eq!(flexible.dependencies[0].version_range, "*");
+        assert!(flexible.locked_versions.is_empty());
+        let destination = fixture.root.join("flexible");
+        fs::create_dir(&destination).expect("destination");
+        fixture
+            .engine
+            .templates
+            .expand(&flexible, &destination)
+            .expect("expand");
+        assert!(
+            fs::read_dir(destination.join("Assets"))
+                .expect("empty Assets directory")
+                .next()
+                .is_none()
+        );
+        assert!(!destination.join("Library").exists());
+        assert!(
+            destination
+                .join("ProjectSettings/TagManager.asset")
+                .is_file()
+        );
+        assert!(
+            destination
+                .join("Packages/com.example.local/package.json")
+                .is_file()
+        );
+        assert!(!destination.join("Packages/com.example.direct").exists());
+        assert!(!destination.join("Packages/com.example.transitive").exists());
+
+        assert!(prepare(true, true).is_err());
+        fs::remove_file(source.join("Assets")).expect("replace invalid fixture");
+        fs::create_dir(source.join("Assets")).expect("asset root");
+        fs::write(source.join("Assets/Scene.unity"), "scene").expect("asset");
+        fs::write(source.join("Assets/Scene.unity.meta"), "guid: stable").expect("metadata");
+        let locked = prepare(true, true).expect("select assets and exact packages");
+        assert_eq!(
+            locked
+                .locked_versions
+                .get("com.example.direct")
+                .map(String::as_str),
+            Some("1.2.0")
+        );
+        assert_eq!(
+            locked
+                .locked_versions
+                .get("com.example.transitive")
+                .map(String::as_str),
+            Some("2.1.0")
+        );
+        let destination = fixture.root.join("locked");
+        fs::create_dir(&destination).expect("destination");
+        fixture
+            .engine
+            .templates
+            .expand(&locked, &destination)
+            .expect("expand");
+        assert_eq!(
+            fs::read(destination.join("Assets/Scene.unity.meta")).expect("asset metadata"),
+            b"guid: stable"
+        );
+    }
+
+    #[test]
+    fn import_rejects_implicit_case_collisions_and_outside_roots() {
+        let fixture = Fixture::new();
+        for paths in [
+            ["Assets/Case/first.asset", "Assets/case/second.asset"],
+            ["Assets/valid.asset", "Library/secret"],
+        ] {
+            let input = fixture.root.join("invalid.alcomdtemplate");
+            let mut archive = zip::ZipWriter::new(fs::File::create(&input).expect("input"));
+            archive
+                .start_file("package.json", zip::write::SimpleFileOptions::default())
+                .expect("manifest");
+            archive
+                .write_all(br#"{"name":"com.example.test","displayName":"test"}"#)
+                .expect("manifest data");
+            for path in paths {
+                archive
+                    .start_file(path, zip::write::SimpleFileOptions::default())
+                    .expect("fixture entry");
+                archive.write_all(b"fixture").expect("entry data");
+            }
+            archive.finish().expect("close ZIP");
+            let result = fixture.engine.prepare_template(
+                ProjectTemplateSource::File {
+                    source_file: input.to_str().expect("input path").to_owned(),
+                },
+                None,
             );
+            assert!(result.is_err());
         }
     }
 
@@ -762,65 +1066,68 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn both_templates_materialize_three_unity_versions_using_declaration_constraints() {
+    async fn both_templates_materialize_three_unity_versions_with_distinct_archives() {
         let fixture = Fixture::new();
         let engine = &fixture.engine;
         let catalog = sdk_fixture(engine);
-        for (index, bytes) in BUILTINS.into_iter().enumerate() {
-            let declaration = engine
-                .validate_declaration(serde_json::from_str(bytes).expect("declaration"))
-                .expect("canonical declaration");
+        let builtins = engine.builtin_templates().expect("builtins");
+        assert_eq!(builtins.len(), 6);
+        for (index, declaration) in builtins.into_iter().enumerate() {
             let direct = &declaration.dependencies[0].package_id;
-            for (version, expected) in [
-                ("2022.3.22f1", "3.10.0"),
-                ("2022.3.6f1", "3.9.0"),
-                ("2019.4.31f1", "3.4.2"),
-            ] {
-                let id = OperationId::new();
-                let mut work = fixture.work(
-                    &format!("Project {index} {version}"),
-                    version,
-                    Some(declaration.clone()),
-                );
-                let stage = engine.stage(id, &work).expect("stage");
-                let packages = engine
-                    .resolve(&stage, &work, catalog.clone())
-                    .await
-                    .expect("resolve");
-                work.packages = Some(packages.clone());
-                engine
-                    .materialize(
-                        &stage,
-                        packages,
-                        Arc::new(ResourceLockCoordinator::default()),
-                    )
-                    .await
-                    .expect("materialize frozen packages");
-                let observation = engine.publish(stage, id, &work).await.expect("publish");
-                assert_eq!(observation.unity_version, version);
-                assert_eq!(observation.direct_dependencies.len(), 1);
-                assert_eq!(&observation.direct_dependencies[0].package_id, direct);
-                assert_eq!(observation.locked_dependencies.len(), 2);
-                assert!(
-                    observation
-                        .locked_dependencies
-                        .iter()
-                        .all(|value| value.value == expected)
-                );
-                let project = Path::new(&observation.root_path);
-                assert!(
-                    project
-                        .join("Packages/com.vrchat.base/package.json")
-                        .is_file()
-                );
-                assert!(
-                    project
-                        .join("Packages")
-                        .join(direct)
-                        .join("package.json")
-                        .is_file()
-                );
-            }
+            let version = declaration
+                .editor_version
+                .as_deref()
+                .expect("versioned builtin");
+            let expected = match version {
+                "2022.3.22f1" => "3.10.0",
+                "2022.3.6f1" => "3.9.0",
+                "2019.4.31f1" => "3.4.2",
+                other => panic!("unexpected Unity version {other}"),
+            };
+            let id = OperationId::new();
+            let mut work = fixture.work(
+                &format!("Project {index} {version}"),
+                version,
+                Some(declaration.clone()),
+            );
+            let stage = engine.stage(id, &work).expect("stage");
+            let packages = engine
+                .resolve(&stage, &work, catalog.clone())
+                .await
+                .expect("resolve");
+            work.packages = Some(packages.clone());
+            engine
+                .materialize(
+                    &stage,
+                    packages,
+                    Arc::new(ResourceLockCoordinator::default()),
+                )
+                .await
+                .expect("materialize frozen packages");
+            let observation = engine.publish(stage, id, &work).await.expect("publish");
+            assert_eq!(observation.unity_version, version);
+            assert_eq!(observation.direct_dependencies.len(), 1);
+            assert_eq!(&observation.direct_dependencies[0].package_id, direct);
+            assert_eq!(observation.locked_dependencies.len(), 2);
+            assert!(
+                observation
+                    .locked_dependencies
+                    .iter()
+                    .all(|value| value.value == expected)
+            );
+            let project = Path::new(&observation.root_path);
+            assert!(
+                project
+                    .join("Packages/com.vrchat.base/package.json")
+                    .is_file()
+            );
+            assert!(
+                project
+                    .join("Packages")
+                    .join(direct)
+                    .join("package.json")
+                    .is_file()
+            );
         }
     }
 

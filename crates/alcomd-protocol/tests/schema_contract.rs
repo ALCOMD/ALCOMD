@@ -1586,11 +1586,11 @@ fn m7_project_favorite_and_unity_launch_config_are_active_contracts() {
 }
 
 #[test]
-fn project_creation_and_template_declarations_round_trip() {
+fn project_creation_and_template_archives_round_trip() {
     use alcomd_protocol::{
-        ProjectTemplatesListResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult,
-        ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectsCreateParams,
-        ProjectsCreateResult,
+        ProjectTemplatesExportParams, ProjectTemplatesListResult, ProjectTemplatesRemoveParams,
+        ProjectTemplatesRemoveResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult,
+        ProjectsCreateParams, ProjectsCreateResult,
     };
     let contract = schema("m7-project-create");
     assert_eq!(contract["x-alcomd-local-owner-only"], true);
@@ -1599,9 +1599,10 @@ fn project_creation_and_template_declarations_round_trip() {
         contract["x-alcomd-method-capabilities"],
         json!({
             "projects.create": "projects.create.v1",
-            "projectTemplates.list": "projectTemplates.v1",
-            "projectTemplates.save": "projectTemplates.v1",
-            "projectTemplates.remove": "projectTemplates.v1"
+            "projectTemplates.list": "projectTemplates.v2",
+            "projectTemplates.save": "projectTemplates.v2",
+            "projectTemplates.export": "projectTemplates.v2",
+            "projectTemplates.remove": "projectTemplates.v2"
         })
     );
     assert_eq!(
@@ -1621,6 +1622,9 @@ fn project_creation_and_template_declarations_round_trip() {
     round_trip::<ProjectsCreateResult>(&vectors["created"]);
     round_trip::<ProjectTemplatesListResult>(&vectors["list"]);
     round_trip::<ProjectTemplatesSaveParams>(&vectors["save"]);
+    round_trip::<ProjectTemplatesSaveParams>(&vectors["saveFile"]);
+    round_trip::<ProjectTemplatesSaveParams>(&vectors["saveProject"]);
+    round_trip::<ProjectTemplatesExportParams>(&vectors["export"]);
     round_trip::<ProjectTemplatesSaveResult>(&vectors["saved"]);
     round_trip::<ProjectTemplatesRemoveParams>(&vectors["remove"]);
     round_trip::<ProjectTemplatesRemoveResult>(&vectors["removed"]);
@@ -1634,7 +1638,7 @@ fn project_creation_and_template_declarations_round_trip() {
         .remove("unityVersion");
     assert!(serde_json::from_value::<ProjectsCreateParams>(request).is_err());
     let mut request = vectors["save"].clone();
-    request["declaration"]["base"] = json!("com.example.base");
+    request["source"]["base"] = json!("com.example.base");
     assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(request).is_err());
 
     let hello = HelloParams {
@@ -1646,12 +1650,12 @@ fn project_creation_and_template_declarations_round_trip() {
         },
         capabilities: vec![
             "projects.create.v1".to_owned(),
-            "projectTemplates.v1".to_owned(),
+            "projectTemplates.v2".to_owned(),
         ],
     };
     assert!(hello.validate().is_ok());
     let invalid = HelloParams {
-        capabilities: vec!["projectTemplates.v2".to_owned()],
+        capabilities: vec!["projectTemplates.v1".to_owned()],
         ..hello
     };
     assert!(invalid.validate().is_err());

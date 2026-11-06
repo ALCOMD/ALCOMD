@@ -32,40 +32,51 @@ pub struct ProjectTemplateRef {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectTemplateDeclaration {
-    pub id: String,
-    pub name: String,
-    pub unity: ProjectTemplateUnity,
-    pub dependencies: Vec<ProjectTemplateDependency>,
-    pub constraints: Vec<ProjectTemplateConstraint>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectTemplateUnity {
-    pub series: Vec<String>,
-    pub presets: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectTemplateDependency {
     pub package_id: String,
     pub version_range: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectTemplateConstraint {
-    pub unity_version: String,
-    pub package_id: String,
-    pub version_range: String,
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum ProjectTemplateSource {
+    File {
+        source_file: String,
+    },
+    Project {
+        project_id: String,
+        expected_project_revision: u64,
+        id: String,
+        name: String,
+        #[serde(default)]
+        include_assets: bool,
+        #[serde(default)]
+        lock_package_versions: bool,
+    },
+    Manual {
+        id: String,
+        name: String,
+        unity_version: String,
+        dependencies: Vec<ProjectTemplateDependency>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectTemplateRecord {
-    pub declaration: ProjectTemplateDeclaration,
+    pub id: String,
+    pub name: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub editor_version: Option<String>,
     pub revision: u64,
     pub locked: bool,
 }
@@ -98,7 +109,8 @@ pub struct ProjectTemplatesListResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectTemplatesSaveParams {
-    pub declaration: ProjectTemplateDeclaration,
+    pub source: ProjectTemplateSource,
+    pub idempotency_key: String,
     #[serde(
         default,
         deserialize_with = "crate::deserialize_optional_non_null",
@@ -110,7 +122,17 @@ pub struct ProjectTemplatesSaveParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectTemplatesSaveResult {
-    pub template: ProjectTemplateRecord,
+    pub operation_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectTemplatesExportParams {
+    pub id: String,
+    pub revision: u64,
+    pub destination_file: String,
+    pub idempotency_key: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

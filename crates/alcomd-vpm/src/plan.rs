@@ -297,6 +297,22 @@ pub fn build_resolution_plan(
     action: PlanAction,
     resolution: &Resolution,
 ) -> Result<PackagePlanDraft, M4Error> {
+    build_resolution_plan_with_ranges(snapshot, action, resolution, false)
+}
+
+pub(crate) fn build_template_resolution_plan(
+    snapshot: &ProjectPackageSnapshot,
+    resolution: &Resolution,
+) -> Result<PackagePlanDraft, M4Error> {
+    build_resolution_plan_with_ranges(snapshot, PlanAction::Resolve, resolution, true)
+}
+
+fn build_resolution_plan_with_ranges(
+    snapshot: &ProjectPackageSnapshot,
+    action: PlanAction,
+    resolution: &Resolution,
+    preserve_input_ranges: bool,
+) -> Result<PackagePlanDraft, M4Error> {
     if action == PlanAction::Remove {
         return Err(M4Error::new(M4ErrorCode::InvalidInput));
     }
@@ -353,7 +369,8 @@ pub fn build_resolution_plan(
         }
         locked.insert(package.package_id.clone(), target_version.clone());
         if direct_ids.contains(package.package_id.as_str())
-            && (!direct.contains_key(&package.package_id) || version_changed)
+            && (!direct.contains_key(&package.package_id)
+                || (version_changed && !preserve_input_ranges))
         {
             direct.insert(package.package_id.clone(), target_version);
         }
@@ -520,6 +537,22 @@ pub(crate) fn materialize_plan_manifest(
     change_set: &PackageChangeSet,
     preserve_repaired_locks: bool,
 ) -> Result<Vec<u8>, M4Error> {
+    materialize_plan_manifest_with_ranges(current, change_set, preserve_repaired_locks, false)
+}
+
+pub(crate) fn materialize_template_manifest(
+    current: &[u8],
+    change_set: &PackageChangeSet,
+) -> Result<Vec<u8>, M4Error> {
+    materialize_plan_manifest_with_ranges(current, change_set, true, true)
+}
+
+fn materialize_plan_manifest_with_ranges(
+    current: &[u8],
+    change_set: &PackageChangeSet,
+    preserve_repaired_locks: bool,
+    preserve_input_ranges: bool,
+) -> Result<Vec<u8>, M4Error> {
     if !change_set.mutations.is_empty()
         && change_set.mutations.iter().all(|mutation| {
             mutation.kind == PackageMutationKind::Replace
@@ -552,9 +585,9 @@ pub(crate) fn materialize_plan_manifest(
                     .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
                 let previous = locked.insert(mutation.package_id.clone(), version.clone());
                 if direct_ids.contains(mutation.package_id.as_str())
-                    && !(preserve_repaired_locks
-                        && previous.as_ref() == Some(version)
-                        && direct.contains_key(&mutation.package_id))
+                    && !(direct.contains_key(&mutation.package_id)
+                        && (preserve_input_ranges
+                            || (preserve_repaired_locks && previous.as_ref() == Some(version))))
                 {
                     direct.insert(mutation.package_id.clone(), version.clone());
                 }

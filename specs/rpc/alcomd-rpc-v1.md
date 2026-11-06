@@ -263,7 +263,7 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v27 由 daemon 的存储
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v28 由 daemon 的存储
 组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 12，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
@@ -660,20 +660,23 @@ Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的本机�
 相同请求返回原任务，不同请求返回 `idempotency_conflict`。成功的任务结果包含 `projectId`。
 Core 校验目标父目录的身份，只向不存在的目标发布，并在同一事务登记项目、完成任务和写入事件。
 
-模板目录通过 `projectTemplates.v1` 发布 `projectTemplates.list`、`projectTemplates.save` 和 `projectTemplates.remove`，
-仅限已认证的本机所有者。公开记录由模板声明、当前修订和独立锁定标记组成。目录按 ID 排序分页。
-同名的不同 ID 可以并存。同 ID 同内容的创建返回已有记录，同 ID 异内容的创建返回 `template_conflict`。
-编辑与删除检查修订，锁定记录返回 `template_builtin_immutable`。每次实际变化提交
-`project-template.changed` 事件，内部 aggregate UUID 只用于事件关联。
+模板目录通过 `projectTemplates.v2` 发布 `projectTemplates.list`、`projectTemplates.save`、
+`projectTemplates.export` 和 `projectTemplates.remove`，仅限已认证的本机所有者。
+列表按 ID 分页，记录包含 ID、显示名、可选 Unity 版本、修订和锁定标记。变更提交
+`project-template.changed` 事件，内部 UUID 只用于关联事件。同 ID 同内容复用记录，
+同 ID 异内容需提供现有修订。锁定记录拒绝替换或删除。
 
-模板声明包含公开 ID、名称、Unity 系列和精确预设、VPM 直接依赖及按精确 Unity 版本匹配的包约束。
-选择模板时，在 `projects.create` 请求中加入 `template: {id, revision}` 并协商模板能力。
-Core 在接受任务的事务内检查修订并固定声明。已删除或过期的引用返回 `revision_conflict`。
-使用模板依赖时检查 `packages.read`、`repositories.read` 和 `packages.manage`，并在发布前锁定包版本、来源和内容。
-条件约束作用于求解器纳入的包，包括传递依赖。内置与用户模板走同一个求解器。
+保存支持已选 `.alcomdtemplate` 文件、已登记项目及手动填写三种来源。
+项目来源要求所选项目的 `projects.read` 和当前修订，两个可选开关默认关闭。
+保存与导出使用持久幂等任务，接受后返回 `{operationId,replayed}`。
+保存成功结果为 `{template}`，导出成功结果为 `{id,revision}`。
+导出目标通过独占发布产生。模板归档内部为标准 ZIP 及 VCC 目录结构。
 
-State22 清除旧模板与专属记录，State23 加入新模板目录。旧 `templates.*` 方法和能力随切换失效。
-精确 DTO 和边界见 `m7-project-create.schema.json`。
+`projects.create` 以 `template: {id, revision}` 选择当前归档，在接受事务中冻结模板。
+过期引用返回 `revision_conflict`。使用模板依赖仍检查 `packages.read`、`repositories.read`
+和 `packages.manage`。模板有明确 Unity 版本时要求匹配，安装锁定或求解后的包后才发布。
+公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
+State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。
 
 ## 21. M5 兼容增加：Backup Create
 

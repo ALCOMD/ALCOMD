@@ -125,6 +125,7 @@ pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
 pub const METHOD_PROJECTS_CREATE: &str = "projects.create";
 pub const METHOD_PROJECT_TEMPLATES_LIST: &str = "projectTemplates.list";
 pub const METHOD_PROJECT_TEMPLATES_SAVE: &str = "projectTemplates.save";
+pub const METHOD_PROJECT_TEMPLATES_EXPORT: &str = "projectTemplates.export";
 pub const METHOD_PROJECT_TEMPLATES_REMOVE: &str = "projectTemplates.remove";
 pub const METHOD_BACKUPS_LIST: &str = "backups.list";
 pub const METHOD_BACKUPS_GET: &str = "backups.get";
@@ -164,7 +165,7 @@ pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
 /// Capability required by `events.list`.
 pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
 pub const CAPABILITY_PROJECTS_CREATE_V1: &str = "projects.create.v1";
-pub const CAPABILITY_PROJECT_TEMPLATES_V1: &str = "projectTemplates.v1";
+pub const CAPABILITY_PROJECT_TEMPLATES_V2: &str = "projectTemplates.v2";
 pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
@@ -3073,7 +3074,7 @@ fn validate_capabilities(capabilities: &[String]) -> Result<(), ContractViolatio
         if capability.is_empty()
             || capability.len() > MAX_CAPABILITY_BYTES
             || !capability.is_ascii()
-            || (capability != CAPABILITY_PROJECT_TEMPLATES_V1
+            || (capability != CAPABILITY_PROJECT_TEMPLATES_V2
                 && !capability.bytes().all(|byte| {
                     byte.is_ascii_lowercase()
                         || byte.is_ascii_digit()
