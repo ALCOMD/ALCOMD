@@ -553,7 +553,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        r#"schema = 10
+        r#"schema = 12
 revision = 14
 locale = "ja-JP"
 
@@ -581,11 +581,20 @@ auto_discover = false
 compression_mode = "maximum"
 include_vpm_packages = false
 include_library = true
+
+[integrations]
+handle_vcc_links = false
+
+[network]
+proxy_mode = "direct"
 "#
     );
-    // A valid pre-fullscreen Config9 must retain all accepted preferences and revision.
-    let config9 = settings_file
-        .replacen("schema = 10\n", "schema = 9\n", 1)
+    let (legacy_settings, _) = settings_file
+        .split_once("\n[integrations]\n")
+        .expect("Config12-only suffix");
+    // Config9 has no fullscreen, VCC link, or proxy preferences.
+    let config9 = legacy_settings
+        .replacen("schema = 12\n", "schema = 9\n", 1)
         .replacen("fullscreen = false\n", "", 1);
     let settings_path = data.join("config/settings.toml");
     fs::write(&settings_path, config9).expect("isolated Config9 migration input");
@@ -601,12 +610,18 @@ include_library = true
     let persisted = reopened.settings_get().await.expect("reopened settings");
     assert_eq!(persisted.config_schema, 12);
     assert_eq!(persisted.revision, 14);
-    assert_eq!(persisted.settings, hub_cleared.settings);
+    let mut expected_settings = hub_cleared.settings;
+    expected_settings.integrations = defaults.settings.integrations;
+    expected_settings.network = defaults.settings.network;
+    assert_eq!(persisted.settings, expected_settings);
     assert!(!persisted.settings.window.fullscreen);
+    let expected_file = settings_file
+        .replacen("handle_vcc_links = false", "handle_vcc_links = true", 1)
+        .replacen("proxy_mode = \"direct\"", "proxy_mode = \"system\"", 1);
     assert_eq!(
         fs::read_to_string(&settings_path).expect("migrated canonical settings"),
-        settings_file,
-        "migration changes only schema and the new default, without a user revision increment"
+        expected_file,
+        "migration adds only newer defaults without incrementing the revision"
     );
     restarted_shutdown.store(true, Ordering::Relaxed);
     restarted
