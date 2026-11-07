@@ -1,4 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
+import { confirmFile, openFilePicker } from "./file-picker";
 import { expect, test, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -317,7 +318,14 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         await expect(dialog).toBeVisible();
         await expect(dialogHost(page, title).getByLabel(field, { exact: true })).toBeVisible();
         await expect(dialog).toHaveCSS("border-radius", "28px");
-        await control.fill(value);
+        if (route === "/extensions" || route === "/unity") {
+            const picker = await openFilePicker(page, dialogHost(page, title));
+            await picker.getByLabel(field, { exact: true }).fill(value);
+            await confirmFile(picker);
+            await expect(control).toHaveValue(value);
+        } else {
+            await control.fill(value);
+        }
         await page.screenshot({ path: test.info().outputPath(`${route.slice(1)}-action-dialog.png`), fullPage: false, animations: "disabled" });
         await dialogHost(page, title).getByRole("button", { name: "Cancel", exact: true }).click();
         await expect(dialog).not.toBeVisible();

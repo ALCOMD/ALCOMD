@@ -35,12 +35,14 @@
 }
 
 .file-picker__path {
+    inline-size: min(100%, 512px);
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: 8px;
 }
 
+.file-picker > md-outlined-text-field,
 .file-picker__path > md-outlined-text-field { width: 100%; min-inline-size: 0; }
 .file-picker__path > md-filled-tonal-button { margin-block-start: calc((56px - var(--alcomd-button-height)) / 2); }
 .file-picker__error { margin: 0; color: var(--md-sys-color-error); }

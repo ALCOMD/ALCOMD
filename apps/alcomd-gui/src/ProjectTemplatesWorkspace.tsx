@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
 import { DesktopList } from "./DesktopList";
 import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
-import { FilePicker } from "./FilePicker";
+import { FilePickerField } from "./FilePicker";
 import { PagedItems } from "./PagedItems";
 import { SplitButton } from "./SplitButton";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -240,7 +240,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                             <Select disabled={formDisabled} label={t("Template source")} onChange={(value) => setSource(value as SourceKind)}
                                 options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
                         </>}
-                        {source === "file" ? <FilePicker client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
+                        {source === "file" ? <FilePickerField client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
                             chooseFile={() => client.selectProjectTemplateFile("open")} onInput={(path) => { setSourceFile(path); setError(undefined); }} /> : <>
                             <div className="template-declaration-row">
                                 <TextField disabled={formDisabled} label={t("Template ID")} maxLength={128} onInput={setId}

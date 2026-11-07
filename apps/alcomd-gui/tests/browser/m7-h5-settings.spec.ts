@@ -1,4 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
+import { browseForFile, confirmFile, openFilePicker } from "./file-picker";
 import { expect, test, type Page } from "@playwright/test";
 import { H5_HIDDEN_ID, H5_HUB_PATH, H5_REPOSITORY_CURSOR, H5_SETTINGS_SECRET, H5_VISIBLE_ID } from "./h5-settings-client";
 
@@ -138,7 +139,9 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await openSettings(page);
     await fail(page, "settings.update", "internal_error", true);
     await selectSettingsSection(page, "unity");
-    await hub(page).getByRole("button", { name: "Select", exact: true }).click();
+    const picker = await openFilePicker(page, hub(page));
+    await browseForFile(picker).click();
+    await confirmFile(picker);
     const retryHub = hub(page).getByRole("button", { name: "Retry", exact: true });
     await expect(retryHub).toBeVisible();
     expect((await changes(page))[0]?.params).toEqual({ expectedRevision: 7, update: { unity: { hubPath: H5_HUB_PATH } } });
@@ -155,7 +158,9 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
     await openSettings(page);
     await fail(page, "unity.installations.refresh", "internal_error");
     await selectSettingsSection(page, "unity");
-    await hub(page).getByRole("button", { name: "Select", exact: true }).click();
+    const picker = await openFilePicker(page, hub(page));
+    await browseForFile(picker).click();
+    await confirmFile(picker);
     await expect.poll(() => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_DISPLAY_PATH);

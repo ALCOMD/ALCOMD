@@ -32,7 +32,7 @@ import { queryCandidates } from "../../src/package-candidates";
 import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
 import "../../src/styles.css";
-import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
+import { InlineFilePickerEvidence, MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 import { OperationLogEvidence } from "./OperationLogEvidence";
 import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
@@ -284,9 +284,14 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("fixture-file-drag", listener);
         return () => window.removeEventListener("fixture-file-drag", listener);
     }
-    selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
+    async selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
-        return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
+        const picker = query.get("list-picker");
+        if (picker === "hold") {
+            await new Promise<void>((resolve) => window.addEventListener("test-list-picker-ready", () => resolve(), { once: true }));
+            return undefined;
+        }
+        return this.value(picker === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
     }
     private listImportStopped = false;
     private listFixtureCount(): number {
@@ -1578,7 +1583,7 @@ const repositoryLinks = pendingRepositoryLinks ? {
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
         {materialEvidence
-            ? <MaterialFoundationEvidence />
+            ? query.has("inline-file-picker") ? <InlineFilePickerEvidence client={window.fixtureCore} /> : <MaterialFoundationEvidence />
             : operationLogEvidence ? <OperationLogEvidence />
             : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}
     </React.StrictMode>
