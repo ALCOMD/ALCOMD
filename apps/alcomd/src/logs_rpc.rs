@@ -18,6 +18,7 @@ pub(super) async fn dispatch(
             return super::error_action(Some(request.id), rpc::RpcError::invalid_request(), false);
         }
     };
+    let filter = params.filter.unwrap_or_default();
     match app::read_operation_logs(
         store,
         access,
@@ -25,6 +26,24 @@ pub(super) async fn dispatch(
             before_sequence: params.before_sequence,
             after_sequence: params.after_sequence,
             limit: params.limit.unwrap_or(100),
+            filter: app::LogFilter {
+                search: filter.search,
+                actor: filter.actor,
+                outcome: filter.outcome.map(|outcome| match outcome {
+                    rpc::LogOutcome::Started => app::LogOutcome::Started,
+                    rpc::LogOutcome::Succeeded => app::LogOutcome::Succeeded,
+                    rpc::LogOutcome::Failed => app::LogOutcome::Failed,
+                    rpc::LogOutcome::Cancelled => app::LogOutcome::Cancelled,
+                    rpc::LogOutcome::Waiting => app::LogOutcome::Waiting,
+                }),
+                operation_type: filter.operation_type.map(|kind| match kind {
+                    rpc::OperationLogType::Read => app::OperationLogType::Read,
+                    rpc::OperationLogType::Write => app::OperationLogType::Write,
+                    rpc::OperationLogType::Passive => app::OperationLogType::Passive,
+                    rpc::OperationLogType::Open => app::OperationLogType::Open,
+                    rpc::OperationLogType::Maintenance => app::OperationLogType::Maintenance,
+                }),
+            },
         },
     )
     .await
@@ -33,6 +52,7 @@ pub(super) async fn dispatch(
             request.id,
             rpc::LogsReadResult {
                 entries: page.entries.into_iter().map(entry_to_rpc).collect(),
+                actors: page.actors,
                 high_watermark: page.high_watermark,
                 has_more: page.has_more,
                 next_sequence: page.next_sequence,
@@ -207,10 +227,16 @@ mod tests {
                 &[rpc::CAPABILITY_LOGS_READ_V1],
             )
             .await;
-            let response = exchange(&mut gui, rpc::METHOD_LOGS_READ, json!({})).await;
+            let response = exchange(
+                &mut gui,
+                rpc::METHOD_LOGS_READ,
+                json!({"filter": {"search": "不存在的项目", "actor": "CLI", "outcome": "failed", "type": "write"}}),
+            )
+            .await;
             let page: rpc::LogsReadResult =
                 serde_json::from_value(response["result"].clone()).expect("typed logs.read result");
             assert_eq!(page.entries.len(), 1);
+            assert_eq!(page.actors, ["CLI"]);
             let entry = &page.entries[0];
             assert_eq!(entry.actor, "CLI");
             assert_eq!(entry.step, "inspect_project");

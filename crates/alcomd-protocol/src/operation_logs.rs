@@ -26,6 +26,52 @@ pub struct LogsReadParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub limit: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub filter: Option<LogFilter>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OperationLogType {
+    Read,
+    Write,
+    Passive,
+    Open,
+    Maintenance,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LogFilter {
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub search: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub actor: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub outcome: Option<LogOutcome>,
+    #[serde(
+        rename = "type",
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub operation_type: Option<OperationLogType>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -73,6 +119,7 @@ pub struct OperationLogEntry {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogsReadResult {
     pub entries: Vec<OperationLogEntry>,
+    pub actors: Vec<String>,
     pub high_watermark: u64,
     pub has_more: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
