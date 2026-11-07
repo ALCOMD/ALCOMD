@@ -200,6 +200,199 @@ fn project(identity: u8) -> ProjectObservation {
     }
 }
 
+#[tokio::test]
+async fn project_list_view_filters_orders_and_rejects_stale_continuation() {
+    use alcomd_application::{ProjectListSort, ProjectListView};
+
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("project view fixture");
+    let owner = PrincipalId::local_owner();
+    let other = PrincipalId::parse("extension:fixture").expect("another principal");
+    let mut records = Vec::new();
+    for (index, name) in [
+        "Avatar Favorite",
+        "Avatar Older",
+        "Avatar Recent",
+        "Avatar Unknown",
+        "World",
+        "Avatar Private",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut observation = project(index as u8 + 1);
+        observation.root_path = format!("C:\\fixture\\{name}\\");
+        records.push(
+            store
+                .register_project(
+                    if index == 5 {
+                        other.clone()
+                    } else {
+                        owner.clone()
+                    },
+                    observation,
+                    key(&format!("view-register-{index}")),
+                    10 + index as u64,
+                )
+                .await
+                .expect("register project view fixture")
+                .value,
+        );
+    }
+    store
+        .set_project_favorite(
+            owner.clone(),
+            records[0].project_id,
+            true,
+            records[0].revision,
+            key("view-favorite"),
+            30,
+        )
+        .await
+        .expect("set favorite for view fixture");
+    let fixture = Connection::open(directory.database()).expect("open isolated fixture");
+    fixture
+        .execute(
+            "UPDATE projects SET last_modified_at_ms=NULL WHERE project_id=?1",
+            [records[3].project_id.to_string()],
+        )
+        .expect("set a legacy project activity time to unknown");
+    fixture
+        .execute(
+            "UPDATE projects SET snapshot_json=json_set(snapshot_json,'$.unity_version','6000.0.1f1') WHERE project_id=?1",
+            [records[2].project_id.to_string()],
+        )
+        .expect("represent a migrated editor version in the authoritative snapshot");
+    drop(fixture);
+    let view = ProjectListView {
+        search: Some("AVATAR".into()),
+        sort: ProjectListSort::Modified,
+        descending: true,
+    };
+    let first = store
+        .list_project_view(owner.clone(), None, 2, view.clone(), None)
+        .await
+        .expect("first view page");
+    assert_eq!(
+        first
+            .page
+            .projects
+            .iter()
+            .map(|project| project.project_id)
+            .collect::<Vec<_>>(),
+        [records[0].project_id, records[2].project_id]
+    );
+    let second = store
+        .list_project_view(
+            owner.clone(),
+            first.page.next_cursor.clone(),
+            2,
+            view.clone(),
+            Some(first.sequence),
+        )
+        .await
+        .expect("continue the same view");
+    assert_eq!(
+        second
+            .page
+            .projects
+            .iter()
+            .map(|project| project.project_id)
+            .collect::<Vec<_>>(),
+        [records[1].project_id, records[3].project_id]
+    );
+    assert!(second.page.next_cursor.is_none());
+    let ascending = store
+        .list_project_view(
+            owner.clone(),
+            None,
+            10,
+            ProjectListView {
+                descending: false,
+                ..view.clone()
+            },
+            None,
+        )
+        .await
+        .expect("ascending view");
+    assert_eq!(
+        ascending
+            .page
+            .projects
+            .iter()
+            .map(|project| project.project_id)
+            .collect::<Vec<_>>(),
+        [
+            records[0].project_id,
+            records[1].project_id,
+            records[2].project_id,
+            records[3].project_id
+        ]
+    );
+    let by_name = store
+        .list_project_view(
+            owner.clone(),
+            None,
+            10,
+            ProjectListView {
+                sort: ProjectListSort::Name,
+                descending: true,
+                ..view.clone()
+            },
+            None,
+        )
+        .await
+        .expect("name view");
+    assert_eq!(
+        by_name
+            .page
+            .projects
+            .iter()
+            .map(|project| project.project_id)
+            .collect::<Vec<_>>(),
+        [
+            records[0].project_id,
+            records[3].project_id,
+            records[2].project_id,
+            records[1].project_id
+        ]
+    );
+    let by_unity = store
+        .list_project_view(
+            owner.clone(),
+            None,
+            2,
+            ProjectListView {
+                sort: ProjectListSort::Unity,
+                ..view.clone()
+            },
+            None,
+        )
+        .await
+        .expect("Unity version view");
+    assert_eq!(by_unity.page.projects[1].project_id, records[2].project_id);
+    assert_eq!(
+        by_unity.page.projects[1].observation.unity_version,
+        "6000.0.1f1"
+    );
+    store
+        .set_project_favorite(
+            owner.clone(),
+            records[3].project_id,
+            true,
+            records[3].revision,
+            key("view-move-favorite"),
+            31,
+        )
+        .await
+        .expect("invalidate the ordered view");
+    let stale = store
+        .list_project_view(owner, first.page.next_cursor, 2, view, Some(first.sequence))
+        .await
+        .expect_err("reordered view must restart at the beginning");
+    assert_eq!(stale.code(), M3ErrorCode::RevisionConflict);
+}
+
 fn repository(identity: u8, refreshed_at_ms: u64) -> RepositoryObservation {
     RepositoryObservation {
         source: RepositorySource::Remote {

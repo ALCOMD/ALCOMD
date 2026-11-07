@@ -1485,6 +1485,43 @@ fn hello_schema_accepts_the_project_observation_removal_v16_store() {
 }
 
 #[test]
+fn m3_project_list_view_is_an_explicit_pagination_contract() {
+    let contract = schema("m3-project-repository");
+    let definitions = &contract["$defs"];
+    assert_eq!(
+        definitions["projectListView"]["properties"]["sort"]["enum"],
+        json!(["name", "type", "unity", "added", "modified"])
+    );
+    assert_eq!(
+        definitions["projectListView"]["properties"]["search"]["maxLength"],
+        256
+    );
+    assert_eq!(
+        definitions["projectListResult"]["properties"]["projects"]["maxItems"],
+        1000
+    );
+    let value = json!({
+        "view": {"search": "Avatar", "sort": "modified", "descending": true},
+        "cursor": {"registeredAtMs": 100, "id": "00000000-0000-4000-8000-000000000101"},
+        "expectedViewSequence": 8
+    });
+    let params: alcomd_protocol::ProjectsListParams =
+        serde_json::from_value(value.clone()).expect("project view params");
+    assert_eq!(
+        serde_json::to_value(params).expect("project view json"),
+        value
+    );
+    for invalid in [
+        json!({"view": null}),
+        json!({"view": {"sort": "random", "descending": false}}),
+        json!({"view": {"search": null, "sort": "name", "descending": false}}),
+        json!({"expectedViewSequence": null}),
+    ] {
+        assert!(serde_json::from_value::<alcomd_protocol::ProjectsListParams>(invalid).is_err());
+    }
+}
+
+#[test]
 fn project_snapshot_has_optional_modified_time_without_observation_time() {
     let project_schema = &schema("m3-project-repository")["$defs"]["projectSnapshot"];
     assert!(project_schema["properties"].get("observedAtMs").is_none());

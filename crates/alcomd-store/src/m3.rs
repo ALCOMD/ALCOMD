@@ -5,6 +5,7 @@ use alcomd_application::{
     RepositorySource, RepositoryValidators, ResolverPackageMetadata, Revision, SyncWrite,
     UnregisterResult, VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
+use alcomd_application::{ProjectListSort, ProjectListView, ProjectViewPage, project_display_name};
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -439,6 +440,147 @@ pub(super) fn list_projects(
     Ok(ProjectPage {
         projects,
         next_cursor,
+    })
+}
+
+struct ProjectListRow {
+    id: String,
+    name_key: String,
+    snapshot_sort_key: String,
+    registered_at_ms: i64,
+    last_modified_at_ms: Option<i64>,
+    favorite: bool,
+}
+
+pub(super) fn list_project_view(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    cursor: Option<RegistryCursor<ProjectId>>,
+    limit: u32,
+    view: &ProjectListView,
+    expected_sequence: Option<u64>,
+) -> Result<ProjectViewPage, M3Error> {
+    let transaction = connection.transaction().map_err(sql_failure)?;
+    let sequence: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(MAX(sequence),0) FROM events
+             WHERE principal_id=?1 AND aggregate_kind='project'",
+            [owner.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(sql_failure)?;
+    let sequence = u64::try_from(sequence).map_err(|_| internal())?;
+    if expected_sequence.is_some_and(|expected| expected != sequence) {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+
+    let search = view
+        .search
+        .as_deref()
+        .filter(|text| !text.is_empty())
+        .map(str::to_lowercase);
+    let read_name = search.is_some() || view.sort == ProjectListSort::Name;
+    let snapshot_sort_field = match view.sort {
+        ProjectListSort::Type => Some("$.project_type"),
+        ProjectListSort::Unity => Some("$.unity_version"),
+        _ => None,
+    };
+    let mut statement = transaction
+        .prepare(
+            "SELECT project_id,CASE WHEN ?2 THEN root_path ELSE '' END,
+                    CASE WHEN ?3 IS NOT NULL THEN json_extract(snapshot_json,?3) ELSE '' END,
+                    registered_at_ms,last_modified_at_ms,favorite
+             FROM projects WHERE owner_principal_id=?1",
+        )
+        .map_err(sql_failure)?;
+    let mut rows = Vec::new();
+    let entries = statement
+        .query_map(
+            params![owner.as_str(), read_name, snapshot_sort_field],
+            |row| {
+                let path = row.get::<_, String>(1)?;
+                Ok(ProjectListRow {
+                    id: row.get(0)?,
+                    name_key: project_display_name(&path)
+                        .unwrap_or_default()
+                        .to_lowercase(),
+                    snapshot_sort_key: row.get(2)?,
+                    registered_at_ms: row.get(3)?,
+                    last_modified_at_ms: row.get(4)?,
+                    favorite: row.get(5)?,
+                })
+            },
+        )
+        .map_err(sql_failure)?;
+    for entry in entries {
+        let entry = entry.map_err(sql_failure)?;
+        if search
+            .as_ref()
+            .is_none_or(|search| entry.name_key.contains(search))
+        {
+            rows.push(entry);
+        }
+    }
+    drop(statement);
+    rows.sort_unstable_by(|left, right| {
+        right.favorite.cmp(&left.favorite).then_with(|| {
+            if view.sort == ProjectListSort::Modified {
+                let missing = left
+                    .last_modified_at_ms
+                    .is_none()
+                    .cmp(&right.last_modified_at_ms.is_none());
+                if !missing.is_eq() {
+                    return missing;
+                }
+            }
+            let comparison = match view.sort {
+                ProjectListSort::Name => left.name_key.cmp(&right.name_key),
+                ProjectListSort::Type | ProjectListSort::Unity => {
+                    left.snapshot_sort_key.cmp(&right.snapshot_sort_key)
+                }
+                ProjectListSort::Added => left.registered_at_ms.cmp(&right.registered_at_ms),
+                ProjectListSort::Modified => {
+                    left.last_modified_at_ms.cmp(&right.last_modified_at_ms)
+                }
+            };
+            (if view.descending {
+                comparison.reverse()
+            } else {
+                comparison
+            })
+            .then_with(|| left.id.cmp(&right.id))
+        })
+    });
+
+    let offset = if let Some(cursor) = cursor {
+        let id = cursor.id.to_string();
+        let time = integer(cursor.registered_at_ms)?;
+        rows.iter()
+            .position(|row| row.id == id && row.registered_at_ms == time)
+            .ok_or_else(|| M3Error::new(M3ErrorCode::RevisionConflict))?
+            + 1
+    } else {
+        0
+    };
+    let mut projects = Vec::new();
+    for row in rows.iter().skip(offset).take(limit as usize) {
+        let id = ProjectId::parse(&row.id).map_err(|_| internal())?;
+        projects.push(load_project(&transaction, owner, id)?);
+    }
+    let next_cursor = if rows.len() > offset + projects.len() {
+        projects.last().map(|record| RegistryCursor {
+            registered_at_ms: record.registered_at_ms,
+            id: record.project_id,
+        })
+    } else {
+        None
+    };
+    Ok(ProjectViewPage {
+        page: ProjectPage {
+            projects,
+            next_cursor,
+        },
+        sequence,
     })
 }
 

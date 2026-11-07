@@ -58,20 +58,39 @@ pub(super) async fn dispatch(
         }
         rpc::METHOD_PROJECTS_LIST => {
             require!(request, state, rpc::CAPABILITY_PROJECTS_READ_V1);
-            let params: rpc::RegistryListParams = parse!(request);
+            let params: rpc::ProjectsListParams = parse!(request);
             let cursor = match params.cursor.map(project_cursor).transpose() {
                 Ok(value) => value,
                 Err(()) => return invalid(request.id),
             };
-            match application
-                .list_projects(access, cursor, params.limit.unwrap_or(100))
-                .await
-            {
-                Ok(page) => success_action(
+            let limit = params.limit.unwrap_or(100);
+            let result = if let Some(view) = params.view {
+                application
+                    .list_project_view(
+                        access,
+                        cursor,
+                        limit,
+                        project_list_view(view),
+                        params.expected_view_sequence,
+                    )
+                    .await
+                    .map(|value| (value.page, Some(value.sequence)))
+            } else {
+                if params.expected_view_sequence.is_some() {
+                    return invalid(request.id);
+                }
+                application
+                    .list_projects(access, cursor, limit)
+                    .await
+                    .map(|page| (page, None))
+            };
+            match result {
+                Ok((page, view_sequence)) => success_action(
                     request.id,
                     rpc::ProjectsListResult {
                         projects: page.projects.into_iter().map(project_record).collect(),
                         next_cursor: page.next_cursor.map(registry_cursor),
+                        view_sequence,
                     },
                     None,
                 ),
@@ -527,6 +546,7 @@ fn project_snapshot(
         project_id,
         registered_at_ms,
         last_modified_at_ms,
+        display_name: app::project_display_name(&value.root_path).map(str::to_owned),
         root_path: value.root_path,
         project_type: project_type(value.project_type),
         unity_version: value.unity_version,
@@ -546,6 +566,23 @@ fn project_snapshot(
         issues: value.issues.into_iter().map(issue).collect(),
         revision,
         favorite,
+    }
+}
+
+fn project_list_view(value: rpc::ProjectListView) -> app::ProjectListView {
+    use app::ProjectListSort as A;
+    use rpc::ProjectListSort as R;
+    let sort = match value.sort {
+        R::Name => A::Name,
+        R::Type => A::Type,
+        R::Unity => A::Unity,
+        R::Added => A::Added,
+        R::Modified => A::Modified,
+    };
+    app::ProjectListView {
+        search: value.search,
+        sort,
+        descending: value.descending,
     }
 }
 
