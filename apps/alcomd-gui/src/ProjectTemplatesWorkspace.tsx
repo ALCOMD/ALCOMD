@@ -1,11 +1,12 @@
 import type { ProjectTemplateDependency, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
 import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
 import { FilePicker } from "./FilePicker";
+import { FilePickerControl } from "./FilePickerControl";
 import { PagedItems } from "./PagedItems";
 import { SplitButton } from "./SplitButton";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -122,6 +123,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
     const [includeAssets, setIncludeAssets] = useState(false);
     const [lockPackageVersions, setLockPackageVersions] = useState(false);
     const [sourceFile, setSourceFile] = useState("");
+    const [choosing, setChoosing] = useState(false);
     const [destinationFile, setDestinationFile] = useState("");
     const [fileName, setFileName] = useState(record === undefined ? "" : record.id + ".alcomdtemplate");
     const [busy, setBusy] = useState(false);
@@ -156,7 +158,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
     });
 
     function saveSource(): ProjectTemplateSource | undefined {
-        if (source === "file") return sourceFile === "" ? undefined : { kind: "file", sourceFile };
+        if (source === "file") return sourceFile.trim() === "" ? undefined : { kind: "file", sourceFile };
         if (id.trim() === "" || name.trim() === "") return undefined;
         if (source === "project") return project === undefined ? undefined : {
             kind: "project", projectId: project.projectId, expectedProjectRevision: project.revision,
@@ -174,9 +176,8 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
         kind: "save", params: { source: selectedSource, ...(record === undefined ? {} : { expectedRevision: record.revision }) }
     };
 
-    function submit(event: FormEvent) {
-        event.preventDefault();
-        if (selection.kind === "view" || operationId !== undefined) return;
+    function submit() {
+        if (selection.kind === "view" || operationId !== undefined || choosing) return;
         void run(async () => {
             if (selection.kind === "remove") {
                 await client.projectTemplatesRemove({ id: selection.template.id, expectedRevision: selection.template.revision });
@@ -208,21 +209,27 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
         : selection.kind === "export" ? "Export template" : record !== undefined ? "Replace template" : sourceLabels[source];
     const submitLabel = selection.kind === "remove" || selection.kind === "export" || record !== undefined ? title
         : source === "file" ? "Import template" : "Save template";
+    const importing = selection.kind === "save" && record === undefined && source === "file" && operationId === undefined;
+    const submitDisabled = busy || choosing || !retrying && request === undefined && selection.kind !== "remove";
     const terminalFailure = operation?.state === "failed" || operation?.state === "cancelled";
     const failedPackage = operation?.state === "failed" && typeof operation.result === "object" && operation.result !== null
         && "packageId" in operation.result && typeof operation.result.packageId === "string" ? operation.result.packageId : undefined;
 
     return <>
-        <Dialog dismissible={!busy} onClose={onClose} open={open} returnFocus={origin} title={t(title)} wide={selection.kind !== "save" || source !== "file"}>
+        <Dialog dismissible={!busy && !choosing} onClose={onClose} open={open} returnFocus={origin} title={t(title)} wide={selection.kind !== "save" || source !== "file"}
+            actions={importing ? <>
+                <DialogCloseButton disabled={busy || choosing} variant="text">{t("Cancel")}</DialogCloseButton>
+                <Button disabled={submitDisabled} onClick={submit} type="button">{t("Confirm")}</Button>
+            </> : undefined}>
             {!open ? null : operationId !== undefined ? <div className="project-create-flow">
                 <AcceptedOperationProgress operationId={operationId} operations={operations} />
                 {failedPackage === undefined ? null : <p>{t("Package ID")} <code>{failedPackage}</code></p>}
                 {selection.kind === "export" ? <PathField label={t("Destination file")} readOnly value={destinationFile} /> : null}
                 <div className="dialog-actions">
                     {terminalFailure ? <Button onClick={() => setOperationId(undefined)} type="button" variant="text">{t("Back")}</Button> : null}
-                    <Button onClick={onClose} type="button">{t("Close")}</Button>
+                    <DialogCloseButton>{t("Close")}</DialogCloseButton>
                 </div>
-            </div> : <form className="project-create-flow" onSubmit={submit}>
+            </div> : <form className="project-create-flow" onSubmit={(event) => { event.preventDefault(); submit(); }}>
                 {selection.kind === "view" ? <>
                     <TextField label={t("Template ID")} readOnly value={selection.template.id} />
                     <TextField label={t("Display name")} readOnly value={selection.template.name} />
@@ -240,7 +247,10 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                             <Select disabled={formDisabled} label={t("Template source")} onChange={(value) => setSource(value as SourceKind)}
                                 options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
                         </>}
-                        {source === "file" ? <FilePicker client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
+                        {importing ? <FilePickerControl client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
+                            choosePath={() => client.selectProjectTemplateFile("open")} onChoosingChange={setChoosing}
+                            onPathChange={(path) => { setSourceFile(path); setError(undefined); }} />
+                            : source === "file" ? <FilePicker client={client} disabled={formDisabled} label={t("Template file")} value={sourceFile}
                             chooseFile={() => client.selectProjectTemplateFile("open")} onInput={(path) => { setSourceFile(path); setError(undefined); }} /> : <>
                             <div className="template-declaration-row">
                                 <TextField disabled={formDisabled} label={t("Template ID")} maxLength={128} onInput={setId}
@@ -270,11 +280,11 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                         </>}
                     </>}
                 {error === undefined ? null : <TemplateFailure error={error} />}
-                <div className="dialog-actions">
-                    <Button disabled={busy} onClick={onClose} type="button" variant="text">{t(selection.kind === "view" ? "Close" : "Cancel")}</Button>
-                    {selection.kind === "view" ? null : <Button disabled={busy || !retrying && request === undefined && selection.kind !== "remove"}
+                {importing ? null : <div className="dialog-actions">
+                    <DialogCloseButton disabled={busy} variant="text">{t(selection.kind === "view" ? "Close" : "Cancel")}</DialogCloseButton>
+                    {selection.kind === "view" ? null : <Button disabled={submitDisabled}
                         type="submit">{t(retrying ? "Retry" : submitLabel)}</Button>}
-                </div>
+                </div>}
             </form>}
         </Dialog>
         {operations.follow()}

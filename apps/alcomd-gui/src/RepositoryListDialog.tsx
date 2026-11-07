@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { RepositoryListImportItem, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
-import { Button, Checkbox, Dialog, MenuItem, Progress, TextField } from "./Material";
-import { FilePicker } from "./FilePicker";
+import { Button, Checkbox, Dialog, DialogCloseButton, MenuItem, Progress, TextField } from "./Material";
+import { FilePickerControl } from "./FilePickerControl";
 import { SplitButton } from "./SplitButton";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { ScrollArea } from "./ScrollArea";
@@ -43,6 +43,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const { t } = useTranslation();
     const current = useActionScope(client);
     const [path, setPath] = useState("");
+    const [choosing, setChoosing] = useState(false);
     const [preview, setPreview] = useState<{ path: string; inspection: RepositoryListInspection }>();
     const [results, setResults] = useState<RepositoryListImportItem[]>();
     const [finished, setFinished] = useState(false);
@@ -126,21 +127,22 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const counts = { added: 0, failed: 0, unknown: 0, unprocessed: 0 };
     for (const { status } of results ?? []) if (status !== "existing") counts[status] += 1;
     const labels = { candidate: "To import", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", failed: "Failed", added: "Added", unknown: "Result unknown", existing: "Already added", unprocessed: "Not processed" } as const;
-    return <Dialog wide open dismissible={!busy} title={t("Import list")} onClose={onClose} actions={<>
-        {busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button> : <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button>}
-        {!busy && path.trim() !== "" && !inspection ? <Button onClick={() => void read(path)} type="button" variant="text">{t("Review list")}</Button> : null}
-        {!busy && !finished && inspection ? <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button> : null}
-    </>}>
-        <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
-        <FilePicker client={client} chooseFile={() => client.selectRepositoryListFile("open")} disabled={busy}
-            label={t("Repository list file")} value={path} onPicked={(picked) => void read(picked)}
-            onInput={(next) => { setPath(next); setPreview(undefined); setResults(undefined); setFinished(false); setError(undefined); }}
-            onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
-                    event.preventDefault();
-                    if (!inspection) void read(path);
-                }
-            }} />
+    const actions = busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button>
+        : finished ? <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
+        : inspection ? <>
+            <Button onClick={() => setPreview(undefined)} type="button" variant="text">{t("Back")}</Button>
+            <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button>
+        </> : <>
+            <DialogCloseButton disabled={choosing} variant="text">{t("Cancel")}</DialogCloseButton>
+            <Button disabled={choosing || path.trim() === ""} onClick={() => void read(path)} type="button">{t("Confirm")}</Button>
+        </>;
+    return <Dialog wide={inspection !== undefined} open dismissible={!busy && !choosing} title={t("Import list")} onClose={onClose} actions={actions}>
+        {inspection ? null : <>
+            <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
+            <FilePickerControl client={client} choosePath={() => client.selectRepositoryListFile("open")} disabled={busy}
+                label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
+                onPathChange={(next) => { setPath(next); setError(undefined); }} />
+        </>}
         {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>
             <p>{t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>
@@ -194,7 +196,7 @@ function ExportRepositoryList({ client, onClose }: { client: GuiRpcClient; onClo
         finally { pending.current = false; if (current()) setBusy(false); }
     };
     const reasonText = { local_source: "Local source cannot be represented by this URL list.", authentication_not_supported: "Authentication settings cannot be represented by this URL list.", unsupported_source: "This source cannot be represented by this URL list." };
-    return <Dialog wide open dismissible={!busy} title={t("Export list")} onClose={onClose} actions={<><Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Close")}</Button><Button disabled={busy} onClick={() => void load()} type="button" variant="text">{t("Preview again")}</Button>{saved ? null : <Button disabled={busy || !confirmed || !preview || preview.exportableCount === 0 || !nameValid} onClick={() => void save()} type="button">{t("Save new list file")}</Button>}</>}>
+    return <Dialog wide open dismissible={!busy} title={t("Export list")} onClose={onClose} actions={<><DialogCloseButton disabled={busy} variant="text">{t("Close")}</DialogCloseButton><Button disabled={busy} onClick={() => void load()} type="button" variant="text">{t("Preview again")}</Button>{saved ? null : <Button disabled={busy || !confirmed || !preview || preview.exportableCount === 0 || !nameValid} onClick={() => void save()} type="button">{t("Save new list file")}</Button>}</>}>
         {error ? <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {preview ? <>
             <p>{t("{count} repositories can be exported · {excluded} excluded · {bytes} bytes", { count: preview.exportableCount, excluded: preview.excluded.length, bytes: preview.byteCount })}</p>
