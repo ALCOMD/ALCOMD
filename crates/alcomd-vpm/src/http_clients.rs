@@ -53,7 +53,7 @@ impl HttpClients {
         Ok(current.1.clone())
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, windows))]
     pub async fn set_authenticated(&self, client: Client) {
         self.current.lock().await.1.authenticated = client;
     }
