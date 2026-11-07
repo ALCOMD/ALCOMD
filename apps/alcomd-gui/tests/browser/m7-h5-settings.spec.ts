@@ -211,11 +211,22 @@ test("Project package filters enforce the complete 256-ID bound while allowing e
     await expect(visible).toBeChecked();
     await expect(visible).toBeDisabled();
     await expect(filters(page).getByRole("alert")).toHaveCount(0);
-    await hidden.check();
+    await page.evaluate(() => window.h5Settings.holdNextUpdate());
+    // These controlled checkboxes reflect the accepted settings, not an
+    // optimistic native-input toggle before the asynchronous write completes.
+    await hidden.click();
     await expect.poll(() => changes(page).then((requests) => requests.length)).toBe(1);
+    await expect(hidden).toBeDisabled();
+    expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(0);
+    await page.evaluate(() => window.h5Settings.releaseUpdate());
+    await expect(hidden).toBeChecked();
     await expect(visible).toBeEnabled();
-    await visible.uncheck();
+    await page.evaluate(() => window.h5Settings.holdNextUpdate());
+    await visible.click();
     await expect.poll(() => changes(page).then((requests) => requests.length)).toBe(2);
+    await expect(visible).toBeDisabled();
+    expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
+    await page.evaluate(() => window.h5Settings.releaseUpdate());
     await expect.poll(() => page.evaluate(() => window.h5Settings.commits.length)).toBe(2);
     const lists = await page.evaluate(() => window.h5Settings.commits.map((commit) => commit.update.packages!.hiddenRepositoryIds!));
     expect(lists.map((ids) => ids.length)).toEqual([255, 256]);
