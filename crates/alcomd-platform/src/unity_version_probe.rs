@@ -191,6 +191,9 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    // These fixtures share the production probe pool's two process-wide slots.
+    static PROBE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn script(root: &Path, name: &str, body: &str) -> PathBuf {
         let path = root.join(name);
         fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("owned script");
@@ -200,6 +203,7 @@ mod tests {
 
     #[test]
     fn probe_uses_only_version_argv_and_empty_independent_cwd() {
+        let _serial = PROBE_TEST_LOCK.lock().expect("probe fixture lock");
         let root = WorkingDirectory::create().expect("fixture");
         let executable = script(
             &root.0,
@@ -215,6 +219,7 @@ mod tests {
 
     #[test]
     fn probe_bounds_each_stream_and_reaps_its_child_on_timeout() {
+        let _serial = PROBE_TEST_LOCK.lock().expect("probe fixture lock");
         let root = WorkingDirectory::create().expect("fixture");
         for (name, body, kind) in [
             (
@@ -239,6 +244,7 @@ mod tests {
 
     #[test]
     fn timed_out_child_is_no_longer_running() {
+        let _serial = PROBE_TEST_LOCK.lock().expect("probe fixture lock");
         let root = WorkingDirectory::create().expect("fixture");
         let pid_path = root.0.join("child.pid");
         let body = format!("echo $$ > '{}'\nwhile :; do :; done", pid_path.display());
@@ -281,6 +287,7 @@ mod tests {
 
     #[test]
     fn layout_validation_does_not_probe_and_explicit_inspection_binds_file_identity() {
+        let _serial = PROBE_TEST_LOCK.lock().expect("probe fixture lock");
         let root = WorkingDirectory::create().expect("fixture");
         let editor = root.0.join("Editor");
         let resources = editor.join("Data/Resources/PackageManager/Editor");
