@@ -13,6 +13,7 @@
 - 本轮源码整合候选为 `213d0d2`：独立文件/文件夹选择内容接入仓库列表导入、模板导入、添加已有项目和用户软件包登记；调用方负责确认、预览及弹窗生命周期。另同步旧浏览器预期、State29 精确断言，以及 Config12 和已有平台功能的元数据校验。只有标准 `main` 工作树，本地归档分支均为其祖先，无 stash；截图及生成材料保留在本地。
 - 该候选的完整 Rust fmt、严格 workspace Clippy、workspace 测试及仓库检查通过，测试汇总 772 通过、13 项既有显式忽略。前端全工作区检查/构建和 Chromium **514/514** 通过，零重试、零跳过；元数据及 7 组内存反例通过。指纹已核对各验证范围的输入未变；早期失败轮继续保留在 `target/m7-main-integration-20261107T040906Z/`。原生系统选择窗口仍待人工核对。
 - `e5ede89f` 的 [CodeQL 42340358565](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358565) 四语言通过，[CI 42340358982](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358982) 三平台未通过：Unix 测试模块位置和 Windows 专用 HTTP 测试钩子的编译范围触发严格 Clippy；Windows 两项设置测试争用用户 IPC 端点。`de3c06a`、`41a1653` 修正这三处测试边界，保留原断言及生产端点合同。默认并行 workspace 回归 772 通过、13 项既有忽略，两线程设置 IPC 额外三轮共 6 项通过，fmt 和受影响严格 Clippy 通过。原 Core、数据和 profile 保留，GUI 维持原先关闭；Unity 原有编辑器新增导入子进程，清单不完全相同，未操作这些进程。证据位于 `target/m7-ci-e5ede89f-20261107/`；后续 Hosted 结果按实际推送 SHA 从 [Actions](https://github.com/ALCOMD/ALCOMD/actions?query=branch%3Amain) 核对。
+- `b1ad980c` 的 [CodeQL 42372423392](https://github.com/ALCOMD/ALCOMD/actions/runs/42372423392) 四语言通过，[CI 42372423496](https://github.com/ALCOMD/ALCOMD/actions/runs/42372423496) 继续发现测试生命周期问题：Unix 四项版本探测夹具并行争用两个生产探测名额；Windows 私有管道创建测试在终态后的归档清理释放前删除目录。整改仅为共享探测夹具互斥，以及私有测试运行时释放后再删除目录；生产并发上限、超时和业务断言保持。定向 fmt、Windows Core/平台严格 Clippy、Linux/macOS 平台跨目标严格 Clippy 通过；私有管道创建测试连续 8 轮通过。跨目标检查不算 Unix 原生执行，后续 Hosted 结果以实际修复候选为准；证据仍存上述目录。
 
 ## 按任务查合同
 
