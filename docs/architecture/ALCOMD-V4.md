@@ -1,6 +1,6 @@
 # ALCOMD3 v4.0.0 完整架构、扩展与无残留迁移方案
 
-状态：**Accepted as product direction，implementation pending**
+本文定义 v4 架构。当前实现阶段、源码基线和验收状态见 [项目状态](../status.md)。
 
 ## 1. 定位
 
@@ -260,9 +260,9 @@ ExternalConfig(provider_id)
 }
 ```
 
-核心在 state store 成功初始化并完成恢复后，兼容返回可选 `dataSchema`；当前开发基线为
-State v27，实际版本由 daemon 提供。当前配置格式为 Config12，返回可选 `configSchema: 12`；
-`extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。
+核心在 state store 成功初始化并完成恢复后，返回可选 `dataSchema` 和 `configSchema`。
+`dataSchema` 由 daemon 报告已打开的存储结构版本，`configSchema` 报告支持的配置格式版本。
+`extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。当前源码基线见 [项目状态](../status.md)。
 这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
 
 公共 DTO 与内部领域对象必须分离。已发布公共合同的破坏性变化提升对应协议大版本，
@@ -326,20 +326,19 @@ Unity
 扩展管理
 外部访问管理
 通用设置
-活动记录
-技术日志
+操作日志
 ```
 
 GUI 迁移要求用户入口、用例、数据结果、错误、进度和可访问性等价，不要求像素级复刻。
 导航或视觉重构必须有冻结流程对照与人工截图签收，不能用外观变化掩盖功能或状态缺失。
 
-Tauri command 只能用于窗口、文件选择器、系统通知、typed RPC 桥接，以及M7批准的GUI自身受控技术日志读写/等待和有限真实前端异常上报。Portable Extension UI 仍经同一
-ALCOMD RPC/application 边界，不使用 extension private command。Tauri command 不得实现包、项目、MCP、Discord
-或迁移业务。
+Tauri command 限于窗口、文件选择器、系统通知等系统/UI 适配以及 typed RPC 桥接。
+Portable Extension UI 经同一 ALCOMD RPC/application 边界，禁止扩展专用私有命令。
 
-2026-11-05所有者撤销日志、活动记录与提示系统：删除Core/GUI日志生产、文件读取、健康状态、独立活动表/API及所有浮动提醒。无替代实现或兼容入口。Operation仍是任务执行权威，业务Event及其共享变化通知用于数据同步；所属页面保留错误、确认、重试与完成行为。State20删除清单、备份要求和验证以当前M7 ExecPlan为准；原日志与验收材料保留。
-
-2026-11-06批准新的单页业务操作日志：Core在真实业务步骤记录追加事实，State21持久保存历史及发起入口，`logs.read`仅供已认证本机所有者，GUI借共享提交后通知按需读取。Operation仍为执行权威；没有独立活动投影、技术日志页、浮动提醒或旧日志转换。具体合同见M7 ExecPlan。
+Operation 是任务执行权威，业务 Event 和共享变化通知负责数据同步。操作日志由 Core 在真实业务步骤追加，
+记录历史和发起入口。GUI 通过已认证本机所有者的 `logs.read` 和共享提交后通知读取。
+错误、确认、重试和完成状态留在所属页面。独立活动投影、技术日志页、浮动提醒和旧日志转换已撤销，
+删除边界和后续操作日志合同见 [M7 当前有效合同](../exec-plans/M7-official-gui-extension-ui.md#当前有效合同)。
 
 Tauri Bundler 可在某个平台作为 `cargo xtask dist` 的受控底层工具，但不得决定产品组成、
 安装布局、更新事务、迁移流程或最终发行资产集合。这不是禁用 Tauri Bundler；它可以参与
@@ -525,16 +524,15 @@ macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目�
 
 `settings.toml` 保存可理解的公开设置。`state.db` 是内部权威状态，不是第三方 API。凭据进入 OS Credential Store / Keychain / Secret Service。
 
-数据库结构版本按 A-034/A-035 管理。当前开发基线为 State v18；daemon 在 store 成功初始化后，将实际
-存储版本传给 hello DTO，protocol 不依赖 store，也不独立维护一份“当前数据版本”常量。
+数据库结构版本按 A-034/A-035 管理。daemon 在 store 成功初始化后，将实际存储版本传给 hello DTO。
+protocol 不依赖 store，也不独立维护当前数据版本。
 `dataSchema` 只说明存储结构，不替代应用版本、RPC major 或 capability 协商。
 
 未公开发布的开发库不承诺长期兼容。仅对明确需要保留的开发数据维护迁移，可重建的测试库
 通过重建 fixture 适配；布局有变化时仍须如实识别版本，不能把不兼容布局冒充同一版本。
 不得因“不保证开发兼容”自动删除现有数据库、Plan、Operation 或恢复证据。首次正式发布前
 单独审计并收敛当时有效的初始 Schema，清除无保留需要的开发迁移和旧格式支持；此后严格维护
-正式用户的数据升级和恢复。State17 仅按所有者明确批准，将项目 Unity 参数数组下限从1改为0；
-逐行原样保留旧数据，已有迁移保持，清理不随本轮修复执行。
+正式用户的数据升级和恢复。具体迁移的授权和范围见对应决策与存储规范。
 
 版本独立：
 

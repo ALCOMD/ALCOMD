@@ -1,8 +1,18 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H7 MANUAL_PENDING / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
-活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
-Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
+当前阶段、部署记录和下一停止点见 [项目状态](../status.md)。按改动查对应合同：
+
+| 任务 | 对应章节 |
+| --- | --- |
+| 仓库、项目、包管理、模板、页面提示、操作日志 | [当前有效合同](#当前有效合同) |
+| 任务同步、订阅、Unity 启动 | [任务与页面变化通知整改](#任务与页面变化通知整改2026-11-04已实现本地候选人工确认待定)、[Unity 启动](#unity-启动只判断目标项目2026-11-05) |
+| Portable Extension UI | [Stop A frozen contract](#stop-a-frozen-contract) |
+| 导航、Material 组件、typed GUI 适配、无障碍 | [Restored Official GUI Completion](#restored-official-gui-completion) |
+| 阶段门禁 | [验证与 release blockers](#验证与-release-blockers) |
+
+[Progress log](#progress-log) 和 [原停止点记录](#下一停止点) 保存当时的候选、验收与授权证据。
+
+2026-11-07 主线整合候选 `213d0d2`：按所有者要求整合现有工作区并分批提交。文件选择器接入及共享弹窗关闭保持调用方控制流程；更新与现行日志、设置、模板、路径和 Material 合同不符的测试预期，State29 仍采用精确版本断言。元数据脚本分别检查当前 Config12 与历史 Config10 迁移证据，保留依赖版本和功能开关的精确门禁。完整 Rust 门禁、真实 Windows IPC、前端检查/构建、514 项 Chromium 和元数据检查通过；既有显式忽略、原生未覆盖及运行环境恢复情况见[项目状态](../status.md)。证据保留于 `target/m7-main-integration-20261107T040906Z/`。未新增产品合同、依赖、权限或持久结构，H2–H6 签收保留，M7/H7 仍待所有者最终确认。
 
 ## 实现依据与跨模块整改计划（2026-11-05，已批准实施）
 
@@ -291,7 +301,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
   `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
   SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
   复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
-- 当前源码基线为 **State v20**，按本节批准撤销独立活动，保留原任务及其他业务事件；按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
+- State20 按本节批准撤销独立活动，保留原任务及其他业务事件。当前源码基线见 [项目状态](../status.md)。A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
   保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
   保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
 - 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
@@ -299,11 +309,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config12**，含默认目录、项目自动发现、备份默认选项、Unity 全局参数、默认关闭的窗口记忆、默认开启的 VCC 链接开关及默认跟随系统的全局代理；保留已批准的紧凑模式及 `appearance.density` 删除。
-  application 持有权限、CAS、字段校验、候选缓存和取消一致性；
-  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–9→10 和
-  原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
-  显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
+- 设置及迁移见 [设置合同](#settings-与存储权威)。
 - 主题编辑器直接展开于外观页，与其他偏好共用串行自动保存队列；sourceColor/mode/scheme 只提交实际改动字段，保持实时显示、未知结果重读去重和显式失败重试。
   默认种子 `#6CB6FF`、Vibrant、跟随系统及九方案不变，模式下拉顺序为“跟随系统 / 浅色 / 深色”。共享 Material HEX/拾色器/
   Select 使用标准控件及现有设置区块间距；模式、主题色、配色方案按共享设置行纵向排列，模式与九方案均用下拉框，不保留主题专用分段和两列布局。
@@ -313,7 +319,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
   en-US/zh-CN/ja-JP，使用静态词条和 React 文本插值；外部内容不翻译、不解释 HTML。
   动画三态为 system/full/reduced，默认 system；共享适配器处理 CSS/Shadow DOM/弹层及滚动条，
   不恢复已撤除的切页动画。
-  日志页沿用“活动记录 / 技术日志”的用户术语；技术日志的en-US名称为Technical Logs、ja-JP为技術ログ，搜索、筛选、表格及空状态同步。“诊断ID”继续表示错误排障编号。
+  “诊断 ID”继续表示错误排障编号。操作日志的术语与交互见单页业务操作日志合同。
   所有页面移除通用刷新及专用承载，不保留标题刷新槽或扩展宿主刷新确认分支；仓库获取、软件包重新读取、业务完成后的数据更新及错误重试保留。
   所有者已否定为删除按钮而增加定时业务读取，并于2026-11-04批准下方完整变化通知合同；本轮按提交后通知改造项目、任务、活动及任务详情，移除3秒/750ms轮询及旧追赶逻辑，不恢复通用刷新作为替代。
   已有分页、去重、筛选及阅读位置保护保留；以本轮真实代码和定向证据确认事件覆盖、恢复及背压，不把旧轮询候选的通过记录当作新链路验证。
@@ -327,6 +333,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
   PageHeader、SplitButton、Dialog、ScrollArea 和 SegmentedButtons 统一持有布局/生命周期。无图标分段按钮内部左右各 24px，采用 Material 自身等宽布局，
   移除勾号选项及隐藏宽度测量层，不写死文案宽度；所有者允许过窄窗口放不下，包括本次 640px 英文设置导航，不增加滚动兜底。滚动条只在实际滚动或轨道悬停时唤出，沿用库计时和销毁语义；textarea
   内部编辑滚动保持原生。离线页面恢复同时重新协商当前连接能力，不依赖切页刷新能力。
+- 文件选择复用 `FilePickerControl`，包含上方虚线拖放区和下方路径输入/选择按钮，支持文件与文件夹模式。首批接入仓库列表导入、模板导入、添加已有项目和用户软件包登记。选择阶段的弹窗底部固定为“取消 / 确认”，系统选择期间禁用确认、取消及 Esc/空白处关闭；选择只更新路径，确认后调用 Core。仓库列表确认后进入独立宽预览，隐藏选择器；返回时恢复标准宽度并保留路径。路径类型、文件内容及业务资格均由既有 Core 用例校验。
 - 异步 Plan 的触发控件通过稳定本地 origin ref 返回焦点；共享 Dialog 等待公开 closed、
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
@@ -706,7 +713,7 @@ consumer 并用相同 public DTO/Fixture 验证全部 node/action 与 fail-close
 ## Restored Official GUI Completion
 
 Portable UI architecture reset 只替换旧 Web UI/iframe/isolated WebView 方向，不删除 official GUI 对当前 Core use case 的覆盖。
-completion audit 后恢复以下批准切片：
+以下是 completion audit 当时恢复的切片。F1 的配置版本已演进，F2/F3 中的 Activity 和 Diagnostics 已撤销。
 
 1. Slice E1：Core read surfaces、stable route identity、wide rail/drawer、narrow modal drawer 与统一 data-route state；
 2. Slice E2：当前既有 mutation、typed Plan review、explicit Apply、Operation progress/cancel/reconnect；
@@ -753,8 +760,7 @@ Extensions
        -> Permissions
        -> Portable UI
 Settings
-Activity
-Diagnostics
+Operation Logs
 About
 ```
 
@@ -762,11 +768,10 @@ route identity 使用稳定 ASCII ID 和 opaque resource ID，不使用翻译文
 业务不显示假按钮或 disabled fake page。M8 MCP、M9 Discord、migration/import、updater/distribution、Local API、Custom
 Web UI 与 full external-client credential pairing/revocation 不进入 M7。
 
-当前 minimum-change proposal 将 Projects 恢复为 home-equivalent，将 Repositories/Templates移回Packages & Templates，将
-project Unity/Backups保留在Project context，将global Unity放入Settings，将Operations表达为context progress与secondary Task
-Center，将Activity/Diagnostics放入同一Log utility，并把About/version放入footer/Settings。Extensions是v3既有用户概念，保持
-其utility身份和大致归属；permission/quarantine/Portable UI进入Extension detail。Portable UI v1不提供sidebar/menu/toolbar/
-arbitrary navigation contribution。该proposal已获项目所有者批准。
+已批准的布局将 Projects 用作首页，将 Repositories/Templates 归入资源导航，将项目 Unity/Backups 保留在项目上下文，
+全局 Unity 放在 Settings，Operations 对应上下文进度和次级任务中心，About/version 归于 footer/Settings。
+操作日志沿用单页业务操作日志合同。Extensions 保留原有工具归属，权限、隔离和 Portable UI 进入详情。
+Portable UI v1 不提供 sidebar/menu/toolbar/arbitrary navigation contribution。
 
 ### Visual architecture and component policy
 
@@ -778,7 +783,7 @@ but
 rejected_for_visual_and_information_architecture_acceptance
 ```
 
-源码审计确认 `@material/web 2.5.0` production import 为 0、rendered `md-*` element 为 0；Core 与 Portable UI 使用 native
+该候选的源码审计确认 `@material/web 2.5.0` production import 为 0、rendered `md-*` element 为 0；Core 与 Portable UI 使用 native
 button/input/select/textarea/progress 和 custom CSS。该事实分类为
 `material_web_dependency_present_but_component_system_not_adopted`，主题分类为
 `material_theme_not_actually_wired`。
@@ -813,27 +818,25 @@ route 另实现 `confirmation-required`、`operation-running`、`success`、`fai
 高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
 result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
 
-### Settings Config9 与存储权威
+### Settings 与存储权威
 
-当前活动格式为 `specs/config/settings-v8.md` / `.schema.json`。closed 字段为：
-appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好、unity.hubPath/defaultLaunchArguments、paths 两目录覆盖、window.rememberState、projects.autoDiscover 及 backups 三项默认；
-精确枚举、边界和 null 语义以现有机器合同为准。所有非 nullable PATCH 字段显式 null 整次拒绝，
-sourceColor:null、hubPath:null 和两个目录的 null 分别清除显式覆盖；有效目录由 Core 只读解析后投影。
+当前设置格式与迁移输入见 [项目状态](../status.md) 所链接的配置规范和 Schema。字段、枚举、边界及 null 语义以机器合同为准。
+非 nullable PATCH 字段显式 null 整次拒绝，nullable 字段可按合同清除覆盖。有效目录由 Core 只读解析后投影。
 
-settings.get/update 要求原 settings.read/manage，返回 Config9、revision、完整归一化设置及
+settings.get/update 要求原 settings.read/manage，返回实际配置版本、revision、完整归一化设置及
 派生 unityHub/有效目录；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
 最多 16 KiB，确定性序列化、可恢复原子替换。派生文件状态不推进 revision，保存后状态读取
 失败不把已提交设置伪报为失败。application 只经 ConfigStore port 保存归一化快照，Store
 负责文件格式和恢复，不增加配置数据库表、通用 key/value、GUI 直写或第二套权威。
 
-主题确认、普通即时设置和 Hub 配置共用 UI 串行 CAS；状态读取、能力协商和故障恢复仍通过
-typed client/RPC。当前 hello.configSchema=9。Config1–8 只作为保留原数据的迁移输入，不是当前写入或
-返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config9 不接受该字段。自动发现字段及生效时的项目目录修改附加现有 projects.manage；Unity全局参数修改附加unity.manage。
-开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
+主题、普通即时设置和 Hub 配置共用 UI 串行 CAS。失败保留意图，显式重试先读取权威状态，
+写入结果未知时核实后再决定是否重试，切换连接时停止旧队列。自动发现字段及生效时的项目目录修改
+附加现有 projects.manage，Unity 全局参数修改附加 unity.manage。开发兼容策略按 A-034。
 
 ### 日志、活动记录与提示已撤销
 
-按当前有效合同彻底移除日志、独立活动及浮动提示。Operation与业务Event保留原用途；页面内错误、确认、重试及完成行为继续验证。下方旧日志重建方案及技术记录只保留为撤销前历史，不授予恢复实现的范围。
+旧技术日志、独立活动和浮动提示已撤销。现行日志入口仅为 [单页业务操作日志](#单页业务操作日志2026-11-06所有者批准实施)。
+Operation 与业务 Event 保留原用途，页面内错误、确认、重试及完成行为继续验证。
 
 ### Accessibility and manual ownership
 
@@ -1932,6 +1935,8 @@ check 和必要 GUI 构建通过，Core/协议/依赖未变，不重跑 Rust、�
   本次只做工作空间与记录整合，没有 GUI 新功能、合同调整、push 或视觉验收结论。
 
 ## 下一停止点
+
+以下是原候选的交接记录。当前停止点见 [项目状态](../status.md#剩余边界与下一停止点)。
 
 P6 实际 wire 字段修复与候选 DTO 分离已按项目所有者批准落实，其完整 Rust 483/0/8、公开
 RPC 8/8 和六种 Plan review 证据保持。本轮 H2-A 已形成真实桌面签收候选，完成 GUI
