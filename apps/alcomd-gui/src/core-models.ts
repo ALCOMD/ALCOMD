@@ -117,6 +117,7 @@ export interface ReadIssue {
 }
 
 export interface ProjectSnapshot {
+    displayName?: string;
     projectId?: string;
     registeredAtMs?: number;
     favorite?: boolean;
@@ -134,7 +135,9 @@ export interface ProjectSnapshot {
 }
 
 export interface ProjectResult { project: ProjectSnapshot }
-export interface ProjectsListResult { projects: ProjectSnapshot[]; nextCursor?: RegistryCursor }
+export type ProjectListSort = "name" | "type" | "unity" | "added" | "modified";
+export interface ProjectListView { search?: string; sort: ProjectListSort; descending: boolean }
+export interface ProjectsListResult { projects: ProjectSnapshot[]; nextCursor?: RegistryCursor; viewSequence?: number }
 export interface ProjectWriteResult { project: ProjectSnapshot; replayed: boolean }
 export interface ProjectUnregisterResult { projectId: string; revision: number; unregistered: boolean; replayed: boolean }
 

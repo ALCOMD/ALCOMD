@@ -784,11 +784,20 @@ impl AlcomdClient {
         cursor: Option<alcomd_protocol::RegistryCursor>,
         limit: Option<u32>,
     ) -> Result<alcomd_protocol::ProjectsListResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_PROJECTS_LIST,
-            alcomd_protocol::RegistryListParams { cursor, limit },
-        )
+        self.projects_list_with_view(alcomd_protocol::ProjectsListParams {
+            cursor,
+            limit,
+            ..Default::default()
+        })
         .await
+    }
+
+    pub async fn projects_list_with_view(
+        &mut self,
+        params: alcomd_protocol::ProjectsListParams,
+    ) -> Result<alcomd_protocol::ProjectsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECTS_LIST, params)
+            .await
     }
 
     pub async fn project_get(

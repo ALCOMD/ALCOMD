@@ -460,7 +460,7 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | method | capability | permission | 语义 |
 |---|---|---|---|
 | `projects.inspect` | `projects.read.v1` | `projects.read` | 无状态读取绝对路径；显式 exact-root/search-parents |
-| `projects.list` | `projects.read.v1` | `projects.read` | 注册项目稳定分页 |
+| `projects.list` | `projects.read.v1` | `projects.read` | 注册项目稳定分页，可指定 Core 搜索和排序视图 |
 | `projects.get` | `projects.read.v1` | `projects.read` | 读取一个已注册 snapshot |
 | `projects.register` | `projects.registry.v1` | `projects.manage` | exact root 读取成功后写 registry |
 | `projects.refresh` | `projects.registry.v1` | `projects.manage` | 刷新 normalized snapshot，不写项目 |
@@ -493,8 +493,15 @@ Core 去掉首尾空白，空值恢复默认名称。读取及写入结果中的
 
 `projects.inspect/register` 的 RPC path 必须绝对；CLI 可先解析相对路径。local repository path 同样
 必须绝对，remote URL 只允许无 userinfo 的 HTTP(S)。DTO、枚举、长度、cursor 与可选字段由
-`m3-project-repository.schema.json` 冻结。列表默认 limit 100、最大 1000；registry page 按
+`m3-project-repository.schema.json` 冻结。列表默认 limit 100、最大 1000；无 `view` 的项目列表按
 `(registeredAtMs DESC, id DESC)`，package page 按 `(packageId ASC, version ASC)`，cursor exclusive。
+`ProjectSnapshot.displayName` 是 Core 从项目根目录提取的名称。`projects.list` 的 `view` 可指定
+`search` 和 `sort`（`name`、`type`、`unity`、`added`、`modified`）、`descending`。搜索按名称做 Unicode 小写
+子串匹配，最多 256 个字符，禁止控制字符。Core 始终先返回收藏项目，按所选字段和方向排序，最后按项目 ID
+升序打破并列；按修改时间排序时，各收藏分组内未知时间始终排在已知时间之后。
+视图结果返回 `viewSequence`，续页提交同一 `view`、`nextCursor` 和原 `viewSequence` 作为
+`expectedViewSequence`。Core 在同一读取快照核对项目事件水位并读取分页结果。水位改变或游标不再有效时
+返回 `revision_conflict`，客户端从首页重读。
 `repositories.refreshAll` 接收单个最多 64 字节的幂等键。Core 对本 principal 最多 4096 个已登记的源
 滚动发起刷新，修订冲突时读取当前修订并重试一次。结果按登记快照顺序逐仓库返回 `refreshed` 或
 `failed`，失败附稳定错误码。单仓失败时保留其 last-known-good 状态。

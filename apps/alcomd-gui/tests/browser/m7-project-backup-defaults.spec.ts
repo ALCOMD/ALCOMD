@@ -122,7 +122,7 @@ test("visible project lists follow Core discoveries without an explicit refresh"
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await page.evaluate(() => {
         const original = window.projectSnapshots.at(-1)![0]!;
-        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000991", rootPath: "C:\\Fixture\\Discovered project" });
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000991", rootPath: "C:\\Fixture\\Discovered project", displayName: "Discovered project" });
     });
     await page.clock.fastForward(3_100);
     await expect(page.getByText("Discovered project", { exact: true })).toBeVisible();
@@ -142,7 +142,7 @@ test("turning off discovery leaves idle lists quiet while committed project chan
     expect(await page.evaluate(() => window.projectListReads)).toBe(before);
     await page.evaluate(() => {
         const original = window.projectSnapshots.at(-1)![0]!;
-        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000993", rootPath: "C:\\Fixture\\Registered elsewhere" });
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000993", rootPath: "C:\\Fixture\\Registered elsewhere", displayName: "Registered elsewhere" });
     });
     await page.clock.runFor(500);
     await expect(page.getByText("Registered elsewhere", { exact: true })).toBeVisible();
@@ -157,7 +157,7 @@ test("a late automatic read cannot overwrite an accepted project change", async 
     await expect.poll(() => page.evaluate(() => window.resumeProjectPoll !== undefined)).toBe(true);
     await page.evaluate(() => {
         const original = window.projectSnapshots.at(-1)![0]!;
-        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000992", rootPath: "C:\\Fixture\\Newer project" });
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000992", rootPath: "C:\\Fixture\\Newer project", displayName: "Newer project" });
     });
     await page.getByRole("button", { name: "Add to favorites", exact: true }).first().click();
     await expect(page.getByRole("button", { name: "Remove from favorites", exact: true }).first()).toBeVisible();
@@ -175,7 +175,7 @@ test("a held pre-delete project snapshot cannot reinsert a project removed by an
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await page.evaluate(() => {
         const original = window.projectSnapshots.at(-1)![0]!;
-        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000994", rootPath: "C:\\Fixture\\Deleted before reply" });
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000994", rootPath: "C:\\Fixture\\Deleted before reply", displayName: "Deleted before reply" });
     });
     await page.clock.runFor(500);
     await expect.poll(() => page.evaluate(() => window.resumeProjectPoll !== undefined)).toBe(true);

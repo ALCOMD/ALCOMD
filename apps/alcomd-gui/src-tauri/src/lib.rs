@@ -171,12 +171,12 @@ async fn gui_projects_inspect(
 #[tauri::command]
 async fn gui_projects_list(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::RegistryListParams,
+    params: alcomd_protocol::ProjectsListParams,
 ) -> Result<alcomd_protocol::ProjectsListResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.projects_list(params.cursor, params.limit).await,
+        Some(client) => client.projects_list_with_view(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)

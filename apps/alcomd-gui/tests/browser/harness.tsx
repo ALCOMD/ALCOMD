@@ -24,7 +24,7 @@ import ReactDOM from "react-dom/client";
 import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json" with { type: "json" };
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
-import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
+import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
@@ -607,16 +607,17 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
-    projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
+    projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): ReturnType<GuiRpcClient["projectsList"]> {
         window.projectListReads += 1;
+        const page = (projects: ProjectSnapshot[]) => projectListPage(projects, cursor, view, expectedViewSequence, this.mode === "favorite-pages");
         if (query.has("auto-projects")) {
             const projects = [project(), ...window.autoDiscoveryProjects];
             window.projectSnapshots.push(structuredClone(projects));
             if (query.has("hold-project-poll") && window.projectListReads === 2) {
-                const snapshot = structuredClone({ projects });
+                const snapshot = structuredClone(page(projects));
                 return new Promise((resolve) => { window.resumeProjectPoll = () => resolve(snapshot); });
             }
-            return this.value({ projects });
+            return this.value(page(projects));
         }
         if (query.has("projectModified")) {
             const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
@@ -628,26 +629,25 @@ class DeterministicGuiClient implements GuiRpcClient {
                 { ...project("00000000-0000-4000-8000-000000000105", "Favorite", true), lastModifiedAtMs: 1_700_000_000_000 }
             ].map((item) => ({ ...item, ...(this.projectLaunchTimes.has(item.projectId) ? { lastModifiedAtMs: this.projectLaunchTimes.get(item.projectId) } : {}) }));
             window.projectSnapshots.push(structuredClone(projects));
-            return this.value({ projects });
+            return this.value(page(projects));
         }
         if (query.has("projectGrid")) {
             const names = ["Avatar Studio", "World Workshop", "非常长的项目名称用于检查卡片信息与操作是否保持整齐 Long Project Name", "Package Sandbox", "Unknown Editor", "Avatar Preview", "Archive"];
-            return this.value({ projects: names.map((name, index) => ({
+            return this.value(page(names.map((name, index) => ({
                 ...project(`00000000-0000-4000-8000-${String(101 + index).padStart(12, "0")}`, name, index === 0),
                 rootPath: `C:\\Projects\\Workspace with a long directory name\\${name}`,
                 projectType: index === 1 ? "worlds" : index === 3 ? "Unknown project type with long text" : "avatars",
                 unityVersion: index === 4 ? "" : index === 1 ? "6000.0.40f1" : "2022.3.22f1",
                 registeredAtMs: index === 4 ? undefined : 1_690_000_000_000
-            })) });
+            }))));
         }
         if (this.mode === "favorite-pages") {
-            return cursor === undefined
-                ? this.value({ projects: [project(PROJECT_ID, "Alpha")], nextCursor: { registeredAtMs: 1_690_000_000_000, id: PROJECT_ID } })
-                : this.value({ projects: [project("00000000-0000-4000-8000-000000000110", "Zulu Favorite", true)] });
+            return this.value(page([project(PROJECT_ID, "Alpha"), project("00000000-0000-4000-8000-000000000110", "Zulu Favorite", true)]));
         }
         const projects = [project(), ...this.createdProjects].map((item) => this.projectFavorites.has(item.projectId) ? { ...item, favorite: this.projectFavorites.get(item.projectId)!, revision: 3 } : item).filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
-        if (query.has("hold-project-refresh") && this.createdProjects.length > 0) return new Promise((resolve) => window.addEventListener("test-project-refresh-ready", () => resolve({ projects }), { once: true }));
-        return this.value({ projects: this.mode === "empty" ? [] : projects });
+        const result = page(this.mode === "empty" ? [] : projects);
+        if (query.has("hold-project-refresh") && this.createdProjects.length > 0) return new Promise((resolve) => window.addEventListener("test-project-refresh-ready", () => resolve(result), { once: true }));
+        return this.value(result);
     }
     projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
         const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
@@ -1383,12 +1383,45 @@ const DISCORD_ID = "com.vrclearn.discord";
 const MCP_ID = "com.vrclearn.mcp-management";
 const HASH = "a".repeat(64);
 
+function projectListPage(projects: ProjectSnapshot[], cursor: RegistryCursor | undefined, view: ProjectListView | undefined, expectedViewSequence: number | undefined, paginate: boolean): ProjectsListResult {
+    const viewSequence = view === undefined ? undefined : 1;
+    if (view !== undefined) {
+        if (cursor !== undefined && expectedViewSequence !== viewSequence) throw { code: "revision_conflict" };
+        const search = view.search?.toLowerCase() ?? "";
+        projects = projects.filter((item) => (item.displayName ?? "").toLowerCase().includes(search)).sort((left, right) => {
+            const favorite = Number(right.favorite === true) - Number(left.favorite === true);
+            if (favorite !== 0) return favorite;
+            let order = 0;
+            switch (view.sort) {
+                case "name": order = (left.displayName ?? "").toLowerCase().localeCompare((right.displayName ?? "").toLowerCase()); break;
+                case "type": order = left.projectType.localeCompare(right.projectType); break;
+                case "unity": order = left.unityVersion.localeCompare(right.unityVersion); break;
+                case "added": order = (left.registeredAtMs ?? 0) - (right.registeredAtMs ?? 0); break;
+                case "modified": {
+                    if (left.lastModifiedAtMs === undefined && right.lastModifiedAtMs !== undefined) return 1;
+                    if (right.lastModifiedAtMs === undefined && left.lastModifiedAtMs !== undefined) return -1;
+                    order = (left.lastModifiedAtMs ?? 0) - (right.lastModifiedAtMs ?? 0);
+                    break;
+                }
+            }
+            return (view.descending ? -order : order) || (left.projectId ?? "").localeCompare(right.projectId ?? "");
+        });
+    }
+    if (!paginate) return { projects, viewSequence };
+    const offset = cursor === undefined ? 0 : projects.findIndex((item) => item.projectId === cursor.id) + 1;
+    const item = projects[offset];
+    const nextCursor = projects.length > offset + 1 && item?.projectId && item.registeredAtMs !== undefined
+        ? { id: item.projectId, registeredAtMs: item.registeredAtMs } : undefined;
+    return { projects: item === undefined ? [] : [item], viewSequence, nextCursor };
+}
+
 function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
     const rootPath = query.has("windows-paths") ? `\\\\?\\C:\\Projects\\${name}` : projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
-    return { projectId, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
+    const displayName = rootPath === "<private-project>" ? rootPath : name;
+    return { projectId, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
 }
-function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
-function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
+function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, actions: { canRemove: true, canEditAuthentication: true }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
+function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, actions: { canRemove: true, canEditAuthentication: false }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, sourceRootPath: "<private-user-package>", packageId: "com.example.avatar", version: "1.2.3", displayName: "Local avatar tools", revision, archiveSha256: HASH, createdAtMs: 1_700_000_000_000, updatedAtMs: revision === 1 ? 1_700_000_000_000 : 1_700_000_001_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: query.has("windows-paths") ? "\\\\?\\C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.22f1\\Editor\\Unity.exe" : "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }

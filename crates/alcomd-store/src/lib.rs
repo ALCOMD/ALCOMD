@@ -325,6 +325,20 @@ impl M3RegistryStore for StateStoreHandle {
             .await
     }
 
+    async fn list_project_view(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+        view: alcomd_application::ProjectListView,
+        expected_sequence: Option<u64>,
+    ) -> Result<alcomd_application::ProjectViewPage, M3Error> {
+        self.request_m3(move |connection| {
+            m3::list_project_view(connection, &owner, cursor, limit, &view, expected_sequence)
+        })
+        .await
+    }
+
     async fn refresh_project(
         &self,
         owner: PrincipalId,

@@ -33,6 +33,7 @@ import type {
     PackageSourceSelector,
     ProjectCopyPlan,
     ProjectDeletePlan,
+    ProjectListSort,
     ProjectSnapshot,
     RegistryCursor,
     RepositorySnapshot,
@@ -205,19 +206,33 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.projectsCreate);
     const canRestore = useCapability(capabilities.backupsRestore);
+    const [search, setSearch] = useViewState("projects", "search", "");
+    const [sort, setSort] = useViewState<ProjectListSort>("projects", "sort", "modified");
+    const [descending, setDescending] = useViewState("projects", "descending", true);
     const load = useCallback(async () => {
         const read = async () => {
-        const projects: ProjectSnapshot[] = [];
-        let cursor: RegistryCursor | undefined;
-        do {
-            const value = await client.projectsList(cursor);
-            projects.push(...value.projects);
-            cursor = value.nextCursor;
-        } while (cursor !== undefined);
-        return projects;
+            const projects: ProjectSnapshot[] = [];
+            const view = { search, sort, descending };
+            let cursor: RegistryCursor | undefined;
+            let sequence: number | undefined;
+            do {
+                const value = await client.projectsList(cursor, view, sequence);
+                projects.push(...value.projects);
+                cursor = value.nextCursor;
+                sequence = value.viewSequence;
+            } while (cursor !== undefined);
+            return projects;
         };
-        return coreEvents ? coreEvents.consistentRead(["projects"], read) : read();
-    }, [client, coreEvents]);
+        const readCurrent = async () => {
+            try {
+                return await read();
+            } catch (error) {
+                if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "revision_conflict") throw error;
+                return read();
+            }
+        };
+        return coreEvents ? coreEvents.consistentRead(["projects"], readCurrent) : readCurrent();
+    }, [client, coreEvents, search, sort, descending]);
     const initial = use(usePageReadPromise("primary", load));
     const [state, setState] = useState<{
         error?: RpcError;
@@ -225,9 +240,6 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         projects: ProjectSnapshot[];
     }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [],
         error: initial.kind === "error" ? safeError(t, locale, initial.error) : undefined }));
-    const [search, setSearch] = useViewState("projects", "search", "");
-    const [sort, setSort] = useViewState("projects", "sort", "modified");
-    const [descending, setDescending] = useViewState("projects", "descending", true);
     const [view, setView] = useState<"list" | "grid">(() => {
         try {
             return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
@@ -247,7 +259,13 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const refreshingList = useRef(false);
     const queuedList = useRef(false);
     const listError = useRef<unknown>(undefined);
-    useEffect(() => () => { listReadGeneration.current += 1; }, [client]);
+    const loadRef = useRef(load);
+    const lastViewLoad = useRef(load);
+    loadRef.current = load;
+    useEffect(() => () => {
+        listReadGeneration.current += 1;
+        queuedList.current = false;
+    }, [client]);
 
     const toggleView = () => {
         const next = view === "list" ? "grid" : "list";
@@ -264,11 +282,12 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         refreshingList.current = true;
         listError.current = undefined;
         const request = ++listReadGeneration.current;
+        const read = loadRef.current;
         try {
-            const projects = await load();
-            if (request === listReadGeneration.current) setState({ loading: false, projects });
+            const projects = await read();
+            if (request === listReadGeneration.current && read === loadRef.current) setState({ loading: false, projects });
         } catch (caught: unknown) {
-            if (request === listReadGeneration.current) {
+            if (request === listReadGeneration.current && read === loadRef.current) {
                 listError.current = caught;
                 const failure = safeError(t, locale, caught);
                 setState((current) => ({ ...current, error: current.error?.code === failure.code ? current.error : failure, loading: false }));
@@ -277,43 +296,25 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             refreshingList.current = false;
             if (queuedList.current) { queuedList.current = false; void refresh(); }
         }
-    }, [load]);
+    }, [t, locale]);
+
+    useEffect(() => {
+        if (lastViewLoad.current === load) return;
+        const timer = window.setTimeout(() => {
+            lastViewLoad.current = load;
+            void refresh();
+        }, 100);
+        return () => window.clearTimeout(timer);
+    }, [load, refresh]);
 
     const retryProjects = useCoreInvalidation("projects:list", ["projects"], async () => { await refresh(); if (listError.current !== undefined) throw listError.current; });
     useViewReadingPosition("projects", root, state.projects);
     useEffect(() => { coreEvents?.noteDisplayedData(); coreEvents?.writeView("projects", state.projects, state.projects.length); }, [coreEvents, state.projects]);
 
-    const projects = [...state.projects]
-        .filter((project) => projectName(t, locale, project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
-        .sort((left, right) => {
-            const favorite = Number(right.favorite === true) - Number(left.favorite === true);
-            if (favorite !== 0) return favorite;
-            let compared = 0;
-            if (sort === "name") compared = projectName(t, locale, left).localeCompare(projectName(t, locale, right));
-            if (sort === "type") compared = left.projectType.localeCompare(right.projectType);
-            if (sort === "unity") compared = left.unityVersion.localeCompare(right.unityVersion);
-            if (sort === "added") compared = (left.registeredAtMs ?? 0) - (right.registeredAtMs ?? 0);
-            if (sort === "modified") {
-                // An unknown legacy timestamp is never replaced by observation or registration time.
-                if (left.lastModifiedAtMs === undefined && right.lastModifiedAtMs !== undefined) return 1;
-                if (right.lastModifiedAtMs === undefined && left.lastModifiedAtMs !== undefined) return -1;
-                if (left.lastModifiedAtMs !== undefined && right.lastModifiedAtMs !== undefined) compared = left.lastModifiedAtMs - right.lastModifiedAtMs;
-            }
-            if (compared !== 0) return descending ? -compared : compared;
-            const leftIdentity = left.projectId ?? left.rootPath;
-            const rightIdentity = right.projectId ?? right.rootPath;
-            return leftIdentity < rightIdentity ? -1 : leftIdentity > rightIdentity ? 1 : 0;
-        });
+    const projects = state.projects;
+    const updateProject = () => { void refresh(); };
 
-    const updateProject = (project: ProjectSnapshot) => {
-        listReadGeneration.current += 1;
-        setState((current) => ({
-            ...current,
-            projects: current.projects.map((existing) => existing.projectId === project.projectId ? project : existing)
-        }));
-    };
-
-    const updateSort = (nextSort: string) => {
+    const updateSort = (nextSort: ProjectListSort) => {
         if (sort === nextSort) {
             setDescending((current) => !current);
             return;
@@ -359,7 +360,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                         aria-label={t("Sort by")}
                         className="projects-sort"
                         label=""
-                        onChange={updateSort}
+                        onChange={(value) => updateSort(value as ProjectListSort)}
                         options={[
                             { label: t("Last modified"), value: "modified" },
                             { label: t("Name"), value: "name" },
@@ -379,7 +380,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             ) : null}
             <div className="projects-content">
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
-                {state.error !== undefined && state.projects.length === 0 ? <ErrorState error={state.error} retry={retryProjects} /> : null}
+                {state.error !== undefined ? <ErrorState error={state.error} retry={retryProjects} /> : null}
                 {!state.loading && state.error === undefined && projects.length === 0 ? (
                     <section className="projects-empty" role="status">
                         <h2>{search.length === 0 ? t("No registered projects") : t("No matching projects")}</h2>
@@ -446,12 +447,12 @@ function ProjectsTable({
     navigate(path: string): void;
     onChanged(): void;
     onProjectChanged(project: ProjectSnapshot): void;
-    onSort(sort: string): void;
+    onSort(sort: ProjectListSort): void;
     projects: ProjectSnapshot[];
-    sort: string;
+    sort: ProjectListSort;
 }) {
     const { t, locale } = useTranslation();
-    const sortableColumn = (header: string, key: string, width?: DesktopListColumn["width"]): DesktopListColumn => {
+    const sortableColumn = (header: string, key: ProjectListSort, width?: DesktopListColumn["width"]): DesktopListColumn => {
         const active = sort === key;
         return { key, header, width, onSort: () => onSort(key), sortDirection: active ? (descending ? "descending" : "ascending") : undefined };
     };
@@ -927,8 +928,8 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
     );
 }
 
-function projectName(t: Translate, locale: SupportedLocale, project: ProjectSnapshot): string {
-    return displayPath(project.rootPath).split(/[\\/]/).at(-1) ?? t("Unity project");
+function projectName(t: Translate, _locale: SupportedLocale, project: ProjectSnapshot): string {
+    return project.displayName ?? t("Unity project");
 }
 
 function formatModified(t: Translate, locale: SupportedLocale, value: number | undefined): string {

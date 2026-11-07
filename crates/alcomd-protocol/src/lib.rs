@@ -1147,6 +1147,8 @@ pub struct ProjectSnapshot {
     /// Registry-maintained project activity time; absent when no authoritative value is known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_modified_at_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
     pub root_path: String,
     pub project_type: ProjectType,
     pub unity_version: String,
@@ -1246,6 +1248,50 @@ pub struct RegistryListParams {
     pub cursor: Option<RegistryCursor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<RegistryCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub view: Option<ProjectListView>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected_view_sequence: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectListView {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub search: Option<String>,
+    pub sort: ProjectListSort,
+    pub descending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectListSort {
+    Name,
+    Type,
+    Unity,
+    Added,
+    Modified,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1387,6 +1433,8 @@ pub struct ProjectsListResult {
     pub projects: Vec<ProjectSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<RegistryCursor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_sequence: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

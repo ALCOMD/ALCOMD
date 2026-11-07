@@ -6,6 +6,7 @@ import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListC
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
+import type { ProjectListView } from "./core-models";
 
 import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
@@ -22,7 +23,7 @@ export interface GuiRpcClient {
     settingsGet(): Promise<SettingsGetResult>;
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
-    projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult>;
+    projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
@@ -190,8 +191,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_projects_inspect", { params: { path, discoveryMode } });
     }
 
-    projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult> {
-        return invokeTyped("gui_projects_list", { params: { cursor, limit: 100 } });
+    projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): Promise<ProjectsListResult> {
+        return invokeTyped("gui_projects_list", { params: { cursor, limit: 100, view, expectedViewSequence } });
     }
 
     projectGet(projectId: string): Promise<ProjectResult> {

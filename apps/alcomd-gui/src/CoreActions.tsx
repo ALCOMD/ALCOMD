@@ -779,7 +779,7 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         </>}
     </OperationFollow>;
     return <ActionSection title={t("Create backup")}>
-        <p><Translated message="Back up {name}." values={{ name: <strong>{project.rootPath.split(/[\\/]/).filter(Boolean).at(-1) ?? project.projectId}</strong> }} /></p>
+        <p><Translated message="Back up {name}." values={{ name: <strong>{project.displayName ?? t("Unity project")}</strong> }} /></p>
         {options === undefined ? showLoading ? <LoadingState title={t("Loading backup defaults…")} /> : null : <>
             <Select disabled={feedback.busy || unknown} id="backup-compression" label={t("Compression")}
                 onChange={(compressionMode) => setOptions({ ...options, compressionMode: compressionMode as typeof options.compressionMode })}

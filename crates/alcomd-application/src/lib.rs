@@ -160,6 +160,15 @@ pub struct ProjectObservation {
     pub issues: Vec<ReadIssue>,
 }
 
+/// The leaf name used by project lists and details.
+pub fn project_display_name(root_path: &str) -> Option<&str> {
+    root_path
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+}
+
 /// Durable registered project record.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProjectRecord {
@@ -295,6 +304,28 @@ pub struct PackageCursor {
 pub struct ProjectPage {
     pub projects: Vec<ProjectRecord>,
     pub next_cursor: Option<RegistryCursor<ProjectId>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectListView {
+    pub search: Option<String>,
+    pub sort: ProjectListSort,
+    pub descending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectListSort {
+    Name,
+    Type,
+    Unity,
+    Added,
+    Modified,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectViewPage {
+    pub page: ProjectPage,
+    pub sequence: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -524,6 +555,14 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
     ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send;
+    fn list_project_view(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+        view: ProjectListView,
+        expected_sequence: Option<u64>,
+    ) -> impl Future<Output = Result<ProjectViewPage, M3Error>> + Send;
     fn refresh_project(
         &self,
         owner: PrincipalId,
@@ -1440,6 +1479,35 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         validate_m3_limit(limit)?;
         self.store
             .list_projects(access.principal().clone(), cursor, limit)
+            .await
+    }
+
+    pub async fn list_project_view(
+        &self,
+        access: &AccessContext,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+        view: ProjectListView,
+        expected_sequence: Option<u64>,
+    ) -> Result<ProjectViewPage, M3Error> {
+        require_m3(access, Permission::ProjectsRead)?;
+        validate_m3_limit(limit)?;
+        if cursor.is_some() != expected_sequence.is_some()
+            || expected_sequence.is_some_and(|value| value > i64::MAX as u64)
+            || view.search.as_ref().is_some_and(|search| {
+                search.chars().count() > 256 || search.chars().any(char::is_control)
+            })
+        {
+            return Err(M3Error::new(M3ErrorCode::InvalidInput));
+        }
+        self.store
+            .list_project_view(
+                access.principal().clone(),
+                cursor,
+                limit,
+                view,
+                expected_sequence,
+            )
             .await
     }
 
