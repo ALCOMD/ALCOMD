@@ -46,10 +46,8 @@ type MaterialElement = HTMLElement & {
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
 export const DialogOpenContext = createContext<boolean | undefined>(undefined);
-export const DialogCloseContext = createContext<{
+const DialogCloseContext = createContext<{
     requestClose(afterClose?: () => void): void;
-    lockForFilePicker(): (() => void) | undefined;
-    filePickerOpen: boolean;
 } | undefined>(undefined);
 
 export interface DialogOrigin {
@@ -705,7 +703,7 @@ export function Checkbox({ checked, disabled, label, labelHidden = false, onChan
 export function DialogCloseButton({ afterClose, disabled, ...props }: Omit<ButtonProps, "onClick" | "type"> & { afterClose?: () => void }) {
     const dialog = useContext(DialogCloseContext);
     if (dialog === undefined) throw new Error("Missing dialog close context");
-    return <Button {...props} disabled={disabled || dialog.filePickerOpen} type="button" onClick={() => dialog.requestClose(afterClose)} />;
+    return <Button {...props} disabled={disabled} type="button" onClick={() => dialog.requestClose(afterClose)} />;
 }
 
 interface DialogView {
@@ -769,8 +767,6 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
     const lastOpenView = useRef<DialogView>(undefined);
     const closeRequest = useRef<{ afterClose?: () => void }>(undefined);
     const closing = useRef(false);
-    const pickerPending = useRef(false);
-    const [filePickerOpen, setFilePickerOpen] = useState(false);
     const [closingView, setClosingView] = useState<DialogView>();
     const [restoreFocus, setRestoreFocus] = useState(false);
     const view = { actions, children, title, wide };
@@ -779,19 +775,9 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
     useLayoutEffect(() => {
         if (open && !closing.current) lastOpenView.current = view;
     });
-    const lockForFilePicker = () => {
-        if (!ref.current?.open || closing.current || closeRequest.current !== undefined || pickerPending.current) return;
-        // Block native close events before React renders the disabled button.
-        pickerPending.current = true;
-        setFilePickerOpen(true);
-        return () => {
-            pickerPending.current = false;
-            setFilePickerOpen(false);
-        };
-    };
     const requestClose = useCallback((afterClose?: () => void) => {
         const element = ref.current;
-        if (!element?.open || closing.current || closeRequest.current !== undefined || pickerPending.current) return;
+        if (!element?.open || closing.current || closeRequest.current !== undefined) return;
         closeRequest.current = { afterClose };
         element.close?.();
     }, []);
@@ -805,7 +791,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         complete();
     });
     const cancelClose = useEffectEvent((event: Event) => {
-        if (!dismissible || pickerPending.current) event.preventDefault();
+        if (!dismissible) event.preventDefault();
     });
     useLayoutEffect(() => {
         const element = ref.current;
@@ -837,7 +823,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         };
         const startClose = (event: Event) => {
             if (event.target !== element) return;
-            if (closing.current || pickerPending.current) { event.preventDefault(); return; }
+            if (closing.current) { event.preventDefault(); return; }
             closing.current = true;
             resize?.startClosing();
             setClosingView(lastOpenView.current);
@@ -872,7 +858,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         if (element === null) return;
         if (open) element.open = true;
         else requestClose();
-    }, [open, filePickerOpen, requestClose]);
+    }, [open, requestClose]);
     useEffect(() => {
         if (open) {
             if (restoreFocus) setRestoreFocus(false);
@@ -894,7 +880,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         return () => { active = false; };
     }, [open, restoreFocus, returnFocus, returnFocusReady]);
     return createPortal(
-        <DialogCloseContext.Provider value={{ requestClose, lockForFilePicker, filePickerOpen }}>{createElement(
+        <DialogCloseContext.Provider value={{ requestClose }}>{createElement(
             materialElements.dialog,
             { ariaLabel: visible.title, quick, ref, style: visible.wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, visible.title),

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RepositoryListImportItem, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
-import { Button, Checkbox, Dialog, DialogCloseButton, DialogCloseContext, MenuItem, Progress, TextField } from "./Material";
+import { Button, Checkbox, Dialog, MenuItem, Progress, TextField } from "./Material";
 import { FilePicker } from "./FilePicker";
 import { SplitButton } from "./SplitButton";
 import { UtilityActionDialog } from "./UtilityActionDialog";
@@ -50,10 +50,10 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const [stopping, setStopping] = useState(false);
     const [error, setError] = useState<RpcError>();
     const pending = useRef(false);
+    const cancelRead = useRef(false);
     const activeImport = useRef<string | undefined>(undefined);
-    const backButton = useRef<HTMLElement>(null);
-    const confirmButton = useRef<HTMLElement>(null);
     useEffect(() => () => {
+        cancelRead.current = true;
         if (activeImport.current !== undefined) void client.repositoryListCancelRegistration(activeImport.current).catch(() => {});
     }, [client]);
 
@@ -61,31 +61,26 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const entries = inspection?.entries ?? [];
     const candidateCount = entries.filter(({ status }) => status === "candidate").length;
     const busy = busyAction !== undefined;
-    useEffect(() => {
-        (inspection === undefined ? confirmButton : backButton).current?.focus();
-    }, [inspection]);
-
-    const backToSelection = () => {
-        setPreview(undefined);
-        setResults(undefined);
-        setFinished(false);
-        setError(undefined);
-    };
     const begin = (action: "reading" | "adding") => {
         pending.current = true;
+        cancelRead.current = false;
         setStopping(false);
         setBusyAction(action);
         setError(undefined);
     };
     const end = () => { pending.current = false; if (current()) setBusyAction(undefined); };
-    const read = async () => {
-        if (pending.current || preview !== undefined || path.trim() === "") return;
+    const read = async (selectedPath: string) => {
+        if (pending.current || selectedPath.trim() === "") return;
+        setPath(selectedPath);
+        setPreview(undefined);
+        setResults(undefined);
+        setFinished(false);
         begin("reading");
         try {
-            const inspection = await client.repositoryListInspectFile(path);
-            if (!current()) return;
-            setPreview({ path, inspection });
-        } catch (caught) { if (current()) setError(normalizeRequestError(caught)); }
+            const inspection = await client.repositoryListInspectFile(selectedPath);
+            if (!current() || cancelRead.current) return;
+            setPreview({ path: selectedPath, inspection });
+        } catch (caught) { if (current() && !cancelRead.current) setError(normalizeRequestError(caught)); }
         finally { end(); }
     };
     const register = async () => {
@@ -108,6 +103,11 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
         }
     };
     const stop = async () => {
+        if (busyAction === "reading") {
+            cancelRead.current = true;
+            setStopping(true);
+            return;
+        }
         const key = activeImport.current;
         if (key === undefined || stopping) return;
         setStopping(true);
@@ -126,27 +126,23 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const counts = { added: 0, failed: 0, unknown: 0, unprocessed: 0 };
     for (const { status } of results ?? []) if (status !== "existing") counts[status] += 1;
     const labels = { candidate: "To import", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", failed: "Failed", added: "Added", unknown: "Result unknown", existing: "Already added", unprocessed: "Not processed" } as const;
-    const errorMessage = error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null;
-    const actions = inspection === undefined ? <DialogCloseContext.Consumer>{(dialog) => <>
-        <DialogCloseButton variant="text">{t("Cancel")}</DialogCloseButton>
-        <Button ref={confirmButton} disabled={busy || path.trim() === "" || dialog?.filePickerOpen}
-            onClick={() => void read()} type="button">{t("Confirm")}</Button>
-    </>}</DialogCloseContext.Consumer> : busy
-        ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{t("Stop import")}</Button>
-        : <>
-            <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
-            <Button onClick={backToSelection} ref={backButton} type="button" variant="text">{t("Back")}</Button>
-            {finished ? null : <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button>}
-        </>;
-    return <Dialog open title={t("Import list")} onClose={onClose} wide={entries.length > 0}
-        dismissible={inspection === undefined || !busy} actions={actions}>
-        {inspection === undefined ? <>
-            <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
-            <FilePicker client={client} chooseFile={() => client.selectRepositoryListFile("open")} label={t("Repository list file")}
-                value={path} disabled={busy} onEnter={() => void read()} onInput={(value) => { setPath(value); setError(undefined); }} />
-            {errorMessage}
-        </> : <>
-            {errorMessage}
+    return <Dialog wide open dismissible={!busy} title={t("Import list")} onClose={onClose} actions={<>
+        {busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button> : <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button>}
+        {!busy && path.trim() !== "" && !inspection ? <Button onClick={() => void read(path)} type="button" variant="text">{t("Review list")}</Button> : null}
+        {!busy && !finished && inspection ? <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t("Add {count} repositories", { count: candidateCount })}</Button> : null}
+    </>}>
+        <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
+        <FilePicker client={client} chooseFile={() => client.selectRepositoryListFile("open")} disabled={busy}
+            label={t("Repository list file")} value={path} onPicked={(picked) => void read(picked)}
+            onInput={(next) => { setPath(next); setPreview(undefined); setResults(undefined); setFinished(false); setError(undefined); }}
+            onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                    event.preventDefault();
+                    if (!inspection) void read(path);
+                }
+            }} />
+        {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
+        {inspection ? <>
             <p>{t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>
             {results === undefined ? null : <div aria-live="polite">
                 <p>{t("Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: counts.added, failed: counts.failed, unknown: counts.unknown, pending: counts.unprocessed })}</p>
@@ -162,7 +158,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
                     {outcome === undefined || !("code" in outcome) ? null : <span className="repository-list-error">{t(requestErrorMessage(outcome.code))}</span>}
                 </li>;
             })}</ul></ScrollArea>
-        </>}
+        </> : null}
         {busy ? <div className="repository-list-progress" aria-live="polite"><Progress label={t("Repository list progress")} /><span>{busyAction === "reading" ? t("Loading…") : stopping ? t("Stopping import…") : t("Adding repositories…")}</span></div> : null}
     </Dialog>;
 }

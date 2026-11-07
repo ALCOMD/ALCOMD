@@ -23,7 +23,7 @@ import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
 import { useCoreInvalidation } from "./core-events-ui";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { FilePickerField } from "./FilePicker";
+import { FilePicker } from "./FilePicker";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -204,7 +204,7 @@ function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden 
 }
 
 type UnityHubIntent = { path: string | null; previousPath: string | null; origin: "select" | "auto" | "edit" };
-type UnityHubAction = { kind: "select"; path: string } | { kind: "auto" } | { kind: "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
+type UnityHubAction = { kind: "select"; path?: string } | { kind: "auto" } | { kind: "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
 
 function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, label, onDirtyChange }: {
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult;
@@ -324,7 +324,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const [draft, setDraft] = useState(accepted.unityHub.path ?? accepted.settings.unity.hubPath ?? "");
     const edit = useRef({ value: draft, display: draft, previousPath: accepted.settings.unity.hubPath, dirty: false });
     const failedEdit = useRef<string | undefined>(undefined);
-    const pickerOpen = useRef(false);
+    const group = useRef<HTMLElement>(null);
     const guard = useRef(false);
     const active = useRef(true);
     const generation = useRef(0);
@@ -362,10 +362,13 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         }
         guard.current = true;
         const request = generation.current;
+        let restoreDraftFocus = false;
         setBusy(true);
         try {
             if (action.kind === "auto" || action.kind === "select") {
-                const path = action.kind === "auto" ? null : action.path;
+                const path = action.kind === "auto" ? null : action.path ?? await client.selectUnityHub(acceptedRef.current.unityHub.path);
+                if (request !== generation.current) return;
+                if (path === undefined) { restoreDraftFocus = edit.current.dirty; return; }
                 intent = { path, previousPath: acceptedRef.current.settings.unity.hubPath, origin: action.kind };
             }
             if (intent === undefined) return;
@@ -385,6 +388,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             }
         } catch (cause) {
             if (request !== generation.current) return;
+            if (action.kind === "select" && intent === undefined) throw cause;
             if (intent?.origin === "edit") failedEdit.current = intent.path ?? undefined;
             if (cause instanceof UnityHubConflictError) {
                 resetDraft(acceptedRef.current);
@@ -397,6 +401,9 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             if (request === generation.current) {
                 guard.current = false;
                 setBusy(false);
+                if (restoreDraftFocus) requestAnimationFrame(() => {
+                    if (request === generation.current) group.current?.querySelector<HTMLElement>("#settings-unity-hub-path")?.focus();
+                });
             }
         }
     };
@@ -431,7 +438,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         }
     };
     return (
-        <SettingsSection title={t("Unity Hub Path")}
+        <SettingsSection title={t("Unity Hub Path")} sectionRef={group}
             actions={<div className="action-row">
                 <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: invalid && pending?.origin === "auto" ? "retry" : "auto" })} type="button" variant="tonal">{t(invalid && pending?.origin === "auto" ? "Retry" : "Auto detect")}</Button>
                 <Button disabled={!canOpenHub || (!usable && !download)} softDisabled={busy || state.saving || state.failed || edit.current.dirty || pending !== undefined}
@@ -439,7 +446,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                     widthLabels={[t("Open Unity Hub"), t("Download Unity Hub")]} onClick={() => void openHub()} type="button">{openLabel}</Button>
             </div>}
             onBlur={(event) => {
-                if (pickerOpen.current || resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
+                if (resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
                 let target: EventTarget | null = event.relatedTarget;
                 while (target instanceof Node) {
                     if (event.currentTarget.contains(target)) return;
@@ -448,11 +455,12 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                 }
                 void run({ kind: "edit", trigger: "blur" });
             }}>
-                <FilePickerField client={client} selectDisabled={busy || state.saving || state.failed}
-                    onRetry={invalid && pending !== undefined && pending.origin !== "auto" ? () => void run({ kind: "retry" }) : undefined}
-                    chooseFile={() => client.selectUnityHub(acceptedRef.current.unityHub.path)}
-                    onPickerOpenChange={(open) => { pickerOpen.current = open; }}
-                    onPicked={(path) => void run({ kind: "select", path })}
+                <FilePicker client={client} selectDisabled={busy || state.saving || state.failed}
+                    selectLabel={t(invalid && pending !== undefined && pending.origin !== "auto" ? "Retry" : "Select")}
+                    chooseFile={async () => {
+                        await run({ kind: invalid && pending !== undefined && pending.origin !== "auto" ? "retry" : "select" });
+                        return undefined;
+                    }} onPicked={(path) => void run({ kind: "select", path })}
                     id="settings-unity-hub-path" label={t("Unity Hub Path")} error={invalid || (!edit.current.dirty && location.configuredPathStatus === "invalid")} readOnly={busy || state.failed}
                     placeholder={location.path === null && accepted.settings.unity.hubPath === null ? pathLabel : undefined} value={draft}
                     onFocus={() => { if (!edit.current.dirty) resetDraft(acceptedRef.current); }}

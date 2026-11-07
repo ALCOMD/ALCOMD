@@ -24,7 +24,7 @@ import type {
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
-import { FilePickerField } from "./FilePicker";
+import { FilePicker } from "./FilePicker";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
@@ -140,7 +140,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setAuthentication(EMPTY_REPOSITORY_AUTH); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
             {kind === "remote" ? <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={t("Repository URL")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type="url" value={value} />
-                : <FilePickerField client={client} chooseFile={() => client.selectFile("repositoryManifest")} disabled={feedback.busy} error={fieldError !== undefined}
+                : <FilePicker client={client} chooseFile={() => client.selectFile("repositoryManifest")} disabled={feedback.busy} error={fieldError !== undefined}
                     errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={t("Local manifest path")}
                     maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required value={value} />}
             {kind === "remote" ? <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} /> : null}
@@ -417,7 +417,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button className="material-button--danger" disabled={!available || feedback.busy} onClick={() => void mutate("remove")} type="button">{t("Remove installation")}</Button></div>
         </> : <>
             <form onSubmit={(event) => { event.preventDefault(); void mutate("register"); }}>
-                <FilePickerField client={client} chooseFile={() => client.selectFile("unityEditor")} disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+                <FilePicker client={client} chooseFile={() => client.selectFile("unityEditor")} disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                 <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="submit">{t("Register")}</Button><Button disabled={!available || feedback.busy} onClick={() => void mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="tonal">{t("Discover and refresh")}</Button></div>
             </form>
             {installations.length === 0 ? null : <Select aria-label={t("Installation to remove")} disabled={feedback.busy} label={t("Remove installation")} onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: t("Select an installation"), value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
@@ -860,7 +860,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
         {feedback.operationId !== undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
-            <FilePickerField client={client} chooseFile={() => client.selectFile("extensionPackage")} disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+            <FilePicker client={client} chooseFile={() => client.selectFile("extensionPackage")} disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
             <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={(value) => { setApprovePublisher(value); setFeedback(INITIAL_FEEDBACK); }} />
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
         </form> : <>

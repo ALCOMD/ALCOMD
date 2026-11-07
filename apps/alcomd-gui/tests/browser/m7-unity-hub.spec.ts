@@ -1,5 +1,4 @@
 import { selectSettingsSection } from "./settings-sections";
-import { browseForFile, confirmFile, openFilePicker } from "./file-picker";
 import { expect, test, type Page } from "@playwright/test";
 
 const path = "C:\\Tools\\Unity Hub\\Unity Hub.exe";
@@ -14,21 +13,11 @@ async function open(page: Page, query = "") {
 const settingsNavigationTarget = (page: Page) => page.locator(".utility-workspace-toolbar nav.resource-navigation").getByRole("button").first();
 const input = (page: Page) => section(page).locator("md-outlined-text-field input");
 const value = (page: Page) => section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { value: string }).value);
-async function pickHub(page: Page) {
-    const picker = await openFilePicker(page, section(page));
-    await browseForFile(picker).click();
-    await confirmFile(picker);
-}
 
 test("Hub picker cancellation performs no save or Editor discovery", async ({ page }) => {
     await open(page, "hub-picker=cancel");
-    const picker = await openFilePicker(page, section(page));
-    await browseForFile(picker).click();
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => requests(page, "selectUnityHub")).toBe(1);
-    await expect(picker.getByRole("button", { name: "Confirm", exact: true })).toBeDisabled();
-    await picker.getByLabel("Unity Hub Path", { exact: true }).fill(path);
-    await picker.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(picker).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
     expect(await value(page)).toBe("");
@@ -37,7 +26,7 @@ test("Hub picker cancellation performs no save or Editor discovery", async ({ pa
 
 test("Hub selection saves one narrow update, refreshes once and survives navigation", async ({ page }) => {
     await open(page);
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => value(page)).toBe(path);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: path } } }]);
     await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
@@ -50,24 +39,20 @@ test("Hub selection saves one narrow update, refreshes once and survives navigat
 
 test("rapid repeated selection opens one picker and keeps accepted path while pending", async ({ page }) => {
     await open(page, "hub-picker=hold");
-    const picker = await openFilePicker(page, section(page));
-    const select = browseForFile(picker);
+    const select = section(page).getByRole("button", { name: "Select", exact: true });
     await select.evaluate((element) => { (element as HTMLElement).click(); (element as HTMLElement).click(); });
     await expect.poll(() => requests(page, "selectUnityHub")).toBe(1);
     expect(await value(page)).toBe("");
     await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", "Unity Hub was not found.");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     await page.evaluate(() => window.dispatchEvent(new Event("test-hub-picker-ready")));
-    await expect(picker.getByLabel("Unity Hub Path", { exact: true })).toHaveValue(path);
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await confirmFile(picker);
     await expect.poll(() => value(page)).toBe(path);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
 });
 
 test("failed Hub save retains accepted evidence and Retry reconciles before saving", async ({ page }) => {
     await open(page, "theme-save=error-once");
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     expect(await value(page)).toBe("");
@@ -81,11 +66,10 @@ test("failed Hub save retains accepted evidence and Retry reconciles before savi
 
 test("an old picker result cannot save after leaving and reopening Settings", async ({ page }) => {
     await open(page, "hub-picker=hold");
-    const picker = await openFilePicker(page, section(page));
-    await browseForFile(picker).click();
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => requests(page, "selectUnityHub")).toBe(1);
     const navigation = (name: string) => page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: new RegExp(`^${name}$`) }) });
-    await navigation("Projects").evaluate((element) => (element as HTMLElement).click());
+    await navigation("Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await navigation("Settings").click();
     await selectSettingsSection(page, "unity");
@@ -98,7 +82,7 @@ test("an old picker result cannot save after leaving and reopening Settings", as
 
 test("lost Hub save reply reconciles without duplicate write", async ({ page }) => {
     await open(page, "theme-save=commit-error-once");
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(() => value(page)).toBe(path);
@@ -107,7 +91,7 @@ test("lost Hub save reply reconciles without duplicate write", async ({ page }) 
 
 test("ambiguous normalized Hub save requires reselect instead of a second write", async ({ page }) => {
     await open(page, "theme-save=commit-error-once&hub-normalize=1");
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(section(page).getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
@@ -120,7 +104,7 @@ test("ambiguous normalized Hub save requires reselect instead of a second write"
 
 test("Editor refresh failure is separate from a confirmed Hub save", async ({ page }) => {
     await open(page, "hub-refresh=error");
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => value(page)).toBe(path);
     await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
@@ -129,7 +113,7 @@ test("Editor refresh failure is separate from a confirmed Hub save", async ({ pa
 
 test("saving Hub path does not require Unity manage capability", async ({ page }) => {
     await open(page, "noUnityManage=1");
-    await pickHub(page);
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect.poll(() => value(page)).toBe(path);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
 });
@@ -278,14 +262,14 @@ test("Auto and picker actions suppress draft blur, cancellation keeps it editabl
     await expect.poll(() => value(page)).toBe("C:\\Program Files\\Unity Hub\\Unity Hub.exe");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     await input(page).fill(path);
-    const picker = await openFilePicker(page, section(page));
-    await browseForFile(picker).click();
-    await picker.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(picker).toHaveCount(0);
-    await input(page).focus();
+    await section(page).getByRole("button", { name: "Select", exact: true }).click();
+    await expect(input(page)).toBeFocused();
     expect(await value(page)).toBe(path);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
+    const drop = section(page).getByRole("button", { name: "Drop a file here or click to select", exact: true });
     await input(page).press("Shift+Tab");
+    await expect(drop).toBeFocused();
+    await drop.press("Shift+Tab");
     const openAction = section(page).getByRole("button", { name: "Open Unity Hub", exact: true });
     await expect(openAction).toBeFocused();
     await expect(openAction).toBeDisabled();
@@ -297,6 +281,8 @@ test("Auto and picker actions suppress draft blur, cancellation keeps it editabl
     await automatic.press("Tab");
     await expect(openAction).toBeFocused();
     await openAction.press("Tab");
+    await expect(drop).toBeFocused();
+    await drop.press("Tab");
     await expect(input(page)).toBeFocused();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     await input(page).press("Tab");

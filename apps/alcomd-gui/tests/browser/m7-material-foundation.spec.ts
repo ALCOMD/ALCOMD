@@ -1,24 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test("an inline file picker accepts a system selection and a drop inside a form", async ({ page }) => {
-    await page.goto("/browser-harness.html?material=1&inline-file-picker=1");
-    const form = page.getByRole("form", { name: "File form" });
-    const input = form.getByRole("textbox", { name: "Manifest file" });
-    const browse = form.getByRole("button", { name: "Drop a file here or click to select" });
-    await input.fill("C:/fixture/typed.json");
-    await expect(input).toHaveValue("C:/fixture/typed.json");
-    await browse.click();
-    await expect(input).toHaveValue("C:/fixture/repository.json");
-    await browse.evaluate((target) => {
-        const box = target.getBoundingClientRect();
-        window.dispatchEvent(new CustomEvent("fixture-file-drag", { detail: {
-            type: "drop", x: box.x + box.width / 2, y: box.y + box.height / 2, paths: ["C:/fixture/dropped.json"]
-        } }));
-    });
-    await expect(input).toHaveValue("C:/fixture/dropped.json");
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-});
-
 test("shared Material foundation renders real controls with React 19 interaction semantics", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?material=1");
     const open = page.locator("md-filled-button").filter({ hasText: "Open dialog" });

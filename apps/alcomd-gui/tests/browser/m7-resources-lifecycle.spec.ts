@@ -1,6 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
-import { confirmFile, openFilePicker } from "./file-picker";
 
 const userPackageId = "00000000-0000-4000-8000-000000000113";
 
@@ -255,12 +254,8 @@ async function reviewRepository(page: Page, kind: "remote" | "local", invalid = 
     if (kind === "local") {
         await host.getByRole("combobox", { name: "Source type", exact: true }).click();
         await host.getByRole("option", { name: "Local manifest", exact: true }).click();
-        const picker = await openFilePicker(page, host);
-        await picker.getByLabel("Local manifest path", { exact: true }).fill("C:\\Fixture\\repository.json");
-        await confirmFile(picker);
-    } else {
-        await host.getByLabel("Repository URL", { exact: true }).fill("https://fixture.example/repository.json");
     }
+    await host.getByLabel(kind === "local" ? "Local manifest path" : "Repository URL", { exact: true }).fill(kind === "local" ? "C:\\Fixture\\repository.json" : "https://fixture.example/repository.json");
     await host.getByRole("button", { name: "Review repository", exact: true }).click();
     if (!invalid) await expect(host.locator(".dialog-summary")).toContainText(kind === "local" ? "Local packages" : "Example packages");
 }

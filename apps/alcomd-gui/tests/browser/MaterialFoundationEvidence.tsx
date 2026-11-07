@@ -2,20 +2,7 @@ import { useState } from "react";
 import { projectsIcon } from "@alcomd/ui/icons";
 
 import { DesktopList } from "../../src/DesktopList";
-import { FilePicker } from "../../src/FilePicker";
 import { Button, Checkbox, Dialog, Icon, IconButton, Progress, SegmentedButtons, Select, Switch, TextField } from "../../src/Material";
-
-import type { GuiRpcClient } from "../../src/rpc";
-
-export function InlineFilePickerEvidence({ client }: { client: GuiRpcClient }) {
-    const [path, setPath] = useState("");
-    return <main className="material-evidence">
-        <form aria-label="File form">
-            <FilePicker client={client} chooseFile={() => client.selectFile("repositoryManifest")}
-                label="Manifest file" value={path} onInput={setPath} />
-        </form>
-    </main>;
-}
 
 export function MaterialFoundationEvidence() {
     const [dialogOpen, setDialogOpen] = useState(false);

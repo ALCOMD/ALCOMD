@@ -16,8 +16,7 @@ function expectedImport() {
 }
 async function review(page: Page, candidateCount = 3) {
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByText("Duplicate", { exact: true })).toBeVisible();
     await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
     await expect(host.getByText("Unsupported", { exact: true })).toBeVisible();
@@ -121,36 +120,8 @@ test("long preview content scrolls independently of actions and closing restores
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Import list");
-    const content = host.locator(".material-dialog-content");
-    const dropZone = content.locator(".file-picker__drop");
-    const actions = host.locator('[slot="actions"]').getByRole("button");
-    await expect(actions).toHaveCount(2);
-    await expect(actions.nth(0)).toHaveAccessibleName("Cancel");
-    await expect(actions.nth(1)).toHaveAccessibleName("Confirm");
-    await expect(content.getByRole("button")).toHaveCount(1);
-    await expect(content).toHaveCSS("width", "512px");
-    await expect(dropZone).toBeVisible();
-    await expect(host.getByRole("button", { name: "Confirm", exact: true })).toBeDisabled();
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    const input = host.getByLabel("Repository list file", { exact: true });
-    await expect(input).toHaveValue("C:/fixture/repositories.txt");
-    await expect(content).toHaveCSS("width", "512px");
-    await expect(content.locator(".repository-list-entries")).toHaveCount(0);
-    expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect(content).toHaveCSS("width", "800px");
-    await expect(content.locator(".file-picker")).toHaveCount(0);
-    await expect(content.locator(".repository-list-entries li").nth(2)).toBeInViewport();
-    await host.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(content).toHaveCSS("width", "512px");
-    await expect(actions).toHaveCount(2);
-    await expect(actions.nth(0)).toHaveAccessibleName("Cancel");
-    await expect(actions.nth(1)).toHaveAccessibleName("Confirm");
-    await expect(input).toHaveValue("C:/fixture/repositories.txt");
-    await expect(dropZone).toBeVisible();
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect.poll(async () => (await requests(page, "repositories.inspectListFile")).length).toBe(2);
-    for (const name of ["Close", "Back", "Add 3 repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
+    for (const name of ["Close", "Select", "Add 3 repositories"]) await expect(host.getByRole("button", { name, exact: true })).toBeInViewport();
     await host.getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("button", { name: "Repository list actions", exact: true })).toBeFocused();
     const exportHost = await openList(page, "Export list");
@@ -161,69 +132,19 @@ test("long preview content scrolls independently of actions and closing restores
 test("a typed repository list path must be reviewed again when it changes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Import list");
-    await host.evaluate((dialog) => dialog.dataset.testImportFlow = "original");
     const input = host.getByLabel("Repository list file", { exact: true });
     await input.fill("C:/fixture/typed.txt");
     await input.press("Enter");
     await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
-    await host.getByRole("button", { name: "Back", exact: true }).click();
-    await expect(host).toHaveAttribute("data-test-import-flow", "original");
     await input.fill("C:/fixture/changed.txt");
     await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toHaveCount(0);
-    await expect(host.locator(".material-dialog-content")).toHaveCSS("width", "512px");
-    await expect(host.locator(".file-picker__drop")).toBeVisible();
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
+    await host.getByRole("button", { name: "Review list", exact: true }).click();
     await expect(host.getByRole("button", { name: "Add 3 repositories", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.inspectListFile")).toEqual([
         { method: "repositories.inspectListFile", params: { path: "C:/fixture/typed.txt" } },
         { method: "repositories.inspectListFile", params: { path: "C:/fixture/changed.txt" } }
     ]);
     expect(await requests(page, "repositories.importListFile")).toEqual([]);
-});
-
-test("repository import animates between standard and wide dialogs in both directions", async ({ page }) => {
-    await page.setViewportSize({ width: 1400, height: 800 });
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.addInitScript(() => {
-        const animate = Element.prototype.animate;
-        Element.prototype.animate = function (this: Element, keyframes, options) {
-            const animation = animate.call(this, keyframes, options);
-            if (this instanceof HTMLDialogElement && Array.isArray(keyframes) && keyframes[0]?.width
-                && keyframes[0].width !== keyframes.at(-1)?.width) {
-                animation.pause();
-                animation.currentTime = Number(animation.effect!.getTiming().duration) / 2;
-            }
-            return animation;
-        };
-    });
-    await page.goto("/browser-harness.html?route=/repositories");
-    const host = await openList(page, "Import list");
-    const panel = host.locator("dialog");
-    const width = () => panel.evaluate((element) => (element as HTMLDialogElement).offsetWidth);
-    const height = () => panel.evaluate((element) => (element as HTMLDialogElement).offsetHeight);
-    const paused = () => panel.evaluate((element) => element.getAnimations().some((animation) => animation.playState === "paused"));
-    const finish = () => panel.evaluate((element) => element.getAnimations().filter((animation) => animation.playState === "paused").forEach((animation) => animation.finish()));
-    await expect.poll(width).toBe(560);
-    let startHeight = await height();
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
-    for (const [destination, action] of [[848, "Back"], [560, "Confirm"]] as const) {
-        await expect.poll(paused).toBe(true);
-        const intermediateWidth = await width();
-        const intermediateHeight = await height();
-        expect(intermediateWidth).toBeGreaterThan(560);
-        expect(intermediateWidth).toBeLessThan(848);
-        await finish();
-        await expect.poll(width).toBe(destination);
-        const endHeight = await height();
-        expect(intermediateHeight).toBeGreaterThan(Math.min(startHeight, endHeight));
-        expect(intermediateHeight).toBeLessThan(Math.max(startHeight, endHeight));
-        startHeight = endHeight;
-        if (action === "Confirm") await page.emulateMedia({ reducedMotion: "reduce" });
-        await host.getByRole("button", { name: action, exact: true }).click();
-    }
-    await expect.poll(width).toBe(848);
-    expect(await paused()).toBe(false);
 });
 
 test("one confirmation adds every candidate once without downloading a preview", async ({ page }) => {
@@ -301,35 +222,10 @@ test("transport loss shows an unresolved import without inventing per-line outco
 test("cancelled list file picker performs no inspection or registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-picker=cancel");
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    await expect(host.getByRole("button", { name: "Confirm", exact: true })).toBeDisabled();
-    await host.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(host).toHaveCount(0);
+    await host.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(host.getByRole("button", { name: "Close", exact: true })).toBeEnabled();
     expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
     expect(await requests(page, "repositories.importListFile")).toEqual([]);
-});
-
-test("the import dialog cannot close while its system file picker is open", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/repositories&list-picker=hold");
-    const host = await openList(page, "Import list");
-    const close = host.getByRole("button", { name: "Cancel", exact: true });
-    const confirm = host.getByRole("button", { name: "Confirm", exact: true });
-    await host.getByLabel("Repository list file", { exact: true }).fill("C:/fixture/repositories.txt");
-    await expect(confirm).toBeEnabled();
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    await expect(close).toBeDisabled();
-    await expect(confirm).toBeDisabled();
-    await page.keyboard.press("Escape");
-    await page.mouse.click(8, 8);
-    await expect(close).toBeDisabled();
-    expect(await requests(page, "selectRepositoryListFile")).toHaveLength(1);
-
-    await page.evaluate(() => window.dispatchEvent(new Event("test-list-picker-ready")));
-    await expect(close).toBeEnabled();
-    await expect(confirm).toBeEnabled();
-    await page.mouse.click(8, 8);
-    await expect(host).toHaveCount(0);
-    expect(await requests(page, "repositories.inspectListFile")).toEqual([]);
 });
 
 test("an already registered source is skipped and the batch continues", async ({ page }) => {
@@ -344,8 +240,7 @@ test("an already registered source is skipped and the batch continues", async ({
 test("lists with no candidates cannot start registration", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=invalid");
     const host = await openList(page, "Import list");
-    await host.getByRole("button", { name: "Drop a file here or click to select", exact: true }).click();
-    await host.getByRole("button", { name: "Confirm", exact: true }).click();
+    await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByText("Invalid", { exact: true })).toBeVisible();
     await expect(host.getByRole("button", { name: "Add 0 repositories", exact: true })).toBeDisabled();
     expect(await requests(page, "repositories.importListFile")).toEqual([]);
