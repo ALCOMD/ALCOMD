@@ -274,7 +274,12 @@ test("Projects creation split button groups add and restore with distinct action
         expect((await item.boundingBox())!.height).toBe(40);
     }
     await page.screenshot({ path: testInfo.outputPath("projects-creation-menu.png"), animations: "disabled" });
+    const menuClosed = await page.locator(".alcomd-split-button-options").evaluateHandle((element) => ({
+        event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
     await page.keyboard.press("Escape");
+    await menuClosed.evaluate((value) => value.event);
+    await menuClosed.dispose();
     await expect(toggle).toBeFocused();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
