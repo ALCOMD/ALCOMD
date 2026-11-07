@@ -14,8 +14,12 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
+// These fixtures share Windows' unique current-user endpoint, including during restart.
+static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn official_settings_round_trip_preserves_business_errors_without_removed_history_apis() {
+    let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
@@ -632,6 +636,7 @@ proxy_mode = "direct"
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_remember_state() {
+    let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
     let runtime = fixture.path().join("runtime-fullscreen");
     let data = fixture.path().join("data-fullscreen");
