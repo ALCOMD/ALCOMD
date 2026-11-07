@@ -2,7 +2,7 @@ import { requestErrorMessage } from "./request-errors";
 import { useRef, useState, useSyncExternalStore } from "react";
 import type { RpcError } from "@alcomd/sdk";
 import type { SettingsGetResult } from "./core-models";
-import { Button, Dialog } from "./Material";
+import { DialogCloseButton, Button, Dialog } from "./Material";
 import { capabilities, useCapability } from "./capabilities";
 import { useTranslation } from "./i18n";
 import { normalizeRequestError } from "./request-errors";
@@ -45,7 +45,6 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
     const [unknown, setUnknown] = useState(false);
     const [conflict, setConflict] = useState(false);
     const pending = useRef(false);
-    const close = () => { if (!pending.current) setOpen(false); };
     const finish = () => {
         setOpen(false);
 
@@ -73,7 +72,7 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
             {conflict ? <div>{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</div> : error === undefined ? null
                 : <div role="alert"><strong>{unknown ? t("Launch argument save result is unknown") : t("Launch arguments could not be saved.")}</strong><p>{t((unknown ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
-                <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
+                <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button disabled={busy || !canManage || conflict || JSON.stringify(draft) === JSON.stringify(baseline)} type="submit">{t(error === undefined ? "Save launch arguments" : "Retry")}</Button>
             </div>
         </form>

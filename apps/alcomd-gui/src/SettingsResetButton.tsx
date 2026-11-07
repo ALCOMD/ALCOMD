@@ -1,7 +1,7 @@
 import { requestErrorMessage } from "./request-errors";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { RpcError } from "@alcomd/sdk";
-import { Button, Dialog } from "./Material";
+import { DialogCloseButton, Button, Dialog } from "./Material";
 import { useTranslation } from "./i18n";
 import { normalizeRequestError } from "./request-errors";
 
@@ -57,12 +57,12 @@ export function SettingsResetButton({ title, disabled, onRestore }: {
                 setError(undefined); setShown(true); setOpen(true);
             }}>{t("Restore defaults")}</Button>
         {shown ? <Dialog open={open} returnFocus={returnFocus.current} title={t("Restore defaults")} dismissible={!busy}
-            onClose={() => { setError(undefined); if (scope) scope.current = false; }}>
+            onClose={() => { setOpen(false); setError(undefined); if (scope) scope.current = false; }}>
             <p>{t("Restore the default settings for {name}?", { name: title })}</p>
             <p>{t("Only this card's settings will be reset.")}</p>
             {error === undefined ? null : <div role="alert"><strong>{t(error.code === "internal_error" || error.code === "daemon_unavailable" ? "Restore result is unknown" : "Defaults could not be restored.")}</strong><p>{t((error.code === "internal_error" || error.code === "daemon_unavailable" ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
-                <Button disabled={busy} onClick={() => setOpen(false)} type="button" variant="text">{t("Cancel")}</Button>
+                <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button disabled={busy || disabled} onClick={() => void restore()} type="button">{t("Restore defaults")}</Button>
             </div>
         </Dialog> : null}

@@ -23,7 +23,7 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
@@ -255,7 +255,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
             <div className="dialog-actions">
                 {canEditAuthentication && repository.credentialsConfigured ? <Button disabled={feedback.busy} onClick={() => void changeAuthentication(true)}
                     type="button" variant="text">{t("Clear authentication")}</Button> : null}
-                <Button disabled={savingSettings} onClick={closeManagement} type="button" variant="text">{t("Close")}</Button>
+                <DialogCloseButton disabled={savingSettings} variant="text">{t("Close")}</DialogCloseButton>
                 {canEditAuthentication ? <Button disabled={feedback.busy || authentication.headers.length === 0 || !readyRepositoryHeaders(authentication)}
                     onClick={() => void changeAuthentication(false)} type="button">{t("Save")}</Button> : null}
             </div>
@@ -263,7 +263,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repositoryDisplayName(t, repository, t("this repository"))}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
     </div>;
 }
@@ -369,12 +369,12 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                             ))}</ul>
                         </>}
                         <div className="dialog-actions">
-                            <Button disabled={feedback.busy} onClick={closeChanges} type="button" variant="text">{t("Cancel")}</Button>
+                            <DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton>
                             <Button disabled={!canApply || feedback.busy} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button>
                         </div>
                     </div>
                 ) : (
-                    <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p><div className="dialog-actions"><Button onClick={closeChanges} type="button">{t("Close")}</Button></div></div>
+                    <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p><div className="dialog-actions"><DialogCloseButton>{t("Close")}</DialogCloseButton></div></div>
                 )}
             </MaterialDialog>
             {feedback.error === undefined ? null : <div role="alert"><strong>{t("Package changes were not applied")}</strong><p>{t((packageErrorMessage(feedback.error)) ?? requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
@@ -446,7 +446,6 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
         }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
         return () => { active = false; };
     }, [client, initialConfig, projectId]);
-    const close = () => { if (!pending.current) setOpen(false); };
     const finish = () => {
         setFeedback(INITIAL_FEEDBACK); setOpen(false);
         onChanged?.();
@@ -481,11 +480,11 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
                 onChange={(next) => { setArguments(next); setFeedback(INITIAL_FEEDBACK); }} disabled={!canManage || feedback.busy || conflict} readOnly={inherit} />
             {conflict ? <div>{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</div> : null}
             <div className="dialog-actions">
-                <Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
+                <DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button disabled={!canManage || feedback.busy || conflict || (inherit && snapshot.config.revision === 0)} type="submit">{t(feedback.error === undefined ? "Save launch arguments" : "Retry")}</Button>
             </div>
         </form>}
-        {snapshot === undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Cancel")}</Button></div> : null}
+        {snapshot === undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Cancel")}</DialogCloseButton></div> : null}
         <MutationFeedback client={client} errorTitle={unknown ? t("Launch argument save result is unknown") : undefined} feedback={feedback} />
     </MaterialDialog>;
 }
@@ -699,7 +698,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
                 <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${migrationVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
                 {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
-                    <Button onClick={() => { setMigrationChooserOpen(false); setMigrationVersion(undefined); }} type="button" variant="tonal">{t("Cancel")}</Button>
+                    <DialogCloseButton variant="tonal">{t("Cancel")}</DialogCloseButton>
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
                 </div>
             </ModalDialog>
@@ -735,7 +734,6 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
     const showLoading = useDelayedPending(options === undefined && feedback.error === undefined);
     const unknown = operationRequestOutcomeUnknown(feedback.error);
     const pending = useRef(false);
-    const close = useUtilityDialogClose();
     const isCurrent = useActionScope(client);
     useUtilityDialogBusy(feedback.busy);
     useEffect(() => {
@@ -762,7 +760,7 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         {(operation, error) => <>
             <OperationProgress error={error} operation={operation} title={t("Create backup")} />
             <div className="dialog-actions">
-                <Button onClick={close} type="button" variant="text">{t("Close")}</Button>
+                <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
                 <Button onClick={() => navigate(`/operations/${accepted.operationId}`)} type="button" variant="text">{t("View operation")}</Button>
                 {operation?.state !== "succeeded" ? null : <Button onClick={() => navigate(`/backups/${accepted.backupId}`)} type="button">{t("View backup")}</Button>}
             </div>
@@ -810,7 +808,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
         <MaterialDialog dismissible={!feedback.busy} onClose={() => { setConfirm(false); setFeedback(INITIAL_FEEDBACK); }} open={confirm} title={t("Request cancellation?")}>
             <p>{t("Cancellation is cooperative. The operation remains authoritative until the daemon reports a terminal state.")}</p>
             {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirm(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button className="material-button--danger" disabled={!available || feedback.busy || terminal || operation.state === "cancelling"} onClick={() => void cancel()} type="button">{t("Confirm")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Back")}</DialogCloseButton><Button className="material-button--danger" disabled={!available || feedback.busy || terminal || operation.state === "cancelling"} onClick={() => void cancel()} type="button">{t("Confirm")}</Button></div>
         </MaterialDialog>
     </ActionSection>;
 }
@@ -824,7 +822,6 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [submitted, setSubmitted] = useState(false);
     useUtilityDialogBusy(feedback.busy);
-    const close = useUtilityDialogClose();
     const current = useActionScope(client);
     const pending = useRef(false);
     const run = async (apply: boolean) => {
@@ -855,7 +852,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         finally { pending.current = false; }
     };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
-        {feedback.operationId !== undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
+        {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
             <TextField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
             <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={(value) => { setApprovePublisher(value); setFeedback(INITIAL_FEEDBACK); }} />
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
@@ -915,15 +912,15 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
         <div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || blocked || (extension.desiredState === "enabled" && !quarantined)} onClick={() => void run("enable")} type="button" variant="tonal">{quarantined ? t("Recover extension") : t("Enable")}</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">{t("Disable")}</Button><Button disabled={feedback.busy || blocked} onClick={() => open("permissions")} type="button" variant="text">{t("Manage permissions")}</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || blocked} onClick={() => open("uninstall")} type="button" variant="text">{t("Uninstall extension")}</Button></div>
         <MaterialDialog dismissible={!feedback.busy && !permissionsBusy} open={mode !== "none"} onClose={close} title={mode === "permissions" ? t("Extension permissions") : plan === undefined ? t("Uninstall extension") : t("Review extension uninstall")}>
             <p><strong>{extension.extensionId}</strong></p>
-            {mode === "permissions" ? <ExtensionPermissions client={client} extensionId={extension.extensionId} onBusyChange={setPermissionsBusy} onChanged={onChanged} onClose={close} /> : feedback.operationId !== undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div> : plan === undefined ? <>
+            {mode === "permissions" ? <ExtensionPermissions client={client} extensionId={extension.extensionId} onBusyChange={setPermissionsBusy} onChanged={onChanged} /> : feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <>
                 <p>{t("Review the removal before applying it.")}</p>
                 <Checkbox disabled={feedback.busy} checked={deleteData} label={t("Delete extension-owned data during uninstall")} onChange={setDeleteData} />
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("plan")} type="button">{t("Create uninstall plan")}</Button></div>
+                <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("plan")} type="button">{t("Create uninstall plan")}</Button></div>
             </> : <>
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
-                <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
+                <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy || submitted} variant="text">{t("Discard plan")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
             </>}
-            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
         </MaterialDialog>
     </ActionSection>;
 }
@@ -934,7 +931,7 @@ function ActionSection({ children, title }: { children: ReactNode; title: string
 
 function PlanDialog({ applyDisabled = false, busy, children, onApply, onClose, open, title }: { applyDisabled?: boolean; busy: boolean; children: ReactNode; onApply(): Promise<void>; onClose(): void; open: boolean; title: string }) {
     const { t } = useTranslation();
-    return <ModalDialog dismissible={!busy} open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">{t("The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.")}</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">{t("Discard plan")}</Button><Button data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{t("Apply reviewed plan")}</Button></div></ModalDialog>;
+    return <ModalDialog dismissible={!busy} open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">{t("The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.")}</p><div className="dialog-actions"><DialogCloseButton disabled={busy} variant="tonal">{t("Discard plan")}</DialogCloseButton><Button data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{t("Apply reviewed plan")}</Button></div></ModalDialog>;
 }
 
 function ModalDialog({ children, dismissible = true, onClose, open, title }: { children: ReactNode; dismissible?: boolean; onClose(): void; open: boolean; title: string }) {

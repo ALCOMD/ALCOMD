@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ExtensionPermissionGrant, ExtensionPermissionsListResult, RpcError } from "@alcomd/sdk";
 import type { ProjectSnapshot } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Select } from "./Material";
+import { DialogCloseButton, Button, Select } from "./Material";
 import { LoadingState } from "./LoadingState";
 import { capabilities, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
@@ -32,12 +32,11 @@ export function ExtensionPermissionRequests({ required, optional }: { required: 
     </section>;
 }
 
-export function ExtensionPermissions({ client, extensionId, onBusyChange, onChanged, onClose }: {
+export function ExtensionPermissions({ client, extensionId, onBusyChange, onChanged }: {
     client: GuiRpcClient;
     extensionId: string;
     onBusyChange(busy: boolean): void;
     onChanged?(): void;
-    onClose(): void;
 }) {
     const { t } = useTranslation();
     const canRead = useCapability(capabilities.extensionsPermissionsRead);
@@ -189,7 +188,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 <div className="dialog-actions"><Button disabled={!canWrite || writing || moreLoading || (selected === "projects.read" && !projects.some((project) => project.projectId === projectId))} onClick={() => void write({ permission: selected, resourceKind: selected === "background.run" ? "Extension" : "Project", resourceId: selected === "background.run" ? extensionId : projectId }, false)} type="button">{t("Grant")}</Button></div>
             </>}
         </>}
-        <div className="dialog-actions"><Button disabled={writing} onClick={onClose} type="button" variant="text">{t("Close")}</Button>{!canRead || value === undefined ? null : <Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button>}</div>
+        <div className="dialog-actions"><DialogCloseButton disabled={writing} variant="text">{t("Close")}</DialogCloseButton>{!canRead || value === undefined ? null : <Button disabled={writing || moreLoading} onClick={reload} type="button" variant="text">{t("Refresh")}</Button>}</div>
     </section>;
 }
 
