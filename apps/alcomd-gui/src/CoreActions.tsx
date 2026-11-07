@@ -30,7 +30,7 @@ import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAct
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
-import { isBuiltinRepository, repositoryDefaultName, repositoryDisplayName } from "./repository-display";
+import { repositoryDefaultName, repositoryDisplayName } from "./repository-display";
 import type { RepositoryLinkDraft } from "./repository-link";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
@@ -168,8 +168,8 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef<"refresh" | "remove" | "credentials" | "name" | undefined>(undefined);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
-    const builtin = isBuiltinRepository(repository);
-    const canEditAuthentication = repository.source.kind === "remote" && !builtin;
+    const canRemove = repository.actions?.canRemove === true;
+    const canEditAuthentication = repository.actions?.canEditAuthentication === true;
     const savingSettings = feedback.busy && (pending.current === "credentials" || pending.current === "name");
     const openManagement = () => {
         if (repository.revision === undefined) return;
@@ -214,7 +214,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         } finally { pending.current = undefined; }
     };
     const run = async (remove: boolean) => {
-        if (!ready || !available || pending.current || (remove && builtin)) return;
+        if (!ready || !available || pending.current || (remove && !canRemove)) return;
         pending.current = remove ? "remove" : "refresh";
         setFeedback({ busy: true });
         try {
@@ -240,7 +240,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     };
     return <div className="repository-row-actions">
         <IconButton disabled={!available || !ready || feedback.busy} label={t("Manage repository")} onClick={openManagement} title={t("Manage repository")} type="button"><Icon asset={editIcon} /></IconButton>
-        <IconButton disabled={builtin || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
+        <IconButton disabled={!canRemove || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
         <MaterialDialog open={managing} title={t("Manage repository")} dismissible={!savingSettings} onClose={closeManagement}>
             {nameDraft === undefined ? null : <form onSubmit={(event) => { event.preventDefault(); void saveName(); }}>
                 <TextField disabled={feedback.busy} label={t("Display name")}

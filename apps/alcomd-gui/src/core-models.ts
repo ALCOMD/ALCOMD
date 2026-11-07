@@ -195,6 +195,8 @@ export type RepositorySource =
 
 export interface RepositorySnapshot {
     credentialsConfigured?: boolean;
+    builtin?: "official" | "curated";
+    actions?: { canRemove: boolean; canEditAuthentication: boolean };
     repositoryId?: string;
     source: RepositorySource;
     declaredId?: string;

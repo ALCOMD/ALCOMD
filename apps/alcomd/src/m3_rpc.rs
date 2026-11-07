@@ -239,7 +239,7 @@ pub(super) async fn dispatch(
                         repositories: page
                             .repositories
                             .into_iter()
-                            .map(repository_record)
+                            .map(|record| repository_record(access, record))
                             .collect(),
                         next_cursor: page.next_cursor.map(registry_cursor),
                     },
@@ -259,7 +259,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::RepositoryResult {
-                        repository: repository_record(value),
+                        repository: repository_record(access, value),
                     },
                     None,
                 ),
@@ -313,7 +313,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::RepositoryWriteResult {
-                        repository: repository_record(value.value),
+                        repository: repository_record(access, value.value),
                         replayed: value.replayed,
                     },
                     None,
@@ -364,7 +364,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::RepositoryWriteResult {
-                        repository: repository_record(value.value),
+                        repository: repository_record(access, value.value),
                         replayed: value.replayed,
                     },
                     None,
@@ -419,7 +419,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::RepositoryWriteResult {
-                        repository: repository_record(value.value),
+                        repository: repository_record(access, value.value),
                         replayed: value.replayed,
                     },
                     None,
@@ -444,7 +444,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::RepositoryWriteResult {
-                        repository: repository_record(value.value),
+                        repository: repository_record(access, value.value),
                         replayed: value.replayed,
                     },
                     None,
@@ -631,14 +631,28 @@ fn repository_observation(value: app::RepositoryObservation) -> rpc::RepositoryS
     repository_snapshot(None, value, None, false, None)
 }
 
-fn repository_record(value: app::RepositoryRecord) -> rpc::RepositorySnapshot {
-    repository_snapshot(
+fn repository_record(
+    access: &app::AccessContext,
+    value: app::RepositoryRecord,
+) -> rpc::RepositorySnapshot {
+    let builtin = app::builtin_repository(value.repository_id);
+    let actions = rpc::RepositoryActions {
+        can_remove: app::can_remove_repository(access, value.repository_id),
+        can_edit_authentication: app::can_edit_repository_authentication(access, &value),
+    };
+    let mut snapshot = repository_snapshot(
         Some(value.repository_id.to_string()),
         value.observation,
         Some(value.revision.get()),
         value.credentials_configured,
         value.display_name,
-    )
+    );
+    snapshot.builtin = builtin.map(|builtin| match builtin {
+        app::BuiltinRepository::Official => rpc::BuiltinRepository::Official,
+        app::BuiltinRepository::Curated => rpc::BuiltinRepository::Curated,
+    });
+    snapshot.actions = Some(actions);
+    snapshot
 }
 
 fn repository_snapshot(
@@ -662,6 +676,8 @@ fn repository_snapshot(
         revision,
         refreshed_at_ms: value.refreshed_at_ms,
         credentials_configured,
+        builtin: None,
+        actions: None,
     }
 }
 
@@ -730,9 +746,80 @@ pub(super) fn m3_code(code: app::M3ErrorCode) -> &'static str {
 }
 
 #[cfg(test)]
-mod source_error_tests {
+mod tests {
     use super::*;
     use app::M3ReadAdapter;
+
+    #[test]
+    fn repository_projection_uses_core_identity_source_and_permissions() {
+        let owner = app::AccessContext::local_owner();
+        let reader = app::AccessContext::new(
+            owner.principal().clone(),
+            [app::Permission::RepositoriesRead],
+        );
+        let remote = app::RepositorySource::Remote {
+            url: "https://example.test/index.json".into(),
+        };
+        let record = |repository_id, source| app::RepositoryRecord {
+            repository_id,
+            observation: app::RepositoryObservation {
+                source,
+                source_identity_key: Vec::new(),
+                declared_id: None,
+                name: None,
+                declared_url: None,
+                issues: Vec::new(),
+                packages: Vec::new(),
+                validators: Default::default(),
+                refreshed_at_ms: 1,
+            },
+            display_name: None,
+            revision: app::Revision::INITIAL,
+            registered_at_ms: 1,
+            credentials_configured: false,
+            resolver_indexed: false,
+        };
+        let official =
+            app::RepositoryId::parse(app::VRCHAT_OFFICIAL_REPOSITORY_ID).expect("built-in ID");
+        let built_in = repository_record(&owner, record(official, remote.clone()));
+        assert_eq!(built_in.builtin, Some(rpc::BuiltinRepository::Official));
+        assert_eq!(
+            built_in.actions,
+            Some(rpc::RepositoryActions {
+                can_remove: false,
+                can_edit_authentication: false
+            })
+        );
+
+        let custom = app::RepositoryId::new();
+        let registered = record(custom, remote);
+        assert_eq!(
+            repository_record(&owner, registered.clone()).actions,
+            Some(rpc::RepositoryActions {
+                can_remove: true,
+                can_edit_authentication: true
+            })
+        );
+        assert_eq!(
+            repository_record(&reader, registered).actions,
+            Some(rpc::RepositoryActions {
+                can_remove: false,
+                can_edit_authentication: false
+            })
+        );
+
+        let local = app::RepositorySource::Local {
+            path: "/fixture/index.json".into(),
+        };
+        assert_eq!(
+            repository_record(&owner, record(custom, local)).actions,
+            Some(rpc::RepositoryActions {
+                can_remove: true,
+                can_edit_authentication: false
+            })
+        );
+    }
+
     #[tokio::test]
     async fn actual_manifest_failure_preserves_private_cause_without_exposing_it_over_rpc() {
         let parent = std::env::temp_dir()

@@ -790,8 +790,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             name: `Repository ${index + 1}`
         })) });
         if (query.has("builtin-repositories")) return this.value({ repositories: [
-            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", source: { kind: "remote" as const, url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
-            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", source: { kind: "remote" as const, url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", builtin: "official" as const, actions: { canRemove: false, canEditAuthentication: false }, source: { kind: "remote" as const, url: "https://vrchat.github.io/packages/index.json" }, name: "Official", refreshedAtMs: 0 },
+            { ...repository(), repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102", builtin: "curated" as const, actions: { canRemove: false, canEditAuthentication: false }, source: { kind: "remote" as const, url: "https://vrchat-community.github.io/vpm-listing-curated/index.json" }, name: "Curated" },
             repository(),
         ].map((record) => this.lifecycleRepositories.get(record.repositoryId) ?? record) });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
@@ -919,7 +919,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     private resourceRepository(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): RepositorySnapshot {
-        return { repositoryId: source.kind === "local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID, source, declaredId: source.kind === "local" ? "local-example" : "example", name: source.kind === "local" ? "Local packages" : "Example packages", issues: [], revision: 1, refreshedAtMs: 1_700_000_000_000 };
+        return { repositoryId: source.kind === "local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID, source, actions: { canRemove: true, canEditAuthentication: source.kind === "remote" }, declaredId: source.kind === "local" ? "local-example" : "example", name: source.kind === "local" ? "Local packages" : "Example packages", issues: [], revision: 1, refreshedAtMs: 1_700_000_000_000 };
     }
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {

@@ -1187,6 +1187,24 @@ pub struct RepositorySnapshot {
     pub refreshed_at_ms: u64,
     #[serde(default)]
     pub credentials_configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<BuiltinRepository>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actions: Option<RepositoryActions>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BuiltinRepository {
+    Official,
+    Curated,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryActions {
+    pub can_remove: bool,
+    pub can_edit_authentication: bool,
 }
 
 /// M3 raw package/version display model.
