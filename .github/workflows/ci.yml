@@ -17,7 +17,8 @@ jobs:
   windows-hosted:
     name: Windows Server 2025 hosted
     runs-on: windows-2025
-    timeout-minutes: 60
+    # Cold native builds plus the full browser suite exceeded the former hour.
+    timeout-minutes: 90
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
