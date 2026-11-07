@@ -247,6 +247,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         view: CandidateView::Summary {
             package_ids: None,
             sources: None,
+            bulk_package_ids: None,
             filter: None,
         },
         limit: Some(1),
@@ -276,6 +277,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         view: CandidateView::Summary {
             package_ids: None,
             sources: None,
+            bulk_package_ids: None,
             filter: Some(CandidateFilter {
                 search: Some("REMOTE Registry".into()),
                 status: Some(CandidateFilterStatus::Available),
@@ -325,6 +327,35 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
     assert_eq!(store.authority_reads.load(Ordering::SeqCst), 3);
 
+    let bulk_request = ProjectCandidateRequest {
+        view: CandidateView::Summary {
+            package_ids: None,
+            sources: None,
+            filter: None,
+            bulk_package_ids: Some(vec!["com.example.b".into(), "com.example.a".into()]),
+        },
+        expected_snapshot: Some(first.snapshot.fingerprint.clone()),
+        ..request.clone()
+    };
+    let bulk_page = application
+        .query(&owner, bulk_request.clone())
+        .await
+        .expect("bulk actions use the complete cached snapshot");
+    assert_eq!(bulk_page.snapshot, first.snapshot);
+    assert!(bulk_page.next_cursor.is_none());
+    let bulk = serde_json::to_value(bulk_page.bulk.expect("bulk projection"))
+        .expect("encode bulk projection");
+    assert_eq!(bulk["installUpdate"]["targetCount"], 2);
+    assert_eq!(
+        bulk["installUpdate"]["intents"][0]["packageId"],
+        "com.example.a"
+    );
+    assert_eq!(bulk["installUpdate"]["intents"][1]["kind"], "install");
+    assert_eq!(bulk["remove"].as_array().map(Vec::len), Some(2));
+    assert_eq!(bulk["reinstall"], serde_json::json!([]));
+    assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 4);
+
     store.inventory_revision.fetch_add(1, Ordering::SeqCst);
     assert_eq!(
         application
@@ -334,7 +365,14 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         CandidateQueryError::EvidenceStale
     );
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
-    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 4);
+    assert_eq!(
+        application
+            .query(&owner, bulk_request)
+            .await
+            .expect_err("old bulk snapshot rejected"),
+        CandidateQueryError::EvidenceStale
+    );
+    assert_eq!(store.authority_reads.load(Ordering::SeqCst), 6);
     let changed = application
         .query(&owner, request)
         .await
@@ -395,6 +433,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         view: CandidateView::Summary {
             package_ids: Some(vec!["com.example.absent".into()]),
             sources: None,
+            bulk_package_ids: None,
             filter: None,
         },
         limit: None,
@@ -532,6 +571,7 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
                     view: CandidateView::Summary {
                         package_ids: None,
                         sources: None,
+                        bulk_package_ids: None,
                         filter: None,
                     },
                     limit: None,
@@ -605,6 +645,7 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
                     view: CandidateView::Summary {
                         package_ids: None,
                         sources: None,
+                        bulk_package_ids: None,
                         filter: None,
                     },
                     limit: None,

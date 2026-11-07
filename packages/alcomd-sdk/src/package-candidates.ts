@@ -11,7 +11,7 @@ export interface CandidateFilter {
 export interface ProjectCandidateRequest {
     projectId: string;
     expectedRevision: number;
-    view: { kind: "summary"; packageIds?: string[]; sources?: Array<{ packageId: string; source: CandidateSource }>; filter?: CandidateFilter } | { kind: "versions"; packageId: string; source?: CandidateSource };
+    view: { kind: "summary"; packageIds?: string[]; sources?: Array<{ packageId: string; source: CandidateSource }>; filter?: CandidateFilter; bulkPackageIds?: string[] } | { kind: "versions"; packageId: string; source?: CandidateSource };
     limit?: number;
     expectedSnapshot?: string;
     cursor?: CandidateCursor;
@@ -42,5 +42,23 @@ export interface PackageCandidateSummary {
     update: PackageUpdateEvidence;
     stableUpdate: PackageUpdateEvidence;
 }
+export type CandidateBulkIntent =
+    | { kind: "install" | "upgrade"; packageId: string; versionRange: string; source: CandidateSource; includePrerelease: boolean }
+    | { kind: "remove"; packageId: string }
+    | { kind: "reinstall"; packageId: string; source?: CandidateSource };
+export interface CandidateBulkAction {
+    targetCount: number;
+    intents: CandidateBulkIntent[];
+    exclusions: Array<{ packageId: string; update: PackageUpdateEvidence }>;
+    omittedExclusions: number;
+}
+export interface CandidateBulkActions {
+    updateAll: CandidateBulkAction;
+    updateAllStable?: CandidateBulkAction;
+    installUpdate: CandidateBulkAction;
+    installUpdateStable?: CandidateBulkAction;
+    remove: CandidateBulkIntent[];
+    reinstall: CandidateBulkIntent[];
+}
 interface CandidatePageBase { projectId: string; snapshot: CandidateSnapshot; showPrerelease: boolean; catalogComplete: boolean; nextCursor: CandidateCursor | null }
-export type ProjectCandidatePage = (CandidatePageBase & { view: "summary"; items: PackageCandidateSummary[] }) | (CandidatePageBase & { view: "versions"; packageId: string; items: PackageCandidateEvidence[] });
+export type ProjectCandidatePage = (CandidatePageBase & { view: "summary"; items: PackageCandidateSummary[]; bulk?: CandidateBulkActions }) | (CandidatePageBase & { view: "versions"; packageId: string; items: PackageCandidateEvidence[] });

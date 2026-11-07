@@ -122,6 +122,12 @@
                         "source": { "enum": ["local", "remote", "user-package"] }
                     }
                 },
+                "bulkPackageIds": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "maxItems": 4096,
+                    "uniqueItems": true
+                },
                 "packageIds": {
                     "type": "array",
                     "items": {
@@ -159,6 +165,10 @@
             },
             "required": [
                 "kind"
+            ],
+            "allOf": [
+                { "not": { "required": ["bulkPackageIds", "packageIds"] } },
+                { "not": { "required": ["bulkPackageIds", "filter"] } }
             ],
             "additionalProperties": false
         },
@@ -225,6 +235,10 @@
                 "expectedRevision",
                 "view"
             ],
+            "not": {
+                "required": ["view", "cursor"],
+                "properties": { "view": { "required": ["bulkPackageIds"] } }
+            },
             "additionalProperties": false
         },
         "Installed": {
@@ -629,6 +643,71 @@
             ],
             "additionalProperties": false
         },
+        "BulkIntent": {
+            "type": "object",
+            "properties": {
+                "kind": { "enum": ["install", "upgrade", "remove", "reinstall"] },
+                "packageId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "versionRange": { "type": "string", "minLength": 1, "maxLength": 257 },
+                "source": { "$ref": "#/$defs/SourceSelector" },
+                "includePrerelease": { "type": "boolean" }
+            },
+            "required": ["kind", "packageId"],
+            "oneOf": [
+                {
+                    "properties": { "kind": { "enum": ["install", "upgrade"] } },
+                    "required": ["versionRange", "source", "includePrerelease"]
+                },
+                {
+                    "properties": { "kind": { "const": "remove" }, "versionRange": false, "source": false, "includePrerelease": false }
+                },
+                {
+                    "properties": { "kind": { "const": "reinstall" }, "versionRange": false, "includePrerelease": false }
+                }
+            ],
+            "additionalProperties": false
+        },
+        "BulkIntents": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/BulkIntent" },
+            "maxItems": 256
+        },
+        "BulkAction": {
+            "type": "object",
+            "properties": {
+                "targetCount": { "type": "integer", "minimum": 0 },
+                "intents": { "$ref": "#/$defs/BulkIntents" },
+                "exclusions": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "packageId": { "type": "string", "minLength": 1, "maxLength": 128 },
+                            "update": { "$ref": "#/$defs/Update" }
+                        },
+                        "required": ["packageId", "update"],
+                        "additionalProperties": false
+                    }
+                },
+                "omittedExclusions": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["targetCount", "intents", "exclusions", "omittedExclusions"],
+            "additionalProperties": false
+        },
+        "BulkActions": {
+            "type": "object",
+            "properties": {
+                "updateAll": { "$ref": "#/$defs/BulkAction" },
+                "updateAllStable": { "$ref": "#/$defs/BulkAction" },
+                "installUpdate": { "$ref": "#/$defs/BulkAction" },
+                "installUpdateStable": { "$ref": "#/$defs/BulkAction" },
+                "remove": { "$ref": "#/$defs/BulkIntents" },
+                "reinstall": { "$ref": "#/$defs/BulkIntents" }
+            },
+            "required": ["updateAll", "installUpdate", "remove", "reinstall"],
+            "additionalProperties": false
+        },
         "SummaryPage": {
             "type": "object",
             "properties": {
@@ -659,6 +738,9 @@
                 "view": {
                     "const": "summary"
                 },
+                "bulk": {
+                    "$ref": "#/$defs/BulkActions"
+                },
                 "items": {
                     "type": "array",
                     "items": {
@@ -677,6 +759,8 @@
                 "view",
                 "items"
             ],
+            "if": { "required": ["bulk"] },
+            "then": { "properties": { "items": { "maxItems": 0 }, "nextCursor": { "type": "null" } } },
             "additionalProperties": false
         },
         "VersionsPage": {

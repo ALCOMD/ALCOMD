@@ -1,4 +1,4 @@
-import type { CandidateChoice, CandidateCursor, CandidateSnapshot, CandidateSource, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidatePage, ProjectCandidateRequest, PackageUpdateEvidence } from "@alcomd/sdk";
+import type { CandidateBulkIntent, CandidateChoice, CandidateCursor, CandidateSnapshot, CandidateSource, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidatePage, ProjectCandidateRequest, PackageUpdateEvidence } from "@alcomd/sdk";
 import type { PackageBulkIntent, PackageSourceSelector } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import type { Translate } from "./i18n-types";
@@ -22,16 +22,13 @@ export function choiceText(choice: CandidateChoice, t: Translate = (message) => 
 export function updateReason(update: PackageUpdateEvidence, t: Translate = (message) => message): string {
     return update.kind === "target" ? "" : (update.kind === "no_update" ? [update.reason] : update.reasons).map((reason) => reasonText(reason, t)).join(", ");
 }
-export function intentForSummary(row: PackageCandidateSummary, stable: boolean): PackageBulkIntent | undefined {
-    const update = stable ? row.stableUpdate : row.update;
-    const choice = stable ? row.projectLatestStable : row.projectLatest;
-    const candidate = row.installed.kind === "locked" ? (update.kind === "target" ? update.candidate : undefined) : row.installed.kind === "absent" && choice.kind === "candidate" ? choice.candidate : undefined;
-    if (candidate?.eligibility !== "eligible" || candidate.relation === "unknown") return undefined;
-    return { kind: row.installed.kind === "locked" ? "upgrade" : "install", packageId: row.packageId, versionRange: `=${candidate.version}`, source: candidateSource(candidate.source), includePrerelease: candidate.classification === "prerelease" };
-}
-export function uncertainUpdate(row: PackageCandidateSummary, stable: boolean): boolean {
-    const choice = stable ? row.projectLatestStable : row.projectLatest;
-    return row.installed.kind === "unknown" || choice.kind === "unknown" || choice.kind === "ambiguous";
+export function bulkPlanIntent(intent: CandidateBulkIntent): PackageBulkIntent {
+    switch (intent.kind) {
+        case "remove": return intent;
+        case "reinstall": return { kind: intent.kind, packageId: intent.packageId, ...(intent.source === undefined ? {} : { source: candidateSource(intent.source) }) };
+        case "install":
+        case "upgrade": return { ...intent, source: candidateSource(intent.source) };
+    }
 }
 
 // Shared across every workspace/menu. At most two requests, one per traversal.

@@ -535,6 +535,10 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "本次更新不包含：",
         "ja-JP": "今回の更新に含まれない項目："
     },
+    "{count} more packages were not included.": {
+        "zh-CN": "另有 {count} 个软件包未包含在本次更新中。",
+        "ja-JP": "ほかに {count} 件のパッケージが今回の更新に含まれていません。"
+    },
     "official": {
         "zh-CN": "官方",
         "ja-JP": "Official"
