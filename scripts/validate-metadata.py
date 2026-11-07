@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROJECT_LICENSE = "AGPL-3.0-only"
 PROJECT_REPOSITORY = "https://github.com/ALCOMD/ALCOMD"
 RUST_VERSION = "1.97.1"
+CURRENT_CONFIG_SCHEMA = 12
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SHA256_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -32,10 +33,11 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_current_settings_contract() -> None:
+    # Keep Config10's frozen migration evidence separate from the active RPC version.
     current = load_json("specs/config/settings-v10.schema.json")
     definitions = current["$defs"]
     fields = {"mode", "scheme", "sourceColor", "motion"}
-    require(current["properties"]["schema"]["const"] == 10, "Current settings Schema must be 10")
+    require(current["properties"]["schema"]["const"] == 10, "Historical Config10 Schema version changed")
     require("density" not in definitions, "Config10 must not define density")
     require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config10 appearance fields")
     require(set(definitions["appearance"]["required"]) == fields, "Config10 appearance must be complete")
@@ -57,19 +59,53 @@ def validate_current_settings_contract() -> None:
         else:
             require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
-    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 10, "Settings RPC must report Config10")
-    base = "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/"
+    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
+            "Settings RPC must report Config12")
+    base = f"https://alcomd.vrclearn.com/schema/config/settings-v{CURRENT_CONFIG_SCHEMA}.json#/$defs/"
     require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
             "Settings RPC must use the current settings model")
     require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
             "Settings RPC updates must use the current model")
     hello = load_json("specs/rpc/system-hello.response.schema.json")
-    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 10, "Hello must report Config10")
+    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
+            "Hello must report Config12")
+    for version in (11, CURRENT_CONFIG_SCHEMA):
+        schema = load_json(f"specs/config/settings-v{version}.schema.json")
+        active_definitions = schema["$defs"]
+        require(schema["properties"]["schema"]["const"] == version and schema["additionalProperties"] is False,
+                f"Config{version} must keep its exact version and closed root")
+        additions = {"integrations"} | ({"network"} if version == 12 else set())
+        for name, definition in definitions.items():
+            if name not in {"settings", "partialUpdate"}:
+                require(active_definitions[name] == definition,
+                        f"Config{version} changed the retained {name} contract")
+        for name in ("settings", "partialUpdate"):
+            active = active_definitions[name]
+            require(set(active["properties"]) == set(definitions[name]["properties"]) | additions and
+                    active["additionalProperties"] is False,
+                    f"Config{version} must expose only approved settings additions")
+        require(set(active_definitions["settings"]["required"]) == set(definitions["settings"]["required"]) | additions,
+                f"Config{version} settings must require all approved fields")
+        require(active_definitions["partialUpdate"]["minProperties"] == 1,
+                f"Config{version} must reject empty updates")
+        active_vectors = load_json(f"specs/config/settings-v{version}.contract-vectors.json")
+        result = active_vectors["current"]["getResult"]
+        source = tomllib.loads(active_vectors["current"]["toml"])
+        require(active_vectors["currentConfigSchema"] == result["configSchema"] == source["schema"] == version,
+                f"Config{version} vectors must match their Schema and wire version")
+        require(source["revision"] == result["revision"] and
+                set(result["settings"]) == set(active_definitions["settings"]["required"]),
+                f"Config{version} vectors must retain revision and complete settings")
+        require(result["settings"]["integrations"] == {"handleVccLinks": True},
+                f"Config{version} must preserve the approved VCC link default")
+        if version == 12:
+            require(result["settings"]["network"] == {"proxy": {"mode": "system"}},
+                    "Config12 must use the approved system proxy default")
     theme = load_json("specs/config/theme-controls.proposal.contract.json")
     require(theme["configMigration"]["to"] == 5 and "appearance.density" not in theme["ordinarySettings"]["fields"],
             "Historical theme migration remains Config5 without a density preference")
     hub = load_json("specs/config/unity-hub-location.proposal.contract.json")
-    require(hub["interfaces"]["configSchema"] == 10, "Hub settings must use Config10")
+    require(hub["interfaces"]["configSchema"] == 10, "Historical Hub proposal Config10 evidence changed")
     vectors = load_json("specs/config/settings-v10.contract-vectors.json")
     require(vectors["currentConfigSchema"] == 10 and vectors["current"]["getResult"]["configSchema"] == 10,
             "Settings vectors must describe Config10")
@@ -799,10 +835,14 @@ def main() -> int:
             "Win32_Foundation",
             "Win32_Security",
             "Win32_Security_Authorization",
+            "Win32_Security_Credentials",
             "Win32_Storage_FileSystem",
             "Win32_System_Com",
+            "Win32_System_Registry",
             "Win32_System_Threading",
             "Win32_UI_Shell",
+            "Win32_UI_Accessibility",
+            "Win32_UI_WindowsAndMessaging",
         },
         "Unexpected windows-sys feature set",
     )
@@ -817,8 +857,8 @@ def main() -> int:
 
     vpm_manifest = load_toml("crates/alcomd-vpm/Cargo.toml")
     require(
-        vpm_manifest["dependencies"]["reqwest"] == {"workspace": True},
-        "alcomd-vpm must use the approved workspace reqwest",
+        vpm_manifest["dependencies"]["reqwest"] == {"workspace": True, "features": ["system-proxy"]},
+        "alcomd-vpm must use the approved workspace reqwest with Config12 system proxy support",
     )
     reqwest = cargo_workspace["workspace"]["dependencies"]["reqwest"]
     require(reqwest["version"] == "=0.13.4", "Unexpected reqwest version")
