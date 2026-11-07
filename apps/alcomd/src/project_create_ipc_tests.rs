@@ -64,8 +64,25 @@ fn successful_result(operation: &app::OperationRecord) -> Value {
         .expect("result JSON")
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_pipe() {
+#[test]
+fn standalone_project_creation_and_template_mutations_use_the_private_rpc_pipe() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("fixture runtime");
+    let root = runtime.block_on(project_creation_and_template_mutation_fixture());
+    // A committed terminal state can precede archive pruning. Drop all async
+    // owners and join blocking work before removing the fixture's database.
+    drop(runtime);
+    assert!(
+        root.file_name()
+            .is_some_and(|leaf| leaf.to_string_lossy().starts_with("alcomd-create-ipc-"))
+    );
+    std::fs::remove_dir_all(root).expect("remove only owned test directory");
+}
+
+async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf {
     let root = std::env::temp_dir()
         .canonicalize()
         .expect("temp parent")
@@ -437,9 +454,5 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
         .expect("pipe closes")
         .expect("pipe task success");
     drop(store);
-    assert!(
-        root.file_name()
-            .is_some_and(|leaf| leaf.to_string_lossy().starts_with("alcomd-create-ipc-"))
-    );
-    std::fs::remove_dir_all(root).expect("remove only owned test directory");
+    root
 }
