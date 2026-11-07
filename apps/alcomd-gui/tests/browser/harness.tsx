@@ -1097,19 +1097,25 @@ class DeterministicGuiClient implements GuiRpcClient {
         return { ...userPackage(this.userPackageRevision), sourceRootPath: this.userPackagePath, ...(query.has("resource-lifecycle") && this.userPackageRevision > 1 ? { version: "1.3.0", archiveSha256: NEW_HASH } : {}) };
     }
 
-    async unityInstallationsList(): ReturnType<GuiRpcClient["unityInstallationsList"]> {
-        if (query.has("holdUnity")) {
-            this.unityReady ??= new Promise<void>((resolve) => window.addEventListener("test-unity-ready", () => resolve(), { once: true }));
-            await this.unityReady;
-        }
-        const installations = (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
+    private registeredUnityInstallations() {
+        return (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
                 ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: query.has("windows-paths") ? "\\\\?\\UNC\\builds\\Editors\\Unity.exe" : "<private-editor-two>" }]
                 : this.mode === "unity-migration"
                     ? [installation(), migrationInstallation()]
                 : [installation()];
-        return this.value({ installations, replayed: false });
+    }
+    async unityInstallationsList(_cursor?: string, includeVersionOptions?: boolean): ReturnType<GuiRpcClient["unityInstallationsList"]> {
+        if (query.has("holdUnity")) {
+            this.unityReady ??= new Promise<void>((resolve) => window.addEventListener("test-unity-ready", () => resolve(), { once: true }));
+            await this.unityReady;
+        }
+        const installations = this.registeredUnityInstallations();
+        if (!includeVersionOptions) return this.value({ installations, replayed: false });
+        const versions = [...new Set(installations.map((row) => row.unityVersion))].sort();
+        const defaultVersion = versions.length === 1 ? versions[0] : undefined;
+        return this.value({ installations, replayed: false, versionOptions: { versions, defaultVersion } });
     }
     unityInstallationGet(): ReturnType<GuiRpcClient["unityInstallationGet"]> { return this.value({ installation: installation(), replayed: false }); }
     unityInstallationRegister(executablePath: string): ReturnType<GuiRpcClient["unityInstallationRegister"]> {
@@ -1145,7 +1151,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ config: launchConfig(this.launchArguments, nextRevision), changed: true, replayed: false });
     }
     unityWriterState(): ReturnType<GuiRpcClient["unityWriterState"]> { return this.value({ projectId: PROJECT_ID, state: "not_observed", evidence: [], checkedAtMs: 1_700_000_000_000 }); }
-    unityLaunchOptions(projectId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunchOptions"]> {
+    unityLaunchOptions(projectId: string, expectedProjectRevision: number, includeMigrationVersionOptions?: boolean): ReturnType<GuiRpcClient["unityLaunchOptions"]> {
         window.unityRequests.push({ method: "unity.launchOptions", params: { projectId, expectedProjectRevision } });
         if (query.has("unityOptionsError")) return Promise.reject({ code: "revision_conflict" });
         const exactMatchingInstallations = this.mode === "unity-zero"
@@ -1155,7 +1161,15 @@ class DeterministicGuiClient implements GuiRpcClient {
                 : this.currentUnityVersion === migrationInstallation().unityVersion
                     ? [migrationInstallation()]
                     : [installation()];
-        return this.value({ projectId, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
+        const result = { projectId, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations };
+        if (!includeMigrationVersionOptions) return this.value(result);
+        const installed = this.registeredUnityInstallations();
+        const versions = [...new Set(installed.map((row) => row.unityVersion))].filter((version) => version !== this.currentUnityVersion).sort();
+        const migrationVersionOptions = versions.map((unityVersion) => {
+            const installations = installed.filter((row) => row.unityVersion === unityVersion).map(({ installationId, architecture }) => ({ installationId, architecture }));
+            return { unityVersion, installations, defaultInstallationId: installations.length === 1 ? installations[0]?.installationId : undefined };
+        });
+        return this.value({ ...result, migrationVersionOptions });
     }
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
         window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });

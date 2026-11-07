@@ -1144,7 +1144,6 @@ interface PackageWorkspaceValue {
     candidates?: CandidateSummaryPage;
     candidateRequest?: ProjectCandidateRequest;
     candidateError?: string;
-    installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
     repositories: RepositorySnapshot[];
@@ -1275,12 +1274,11 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
             return { error: normalizeRequestError(caught).code };
         }
     };
-    const [repositories, settings, userPackages, installations, launchOptions, firstPage] = await Promise.all([
+    const [repositories, settings, userPackages, launchOptions, firstPage] = await Promise.all([
         listAllRepositories(client),
         client.settingsGet(),
         includeUserPackages ? listAllUserPackages(client) : Promise.resolve([]),
-        loadAllUnityInstallations(client),
-        client.unityLaunchOptions(projectId, project.revision),
+        client.unityLaunchOptions(projectId, project.revision, true),
         readFirstPage()
     ]);
     if (repositories.length > 4096) throw { code: "package_candidate_limit_exceeded" };
@@ -1292,7 +1290,7 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
     const sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {};
     for (const repository of repositories) if (repository.repositoryId) sourceRegistry["repository:" + repository.repositoryId] = repositoryDisplayName(t, repository, sourceText(t, locale, repository));
     for (const local of userPackages) sourceRegistry["user-package:" + local.userPackageId] = local.displayName ?? t("Local / User Package");
-    return { project, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
+    return { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
 }
 
 function PackageWorkspaceData({ client, value, filter, children }: {
@@ -1429,7 +1427,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     };
     return (
         <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError }) => {
-            const { project, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
+            const { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
             const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
@@ -1478,7 +1476,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         title={projectName(t, locale, project)}
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
-                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction) => <ProjectRowActions
+                            <ProjectUnityWorkspaceActions client={client} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
                                 launchAction={launchAction}
@@ -1827,15 +1825,14 @@ export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate,
     const load = useCallback(async () => {
         const project = (await client.projectGet(projectId)).project;
         if (project.revision === undefined) throw { code: "project_not_registered" };
-        const [installations, launchConfig, launchOptions, writer] = await Promise.all([
-            loadAllUnityInstallations(client),
+        const [launchConfig, launchOptions, writer] = await Promise.all([
             client.unityProjectLaunchConfigGet(projectId),
-            client.unityLaunchOptions(projectId, project.revision),
+            client.unityLaunchOptions(projectId, project.revision, true),
             client.unityWriterState(projectId).catch(() => undefined)
         ]);
-        return { project, installations, launchConfig, launchOptions, writer };
+        return { project, launchConfig, launchOptions, writer };
     }, [client, projectId]);
-    return <UtilityWorkspace changes={["projects", "unity"]} title={t("Project Unity")} back={<BackTo label={t("Project packages")} navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label={t("Project Unity version")} value={project.unityVersion} /><Detail label={t("Exact installations")} value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label={t("Writer observation")} value={writer?.state ?? t("Unknown")} /><Detail label={t("Arguments")} value={launchConfig.config.revision === 0 ? t("Use global defaults") : t("{count} arguments", { count: launchConfig.effectiveArguments.length })} /><Detail label={t("Observed")} value={writer === undefined ? "—" : formatTime(t, locale, writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["projects", "unity"]} title={t("Project Unity")} back={<BackTo label={t("Project packages")} navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label={t("Project Unity version")} value={project.unityVersion} /><Detail label={t("Exact installations")} value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label={t("Writer observation")} value={writer?.state ?? t("Unknown")} /><Detail label={t("Arguments")} value={launchConfig.config.revision === 0 ? t("Use global defaults") : t("{count} arguments", { count: launchConfig.effectiveArguments.length })} /><Detail label={t("Observed")} value={writer === undefined ? "—" : formatTime(t, locale, writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
 }
 
 async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {

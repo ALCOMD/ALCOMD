@@ -38,10 +38,22 @@ pub(super) async fn dispatch(
                 Err(()) => return invalid(request.id),
             };
             match application
-                .list_installations(access, cursor, params.limit.unwrap_or(100))
+                .list_installations(
+                    access,
+                    cursor,
+                    params.limit.unwrap_or(100),
+                    params.include_version_options.unwrap_or(false),
+                )
                 .await
             {
-                Ok(page) => success_action(request.id, page_result(page, false), None),
+                Ok((page, options)) => {
+                    let mut result = page_result(page, false);
+                    result.version_options = options.map(|options| rpc::UnityVersionOptions {
+                        versions: options.versions,
+                        default_version: options.default_version,
+                    });
+                    success_action(request.id, result, None)
+                }
                 Err(error) => m5_error(request.id, error),
             }
         }
@@ -234,7 +246,12 @@ pub(super) async fn dispatch(
                 return invalid(request.id);
             };
             match application
-                .launch_options(access, project_id, revision)
+                .launch_options(
+                    access,
+                    project_id,
+                    revision,
+                    params.include_migration_version_options.unwrap_or(false),
+                )
                 .await
             {
                 Ok(value) => success_action(
@@ -248,6 +265,25 @@ pub(super) async fn dispatch(
                             .into_iter()
                             .map(installation)
                             .collect(),
+                        migration_version_options: value.migration_version_options.map(|options| {
+                            options
+                                .into_iter()
+                                .map(|option| rpc::UnityMigrationVersionOption {
+                                    unity_version: option.unity_version,
+                                    installations: option
+                                        .installations
+                                        .into_iter()
+                                        .map(|row| rpc::UnityMigrationInstallationOption {
+                                            installation_id: row.installation_id.to_string(),
+                                            architecture: architecture(row.architecture),
+                                        })
+                                        .collect(),
+                                    default_installation_id: option
+                                        .default_installation_id
+                                        .map(|id| id.to_string()),
+                                })
+                                .collect()
+                        }),
                     },
                     None,
                 ),
@@ -292,6 +328,7 @@ fn page_result(
         installations: page.installations.into_iter().map(installation).collect(),
         next_cursor: page.next_cursor.map(format_cursor),
         replayed,
+        version_options: None,
     }
 }
 
@@ -301,12 +338,7 @@ fn installation(value: app::UnityInstallationRecord) -> rpc::UnityInstallation {
         executable_path: value.observation.executable_path,
         filesystem_identity: hex(&value.observation.filesystem_identity),
         unity_version: value.observation.unity_version,
-        architecture: match value.observation.architecture {
-            app::UnityArchitecture::X86_64 => rpc::UnityArchitecture::X86_64,
-            app::UnityArchitecture::Arm64 => rpc::UnityArchitecture::Arm64,
-            app::UnityArchitecture::Universal => rpc::UnityArchitecture::Universal,
-            app::UnityArchitecture::Unknown => rpc::UnityArchitecture::Unknown,
-        },
+        architecture: architecture(value.observation.architecture),
         source_kind: match value.observation.source_kind {
             app::UnitySourceKind::Manual => rpc::UnitySourceKind::Manual,
             app::UnitySourceKind::HubConfig => rpc::UnitySourceKind::HubConfig,
@@ -316,6 +348,15 @@ fn installation(value: app::UnityInstallationRecord) -> rpc::UnityInstallation {
         revision: value.revision.get(),
         observed_at_ms: value.observation.observed_at_ms,
         updated_at_ms: value.updated_at_ms,
+    }
+}
+
+fn architecture(value: app::UnityArchitecture) -> rpc::UnityArchitecture {
+    match value {
+        app::UnityArchitecture::X86_64 => rpc::UnityArchitecture::X86_64,
+        app::UnityArchitecture::Arm64 => rpc::UnityArchitecture::Arm64,
+        app::UnityArchitecture::Universal => rpc::UnityArchitecture::Universal,
+        app::UnityArchitecture::Unknown => rpc::UnityArchitecture::Unknown,
     }
 }
 

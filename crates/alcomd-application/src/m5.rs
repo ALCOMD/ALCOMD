@@ -1,5 +1,6 @@
 //! M5 Unity installation, writer observation and launch use cases.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -65,6 +66,12 @@ pub struct UnityInstallationPage {
     pub next_cursor: Option<UnityInstallationCursor>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnityVersionOptions {
+    pub versions: Vec<String>,
+    pub default_version: Option<String>,
+}
+
 /// Per-project safe Unity launch arguments. A missing row is represented by a
 /// revision-zero sentinel and never selects an Editor installation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -116,6 +123,20 @@ pub struct UnityLaunchOptions {
     pub project_revision: Revision,
     pub project_unity_version: String,
     pub exact_matching_installations: Vec<UnityInstallationRecord>,
+    pub migration_version_options: Option<Vec<UnityMigrationVersionOption>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnityMigrationVersionOption {
+    pub unity_version: String,
+    pub installations: Vec<UnityMigrationInstallationOption>,
+    pub default_installation_id: Option<UnityInstallationId>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnityMigrationInstallationOption {
+    pub installation_id: UnityInstallationId,
+    pub architecture: UnityArchitecture,
 }
 
 /// One short-lived, non-persisted process observation.
@@ -387,14 +408,63 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         access: &AccessContext,
         cursor: Option<UnityInstallationCursor>,
         limit: u32,
-    ) -> Result<UnityInstallationPage, M5UnityError> {
+        include_version_options: bool,
+    ) -> Result<(UnityInstallationPage, Option<UnityVersionOptions>), M5UnityError> {
         require(access, Permission::UnityRead)?;
-        if !(1..=1_000).contains(&limit) {
+        if !(1..=1_000).contains(&limit) || (include_version_options && cursor.is_some()) {
             return Err(M5UnityError::new(M5UnityErrorCode::InvalidInput));
         }
-        self.store
+        let page = self
+            .store
             .list_installations(access.principal().clone(), cursor, limit)
-            .await
+            .await?;
+        if !include_version_options {
+            return Ok((page, None));
+        }
+        let mut versions: BTreeSet<_> = page
+            .installations
+            .iter()
+            .filter_map(|row| canonical_unity_version(&row.observation.unity_version).ok())
+            .collect();
+        if let Some(next) = page.next_cursor.clone() {
+            self.visit_installations(access, Some(next), |row| {
+                if let Ok(version) = canonical_unity_version(&row.observation.unity_version) {
+                    versions.insert(version);
+                }
+            })
+            .await?;
+        }
+        let default_version = if versions.len() == 1 {
+            versions.first().cloned()
+        } else {
+            None
+        };
+        Ok((
+            page,
+            Some(UnityVersionOptions {
+                versions: versions.into_iter().collect(),
+                default_version,
+            }),
+        ))
+    }
+
+    async fn visit_installations(
+        &self,
+        access: &AccessContext,
+        mut cursor: Option<UnityInstallationCursor>,
+        mut visit: impl FnMut(UnityInstallationRecord) + Send,
+    ) -> Result<(), M5UnityError> {
+        loop {
+            let page = self
+                .store
+                .list_installations(access.principal().clone(), cursor, 1_000)
+                .await?;
+            page.installations.into_iter().for_each(&mut visit);
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                return Ok(());
+            }
+        }
     }
 
     pub async fn get_installation(
@@ -571,6 +641,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         access: &AccessContext,
         project_id: ProjectId,
         expected_project_revision: Revision,
+        include_migration_version_options: bool,
     ) -> Result<UnityLaunchOptions, M5UnityError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityRead)?;
@@ -584,41 +655,51 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
         let canonical = canonical_unity_version(&project.observation.unity_version)?;
-        let mut cursor = None;
         let mut matches = Vec::new();
-        loop {
-            let page = self
-                .store
-                .list_installations(access.principal().clone(), cursor, 1_000)
-                .await?;
-            matches.extend(page.installations.into_iter().filter(|installation| {
-                exact_unity_version(&canonical, &installation.observation.unity_version)
-            }));
-            let Some(next) = page.next_cursor else {
-                break;
+        let mut migration_groups = BTreeMap::<String, Vec<UnityInstallationRecord>>::new();
+        self.visit_installations(access, None, |installation| {
+            let Ok(version) = canonical_unity_version(&installation.observation.unity_version)
+            else {
+                return;
             };
-            cursor = Some(next);
-        }
-        matches.sort_by(|left, right| {
-            left.observation
-                .unity_version
-                .as_bytes()
-                .cmp(right.observation.unity_version.as_bytes())
-                .then_with(|| {
-                    source_order(left.observation.source_kind)
-                        .cmp(&source_order(right.observation.source_kind))
+            if version == canonical {
+                matches.push(installation);
+            } else if include_migration_version_options {
+                migration_groups
+                    .entry(version)
+                    .or_default()
+                    .push(installation);
+            }
+        })
+        .await?;
+        order_installation_options(&mut matches);
+        let migration_version_options = include_migration_version_options.then(|| {
+            migration_groups
+                .into_iter()
+                .map(|(unity_version, mut group)| {
+                    order_installation_options(&mut group);
+                    let default_installation_id =
+                        (group.len() == 1).then(|| group[0].installation_id);
+                    UnityMigrationVersionOption {
+                        unity_version,
+                        default_installation_id,
+                        installations: group
+                            .into_iter()
+                            .map(|row| UnityMigrationInstallationOption {
+                                installation_id: row.installation_id,
+                                architecture: row.observation.architecture,
+                            })
+                            .collect(),
+                    }
                 })
-                .then_with(|| {
-                    left.installation_id
-                        .to_string()
-                        .cmp(&right.installation_id.to_string())
-                })
+                .collect()
         });
         Ok(UnityLaunchOptions {
             project_id,
             project_revision: project.revision,
             project_unity_version: canonical,
             exact_matching_installations: matches,
+            migration_version_options,
         })
     }
 
@@ -932,6 +1013,24 @@ fn parse_decimal(bytes: &[u8], start: usize, allow_zero: bool) -> Result<usize, 
 
 fn exact_unity_version(project: &str, installation: &str) -> bool {
     canonical_unity_version(installation).is_ok_and(|value| value == project)
+}
+
+fn order_installation_options(installations: &mut [UnityInstallationRecord]) {
+    installations.sort_by(|left, right| {
+        left.observation
+            .unity_version
+            .as_bytes()
+            .cmp(right.observation.unity_version.as_bytes())
+            .then_with(|| {
+                source_order(left.observation.source_kind)
+                    .cmp(&source_order(right.observation.source_kind))
+            })
+            .then_with(|| {
+                left.installation_id
+                    .to_string()
+                    .cmp(&right.installation_id.to_string())
+            })
+    });
 }
 
 const fn source_order(source: UnitySourceKind) -> u8 {

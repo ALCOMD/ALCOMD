@@ -1892,6 +1892,8 @@ pub struct UnityInstallationsListParams {
     pub cursor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_version_options: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1901,6 +1903,16 @@ pub struct UnityInstallationsListResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<String>,
     pub replayed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version_options: Option<UnityVersionOptions>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityVersionOptions {
+    pub versions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_version: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2058,6 +2070,8 @@ pub struct UnityLaunchParams {
 pub struct UnityLaunchOptionsParams {
     pub project_id: String,
     pub expected_project_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_migration_version_options: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2067,6 +2081,24 @@ pub struct UnityLaunchOptionsResult {
     pub project_revision: u64,
     pub project_unity_version: String,
     pub exact_matching_installations: Vec<UnityInstallation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_version_options: Option<Vec<UnityMigrationVersionOption>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityMigrationVersionOption {
+    pub unity_version: String,
+    pub installations: Vec<UnityMigrationInstallationOption>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_installation_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityMigrationInstallationOption {
+    pub installation_id: String,
+    pub architecture: UnityArchitecture,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

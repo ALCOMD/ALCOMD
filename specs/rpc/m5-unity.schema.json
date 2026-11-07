@@ -152,7 +152,32 @@
             "additionalProperties": false,
             "properties": {
                 "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                "includeVersionOptions": {"type": "boolean"}
+            },
+            "if": {
+                "required": ["includeVersionOptions"],
+                "properties": {"includeVersionOptions": {"const": true}}
+            },
+            "then": {"not": {"required": ["cursor"]}}
+        },
+        "installationListResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["installations", "replayed"],
+            "properties": {
+                "installations": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/unityInstallation"}},
+                "nextCursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "replayed": {"type": "boolean"},
+                "versionOptions": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["versions"],
+                    "properties": {
+                        "versions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/unityVersion"}},
+                        "defaultVersion": {"$ref": "#/$defs/unityVersion"}
+                    }
+                }
             }
         },
         "installationGetParams": {
@@ -224,7 +249,8 @@
             "required": ["projectId", "expectedProjectRevision"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedProjectRevision": {"$ref": "#/$defs/revision"}
+                "expectedProjectRevision": {"$ref": "#/$defs/revision"},
+                "includeMigrationVersionOptions": {"type": "boolean"}
             }
         },
         "launchOptionsResult": {
@@ -234,11 +260,35 @@
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "projectRevision": {"$ref": "#/$defs/revision"},
-                "projectUnityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "projectUnityVersion": {"$ref": "#/$defs/unityVersion"},
                 "exactMatchingInstallations": {
                     "type": "array",
                     "maxItems": 1000,
                     "items": {"$ref": "#/$defs/unityInstallation"}
+                },
+                "migrationVersionOptions": {"type": "array", "items": {"$ref": "#/$defs/migrationVersionOption"}}
+            }
+        },
+        "unityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+        "migrationVersionOption": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["unityVersion", "installations"],
+            "properties": {
+                "unityVersion": {"$ref": "#/$defs/unityVersion"},
+                "defaultInstallationId": {"$ref": "#/$defs/uuid"},
+                "installations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["installationId", "architecture"],
+                        "properties": {
+                            "installationId": {"$ref": "#/$defs/uuid"},
+                            "architecture": {"$ref": "#/$defs/architecture"}
+                        }
+                    }
                 }
             }
         },

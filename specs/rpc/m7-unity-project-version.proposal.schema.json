@@ -136,7 +136,8 @@
             "required": ["projectId", "expectedProjectRevision"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "expectedProjectRevision": {"$ref": "#/$defs/revision"}
+                "expectedProjectRevision": {"$ref": "#/$defs/revision"},
+                "includeMigrationVersionOptions": {"type": "boolean"}
             }
         },
         "launchOptionsResult": {
@@ -159,6 +160,10 @@
                         "type": "object",
                         "description": "Existing UnityInstallation safe DTO with Core-canonicalized unityVersion."
                     }
+                },
+                "migrationVersionOptions": {
+                    "type": "array",
+                    "items": {"$ref": "m5-unity.json#/$defs/migrationVersionOption"}
                 }
             }
         },

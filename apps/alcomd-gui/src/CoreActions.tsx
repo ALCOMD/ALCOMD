@@ -495,7 +495,7 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
     </MaterialDialog>;
 }
 
-export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
+export function ProjectUnityActions({ afterMigrationOpen = false, client, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canManage = useCapability(capabilities.unityManage);
@@ -510,10 +510,8 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     const projectId = project.projectId;
     const projectRevision = project.revision;
     const handledMigrationOperation = useRef<string | undefined>(undefined);
-    const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
-        .filter((version) => version !== project.unityVersion)
-        .sort((left, right) => left.localeCompare(right));
-    const targetInstallations = installations.filter((installation) => installation.unityVersion === targetVersion);
+    const migrationVersions = launchOptions.migrationVersionOptions ?? [];
+    const targetInstallations = migrationVersions.find((option) => option.unityVersion === targetVersion)?.installations ?? [];
     const effectiveLaunchOptions = postMigrationLaunchOptions ?? launchOptions;
     const candidates = effectiveLaunchOptions.exactMatchingInstallations;
     const launchInstallation = candidates.length === 1 ? candidates[0] : candidates.find((item) => item.installationId === launchInstallationId);
@@ -529,8 +527,8 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     };
     const chooseTargetVersion = (version: string) => {
         setTargetVersion(version);
-        const matches = installations.filter((installation) => installation.unityVersion === version);
-        setTargetInstallationId(matches.length === 1 ? matches[0]?.installationId ?? "" : "");
+        const option = migrationVersions.find((item) => item.unityVersion === version);
+        setTargetInstallationId(option?.defaultInstallationId ?? "");
         setMigrationPlan(undefined);
     };
     const planMigration = async () => {
@@ -602,8 +600,8 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManage, capabilities.unityManage, t)} type="button" variant="tonal">{t("Edit launch arguments")}</Button>
             {!argumentsOpen || projectId === undefined ? null : <ProjectLaunchArgumentsDialog client={client} launchConfig={launchConfig} onChanged={onChanged} onClose={() => setArgumentsOpen(false)} projectId={projectId} />}
             <h3>{t("Migrate Project Unity version")}</h3>
-            <Select id="project-unity-version" label={t("Target Unity version")} onChange={chooseTargetVersion} options={[{ label: t("Current · {version}", { version: project.unityVersion }), value: "" }, ...migrationVersions.map((version) => ({ label: version, value: version }))]} value={targetVersion} />
-            {targetInstallations.length > 1 ? <Select id="migration-installation" label={t("Target Unity installation")} onChange={setTargetInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...targetInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
+            <Select id="project-unity-version" label={t("Target Unity version")} onChange={chooseTargetVersion} options={[{ label: t("Current · {version}", { version: launchOptions.projectUnityVersion }), value: "" }, ...migrationVersions.map(({ unityVersion }) => ({ label: unityVersion, value: unityVersion }))]} value={targetVersion} />
+            {targetInstallations.length > 1 ? <Select id="migration-installation" label={t("Target Unity installation")} onChange={setTargetInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...targetInstallations.map((item) => ({ label: `${targetVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
             <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button" variant="tonal">{t("Review migration")}</Button>
             <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
@@ -614,9 +612,8 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     );
 }
 
-export function ProjectUnityWorkspaceActions({ client, installations, launchOptions, navigate, onChanged, project, renderLaunch }: {
+export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, onChanged, project, renderLaunch }: {
     client: GuiRpcClient;
-    installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
     navigate(path: string): void;
     onChanged(): void;
@@ -627,7 +624,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const unityLaunch = useProjectUnityLaunch({ client, initialOptions: launchOptions, navigate, onLaunchSettled: onChanged, project });
-    const [migrationVersion, setMigrationVersion] = useState(project.unityVersion);
+    const [migrationVersion, setMigrationVersion] = useState<string>();
     const [migrationInstallationId, setMigrationInstallationId] = useState("");
     const [migrationChooserOpen, setMigrationChooserOpen] = useState(false);
     const [migrationPlan, setMigrationPlan] = useState<ProjectUnityMigrationPlan>();
@@ -636,10 +633,8 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     const isCurrent = useActionScope(client);
     const projectId = project.projectId;
     const projectRevision = project.revision;
-    const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
-        .filter((version) => version !== project.unityVersion)
-        .sort((left, right) => left.localeCompare(right));
-    const migrationInstallations = installations.filter((installation) => installation.unityVersion === migrationVersion);
+    const migrationVersions = launchOptions.migrationVersionOptions ?? [];
+    const migrationInstallations = migrationVersions.find((option) => option.unityVersion === migrationVersion)?.installations ?? [];
 
     const planMigration = async (installationId: string) => {
         if (!canMigrate || pending.current || projectId === undefined || projectRevision === undefined) return;
@@ -651,7 +646,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
             setSubmitted(false);
             setMigrationChooserOpen(false);
             if (result.kind === "no_change") {
-                setMigrationVersion(project.unityVersion);
+                setMigrationVersion(undefined);
                 setFeedback(INITIAL_FEEDBACK);
                 return;
             }
@@ -659,18 +654,18 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
             setFeedback({ busy: false });
         } catch (caught: unknown) {
             if (!isCurrent()) return;
-            setMigrationVersion(project.unityVersion);
+            setMigrationVersion(undefined);
             setFeedback({ busy: false, error: safeError(caught) });
         } finally { pending.current = false; }
     };
     const chooseMigrationVersion = (version: string) => {
-        setMigrationVersion(version);
+        const option = migrationVersions.find((item) => item.unityVersion === version);
+        setMigrationVersion(option?.unityVersion);
         setFeedback(INITIAL_FEEDBACK);
         setMigrationPlan(undefined);
-        if (version === project.unityVersion) return;
-        const matches = installations.filter((installation) => installation.unityVersion === version);
-        if (matches.length === 1) {
-            void planMigration(matches[0]!.installationId);
+        if (option === undefined) return;
+        if (option.defaultInstallationId !== undefined) {
+            void planMigration(option.defaultInstallationId);
             return;
         }
         setMigrationInstallationId("");
@@ -698,22 +693,22 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 label={t("Unity version")}
                 onChange={chooseMigrationVersion}
                 options={[
-                    { label: `Unity ${project.unityVersion}`, value: project.unityVersion },
-                    ...migrationVersions.map((version) => ({ label: `Unity ${version}`, value: version }))
+                    { label: `Unity ${launchOptions.projectUnityVersion}`, value: launchOptions.projectUnityVersion },
+                    ...migrationVersions.map(({ unityVersion }) => ({ label: `Unity ${unityVersion}`, value: unityVersion }))
                 ]}
-                value={migrationVersion}
+                value={migrationVersion ?? launchOptions.projectUnityVersion}
             />
             {renderLaunch({ ...unityLaunch.action, disabled: unityLaunch.action.disabled || feedback.busy })}
             {unityLaunch.dialogs}
-            <ModalDialog dismissible={!feedback.busy} onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationChooserOpen} title={t("Choose Unity {version} installation", { version: migrationVersion })}>
-                <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
+            <ModalDialog dismissible={!feedback.busy} onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationChooserOpen} title={t("Choose Unity {version} installation", { version: migrationVersion ?? "" })}>
+                <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${migrationVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
                 {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
-                    <Button onClick={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); }} type="button" variant="tonal">{t("Cancel")}</Button>
+                    <Button onClick={() => { setMigrationChooserOpen(false); setMigrationVersion(undefined); }} type="button" variant="tonal">{t("Cancel")}</Button>
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
                 </div>
             </ModalDialog>
-            <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
+            <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </PlanDialog>

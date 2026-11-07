@@ -652,7 +652,14 @@ package/backup mutation 对 confirmed 返回 `unity_project_running`，suspected
 set/clear 的结果形状及权限保持。已接受 launch 固定有效参数，后续设置变更不改已接受启动；相同幂等键的有效参数变化返回冲突。
 flag 和 value 各占一项，通过无 shell 的 argv 数组传递；带空格路径保持为一个字符串，不要求额外 shell 引号。
 
-`unity.launchOptions` 由 Core 按 canonical exact Unity version 返回确定排序的匹配 installation。`unity.launch`
+`unity.installations.list` 的首个请求可设置 `includeVersionOptions: true`，不带 `cursor`。除原分页外，Core 返回
+`versionOptions`，覆盖调用者所有已登记安装的有效规范版本。版本去重后按规范字符串顺序排列，仅有一个版本时返回
+`defaultVersion`。默认版本按版本数判定，同版本存在多个安装也可预选该版本。
+
+`unity.launchOptions` 由 Core 按 canonical exact Unity version 返回确定排序的匹配 installation。设置
+`includeMigrationVersionOptions: true` 时，另返回 `migrationVersionOptions`。Core 按规范版本分组，排除当前版本，
+按规范字符串排序，每组返回安装 ID 和架构。仅有一个安装的组同时返回 `defaultInstallationId`。候选用于迁移审阅，
+迁移计划和应用仍各自检查版本、安装、权限和项目修订。`unity.launch`
 要求调用方提供 one-shot InstallationId；该选择不持久化，并在启动前复验 project/installation identity、
 project revision、canonical exact version、permission 与永久 idempotency。成功
 只返回 opaque launch record 且 `state=opening`/`spawnAccepted=true`，不宣称 Unity 已完全打开。

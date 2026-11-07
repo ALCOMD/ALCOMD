@@ -26,7 +26,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     fs::create_dir(&data).expect("create data directory");
     let project = fixture.path().join("Project");
     create_project(&project);
-    let editor = create_fake_editor(fixture.path(), "Editor");
+    let editor = create_fake_editor(fixture.path(), "Editor", "2022.3.22f1");
 
     let (ipc, config) = isolated_ipc(runtime);
     let query_ipc = ipc.clone();
@@ -105,10 +105,12 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .unity_launch_options(UnityLaunchOptionsParams {
             project_id: project_id.clone(),
             expected_project_revision: project.project.revision.expect("project revision"),
+            include_migration_version_options: Some(true),
         })
         .await
         .expect("read launch options without candidates");
     assert!(no_candidate.exact_matching_installations.is_empty());
+    assert_eq!(no_candidate.migration_version_options, Some(Vec::new()));
     let installation = client
         .unity_installation_register(UnityInstallationRegisterParams {
             executable_path: editor.to_string_lossy().into_owned(),
@@ -144,6 +146,67 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         fs::read(editor.with_extension("version-probes")).expect("owned probe evidence"),
         probes_before_list,
         "ordinary installation listing must use registered evidence without executing the Editor"
+    );
+    let version_options = UnityInstallationsListParams {
+        limit: Some(1),
+        include_version_options: Some(true),
+        ..Default::default()
+    };
+    let single_version = client
+        .unity_installations_list(version_options.clone())
+        .await
+        .expect("read creation options with one version")
+        .version_options
+        .expect("requested version projection");
+    assert_eq!(single_version.versions, ["2022.3.22f1"]);
+    assert_eq!(
+        single_version.default_version.as_deref(),
+        Some("2022.3.22f1")
+    );
+
+    let alternate = create_fake_editor(fixture.path(), "MigrationEditor", "2022.3.6f1");
+    let alternate = client
+        .unity_installation_register(UnityInstallationRegisterParams {
+            executable_path: alternate.to_string_lossy().into_owned(),
+            idempotency_key: "m7-editor-register-migration".to_owned(),
+        })
+        .await
+        .expect("register migration Editor")
+        .installation;
+    let first_page = client
+        .unity_installations_list(version_options)
+        .await
+        .expect("read creation options across installation pages");
+    assert_eq!(first_page.installations.len(), 1);
+    assert!(first_page.next_cursor.is_some());
+    let versions = first_page
+        .version_options
+        .expect("requested version projection");
+    assert_eq!(versions.versions, ["2022.3.22f1", "2022.3.6f1"]);
+    assert_eq!(versions.default_version, None);
+
+    let migration = client
+        .unity_launch_options(UnityLaunchOptionsParams {
+            project_id: project_id.clone(),
+            expected_project_revision: project.project.revision.expect("project revision"),
+            include_migration_version_options: Some(true),
+        })
+        .await
+        .expect("read migration version options");
+    assert_eq!(migration.exact_matching_installations.len(), 1);
+    let migration = migration
+        .migration_version_options
+        .expect("requested migration projection");
+    assert_eq!(migration.len(), 1);
+    assert_eq!(migration[0].unity_version, "2022.3.6f1");
+    assert_eq!(migration[0].installations.len(), 1);
+    assert_eq!(
+        migration[0].installations[0].installation_id,
+        alternate.installation_id
+    );
+    assert_eq!(
+        migration[0].default_installation_id.as_deref(),
+        Some(alternate.installation_id.as_str())
     );
     let config = client
         .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
@@ -227,7 +290,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .await
         .expect("accept Unity launch");
     assert!(launch.launch.spawn_accepted);
-    let second_editor = create_fake_editor(fixture.path(), "EditorB");
+    let second_editor = create_fake_editor(fixture.path(), "EditorB", "2022.3.22f1");
     client
         .unity_installation_register(UnityInstallationRegisterParams {
             executable_path: second_editor.to_string_lossy().into_owned(),
@@ -250,10 +313,12 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .unity_launch_options(UnityLaunchOptionsParams {
             project_id: launch.launch.project_id,
             expected_project_revision: project.project.revision.expect("project revision"),
+            include_migration_version_options: None,
         })
         .await
         .expect("read all exact launch candidates");
     assert_eq!(multiple.exact_matching_installations.len(), 2);
+    assert!(multiple.migration_version_options.is_none());
 
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(3), daemon)
@@ -263,7 +328,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     assert!(result.is_ok());
 }
 
-fn create_fake_editor(root: &Path, directory: &str) -> PathBuf {
+fn create_fake_editor(root: &Path, directory: &str, version: &str) -> PathBuf {
     #[cfg(windows)]
     let executable = root.join(directory).join("Unity.exe");
     #[cfg(not(windows))]
@@ -277,15 +342,19 @@ fn create_fake_editor(root: &Path, directory: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt;
         fs::write(
             &executable,
-            "#!/bin/sh\nif [ \"$#\" -eq 1 ] && [ \"$1\" = \"-version\" ]; then\n  printf 'probe\\n' >> \"$0.version-probes\"\n  printf '2022.3.22f1 (887be4894c44)\\n'\n  exit 0\nfi\nexit 0\n",
+            format!("#!/bin/sh\nif [ \"$#\" -eq 1 ] && [ \"$1\" = \"-version\" ]; then\n  printf 'probe\\n' >> \"$0.version-probes\"\n  printf '{version} (887be4894c44)\\n'\n  exit 0\nfi\nexit 0\n"),
         )
         .expect("write owned Editor fixture with isolated version invocation");
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
             .expect("make owned Editor fixture executable");
     }
     #[cfg(windows)]
-    windows_editor_fixture::write_editor_fixture(&executable, "Unity", "2022.3.22f1_887be4894c44")
-        .expect("write native Editor version resource");
+    windows_editor_fixture::write_editor_fixture(
+        &executable,
+        "Unity",
+        &format!("{version}_887be4894c44"),
+    )
+    .expect("write native Editor version resource");
     let catalog = r#"{"schemaVersion":4,"packages":{"com.unity.collections":{"version":"1.2.4"}}}"#;
     fs::write(manifest, catalog).expect("write Editor package catalog");
     executable
