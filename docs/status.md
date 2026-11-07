@@ -12,6 +12,7 @@
 - 本机最近一次 GUI 部署使用 `34cac0a2` 加当时文件选择器工作树修改，证据位于 `target/m7-file-picker-integration-update-20261107/`。本轮验证后恢复原 Core/GUI 二进制、数据目录和 profile；九组业务读取一致，Unity 进程未变，没有另行部署。
 - 本轮源码整合候选为 `213d0d2`：独立文件/文件夹选择内容接入仓库列表导入、模板导入、添加已有项目和用户软件包登记；调用方负责确认、预览及弹窗生命周期。另同步旧浏览器预期、State29 精确断言，以及 Config12 和已有平台功能的元数据校验。只有标准 `main` 工作树，本地归档分支均为其祖先，无 stash；截图及生成材料保留在本地。
 - 该候选的完整 Rust fmt、严格 workspace Clippy、workspace 测试及仓库检查通过，测试汇总 772 通过、13 项既有显式忽略。前端全工作区检查/构建和 Chromium **514/514** 通过，零重试、零跳过；元数据及 7 组内存反例通过。指纹已核对各验证范围的输入未变；早期失败轮继续保留在 `target/m7-main-integration-20261107T040906Z/`。原生系统选择窗口仍待人工核对。
+- `e5ede89f` 的 [CodeQL 42340358565](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358565) 四语言通过，[CI 42340358982](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358982) 三平台未通过：Unix 测试模块位置和 Windows 专用 HTTP 测试钩子的编译范围触发严格 Clippy；Windows 两项设置测试争用用户 IPC 端点。`de3c06a`、`41a1653` 修正这三处测试边界，保留原断言及生产端点合同。默认并行 workspace 回归 772 通过、13 项既有忽略，两线程设置 IPC 额外三轮共 6 项通过，fmt 和受影响严格 Clippy 通过。原 Core、数据和 profile 保留，GUI 维持原先关闭；Unity 原有编辑器新增导入子进程，清单不完全相同，未操作这些进程。证据位于 `target/m7-ci-e5ede89f-20261107/`；后续 Hosted 结果按实际推送 SHA 从 [Actions](https://github.com/ALCOMD/ALCOMD/actions?query=branch%3Amain) 核对。
 
 ## 按任务查合同
 
