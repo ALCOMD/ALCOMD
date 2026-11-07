@@ -196,7 +196,7 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
 });
 
-test("Candidate pages render names and preserve Core order without reading repository catalogs", async ({ page }) => {
+test("Candidate pages render names and order installed packages before sources without reading repository catalogs", async ({ page }) => {
     await open(page, "paged=1&deferCandidateSummary=1&reverse-candidate-order=1");
     const first = page.getByRole("checkbox", { name: "Select Local tools", exact: true });
     const updateAll = page.getByRole("button", { name: /^Update All \(\d+\)$/ });
@@ -208,7 +208,9 @@ test("Candidate pages render names and preserve Core order without reading repos
     await expect(first).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Select Avatar tools", exact: true })).toBeVisible();
     const table = page.getByRole("table", { name: "Packages", exact: true });
-    await expect(table.locator("tbody tr").first()).toContainText("Local tools");
+    await expect(table.locator("tbody tr").nth(0)).toContainText("Avatar tools");
+    await expect(table.locator("tbody tr").nth(1)).toContainText("Remote tools");
+    await expect(table.locator("tbody tr").nth(2)).toContainText("Local tools");
     expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
 });
 

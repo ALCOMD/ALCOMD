@@ -8,6 +8,7 @@ import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateBulkAction, CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
 import { actionableVersion, bulkPlanIntent, candidateSource, candidateSourceKey, choiceText, finishCandidateSummary, queryCandidates, readCandidateSummaryPage, reasonText, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
+import { orderPackageWorkspaceRows } from "./package-workspace-order";
 import {
     accountCircleIcon,
     arrowBackIcon,
@@ -1450,7 +1451,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     return (
         <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} selectedIds={bulkSelection} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError, allBulk, selectedBulk, bulkError }) => {
             const { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
-            const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry);
+            const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry, repositories);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
@@ -1475,7 +1476,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const allStable = allBulk?.updateAllStable;
             const selectedLatest = selectedBulk?.installUpdate;
             const selectedStable = selectedBulk?.installUpdateStable;
-            const rows = candidateFilter === undefined ? workspaceRows : packageWorkspaceRows(project, filteredItems ?? [], sourceRegistry);
+            const rows = candidateFilter === undefined ? workspaceRows : packageWorkspaceRows(project, filteredItems ?? [], sourceRegistry, repositories);
             return (
                 <section className="project-workspace">
                     <PageHeader
@@ -1562,12 +1563,12 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     );
 }
 
-function packageWorkspaceRows(project: ProjectSnapshot, summaries: PackageCandidateSummary[] | undefined, sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {}): PackageWorkspaceRow[] {
+function packageWorkspaceRows(project: ProjectSnapshot, summaries: PackageCandidateSummary[] | undefined, sourceRegistry: PackageWorkspaceValue["sourceRegistry"], repositories: RepositorySnapshot[]): PackageWorkspaceRow[] {
     const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
     const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
     const evidenceById = new Map(summaries?.map((item) => [item.packageId, item]));
     const packageIds = summaries?.map((item) => item.packageId) ?? [...new Set([...installed.keys(), ...requested.keys()])];
-    return packageIds.map((packageId) => {
+    return orderPackageWorkspaceRows(packageIds.map((packageId) => {
         const installedVersion = installed.get(packageId);
         const evidence = evidenceById.get(packageId);
         const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key] ?? key, selector: candidateSource(provider.source) }; });
@@ -1580,7 +1581,7 @@ function packageWorkspaceRows(project: ProjectSnapshot, summaries: PackageCandid
             ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
             sourceOptions
         };
-    });
+    }), repositories);
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
