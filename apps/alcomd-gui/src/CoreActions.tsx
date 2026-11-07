@@ -133,12 +133,26 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
+    const chooseFile = async () => {
+        if (pending.current) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            const selected = await client.selectFile("repositoryManifest");
+            if (current()) {
+                if (selected !== undefined) setValue(selected);
+                setFeedback(INITIAL_FEEDBACK);
+            }
+        } catch (caught) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
     const fieldError = preview === undefined && feedback.error !== undefined && ["repository_source_invalid", "repository_document_invalid", "invalid_params"].includes(feedback.error.code) ? feedback.error : undefined;
     const error = feedback.error === undefined || fieldError !== undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     return <ActionSection title={t("Add repository")}>
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setAuthentication(EMPTY_REPOSITORY_AUTH); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
-            <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type={kind === "remote" ? "url" : "text"} value={value} />
+            {kind === "remote" ? <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={t("Repository URL")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type="url" value={value} /> : <div className="project-target-picker"><PathField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required value={value} />
+                <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button></div>}
             {kind === "remote" ? <RepositoryAuthenticationFields draft={authentication} disabled={feedback.busy} onChange={setAuthentication} /> : null}
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0 || !readyRepositoryHeaders(authentication)} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
@@ -406,6 +420,19 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
         } catch (caught: unknown) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
+    const chooseFile = async () => {
+        if (pending.current) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            const selected = await client.selectFile("unityEditor");
+            if (isCurrent()) {
+                if (selected !== undefined) setPath(selected);
+                setFeedback(INITIAL_FEEDBACK);
+            }
+        } catch (caught) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
     return <ActionSection title={confirmRemove ? t("Remove Unity installation") : t("Manage Unity installations")}>
         {confirmRemove && remove !== undefined ? <>
             <p><Translated message="Remove {name} from the list?" values={{ name: <strong>Unity {remove.unityVersion}</strong> }} /></p>
@@ -413,7 +440,8 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button className="material-button--danger" disabled={!available || feedback.busy} onClick={() => void mutate("remove")} type="button">{t("Remove installation")}</Button></div>
         </> : <>
             <form onSubmit={(event) => { event.preventDefault(); void mutate("register"); }}>
-                <TextField disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+                <div className="project-target-picker"><PathField disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+                <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button></div>
                 <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="submit">{t("Register")}</Button><Button disabled={!available || feedback.busy} onClick={() => void mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="tonal">{t("Discover and refresh")}</Button></div>
             </form>
             {installations.length === 0 ? null : <Select aria-label={t("Installation to remove")} disabled={feedback.busy} label={t("Remove installation")} onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: t("Select an installation"), value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
@@ -851,9 +879,23 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         }
         finally { pending.current = false; }
     };
+    const chooseFile = async () => {
+        if (pending.current) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            const selected = await client.selectFile("extensionPackage");
+            if (current()) {
+                if (selected !== undefined) setPath(selected);
+                setFeedback(INITIAL_FEEDBACK);
+            }
+        } catch (caught) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
         {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
-            <TextField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+            <div className="project-target-picker"><PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+                <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button></div>
             <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={(value) => { setApprovePublisher(value); setFeedback(INITIAL_FEEDBACK); }} />
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
         </form> : <>

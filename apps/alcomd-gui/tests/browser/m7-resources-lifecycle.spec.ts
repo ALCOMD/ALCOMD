@@ -58,6 +58,7 @@ test("closed User Package details cannot replace the next read with an old snaps
 test("cancelled directory selection does not enroll a User Package", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1&cancel-directory=1");
     await page.getByRole("button", { name: "Enroll folder", exact: true }).click();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Select", exact: true }).click();
     await expect(page.getByText("No User Packages enrolled", { exact: true })).toBeVisible();
     expect(await requests(page, "selectDirectory")).toHaveLength(1);
     expect(await requests(page, "packages.userPackages.enroll")).toEqual([]);
@@ -66,6 +67,11 @@ test("cancelled directory selection does not enroll a User Package", async ({ pa
 test("User Package enrollment, current details, refresh and confirmed removal use their existing RPCs", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1");
     await page.getByRole("button", { name: "Enroll folder", exact: true }).click();
+    const picker = page.locator("md-dialog[open]");
+    await picker.getByRole("button", { name: "Select", exact: true }).click();
+    expect(await requests(page, "packages.userPackages.enroll")).toEqual([]);
+    await picker.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(picker).toHaveCount(0);
     const row = userRow(page);
     await expect(row).toContainText("1.2.3");
     expect(await requests(page, "packages.userPackages.enroll")).toEqual([{ method: "packages.userPackages.enroll", params: { sourcePath: "C:\\Fixture\\Avatar" } }]);

@@ -73,7 +73,7 @@ import "./ExtensionWorkspace.css";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, PathField, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { isBuiltinRepository, repositoryDisplayName } from "./repository-display";
@@ -252,9 +252,6 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [registerOpen, setRegisterOpen] = useState(false);
     const [createOpen, setCreateOpen] = useState(false);
     const [restoreOpen, setRestoreOpen] = useState(false);
-    const [registerPath, setRegisterPath] = useState("");
-    const [selectingDirectory, setSelectingDirectory] = useState(false);
-    const current = useActionScope(client);
     const addProjectMenuRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
     const listReadGeneration = useRef(0);
@@ -341,23 +338,6 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         setDescending(nextSort === "added" || nextSort === "modified");
     };
 
-    const chooseProjectDirectory = async () => {
-        setSelectingDirectory(true);
-        try {
-            const selected = await client.selectDirectory();
-            if (!current() || selected === undefined) return;
-            setRegisterPath(selected);
-            setRegisterOpen(true);
-        } catch {} finally {
-            setSelectingDirectory(false);
-        }
-    };
-
-    const closeRegisterDialog = () => {
-        setRegisterOpen(false);
-        window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
-    };
-
     return <>{(
         <section className="projects-page" ref={root}>
             <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
@@ -367,7 +347,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <StateSizedLabel current={view === "list" ? t("List view") : t("Grid view")} labels={[t("List view"), t("Grid view")]} />
                 </Button>
                 <SplitButton disabled={!canCreate} label={t("Create project")} menuButtonRef={addProjectMenuRef} menuLabel={t("More project creation options")} onClick={() => setCreateOpen(true)} primaryRef={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.projectsCreate, t)}>
-                    <MenuItem disabled={!canRegister || selectingDirectory} label={selectingDirectory ? t("Choosing…") : t("Add existing project")} onClick={() => void chooseProjectDirectory()} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry, t)} />
+                    <MenuItem disabled={!canRegister} label={t("Add existing project")} onClick={() => setRegisterOpen(true)} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry, t)} />
                     <MenuItem disabled={!canRestore} label={t("Restore from backup")} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} />
                 </SplitButton>
             </PageHeader>
@@ -408,15 +388,15 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 {projects.length > 0 && view === "list" ? <ProjectsTable client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onProjectChanged={updateProject} onSort={updateSort} projects={projects} sort={sort} /> : null}
                 {projects.length > 0 && view === "grid" ? <ScrollArea className="projects-grid">{projects.map((project) => <ProjectCard client={client} key={project.projectId ?? project.rootPath} onChanged={updateProject} onRefresh={() => void refresh()} project={project} navigate={navigate} />)}</ScrollArea> : null}
             </div>
-            <RegisterProjectDialog
+            <DirectorySelectionDialog
                 client={client}
-                onChanged={() => {
-
-                    void refresh();
-                }}
-                onClose={closeRegisterDialog}
+                label={t("Project location")}
+                onChanged={() => void refresh()}
+                onClose={() => setRegisterOpen(false)}
+                onConfirm={(path) => client.projectRegister(path)}
                 open={registerOpen}
-                path={registerPath}
+                origin={addProjectMenuRef}
+                title={t("Register this project?")}
             />
             <CreateProjectDialog
                 client={client}
@@ -668,7 +648,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                     <p>{workspace ? t("Remove the ALCOMD registration for this project?") : t("Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.")}</p>
                     <p>{t("Removing from the list does not delete files.")}</p>
                     <div className={workspace ? "dialog-actions" : "dialog-actions dialog-actions--split"}>
-                        <Button disabled={unregistering || deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">{t("Cancel")}</Button>
+                        <DialogCloseButton disabled={unregistering || deleting} variant="text">{t("Cancel")}</DialogCloseButton>
                         <Button disabled={!canManageProjects || unregistering || deleting || revision === undefined} onClick={() => void unregister()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} type="button" variant="tonal">
                             {t("Remove from list")}
                         </Button>
@@ -676,7 +656,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                     </div>
                 </> : deletePlan === undefined ? <>
                     <p>{t("Loading the destructive review. No files have been changed.")}</p>
-                    <div className="dialog-actions"><Button disabled={deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">{t("Cancel")}</Button></div>
+                    <div className="dialog-actions"><DialogCloseButton disabled={deleting} variant="text">{t("Cancel")}</DialogCloseButton></div>
                 </> : <>
                     <p><strong>{t("This permanently deletes local files and does not use the Recycle Bin or Trash.")}</strong></p>
                     <p>{t("No automatic backup will be created. This is different from removing the project from the list.")}</p>
@@ -803,7 +783,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                             <Button disabled={busy} onClick={() => void chooseTargetParent()} type="button" variant="tonal">{t("Choose…")}</Button>
                         </div>
                         <div className="dialog-actions">
-                            <Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Cancel")}</Button>
+                            <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                             <Button disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{t("Review copy")}</Button>
                         </div>
                     </>
@@ -826,7 +806,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         <p role="status">{operation.progress?.phase === undefined ? t("Copy {state}.", { state: humanize(t, operation.state) }) : t("Copy {state}: {phase}.", { state: humanize(t, operation.state), phase: humanize(t, operation.progress.phase) })}</p>
                         <div className="dialog-actions">
                             {!terminal ? <Button disabled={busy} onClick={() => void cancel()} type="button" variant="text">{t("Cancel copy")}</Button> : null}
-                            <Button disabled={!terminal} onClick={onClose} type="button">{t("Close")}</Button>
+                            <DialogCloseButton disabled={!terminal}>{t("Close")}</DialogCloseButton>
                         </div>
                     </>
                 )}
@@ -901,49 +881,76 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { clie
     return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={!canManageProjects || busy || revision === undefined} label={label} onClick={() => void toggle()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t) ?? label} type="button"><Icon asset={starIcon} /></IconButton>;
 }
 
-function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { client: GuiRpcClient; onChanged(): void; onClose(): void; open: boolean; path: string }) {
-    const { t, locale } = useTranslation();
+function DirectorySelectionDialog({ client, label, onChanged, onClose, onConfirm, open, origin, title }: {
+    client: GuiRpcClient;
+    label: string;
+    onChanged(): void;
+    onClose(): void;
+    onConfirm(path: string): Promise<unknown>;
+    open: boolean;
+    origin: DialogOrigin;
+    title: string;
+}) {
+    const { t } = useTranslation();
+    const current = useActionScope(client, open);
+    const pending = useRef(false);
+    const [path, setPath] = useState("");
     const [busy, setBusy] = useState(false);
+    const [choosing, setChoosing] = useState(false);
     const [error, setError] = useState<RpcError>();
-    const confirmRef = useRef<HTMLElement>(null);
 
     useEffect(() => {
         if (open) return;
-        setBusy(false);
+        setPath("");
         setError(undefined);
     }, [open]);
 
-    useEffect(() => {
-        if (!open) return;
-        window.requestAnimationFrame(() => confirmRef.current?.focus());
-    }, [open]);
-
-    const register = async () => {
-        setBusy(true);
+    const chooseDirectory = async () => {
+        if (pending.current || choosing) return;
+        pending.current = true;
+        setChoosing(true);
         setError(undefined);
         try {
-            await client.projectRegister(path);
-            onChanged();
-            onClose();
-        } catch (caught: unknown) {
-            setBusy(false);
-            setError(safeError(t, locale, caught));
+            const selected = await client.selectDirectory();
+            if (current() && selected !== undefined) setPath(selected);
+        } catch (caught) {
+            if (current()) setError(normalizeRequestError(caught));
+        } finally {
+            pending.current = false;
+            if (current()) setChoosing(false);
         }
     };
 
-    return (
-        <Dialog onClose={onClose} open={open} title={t("Register this project?")}>
-            <div className="project-register-review">
-                <p>{t("ALCOMD will inspect this Unity project and add it to the per-user registry.")}</p>
-                <code>{path}</code>
-                <div className="dialog-actions">
-                    <Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Cancel")}</Button>
-                    <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{t("Confirm")}</Button>
-                </div>
+    const confirm = async () => {
+        if (pending.current || choosing || path.trim() === "") return;
+        pending.current = true;
+        setBusy(true);
+        setError(undefined);
+        try {
+            await onConfirm(path);
+            if (!current()) return;
+            onChanged();
+            onClose();
+        } catch (caught) {
+            if (current()) setError(normalizeRequestError(caught));
+        } finally {
+            pending.current = false;
+            setBusy(false);
+        }
+    };
+
+    return <Dialog dismissible={!busy && !choosing} onClose={onClose} open={open} returnFocus={origin} title={title} actions={<>
+        <DialogCloseButton disabled={busy || choosing} variant="text">{t("Cancel")}</DialogCloseButton>
+        <Button disabled={busy || choosing || path.trim() === ""} onClick={() => void confirm()} type="button">{t("Confirm")}</Button>
+    </>}>
+        {open ? <>
+            <div className="project-target-picker">
+                <PathField disabled={busy || choosing} label={label} value={path} onInput={(next) => { setPath(next); setError(undefined); }} />
+                <Button disabled={busy || choosing} onClick={() => void chooseDirectory()} type="button" variant="tonal">{t("Select")}</Button>
             </div>
-            {error === undefined ? null : <div role="alert"><p>{t(t("Registration failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
-        </Dialog>
-    );
+            {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+        </> : null}
+    </Dialog>;
 }
 
 function projectName(t: Translate, _locale: SupportedLocale, project: ProjectSnapshot): string {
@@ -1264,7 +1271,7 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
         </FilterPopover>
         <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title={t("Show prerelease versions?")}>
             <p>{t("Prerelease packages may be unstable. Showing them does not install or update any package.")}</p>
-            <div className="dialog-actions"><Button onClick={() => setConfirmPrerelease(false)} type="button" variant="text">{t("Cancel")}</Button><Button onClick={() => { setConfirmPrerelease(false); void save({ showPrerelease: true }); }} type="button">{t("Show prerelease versions")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton variant="text">{t("Cancel")}</DialogCloseButton><DialogCloseButton afterClose={() => { setConfirmPrerelease(false); setOpen(true); void save({ showPrerelease: true }); }}>{t("Show prerelease versions")}</DialogCloseButton></div>
         </Dialog>
     </>;
 }
@@ -1691,7 +1698,7 @@ function RepositoryTable({ client, onChanged, repositories, settings, error }: {
         />}
         {selected === undefined || selectedId === undefined ? null : <Dialog wide open title={repositoryDisplayName(t, selected, t("Repository packages"))} onClose={() => setSelectedId(undefined)}>
             {isBuiltinRepository(selected) && selected.refreshedAtMs === 0 ? <p>{t("Pending first sync")}</p> : <RepositoryPackageList client={client} repositoryId={selectedId} />}
-            <div className="dialog-actions"><Button onClick={() => setSelectedId(undefined)} type="button" variant="text">{t("Close")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div>
         </Dialog>}
     </>;
 }
@@ -1748,29 +1755,13 @@ export function UserPackagesPage({ client, navigate }: PageProps) {
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
     const { t } = useTranslation();
-
-    const current = useActionScope(client);
-    const pending = useRef(false);
-    const [busy, setBusy] = useState<string>();
-    const enroll = async () => {
-        if (pending.current) return;
-        pending.current = true;
-
-        setBusy("enroll");
-        try {
-            const sourcePath = await client.selectDirectory();
-            if (current() && sourcePath !== undefined) {
-                await client.userPackageEnroll(sourcePath);
-                if (!current()) return;
-
-                onChanged();
-            }
-        } catch {} finally {
-            if (current()) setBusy(undefined);
-            pending.current = false;
-        }
-    };
-    return <Button aria-busy={busy !== undefined} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>;
+    const [open, setOpen] = useState(false);
+    const origin = useRef<HTMLElement>(null);
+    return <>
+        <Button aria-haspopup="dialog" onClick={() => setOpen(true)} ref={origin} type="button">{t("Enroll folder")}</Button>
+        <DirectorySelectionDialog client={client} label={t("Source folder")} onChanged={onChanged} onClose={() => setOpen(false)}
+            onConfirm={(path) => client.userPackageEnroll(path)} open={open} origin={origin} title={t("Add user package")} />
+    </>;
 }
 
 function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
@@ -1823,12 +1814,12 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => {  detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => {  setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
         <Dialog onClose={() => setSelected(undefined)} open={selected !== undefined} returnFocus={detailsOrigin} title={t("User Package details")}>
             {selected === undefined ? null : <UserPackageDetails client={client} userPackageId={selected} />}
-            <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div>
         </Dialog>
         {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
         {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
-        <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => { setRemoving(undefined); setError(undefined); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
+        <div className="dialog-actions"><DialogCloseButton disabled={busy !== undefined} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
     </Dialog>}</section>;
 }
 

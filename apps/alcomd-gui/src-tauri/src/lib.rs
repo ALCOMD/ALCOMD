@@ -281,6 +281,27 @@ async fn gui_select_unity_hub(
 }
 
 #[tauri::command]
+async fn gui_select_file(app: tauri::AppHandle, kind: String) -> Result<Option<String>, RpcError> {
+    let picker = app.dialog().file();
+    let picker = match kind.as_str() {
+        "repositoryManifest" => picker.add_filter("JSON manifest", &["json"]),
+        "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdext"]),
+        "unityEditor" if cfg!(windows) => picker.add_filter("Executable", &["exe"]),
+        "unityEditor" => picker,
+        _ => return Err(RpcError::invalid_request()),
+    };
+    picker
+        .blocking_pick_file()
+        .map(|path| {
+            path.into_path()
+                .ok()
+                .and_then(|path| path.into_os_string().into_string().ok())
+                .ok_or_else(|| RpcError::extension("file_selection_failed"))
+        })
+        .transpose()
+}
+
+#[tauri::command]
 async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, RpcError> {
     let selected = app.dialog().file().blocking_pick_folder();
     selected
@@ -1671,6 +1692,7 @@ pub fn run() {
             gui_project_apply_copy,
             gui_project_plan_delete_directory,
             gui_project_apply_delete_directory,
+            gui_select_file,
             gui_project_plan_unity_migration,
             gui_project_apply_unity_migration,
             gui_project_register,

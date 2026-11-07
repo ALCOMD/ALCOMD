@@ -52,9 +52,9 @@ test("file import waits for a selected archive and an explicit confirmation", as
     await page.goto("/browser-harness.html?route=/templates");
     await openSource(page, "Import template");
     const dialog = page.locator("md-dialog[open]");
-    const submit = dialog.getByRole("button", { name: "Import template", exact: true });
+    const submit = dialog.getByRole("button", { name: "Confirm", exact: true });
     await expect(submit).toBeDisabled();
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await expect(dialog.getByLabel("Template file", { exact: true })).toHaveValue("C:\\Fixture\\input.alcomdtemplate");
     expect(await request(page, "projectTemplates.save")).toBeUndefined();
     await submit.click();
@@ -71,7 +71,7 @@ test("user template replacement binds the selected revision and supports removal
     await page.getByRole("menuitem", { name: "Replace template", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog).toContainText(userId);
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await dialog.getByRole("button", { name: "Replace template", exact: true }).click();
     await expect(row(page, userId)).toContainText("Imported replacement");
     expect(await request(page, "projectTemplates.save")).toEqual({
@@ -121,11 +121,11 @@ test("retrying a lost import response sends the same file and idempotency key", 
     await page.goto("/browser-harness.html?route=/templates&template-operation-unknown=1");
     await openSource(page, "Import template");
     const dialog = page.locator("md-dialog[open]");
-    await dialog.getByRole("button", { name: "Choose file", exact: true }).click();
-    await dialog.getByRole("button", { name: "Import template", exact: true }).click();
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
+    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
-    await expect(dialog.getByRole("button", { name: "Choose file", exact: true })).toBeDisabled();
-    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "Select", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(row(page, "com.example.imported")).toHaveCount(1);
     const writes = await page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.save"));

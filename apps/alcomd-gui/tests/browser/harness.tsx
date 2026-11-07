@@ -29,7 +29,7 @@ import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-m
 import { App } from "../../src/App";
 import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
-import type { GuiRpcClient } from "../../src/rpc";
+import type { GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
@@ -279,6 +279,9 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationSequence = 0;
     private listExportAttempts = 0;
     private listPreviewReads = 0;
+    selectFile(kind: NativeFileKind): ReturnType<GuiRpcClient["selectFile"]> {
+        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdext" }[kind]);
+    }
     async selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));

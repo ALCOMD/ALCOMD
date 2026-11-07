@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-08 文件选择器重置基线：按所有者授权移除旧选择器专用提交，混合提交只保留共享弹窗动画；旧 `FilePicker` / `FilePickerControl` 及 CSS 全部不存在。相关入口直接拼接路径输入框和原生选择按钮，GUI 类型、Material 与本地化检查通过。下一步仅重建并接入明确指定的四处。历史重写后的 SHA 与既有 CI 证据 SHA 不同，历史结果不作为新候选通过；当前 Core/GUI 均未重启。
+
 - `main` 源码使用 [State29](../specs/storage/state-v29.md) 与 [Config12](../specs/config/settings-v12.md)。State29 增加仓库显示名。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
 - 此前 Core 部署基于 `0a73acca`，报告 State29 / Config12 和 `ready`，已核对九组业务读取。历史证据位于 `target/m7-core-boundary-update-20261107/`；当前新路径运行环境见下方记录。
 - 随后的 GUI 单独更新基于 `0a73acca` 加文件选择器工作树改动，记录了窗口响应、GUI profile 和同一 Core 进程。证据位于 `target/m7-shared-file-picker-update-20261107/`。CLI 仍匹配 `7fe5f157` 部署记录中的产物摘要，见 `target/m7-repository-core-update-20261107/`。各自的证据只覆盖对应构建。

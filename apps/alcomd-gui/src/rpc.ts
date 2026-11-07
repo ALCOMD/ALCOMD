@@ -10,6 +10,8 @@ import type { ProjectListView } from "./core-models";
 
 import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
+export type NativeFileKind = "repositoryManifest" | "unityEditor" | "extensionPackage";
+
 export interface GuiRpcClient {
     readonly unityWindows?: GuiUnityWindows;
     subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
@@ -27,6 +29,7 @@ export interface GuiRpcClient {
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
+    selectFile(kind: NativeFileKind): Promise<string | undefined>;
     selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
@@ -110,6 +113,10 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    selectFile(kind: NativeFileKind): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_file", { kind }).then((path) => path ?? undefined);
+    }
+
     readonly unityWindows: GuiUnityWindows = {
         start: (token, targets) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_start", { token, targets }),
         next: (token, after) => invokeTyped<UnityWindowSnapshot>("gui_unity_windows_next", { token, after }),
