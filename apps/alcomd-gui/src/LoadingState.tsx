@@ -29,3 +29,11 @@ export function LoadingState({ title, detail }: { title: string; detail?: string
         </section>
     );
 }
+
+/** A route fallback sits at the content canvas edge without taking layout space. */
+export function PageLoadingState({ title, detail }: { title: string; detail?: string }) {
+    return <section className="page-loading-state" role="status" aria-label={title} aria-live="polite" aria-busy="true">
+        <Progress label={title} />
+        <span className="visually-hidden">{title}{detail === undefined ? null : ` ${detail}`}</span>
+    </section>;
+}

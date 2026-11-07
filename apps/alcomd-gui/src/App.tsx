@@ -36,7 +36,7 @@ import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-e
 import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
-import { LoadingState } from "./LoadingState";
+import { LoadingState, PageLoadingState } from "./LoadingState";
 import { createPageRead, PageReadContext } from "./PageRead";
 import { ScrollArea, useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
@@ -100,15 +100,26 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
         settingsConnection.current = { client, generation: connectionGeneration };
         settingsAuthority.current = undefined;
     }
-    const [navigation, setNavigation] = useState(() => ({
-        route: readRoute(window.location.pathname, window.location.search),
-        read: createPageRead(), client, connectionGeneration
-    }));
+    const [navigation, setNavigation] = useState(() => {
+        const route = readRoute(window.location.pathname, window.location.search);
+        return { route, read: createPageRead(), client, connectionGeneration };
+    });
     // A new connection must not reuse an initial result read from the previous daemon/client.
     if (navigation.client !== client || navigation.connectionGeneration !== connectionGeneration) {
         setNavigation({ ...navigation, client, connectionGeneration, read: createPageRead() });
     }
-    const visibleNavigation = useDeferredValue(navigation);
+    const deferredNavigation = useDeferredValue(navigation);
+    const [expiredVisit, setExpiredVisit] = useState<number>();
+    // Preserve the populated page for at most the shared 100ms navigation budget.
+    // An urgent update at the deadline lets Suspense expose the destination fallback
+    // even when its metadata is still pending. Local loading boundaries can expose
+    // the destination toolbar independently of its slower list content.
+    useEffect(() => {
+        if (navigation === deferredNavigation) return;
+        const timer = window.setTimeout(() => setExpiredVisit(navigation.read.visit), Math.max(0, navigation.read.deferUntil - performance.now()));
+        return () => window.clearTimeout(timer);
+    }, [navigation, deferredNavigation]);
+    const visibleNavigation = expiredVisit === navigation.read.visit ? navigation : deferredNavigation;
     const navigating = navigation !== visibleNavigation;
     const route = navigation.route;
     const setRoute = (next: Route) => {
@@ -266,7 +277,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
                         <div className="route-content" inert={navigating}>
-                            <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
+                            <Suspense fallback={<PageLoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
                                     <RouteErrorBoundary key={visibleNavigation.read.visit}><RouteContent
                                         client={client}
@@ -468,7 +479,7 @@ function CapabilityRoute({ required, children }: { required: readonly string[]; 
     const { t } = useTranslation();
     const { missing, state } = useCapabilityCheck(required);
     if (state === "checking") {
-        return <RouteState kind="loading" title={t("Loading")} detail={t("Checking daemon capabilities.")} />;
+        return <PageLoadingState title={t("Loading")} detail={t("Checking daemon capabilities.")} />;
     }
     if (state === "status-unavailable") {
         return children;

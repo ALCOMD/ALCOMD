@@ -1,15 +1,20 @@
 # 项目状态
 
-最后更新：2026-11-07
+最后更新：2026-11-08
 
 ## 当前阶段
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
 - `main` 源码使用 [State29](../specs/storage/state-v29.md) 与 [Config12](../specs/config/settings-v12.md)。State29 增加仓库显示名。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
-- 本机 Core 最近一次有记录的部署基于 `0a73acca`，报告 State29 / Config12 和 `ready`，已核对九组业务读取。证据位于 `target/m7-core-boundary-update-20261107/`。
+- 此前 Core 部署基于 `0a73acca`，报告 State29 / Config12 和 `ready`，已核对九组业务读取。历史证据位于 `target/m7-core-boundary-update-20261107/`；当前新路径运行环境见下方记录。
 - 随后的 GUI 单独更新基于 `0a73acca` 加文件选择器工作树改动，记录了窗口响应、GUI profile 和同一 Core 进程。证据位于 `target/m7-shared-file-picker-update-20261107/`。CLI 仍匹配 `7fe5f157` 部署记录中的产物摘要，见 `target/m7-repository-core-update-20261107/`。各自的证据只覆盖对应构建。
-- 本机最近一次 GUI 部署使用 `34cac0a2` 加当时文件选择器工作树修改，证据位于 `target/m7-file-picker-integration-update-20261107/`。本轮验证后恢复原 Core/GUI 二进制、数据目录和 profile；九组业务读取一致，Unity 进程未变，没有另行部署。
+- 此前一次 GUI 部署使用 `34cac0a2` 加当时文件选择器工作树修改，证据位于 `target/m7-file-picker-integration-update-20261107/`。当轮验证后恢复原 Core/GUI 二进制、数据目录和 profile；九组业务读取一致，Unity 进程未变，没有另行部署。
+- 2026-11-08 当前工作树将所有页面的切页首读等待统一限制为 **100ms**，超时显示目标页加载状态，不再无限停留于旧页。项目页先显示标题/工具栏，再独立加载列表或卡片；项目管理页的元数据与软件包首屏共用剩余预算，超时只让包列表继续读取同一个请求。旧响应隔离、分页/修订/权限及操作资格保持。前端全工作区检查与构建通过；浏览器扩展轮覆盖 150 项，其中 149 通过、1 项旧等待时序断言失败，修正测试后导航/管理页 **25/25** 通过；项目初始读隔离收束后导航/项目修改时间 **24/24** 通过，未变范围复用前轮结果，均无自动重试或跳过。证据位于 `target/m7-package-navigation-100ms-20261108/`。本轮未替换或重启原生 GUI/Core，未操作 Unity；Rust/远端 CI 未重跑，M7/H7 状态保持。
+- 上一次 GUI 部署使用 `aced843c` 加软件包排序及“立即显示管理页基础内容、仅软件包列表延后加载”工作树修改，原 profile 保留，前端检查/构建、相关测试 **92/92** 及 Tauri debug no-bundle 构建通过。当时记录 GUI PID260640、原 Core PID218092；证据位于 `target/m7-package-list-loading-20261108/`，更早整页加载方案位于 `target/m7-package-navigation-20261108/`。该原生构建不包含当前全局 100ms 修改，浏览器结果不代替本机窗口内部人工验收。
+- 所有者随后要求重建并打开当前 GUI：Tauri debug no-bundle 构建通过，复用前端的五份源码及 JS/CSS 摘要与已验证输入一致。新窗口 PID255916 已打开且响应，产物 SHA256 `62DAF418ED7506339CF757AC09CA0BD33B62F93D6BC5B7FE8D1D7C27B97BAD55`。重开前未发现 GUI/Core 进程；此前数据目录 `target/m7-icon-acceptance-20260906/data` 和 WebView profile 均不存在。窗口使用本轮独立临时 profile，VCC 注册关闭；尚未启动 Core、恢复备份或替换数据，数据来源等待所有者指定，不能计作实际项目页面交互通过。启动证据位于 `target/m7-package-navigation-100ms-20261108/native-reopen/`。
+- 所有者已允许新路径，当前 Core locked debug 构建通过，PID263632 使用 `target/m7-package-navigation-100ms-20261108/native-reopen/data` 初始化新数据并报告 `ready`，自动发现 1 个项目，未恢复旧备份。GUI PID255916 按要求保持运行，可用现有“重新连接并重试”入口连接；桌面控制未获准操作该 GUI，未验证原生按钮后的结果。Core 及 GUI 身份、只读 RPC 证据仍在上述 `native-reopen/`。
+- 当前源码新增整页加载条：4px Material 不定进度条位于主内容画布顶部，沿用主题和减少动画设置；局部列表/弹窗加载边界保持。前端检查/构建通过；67 项范围首轮 64 通过、3 项新增测试的宿主定位错误，修正测试后导航/管理页 **28/28** 通过，未变产品源码和其余 39 项复用首轮结果，零自动重试/跳过。证据位于 `target/m7-page-loading-bar-20261108/`。现有原生 GUI 尚未重建进该加载条，M7/H7 人工签收保持待定。
 - 本轮源码整合候选为 `213d0d2`：独立文件/文件夹选择内容接入仓库列表导入、模板导入、添加已有项目和用户软件包登记；调用方负责确认、预览及弹窗生命周期。另同步旧浏览器预期、State29 精确断言，以及 Config12 和已有平台功能的元数据校验。只有标准 `main` 工作树，本地归档分支均为其祖先，无 stash；截图及生成材料保留在本地。
 - 该候选的完整 Rust fmt、严格 workspace Clippy、workspace 测试及仓库检查通过，测试汇总 772 通过、13 项既有显式忽略。前端全工作区检查/构建和 Chromium **514/514** 通过，零重试、零跳过；元数据及 7 组内存反例通过。指纹已核对各验证范围的输入未变；早期失败轮继续保留在 `target/m7-main-integration-20261107T040906Z/`。原生系统选择窗口仍待人工核对。
 - `e5ede89f` 的 [CodeQL 42340358565](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358565) 四语言通过，[CI 42340358982](https://github.com/ALCOMD/ALCOMD/actions/runs/42340358982) 三平台未通过：Unix 测试模块位置和 Windows 专用 HTTP 测试钩子的编译范围触发严格 Clippy；Windows 两项设置测试争用用户 IPC 端点。`de3c06a`、`41a1653` 修正这三处测试边界，保留原断言及生产端点合同。默认并行 workspace 回归 772 通过、13 项既有忽略，两线程设置 IPC 额外三轮共 6 项通过，fmt 和受影响严格 Clippy 通过。原 Core、数据和 profile 保留，GUI 维持原先关闭；Unity 原有编辑器新增导入子进程，清单不完全相同，未操作这些进程。证据位于 `target/m7-ci-e5ede89f-20261107/`；后续 Hosted 结果按实际推送 SHA 从 [Actions](https://github.com/ALCOMD/ALCOMD/actions?query=branch%3Amain) 核对。

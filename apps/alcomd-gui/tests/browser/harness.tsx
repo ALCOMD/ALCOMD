@@ -53,6 +53,7 @@ declare global {
         autoDiscoveryProjects: ProjectSnapshot[];
         projectListReads: number;
         resumeProjectPoll?: () => void;
+        resumeProjectsList?: (error?: string) => void;
         unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         repositoryPackageRequests: Array<{ repositoryId: string; cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1] }>;
@@ -66,6 +67,8 @@ declare global {
         resumeCandidateVersions?: () => void;
         resumeCandidateSummary?: () => void;
         resumeCandidateFilter?: () => void;
+        resumePackageCandidates?: (error?: string) => void;
+        resumePackageProject?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
@@ -624,8 +627,11 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
-    projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): ReturnType<GuiRpcClient["projectsList"]> {
+    async projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): ReturnType<GuiRpcClient["projectsList"]> {
         window.projectListReads += 1;
+        if (query.has("holdProjectsList") && window.resumeProjectsList === undefined) {
+            await new Promise<void>((resolve, reject) => { window.resumeProjectsList = (code) => code === undefined ? resolve() : reject({ code }); });
+        }
         const page = (projects: ProjectSnapshot[]) => projectListPage(projects, cursor, view, expectedViewSequence, this.mode === "favorite-pages");
         if (query.has("auto-projects")) {
             const projects = [project(), ...window.autoDiscoveryProjects].map((item) => item.projectId !== undefined && this.projectFavorites.has(item.projectId)
@@ -667,7 +673,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("hold-project-refresh") && this.createdProjects.length > 0) return new Promise((resolve) => window.addEventListener("test-project-refresh-ready", () => resolve(result), { once: true }));
         return this.value(result);
     }
-    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
+    async projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
+        if (query.has("holdPackageProject") && window.resumePackageProject === undefined) {
+            await new Promise<void>((resolve) => { window.resumePackageProject = resolve; });
+        }
         const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
         if (this.projectLaunchTimes.has(projectId)) value.lastModifiedAtMs = this.projectLaunchTimes.get(projectId)!;
         if (query.get("twoInstalled")) {
@@ -935,6 +944,12 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
+        if (query.has("holdPackageCandidates") && params.view.kind === "summary" && !params.cursor
+            && !params.view.filter && params.view.bulkPackageIds === undefined && window.resumePackageCandidates === undefined) {
+            await new Promise<void>((resolve, reject) => {
+                window.resumePackageCandidates = (code) => code === undefined ? resolve() : reject({ code });
+            });
+        }
         if (params.view.kind === "summary" && params.view.filter?.search
             && params.view.filter.search === query.get("deferCandidateFilter")) {
             await new Promise<void>((resolve) => { window.resumeCandidateFilter = resolve; });

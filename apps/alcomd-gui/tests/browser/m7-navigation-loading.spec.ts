@@ -29,6 +29,110 @@ function navigation(page: Page, name: string) {
     });
 }
 
+for (const width of [480, 1440]) {
+    test(`Whole-page loading stays at the content canvas top at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await open(page, "holdSettings=1&armSettingsHold=1&motion=full");
+        await page.evaluate(() => window.dispatchEvent(new Event("test-settings-hold")));
+        await navigation(page, "Settings").click();
+        const loading = page.locator(".page-loading-state");
+        const progress = loading.getByRole("progressbar", { name: "Loading page…", exact: true });
+        await expect(progress).toBeVisible();
+        await expect(page.locator(".projects-page")).toBeHidden();
+        await expect(progress).not.toHaveAttribute("aria-valuenow", /.+/);
+        const canvasBounds = (await page.locator("#main-content").boundingBox())!;
+        const progressBounds = (await progress.boundingBox())!;
+        expect(Math.abs(progressBounds.x - canvasBounds.x)).toBeLessThan(1);
+        expect(Math.abs(progressBounds.y - canvasBounds.y)).toBeLessThan(1);
+        expect(Math.abs(progressBounds.width - canvasBounds.width)).toBeLessThan(1);
+        expect(progressBounds.height).toBe(4);
+        await expect(loading).toHaveCSS("pointer-events", "none");
+        await expect(page.locator("#primary-navigation .page-loading-state")).toHaveCount(0);
+        await expect(page.locator(".route-content > .loading-state")).toHaveCount(0);
+        const animation = await loading.locator("md-linear-progress").evaluate((element) => getComputedStyle(element.shadowRoot!.querySelector(".primary-bar")!).animationName);
+        expect(animation).toContain("primary-indeterminate-translate");
+        await page.screenshot({ path: test.info().outputPath("page-top-loading-bar.png") });
+        await page.evaluate(() => window.dispatchEvent(new Event("test-settings-ready")));
+        await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
+        await expect(loading).toHaveCount(0);
+    });
+}
+
+test("Whole-page loading honors reduced motion while retaining its progress semantics", async ({ page }) => {
+    await open(page, "holdSettings=1&armSettingsHold=1&motion=reduced");
+    await page.evaluate(() => window.dispatchEvent(new Event("test-settings-hold")));
+    await navigation(page, "Settings").click();
+    const loading = page.locator(".page-loading-state");
+    const progress = loading.getByRole("progressbar", { name: "Loading page…", exact: true });
+    await expect(progress).toBeVisible();
+    await expect(loading).toHaveAttribute("aria-busy", "true");
+    await expect.poll(() => loading.locator("md-linear-progress").evaluate((element) => getComputedStyle(element.shadowRoot!.querySelector(".primary-bar")!).animationDuration)).toBe("1e-06s");
+    await expect(loading).toContainText("Loading page…");
+});
+
+for (const view of ["list", "grid"] as const) {
+    test(`Projects ${view} shows its toolbar while the initial rows are still loading`, async ({ page }) => {
+        await page.addInitScript((mode) => window.localStorage.setItem("alcomd.gui.projects.view", mode), view);
+        await page.goto("/browser-harness.html?route=%2Frepositories&state=ready&holdProjectsList=1");
+        await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
+        await navigation(page, "Projects").click();
+        await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeFocused();
+        await expect(page.getByRole("searchbox", { name: "Search projects", exact: true })).toBeEnabled();
+        await expect(page.getByRole("button", { name: view === "list" ? "List view" : "Grid view", exact: true })).toBeEnabled();
+        await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeEnabled();
+        await expect(page.locator(".projects-content")).toHaveAttribute("aria-busy", "true");
+        await expect(page.locator(".projects-empty")).toHaveCount(0);
+        await expect(page.getByRole("table", { name: "Projects", exact: true })).toHaveCount(0);
+        await expect(page.locator(".project-card")).toHaveCount(0);
+        const title = await page.locator("#route-title").elementHandle();
+        const search = page.getByRole("searchbox", { name: "Search projects", exact: true });
+        await search.focus();
+        await page.evaluate(() => window.resumeProjectsList?.());
+        await expect(page.locator(view === "list" ? ".projects-list" : ".projects-grid")).toBeVisible();
+        await expect(page.locator(".projects-content")).toHaveAttribute("aria-busy", "false");
+        await expect(search).toBeFocused();
+        expect(await title!.evaluate((element) => element.isConnected)).toBe(true);
+        expect(await page.evaluate(() => window.projectListReads)).toBe(1);
+    });
+}
+
+test("Projects search made before the initial rows arrive wins over the old initial read", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&holdProjectsList=1");
+    const search = page.getByRole("searchbox", { name: "Search projects", exact: true });
+    await search.fill("no-project-matches-this");
+    await expect(search).toHaveValue("no-project-matches-this");
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toHaveCount(0);
+    await page.evaluate(() => window.resumeProjectsList?.());
+    await expect(page.getByRole("heading", { name: "No matching projects", exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.getByRole("heading", { name: "No matching projects", exact: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toHaveCount(0);
+    await expect(search).toHaveValue("no-project-matches-this");
+    await expect(search).toBeFocused();
+});
+
+test("Projects initial read failure preserves the toolbar and retries the list", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&holdProjectsList=1");
+    await expect(page.getByRole("searchbox", { name: "Search projects", exact: true })).toBeEnabled();
+    await page.evaluate(() => window.resumeProjectsList?.("internal_error"));
+    await expect(page.getByRole("alert")).toContainText("internal_error");
+    await expect(page.getByRole("searchbox", { name: "Search projects", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Reconnect and retry", exact: true }).click();
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("A late initial Projects list cannot replace another page", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&holdProjectsList=1");
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeFocused();
+    await navigation(page, "Resources").click();
+    await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
+    await page.evaluate(() => window.resumeProjectsList?.());
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeFocused();
+    await expect(page.locator(".projects-page")).toHaveCount(0);
+});
+
 async function frames(page: Page) {
     await page.evaluate(() => {
         window.pageFrames = [];
@@ -48,7 +152,8 @@ async function frames(page: Page) {
 }
 
 for (const origin of ["Projects", "Resources", "Logs"]) {
-    test(`${origin} to Settings keeps populated frames until the settings read settles`, async ({ page }) => {
+    test(`${origin} to Settings waits at most 100ms before showing the destination loading state`, async ({ page }) => {
+        await page.clock.install();
         await open(page, "holdSettings=1&armSettingsHold=1");
         if (origin !== "Projects") {
             await navigation(page, origin).click();
@@ -56,44 +161,59 @@ for (const origin of ["Projects", "Resources", "Logs"]) {
         }
         await page.evaluate(() => window.dispatchEvent(new Event("test-settings-hold")));
         await frames(page);
-        await navigation(page, "Settings").click();
+        await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+        await navigation(page, "Settings").evaluate((button: HTMLElement) => button.click());
         await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
         await expect(page.locator(".route-content")).toHaveAttribute("inert", "");
         await expect(page.locator(".route-content #route-title")).toHaveText(origin);
         await expect(page.locator(".route-content .settings-workspace")).toHaveCount(0);
-        await page.waitForTimeout(220);
+        await page.clock.runFor(99);
         await expect(page.locator(".route-content #route-title")).toHaveText(origin);
         await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
+        await page.clock.runFor(1);
+        await expect(page.locator(".route-content > .page-loading-state md-linear-progress")).toBeVisible();
+        await expect(page.locator(".route-content #route-title")).toBeHidden();
+        await expect(page.locator(".route-content")).not.toHaveAttribute("inert", "");
         await page.evaluate(() => window.dispatchEvent(new Event("test-settings-ready")));
+        await page.clock.resume();
         await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
         await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
         await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
         const samples = await page.evaluate(() => window.pageFrames);
-        expect(samples.every((frame) => frame.populated && frame.opaque && (!frame.settings || frame.unityRows === 1))).toBe(true);
+        expect(samples.every((frame) => frame.opaque && (!frame.settings || frame.unityRows === 1))).toBe(true);
         expect(await page.evaluate(() => window.pageAnimationCalls)).toBe(0);
     });
 }
 
-test("Settings waits for Unity without loading or waiting for repository options", async ({ page }) => {
+test("Settings uses whole-page loading after 100ms while waiting for Unity, without requesting repositories", async ({ page }) => {
+    await page.clock.install();
     await open(page, "holdSettings=1&holdUnity=1&holdRepositories=1");
     await frames(page);
-    await navigation(page, "Settings").click();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+    await navigation(page, "Settings").evaluate((button: HTMLElement) => button.click());
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
     await page.evaluate(() => window.dispatchEvent(new Event("test-settings-ready")));
-    await page.waitForTimeout(100);
-    await expect(page.locator(".route-content .projects-page")).toBeVisible();
+    await page.clock.runFor(100);
+    await expect(page.locator(".route-content .projects-page")).toBeHidden();
+    await expect(page.locator(".route-content > .page-loading-state md-linear-progress")).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-unity-ready")));
+    await page.clock.resume();
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
     await expect(page.getByRole("region", { name: "Packages", exact: true })).toHaveCount(0);
-    expect(await page.evaluate(() => window.pageFrames.every((frame) => frame.populated && frame.opaque && (!frame.settings || frame.unityRows === 1)))).toBe(true);
+    expect(await page.evaluate(() => window.pageFrames.every((frame) => frame.opaque && (!frame.settings || frame.unityRows === 1)))).toBe(true);
 });
 
 test("abandoned pending reads cannot replace the latest route", async ({ page }) => {
+    await page.clock.install();
     await open(page, "holdSettings=1");
-    await navigation(page, "Settings").click();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+    await navigation(page, "Settings").evaluate((button: HTMLElement) => button.click());
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
-    await navigation(page, "Logs").click();
+    await page.clock.runFor(100);
+    await expect(page.locator(".route-content > .page-loading-state md-linear-progress")).toBeVisible();
+    await navigation(page, "Logs").evaluate((button: HTMLElement) => button.click());
+    await page.clock.resume();
     await expect(page.getByRole("table", { name: "Logs", exact: true })).toBeVisible();
     await page.evaluate(async () => {
         window.dispatchEvent(new Event("test-settings-ready"));
@@ -105,10 +225,15 @@ test("abandoned pending reads cannot replace the latest route", async ({ page })
 });
 
 test("a failed pending read commits a real error with a retry action", async ({ page }) => {
+    await page.clock.install();
     await open(page, "holdRepositories=1");
-    await navigation(page, "Resources").click();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+    await navigation(page, "Resources").evaluate((button: HTMLElement) => button.click());
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
+    await page.clock.runFor(100);
+    await expect(page.locator(".route-content > .page-loading-state md-linear-progress")).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-repositories-ready", { detail: "error" })));
+    await page.clock.resume();
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("Core is unavailable. Reconnect and check any submitted task before repeating a change.");
     await expect(alert).toContainText("daemon_unavailable");

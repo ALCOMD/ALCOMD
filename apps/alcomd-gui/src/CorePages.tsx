@@ -25,7 +25,7 @@ import {
     viewGridIcon,
     viewListIcon
 } from "@alcomd/ui/icons";
-import { use, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type {
     OfficialSettings,
@@ -64,8 +64,8 @@ import { displayChildPath, displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
-import { LoadingState, useDelayedPending } from "./LoadingState";
-import { LocalPageReadContext, useInitialPageRead, usePageReadPromise } from "./PageRead";
+import { LoadingState, PageLoadingState, useDelayedPending } from "./LoadingState";
+import { LocalPageReadContext, PageReadContext, useInitialPageRead, usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -98,6 +98,7 @@ interface ResourcePageProps<T> {
 
 function ResourcePage<T>({ load: sourceLoad, children, empty, emptyTitle = "Nothing here yet", changes = [] }: ResourcePageProps<T>) {
     const { t, locale } = useTranslation();
+    const localRead = useContext(LocalPageReadContext);
     const events = useCoreEvents();
     const scopeKey = changes.join("|");
     const load = useCallback(() => events && scopeKey ? events.consistentRead(scopeKey.split("|"), sourceLoad) : sourceLoad(), [events, scopeKey, sourceLoad]);
@@ -147,7 +148,8 @@ function ResourcePage<T>({ load: sourceLoad, children, empty, emptyTitle = "Noth
     useEffect(() => { if (state.value !== undefined) events?.noteDisplayedData(); }, [events, state.value]);
     useEffect(() => () => { waiters.current.splice(0).forEach((waiter) => waiter.resolve()); }, []);
     if (state.loading) {
-        return <RouteState kind="loading" title={t("Loading")} detail={t("Reading the current ALCOMD state…")} />;
+        return localRead ? <LoadingState title={t("Loading")} detail={t("Reading the current ALCOMD state…")} />
+            : <PageLoadingState title={t("Loading")} detail={t("Reading the current ALCOMD state…")} />;
     }
     if (state.error !== undefined && state.value === undefined) {
         return <ErrorState error={state.error} retry={refresh} />;
@@ -234,13 +236,12 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         };
         return coreEvents ? coreEvents.consistentRead(["projects"], readCurrent) : readCurrent();
     }, [client, coreEvents, search, sort, descending]);
-    const initial = use(usePageReadPromise("primary", load));
+    const initial = usePageReadPromise("primary", load);
     const [state, setState] = useState<{
         error?: RpcError;
         loading: boolean;
         projects: ProjectSnapshot[];
-    }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [],
-        error: initial.kind === "error" ? safeError(t, locale, initial.error) : undefined }));
+    }>({ loading: true, projects: [] });
     const [view, setView] = useState<"list" | "grid">(() => {
         try {
             return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
@@ -262,7 +263,20 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const listError = useRef<unknown>(undefined);
     const loadRef = useRef(load);
     const lastViewLoad = useRef(load);
+    const initialLoad = useRef(load).current;
     loadRef.current = load;
+    // The toolbar does not depend on project rows. Share the visit's first read,
+    // but allow it to settle after the route commits; newer filters/reads win.
+    useEffect(() => {
+        let active = true;
+        const generation = listReadGeneration.current;
+        void initial.then((result) => {
+            if (!active || listReadGeneration.current !== generation || loadRef.current !== initialLoad) return;
+            setState(result.kind === "ready" ? { loading: false, projects: result.value }
+                : { loading: false, projects: [], error: normalizeRequestError(result.error) });
+        });
+        return () => { active = false; };
+    }, [initial, initialLoad]);
     useEffect(() => () => {
         listReadGeneration.current += 1;
         queuedList.current = false;
@@ -309,8 +323,11 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     }, [load, refresh]);
 
     const retryProjects = useCoreInvalidation("projects:list", ["projects"], async () => { await refresh(); if (listError.current !== undefined) throw listError.current; });
-    useViewReadingPosition("projects", root, state.projects);
-    useEffect(() => { coreEvents?.noteDisplayedData(); coreEvents?.writeView("projects", state.projects, state.projects.length); }, [coreEvents, state.projects]);
+    useViewReadingPosition("projects", root, state.projects, !state.loading);
+    useEffect(() => {
+        if (state.loading) return;
+        coreEvents?.noteDisplayedData(); coreEvents?.writeView("projects", state.projects, state.projects.length);
+    }, [coreEvents, state.projects, state.loading]);
 
     const projects = state.projects;
     const updateProject = () => { void refresh(); };
@@ -342,7 +359,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     };
 
     return <>{(
-        <section className="projects-page" aria-busy={state.loading} ref={root}>
+        <section className="projects-page" ref={root}>
             <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                 <Button onClick={toggleView} type="button" variant="text">
@@ -375,11 +392,11 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                         <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />
                     </IconButton>
                     <span className="alcomd-filter-bar-status" role="status" aria-live="polite">
-                        {t(projects.length === 1 ? "{count} project" : "{count} projects", { count: projects.length })}
+                        {state.loading ? null : t(projects.length === 1 ? "{count} project" : "{count} projects", { count: projects.length })}
                     </span>
                 </div>
             ) : null}
-            <div className="projects-content">
+            <div className="projects-content" aria-busy={state.loading}>
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
                 {state.error !== undefined ? <ErrorState error={state.error} retry={retryProjects} /> : null}
                 {!state.loading && state.error === undefined && projects.length === 0 ? (
@@ -982,7 +999,7 @@ export function ProjectDetailPage(props: PageProps & { projectId: string }) {
 }
 
 export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
-    return <ProjectPackageWorkspace {...props} />;
+    return <ProjectDetailPage {...props} />;
 }
 
 interface PackageWorkspaceRow {
@@ -1142,9 +1159,10 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
 interface PackageWorkspaceValue {
     sourceSelectionKey: string;
     sourceRegistry: Record<string, string>;
-    candidates?: CandidateSummaryPage;
     candidateRequest?: ProjectCandidateRequest;
     candidateError?: string;
+    candidateRead?: Promise<PageReadResult<CandidateSummaryPage>>;
+    initialCandidates?: PageReadResult<CandidateSummaryPage>;
     launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
     repositories: RepositorySnapshot[];
@@ -1262,36 +1280,48 @@ async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnap
     return repositories;
 }
 
-async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, client: GuiRpcClient, projectId: string, includeUserPackages: boolean, canQuery: boolean, sourceSelections: Record<string, string>): Promise<PackageWorkspaceValue> {
+async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, client: GuiRpcClient, projectId: string, includeUserPackages: boolean, canQuery: boolean, sourceSelections: Record<string, string>, deferUntil?: number): Promise<PackageWorkspaceValue> {
     const project = (await client.projectGet(projectId)).project;
     if (project.revision === undefined) throw { code: "project_not_registered" };
     const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
     const candidateRequest: ProjectCandidateRequest = { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } };
-    const readFirstPage = async () => {
-        if (!canQuery) return { error: "capability_required" };
-        try {
-            return { page: await readCandidateSummaryPage(client, candidateRequest) };
-        } catch (caught) {
-            return { error: normalizeRequestError(caught).code };
-        }
-    };
-    const [repositories, settings, userPackages, launchOptions, firstPage] = await Promise.all([
+    const [repositories, settings, userPackages, launchOptions] = await Promise.all([
         listAllRepositories(client),
         client.settingsGet(),
         includeUserPackages ? listAllUserPackages(client) : Promise.resolve([]),
-        client.unityLaunchOptions(projectId, project.revision, true),
-        readFirstPage()
+        client.unityLaunchOptions(projectId, project.revision, true)
     ]);
     if (repositories.length > 4096) throw { code: "package_candidate_limit_exceeded" };
-    let { page: candidates, error: candidateError } = firstPage;
-    if (candidates !== undefined && candidates.snapshot.configRevision !== settings.revision) {
-        candidates = undefined;
-        candidateError = "package_candidate_evidence_stale";
-    }
     const sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {};
     for (const repository of repositories) if (repository.repositoryId) sourceRegistry["repository:" + repository.repositoryId] = repositoryDisplayName(t, repository, sourceText(t, locale, repository));
     for (const local of userPackages) sourceRegistry["user-package:" + local.userPackageId] = local.displayName ?? t("Local / User Package");
-    return { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
+    if (!canQuery) return { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), candidateError: "capability_required" };
+    // The initial route may wait only for the remainder of its 100ms budget.
+    // Keep the same settled read after timeout so mounting never duplicates it.
+    const candidateRead = readCandidateSummaryPage(client, candidateRequest).then(
+        (first): PageReadResult<CandidateSummaryPage> => first.snapshot.configRevision === settings.revision
+            ? { kind: "ready", value: first } : { kind: "error", error: { code: "package_candidate_evidence_stale" } },
+        (error: unknown): PageReadResult<CandidateSummaryPage> => ({ kind: "error", error })
+    );
+    const remaining = (deferUntil ?? 0) - performance.now();
+    let initialCandidates: PageReadResult<CandidateSummaryPage> | undefined;
+    if (remaining > 0) {
+        let timer: number | undefined;
+        try {
+            initialCandidates = await Promise.race([candidateRead, new Promise<undefined>((resolve) => { timer = window.setTimeout(resolve, remaining); })]);
+        } finally {
+            window.clearTimeout(timer);
+        }
+    }
+    return { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), candidateRequest, candidateRead, initialCandidates };
+}
+
+type PackageCandidateReadState = { value: PackageWorkspaceValue; first?: CandidateSummaryPage; candidates?: CandidateSummarySet; error?: string };
+
+function initialPackageCandidates(value: PackageWorkspaceValue): PackageCandidateReadState | undefined {
+    const initial = value.initialCandidates;
+    return initial?.kind === "ready" ? { value, first: initial.value, ...(initial.value.nextCursor === null ? { candidates: initial.value } : {}) }
+        : initial?.kind === "error" ? { value, error: normalizeRequestError(initial.error).code } : undefined;
 }
 
 function PackageWorkspaceData({ client, value, filter, selectedIds, children }: {
@@ -1301,6 +1331,7 @@ function PackageWorkspaceData({ client, value, filter, selectedIds, children }: 
     selectedIds: string[];
     children(data: {
         candidates: CandidateSummarySet | undefined;
+        displayedItems: PackageCandidateSummary[] | undefined;
         candidateError: string | undefined;
         candidatesPending: boolean;
         filteredItems: PackageCandidateSummary[] | undefined;
@@ -1311,27 +1342,41 @@ function PackageWorkspaceData({ client, value, filter, selectedIds, children }: 
         bulkError: string | undefined;
     }): ReactNode;
 }) {
-    const [complete, setComplete] = useState<{ value: PackageWorkspaceValue; candidates?: CandidateSummarySet; error?: string }>();
+    const [complete, setComplete] = useState<PackageCandidateReadState | undefined>(() => initialPackageCandidates(value));
     const [filtered, setFiltered] = useState<{ value: PackageWorkspaceValue; filter: CandidateFilter; items?: PackageCandidateSummary[]; error?: string }>();
     const [bulk, setBulk] = useState<{ value: PackageWorkspaceValue; selectedIds: string[]; result?: CandidateBulkActions; error?: string }>();
-    const needsPages = value.candidates !== undefined && value.candidates.nextCursor !== null;
-    const resolved = complete?.value === value ? complete : undefined;
-    const candidates = resolved === undefined ? value.candidates : resolved.candidates;
-    const candidatesPending = needsPages && resolved === undefined;
+    const resolved = complete?.value === value ? complete : initialPackageCandidates(value);
+    const first = resolved?.first;
+    const candidates = resolved?.error === undefined ? resolved?.candidates ?? first : undefined;
+    const previousCandidates = complete !== undefined && complete.value.project.projectId === value.project.projectId ? complete.candidates ?? complete.first : undefined;
+    const displayedItems = (candidates ?? previousCandidates)?.items;
+    const candidatesPending = value.candidateRequest !== undefined && resolved?.error === undefined && resolved?.candidates === undefined;
     useEffect(() => {
-        const { candidates: first, candidateRequest } = value;
-        if (!first || !candidateRequest || first.nextCursor === null) return;
+        const { candidateRequest, candidateRead } = value;
+        if (!candidateRequest || !candidateRead) return;
+        if (value.initialCandidates?.kind === "error" || (value.initialCandidates?.kind === "ready" && value.initialCandidates.value.nextCursor === null)) {
+            setComplete((previous) => previous?.value === value ? previous : initialPackageCandidates(value));
+            return;
+        }
         let active = true;
-        void finishCandidateSummary(client, candidateRequest, first, () => active).then((candidates) => {
-            if (!active || candidates === undefined) return;
-            setComplete({ value, candidates });
+        void candidateRead.then(async (result) => {
+            if (!active) return;
+            if (result.kind === "error") throw result.error;
+            const first = result.value;
+            if (first.nextCursor === null) {
+                setComplete({ value, first, candidates: first });
+                return;
+            }
+            setComplete({ value, first });
+            const candidates = await finishCandidateSummary(client, candidateRequest, first, () => active);
+            if (active && candidates !== undefined) setComplete({ value, first, candidates });
         }).catch((caught: unknown) => {
             if (active) setComplete({ value, error: normalizeRequestError(caught).code });
         });
         return () => { active = false; };
     }, [client, value]);
     useEffect(() => {
-        const { candidates: first, candidateRequest } = value;
+        const { candidateRequest } = value;
         if (!filter || !first || candidateRequest?.view.kind !== "summary") return;
         const request: ProjectCandidateRequest = {
             ...candidateRequest,
@@ -1350,9 +1395,9 @@ function PackageWorkspaceData({ client, value, filter, selectedIds, children }: 
             });
         }, 120);
         return () => { active = false; window.clearTimeout(timeout); };
-    }, [client, filter, value]);
+    }, [client, filter, first, value]);
     useEffect(() => {
-        const { candidates: first, candidateRequest } = value;
+        const { candidateRequest } = value;
         if (!first || candidateRequest?.view.kind !== "summary") return;
         const request: ProjectCandidateRequest = {
             ...candidateRequest,
@@ -1372,15 +1417,16 @@ function PackageWorkspaceData({ client, value, filter, selectedIds, children }: 
             });
         }, selectedIds.length ? 80 : 0);
         return () => { active = false; window.clearTimeout(timer); };
-    }, [client, selectedIds, value]);
+    }, [client, selectedIds, first, value]);
     const visible = filtered?.value === value && filtered.filter === filter ? filtered : undefined;
     const currentBulk = bulk?.value === value ? bulk : undefined;
     return <>{children({
         candidates,
+        displayedItems,
         candidateError: resolved?.error ?? value.candidateError,
         candidatesPending,
         filteredItems: visible?.items,
-        filterPending: filter !== undefined && value.candidates !== undefined && visible === undefined,
+        filterPending: filter !== undefined && value.candidateRequest !== undefined && resolved?.error === undefined && visible === undefined,
         filterError: visible?.error,
         allBulk: currentBulk?.result,
         selectedBulk: currentBulk?.selectedIds === selectedIds ? currentBulk?.result : undefined,
@@ -1391,6 +1437,7 @@ function PackageWorkspaceData({ client, value, filter, selectedIds, children }: 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
     const current = useActionScope(client);
+    const pageRead = useContext(PageReadContext);
 
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
@@ -1409,7 +1456,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         };
     }, [search, filter, sourceFilter]);
     const [sourceSelections, setSourceSelections] = useState<Record<string, string>>({});
-    const load = useCallback(() => loadPackageWorkspace(t, locale, client, projectId, canUseUserPackages, canQueryCandidates, sourceSelections), [canUseUserPackages, canQueryCandidates, client, projectId, sourceSelections, t, locale]);
+    const load = useCallback(() => loadPackageWorkspace(t, locale, client, projectId, canUseUserPackages, canQueryCandidates, sourceSelections, pageRead?.deferUntil), [canUseUserPackages, canQueryCandidates, client, projectId, sourceSelections, t, locale, pageRead]);
     const [evidenceInvalid, setEvidenceInvalid] = useState(false);
     const [packageMutationBusy, setPackageMutationBusy] = useState(false);
     useEffect(() => setEvidenceInvalid(false), [load]);
@@ -1449,9 +1496,9 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         }
     };
     return (
-        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} selectedIds={bulkSelection} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError, allBulk, selectedBulk, bulkError }) => {
+        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} selectedIds={bulkSelection} value={value}>{({ candidates, displayedItems, candidateError, candidatesPending, filteredItems, filterPending, filterError, allBulk, selectedBulk, bulkError }) => {
             const { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
-            const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry, repositories);
+            const workspaceRows = candidatesPending && displayedItems === undefined ? [] : packageWorkspaceRows(project, displayedItems, sourceRegistry, repositories);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };

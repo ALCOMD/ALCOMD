@@ -7,7 +7,7 @@ type PageReadKey = "primary" | "settings.unity" | "settings.repositories";
 
 /** At most three initial read slots per visit, shared across render retries, never across visits. */
 export function createPageRead() {
-    return { visit: ++nextVisit, results: new Map<PageReadKey, Promise<PageReadResult<unknown>>>() };
+    return { visit: ++nextVisit, deferUntil: performance.now() + 100, results: new Map<PageReadKey, Promise<PageReadResult<unknown>>>() };
 }
 
 export const PageReadContext = createContext<ReturnType<typeof createPageRead> | undefined>(undefined);
