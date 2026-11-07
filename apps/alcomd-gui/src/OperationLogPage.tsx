@@ -55,7 +55,7 @@ export function OperationLogPage({ entries, actors, filters, pending = false, er
     return <section aria-labelledby="route-title" className="utility-workspace page-surface--utility operation-log-page">
         <PageHeader title={t("Logs")}>
             <SearchField className="operation-log-search" label={t("Search logs")} placeholder={t("Search logs")}
-                maxLength={256} value={filters.search ?? ""} onInput={(search) => onFilterChange({ ...filters, search: search || undefined })} />
+                value={filters.search ?? ""} onInput={(search) => onFilterChange({ ...filters, search: search || undefined })} />
         </PageHeader>
         <div className="alcomd-filter-bar operation-log-filters" role="group" aria-label={t("Log filters")}>
             <Select className="operation-log-select" label={t("Initiator")} value={filters.actor ?? ""}

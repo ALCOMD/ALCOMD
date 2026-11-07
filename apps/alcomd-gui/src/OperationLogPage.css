@@ -1,6 +1,6 @@
 .operation-log-list { flex: 1; min-height: 0; }
 .operation-log-filters { flex-wrap: wrap; }
-.operation-log-search { flex: 0 1 22rem; min-width: 0; }
+.operation-log-search { flex: 0 1 22rem; min-width: 0; margin-inline-start: auto; }
 .operation-log-select { flex: 0 1 10rem; min-width: min(100%, 8rem); }
 .operation-log-page td { vertical-align: top; }
 .operation-log-page .operation-log-lines { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
