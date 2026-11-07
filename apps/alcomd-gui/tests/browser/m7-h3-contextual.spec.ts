@@ -169,11 +169,15 @@ test("Settings Unity errors stay with the action and a corrected registration su
     await expectRequestError(dialog.getByRole("alert"), "unity_installation_invalid");
     await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/Editors/Unity.exe");
     await expect(dialog.getByRole("alert")).toHaveCount(0);
+    // Removing the error resizes the dialog. Measure after its real animation,
+    // using actionability's stable-position check rather than a fixed delay.
+    await dialog.getByRole("button", { name: "Register", exact: true }).click({ trial: true });
     const before = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     await dialog.getByRole("button", { name: "Register", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h3Requests.some((r) => r.method === "unity.installations.register"))).toBe(true);
     await expect.poll(() => dialog.locator(".reminder").count()).toBe(0);
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click({ trial: true });
     const after = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     expect(after!.y).toBeCloseTo(before!.y, 0);
     expect(await requests(page, "unity.installations.register")).toHaveLength(2);
