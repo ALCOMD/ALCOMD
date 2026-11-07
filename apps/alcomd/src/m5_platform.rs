@@ -194,28 +194,6 @@ fn probe_output_version(value: &str) -> Result<&str, app::M5UnityError> {
     Ok(version)
 }
 
-#[cfg(test)]
-mod version_output_tests {
-    #[test]
-    fn version_output_requires_complete_version_and_only_optional_hash() {
-        for value in ["2022.3.22f1", "2022.3.22f1 (887be4894c44)"] {
-            assert_eq!(
-                super::probe_output_version(value).expect("version"),
-                "2022.3.22f1"
-            );
-        }
-        for value in [
-            "2022.3",
-            "version 2022.3.22f1",
-            "2022.3.22f1 unrelated",
-            "2022.3.22f1 (garbage)",
-            "2022.3.22f1 (887be4894c44) more",
-        ] {
-            assert!(super::probe_output_version(value).is_err(), "{value}");
-        }
-    }
-}
-
 #[cfg(windows)]
 fn editor_product_version(value: &str) -> Result<&str, app::M5UnityError> {
     let version = if let Some((version, revision)) = value.split_once('_') {
@@ -390,6 +368,28 @@ mod tests {
                     .code(),
                 app::M5UnityErrorCode::VersionUnverified
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod version_output_tests {
+    #[test]
+    fn version_output_requires_complete_version_and_only_optional_hash() {
+        for value in ["2022.3.22f1", "2022.3.22f1 (887be4894c44)"] {
+            assert_eq!(
+                super::probe_output_version(value).expect("version"),
+                "2022.3.22f1"
+            );
+        }
+        for value in [
+            "2022.3",
+            "version 2022.3.22f1",
+            "2022.3.22f1 unrelated",
+            "2022.3.22f1 (garbage)",
+            "2022.3.22f1 (887be4894c44) more",
+        ] {
+            assert!(super::probe_output_version(value).is_err(), "{value}");
         }
     }
 }
