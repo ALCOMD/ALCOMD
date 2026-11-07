@@ -482,6 +482,8 @@ Core 返回 `revision_conflict`，客户端可从首页重读。
 显示名适用于内置与用户仓库。输入最多 128 个 Unicode 标量值，拒绝控制字符。
 Core 去掉首尾空白，空值恢复默认名称。读取及写入结果中的 `displayName` 仅在设置覆盖值时出现。
 沿用仓库修订及幂等键，只有实际变化才写入 `repository.display-name-changed` 事件。
+已登记仓库的读取和写入结果提供 `actions.canRemove` 与 `actions.canEditAuthentication`。
+Core 结合调用者权限和仓库来源判定资格，并用 `builtin` 标识官方或精选来源。预览结果只描述读取到的来源。
 
 本机所有者可在 `repositories.inspect` 和 `repositories.register` 传入写入专用 `credentials`。
 `headers` 最多 16 项，完整凭据 JSON 上限 2560 字节。旧 `allowedOrigins` 字段被拒绝，旧凭据需重新输入。

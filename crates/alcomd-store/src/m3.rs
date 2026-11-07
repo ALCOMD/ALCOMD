@@ -1436,7 +1436,7 @@ pub(super) fn set_credential_reference(
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
-    if !matches!(current.observation.source, RepositorySource::Remote { .. }) {
+    if !alcomd_application::repository_supports_authentication(&current.observation.source) {
         return Err(M3Error::new(M3ErrorCode::RepositorySourceInvalid));
     }
     let next = expected.checked_next().ok_or_else(internal)?;

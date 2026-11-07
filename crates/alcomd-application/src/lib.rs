@@ -208,6 +208,37 @@ impl std::fmt::Debug for RepositoryCredentials {
 pub const VRCHAT_OFFICIAL_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101";
 pub const VRCHAT_CURATED_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102";
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BuiltinRepository {
+    Official,
+    Curated,
+}
+
+pub fn builtin_repository(id: RepositoryId) -> Option<BuiltinRepository> {
+    match id.to_string().as_str() {
+        VRCHAT_OFFICIAL_REPOSITORY_ID => Some(BuiltinRepository::Official),
+        VRCHAT_CURATED_REPOSITORY_ID => Some(BuiltinRepository::Curated),
+        _ => None,
+    }
+}
+
+pub fn can_remove_repository(access: &AccessContext, id: RepositoryId) -> bool {
+    builtin_repository(id).is_none() && access.require(Permission::RepositoriesManage).is_ok()
+}
+
+pub fn can_edit_repository_authentication(
+    access: &AccessContext,
+    record: &RepositoryRecord,
+) -> bool {
+    builtin_repository(record.repository_id).is_none()
+        && repository_supports_authentication(&record.observation.source)
+        && require_repository_credentials(access).is_ok()
+}
+
+pub fn repository_supports_authentication(source: &RepositorySource) -> bool {
+    matches!(source, RepositorySource::Remote { .. })
+}
+
 /// Conditional HTTP validators stored separately from semantic state.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepositoryValidators {
@@ -1762,10 +1793,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_repository_credentials(access)?;
-        if matches!(
-            id.to_string().as_str(),
-            VRCHAT_OFFICIAL_REPOSITORY_ID | VRCHAT_CURATED_REPOSITORY_ID
-        ) {
+        if builtin_repository(id).is_some() {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
@@ -2359,11 +2387,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         expected: Revision,
         key: IdempotencyKey,
     ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
-        require_m3(access, Permission::RepositoriesManage)?;
-        if matches!(
-            id.to_string().as_str(),
-            VRCHAT_OFFICIAL_REPOSITORY_ID | VRCHAT_CURATED_REPOSITORY_ID
-        ) {
+        if !can_remove_repository(access, id) {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
