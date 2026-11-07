@@ -250,14 +250,25 @@ class DeterministicGuiClient implements GuiRpcClient {
         fixture.reads.push(structuredClone(params));
         if (fixture.fail) throw { code: "daemon_unavailable", message: "" };
         const forward = params.afterSequence !== undefined;
-        const matches = fixture.entries.filter((entry) => forward ? entry.sequence > params.afterSequence!
-            : entry.sequence < (params.beforeSequence ?? Number.POSITIVE_INFINITY));
+        const { actor, outcome, type, search } = params.filter ?? {};
+        const query = search?.trim().toLowerCase();
+        const matches = fixture.entries.filter((entry) => {
+            if (forward ? entry.sequence <= params.afterSequence!
+                : entry.sequence >= (params.beforeSequence ?? Number.POSITIVE_INFINITY)) return false;
+            if ((actor && actor !== entry.actor) || (outcome && outcome !== entry.outcome)) return false;
+            const kind = entry.action === "projects.refresh" ? "read"
+                : entry.action === "projects.register" ? (entry.actor === "Core" ? "passive" : "write") : undefined;
+            if (type && type !== kind) return false;
+            return !query || [entry.actor, entry.action, entry.step, entry.outcome, kind, entry.target?.name, entry.target?.path, entry.details]
+                .some((value) => value?.toLowerCase().includes(query));
+        });
         matches.sort((a, b) => forward ? a.sequence - b.sequence : b.sequence - a.sequence);
         const entries = matches.slice(0, params.limit ?? 100);
         const hasMore = entries.length < matches.length;
         const nextSequence = hasMore ? entries.at(-1)?.sequence : undefined;
         if (!forward) entries.reverse();
-        return { entries, highWatermark: Math.max(0, ...fixture.entries.map((entry) => entry.sequence)), hasMore, nextSequence };
+        return { entries, actors: [...new Set(fixture.entries.map((entry) => entry.actor))].sort(),
+            highWatermark: Math.max(0, ...fixture.entries.map((entry) => entry.sequence)), hasMore, nextSequence };
     }
 
     subscribeEvents = browserCoreEvents.subscribe;

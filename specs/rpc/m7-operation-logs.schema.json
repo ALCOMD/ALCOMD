@@ -16,9 +16,19 @@
             "properties": {
                 "beforeSequence": {"$ref": "#/$defs/sequence"},
                 "afterSequence": {"$ref": "#/$defs/sequence"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 100},
+                "filter": {"$ref": "#/$defs/filter"}
             },
             "not": {"required": ["beforeSequence", "afterSequence"]}
+        },
+        "filter": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "search": {"type": "string", "maxLength": 256},
+                "actor": {"type": "string", "minLength": 1, "maxLength": 64},
+                "outcome": {"enum": ["started", "succeeded", "failed", "cancelled", "waiting"]},
+                "type": {"enum": ["read", "write", "passive", "open", "maintenance"]}
+            }
         },
         "target": {
             "type": "object", "additionalProperties": false, "required": ["kind"],
@@ -47,9 +57,10 @@
         },
         "result": {
             "type": "object", "additionalProperties": false,
-            "required": ["entries", "highWatermark", "hasMore"],
+            "required": ["entries", "actors", "highWatermark", "hasMore"],
             "properties": {
                 "entries": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/entry"}},
+                "actors": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
                 "highWatermark": {"$ref": "#/$defs/sequence"},
                 "hasMore": {"type": "boolean"},
                 "nextSequence": {"$ref": "#/$defs/sequence", "minimum": 1}

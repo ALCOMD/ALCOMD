@@ -1,3 +1,4 @@
+import type { LogFilter } from "@alcomd/sdk";
 import { useState } from "react";
 
 import { LocaleProvider, type SupportedLocale } from "../../src/i18n";
@@ -25,6 +26,7 @@ const samples: OperationLogRow[] = [
 export function OperationLogEvidence({ locale = "zh-CN" }: { locale?: SupportedLocale }) {
     const [entries, setEntries] = useState(samples);
     const [error, setError] = useState<string>();
+    const [filters, setFilters] = useState<LogFilter>({});
     window.logPreview = {
         replace: setEntries,
         fail: setError,
@@ -33,7 +35,8 @@ export function OperationLogEvidence({ locale = "zh-CN" }: { locale?: SupportedL
     return <LocaleProvider locale={locale}>
         <main style={{ height: "100vh", padding: 24, display: "flex", flexDirection: "column", gap: 12 }}>
             <p style={{ margin: 0 }}>界面样例，尚未接入 Core</p>
-            <OperationLogPage entries={entries} error={error} onRetry={() => { window.logPreview.retries++; setError(undefined); }} />
+            <OperationLogPage entries={entries} actors={["CLI", "GUI", "MCP"]} filters={filters} onFilterChange={setFilters}
+                error={error} onRetry={() => { window.logPreview.retries++; setError(undefined); }} />
         </main>
     </LocaleProvider>;
 }

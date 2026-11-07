@@ -1040,7 +1040,9 @@ repository_list_io_error；普通错误与日志均不包含原始秘密。
 
 - 新增`logs.read`，能力`logs.read.v1`，仅authenticated local-owner且有既有`operations.read`权限，按owner隔离，无公开写入方法。
 - params：可选`beforeSequence`、`afterSequence`互斥，limit默认100、最大200；无位置读最近记录，before向旧、after向新。所有位置为非负JSON安全整数。
+- 可选`filter`将`actor`、`outcome`、`type`和`search`组合为交集，由Core在游标范围内筛选后分页。`type`由Core根据操作与发起入口判定，分类为`read`、`write`、`passive`、`open`或`maintenance`。`search`最长256字符，忽略首尾空白和大小写，匹配已保存的发起入口、操作和步骤标识、状态、Core操作类型、目标名称和路径及详情。GUI本地化标签不参与搜索。
 - result：`entries`始终sequence升序；`highWatermark`为同一数据库读取快照中该owner的最新日志sequence；`hasMore`及有剩余时的`nextSequence`支持内部续读。before的next为本批最小sequence，after的next为最大sequence；无位置按before处理。单条512KiB、帧4MiB，按完整条目编码大小控制批次，不截断或跳过剩余条目。
+- result的`actors`是同一快照内该owner完整日志中出现过的发起入口，按二进制字序排列，独立于当前筛选、游标和分页。最多256项，超过此上限返回读取错误。
 - 每行保存稳定`action`/`step`、实际发生时的`outcome`、目标快照、真实必要详情，GUI负责标签本地化。sequence和entryId跨重启保持；不从RPC响应、事件投影或GUI提示生成日志。
 - `actor`是发起入口（GUI、CLI、MCP、Local API、Core或Local IPC），沿用`system.hello`的客户端名称元数据绑定到连接，不代表权限或自然人身份。任务执行及恢复沿用原发起入口，取消请求记录实际提交入口。
 - 既有`events.batch.invalidatedScopes`拟增加`operation-log`；由Store提交后的日志水位变化唤醒，共用订阅/ACK/取消和重连，不新增计时轮询或第二条页面通知连接。失效不包含日志正文、不授予读取权限。

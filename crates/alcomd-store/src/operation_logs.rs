@@ -445,13 +445,7 @@ pub(super) fn append(
     if !entry.valid() {
         return Err(StoreError::new(StoreErrorKind::CorruptState));
     }
-    let outcome = match entry.outcome {
-        LogOutcome::Started => "started",
-        LogOutcome::Succeeded => "succeeded",
-        LogOutcome::Failed => "failed",
-        LogOutcome::Cancelled => "cancelled",
-        LogOutcome::Waiting => "waiting",
-    };
+    let outcome = entry.outcome.as_str();
     connection.execute(
         "INSERT INTO operation_log_entries
          (entry_id, owner, execution_id, actor, operation_id, occurred_at_ms, action, step, outcome, target_json, details)
@@ -510,13 +504,30 @@ pub(super) fn read(
             |r| nonnegative(r, 0),
         )
         .map_err(failure)?;
+    let actors = {
+        let mut statement = transaction
+            .prepare("SELECT DISTINCT actor FROM operation_log_entries WHERE owner=?1 ORDER BY actor COLLATE BINARY LIMIT 257")
+            .map_err(failure)?;
+        statement
+            .query_map([owner.as_str()], |row| row.get::<_, String>(0))
+            .map_err(failure)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(failure)?
+    };
+    if actors.len() > 256 {
+        return Err(StoreError::new(StoreErrorKind::Unavailable));
+    }
     let forward = query.after_sequence.is_some();
     let sql = if forward {
         "SELECT sequence, entry_id, execution_id, actor, operation_id, occurred_at_ms, action, step, outcome, target_json, details
-         FROM operation_log_entries WHERE owner=?1 AND sequence>?2 ORDER BY sequence ASC LIMIT ?3"
+         FROM operation_log_entries WHERE owner=?1 AND sequence>?2
+         AND (?4 IS NULL OR actor=?4) AND (?5 IS NULL OR outcome=?5)
+         ORDER BY sequence ASC LIMIT ?3"
     } else {
         "SELECT sequence, entry_id, execution_id, actor, operation_id, occurred_at_ms, action, step, outcome, target_json, details
-         FROM operation_log_entries WHERE owner=?1 AND sequence<?2 ORDER BY sequence DESC LIMIT ?3"
+         FROM operation_log_entries WHERE owner=?1 AND sequence<?2
+         AND (?4 IS NULL OR actor=?4) AND (?5 IS NULL OR outcome=?5)
+         ORDER BY sequence DESC LIMIT ?3"
     };
     let cursor = i64::try_from(
         query
@@ -525,21 +536,50 @@ pub(super) fn read(
             .unwrap_or(alcomd_application::LOG_MAX_SAFE_SEQUENCE + 1),
     )
     .map_err(failure)?;
+    let search = query
+        .filter
+        .search
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let operation_type = query.filter.operation_type;
+    // Rust filters stream the matching owner range. A limit on the raw rows would
+    // hide matches beyond the first unfiltered page.
+    let scan_limit = if search.is_empty() && operation_type.is_none() {
+        i64::from(query.limit) + 1
+    } else {
+        -1
+    };
     let mut statement = transaction.prepare(sql).map_err(failure)?;
     let rows = statement
-        .query_map(params![owner.as_str(), cursor, query.limit + 1], row_entry)
+        .query_map(
+            params![
+                owner.as_str(),
+                cursor,
+                scan_limit,
+                query.filter.actor,
+                query.filter.outcome.map(LogOutcome::as_str)
+            ],
+            row_entry,
+        )
         .map_err(failure)?;
     let mut entries = Vec::new();
-    let mut bytes = 0;
+    let mut bytes = serde_json::to_vec(&actors).map_err(failure)?.len();
     let mut has_more = false;
     for row in rows {
         let entry = row.map_err(failure)?;
+        if operation_type.is_some_and(|kind| entry.operation_type() != Some(kind))
+            || (!search.is_empty() && !entry.contains_search(&search))
+        {
+            continue;
+        }
         if !entry.valid() {
             return Err(StoreError::new(StoreErrorKind::CorruptState));
         }
         let size = serde_json::to_vec(&entry).map_err(failure)?.len();
         // Reserve envelope space; stop at a complete record, never skip an overflow item.
-        if entries.len() == query.limit as usize || bytes + size > 4 * 1024 * 1024 - 4096 {
+        if entries.len() == query.limit as usize || bytes + size + 1 > 4 * 1024 * 1024 - 4096 {
             has_more = true;
             break;
         }
@@ -557,6 +597,7 @@ pub(super) fn read(
     }
     Ok(OperationLogPage {
         entries,
+        actors,
         high_watermark,
         has_more,
         next_sequence,
@@ -777,6 +818,87 @@ mod tests {
                 ..expected
             }]
         );
+    }
+
+    #[tokio::test]
+    async fn filters_cover_history_beyond_unfiltered_pages_and_keep_owner_isolation() {
+        use alcomd_application::{LogFilter, OperationLogType};
+
+        let directory = crate::events_tests::Directory::new();
+        let store = StateStoreHandle::open(directory.database()).expect("isolated store");
+        let owner = PrincipalId::local_owner();
+        let foreign_owner = PrincipalId::parse("test:foreign-log-owner").expect("foreign owner");
+        let failed = || fact("CLI", Some("Überprüfung fehlgeschlagen".to_owned()));
+        let mut records = vec![
+            failed(),
+            OperationLogEntry {
+                action: "projects.refresh".to_owned(),
+                ..failed()
+            },
+            OperationLogEntry {
+                outcome: LogOutcome::Succeeded,
+                ..failed()
+            },
+            OperationLogEntry {
+                actor: "Core".to_owned(),
+                ..failed()
+            },
+            fact("MCP", None),
+            failed(),
+        ];
+        records.extend((0..120).map(|_| fact("GUI", None)));
+        store
+            .append_operation_logs(owner.clone(), records)
+            .await
+            .expect("persist history");
+        store
+            .append_operation_logs(foreign_owner, vec![fact("foreign", None), failed()])
+            .await
+            .expect("persist foreign history");
+
+        let query = OperationLogQuery {
+            limit: 1,
+            filter: LogFilter {
+                search: Some(" ÜBERPRÜFUNG ".to_owned()),
+                actor: Some("CLI".to_owned()),
+                outcome: Some(LogOutcome::Failed),
+                operation_type: Some(OperationLogType::Write),
+            },
+            ..Default::default()
+        };
+        for (start, first, second) in [(None, 6, 1), (Some(0), 1, 6)] {
+            let newest = store
+                .read_operation_logs(
+                    owner.clone(),
+                    OperationLogQuery {
+                        after_sequence: start,
+                        ..query.clone()
+                    },
+                )
+                .await
+                .expect("first filtered page");
+            assert_eq!(newest.actors, ["CLI", "Core", "GUI", "MCP"]);
+            assert_eq!(newest.high_watermark, 126);
+            assert_eq!(newest.entries.len(), 1);
+            assert_eq!(newest.entries[0].sequence, first);
+            assert!(newest.has_more);
+            assert_eq!(newest.next_sequence, Some(first));
+            let next = store
+                .read_operation_logs(
+                    owner.clone(),
+                    OperationLogQuery {
+                        before_sequence: start.is_none().then_some(first),
+                        after_sequence: start.map(|_| first),
+                        ..query.clone()
+                    },
+                )
+                .await
+                .expect("next filtered page");
+            assert_eq!(next.entries.len(), 1);
+            assert_eq!(next.entries[0].sequence, second);
+            assert!(!next.has_more);
+            assert_eq!(next.next_sequence, None);
+        }
     }
 
     #[tokio::test]

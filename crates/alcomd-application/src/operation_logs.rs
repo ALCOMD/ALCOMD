@@ -24,6 +24,39 @@ pub enum LogOutcome {
     Waiting,
 }
 
+impl LogOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Started => "started",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Waiting => "waiting",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OperationLogType {
+    Read,
+    Write,
+    Passive,
+    Open,
+    Maintenance,
+}
+
+impl OperationLogType {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Passive => "passive",
+            Self::Open => "open",
+            Self::Maintenance => "maintenance",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LogTarget {
@@ -57,6 +90,70 @@ pub struct OperationLogEntry {
 }
 
 impl OperationLogEntry {
+    pub fn operation_type(&self) -> Option<OperationLogType> {
+        use OperationLogType::{Maintenance, Open, Passive, Read, Write};
+        match self.action.as_str() {
+            "projects.register" if self.actor == "Core" => Some(Passive),
+            "projects.refresh" | "repositories.refresh" | "packages.userPackages.refresh" => {
+                Some(Read)
+            }
+            "unity.launch" | "unity.hub.open" => Some(Open),
+            "state.check" | "unity.installations.refresh" => Some(Maintenance),
+            "projects.register"
+            | "projects.unregister"
+            | "projects.setFavorite"
+            | "repositories.register"
+            | "repositories.unregister"
+            | "repositories.exportListFile"
+            | "packages.apply"
+            | "packages.bulk"
+            | "packages.install"
+            | "packages.remove"
+            | "packages.upgrade"
+            | "packages.downgrade"
+            | "packages.resolve"
+            | "packages.reinstall"
+            | "packages.userPackages.enroll"
+            | "packages.userPackages.remove"
+            | "backups.create"
+            | "backups.restore"
+            | "projects.create"
+            | "projectTemplates.save"
+            | "projectTemplates.remove"
+            | "projectTemplates.export"
+            | "projects.copy"
+            | "projects.delete-directory"
+            | "projects.unity-migration"
+            | "extensions.install"
+            | "extensions.uninstall"
+            | "extensions.enable"
+            | "extensions.disable"
+            | "extensions.permission"
+            | "unity.projectLaunchConfig"
+            | "unity.installations.register"
+            | "unity.installations.remove"
+            | "settings.update" => Some(Write),
+            _ => None,
+        }
+    }
+
+    pub fn contains_search(&self, normalized: &str) -> bool {
+        let target = self.target.as_ref();
+        [
+            Some(self.actor.as_str()),
+            Some(self.action.as_str()),
+            Some(self.step.as_str()),
+            Some(self.outcome.as_str()),
+            self.operation_type().map(OperationLogType::as_str),
+            target.and_then(|t| t.name.as_deref()),
+            target.and_then(|t| t.path.as_deref()),
+            self.details.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|value| value.to_lowercase().contains(normalized))
+    }
+
     pub fn valid(&self) -> bool {
         self.sequence <= LOG_MAX_SAFE_SEQUENCE
             && self.entry_id.len() == 36
@@ -81,16 +178,35 @@ impl OperationLogEntry {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct LogFilter {
+    pub search: Option<String>,
+    pub actor: Option<String>,
+    pub outcome: Option<LogOutcome>,
+    pub operation_type: Option<OperationLogType>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct OperationLogQuery {
     pub before_sequence: Option<u64>,
     pub after_sequence: Option<u64>,
     pub limit: u32,
+    pub filter: LogFilter,
 }
 
 impl OperationLogQuery {
     pub fn valid(&self) -> bool {
         (1..=200).contains(&self.limit)
             && !(self.before_sequence.is_some() && self.after_sequence.is_some())
+            && self
+                .filter
+                .search
+                .as_ref()
+                .is_none_or(|search| search.chars().count() <= 256)
+            && self
+                .filter
+                .actor
+                .as_ref()
+                .is_none_or(|actor| !actor.is_empty() && actor.chars().count() <= 64)
             && self
                 .before_sequence
                 .is_none_or(|s| s <= LOG_MAX_SAFE_SEQUENCE)
@@ -103,6 +219,7 @@ impl OperationLogQuery {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationLogPage {
     pub entries: Vec<OperationLogEntry>,
+    pub actors: Vec<String>,
     pub high_watermark: u64,
     pub has_more: bool,
     pub next_sequence: Option<u64>,

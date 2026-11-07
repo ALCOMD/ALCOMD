@@ -1,5 +1,5 @@
 {
-    "params": {"afterSequence": 9, "limit": 100},
+    "params": {"afterSequence": 9, "limit": 100, "filter": {"search": "access denied", "actor": "CLI", "outcome": "failed", "type": "write"}},
     "result": {
         "entries": [{
             "sequence": 10,
@@ -13,6 +13,7 @@
             "target": {"kind": "project", "path": "C:\\Isolated\\项目\\Packages\\vpm-manifest.json"},
             "details": "Failed to read the manifest\ncaused by: access denied (os error 5)"
         }],
+        "actors": ["CLI", "GUI"],
         "highWatermark": 11,
         "hasMore": true,
         "nextSequence": 10
