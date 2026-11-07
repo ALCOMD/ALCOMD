@@ -3,7 +3,7 @@ import type { ProjectsCreateParams, ProjectTemplateRef, ProjectTemplatesListResu
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { BackupApplyRestoreResult, BackupRecord, BackupRestorePlan, Operation } from "./core-models";
-import { Button, Dialog, PathField, Select, TextField } from "./Material";
+import { DialogCloseButton, Button, Dialog, PathField, Select, TextField } from "./Material";
 import { AcceptedOperationProgress, OperationFollow, operationRequestOutcomeUnknown, operationResultProjectId, useAcceptedOperations, useActionScope } from "./CoreActions";
 import { useCoreEvents, useWorkspaceInvalidation } from "./core-events-ui";
 import { capabilities, useCapability } from "./capabilities";
@@ -236,14 +236,14 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                         <Button disabled={formDisabled} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                     </div>
                     <div className="dialog-actions">
-                        <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
+                        <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                         <Button disabled={busy || !ready} onClick={() => void create()} type="button">{t("Create project")}</Button>
                     </div>
                 </> : <>
                     <AcceptedOperationProgress operationId={operationId} operations={operations} />
                     <div className="dialog-actions">
                         {!terminal ? <Button disabled={busy || operation === undefined} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel creation")}</Button> : null}
-                        <Button disabled={busy} onClick={close} type="button">{t("Close")}</Button>
+                        <DialogCloseButton disabled={busy}>{t("Close")}</DialogCloseButton>
                     </div>
                 </>}
                 {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage(directoryError.code))}</p><code>{directoryError.code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
@@ -391,11 +391,11 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
         <Dialog dismissible={!busy} onClose={onClose} open={open && visible} title={t("Restore project")}>
             <div className="project-create-flow">
                 {loading ? <LoadingState title={t("Loading backups…")} /> : null}
-                {loading ? null : readFailed ? <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">{t("Close")}</Button><Button onClick={() => setReadVersion((value) => value + 1)} type="button">{t("Retry")}</Button></div> : backups.length === 0 ? (
+                {loading ? null : readFailed ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton><Button onClick={() => setReadVersion((value) => value + 1)} type="button">{t("Retry")}</Button></div> : backups.length === 0 ? (
                     <div className="dialog-empty" role="status">
                         <strong>{t("No managed backups available")}</strong>
                         <span>{t("Create a project backup before restoring a project.")}</span>
-                        <div className="dialog-actions"><Button onClick={onClose} type="button">{t("Close")}</Button></div>
+                        <div className="dialog-actions"><DialogCloseButton>{t("Close")}</DialogCloseButton></div>
                     </div>
                 ) : accepted !== undefined ? <>
                     <OperationFollow client={client} onSnapshot={setOperation} onTerminal={(next) => {
@@ -405,7 +405,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                     <div className="dialog-actions">
                         {operation === undefined || terminal ? null : <Button disabled={busy || operation.state === "cancelling"} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel restore")}</Button>}
                         {onViewOperation === undefined ? null : <Button disabled={busy} onClick={() => onViewOperation(accepted.operationId)} type="button" variant="text">{t("View operation")}</Button>}
-                        <Button disabled={busy} onClick={onClose} type="button">{t("Close")}</Button>
+                        <DialogCloseButton disabled={busy}>{t("Close")}</DialogCloseButton>
                     </div>
                 </> : plan === undefined ? (
                     <>
@@ -417,7 +417,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                         </div>
                         <TextField aria-label={t("Restore project name")} disabled={busy} label={t("Project name")} onInput={(value) => { setTargetLeaf(value); setError(undefined); }} value={targetLeaf} />
                         <div className="dialog-actions">
-                            <Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Cancel")}</Button>
+                            <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                             <Button disabled={!canRestore || busy || backupId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{t("Review restore")}</Button>
                         </div>
                     </>
@@ -434,7 +434,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                         <div className="dialog-actions">
                             <Button disabled={busy || (submitted && operationRequestOutcomeUnknown(error))} onClick={() => { setPlan(undefined); setSubmitted(false); setError(undefined); }} type="button" variant="text">{t("Back")}</Button>
                             <Button disabled={!canRestore || busy || submitted} onClick={() => void apply()} type="button">{t("Restore project")}</Button>
-                            {submitted ? <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button> : null}
+                            {submitted ? <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton> : null}
                         </div>
                     </>
                 )}

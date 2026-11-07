@@ -1,6 +1,6 @@
 import { useTranslation } from "./i18n";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
-import { Button, Dialog } from "./Material";
+import { Dialog, DialogCloseButton } from "./Material";
 
 const BusyContext = createContext<(busy: boolean) => void>(() => {});
 const CloseContext = createContext<{ busy: boolean; close(): void; registerCancel(): () => void } | undefined>(undefined);
@@ -22,7 +22,7 @@ export function UtilityDialogCancel({ disabled = false, label }: { disabled?: bo
     const registerCancel = context?.registerCancel;
     useLayoutEffect(() => registerCancel?.(), [registerCancel]);
     if (context === undefined) return null;
-    return <Button disabled={disabled || context.busy} variant="text" onClick={context.close} type="button">{label ?? t("Cancel")}</Button>;
+    return <DialogCloseButton disabled={disabled || context.busy} variant="text">{label ?? t("Cancel")}</DialogCloseButton>;
 }
 
 export function UtilityActionDialog({ children, onClose, title, wide = false }: { children: ReactNode; onClose(): void; title: string; wide?: boolean }) {
@@ -39,7 +39,7 @@ export function UtilityActionDialog({ children, onClose, title, wide = false }: 
     return <BusyContext.Provider value={setBusy}><CloseContext.Provider value={context}>
         <Dialog open={open} title={title} wide={wide} dismissible={!busy} onClose={onClose}>
             <div className="utility-action-dialog">{children}</div>
-            {cancelCount === 0 ? <div className="dialog-actions"><Button disabled={busy} variant="text" onClick={close} type="button">{t("Cancel")}</Button></div> : null}
+            {cancelCount === 0 ? <div className="dialog-actions"><DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton></div> : null}
         </Dialog>
     </CloseContext.Provider></BusyContext.Provider>;
 }

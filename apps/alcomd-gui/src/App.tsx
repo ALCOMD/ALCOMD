@@ -44,7 +44,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
-import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
+import { DialogCloseButton, Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 import { nativeWindowStateMemory } from "./native-window-state";
@@ -285,8 +285,8 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                 <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title={t("Discard unsaved changes?")}>
                     <p>{t(DISCARD_MESSAGE)}</p>
                     <div className="dialog-actions">
-                        <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
-                        <Button onClick={discardAndNavigate} type="button">{t("Discard changes")}</Button>
+                        <DialogCloseButton variant="text">{t("Keep editing")}</DialogCloseButton>
+                        <DialogCloseButton afterClose={discardAndNavigate}>{t("Discard changes")}</DialogCloseButton>
                     </div>
                 </MaterialDialog>
                 {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
@@ -678,8 +678,8 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                 <MaterialDialog onClose={() => setPendingReconnect(false)} open={pendingReconnect} title={t("Discard unsaved changes?")}>
                     <p>{t(DISCARD_MESSAGE)}</p>
                     <div className="dialog-actions">
-                        <Button onClick={() => setPendingReconnect(false)} type="button" variant="text">{t("Keep editing")}</Button>
-                        <Button onClick={() => void discardAndContinue()} type="button">{t("Discard changes")}</Button>
+                        <DialogCloseButton variant="text">{t("Keep editing")}</DialogCloseButton>
+                        <DialogCloseButton afterClose={discardAndContinue}>{t("Discard changes")}</DialogCloseButton>
                     </div>
                 </MaterialDialog>
                 {snapshot === undefined ? null : (

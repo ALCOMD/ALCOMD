@@ -47,9 +47,11 @@ export function MaterialFoundationEvidence() {
             <DesktopList columns={[{ key: "project", header: "Project" }, { key: "state", header: "State" }]} label="Material table foundation" minWidth={240} rows={[{ key: "foundation", cells: ["Foundation fixture", "Ready"] }]} />
             <div style={{ whiteSpace: "nowrap" }}>
                 <Dialog onClose={() => setDialogOpen(false)} open={dialogOpen} title="Material dialog">
-                    <p>The dialog is hosted by the shared Material foundation.</p>
-                    <p data-testid="dialog-width-evidence">Shared dialog content must wrap within the Material surface instead of being measured wider and clipped by the internal container.</p>
-                    <Button onClick={() => setDialogOpen(false)} variant="text">Close</Button>
+                    {dialogOpen ? <>
+                        <p>The dialog is hosted by the shared Material foundation.</p>
+                        <p data-testid="dialog-width-evidence">Shared dialog content must wrap within the Material surface instead of being measured wider and clipped by the internal container.</p>
+                        <Button onClick={() => setDialogOpen(false)} variant="text">Close</Button>
+                    </> : null}
                 </Dialog>
             </div>
         </main>

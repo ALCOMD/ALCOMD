@@ -4,7 +4,7 @@ import type { RpcError } from "@alcomd/sdk";
 import { flipToFrontIcon, playArrowIcon, taskCenterIcon } from "@alcomd/ui/icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Button, ButtonProgress, Dialog, Icon, Select } from "./Material";
+import { DialogCloseButton, Button, ButtonProgress, Dialog, Icon, Select } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
@@ -72,7 +72,7 @@ export function useUnityWindowAction(client: GuiRpcClient, project: ProjectSnaps
         <p>{failure === "unity_window_not_found" ? t("The Unity window for this project is no longer available.")
             : failure === "unity_window_focus_rejected" ? t("Windows did not allow the Unity window to move to the front.")
                 : t(requestErrorMessage(failure))}</p>
-        <div className="dialog-actions"><Button onClick={close} type="button">{t("Close")}</Button></div>
+        <div className="dialog-actions"><DialogCloseButton>{t("Close")}</DialogCloseButton></div>
     </Dialog>;
     return { action, feedback, windowIsActive };
 }
@@ -162,15 +162,15 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             <Dialog onClose={() => closed("missing")} open={dialog === "missing"} title={t("Unity installation required")}>
                 <p>{t("This project requires Unity {version}. No exact matching Unity installation was found.", { version: options?.projectUnityVersion ?? project.unityVersion })}</p>
                 <div className="dialog-actions">
-                    <Button onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
-                    <Button disabled={!canMigrate} onClick={() => { close(); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button">{t("Migrate Project…")}</Button>
+                    <DialogCloseButton variant="tonal">{t("Cancel")}</DialogCloseButton>
+                    <DialogCloseButton disabled={!canMigrate} afterClose={() => { close(); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)}>{t("Migrate Project…")}</DialogCloseButton>
                 </div>
             </Dialog>
             <Dialog dismissible={!busy} onClose={() => closed("choose")} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
                 <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${displayPath(item.executablePath)}`, value: item.installationId }))]} value={installationId} />
                 {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
-                    <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
+                    <DialogCloseButton disabled={busy} variant="tonal">{t("Cancel")}</DialogCloseButton>
                     <Button disabled={!canLaunch || installationId.length === 0 || busy || desktop.windowIsActive} onClick={confirm} type="button">{t("Open Unity")}</Button>
                 </div>
             </Dialog>
