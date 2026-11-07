@@ -7,7 +7,10 @@ import {
     createElement,
     forwardRef,
     isValidElement,
+    useCallback,
+    useContext,
     useEffect,
+    useEffectEvent,
     useLayoutEffect,
     useRef,
     useState,
@@ -43,6 +46,9 @@ type MaterialElement = HTMLElement & {
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
 export const DialogOpenContext = createContext<boolean | undefined>(undefined);
+const DialogCloseContext = createContext<{
+    requestClose(afterClose?: () => void): void;
+} | undefined>(undefined);
 
 export interface DialogOrigin {
     readonly current: HTMLElement | null;
@@ -694,35 +700,165 @@ export function Checkbox({ checked, disabled, label, labelHidden = false, onChan
     );
 }
 
+export function DialogCloseButton({ afterClose, disabled, ...props }: Omit<ButtonProps, "onClick" | "type"> & { afterClose?: () => void }) {
+    const dialog = useContext(DialogCloseContext);
+    if (dialog === undefined) throw new Error("Missing dialog close context");
+    return <Button {...props} disabled={disabled} type="button" onClick={() => dialog.requestClose(afterClose)} />;
+}
+
+interface DialogView {
+    actions: ReactNode;
+    children: ReactNode;
+    title: string;
+    wide: boolean;
+}
+
+function observeDialogSize(dialog: HTMLDialogElement, content: HTMLElement) {
+    const measure = () => ({ width: dialog.offsetWidth, height: dialog.offsetHeight });
+    let size = measure();
+    let animation: Animation | undefined;
+    let stopped = false;
+    const resize = () => {
+        // Animated dimensions also trigger the observer. Measure the new layout after they settle.
+        if (stopped || !dialog.open || animation !== undefined) return;
+        const next = measure();
+        if (next.width === size.width && next.height === size.height) return;
+        const before = size;
+        size = next;
+        if (reducedMotion()) return;
+        // On a wide-to-standard transition, the standard cap would otherwise clamp the first frame.
+        const keyframe = ({ width, height }: typeof size) => ({
+            width: `${width}px`, maxWidth: `min(${width}px, calc(100vw - 48px))`, height: `${height}px`
+        });
+        animation = dialog.animate([keyframe(before), keyframe(next)], { duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" });
+        animation.onfinish = () => { animation = undefined; resize(); };
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(dialog, { box: "border-box" });
+    observer.observe(content, { box: "border-box" });
+    const stopMotionListener = subscribeMotion(() => {
+        if (!reducedMotion()) return;
+        animation?.cancel();
+        animation = undefined;
+        size = measure();
+    });
+    const stop = () => {
+        stopped = true;
+        observer.disconnect();
+        stopMotionListener();
+    };
+    return {
+        startClosing() {
+            stop();
+            // Keep the in-flight size steady for Material's closing animation.
+            animation?.pause();
+        },
+        dispose() {
+            stop();
+            animation?.cancel();
+        }
+    };
+}
+
 export function Dialog({ actions, children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { actions?: ReactNode; children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
+    const lastOpenView = useRef<DialogView>(undefined);
+    const closeRequest = useRef<{ afterClose?: () => void }>(undefined);
+    const closing = useRef(false);
+    const [closingView, setClosingView] = useState<DialogView>();
+    const [restoreFocus, setRestoreFocus] = useState(false);
+    const view = { actions, children, title, wide };
+    // The owner can clear its form in the same render that requests a close.
+    const visible = closingView ?? (open ? view : lastOpenView.current ?? view);
+    useLayoutEffect(() => {
+        if (open && !closing.current) lastOpenView.current = view;
+    });
+    const requestClose = useCallback((afterClose?: () => void) => {
+        const element = ref.current;
+        if (!element?.open || closing.current || closeRequest.current !== undefined) return;
+        closeRequest.current = { afterClose };
+        element.close?.();
+    }, []);
+    const finishClose = useEffectEvent(() => {
+        const complete = closeRequest.current?.afterClose ?? onClose;
+        closeRequest.current = undefined;
+        closing.current = false;
+        lastOpenView.current = undefined;
+        setClosingView(undefined);
+        if (returnFocus !== undefined) setRestoreFocus(true);
+        complete();
+    });
+    const cancelClose = useEffectEvent((event: Event) => {
+        if (!dismissible) event.preventDefault();
+    });
     useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
         let release: (() => void) | undefined;
+        let resize: ReturnType<typeof observeDialogSize> | undefined;
+        let active = true;
+        const observe = () => {
+            const native = element.shadowRoot?.querySelector("dialog");
+            const content = contentRef.current;
+            if (active && native?.open && content !== null && !closing.current && resize === undefined) {
+                resize = observeDialogSize(native, content);
+            }
+        };
+        const opening = (event: Event) => {
+            if (event.target !== element) return;
+            // Material opens the native dialog immediately after dispatching this event.
+            queueMicrotask(observe);
+        };
         const opened = () => {
+            if (closing.current) return;
             if (release === undefined && contentRef.current !== null) release = registerDialogSurface(contentRef.current);
         };
-        const closed = () => { release?.(); release = undefined; };
+        const cleanup = () => {
+            release?.();
+            release = undefined;
+            resize?.dispose();
+            resize = undefined;
+        };
+        const startClose = (event: Event) => {
+            if (event.target !== element) return;
+            if (closing.current) { event.preventDefault(); return; }
+            closing.current = true;
+            resize?.startClosing();
+            setClosingView(lastOpenView.current);
+        };
+        const closed = (event: Event) => {
+            if (event.target !== element) return;
+            cleanup();
+            finishClose();
+        };
+        const cancel = (event: Event) => {
+            if (event.target === element) cancelClose(event);
+        };
+        element.addEventListener("open", opening);
         element.addEventListener("opened", opened);
+        element.addEventListener("close", startClose);
         element.addEventListener("closed", closed);
-        return () => { closed(); element.removeEventListener("opened", opened); element.removeEventListener("closed", closed); };
+        element.addEventListener("cancel", cancel);
+        // React can reattach effects while the native dialog is already open.
+        observe();
+        return () => {
+            active = false;
+            cleanup();
+            element.removeEventListener("open", opening);
+            element.removeEventListener("opened", opened);
+            element.removeEventListener("close", startClose);
+            element.removeEventListener("closed", closed);
+            element.removeEventListener("cancel", cancel);
+        };
     }, []);
-    const [restoreFocus, setRestoreFocus] = useState(false);
-    useEffect(() => {
+    useLayoutEffect(() => {
         const element = ref.current;
         if (element === null) return;
-        const close = () => {
-            if (returnFocus !== undefined) setRestoreFocus(true);
-            onClose();
-        };
-        const cancel = (event: Event) => { if (!dismissible) event.preventDefault(); };
-        element.addEventListener("closed", close);
-        element.addEventListener("cancel", cancel);
-        return () => { element.removeEventListener("closed", close); element.removeEventListener("cancel", cancel); };
-    }, [onClose, dismissible, returnFocus]);
+        if (open) element.open = true;
+        else requestClose();
+    }, [open, requestClose]);
     useEffect(() => {
         if (open) {
             if (restoreFocus) setRestoreFocus(false);
@@ -744,13 +880,13 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         return () => { active = false; };
     }, [open, restoreFocus, returnFocus, returnFocusReady]);
     return createPortal(
-        createElement(
+        <DialogCloseContext.Provider value={{ requestClose }}>{createElement(
             materialElements.dialog,
-            { ariaLabel: title, open, quick, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
-            createElement("div", { slot: "headline" }, title),
-            createElement("div", { ref: contentRef, className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <DialogOpenContext.Provider value={open}><LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider></DialogOpenContext.Provider>),
-            actions === undefined ? null : createElement("div", { className: "material-dialog-actions", slot: "actions" }, actions)
-        ),
+            { ariaLabel: visible.title, quick, ref, style: visible.wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
+            createElement("div", { slot: "headline" }, visible.title),
+            createElement("div", { ref: contentRef, className: visible.wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <DialogOpenContext.Provider value={open}><LocalPageReadContext.Provider value={true}>{visible.children}</LocalPageReadContext.Provider></DialogOpenContext.Provider>),
+            visible.actions === undefined ? null : createElement("div", { className: "material-dialog-actions", slot: "actions" }, visible.actions)
+        )}</DialogCloseContext.Provider>,
         document.body
     );
 }
