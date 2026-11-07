@@ -177,7 +177,12 @@ test("Material dialog and select use real handles while native text editing stay
     await expect(menu).toBeVisible();
     await page.mouse.move(1439, 899);
     await expectScrollbarTheme(menu);
+    const menuClosed = await select.evaluateHandle((element) => ({
+        event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
     await page.keyboard.press("Escape");
+    await menuClosed.evaluate((value) => value.event);
+    await menuClosed.dispose();
     await page.locator("md-outlined-text-field").evaluate((element) => {
         (element as HTMLElement & { type: string; value: string }).type = "textarea";
         (element as HTMLElement & { value: string }).value = "Multiline content\n".repeat(30);
