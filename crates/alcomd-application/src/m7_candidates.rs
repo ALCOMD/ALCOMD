@@ -1,4 +1,5 @@
 //! Bounded, side-effect-free candidate query orchestration.
+use crate::m7_candidate_bulk::{CandidateBulkActions, bulk_actions};
 use crate::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
@@ -30,6 +31,8 @@ pub enum CandidateView {
         sources: Option<Vec<CandidateSourceOverride>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         filter: Option<CandidateFilter>,
+        #[serde(rename = "bulkPackageIds", skip_serializing_if = "Option::is_none")]
+        bulk_package_ids: Option<Vec<String>>,
     },
     Versions {
         #[serde(rename = "packageId")]
@@ -101,6 +104,8 @@ pub struct ProjectCandidatePage {
     #[serde(flatten)]
     pub page: CandidatePageItems,
     pub next_cursor: Option<CandidateCursor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bulk: Option<CandidateBulkActions>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -236,6 +241,14 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         let filter = match &request.view {
             CandidateView::Summary { filter, .. } => filter.as_ref(),
             CandidateView::Versions { .. } => None,
+        };
+        let bulk_request = match &request.view {
+            CandidateView::Summary {
+                bulk_package_ids: Some(ids),
+                sources,
+                ..
+            } => Some((ids.as_slice(), sources.as_deref().unwrap_or_default())),
+            _ => None,
         };
         let query_fingerprint = if let Some(filter) = filter {
             query_records.push("filter".to_owned());
@@ -388,7 +401,14 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         };
         let offset = request.cursor.as_ref().map_or(0, |c| c.offset);
         let limit = request.limit.unwrap_or(64) as usize;
+        let mut bulk = None;
         let (page, total) = match (items, filter) {
+            (PreparedCandidates::Summary(data), _) if bulk_request.is_some() => {
+                if let Some((ids, sources)) = bulk_request {
+                    bulk = Some(bulk_actions(&data.items, ids, sources, catalog_complete));
+                }
+                (CandidatePageItems::Summary { items: Vec::new() }, 0)
+            }
             (PreparedCandidates::Summary(data), None) => (
                 CandidatePageItems::Summary {
                     items: data
@@ -458,6 +478,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
             catalog_complete,
             page,
             next_cursor,
+            bulk,
         };
         if self
             .engine
@@ -616,7 +637,18 @@ fn validate_request(request: &ProjectCandidateRequest) -> Result<Vec<String>, Ca
             package_ids,
             sources,
             filter,
+            bulk_package_ids,
         } => {
+            if let Some(ids) = bulk_package_ids
+                && (filter.is_some()
+                    || package_ids.is_some()
+                    || request.cursor.is_some()
+                    || ids.len() > 4096
+                    || ids.iter().any(|id| !package_valid(id))
+                    || ids.iter().collect::<BTreeSet<_>>().len() != ids.len())
+            {
+                return Err(invalid);
+            }
             if filter
                 .as_ref()
                 .and_then(|filter| filter.search.as_ref())
@@ -693,6 +725,7 @@ mod tests {
             view: CandidateView::Summary {
                 package_ids: Some(vec!["com.example.b".into(), "com.example.a".into()]),
                 sources: None,
+                bulk_package_ids: None,
                 filter: None,
             },
             limit: None,
@@ -731,6 +764,7 @@ mod tests {
         r.view = CandidateView::Summary {
             package_ids: Some(vec!["com.example.a".into(); 2]),
             sources: None,
+            bulk_package_ids: None,
             filter: None,
         };
         assert_eq!(validate_request(&r), Err(CandidateQueryError::InvalidInput));
@@ -759,6 +793,7 @@ mod tests {
         r.view = CandidateView::Summary {
             package_ids: Some((0..257).map(|i| format!("com.example.{i}")).collect()),
             sources: None,
+            bulk_package_ids: None,
             filter: None,
         };
         assert_eq!(validate_request(&r), Err(CandidateQueryError::InvalidInput));
@@ -950,6 +985,7 @@ mod tests {
         changed_ids.view = CandidateView::Summary {
             package_ids: Some(vec!["com.example.c".into()]),
             sources: None,
+            bulk_package_ids: None,
             filter: None,
         };
         let mut changed_source = continued.clone();

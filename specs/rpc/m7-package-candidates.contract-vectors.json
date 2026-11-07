@@ -32,6 +32,41 @@
             }
         },
         {
+            "id": "bulk-actions-request",
+            "definition": "Request",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "expectedSnapshot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "view": { "kind": "summary", "bulkPackageIds": ["com.example.package"] }
+            }
+        },
+        {
+            "id": "bulk-actions-result",
+            "definition": "Result",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [],
+                "bulk": {
+                    "updateAll": { "targetCount": 0, "intents": [], "exclusions": [], "omittedExclusions": 0 },
+                    "installUpdate": { "targetCount": 0, "intents": [], "exclusions": [], "omittedExclusions": 0 },
+                    "remove": [{ "kind": "remove", "packageId": "com.example.package" }],
+                    "reinstall": []
+                }
+            }
+        },
+        {
             "id": "versions-request",
             "definition": "Request",
             "valid": true,

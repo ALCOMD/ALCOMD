@@ -6,8 +6,8 @@ import { OperationItems } from "./OperationItems";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
-import type { CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
-import { actionableVersion, candidateSource, candidateSourceKey, choiceText, finishCandidateSummary, intentForSummary, queryCandidates, readCandidateSummaryPage, reasonText, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
+import type { CandidateBulkAction, CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
+import { actionableVersion, bulkPlanIntent, candidateSource, candidateSourceKey, choiceText, finishCandidateSummary, queryCandidates, readCandidateSummaryPage, reasonText, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
     arrowBackIcon,
@@ -1293,10 +1293,11 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
     return { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates, candidateRequest } : {}), ...(candidateError ? { candidateError } : {}) };
 }
 
-function PackageWorkspaceData({ client, value, filter, children }: {
+function PackageWorkspaceData({ client, value, filter, selectedIds, children }: {
     client: GuiRpcClient;
     value: PackageWorkspaceValue;
     filter?: CandidateFilter;
+    selectedIds: string[];
     children(data: {
         candidates: CandidateSummarySet | undefined;
         candidateError: string | undefined;
@@ -1304,10 +1305,14 @@ function PackageWorkspaceData({ client, value, filter, children }: {
         filteredItems: PackageCandidateSummary[] | undefined;
         filterPending: boolean;
         filterError: string | undefined;
+        allBulk: CandidateBulkActions | undefined;
+        selectedBulk: CandidateBulkActions | undefined;
+        bulkError: string | undefined;
     }): ReactNode;
 }) {
     const [complete, setComplete] = useState<{ value: PackageWorkspaceValue; candidates?: CandidateSummarySet; error?: string }>();
     const [filtered, setFiltered] = useState<{ value: PackageWorkspaceValue; filter: CandidateFilter; items?: PackageCandidateSummary[]; error?: string }>();
+    const [bulk, setBulk] = useState<{ value: PackageWorkspaceValue; selectedIds: string[]; result?: CandidateBulkActions; error?: string }>();
     const needsPages = value.candidates !== undefined && value.candidates.nextCursor !== null;
     const resolved = complete?.value === value ? complete : undefined;
     const candidates = resolved === undefined ? value.candidates : resolved.candidates;
@@ -1345,14 +1350,40 @@ function PackageWorkspaceData({ client, value, filter, children }: {
         }, 120);
         return () => { active = false; window.clearTimeout(timeout); };
     }, [client, filter, value]);
+    useEffect(() => {
+        const { candidates: first, candidateRequest } = value;
+        if (!first || candidateRequest?.view.kind !== "summary") return;
+        const request: ProjectCandidateRequest = {
+            ...candidateRequest,
+            expectedSnapshot: first.snapshot.fingerprint,
+            view: { ...candidateRequest.view, bulkPackageIds: selectedIds }
+        };
+        let active = true;
+        const timer = window.setTimeout(() => {
+            void queryCandidates(client, request).then((page) => {
+                if (!active) return;
+                if (page.view !== "summary" || !page.bulk || page.snapshot.fingerprint !== first.snapshot.fingerprint) {
+                    throw { code: "package_candidate_evidence_stale" };
+                }
+                setBulk({ value, selectedIds, result: page.bulk });
+            }).catch((cause: unknown) => {
+                if (active) setBulk({ value, selectedIds, error: normalizeRequestError(cause).code });
+            });
+        }, selectedIds.length ? 80 : 0);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [client, selectedIds, value]);
     const visible = filtered?.value === value && filtered.filter === filter ? filtered : undefined;
+    const currentBulk = bulk?.value === value ? bulk : undefined;
     return <>{children({
         candidates,
         candidateError: resolved?.error ?? value.candidateError,
         candidatesPending,
         filteredItems: visible?.items,
         filterPending: filter !== undefined && value.candidates !== undefined && visible === undefined,
-        filterError: visible?.error
+        filterError: visible?.error,
+        allBulk: currentBulk?.result,
+        selectedBulk: currentBulk?.selectedIds === selectedIds ? currentBulk?.result : undefined,
+        bulkError: currentBulk?.selectedIds === selectedIds ? currentBulk?.error : undefined
     })}</>;
 }
 
@@ -1397,15 +1428,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         const source = row === undefined ? undefined : selectedSource(row);
         setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
     };
-    const selectBulkInstalled = (rows: PackageWorkspaceRow[], action: "bulk-reinstall" | "bulk-remove", origin: DialogOrigin) => {
-        const selectedRows = rows.filter((row) => bulkSelection.includes(row.packageId) && (action === "bulk-remove" ? row.evidence?.direct === true : row.evidence?.installed.kind === "locked"));
-        const sources = selectedRows.flatMap((row) => {
-            const source = selectedSource(row);
-            return source === undefined ? [] : [{ packageId: row.packageId, source }];
-        });
-        if (selectedRows.length === 0 || selectedRows.length !== bulkSelection.length || selectedRows.length > 256) return;
-        setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
-    };
     const refreshRepositories = async (reload: () => void) => {
         if (repositoryRefreshPending.current) return;
         repositoryRefreshPending.current = true;
@@ -1426,46 +1448,33 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         }
     };
     return (
-        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError }) => {
+        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{(value, refresh, refreshing, refreshError) => <PackageWorkspaceData client={client} filter={candidateFilter} selectedIds={bulkSelection} value={value}>{({ candidates, candidateError, candidatesPending, filteredItems, filterPending, filterError, allBulk, selectedBulk, bulkError }) => {
             const { project, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey } = value;
             const workspaceRows = packageWorkspaceRows(project, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && !candidatesPending && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
             const readError = filterError ?? candidateError;
-            const evidenceFailure = readError ? t(requestErrorMessage(readError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
+            const evidenceError = readError ?? bulkError;
+            const evidenceFailure = evidenceError ? t(requestErrorMessage(evidenceError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
             const repositoryRefreshFailure = repositoryRefreshError === undefined ? undefined : t("Refresh failed: ") + t(requestErrorMessage(repositoryRefreshError.code));
             const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
                 setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", candidateSnapshot: candidates.snapshot.fingerprint });
             };
-            const selectedRows = workspaceRows.filter((row) => bulkSelection.includes(row.packageId));
-            const completeSelection = selectedRows.length > 0 && selectedRows.length === bulkSelection.length && selectedRows.length <= 256;
-            const canBulkInstalled = catalogReady && completeSelection && selectedRows.every((row) => row.evidence?.installed.kind === "locked");
-            const canBulkRemove = catalogReady && completeSelection && selectedRows.every((row) => row.evidence?.direct === true);
-            const selectedIntents = (stable: boolean) => selectedRows.flatMap((row) => row.evidence ? [intentForSummary(row.evidence, stable)].filter((intent) => intent !== undefined) : []);
-            const selectedLatest = selectedIntents(false);
-            const selectedStable = selectedIntents(true);
-            const canSelected = catalogReady && completeSelection && selectedLatest.length === selectedRows.length;
-            const canSelectedStable = catalogReady && completeSelection && selectedStable.length === selectedRows.length;
-            const stableSelectionDiffers = JSON.stringify(selectedLatest) !== JSON.stringify(selectedStable);
-            const lockedRows = workspaceRows.filter((row) => row.installedVersion !== undefined);
-            const allUpdate = (stable: boolean) => {
-                const intents = lockedRows.flatMap((row) => row.evidence ? [intentForSummary(row.evidence, stable)].filter((intent) => intent?.kind === "upgrade") : []);
-                const blocked = lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, stable));
-                const exclusions = lockedRows.flatMap((row) => {
-                    const update = stable ? row.evidence?.stableUpdate : row.evidence?.update;
-                    return update && update.kind !== "target" ? [`${row.displayName}: ${updateReason(update, t)}`] : [];
-                });
-                return { intents, exclusions, enabled: catalogReady && !blocked && intents.length > 0 && intents.length <= 256 };
+            const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !catalogReady || !intents?.length;
+            const submitBulk = (intents: CandidateBulkIntent[] | undefined, origin: DialogOrigin, action?: CandidateBulkAction) => {
+                if (!catalogReady || !canPlanPackagesV2 || !intents?.length) return;
+                const names = new Map(workspaceRows.map((row) => [row.packageId, row.displayName]));
+                const exclusions = action?.exclusions.map(({ packageId, update }) => `${names.get(packageId) ?? packageId}: ${updateReason(update, t)}`) ?? [];
+                if (action?.omittedExclusions) exclusions.push(t("{count} more packages were not included.", { count: action.omittedExclusions }));
+                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents: intents.map(bulkPlanIntent), exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
             };
-            const allLatest = allUpdate(false);
-            const allStable = allUpdate(true);
-            const submitBulk = (intents: import("./core-models").PackageBulkIntent[], origin: DialogOrigin, exclusions: string[] = []) => {
-                if (!catalogReady || !intents.length || intents.length > 256) return;
-                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents, exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
-            };
+            const allLatest = allBulk?.updateAll;
+            const allStable = allBulk?.updateAllStable;
+            const selectedLatest = selectedBulk?.installUpdate;
+            const selectedStable = selectedBulk?.installUpdateStable;
             const rows = candidateFilter === undefined ? workspaceRows : packageWorkspaceRows(project, filteredItems ?? [], sourceRegistry);
             return (
                 <section className="project-workspace">
@@ -1496,8 +1505,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                              <span className="visually-hidden" role="status" aria-live="polite">{repositoryRefreshFailure}</span>
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
-                                 <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={(event) => submitBulk(allLatest.intents, { current: event.currentTarget }, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>
-                                 {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={(event) => submitBulk(allStable.intents, { current: event.currentTarget }, allStable.exclusions)} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.intents.length })}</Button> : null}
+                                 <Button disabled={bulkDisabled(allLatest?.intents)} onClick={(event) => submitBulk(allLatest?.intents, { current: event.currentTarget }, allLatest)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest?.targetCount ?? 0 })}</Button>
+                                 {allStable ? <Button disabled={bulkDisabled(allStable.intents)} onClick={(event) => submitBulk(allStable.intents, { current: event.currentTarget }, allStable)} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.targetCount })}</Button> : null}
                              </> : null}
                              <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{t(rows.length === 1 ? "{count} package" : "{count} packages", { count: rows.length })}</span>
@@ -1508,10 +1517,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         {bulkSelection.length === 0 ? null : (
                             <div aria-label={t("Selected package actions")} className="package-bulk-bar" role="region">
                                 <strong>{t("{count} selected", { count: bulkSelection.length })}</strong>
-                                <Button disabled={!canPlanPackagesV2 || !canSelected} onClick={(event) => submitBulk(selectedLatest, { current: event.currentTarget })} type="button" variant="tonal">{t("Install / Update selected")}</Button>
-                                {stableSelectionDiffers ? <Button disabled={!canPlanPackagesV2 || !canSelectedStable} onClick={(event) => submitBulk(selectedStable, { current: event.currentTarget })} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
-                                <Button disabled={!canPlanPackagesV2 || !canBulkInstalled} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-reinstall", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
-                                <Button disabled={!canPlanPackagesV2 || !canBulkRemove} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-remove", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
+                                <Button disabled={bulkDisabled(selectedLatest?.intents)} onClick={(event) => submitBulk(selectedLatest?.intents, { current: event.currentTarget })} type="button" variant="tonal">{t("Install / Update selected")}</Button>
+                                {selectedStable ? <Button disabled={bulkDisabled(selectedStable.intents)} onClick={(event) => submitBulk(selectedStable.intents, { current: event.currentTarget })} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
+                                <Button disabled={bulkDisabled(selectedBulk?.reinstall)} onClick={(event) => submitBulk(selectedBulk?.reinstall, { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
+                                <Button disabled={bulkDisabled(selectedBulk?.remove)} onClick={(event) => submitBulk(selectedBulk?.remove, { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}

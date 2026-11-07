@@ -269,13 +269,11 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
 }
 
 export interface PackageActionSelection {
-    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-reinstall" | "bulk-remove" | "bulk-candidates";
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-candidates";
     key: number;
     origin: DialogOrigin;
     packageId: string;
-    packageIds?: string[];
     source?: PackageSourceSelector;
-    sources?: Array<{ packageId: string; source: PackageSourceSelector }>;
     version?: string;
     includePrerelease?: boolean;
     intents?: import("./core-models").PackageBulkIntent[];
@@ -295,9 +293,9 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
     const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, packageIds?: string[], sources?: Array<{ packageId: string; source: PackageSourceSelector }>, includePrerelease = false) => {
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease = false) => {
         if (revision === undefined || projectId === undefined) return;
-        const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-reinstall" || action === "bulk-remove" || action === "bulk-candidates" || action === "downgrade";
+        const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-candidates" || action === "downgrade";
         if ((requiresV2 && !canPlanV2) || (!requiresV2 && !canPlanV1)) {
             setFeedback({ busy: false, error: { code: "capability_required", message: t("The connected daemon did not negotiate {capability}.", { capability: requiresV2 ? capabilities.packagesPlanV2 : capabilities.packagesPlanV1 }) } });
             return;
@@ -307,22 +305,19 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
         setOperationFinished(false);
         try {
             if (selection?.candidateSnapshot && action !== "remove") {
-                const ids = selection.intents?.map((intent) => intent.packageId) ?? packageIds ?? (selectedPackageId ? [selectedPackageId] : undefined);
+                const ids = selection.intents?.map((intent) => intent.packageId) ?? (selectedPackageId ? [selectedPackageId] : undefined);
                 const evidence = await queryCandidates(client, { projectId, expectedRevision: revision, expectedSnapshot: selection.candidateSnapshot, view: { kind: "summary", ...(ids ? { packageIds: ids } : {}) }, limit: 1 });
                 if (!evidence.catalogComplete) throw { code: "package_catalog_incomplete" };
             }
             let result: PackagePlan;
-            if ((action === "bulk-reinstall" || action === "bulk-remove") && (packageIds === undefined || packageIds.length === 0 || packageIds.length > 256)) throw { code: "invalid_input" };
             if (action === "bulk-candidates") {
-                if (!selection?.intents?.length || selection.intents.length > 256) throw { code: "invalid_input" };
+                if (!selection?.intents?.length) throw { code: "invalid_input" };
                 result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: selection.intents });
             }
             else if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
             else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
             else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
             else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
-            else if (action === "bulk-reinstall") result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: (packageIds ?? []).map((packageId) => ({ kind: "reinstall" as const, packageId, ...(sources?.find((item) => item.packageId === packageId)?.source === undefined ? {} : { source: sources.find((item) => item.packageId === packageId)?.source }) })) });
-            else if (action === "bulk-remove") result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: (packageIds ?? []).map((packageId) => ({ kind: "remove" as const, packageId })) });
             else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
                 const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
@@ -341,7 +336,7 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
         handledSelectionKey.current = selection.key;
         setPlan(undefined);
         setFeedback(INITIAL_FEEDBACK);
-        void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.packageIds, selection.sources, selection.includePrerelease);
+        void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease);
     }, [prepareChanges, selection]);
     const apply = async () => {
         if (plan === undefined) return;

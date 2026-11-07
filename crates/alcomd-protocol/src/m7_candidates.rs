@@ -204,6 +204,13 @@ pub enum CandidateView {
             deserialize_with = "nonnull_optional"
         )]
         filter: Option<CandidateFilter>,
+        #[serde(
+            rename = "bulkPackageIds",
+            skip_serializing_if = "Option::is_none",
+            default,
+            deserialize_with = "nonnull_optional"
+        )]
+        bulk_package_ids: Option<Vec<String>>,
     },
     Versions {
         #[serde(rename = "packageId")]
@@ -281,6 +288,64 @@ pub enum CandidatePageItems {
         items: Vec<CandidateEvidence>,
     },
 }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum CandidateBulkIntent {
+    Install {
+        package_id: String,
+        version_range: String,
+        source: CandidateSource,
+        include_prerelease: bool,
+    },
+    Upgrade {
+        package_id: String,
+        version_range: String,
+        source: CandidateSource,
+        include_prerelease: bool,
+    },
+    Remove {
+        package_id: String,
+    },
+    Reinstall {
+        package_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<CandidateSource>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CandidateBulkExclusion {
+    pub package_id: String,
+    pub update: CandidateUpdate,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CandidateBulkAction {
+    pub target_count: usize,
+    pub intents: Vec<CandidateBulkIntent>,
+    pub exclusions: Vec<CandidateBulkExclusion>,
+    pub omitted_exclusions: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CandidateBulkActions {
+    pub update_all: CandidateBulkAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_all_stable: Option<CandidateBulkAction>,
+    pub install_update: CandidateBulkAction,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_update_stable: Option<CandidateBulkAction>,
+    pub remove: Vec<CandidateBulkIntent>,
+    pub reinstall: Vec<CandidateBulkIntent>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCandidatePage {
@@ -291,6 +356,8 @@ pub struct ProjectCandidatePage {
     #[serde(flatten)]
     pub page: CandidatePageItems,
     pub next_cursor: Option<CandidateCursor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bulk: Option<CandidateBulkActions>,
 }
 
 impl<'de> Deserialize<'de> for ProjectCandidatePage {
@@ -309,6 +376,8 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 items: Vec<CandidateSummary>,
                 #[serde(rename = "nextCursor", deserialize_with = "nullable_required")]
                 next_cursor: Option<CandidateCursor>,
+                #[serde(default, deserialize_with = "nonnull_optional")]
+                bulk: Option<Box<CandidateBulkActions>>,
             },
             Versions {
                 #[serde(rename = "projectId")]
@@ -333,6 +402,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 catalog_complete,
                 items,
                 next_cursor,
+                bulk,
             } => Self {
                 project_id,
                 snapshot,
@@ -340,6 +410,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 catalog_complete,
                 page: CandidatePageItems::Summary { items },
                 next_cursor,
+                bulk: bulk.map(|actions| *actions),
             },
             ClosedPage::Versions {
                 project_id,
@@ -356,6 +427,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 catalog_complete,
                 page: CandidatePageItems::Versions { package_id, items },
                 next_cursor,
+                bulk: None,
             },
         })
     }

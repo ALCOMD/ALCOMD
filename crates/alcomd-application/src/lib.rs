@@ -25,6 +25,7 @@ mod m5;
 mod m5_backup;
 mod m6;
 mod m7;
+mod m7_candidate_bulk;
 mod m7_candidates;
 mod m7_candidates_types;
 mod m7_copy;

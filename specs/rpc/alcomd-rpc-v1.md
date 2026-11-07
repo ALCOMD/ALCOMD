@@ -957,6 +957,8 @@ Latest 在确认展示来源集合中按 Core precedence 选择，Project Latest
 只有明确较新的项目候选产生 update.target。依赖图及实际 Apply 可行性仍由原 Plan/Apply 验证。
 版本和来源身份不可分离，同 source 同 precedence build 变体在分页前判歧义。
 
+Summary 的 `bulkPackageIds` 请求返回同一候选快照上的批量动作与排除原因。空数组只查看全项目更新；传入 ID 同时计算所选包的安装、更新、移除及重新安装。该投影不分页，不与 `filter` 或 `packageIds` 同用。Core 生成精确版本和来源的计划意图；目标超过 256 项、目录证据不完整或选中项不符合条件时，相应动作没有可提交意图。排除明细最多返回 256 项，并给出其余项数量。实际变更仍通过既有批量 Plan/Apply。
+
 使用已登记 Project/source/Config 快照；不得网络访问、刷新可变源、下载、写业务状态或创建
 Plan/Operation/Event。无持久 snapshot/session/catalog revision。指纹和 cursor 绑定快照及查询，
 每页重新鉴权；快照变化返回 `package_candidate_evidence_stale`，额度失败返回

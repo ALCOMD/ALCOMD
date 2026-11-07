@@ -1,6 +1,9 @@
 import type { ProjectTemplateRecord } from "@alcomd/sdk";
 import { browserCoreEvents, withBrowserCoreEvents } from "./core-events-client";
 import type {
+    CandidateBulkAction,
+    CandidateBulkActions,
+    CandidateBulkIntent,
     CandidateChoice,
     PackageCandidateEvidence,
     PackageCandidateSummary,
@@ -996,6 +999,58 @@ class DeterministicGuiClient implements GuiRpcClient {
             return { packageId, displayName, links, providers, direct: (installed && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
         });
         if (query.has("reverse-candidate-order")) items.reverse();
+        if (params.view.bulkPackageIds !== undefined) {
+            const selected = new Set(params.view.bulkPackageIds);
+            const selectedItems = items.filter((item) => selected.has(item.packageId));
+            const completeSelection = base.catalogComplete && selected.size > 0 && selected.size <= 256 && selectedItems.length === selected.size;
+            const intent = (item: PackageCandidateSummary, stable: boolean): CandidateBulkIntent[] => {
+                const choice = stable ? item.projectLatestStable : item.projectLatest;
+                const update = stable ? item.stableUpdate : item.update;
+                const installed = item.installed.kind === "locked";
+                const target = installed && update.kind === "target" ? update.candidate
+                    : item.installed.kind === "absent" && choice.kind === "candidate" ? choice.candidate : undefined;
+                if (target?.eligibility !== "eligible" || target.relation === "unknown") return [];
+                return [{
+                    kind: installed ? "upgrade" : "install", packageId: item.packageId,
+                    versionRange: `=${target.version}`, source: target.source, includePrerelease: target.classification === "prerelease"
+                }];
+            };
+            const updateAllFor = (stable: boolean): CandidateBulkAction => {
+                const installed = items.filter((item) => item.installed.kind !== "absent");
+                const intents = installed.flatMap((item) => intent(item, stable));
+                const exclusions = installed.flatMap((item) => {
+                    const update = stable ? item.stableUpdate : item.update;
+                    return update.kind === "target" ? [] : [{ packageId: item.packageId, update }];
+                });
+                const blocked = installed.some((item) => {
+                    const choice = stable ? item.projectLatestStable : item.projectLatest;
+                    return item.installed.kind === "unknown" || choice.kind === "unknown" || choice.kind === "ambiguous";
+                });
+                return {
+                    targetCount: intents.length, intents: base.catalogComplete && !blocked && intents.length <= 256 ? intents : [],
+                    exclusions: exclusions.slice(0, 256), omittedExclusions: Math.max(0, exclusions.length - 256)
+                };
+            };
+            const installUpdateFor = (stable: boolean): CandidateBulkAction => {
+                const intents = selectedItems.flatMap((item) => intent(item, stable));
+                return { targetCount: intents.length, intents: completeSelection && intents.length === selectedItems.length ? intents : [], exclusions: [], omittedExclusions: 0 };
+            };
+            const updateAll = updateAllFor(false);
+            const updateAllStable = updateAllFor(true);
+            const installUpdate = installUpdateFor(false);
+            const installUpdateStable = installUpdateFor(true);
+            const differs = (left: CandidateBulkAction, right: CandidateBulkAction) => left.targetCount !== right.targetCount || JSON.stringify(left.intents) !== JSON.stringify(right.intents);
+            const sources = params.view.sources;
+            const bulk: CandidateBulkActions = {
+                updateAll, ...(differs(updateAll, updateAllStable) ? { updateAllStable } : {}),
+                installUpdate, ...(differs(installUpdate, installUpdateStable) ? { installUpdateStable } : {}),
+                remove: completeSelection && selectedItems.every((item) => item.direct)
+                    ? selectedItems.map(({ packageId }) => ({ kind: "remove", packageId })) : [],
+                reinstall: completeSelection && selectedItems.every((item) => item.installed.kind === "locked")
+                    ? selectedItems.map(({ packageId }) => ({ kind: "reinstall", packageId, source: sources?.find((item) => item.packageId === packageId)?.source })) : []
+            };
+            return this.value({ ...base, view: "summary", items: [], bulk });
+        }
         const filter = params.view.filter;
         const matches = filter === undefined ? items : items.filter((item) => {
             const providers = item.providers.map(({ source }) => source.kind === "user_package"
