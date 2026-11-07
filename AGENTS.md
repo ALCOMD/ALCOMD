@@ -1,105 +1,29 @@
-# AGENTS.md
+# ALCOMD 项目规则
 
-## 工作目录与当前状态入口
+## 工作范围与授权
 
-- 本地开发、检查、构建与提交统一在项目所有者创建的 `C:\Users\M2922\MyProjects\Rust\ALCOMD` 进行，当前工作分支为 `main`。
-- 未经项目所有者另行批准，不创建或切换到额外 worktree，不在同级临时目录继续产品开发。
-- `docs/status.md` 是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档和 `codex/archive/*` 分支只保存历史证据，不另立当前阶段。
-- 2026-09-17 整合的保留与恢复记录见 `docs/testing/workspace-consolidation-20260917.md`。
+- 在项目所有者创建的 `C:\Users\M2922\MyProjects\Rust\ALCOMD` 的 `main` 上开发、检查、构建和提交。新增或切换 worktree、转到同级目录开发须另获项目所有者批准。
+- 一次只推进当前 ExecPlan 内已授权的一个里程碑。公共 RPC、数据库 Schema、Extension API、权限名称和迁移删除清单须经人工审批。新增生产依赖前在对应 ExecPlan 记录用途、替代方案和维护风险。
+- 本项目禁止 push、force-push、release、tag 和远端写入。只有项目所有者明确针对该操作授权例外时，才按授权范围执行。提交由真实 Windows 用户环境执行，除非所有者明确授权其他方式。禁止修改 GitHub 设置、Secrets、真实更新端点或签名材料。第三方仓库的写入也须有明确授权。
+- `../ALCOMD3-v3-readonly` 和 vrc-get 参考仓库只读。v3 仅用于功能审计、迁移格式验证和兼容性测试。禁止复制、移植或改写 v3 源码，禁止复制、Fork、包装、移植或改写 vrc-get / vrc-get-vpm 源码。
 
-## 必读顺序
+## 按任务读取
 
-开始任何任务前，按顺序阅读：
+- 需要判断当前实施范围或验收状态时，先读 [项目状态](docs/status.md)，再读其中对应任务的 ExecPlan 章节。触及子目录时先查看适用的 `AGENTS.md` 或 `AGENTS.override.md`。单纯查证、文案或局部样式改动，只读相关规则、代码和验证入口。
+- 进程、依赖或模块边界查 [架构](docs/architecture/ALCOMD-V4.md) 的对应章节。决策依据和待决事项分别查 [已接受决策](docs/decisions/accepted.md) 和 [开放决策](docs/decisions/open.md)。修改公共合同再查对应 `specs/`。对接 VPM 等规范时先核对官方来源并遵循其语义，发现与既有合同冲突时记录差异，按原审批边界修订。
+- `docs/status.md` 是唯一当前阶段入口，ExecPlan 定义实施合同。`docs/testing/` 和 `codex/archive/*` 用于查历史证据。工作区整合记录见 [保留与恢复记录](docs/testing/workspace-consolidation-20260917.md)。
 
-1. `docs/architecture/ALCOMD-V4.md`
-2. `docs/decisions/accepted.md`
-3. `docs/decisions/open.md`
-4. 当前任务对应的 `docs/exec-plans/*.md`
-5. `docs/status.md`
-6. 当前目录下更具体的 `AGENTS.md` 或 `AGENTS.override.md`
+## 架构与代码
 
-旧版源码应位于 `../ALCOMD3-v3-readonly`，只能读取，不得修改。
-v3 只可用于功能审计、迁移格式验证与兼容性测试，不得复制、移植或改写其源码。
-vrc-get / vrc-get-vpm 不是代码上游，不得复制、Fork、包装、移植或改写其源码。
+- `alcomd` 是唯一权威状态持有者、数据库和 Unity 项目写入者。GUI、CLI、MCP、Local API、外部应用和扩展统一通过 `alcomd-application` 用例，不直接访问数据库或写项目。业务校验、资格与范围、调度、冲突恢复和结果由 Core 实现，GUI 只负责交互、呈现和本地视图状态。
+- `alcomd-mcp` 独立于 GUI 和扩展。MCP 管理界面与全部 Discord 能力是第一方扩展，遵循与第三方相同的公开 API、权限、宿主和沙箱。
+- 正常运行时代码与安装产物排除旧解析器。v3、VCC 和旧 ALCOM 数据解析器只留在 `migrations/v3/`。
+- 从 `alcomd.product.toml` 派生产品身份。永久技术身份是 `ALCOMD`、`alcomd`、`com.vrclearn.alcomd`、`VRCLearn`、`vrclearn.ALCOMD`。生产代码不得引入 `com.cqmhv.*`、`CQMHV`、`CQMHV.ALCOMD*`、`alcomd3-mcp` 或 `ALCOMD3.exe`。迁移输入与历史证据保留真实旧值。
+- Rust 与 TypeScript 用 4 空格缩进。优先强类型和显式错误，公共 DTO 与领域对象分离，不硬编码平台路径、产品名或旧标识。`alcomd-domain` 不依赖 Tauri、SQLite、HTTP、MCP 或 OS API。`unsafe` 须说明。
+- 获批的日志入口可记录排障所需的绝对路径和技术细节，禁止记录 secret。RPC、业务事件及普通 GUI 错误保持有界稳定合同。
 
-## 不可违反的架构边界
+## 验证与状态
 
-- `alcomd` 是唯一状态持有者、数据库写入者和 Unity 项目写入者。
-- GUI、CLI、MCP、Local API、外部应用与扩展不得直接访问数据库或修改项目。
-- 所有入口必须调用同一个 `alcomd-application` 用例层。
-- 业务输入校验、资格与范围判定、批量调度、冲突恢复和业务结果生成由 Core 实现。GUI 负责收集用户输入、调用用例和呈现结果，可维护本地界面状态，不复制 CLI、MCP 等入口也需要的业务规则。
-- `alcomd-mcp` 必须独立于 GUI 和扩展运行。
-- MCP 可视化管理界面必须作为第一方扩展实现。
-- Discord GUI、后台逻辑和 Rich Presence 必须作为第一方扩展实现。
-- 第一方扩展必须使用与第三方扩展相同的公开 API、权限、宿主和沙箱。
-- 正常运行时代码不得依赖 v3、VCC 或旧 ALCOM 数据解析器。
-- 旧解析器只能存在于 `migrations/v3/`，且不得进入正常安装产物。
-- 内部技术身份永久使用 `ALCOMD`、`alcomd` 与 `com.vrclearn.alcomd`，发布者为 `VRCLearn`，Windows AUMID 为 `vrclearn.ALCOMD`。
-- 不得在生产代码中重新引入个人命名空间 `com.cqmhv.*`、发布者 `CQMHV`、`CQMHV.ALCOMD*`、`alcomd3-mcp` 或 `ALCOMD3.exe`；v3 迁移输入和历史证据保留真实旧值。
-
-## 工作范围
-
-- 一次只完成当前 ExecPlan 中的一个里程碑。
-- 不擅自扩大范围或提前实现后续里程碑。
-- 对接 VPM 等有适用官方规范的行为时，先核对官方来源并遵循其定义。不得自行用产品策略替换或缩减官方语义；发现既有合同与官方规范冲突时，明确记录差异并按相应审批边界修正。
-- 不为了让测试通过而删除功能、降低校验、放宽权限或改写验收条件。
-- 新增生产依赖前，必须在 ExecPlan 中记录用途、替代方案和维护风险。
-- 不进行无关重构，不全仓库格式化无关文件。
-- 公共 RPC、数据库 Schema、Extension API、权限名称和迁移删除清单必须经过人工审批。
-- 不把占位实现描述为已完成功能。
-
-## 代码规则
-
-- Rust 和 TypeScript 使用 4 个半角空格缩进。
-- 优先使用强类型与显式错误，不硬编码平台路径、产品名或旧标识。
-- 产品身份从 `alcomd.product.toml` 派生。
-- 公共 DTO 与领域对象分离。
-- 不在 `alcomd-domain` 中依赖 Tauri、SQLite、HTTP、MCP 或操作系统 API。
-- 禁止未经说明的 `unsafe`。
-- 本地技术日志可记录排障所需的完整绝对路径和准确技术细节；secret 永不记录；RPC、Activity、
-  Event 和普通 GUI 错误继续保持有界稳定合同。
-
-## 验证
-
-项目尚未公开发布，按改动风险、影响范围和开发阶段安排验证：
-
-- 日常修改优先运行受影响模块的定向测试及必要的 fmt/Clippy、前端检查；Rust 使用受影响 crate 的 `cargo test -p <crate>` / `cargo clippy -p <crate> --all-targets -- -D warnings`，前端优先检查受影响 workspace。
-- 功能模块完成后，集中执行该模块及相关回归路径的测试。多项相关修改形成稳定候选后，再统一运行完整验证，不因每个小修改或独立提交重复编译、完整测试或 Tauri release 构建。
-- 使用现有聚合脚本前核对其覆盖范围，同一候选不再逐项重跑脚本已完成的检查；额外入口只补充未覆盖的验证。
-- 跨平台、安全、依赖和重要架构变更仍需覆盖相应平台、功能及安全回归，可在该批变更的稳定候选上集中执行；高风险问题或回归失败应及时补充必要验证，不机械等到阶段结束。
-- 三平台 Hosted CI 与 CodeQL 用于重要技术检查点、阶段收尾及最终验收候选，不要求每个小提交运行。在已有推送授权范围内批量提交、集中推送；流程调整不新增推送授权，也不构成取消已运行 CI 的理由。
-- 保留全部测试、断言和安全门禁；如实区分通过、失败和未执行。最终验收须基于实际候选 SHA 完成必要的完整验证，不拼接不同提交的结果。
-
-稳定技术检查点、阶段收尾及最终验收候选按适用范围集中运行完整 Rust 门禁：
-
-```text
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo xtask check
-```
-
-前端日常运行适用的 `check`；模块完成或稳定候选再集中执行适用的构建与浏览器回归。完整前端门禁为：
-
-```text
-npm run check
-npm run build
-```
-
-修改协议或扩展契约后：
-
-- 更新对应 Schema 与规范。
-- 更新契约快照。
-- 运行兼容性测试。
-- 在 ExecPlan 中说明是否为破坏性变化。
-
-无法执行验证时，必须记录原因、未覆盖范围和风险。每个里程碑完成后更新 `docs/status.md`。
-
-## Git 与外部操作
-
-- 不执行 push、force-push、release、tag 或远端仓库写操作。
-- 不修改 GitHub 设置、Secrets、真实更新端点或真实签名材料。
-- 不覆盖用户已有改动。
-- 不修改旧只读仓库。
-- Git 提交应由真实 Windows 用户环境执行，除非用户明确授权。
-- 任何向第三方仓库写入的操作都需要用户明确授权。
+- 日常运行受影响模块的定向测试、fmt/Clippy 和前端检查。功能模块完成后补相关回归，跨平台、安全、依赖与架构变更覆盖相应边界。稳定候选、阶段收尾和最终验收集中执行适用门禁：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`、`cargo xtask check`、`npm run check`、`npm run build`、浏览器回归与三平台 Hosted CI/CodeQL。复用聚合脚本已有结果，最终验收绑定同一候选 SHA。
+- 保留现有功能、断言和安全门禁。不得为使测试通过而缩减功能、放宽校验或权限、改写验收条件。获批修改协议或扩展契约后，同步 Schema、规范和快照，运行兼容性测试，并在 ExecPlan 写明是否为破坏性变化。
+- 区分通过、失败和未执行，记录未覆盖的原因、范围和风险。占位实现不能计为完成。里程碑完成后更新 `docs/status.md`。
