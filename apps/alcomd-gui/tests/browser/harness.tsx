@@ -29,10 +29,11 @@ import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-m
 import { App } from "../../src/App";
 import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
-import type { GuiRpcClient, NativeFileKind } from "../../src/rpc";
+import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
+import { FilePickerEvidence } from "./FilePickerEvidence";
 import { OperationLogEvidence } from "./OperationLogEvidence";
 import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
@@ -281,6 +282,11 @@ class DeterministicGuiClient implements GuiRpcClient {
     private listPreviewReads = 0;
     selectFile(kind: NativeFileKind): ReturnType<GuiRpcClient["selectFile"]> {
         return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdext" }[kind]);
+    }
+    async subscribeFileDrag(receive: (event: FileDrag) => void) {
+        const listener = (event: Event) => receive((event as CustomEvent<FileDrag>).detail);
+        window.addEventListener("fixture-file-drag", listener);
+        return () => window.removeEventListener("fixture-file-drag", listener);
     }
     async selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
@@ -1593,7 +1599,7 @@ const repositoryLinks = pendingRepositoryLinks ? {
 } : undefined;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        {materialEvidence
+        {query.has("file-picker-evidence") ? <FilePickerEvidence /> : materialEvidence
             ? <MaterialFoundationEvidence />
             : operationLogEvidence ? <OperationLogEvidence />
             : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}

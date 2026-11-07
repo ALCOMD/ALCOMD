@@ -4,12 +4,14 @@ import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, Ex
 import type { UnityHubOpenResult } from "@alcomd/sdk";
 import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult, RepositorySetDisplayNameParams } from "@alcomd/sdk";
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
 import type { ProjectListView } from "./core-models";
 
 import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
+export type FileDrag = { type: "leave" } | { type: "hover"; x: number; y: number } | { type: "drop"; x: number; y: number; paths: string[] };
 export type NativeFileKind = "repositoryManifest" | "unityEditor" | "extensionPackage";
 
 export interface GuiRpcClient {
@@ -30,6 +32,7 @@ export interface GuiRpcClient {
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
     selectFile(kind: NativeFileKind): Promise<string | undefined>;
+    subscribeFileDrag?(receive: (event: FileDrag) => void): Promise<() => void>;
     selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
@@ -115,6 +118,16 @@ export interface GuiRpcClient {
 class TauriGuiRpcClient implements GuiRpcClient {
     selectFile(kind: NativeFileKind): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_file", { kind }).then((path) => path ?? undefined);
+    }
+
+    subscribeFileDrag(receive: (event: FileDrag) => void): Promise<() => void> {
+        return getCurrentWebview().onDragDropEvent(({ payload }) => {
+            if (payload.type === "leave") { receive({ type: "leave" }); return; }
+            // Native positions are physical pixels; DOM hit testing uses CSS pixels.
+            const x = payload.position.x / window.devicePixelRatio;
+            const y = payload.position.y / window.devicePixelRatio;
+            receive(payload.type === "drop" ? { type: "drop", x, y, paths: payload.paths } : { type: "hover", x, y });
+        });
     }
 
     readonly unityWindows: GuiUnityWindows = {

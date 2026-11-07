@@ -61,6 +61,7 @@ import {
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { displayChildPath, displayPath } from "./display-path";
+import { FilePicker } from "./FilePicker";
 import { useProjectDirectory } from "./use-project-directory";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
@@ -73,7 +74,7 @@ import "./ExtensionWorkspace.css";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { DialogCloseButton, Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, PathField, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { RepositoryToolbar } from "./RepositoryListDialog";
 import { isBuiltinRepository, repositoryDisplayName } from "./repository-display";
@@ -905,22 +906,6 @@ function DirectorySelectionDialog({ client, label, onChanged, onClose, onConfirm
         setError(undefined);
     }, [open]);
 
-    const chooseDirectory = async () => {
-        if (pending.current || choosing) return;
-        pending.current = true;
-        setChoosing(true);
-        setError(undefined);
-        try {
-            const selected = await client.selectDirectory();
-            if (current() && selected !== undefined) setPath(selected);
-        } catch (caught) {
-            if (current()) setError(normalizeRequestError(caught));
-        } finally {
-            pending.current = false;
-            if (current()) setChoosing(false);
-        }
-    };
-
     const confirm = async () => {
         if (pending.current || choosing || path.trim() === "") return;
         pending.current = true;
@@ -944,10 +929,9 @@ function DirectorySelectionDialog({ client, label, onChanged, onClose, onConfirm
         <Button disabled={busy || choosing || path.trim() === ""} onClick={() => void confirm()} type="button">{t("Confirm")}</Button>
     </>}>
         {open ? <>
-            <div className="project-target-picker">
-                <PathField disabled={busy || choosing} label={label} value={path} onInput={(next) => { setPath(next); setError(undefined); }} />
-                <Button disabled={busy || choosing} onClick={() => void chooseDirectory()} type="button" variant="tonal">{t("Select")}</Button>
-            </div>
+            <FilePicker client={client} kind="directory" choosePath={() => client.selectDirectory()} disabled={busy}
+                label={label} value={path} onChoosingChange={setChoosing}
+                onPathChange={(next) => { setPath(next); setError(undefined); }} />
             {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         </> : null}
     </Dialog>;

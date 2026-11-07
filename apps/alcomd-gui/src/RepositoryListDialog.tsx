@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { RepositoryListImportItem, RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult, RpcError } from "@alcomd/sdk";
 import type { GuiRpcClient } from "./rpc";
 import { RegisterRepositoryPanel, useActionScope } from "./CoreActions";
-import { Button, Checkbox, Dialog, DialogCloseButton, MenuItem, PathField, Progress, TextField } from "./Material";
+import { Button, Checkbox, Dialog, DialogCloseButton, MenuItem, Progress, TextField } from "./Material";
+import { FilePicker } from "./FilePicker";
 import { SplitButton } from "./SplitButton";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { ScrollArea } from "./ScrollArea";
@@ -69,21 +70,6 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
         setError(undefined);
     };
     const end = () => { pending.current = false; if (current()) setBusyAction(undefined); };
-    const chooseFile = async () => {
-        if (pending.current || choosing) return;
-        pending.current = true;
-        setChoosing(true);
-        setError(undefined);
-        try {
-            const selected = await client.selectRepositoryListFile("open");
-            if (current() && selected !== undefined) setPath(selected);
-        } catch (caught) {
-            if (current()) setError(normalizeRequestError(caught));
-        } finally {
-            pending.current = false;
-            if (current()) setChoosing(false);
-        }
-    };
     const read = async (selectedPath: string) => {
         if (pending.current || selectedPath.trim() === "") return;
         setPath(selectedPath);
@@ -153,10 +139,9 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     return <Dialog wide={inspection !== undefined} open dismissible={!busy && !choosing} title={t("Import list")} onClose={onClose} actions={actions}>
         {inspection ? null : <>
             <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
-            <div className="project-target-picker">
-                <PathField disabled={busy || choosing} label={t("Repository list file")} value={path} onInput={(next) => { setPath(next); setError(undefined); }} />
-                <Button disabled={busy || choosing} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
-            </div>
+            <FilePicker client={client} kind="file" choosePath={() => client.selectRepositoryListFile("open")} disabled={busy}
+                label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
+                onPathChange={(next) => { setPath(next); setError(undefined); }} />
         </>}
         {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>

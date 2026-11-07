@@ -134,6 +134,7 @@ export function withBrowserCoreEvents(client: GuiRpcClient): GuiRpcClient {
     const extensionChanges = new Set(["extensionEnable", "extensionDisable", "extensionSetGrant", "extensionRevokeGrant"]);
     return new Proxy(client, { get(target, key, receiver) {
         if (key === "subscribeEvents") return browserCoreEvents.subscribe;
+        if (key === "subscribeFileDrag") return target.subscribeFileDrag?.bind(target);
         const value: unknown = Reflect.get(target, key, receiver);
         if (typeof value !== "function") return value;
         if (!methods.has(key)) methods.set(key, async (...args: unknown[]) => {
