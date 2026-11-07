@@ -299,8 +299,8 @@ async fn standalone_project_creation_and_template_mutations_use_the_private_rpc_
     drop(recovery);
     assert_eq!(installed(), builtins);
     assert_eq!(
-        std::fs::read(&deferred_export).unwrap(),
-        std::fs::read(&archive).unwrap()
+        std::fs::read(&deferred_export).expect("read the recovered export"),
+        std::fs::read(&archive).expect("read the source template archive")
     );
 
     let mut params = json!({"name":"Created IPC","targetParent":root.to_string_lossy(),"idempotencyKey":"isolated-create"});

@@ -145,7 +145,7 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
     assert!(recreated.revision > deletion && deletion > saved.revision);
     assert!(
         project_templates::archive_references(&connection)
-            .unwrap()
+            .expect("read frozen template archive references")
             .contains(&frozen_digest)
     );
     let work = begin_work(&mut connection, accepted.operation_id, 23)
@@ -216,7 +216,7 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
     .expect("finish failed create");
     assert!(
         !project_templates::archive_references(&connection)
-            .unwrap()
+            .expect("read remaining template archive references")
             .contains(&frozen_digest)
     );
 }
@@ -246,7 +246,7 @@ fn reseeding_replaces_retired_builtins_and_preserves_user_templates() {
     assert_eq!(page.templates[1], user);
     project_templates::seed(&mut connection, &owner, vec![new]).expect("repeat seeding");
     assert_eq!(
-        project_templates::list(&connection, &owner, 100, None).unwrap(),
+        project_templates::list(&connection, &owner, 100, None).expect("read reseeded catalogue"),
         page
     );
 }

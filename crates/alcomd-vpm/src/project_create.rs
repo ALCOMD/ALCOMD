@@ -871,7 +871,7 @@ mod tests {
         );
         assert_eq!(
             fs::read_dir(fixture.root.join("templates"))
-                .unwrap()
+                .expect("read the template archive directory")
                 .count(),
             0
         );
