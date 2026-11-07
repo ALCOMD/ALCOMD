@@ -522,7 +522,9 @@ for (const locale of ["zh-CN", "ja-JP"]) {
         expect(automatic!.y + automatic!.height).toBeLessThanOrEqual(field!.y);
         const openBox = await localized.getByRole("button", { name: locale === "zh-CN" ? "打开 Unity Hub" : "Unity Hubを開く", exact: true }).boundingBox();
         expect(openBox).not.toBeNull();
-        expect(Math.abs((openBox!.x + openBox!.width) - (select!.x + select!.width))).toBeLessThanOrEqual(1);
+        expect(Math.abs((openBox!.y + openBox!.height / 2) - (heading!.y + heading!.height / 2))).toBeLessThanOrEqual(1);
+        expect(openBox!.x).toBeGreaterThanOrEqual(automatic!.x + automatic!.width);
+        expect(select!.x).toBeGreaterThanOrEqual(field!.x + field!.width);
         const overflow = await localized.evaluate((element) => element.scrollWidth > element.clientWidth);
         expect(overflow).toBe(false);
         await page.screenshot({ path: testInfo.outputPath(`hub-${locale}.png`), animations: "disabled" });

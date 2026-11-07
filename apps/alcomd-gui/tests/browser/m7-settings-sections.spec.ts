@@ -25,7 +25,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Projects"), t("Backups")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")]];
+        const regions = [[t("Projects"), t("Backups"), t("Network")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")]];
         await expect(page.getByRole("region", { name: t("Packages"), exact: true, includeHidden: true })).toHaveCount(0);
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();

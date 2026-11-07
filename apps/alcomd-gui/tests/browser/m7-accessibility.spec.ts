@@ -56,12 +56,15 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
-    await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
-    await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
+    const drop = page.getByRole("button", { name: "Drop a folder here or click to select", exact: true });
+    await expect(drop).toBeFocused();
+    await expect(page.getByRole("button", { name: "Confirm" })).toBeDisabled();
+    await page.getByRole("textbox", { name: "Project location", exact: true }).fill("C:\\Fixture\\Avatar");
+    await page.getByRole("button", { name: "Confirm" }).focus();
     await page.keyboard.press("Shift+Tab");
     await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
-    await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Select", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
     await expect(invoke).toBeFocused();
@@ -410,7 +413,8 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await openHarness(page, "/projects");
     await page.getByRole("button", { name: "More project creation options" }).click();
     await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
-    await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Project location", exact: true })).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByRole("dialog", { name: "Register this project?", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.coreEvents.rpcRequests.filter(request => request.method === "projectRegister").length)).toBe(1);
@@ -427,15 +431,17 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await openHarness(page, "/templates");
     await page.getByRole("button", { name: "Create template", exact: true }).click();
     await page.getByLabel("Template ID", { exact: true }).fill("com.example.accessibility");
-    await page.getByLabel("Name", { exact: true }).fill("Accessibility fixture");
+    await page.getByLabel("Display name", { exact: true }).fill("Accessibility fixture");
     await clickDialogAction(page, "Create template", "Save template");
     await expect(page.getByRole("row").filter({ hasText: "com.example.accessibility" })).toBeVisible();
 
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/backups");
     await page.getByRole("button", { name: "Create backup", exact: true }).click();
     await clickDialogAction(page, "Create backup", "Create backup");
-    await expect(page.getByRole("dialog", { name: "Create backup", exact: true })).toHaveCount(0);
-    await expect(page.locator(".operation-follow")).toContainText("Create backup");
+    const backupDialog = page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Create backup", exact: true }) });
+    await expect(backupDialog.locator(".operation-follow")).toContainText("Create backup");
+    await backupDialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(backupDialog).toHaveCount(0);
 
     await openHarness(page, "/backups/00000000-0000-4000-8000-000000000104");
     await page.getByRole("button", { name: "Restore backup", exact: true }).click();

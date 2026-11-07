@@ -23,7 +23,7 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
         const cards = page.locator(".projects-grid .project-card");
         await expect(cards).toHaveCount(7);
         for (const button of await cards.first().locator(".project-row-actions--card > md-filled-button, .project-row-actions--card > md-filled-tonal-button").all()) {
-            await expect(button).toHaveCSS("padding-inline-start", "24px");
+            await expect(button).toHaveCSS("padding-inline-start", await button.getAttribute("has-icon") === null ? "24px" : "16px");
             await expect(button).toHaveCSS("padding-inline-end", "24px");
         }
         for (const appearance of ["light", "dark"]) {

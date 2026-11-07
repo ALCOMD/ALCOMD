@@ -160,11 +160,10 @@ test("a late automatic read cannot overwrite an accepted project change", async 
         window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000992", rootPath: "C:\\Fixture\\Newer project", displayName: "Newer project" });
     });
     await page.getByRole("button", { name: "Add to favorites", exact: true }).first().click();
-    await expect(page.getByRole("button", { name: "Remove from favorites", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Updating favorite", exact: true })).toHaveCount(0);
     await page.evaluate(() => window.resumeProjectPoll!());
-    await page.clock.fastForward(100);
+    await page.clock.runFor(500);
     await expect(page.getByRole("button", { name: "Remove from favorites", exact: true }).first()).toBeVisible();
-    await page.clock.fastForward(3_100);
     await expect(page.getByText("Newer project", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });

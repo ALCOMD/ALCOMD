@@ -25,16 +25,16 @@ for (const preference of ["system", "full", "reduced"] as const) {
             })).toBe(reduced ? "all" : "not all");
             const theme = page.getByRole("form", { name: "Theme", exact: true });
             await theme.getByRole("textbox", { name: "Source color", exact: true }).fill("#315DA8");
-            await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
+            await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
+            await page.getByRole("region", { name: "Theme", exact: true }).getByRole("button", { name: "Restore defaults", exact: true }).click();
             await expect(page.locator("md-dialog[open]")).toHaveJSProperty("quick", reduced);
-            await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
+            await expect(page.getByRole("dialog", { name: "Restore defaults", exact: true })).toBeVisible();
             const menu = page.locator("#settings-motion").locator("md-menu");
             await expect(menu).toHaveJSProperty("quick", reduced);
             await page.keyboard.press("Escape");
-            await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeHidden();
+            await expect(page.getByRole("dialog", { name: "Restore defaults", exact: true })).toBeHidden();
             await expect(theme.getByRole("textbox", { name: "Source color", exact: true })).toHaveValue("#315DA8");
-            await theme.getByRole("button", { name: "Cancel", exact: true }).click();
-            expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+            expect(await page.evaluate(() => window.settingsRequests)).toHaveLength(1);
         });
     }
 }
@@ -62,7 +62,7 @@ test("system follows live OS changes while explicit preferences stay fixed", asy
 test("a failed animation write retains the latest control intent without claiming an accepted preference", async ({ page }) => {
     await openSettings(page, "&theme-save=error");
     await selectOption(page, "reduced");
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "reduced");
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);

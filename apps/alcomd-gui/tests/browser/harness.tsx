@@ -276,8 +276,9 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationSequence = 0;
     private listExportAttempts = 0;
     private listPreviewReads = 0;
-    selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
+    async selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
+        if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
     }
     private listImportStopped = false;
@@ -331,6 +332,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private hubReadFailurePending = false;
     private repositoriesReady: Promise<void> | undefined;
     private settingsReady: Promise<void> | undefined;
+    private settingsHoldArmed = !query.has("armSettingsHold");
     private themeSaveRejected = false;
     private argumentsSaveRejected = false;
     private argumentsReadFailurePending = false;
@@ -392,6 +394,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private connectionRestored = false;
 
     constructor(private readonly mode: HarnessMode) {
+        if (query.has("armSettingsHold")) window.addEventListener("test-settings-hold", () => { this.settingsHoldArmed = true; }, { once: true });
         this.userPackageEnrolled = mode === "package-user-source";
         if (mode === "empty") this.projectTemplates = [];
         if (initialRoute.startsWith("/operations") && mode !== "empty" && !query.has("h5-utilities") && !query.has("h4-management")) this.beginOperation();
@@ -543,7 +546,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             window.releasedInitialSettingsReads += 1;
             return this.value(snapshot);
         }
-        if (query.has("holdSettings")) {
+        if (query.has("holdSettings") && this.settingsHoldArmed) {
             this.settingsReady ??= new Promise<void>((resolve) => window.addEventListener("test-settings-ready", () => resolve(), { once: true }));
             window.heldSettingsReads += 1;
             await this.settingsReady;
@@ -625,7 +628,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.projectListReads += 1;
         const page = (projects: ProjectSnapshot[]) => projectListPage(projects, cursor, view, expectedViewSequence, this.mode === "favorite-pages");
         if (query.has("auto-projects")) {
-            const projects = [project(), ...window.autoDiscoveryProjects];
+            const projects = [project(), ...window.autoDiscoveryProjects].map((item) => item.projectId !== undefined && this.projectFavorites.has(item.projectId)
+                ? { ...item, favorite: this.projectFavorites.get(item.projectId)!, revision: 3 } : item);
             window.projectSnapshots.push(structuredClone(projects));
             if (query.has("hold-project-poll") && window.projectListReads === 2) {
                 const snapshot = structuredClone(page(projects));
@@ -707,8 +711,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("hub-picker") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-picker-ready", () => resolve(), { once: true }));
         return query.get("hub-picker") === "cancel" ? undefined : "C:\\Tools\\Unity Hub\\Unity Hub.exe";
     }
-    selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> {
+    async selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> {
         if (query.has("resource-lifecycle")) window.resourceRequests.push({ method: "selectDirectory", params: {} });
+        if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         return this.value(query.has("cancel-directory") ? undefined : "C:\\Fixture\\Avatar");
     }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
@@ -1276,8 +1281,9 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
     }
 
 
-    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectProjectTemplateFile"]> {
+    async selectProjectTemplateFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectProjectTemplateFile"]> {
         window.templateRequests.push({ method: "selectProjectTemplateFile", params: { mode, fileName } });
+        if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         if (query.has("template-file-cancel")) return this.value(undefined);
         return this.value(mode === "open" ? "C:\\Fixture\\input.alcomdtemplate" : "C:\\Fixture\\" + fileName);
     }
