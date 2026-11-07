@@ -1,5 +1,6 @@
 import { expectRequestError } from "./request-error-assertions";
 import { requestErrorMessage } from "../../src/request-errors";
+import { displayPath } from "../../src/display-path";
 import { expect, test, type Page } from "@playwright/test";
 import { H4_ADDED, H4_ALPHA, H4_BETA, H4_GAMMA } from "./h4-management-client";
 
@@ -92,7 +93,7 @@ test("H4 install preserves its raw path, reviews expected absence, and follows o
     expect((await requests(page, "extensions.planInstall"))[0]!.params).toEqual({ packagePath, expectedRevision: 0, publisherApproval: "approve_for_extension" });
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
     await modal(page).getByRole("button", { name: "Discard plan", exact: true }).click();
-    await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue(packagePath);
+    await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue(displayPath(packagePath));
     await modal(page).getByRole("button", { name: "Create install plan", exact: true }).click();
     await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
     await expect(modal(page).locator(".operation-follow")).toContainText(/running/i);

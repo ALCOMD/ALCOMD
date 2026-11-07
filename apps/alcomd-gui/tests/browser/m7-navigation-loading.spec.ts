@@ -49,11 +49,12 @@ async function frames(page: Page) {
 
 for (const origin of ["Projects", "Resources", "Logs"]) {
     test(`${origin} to Settings keeps populated frames until the settings read settles`, async ({ page }) => {
-        await open(page, "holdSettings=1");
+        await open(page, "holdSettings=1&armSettingsHold=1");
         if (origin !== "Projects") {
             await navigation(page, origin).click();
             await expect(page.getByRole("heading", { level: 1, name: origin, exact: true })).toBeFocused();
         }
+        await page.evaluate(() => window.dispatchEvent(new Event("test-settings-hold")));
         await frames(page);
         await navigation(page, "Settings").click();
         await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
@@ -61,7 +62,8 @@ for (const origin of ["Projects", "Resources", "Logs"]) {
         await expect(page.locator(".route-content #route-title")).toHaveText(origin);
         await expect(page.locator(".route-content .settings-workspace")).toHaveCount(0);
         await page.waitForTimeout(220);
-        await expect(page.locator(".page-navigation-progress .loading-state-indicator")).toBeVisible();
+        await expect(page.locator(".route-content #route-title")).toHaveText(origin);
+        await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
         await page.evaluate(() => window.dispatchEvent(new Event("test-settings-ready")));
         await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
         await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
@@ -91,13 +93,13 @@ test("abandoned pending reads cannot replace the latest route", async ({ page })
     await open(page, "holdSettings=1");
     await navigation(page, "Settings").click();
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
-    await navigation(page, "Resources").click();
-    await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
+    await navigation(page, "Logs").click();
+    await expect(page.getByRole("table", { name: "Logs", exact: true })).toBeVisible();
     await page.evaluate(async () => {
         window.dispatchEvent(new Event("test-settings-ready"));
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     });
-    await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeFocused();
+    await expect(page.getByRole("heading", { level: 1, name: "Logs", exact: true })).toBeFocused();
     await expect(page.locator(".settings-workspace")).toHaveCount(0);
     expect(await page.evaluate(() => window.pageAnimationCalls)).toBe(0);
 });
@@ -109,7 +111,6 @@ test("a failed pending read commits a real error with a retry action", async ({ 
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-repositories-ready", { detail: "error" })));
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("Core is unavailable. Reconnect and check any submitted task before repeating a change.");
-    await alert.getByRole("button", { name: "Show details", exact: true }).click();
     await expect(alert).toContainText("daemon_unavailable");
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
@@ -123,7 +124,7 @@ test("Settings never requests repository visibility data across its sections", a
     await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
     await selectSettingsSection(page, "unity");
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
-    for (const section of ["appearance", "notifications", "general"] as const) await selectSettingsSection(page, section);
+    for (const section of ["appearance", "general"] as const) await selectSettingsSection(page, section);
     await expect(page.getByRole("region", { name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("region", { name: "Backups", exact: true })).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);

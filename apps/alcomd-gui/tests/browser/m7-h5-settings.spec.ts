@@ -221,7 +221,7 @@ test("Project package filters enforce the complete 256-ID bound while allowing e
     expect(lists.map((ids) => ids.length)).toEqual([255, 256]);
     expect(lists[0]).not.toContain(H5_HIDDEN_ID);
     expect(lists[1]).toContain(H5_VISIBLE_ID);
-    expect(lists[1]).toEqual([...lists[1]!].sort());
+    expect(lists[1]).toEqual([...lists[0]!, H5_VISIBLE_ID]);
     await expect(hidden).toBeDisabled();
     await expect(visible).toBeEnabled();
     await expect(visible).not.toBeChecked();

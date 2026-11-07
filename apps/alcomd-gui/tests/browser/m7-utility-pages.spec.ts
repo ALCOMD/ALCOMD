@@ -15,8 +15,7 @@ const listRoutes = [
     ["Unity installations", "/settings", "ready"],
     ["Backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
     ["Tasks", "/operations", "ready"],
-    ["Activity", "/activity", "ready"],
-    ["Technical Logs", "/diagnostics", "ready"]
+    ["Logs", "/logs", "ready"]
 ] as const;
 
 for (const width of [1280, 1440]) {
@@ -28,12 +27,18 @@ for (const width of [1280, 1440]) {
                 await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
                 await page.mouse.move(0, 0);
                 if (route === "/settings") await selectSettingsSection(page, "unity");
+                if (route === "/logs") await page.evaluate(() => window.fixtureLogs.replace([{
+                    sequence: 1, actor: "CLI", entryId: "11111111-1111-4111-8111-111111111111",
+                    executionId: "22222222-2222-4222-8222-222222222222", occurredAtMs: 1793937600000,
+                    action: "projects.register", step: "inspect_project", outcome: "succeeded",
+                    target: { kind: "project", name: "Long project name ".repeat(15), path: "C:\\Fixture\\" + "长路径".repeat(100) }
+                }]));
                 const table = page.getByRole("table", { name: label, exact: true });
                 await expect(table.locator("tbody tr").first()).toBeVisible();
-                const viewport = table.locator("..");
+                const viewport = table.locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' desktop-list-viewport ')][1]");
                 await viewport.scrollIntoViewIfNeeded();
                 for (const corner of ["top-left", "top-right", "bottom-left", "bottom-right"]) {
-                    await expect(viewport).toHaveCSS(`border-${corner}-radius`, "28px");
+                    await expect(viewport).toHaveCSS(`border-${corner}-radius`, "16px");
                 }
                 expect(await viewport.evaluate((element) => {
                     const box = element.getBoundingClientRect();
@@ -41,6 +46,12 @@ for (const width of [1280, 1440]) {
                     const atHeader = document.elementFromPoint(box.left + 24, box.top + 3);
                     return atCorner !== null && !element.contains(atCorner) && atHeader !== null && element.contains(atHeader);
                 })).toBe(true);
+                if (route === "/logs") {
+                    await expect(table.locator("tbody td[data-cell-flow='wrap']")).toHaveCount(5);
+                    expect(await page.locator("html").evaluate((element) => element.scrollWidth > innerWidth)).toBe(false);
+                    expect((await table.locator("tbody tr").boundingBox())!.height).toBeGreaterThan(40);
+                    return;
+                }
                 await page.evaluate(() => document.fonts.ready);
                 const cards = await table.evaluate((element) => {
                     const rows = Array.from(element.querySelectorAll("tr"));
@@ -78,16 +89,16 @@ for (const width of [1280, 1440]) {
                     labelSize: "14px", labelLineHeight: "20px", labelWeight: "500"
                 })));
                 expect(cards.corners).toEqual(cards.corners.map((_, index) => [
-                    index === 0 ? "28px" : "8px",
-                    index === cards.corners.length - 1 ? "28px" : "8px",
-                    index === 0 ? "28px" : "8px",
-                    index === cards.corners.length - 1 ? "28px" : "8px"
+                    index === 0 ? "16px" : "8px",
+                    index === cards.corners.length - 1 ? "16px" : "8px",
+                    index === 0 ? "16px" : "8px",
+                    index === cards.corners.length - 1 ? "16px" : "8px"
                 ]));
                 const result = await table.evaluate((element) => {
                     const rows = Array.from(element.querySelectorAll("tbody tr"));
                     const heights = rows.map((row) => row.getBoundingClientRect().height);
                     const probeNodes: Text[] = [];
-                    for (const cell of element.querySelectorAll("tbody td")) {
+                    for (const cell of element.querySelectorAll("tbody td[data-cell-flow='truncate']")) {
                         const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
                         while (walker.nextNode()) {
                             const node = walker.currentNode as Text;
@@ -103,7 +114,7 @@ for (const width of [1280, 1440]) {
                         range.selectNodeContents(node);
                         return new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size > 1;
                     }).length;
-                    const wrappingContainers = Array.from(element.querySelectorAll("th, th *, tbody td, tbody td *")).filter((node) => {
+                    const wrappingContainers = Array.from(element.querySelectorAll("th, th *, tbody td[data-cell-flow='truncate'], tbody td[data-cell-flow='truncate'] *")).filter((node) => {
                         if (node.closest("md-menu, svg") !== null) return false;
                         const style = getComputedStyle(node);
                         return style.whiteSpace !== "nowrap" || ((style.display === "flex" || style.display === "inline-flex") && style.flexWrap !== "nowrap");
@@ -122,11 +133,12 @@ for (const width of [1280, 1440]) {
                         clippedControls,
                         rowHeightChanges: rows.map((row, index) => Math.abs(row.getBoundingClientRect().height - heights[index]!)),
                         pageOverflows: document.documentElement.scrollWidth > window.innerWidth,
-                        defaults: Array.from(element.querySelectorAll("tbody td"), (cell) => cell.getAttribute("data-cell-flow"))
+                        defaults: Array.from(element.querySelectorAll("tbody td:not(.projects-column-actions)"), (cell) => cell.getAttribute("data-cell-flow"))
                     };
                 });
                 expect(result.probes).toBeGreaterThan(0);
                 expect(result.defaults.every((flow) => flow === "truncate")).toBe(true);
+                await expect(table.locator("tbody td[data-cell-flow='wrap']")).toHaveCount(route === "/projects" ? await table.locator("tbody tr").count() : 0);
                 expect(result.wrappedText).toBe(0);
                 expect(result.wrappingContainers).toEqual([]);
                 expect(result.clippedControls).toEqual([]);
@@ -159,7 +171,7 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
     });
     await openHarness(page, "/projects");
     await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
-    await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "28px");
+    await expect(page.locator(".projects-content .desktop-list-viewport")).toHaveCSS("border-radius", "16px");
     await page.getByRole("button", { name: "List view", exact: true }).click();
     await expect(page.locator(".projects-secondary-toolbar")).toHaveCSS("border-radius", "28px");
     await expect(page.locator(".project-card").first()).toHaveCSS("border-radius", "28px");
@@ -167,11 +179,10 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
         ["/settings", ".settings-section"],
         ["/extensions", ".extension-management, .extension-card"],
         ["/about", ".notice-card"],
-        ["/activity", ".logs-filter-toolbar"],
-        ["/diagnostics", ".logs-filter-toolbar"],
+        ["/logs", ".operation-log-filters"],
         ["/extensions/com.vrclearn.discord/ui", ".extension-identity > div, .portable-section, .portable-group"],
         ["/extensions/com.vrclearn.mcp-management/ui", ".portable-list-item"],
-        ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface"]
+        ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-toolbar"]
     ] as const;
     for (const mode of ["light", "dark"]) {
         await openHarness(page, "/projects");
@@ -190,7 +201,7 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
                 await expect(surfaces.first()).toBeVisible();
                 for (const surface of await surfaces.all()) await expect(surface).toHaveCSS("border-radius", "28px");
             }
-            if (route === "/activity" || route === "/diagnostics") expect(await filterBarStyle()).toEqual(sharedFilterStyle);
+            if (route === "/logs") await expect(page.getByRole("group", { name: "Log filters", exact: true }).locator("md-filled-select")).toHaveCount(3);
             if (route === "/about") {
                 // These are transparent definition rows with divider lines, not card surfaces.
                 for (const row of await page.locator(".detail-grid > div").all()) {
@@ -210,11 +221,15 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expectHeading(page, "Resources");
     const resources = page.getByRole("navigation", { name: "Resources", exact: true });
     await expect(resources.getByRole("button", { name: "Repositories", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("table", { name: "Repositories", exact: true }).getByRole("columnheader")).toHaveText(["Repository", "Source", "Actions"]);
+    await expect(page.getByRole("table", { name: "Repositories", exact: true }).getByRole("columnheader")).toHaveText(["Enabled", "Repository", "Source", "Actions"]);
     const repositoryActions = page.getByRole("table", { name: "Repositories", exact: true }).locator("md-icon-button");
-    for (const name of ["package_2", "refresh", "close"]) {
+    for (const name of ["package_2", "edit", "cancel"]) {
         await expect(repositoryActions.filter({ has: page.locator(`[data-icon-name="${name}"]`) })).toHaveCount(1);
     }
+    await page.getByRole("button", { name: "Manage repository", exact: true }).click();
+    const management = dialogHost(page, "Manage repository");
+    await expect(management.getByRole("button", { name: "Refresh repository", exact: true })).toBeVisible();
+    await management.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Browse packages" }).click();
     const repositoryDialog = page.getByRole("dialog", { name: "Example packages", exact: true });
     const repositoryHost = dialogHost(page, "Example packages");
@@ -259,13 +274,13 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expectHeading(page, "Resources");
 });
 
-test("Settings uses shared sections while Logs retains its two real read surfaces", async ({ page }) => {
+test("Settings uses shared sections and Logs uses the Core operation log with Material filters", async ({ page }) => {
     await openHarness(page, "/projects");
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
-    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance", "Notifications"]);
-    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Projects", "Backups"]);
+    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance"]);
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Projects", "Backups", "Network"]);
     await expect(page.getByRole("region", { name: "Packages", exact: true, includeHidden: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
     await selectSettingsSection(page, "appearance");
@@ -280,21 +295,13 @@ test("Settings uses shared sections while Logs retains its two real read surface
     await dialogHost(page, "Manage Unity installations").getByRole("button", { name: "Cancel", exact: true }).click();
     await navigationItem(page, "Logs").click();
     await expectHeading(page, "Logs");
-    const logs = page.getByRole("navigation", { name: "Logs", exact: true });
-    const activity = page.getByRole("table", { name: "Activity", exact: true });
-    await expect(activity.getByRole("columnheader")).toHaveText(["Time", "Status", "Activity", "Target", "Actions"]);
-    await expect(activity).toHaveCSS("table-layout", "fixed");
-    await expect(activity.locator("tbody td[data-cell-flow=\"truncate\"]").first()).toHaveCSS("white-space", "nowrap");
-    await expect(activity.locator(".logs-summary small")).toHaveCSS("white-space", "nowrap");
-    await logs.getByRole("button", { name: "Technical Logs" }).click();
-    await expectHeading(page, "Logs");
-    await expect(logs.getByRole("button", { name: "Technical Logs", exact: true })).toHaveAttribute("aria-pressed", "true");
-    const diagnostics = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Log entry", "Actions"]);
-    await expect(diagnostics).toHaveCSS("table-layout", "fixed");
-    await expect(diagnostics.locator(".logs-summary strong")).toHaveCSS("white-space", "nowrap");
-    await logs.getByRole("button", { name: "Activity", exact: true }).click();
-    await expectHeading(page, "Logs");
+    const logs = page.getByRole("table", { name: "Logs", exact: true });
+    await expect(logs.getByRole("columnheader")).toHaveText(["Time", "Initiator", "Operation and step", "Target", "Result"]);
+    await expect(logs).toHaveCSS("table-layout", "fixed");
+    const filters = page.getByRole("group", { name: "Log filters", exact: true });
+    for (const label of ["Initiator", "Status", "Operation type"]) await expect(filters.getByRole("combobox", { name: label, exact: true })).toBeVisible();
+    await expect(page.getByRole("searchbox", { name: "Search logs", exact: true })).toBeVisible();
+    await expect(page.getByText("No logs yet", { exact: true })).toBeVisible();
 });
 
 test("utility actions use modal dialogs and cancel clears drafts and returns focus", async ({ page }) => {
@@ -403,8 +410,7 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["extensions", "/extensions", "Extensions"],
         ["extension", "/extensions/com.vrclearn.discord", "Extension detail"],
         ["extension-ui", "/extensions/com.vrclearn.discord/ui", "Extension UI"],
-        ["activity", "/activity", "Logs"],
-        ["diagnostics", "/diagnostics", "Logs"],
+        ["logs", "/logs", "Logs"],
         ["about", "/about", "About"]
     ] as const;
     for (const [name, route, heading] of routes) {

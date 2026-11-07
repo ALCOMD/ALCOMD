@@ -30,8 +30,8 @@ test("Projects can select template 101 and create the project returned by Core",
     await expect(select).toContainText("Catalog template 101");
     await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
     await dialog.getByLabel("Create project name", { exact: true }).fill("From page two");
-    await dialog.getByRole("combobox", { name: "Unity version", exact: true }).click();
-    await dialog.getByRole("option", { name: "2022.3.22f1", exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([
         { method: "projects.create", params: { template: { id: lastTemplateId, revision: 111 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
@@ -98,7 +98,10 @@ test("A template read failure stays distinct from an empty catalog and can be ex
     await expect.poll(() => page.evaluate(() => window.heldTemplateReads)).toBe(1);
     await expect(dialog).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-templates-ready")));
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(7);
+    await expect.poll(() => dialog.locator("#project-create-template md-select-option").evaluateAll((options) => options.map((option) => option.textContent?.trim()).sort())).toEqual([
+        "No template", "VRChat Avatars 2022 · 2022.3.22f1", "VRChat Worlds 2022 · 2022.3.22f1",
+        "VRChat Avatars 2019 · 2019.4.31f1", "VRChat Worlds 2019 · 2019.4.31f1"
+    ].sort());
     await expect(dialog.getByRole("alert")).toHaveCount(0);
 });
 

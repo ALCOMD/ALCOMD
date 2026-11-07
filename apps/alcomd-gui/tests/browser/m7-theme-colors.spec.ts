@@ -311,7 +311,7 @@ test("changing settings sections retains controls and automatic theme writes", a
     await selectThemeOption(page, "theme-mode", "dark");
     await selectThemeOption(page, "theme-scheme", "neutral");
     const preview = await palette(page);
-    for (const section of ["general", "unity", "notifications"] as const) {
+    for (const section of ["general", "unity"] as const) {
         await selectSettingsSection(page, section);
         await expect(themeEditor(page)).toHaveCount(0);
         expect(await palette(page)).toEqual(preview);

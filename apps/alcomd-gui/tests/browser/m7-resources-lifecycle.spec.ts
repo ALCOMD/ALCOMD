@@ -5,6 +5,67 @@ const userPackageId = "00000000-0000-4000-8000-000000000113";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
+for (const entry of [
+    { route: "/repositories", menu: "Repository list actions", action: "Import list", label: "Repository list file", path: "C:/fixture/repositories.txt", method: "repositoryListInspectFile" },
+    { route: "/templates", menu: "More template creation options", action: "Import template", label: "Template file", path: "C:\\Fixture\\input.alcomdtemplate", method: "projectTemplatesSave" },
+    { route: "/projects", menu: "More project creation options", action: "Add existing project", label: "Project location", path: "C:\\Fixture\\Avatar", method: "projectRegister" },
+    { route: "/user-packages", menu: undefined, action: "Enroll folder", label: "Source folder", path: "C:\\Fixture\\Avatar", method: "userPackageEnroll" }
+] as const) {
+    test(`${entry.action} uses the shared picker and blocks closure while native selection is pending`, async ({ page }) => {
+        await page.goto(`/browser-harness.html?route=${entry.route}&resource-lifecycle=1&hold-file-selection=1`);
+        if (entry.menu !== undefined) {
+            await page.getByRole("button", { name: entry.menu, exact: true }).click();
+            await page.getByRole("menuitem", { name: entry.action, exact: true }).click();
+        } else await page.getByRole("button", { name: entry.action, exact: true }).click();
+        const host = page.locator("md-dialog[open]");
+        const input = host.getByRole("textbox", { name: entry.label, exact: true });
+        const confirm = host.getByRole("button", { name: "Confirm", exact: true });
+        const cancel = host.getByRole("button", { name: "Cancel", exact: true });
+        await expect(host.locator(".file-picker__drop")).toBeVisible();
+        await expect(confirm).toBeDisabled();
+        await expect(host.locator('[slot="actions"]').getByRole("button")).toHaveCount(2);
+        await host.getByRole("button", { name: "Select", exact: true }).click();
+        await expect(cancel).toBeDisabled();
+        await expect(confirm).toBeDisabled();
+        await page.keyboard.press("Escape");
+        await page.mouse.click(2, 2);
+        await expect(host).toBeVisible();
+        await page.evaluate(() => window.dispatchEvent(new Event("test-file-selection-ready")));
+        await expect(input).toHaveValue(entry.path);
+        await expect(cancel).toBeEnabled();
+        await expect(confirm).toBeEnabled();
+        expect(await page.evaluate((method) => window.coreEvents.rpcRequests.filter((request) => request.method === method).length, entry.method)).toBe(0);
+        await confirm.click();
+        await expect.poll(() => page.evaluate((method) => window.coreEvents.rpcRequests.filter((request) => request.method === method).length, entry.method)).toBe(1);
+    });
+}
+
+test("folder picker accepts a typed or dropped directory only after confirmation", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1");
+    await page.getByRole("button", { name: "Enroll folder", exact: true }).click();
+    const host = page.locator("md-dialog[open]");
+    const input = host.getByRole("textbox", { name: "Source folder", exact: true });
+    await input.fill("C:\\Fixture\\Typed folder");
+    const drop = host.getByRole("button", { name: "Drop a folder here or click to select", exact: true });
+    const box = await drop.boundingBox();
+    if (box === null) throw new Error("Missing folder drop zone");
+    const position = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.evaluate((position) => window.dispatchEvent(new CustomEvent("fixture-file-drag", {
+        detail: { type: "drop", ...position, paths: ["C:\\Fixture\\One", "C:\\Fixture\\Two"] }
+    })), position);
+    await expect(host.getByRole("alert")).toHaveText("Select one folder at a time.");
+    await expect(input).toHaveValue("C:\\Fixture\\Typed folder");
+    await page.evaluate((position) => window.dispatchEvent(new CustomEvent("fixture-file-drag", {
+        detail: { type: "drop", ...position, paths: ["C:\\Fixture\\Dropped folder"] }
+    })), position);
+    await expect(input).toHaveValue("C:\\Fixture\\Dropped folder");
+    expect(await requests(page, "packages.userPackages.enroll")).toEqual([]);
+    await host.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(userRow(page)).toBeVisible();
+    expect(await requests(page, "packages.userPackages.enroll")).toEqual([{ method: "packages.userPackages.enroll", params: { sourcePath: "C:\\Fixture\\Dropped folder" } }]);
+});
+
 test("User Package details read the current Core record and return focus to their row", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&state=package-user-source");
     const row = page.getByRole("table", { name: "User Packages", exact: true }).getByRole("row").filter({ hasText: "Local avatar tools" });
@@ -58,6 +119,7 @@ test("closed User Package details cannot replace the next read with an old snaps
 test("cancelled directory selection does not enroll a User Package", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1&cancel-directory=1");
     await page.getByRole("button", { name: "Enroll folder", exact: true }).click();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Select", exact: true }).click();
     await expect(page.getByText("No User Packages enrolled", { exact: true })).toBeVisible();
     expect(await requests(page, "selectDirectory")).toHaveLength(1);
     expect(await requests(page, "packages.userPackages.enroll")).toEqual([]);
@@ -66,6 +128,11 @@ test("cancelled directory selection does not enroll a User Package", async ({ pa
 test("User Package enrollment, current details, refresh and confirmed removal use their existing RPCs", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/user-packages&resource-lifecycle=1");
     await page.getByRole("button", { name: "Enroll folder", exact: true }).click();
+    const picker = page.locator("md-dialog[open]");
+    await picker.getByRole("button", { name: "Select", exact: true }).click();
+    expect(await requests(page, "packages.userPackages.enroll")).toEqual([]);
+    await picker.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(picker).toHaveCount(0);
     const row = userRow(page);
     await expect(row).toContainText("1.2.3");
     expect(await requests(page, "packages.userPackages.enroll")).toEqual([{ method: "packages.userPackages.enroll", params: { sourcePath: "C:\\Fixture\\Avatar" } }]);

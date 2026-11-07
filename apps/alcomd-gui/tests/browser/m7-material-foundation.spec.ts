@@ -100,6 +100,48 @@ test("Core and Portable UI share Material controls and the same MD3 theme source
     expect(portablePrimary).toBe(corePrimary);
 });
 
+for (const kind of ["controlled", "conditional"] as const) {
+    test(`dialog content and dimensions survive the ${kind} close animation`, async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        if (kind === "controlled") {
+            await page.goto("/browser-harness.html?material=1");
+            await page.getByRole("button", { name: "Open dialog", exact: true }).click();
+        } else {
+            await page.goto("/browser-harness.html?route=/repositories");
+            await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
+            await page.getByRole("menuitem", { name: "Import list", exact: true }).click();
+        }
+        const host = page.locator("md-dialog[open]");
+        await expect(host).toHaveJSProperty("quick", false);
+        const lifecycle = await host.evaluateHandle((element) => {
+            const native = element.shadowRoot!.querySelector("dialog")!;
+            const content = element.querySelector<HTMLElement>(".material-dialog-content")!;
+            const measure = () => ({ open: native.open, content: content.textContent, height: native.offsetHeight });
+            const before = measure();
+            let animations: Animation[] = [];
+            const closing = new Promise<ReturnType<typeof measure>>((resolve) => {
+                element.addEventListener("close", () => {
+                    queueMicrotask(() => {
+                        animations = Array.from(element.shadowRoot!.querySelectorAll("*")).flatMap((node) => node.getAnimations());
+                        for (const animation of animations) animation.pause();
+                        requestAnimationFrame(() => resolve(measure()));
+                    });
+                }, { once: true });
+            });
+            return { before, closing, finish: () => animations.forEach((animation) => animation.finish()) };
+        });
+        try {
+            await host.getByRole("button", { name: kind === "controlled" ? "Close" : "Cancel", exact: true }).click();
+            const before = await lifecycle.evaluate((state) => state.before);
+            expect(await lifecycle.evaluate((state) => state.closing)).toEqual(before);
+            await lifecycle.evaluate((state) => state.finish());
+            await expect(host).toHaveCount(0);
+        } finally {
+            await lifecycle.dispose();
+        }
+    });
+}
+
 test("v3-density Material navigation keeps one offline Rounded icon across selection state", async ({ page }) => {
     const remoteFontRequests: string[] = [];
     page.on("request", (request) => {
@@ -109,8 +151,9 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
 
     const navigation = page.locator("#primary-navigation");
     await expect(navigation.locator("md-list")).toHaveCount(2);
-    await expect(navigation.locator("md-list-item")).toHaveCount(6);
-    await expect(navigation.locator(".navigation-item .alcomd-icon")).toHaveCount(6);
+    await expect(navigation.locator("md-list-item")).toHaveCount(7);
+    await expect(navigation.locator(".navigation-item .alcomd-icon")).toHaveCount(7);
+    await expect(navigationItem(page, "Logs")).toBeVisible();
     await expect(navigationItem(page, "Projects")).toBeVisible();
     await expect(navigationItem(page, "Resources")).toBeVisible();
     await expect(navigation.locator("nav[aria-label='Utilities']")).toBeVisible();
@@ -162,7 +205,7 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
 test("Projects creation split button groups add and restore with distinct actions and focus", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1180, height: 760 });
     await openHarness(page, "/projects");
-    const primary = page.getByRole("button", { name: "Create project", exact: true });
+    const primary = page.locator(".alcomd-split-button-primary").getByRole("button", { name: "Create project", exact: true });
     const toggle = page.getByRole("button", { name: "More project creation options", exact: true });
     await expect(primary).toBeVisible();
     await expect(toggle).toBeVisible();
@@ -645,9 +688,9 @@ test("Project directory deletion requires exact leaf confirmation and follows th
     await page.getByRole("textbox", { name: "Confirm project directory name" }).fill("Sample");
     await expect(apply).toBeEnabled();
     await apply.click();
-    await expect(page.locator('[role="status"]').filter({ hasText: "Project directory permanently deleted." })).toBeVisible({ timeout: 3_000 });
     await expect(dialog).not.toBeVisible();
     await expect(main.getByText("No registered projects")).toBeVisible();
+    await expect(page.locator(".reminder-floating")).toBeHidden();
 });
 
 test("missing negotiated capabilities remain visibly unavailable without dispatching their actions", async ({ page }) => {
