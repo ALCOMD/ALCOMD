@@ -484,6 +484,98 @@ fn key(value: &str) -> IdempotencyKey {
 }
 
 #[tokio::test]
+async fn unity_version_options_cover_the_registry_and_group_migration_installations() {
+    use alcomd_application::{AccessContext, M5UnityApplication, Permission};
+    use std::sync::{Arc, Mutex};
+
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.0.join("version-options.db")).expect("store");
+    let owner = PrincipalId::local_owner();
+    let access = AccessContext::new(
+        owner.clone(),
+        [
+            Permission::ProjectsRead,
+            Permission::UnityRead,
+            Permission::UnityLaunch,
+        ],
+    );
+    let project = store
+        .register_project(owner.clone(), project(), key("options-project"), 1)
+        .await
+        .expect("project")
+        .value;
+    let app = M5UnityApplication::new(
+        store.clone(),
+        CapturingUnityPlatform::default(),
+        Arc::new(TestLaunchDefaults(Mutex::new(None))),
+    );
+    let mut ids = Vec::new();
+    for (name, version, source_kind) in [
+        ("EditorA", "2022.3.22f1", UnitySourceKind::Manual),
+        ("EditorB", "2022.3.22f1", UnitySourceKind::HubConfig),
+        ("EditorC", "2019.4.31f1", UnitySourceKind::Manual),
+        ("EditorD", "2022.3.6f1", UnitySourceKind::HubConfig),
+        ("EditorE", "2022.3.6f1", UnitySourceKind::Manual),
+    ] {
+        let index = u8::try_from(ids.len() + 1).expect("fixture index");
+        let row = UnityInstallationObservation {
+            executable_path: format!("C:/fixture/{name}/Unity.exe"),
+            filesystem_identity: vec![index; 24],
+            unity_version: version.to_owned(),
+            source_kind,
+            ..installation_observation()
+        };
+        let (row, _) = store
+            .register_installation(owner.clone(), row, key(name), u64::from(index))
+            .await
+            .expect("register Editor");
+        ids.push(row.installation_id);
+        if ids.len() == 2 {
+            let (page, versions) = app
+                .list_installations(&access, None, 1, true)
+                .await
+                .expect("read versions across pages");
+            assert!(page.next_cursor.is_some());
+            let versions = versions.expect("version options");
+            assert_eq!(versions.versions, ["2022.3.22f1"]);
+            assert_eq!(versions.default_version.as_deref(), Some("2022.3.22f1"));
+        }
+    }
+    let (_, versions) = app
+        .list_installations(&access, None, 1, true)
+        .await
+        .expect("read multiple versions");
+    let versions = versions.expect("version options");
+    assert_eq!(
+        versions.versions,
+        ["2019.4.31f1", "2022.3.22f1", "2022.3.6f1"]
+    );
+    assert!(versions.default_version.is_none());
+
+    let launch = app
+        .launch_options(&access, project.project_id, project.revision, true)
+        .await
+        .expect("project version options");
+    assert_eq!(launch.exact_matching_installations.len(), 2);
+    let migration = launch
+        .migration_version_options
+        .expect("migration versions");
+    assert_eq!(migration.len(), 2);
+    assert_eq!(migration[0].unity_version, "2019.4.31f1");
+    assert_eq!(migration[0].default_installation_id, Some(ids[2]));
+    assert_eq!(migration[1].unity_version, "2022.3.6f1");
+    assert!(migration[1].default_installation_id.is_none());
+    assert_eq!(
+        migration[1]
+            .installations
+            .iter()
+            .map(|row| row.installation_id)
+            .collect::<Vec<_>>(),
+        [ids[4], ids[3]]
+    );
+}
+
+#[tokio::test]
 async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries() {
     use alcomd_application::{AccessContext, M5UnityApplication, Permission};
     use std::sync::{Arc, Mutex};

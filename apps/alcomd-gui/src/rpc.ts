@@ -75,7 +75,7 @@ export interface GuiRpcClient {
     userPackageEnroll(sourcePath: string): Promise<UserPackageWriteResult>;
     userPackageRefresh(userPackageId: string, expectedRevision: number): Promise<UserPackageWriteResult>;
     userPackageRemove(userPackageId: string, expectedRevision: number): Promise<UserPackageRemoveResult>;
-    unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult>;
+    unityInstallationsList(cursor?: string, includeVersionOptions?: boolean): Promise<UnityInstallationsListResult>;
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult>;
     unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult>;
     unityInstallationRemove(installationId: string, expectedRevision: number): Promise<UnityInstallationRemoveResult>;
@@ -84,7 +84,7 @@ export interface GuiRpcClient {
     unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
     unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
     unityWriterState(projectId: string): Promise<UnityWriterState>;
-    unityLaunchOptions(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchOptionsResult>;
+    unityLaunchOptions(projectId: string, expectedProjectRevision: number, includeMigrationVersionOptions?: boolean): Promise<UnityLaunchOptionsResult>;
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
     projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
@@ -369,8 +369,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_user_package_remove", { userPackageId, expectedRevision, idempotencyKey: crypto.randomUUID() });
     }
 
-    unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult> {
-        return invokeTyped("gui_unity_installations_list", { params: { cursor, limit: 100 } });
+    unityInstallationsList(cursor?: string, includeVersionOptions?: boolean): Promise<UnityInstallationsListResult> {
+        return invokeTyped("gui_unity_installations_list", { params: { cursor, limit: 100, includeVersionOptions } });
     }
 
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult> {
@@ -405,8 +405,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_unity_writer_state", { projectId });
     }
 
-    unityLaunchOptions(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchOptionsResult> {
-        return invokeTyped("gui_unity_launch_options", { params: { projectId, expectedProjectRevision } });
+    async unityLaunchOptions(projectId: string, expectedProjectRevision: number, includeMigrationVersionOptions?: boolean): Promise<UnityLaunchOptionsResult> {
+        const result = await invokeTyped<UnityLaunchOptionsResult>("gui_unity_launch_options", { params: { projectId, expectedProjectRevision, includeMigrationVersionOptions } });
+        if (includeMigrationVersionOptions && result.migrationVersionOptions === undefined) throw new Error("Missing Unity migration version options");
+        return result;
     }
 
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult> {

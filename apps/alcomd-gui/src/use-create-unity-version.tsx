@@ -2,7 +2,7 @@ import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
-import type { UnityInstallation } from "./core-models";
+import type { UnityVersionOptions } from "./core-models";
 import { Button, Select, TextField } from "./Material";
 import { useTranslation } from "./i18n";
 import type { GuiRpcClient } from "./rpc";
@@ -11,7 +11,7 @@ import { normalizeRequestError } from "./request-errors";
 export function useCreateUnityVersion(client: GuiRpcClient, fixedVersion: string | undefined, open: boolean) {
     const [version, setVersion] = useState("");
     const [custom, setCustom] = useState(false);
-    const [installations, setInstallations] = useState<UnityInstallation[]>([]);
+    const [options, setOptions] = useState<UnityVersionOptions>();
     const [error, setError] = useState<RpcError>();
     const [retry, setRetry] = useState(0);
     const edited = useRef(false);
@@ -23,26 +23,16 @@ export function useCreateUnityVersion(client: GuiRpcClient, fixedVersion: string
     useEffect(() => {
         if (!open || fixedVersion !== undefined) return;
         let active = true;
-        setInstallations([]);
+        setOptions(undefined);
         setError(undefined);
         void (async () => {
-            const rows: UnityInstallation[] = [];
-            const cursors = new Set<string>();
-            let cursor: string | undefined;
-            do {
-                const page = await client.unityInstallationsList(cursor);
-                if (!active) return;
-                rows.push(...page.installations);
-                cursor = page.nextCursor;
-                if (cursor !== undefined && cursors.has(cursor)) throw new Error("Repeated installation cursor");
-                if (cursor !== undefined) cursors.add(cursor);
-            } while (cursor !== undefined);
-            if (active) setInstallations(rows);
+            const { versionOptions } = await client.unityInstallationsList(undefined, true);
+            if (versionOptions === undefined) throw new Error("Missing Unity version options");
+            if (active) setOptions(versionOptions);
         })().catch((caught: unknown) => { if (active) setError(normalizeRequestError(caught)); });
         return () => { active = false; };
     }, [client, fixedVersion, open, retry]);
-    const versions = [...new Set(installations.map((installation) => installation.unityVersion))];
-    const suggested = versions.length === 1 ? versions[0]! : "";
+    const suggested = options?.defaultVersion ?? "";
     useEffect(() => {
         if (!edited.current) setVersion(suggested);
     }, [client, fixedVersion, open, suggested]);
@@ -56,7 +46,7 @@ export function useCreateUnityVersion(client: GuiRpcClient, fixedVersion: string
             setVersion(value === "custom" ? "" : value);
         },
         setVersion: (value: string) => { edited.current = true; setVersion(value); },
-        versions,
+        versions: options?.versions ?? [],
         error: fixedVersion === undefined ? error : undefined,
         retry: () => setRetry((current) => current + 1)
     };

@@ -346,6 +346,12 @@ export interface UnityInstallationsListResult {
     installations: UnityInstallation[];
     nextCursor?: string;
     replayed: boolean;
+    versionOptions?: UnityVersionOptions;
+}
+
+export interface UnityVersionOptions {
+    versions: string[];
+    defaultVersion?: string;
 }
 
 export interface UnityInstallationResult { installation: UnityInstallation; replayed: boolean }
@@ -384,6 +390,13 @@ export interface UnityLaunchOptionsResult {
     projectRevision: number;
     projectUnityVersion: string;
     exactMatchingInstallations: UnityInstallation[];
+    migrationVersionOptions?: UnityMigrationVersionOption[];
+}
+
+export interface UnityMigrationVersionOption {
+    unityVersion: string;
+    installations: Array<{ installationId: string; architecture: string }>;
+    defaultInstallationId?: string;
 }
 
 export type ProjectUnityMigrationClassificationKind =

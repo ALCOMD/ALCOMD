@@ -1061,6 +1061,7 @@ async fn execute(
                     .unity_installations_list(alcomd_protocol::UnityInstallationsListParams {
                         cursor,
                         limit,
+                        include_version_options: None,
                     })
                     .await?,
             ),
@@ -1156,6 +1157,7 @@ async fn execute(
                     .unity_launch_options(alcomd_protocol::UnityLaunchOptionsParams {
                         project_id,
                         expected_project_revision,
+                        include_migration_version_options: None,
                     })
                     .await?,
             ),
