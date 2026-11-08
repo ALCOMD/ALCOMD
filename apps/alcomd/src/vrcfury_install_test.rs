@@ -72,6 +72,7 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         .value;
     let index_elapsed = download_index.elapsed();
     let request = PackagePlanRequest {
+        allow_unity_incompatible: false,
         action: PlanAction::Install,
         project_id: project.project_id,
         expected_revision: project.revision,

@@ -51,6 +51,30 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         catalog: ResolverCatalog,
         request: PackagePlanRequest,
     ) -> Result<PackagePlanDraft, M4Error> {
+        let override_target = if request.allow_unity_incompatible {
+            if !matches!(
+                request.action,
+                PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade
+            ) || request.plan_version != alcomd_application::PackagePlanVersion::V2
+            {
+                return Err(M4Error::new(M4ErrorCode::InvalidInput));
+            }
+            let version = request
+                .version_range
+                .as_deref()
+                .and_then(|value| value.strip_prefix('='))
+                .and_then(|value| Version::parse(value).ok())
+                .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
+            Some(alcomd_application::PackageUnityCompatibilityOverride {
+                package_id: request
+                    .package_id
+                    .clone()
+                    .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?,
+                version: version.to_string(),
+            })
+        } else {
+            None
+        };
         let snapshot = tokio::task::spawn_blocking({
             let project = project.clone();
             move || inspect_package_project(&project)
@@ -93,6 +117,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 .filter(|dependency| dependency.package_id != package_id)
                 .map(|dependency| {
                     Ok(ResolveRequest {
+                        allow_unity_incompatible: false,
                         package_id: dependency.package_id.clone(),
                         range: crate::range::ProjectDependencyRange::parse(&dependency.value)
                             .map_err(|cause| {
@@ -165,7 +190,18 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             validate_action_direction(&project, &request, &resolution)?;
             build_resolution_plan(&snapshot, request.action, &resolution)?
         };
-        prepare_legacy_removals(&self.cache, &snapshot, &catalog, draft).await
+        let mut draft = prepare_legacy_removals(&self.cache, &snapshot, &catalog, draft).await?;
+        if let Some(target) = override_target {
+            draft.change_set.format_version = 4;
+            draft.change_set.unity_compatibility_overrides = vec![target];
+            draft.change_set.validate_bounds()?;
+            draft.change_set_fingerprint = Sha256::digest(
+                serde_json::to_vec(&draft.change_set)
+                    .map_err(|_| M4Error::new(M4ErrorCode::Internal))?,
+            )
+            .into();
+        }
+        Ok(draft)
     }
 
     async fn revalidate_plan(
@@ -241,6 +277,7 @@ async fn prepare_reinstall(
     let requests = locked
         .iter()
         .map(|(package_id, version)| ResolveRequest {
+            allow_unity_incompatible: false,
             package_id: package_id.clone(),
             range: format!("={version}"),
             source: selectors.get(package_id).cloned(),
@@ -389,6 +426,7 @@ async fn prepare_bulk(
         .iter()
         .map(
             |(package_id, (range, source, include_prerelease))| ResolveRequest {
+                allow_unity_incompatible: false,
                 package_id: package_id.clone(),
                 range: range.clone(),
                 source: source.clone(),
@@ -409,6 +447,7 @@ async fn prepare_bulk(
             _ => None,
         };
         requests.push(ResolveRequest {
+            allow_unity_incompatible: false,
             package_id: package_id.clone(),
             range: format!("={version}"),
             source,
@@ -1153,6 +1192,7 @@ fn resolution_requests(
             })
             .map(|dependency| {
                 Ok(ResolveRequest {
+                    allow_unity_incompatible: false,
                     package_id: dependency.package_id.clone(),
                     range: crate::range::ProjectDependencyRange::parse(&dependency.value)
                         .map_err(|cause| {
@@ -1171,6 +1211,7 @@ fn resolution_requests(
                 .locked_dependencies
                 .iter()
                 .map(|dependency| ResolveRequest {
+                    allow_unity_incompatible: false,
                     package_id: dependency.package_id.clone(),
                     range: format!("={}", dependency.value),
                     source: None,
@@ -1187,6 +1228,7 @@ fn resolution_requests(
         .clone()
         .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
     Ok(vec![ResolveRequest {
+        allow_unity_incompatible: request.allow_unity_incompatible,
         package_id,
         range: request
             .version_range
@@ -2909,6 +2951,7 @@ mod tests {
 
     fn package_request(action: PlanAction) -> PackagePlanRequest {
         PackagePlanRequest {
+            allow_unity_incompatible: false,
             action,
             project_id: ProjectId::new(),
             expected_revision: Revision::INITIAL,
@@ -3070,6 +3113,7 @@ mod tests {
             project_snapshot_fingerprint: [1; 32],
             change_set_fingerprint: [2; 32],
             change_set: PackageChangeSet {
+                unity_compatibility_overrides: Vec::new(),
                 format_version: 1,
                 legacy_removals: Vec::new(),
                 legacy_packages: Vec::new(),

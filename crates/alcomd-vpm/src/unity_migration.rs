@@ -1395,6 +1395,7 @@ fn migration_requests(
     Ok(requests
         .into_iter()
         .map(|(package_id, range)| ResolveRequest {
+            allow_unity_incompatible: false,
             package_id,
             range,
             source: None,

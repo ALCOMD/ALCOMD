@@ -1603,6 +1603,15 @@ pub struct PackageChangeSet {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_removals: Vec<PackageLegacyRemoval>,
     pub vpm_manifest_sha256: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unity_compatibility_overrides: Vec<PackageUnityCompatibilityOverride>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageUnityCompatibilityOverride {
+    pub package_id: String,
+    pub version: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1620,6 +1629,8 @@ pub struct PackagePlan {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackagePlanInstallParams {
+    #[serde(default)]
+    pub allow_unity_incompatible: bool,
     pub project_id: String,
     pub expected_revision: u64,
     pub package_id: String,
@@ -1646,6 +1657,8 @@ pub struct PackagePlanRemoveParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackagePlanDowngradeParams {
+    #[serde(default)]
+    pub allow_unity_incompatible: bool,
     pub project_id: String,
     pub expected_revision: u64,
     pub package_id: String,

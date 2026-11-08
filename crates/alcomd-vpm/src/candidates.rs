@@ -439,17 +439,19 @@ pub fn evaluate_candidate_versions(
     let mut rows = observed(input, package_id, source, &installed);
     let mut counts = BTreeMap::new();
     for row in &rows {
-        if resolver_direct_match(row)
+        if (resolver_direct_match(row) || row.evidence.manual_unity_override_allowed)
             && let Some(key) = exact_group(row)
         {
             *counts.entry(key).or_insert(0_usize) += 1;
         }
     }
     for row in &mut rows {
-        if row.evidence.eligibility == CandidateEligibility::Eligible
+        if (row.evidence.eligibility == CandidateEligibility::Eligible
+            || row.evidence.manual_unity_override_allowed)
             && exact_group(row).is_some_and(|key| counts.get(&key).is_some_and(|count| *count > 1))
         {
             row.evidence.eligibility = CandidateEligibility::Blocked;
+            row.evidence.manual_unity_override_allowed = false;
             row.evidence.reasons.push(CandidateReason::SourceAmbiguous);
         }
     }
@@ -592,6 +594,14 @@ fn observed_entries<'a>(
                 entry,
                 version,
                 evidence: CandidateEvidence {
+                    manual_unity_override_allowed: reasons.len() == 1
+                        && reasons.contains(&CandidateReason::UnityIncompatible)
+                        && matches!(
+                            relation,
+                            CandidateRelation::NotInstalled
+                                | CandidateRelation::Newer
+                                | CandidateRelation::Older
+                        ),
                     version: entry.version.clone(),
                     source: entry.source.clone(),
                     source_revision: entry.source_revision,
@@ -939,6 +949,35 @@ mod tests {
 
     fn summary(input: &CandidateEvidenceInput) -> CandidateSummary {
         evaluate_candidate_summary(input, Some(&[PACKAGE.to_owned()]), &[]).remove(0)
+    }
+
+    #[test]
+    fn manual_unity_qualification_is_explicit_and_does_not_enable_automatic_updates() {
+        let mut input = input(&["2.0.0"], Some("1.0.0"));
+        input.entries[0].unity = Some("2023.1".into());
+        let versions = evaluate_candidate_versions(&input, PACKAGE, None);
+        assert!(versions[0].manual_unity_override_allowed);
+        assert_eq!(versions[0].eligibility, CandidateEligibility::Blocked);
+        assert!(!matches!(
+            summary(&input).update,
+            CandidateUpdate::Target { .. }
+        ));
+        input.entries[0].yanked = true;
+        assert!(evaluate_candidate_versions(&input, PACKAGE, None).is_empty());
+        input.entries[0].yanked = false;
+        input.project.unity_version = "unknown".into();
+        assert!(
+            !evaluate_candidate_versions(&input, PACKAGE, None)[0].manual_unity_override_allowed
+        );
+        input.project.unity_version = "2022.3.22f1".into();
+        let mut duplicate = input.entries[0].clone();
+        duplicate.version = "2.0.0+other".into();
+        input.entries.push(duplicate);
+        assert!(
+            evaluate_candidate_versions(&input, PACKAGE, None)
+                .iter()
+                .all(|candidate| !candidate.manual_unity_override_allowed)
+        );
     }
 
     #[test]
@@ -1316,6 +1355,7 @@ mod tests {
                 "candidate {actual}"
             );
             let request = ResolveRequest {
+                allow_unity_incompatible: false,
                 package_id: PACKAGE.to_owned(),
                 range: "*".to_owned(),
                 source: None,
@@ -1569,6 +1609,7 @@ mod tests {
             make("com.example.zdependency", "2.0.0", None),
         ];
         let requests = [PACKAGE, "com.example.other"].map(|id| ResolveRequest {
+            allow_unity_incompatible: false,
             package_id: id.to_owned(),
             range: "*".to_owned(),
             source: None,

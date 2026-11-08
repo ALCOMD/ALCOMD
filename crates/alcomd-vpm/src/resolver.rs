@@ -110,6 +110,7 @@ pub struct PackageCandidate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveRequest {
+    pub allow_unity_incompatible: bool,
     pub package_id: String,
     pub range: String,
     pub source: Option<PackageSourceSelector>,
@@ -342,6 +343,7 @@ impl Selection<'_> {
                 requirements,
                 options.include_prerelease,
                 options.unity_version,
+                options.unity_overrides.get(&candidate.package_id) == Some(&candidate.version),
             ),
             Self::Installed(locked) => requirements.iter().all(|requirement| {
                 requirement.source.is_none()
@@ -426,6 +428,7 @@ impl ProjectResolutionRules {
 
 #[derive(Clone, Copy)]
 struct SolveOptions<'a> {
+    unity_overrides: &'a BTreeMap<String, Version>,
     include_prerelease: bool,
     unity_version: Option<UnityVersion>,
     legacy_handling: LegacyCandidateHandling,
@@ -497,8 +500,26 @@ fn resolve_packages_internal(
     let mut requirements = BTreeMap::<String, Vec<Requirement>>::new();
     let mut include_prerelease = false;
     let mut unity_version = None;
+    let mut unity_overrides = BTreeMap::new();
     for request in requests {
         validate_package_id(&request.package_id)?;
+        if request.allow_unity_incompatible {
+            if request.unity_version.is_none() {
+                return Err(ResolveError::InvalidRange);
+            }
+            let version = request
+                .range
+                .strip_prefix('=')
+                .and_then(|value| Version::parse(value).ok())
+                .ok_or(ResolveError::InvalidRange)?;
+            if unity_overrides
+                .insert(request.package_id.clone(), version)
+                .is_some()
+                || unity_overrides.len() > 1
+            {
+                return Err(ResolveError::InvalidRange);
+            }
+        }
         include_prerelease |= request.include_prerelease;
         if let Some(request_unity) = request.unity_version {
             if unity_version.is_some_and(|existing| existing != request_unity) {
@@ -533,6 +554,7 @@ fn resolve_packages_internal(
         requirements.clone(),
         BTreeMap::new(),
         SolveOptions {
+            unity_overrides: &unity_overrides,
             include_prerelease,
             unity_version,
             legacy_handling,
@@ -666,6 +688,7 @@ fn solve<'a>(
                 package_requirements,
                 options.include_prerelease,
                 options.unity_version,
+                options.unity_overrides.get(&candidate.package_id) == Some(&candidate.version),
             )
         })
         .collect::<Vec<_>>();
@@ -863,9 +886,10 @@ fn candidate_satisfies(
     requirements: &[Requirement],
     include_prerelease: bool,
     unity_version: Option<UnityVersion>,
+    allow_unity_incompatible: bool,
 ) -> bool {
     !candidate.yanked
-        && meets_minimum(unity_version, candidate.unity_minimum)
+        && (allow_unity_incompatible || meets_minimum(unity_version, candidate.unity_minimum))
         && requirements.iter().all(|requirement| {
             requirement
                 .source
@@ -1004,12 +1028,63 @@ mod tests {
 
     fn request(package_id: &str, range: &str) -> ResolveRequest {
         ResolveRequest {
+            allow_unity_incompatible: false,
             package_id: package_id.to_owned(),
             range: range.to_owned(),
             source: None,
             include_prerelease: false,
             unity_version: Some(UnityVersion::major_minor(2022, 3)),
         }
+    }
+
+    #[test]
+    fn manual_unity_override_is_exact_root_only_and_preserves_other_checks() {
+        let mut root = candidate(
+            "com.example.root",
+            "1.0.0",
+            1,
+            "repo-a",
+            &[("com.example.child", "=1.0.0")],
+        );
+        root.unity_minimum = Some(UnityVersion::major_minor(2023, 1));
+        let mut child = candidate("com.example.child", "1.0.0", 1, "repo-a", &[]);
+        child.unity_minimum = Some(UnityVersion::major_minor(2023, 1));
+        let mut target = request("com.example.root", "=1.0.0");
+        assert!(resolve_packages(&[root.clone(), child.clone()], &[target.clone()]).is_err());
+        target.allow_unity_incompatible = true;
+        assert!(
+            resolve_packages(&[root.clone(), child.clone()], &[target.clone()]).is_err(),
+            "dependency remains constrained"
+        );
+        child.unity_minimum = None;
+        assert_eq!(
+            resolve_packages(&[root.clone(), child.clone()], &[target.clone()])
+                .expect("manual root")
+                .packages
+                .len(),
+            2
+        );
+        root.yanked = true;
+        assert!(resolve_packages(&[root.clone(), child.clone()], &[target.clone()]).is_err());
+        root.yanked = false;
+        target.unity_version = None;
+        assert_eq!(
+            resolve_packages(&[root.clone(), child.clone()], &[target.clone()]),
+            Err(ResolveError::InvalidRange)
+        );
+        target.unity_version = Some(UnityVersion::major_minor(2022, 3));
+        target.range = "^1.0.0".into();
+        assert_eq!(
+            resolve_packages(&[root.clone(), child.clone()], &[target.clone()]),
+            Err(ResolveError::InvalidRange)
+        );
+        target.range = "=1.0.0".into();
+        let mut other_source = root.clone();
+        other_source.source = candidate("com.example.root", "1.0.0", 1, "repo-b", &[]).source;
+        assert!(matches!(
+            resolve_packages(&[root, other_source, child], &[target]),
+            Err(ResolveError::SourceAmbiguous { .. })
+        ));
     }
 
     fn user_candidate(package_id: &str, version: &str) -> PackageCandidate {

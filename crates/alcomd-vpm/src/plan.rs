@@ -811,6 +811,7 @@ fn build_draft_from_bytes(
     edges.sort();
     edges.dedup();
     let change_set = PackageChangeSet {
+        unity_compatibility_overrides: Vec::new(),
         format_version: 3,
         mutations,
         dependency_edges: edges,
@@ -1112,6 +1113,7 @@ mod tests {
         let historical = serde_json::json!({"dependencies":{"com.example.a":{"version":"1.0.0"}},"locked":{"com.example.a":{"version":"1.0.0"}}});
         let expected = serialize_manifest(&historical).expect("frozen historical output");
         let mut change_set = PackageChangeSet {
+            unity_compatibility_overrides: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             legacy_removals: Vec::new(),

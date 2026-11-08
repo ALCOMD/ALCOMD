@@ -34,6 +34,14 @@ fn approved_candidate_wire_shapes_round_trip_through_production_dtos() {
                     value
                 );
             }
+            "Candidate" => {
+                let candidate: CandidateEvidence =
+                    serde_json::from_value(value.clone()).expect("candidate qualification");
+                assert_eq!(
+                    serde_json::to_value(candidate).expect("candidate encoding"),
+                    value
+                );
+            }
             other => panic!("unexpected definition {other}"),
         }
     }

@@ -162,6 +162,7 @@ impl Fixture {
 
     fn request(&self) -> PackagePlanRequest {
         PackagePlanRequest {
+            allow_unity_incompatible: false,
             action: PlanAction::Install,
             project_id: self.project.project_id,
             expected_revision: self.project.revision,

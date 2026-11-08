@@ -738,6 +738,7 @@ mod tests {
             archive_sha256,
         });
         let mut change_set = PackageChangeSet {
+            unity_compatibility_overrides: Vec::new(),
             format_version: 1,
             legacy_removals: Vec::new(),
             legacy_packages: Vec::new(),

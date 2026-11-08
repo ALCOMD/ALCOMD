@@ -10,6 +10,36 @@ const ARCHIVE_PATH_VECTORS: &str = include_str!("../fixtures/m4/archive-path-vec
 const CHANGESET_GOLDEN: &str = include_str!("../fixtures/m4/changeset-golden.json");
 
 #[test]
+fn manual_unity_schema_only_extends_the_three_approved_plan_methods() {
+    let schema: Value = json(include_str!(
+        "../../../specs/rpc/m4-package-transaction.schema.json"
+    ));
+    let definitions = &schema["$defs"];
+    for properties in [
+        &definitions["planInstallParams"]["allOf"][1]["properties"],
+        &definitions["planDowngradeParams"]["properties"],
+    ] {
+        assert_eq!(properties["allowUnityIncompatible"]["type"], "boolean");
+        assert_eq!(properties["allowUnityIncompatible"]["default"], false);
+    }
+    assert_eq!(
+        definitions["planUpgradeParams"]["allOf"][0]["$ref"],
+        "#/$defs/planInstallParams"
+    );
+    for definition in ["planRemoveParams", "planResolveParams", "applyPlanParams"] {
+        assert!(
+            definitions[definition]["properties"]
+                .get("allowUnityIncompatible")
+                .is_none()
+        );
+    }
+    assert_eq!(
+        definitions["changeSet"]["properties"]["unityCompatibilityOverrides"]["maxItems"],
+        1
+    );
+}
+
+#[test]
 fn resolver_ready_fixture_has_all_m4_security_inputs() {
     let repository = json(RESOLVER_READY_REPOSITORY);
     let packages = repository["packages"].as_object().expect("packages object");

@@ -402,6 +402,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     // Candidate evidence never bypasses the existing Plan's project revision check.
     let stale_plan = client
         .package_plan_upgrade(alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id: project_id.clone(),
             expected_revision: 1,
             package_id: "com.example.candidate".to_owned(),
@@ -433,6 +434,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     assert_eq!(new_summary["items"][0]["update"]["kind"], "target");
     let failed_plan = client
         .package_plan_upgrade(alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id: project_id.clone(),
             expected_revision: 2,
             package_id: "com.example.candidate".to_owned(),

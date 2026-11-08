@@ -23,6 +23,114 @@ const KILL_GATE_ENV: &str = "ALCOMD_TEST_M4_KILL_GATE";
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime-manual");
+    let data = fixture.path().join("data-manual");
+    let project = fixture.path().join("ManualProject");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    create_project(&project);
+    let manifest = serde_json::json!({"name":"com.example.fixture","displayName":"Fixture","version":"1.0.0","unity":"2023.1"});
+    let archive = fixture.path().join("manual.zip");
+    let mut zip = zip::ZipWriter::new(fs::File::create(&archive).expect("archive"));
+    zip.start_file("package.json", SimpleFileOptions::default())
+        .expect("entry");
+    zip.write_all(manifest.to_string().as_bytes())
+        .expect("manifest");
+    zip.finish().expect("ZIP");
+    let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("archive bytes")).into();
+    publish_cache_object(&data, &archive, &digest);
+    let mut index: serde_json::Value =
+        serde_json::from_str(&repository_document(&hex(&digest))).expect("index");
+    index["packages"]["com.example.fixture"]["versions"]["1.0.0"]["unity"] =
+        serde_json::json!("2023.1");
+    let repository = fixture.path().join("manual.json");
+    fs::write(&repository, index.to_string()).expect("repository");
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("owned daemon");
+    let mut client = connect_with_retry(config).await;
+    let registered_project = client
+        .project_register(
+            project.to_string_lossy().into_owned(),
+            "manual-project".into(),
+        )
+        .await
+        .expect("project")
+        .project;
+    let repository = client
+        .repository_register(
+            RepositorySource::Local {
+                path: repository.to_string_lossy().into_owned(),
+            },
+            "manual-repository".into(),
+        )
+        .await
+        .expect("repository")
+        .repository;
+    client
+        .repository_refresh(
+            repository.repository_id.clone().expect("ID"),
+            repository.revision.expect("revision"),
+            "manual-refresh".into(),
+        )
+        .await
+        .expect("index");
+    let mut request = alcomd_protocol::PackagePlanInstallParams {
+        allow_unity_incompatible: false,
+        project_id: registered_project.project_id.expect("ID"),
+        expected_revision: registered_project.revision.expect("revision"),
+        package_id: "com.example.fixture".into(),
+        version_range: Some("=1.0.0".into()),
+        repository_id: None,
+        source: None,
+        include_prerelease: false,
+    };
+    assert!(
+        client.package_plan_install(request.clone()).await.is_err(),
+        "default remains denied"
+    );
+    request.allow_unity_incompatible = true;
+    let plan = client
+        .package_plan_install(request)
+        .await
+        .expect("manual exact plan");
+    assert_eq!(
+        plan.change_set.unity_compatibility_overrides,
+        vec![alcomd_protocol::PackageUnityCompatibilityOverride {
+            package_id: "com.example.fixture".into(),
+            version: "1.0.0".into()
+        }]
+    );
+    let accepted = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: plan.plan_id,
+            expected_revision: plan.project_revision,
+            idempotency_key: "manual-apply".into(),
+        })
+        .await
+        .expect("Apply");
+    let completed = wait_for_terminal(&mut client, &accepted.operation_id, &project).await;
+    assert_eq!(completed.state, OperationState::Succeeded);
+    assert_manifest_version(&project, Some("1.0.0"));
+    drop(client);
+    shutdown.store(true, Ordering::Release);
+    tokio::time::timeout(Duration::from_secs(3), daemon)
+        .await
+        .expect("shutdown timeout")
+        .expect("join shutdown")
+        .expect("shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn install_and_remove_round_trip_through_rpc_without_network() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
@@ -86,6 +194,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
 
     let install = client
         .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id: project_id.clone(),
             expected_revision: 1,
             package_id: "com.example.fixture".to_owned(),
@@ -301,6 +410,7 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
 
     let plan = client
         .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id,
             expected_revision: 1,
             package_id: "com.example.local".to_owned(),
@@ -416,6 +526,7 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
         .user_package;
     let plan = client
         .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id: project_id.clone(),
             expected_revision: 1,
             package_id: "com.example.local-missing".to_owned(),
@@ -557,6 +668,7 @@ fn subprocess_runs_package_apply_until_killed() {
             .await
             .expect("refresh crash repository");
         let plan_params = alcomd_protocol::PackagePlanInstallParams {
+            allow_unity_incompatible: false,
             project_id,
             expected_revision: 1,
             package_id: "com.example.fixture".to_owned(),

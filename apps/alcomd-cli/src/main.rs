@@ -914,6 +914,7 @@ async fn execute(
             } => {
                 let plan = client
                     .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+                        allow_unity_incompatible: false,
                         project_id,
                         expected_revision,
                         package_id,
@@ -965,6 +966,7 @@ async fn execute(
             } => {
                 let plan = client
                     .package_plan_upgrade(alcomd_protocol::PackagePlanUpgradeParams {
+                        allow_unity_incompatible: false,
                         project_id,
                         expected_revision,
                         package_id,
@@ -993,6 +995,7 @@ async fn execute(
             } => {
                 let plan = client
                     .package_plan_downgrade(alcomd_protocol::PackagePlanDowngradeParams {
+                        allow_unity_incompatible: false,
                         project_id,
                         expected_revision,
                         package_id,

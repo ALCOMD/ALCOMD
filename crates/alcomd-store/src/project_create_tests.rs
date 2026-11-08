@@ -154,6 +154,7 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
     assert_eq!(work.declaration, Some(user));
     let pinned = ProjectCreatePackages {
         change_set: PackageChangeSet {
+            unity_compatibility_overrides: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),

@@ -79,6 +79,8 @@ pub enum CandidateInstalled {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateEvidence {
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub manual_unity_override_allowed: bool,
     pub version: String,
     pub source: CandidateSource,
     pub source_revision: u64,

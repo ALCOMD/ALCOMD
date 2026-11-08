@@ -292,6 +292,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             .dependencies
             .iter()
             .map(|dependency| ResolveRequest {
+                allow_unity_incompatible: false,
                 package_id: dependency.package_id.clone(),
                 range: dependency.version_range.clone(),
                 source: None,
@@ -317,6 +318,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
                 request.include_prerelease = true;
             } else {
                 requests.push(ResolveRequest {
+                    allow_unity_incompatible: false,
                     package_id: id.clone(),
                     range: format!("={version}"),
                     source: None,

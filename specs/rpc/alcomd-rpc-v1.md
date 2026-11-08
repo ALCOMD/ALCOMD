@@ -595,6 +595,19 @@ revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phas
 字段缺省时首次下载后本地固定摘要。Apply 使用计划中的固定摘要核对实际归档。
 `author.email` 可省略。Yanked 版本不参与新选择。
 
+所有者于2026-11-08批准手动Unity兼容性窄例外：`packages.planInstall`、
+`packages.planUpgrade`、`packages.planDowngrade` 增加可选布尔值
+`allowUnityIncompatible`，缺省false。true只适用于Plan v2的单个精确根目标；
+Install/Upgrade需`=完整SemVer`，Downgrade沿用精确version。项目Unity必须已知。
+只跳过该根包该版本的Unity最低版本限制，不放宽依赖、来源、撤回、范围、权限及安全校验。
+GUI依据Core候选的可选`manualUnityOverrideAllowed`资格展示确认，取消不创建Plan；
+自动更新和批量请求不发送覆盖意图，也不获得新资格。
+
+确认后的ChangeSet使用既有formatVersion 4，可选
+`unityCompatibilityOverrides: [{packageId, version}]`至多一项，必须对应有固定来源的mutation。
+该意图进入不可变Plan摘要和既有持久JSON；Apply和recovery只执行固定证据，不重新求解。
+未覆盖时字段省略，既有计划不会自动获得覆盖权，无SQL迁移、权限或新RPC方法。
+
 普通包安装、更新和解析计划处理 VPM 的 `legacyFiles`、`legacyFolders` 和
 `legacyPackages`。Plan 使用固定来源和归档清单，依据项目相对路径和 GUID 匹配旧资产，
 随资产纳入存在的 `.meta`，并为仍登记的旧包生成 remove mutation。若所选依赖仍需要

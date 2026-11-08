@@ -17,6 +17,7 @@ export interface ProjectCandidateRequest {
     cursor?: CandidateCursor;
 }
 export interface PackageCandidateEvidence {
+    manualUnityOverrideAllowed?: boolean;
     version: string;
     source: CandidateSource;
     sourceRevision: number;

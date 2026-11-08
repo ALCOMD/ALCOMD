@@ -1588,6 +1588,69 @@
                     }
                 ]
             }
+        },
+        {
+            "id": "manual-unity-qualification",
+            "definition": "Candidate",
+            "valid": true,
+            "value": {
+                "version": "2.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                },
+                "sourceRevision": 1,
+                "classification": "stable",
+                "relation": "newer",
+                "unity": "incompatible",
+                "eligibility": "blocked",
+                "reasons": [
+                    "unity_incompatible"
+                ],
+                "manualUnityOverrideAllowed": true
+            }
+        },
+        {
+            "id": "manual-unity-qualification-wrong-type",
+            "definition": "Candidate",
+            "valid": false,
+            "value": {
+                "version": "2.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                },
+                "sourceRevision": 1,
+                "classification": "stable",
+                "relation": "newer",
+                "unity": "incompatible",
+                "eligibility": "blocked",
+                "reasons": [
+                    "unity_incompatible"
+                ],
+                "manualUnityOverrideAllowed": "true"
+            }
+        },
+        {
+            "id": "manual-unity-qualification-rejects-unknown",
+            "definition": "Candidate",
+            "valid": false,
+            "value": {
+                "version": "2.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                },
+                "sourceRevision": 1,
+                "classification": "stable",
+                "relation": "newer",
+                "unity": "unknown",
+                "eligibility": "blocked",
+                "reasons": [
+                    "unity_incompatible"
+                ],
+                "manualUnityOverrideAllowed": true
+            }
         }
     ],
     "semanticVectors": [

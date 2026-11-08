@@ -116,6 +116,7 @@ fn plan_request(
             .map(|value| Ok((value.package_id, source_selector(value.source)?)))
             .collect::<Result<Vec<_>, ()>>()?;
         return Ok(app::PackagePlanRequest {
+            allow_unity_incompatible: false,
             action,
             project_id: app::ProjectId::parse(&value.project_id).map_err(|_| ())?,
             expected_revision: Revision::new(value.expected_revision).ok_or(())?,
@@ -138,6 +139,7 @@ fn plan_request(
             .map(bulk_intent)
             .collect::<Result<Vec<_>, ()>>()?;
         return Ok(app::PackagePlanRequest {
+            allow_unity_incompatible: false,
             action,
             project_id: app::ProjectId::parse(&value.project_id).map_err(|_| ())?,
             expected_revision: Revision::new(value.expected_revision).ok_or(())?,
@@ -160,6 +162,7 @@ fn plan_request(
         repository_id,
         source,
         prerelease,
+        allow_unity_incompatible,
     ) = match action {
         app::PlanAction::Install | app::PlanAction::Upgrade => {
             let value: rpc::PackagePlanInstallParams =
@@ -172,6 +175,7 @@ fn plan_request(
                 value.repository_id,
                 value.source,
                 value.include_prerelease,
+                value.allow_unity_incompatible,
             )
         }
         app::PlanAction::Remove => {
@@ -184,6 +188,7 @@ fn plan_request(
                 None,
                 None,
                 None,
+                false,
                 false,
             )
         }
@@ -198,6 +203,7 @@ fn plan_request(
                 value.repository_id,
                 value.source,
                 false,
+                value.allow_unity_incompatible,
             )
         }
         app::PlanAction::Resolve => {
@@ -211,6 +217,7 @@ fn plan_request(
                 None,
                 None,
                 value.include_prerelease,
+                false,
             )
         }
         app::PlanAction::Reinstall | app::PlanAction::Bulk => return Err(()),
@@ -222,6 +229,7 @@ fn plan_request(
         return Err(());
     }
     Ok(app::PackagePlanRequest {
+        allow_unity_incompatible,
         action,
         project_id: app::ProjectId::parse(&project_id).map_err(|_| ())?,
         expected_revision: Revision::new(expected_revision).ok_or(())?,
@@ -306,6 +314,15 @@ fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
         project_revision: value.project_revision.get(),
         change_set_fingerprint: hex(&value.change_set_fingerprint),
         change_set: rpc::PackageChangeSet {
+            unity_compatibility_overrides: value
+                .change_set
+                .unity_compatibility_overrides
+                .into_iter()
+                .map(|item| rpc::PackageUnityCompatibilityOverride {
+                    package_id: item.package_id,
+                    version: item.version,
+                })
+                .collect(),
             format_version: value.change_set.format_version,
             mutations: value
                 .change_set
@@ -414,4 +431,59 @@ fn hex(value: &[u8; 32]) -> String {
         result.push(char::from(HEX[(byte & 0x0f) as usize]));
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manual_unity_flag_defaults_to_false_and_only_enters_the_three_approved_methods() {
+        let base = serde_json::json!({
+            "projectId": "00000000-0000-4000-8000-000000000001",
+            "expectedRevision": 1,
+            "packageId": "com.example.package",
+            "versionRange": "=2.0.0"
+        });
+        for action in [app::PlanAction::Install, app::PlanAction::Upgrade] {
+            assert!(
+                !plan_request(action, app::PackagePlanVersion::V2, base.clone())
+                    .expect("default")
+                    .allow_unity_incompatible
+            );
+            let mut explicit = base.clone();
+            explicit["allowUnityIncompatible"] = serde_json::json!(true);
+            assert!(
+                plan_request(action, app::PackagePlanVersion::V2, explicit.clone())
+                    .expect("explicit")
+                    .allow_unity_incompatible
+            );
+            explicit["allowUnityIncompatible"] = serde_json::json!("true");
+            assert!(plan_request(action, app::PackagePlanVersion::V2, explicit).is_err());
+        }
+        let mut downgrade = base.clone();
+        downgrade
+            .as_object_mut()
+            .expect("object")
+            .remove("versionRange");
+        downgrade["version"] = serde_json::json!("2.0.0");
+        downgrade["allowUnityIncompatible"] = serde_json::json!(true);
+        let parsed = plan_request(
+            app::PlanAction::Downgrade,
+            app::PackagePlanVersion::V2,
+            downgrade,
+        )
+        .expect("downgrade");
+        assert!(parsed.allow_unity_incompatible);
+        assert_eq!(parsed.version_range.as_deref(), Some("=2.0.0"));
+        for action in [
+            app::PlanAction::Remove,
+            app::PlanAction::Resolve,
+            app::PlanAction::Reinstall,
+            app::PlanAction::Bulk,
+        ] {
+            let value = serde_json::json!({"projectId": "00000000-0000-4000-8000-000000000001", "expectedRevision": 1, "packageId": "com.example.package", "allowUnityIncompatible": true});
+            assert!(plan_request(action, app::PackagePlanVersion::V2, value).is_err());
+        }
+    }
 }

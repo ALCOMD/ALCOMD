@@ -405,6 +405,11 @@
                     "minItems": 0,
                     "maxItems": 13,
                     "uniqueItems": true
+                },
+                "manualUnityOverrideAllowed": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Core qualification for explicit manual root selection only. Does not grant automatic or bulk eligibility."
                 }
             },
             "required": [
@@ -450,6 +455,46 @@
                         "properties": {
                             "reasons": {
                                 "minItems": 1
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": [
+                            "manualUnityOverrideAllowed"
+                        ],
+                        "properties": {
+                            "manualUnityOverrideAllowed": {
+                                "const": true
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "classification": {
+                                "enum": [
+                                    "stable",
+                                    "prerelease"
+                                ]
+                            },
+                            "relation": {
+                                "enum": [
+                                    "not_installed",
+                                    "newer",
+                                    "older"
+                                ]
+                            },
+                            "unity": {
+                                "const": "incompatible"
+                            },
+                            "eligibility": {
+                                "const": "blocked"
+                            },
+                            "reasons": {
+                                "const": [
+                                    "unity_incompatible"
+                                ]
                             }
                         }
                     }

@@ -196,6 +196,15 @@ pub struct PackageChangeSet {
     pub legacy_packages: Vec<String>,
     #[serde(with = "sha256_hex")]
     pub vpm_manifest_sha256: [u8; 32],
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unity_compatibility_overrides: Vec<PackageUnityCompatibilityOverride>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageUnityCompatibilityOverride {
+    pub package_id: String,
+    pub version: String,
 }
 
 impl PackageChangeSet {
@@ -205,6 +214,19 @@ impl PackageChangeSet {
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
             || self.legacy_removals.len() > 4096
             || self.legacy_packages.len() > MAX_PACKAGE_MUTATIONS
+            || self.unity_compatibility_overrides.len() > 1
+            || (!self.unity_compatibility_overrides.is_empty() && self.format_version != 4)
+            || self.unity_compatibility_overrides.iter().any(|item| {
+                item.package_id.is_empty()
+                    || item.package_id.len() > 128
+                    || item.version.is_empty()
+                    || item.version.len() > 256
+                    || !self.mutations.iter().any(|mutation| {
+                        mutation.package_id == item.package_id
+                            && mutation.to_version.as_ref() == Some(&item.version)
+                            && mutation.source.is_some()
+                    })
+            })
             || (self.format_version < 4
                 && (!self.legacy_removals.is_empty() || !self.legacy_packages.is_empty()))
             || (self.format_version == 1
@@ -301,6 +323,7 @@ pub struct ResolverCatalog {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackagePlanRequest {
+    pub allow_unity_incompatible: bool,
     pub action: PlanAction,
     pub project_id: ProjectId,
     pub expected_revision: Revision,
@@ -820,6 +843,19 @@ where
         require(access, crate::Permission::ProjectsRead)?;
         require(access, crate::Permission::RepositoriesRead)?;
         require(access, crate::Permission::PackagesRead)?;
+        if request.allow_unity_incompatible
+            && (!matches!(
+                request.action,
+                PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade
+            ) || request.plan_version != PackagePlanVersion::V2
+                || request.package_id.is_none()
+                || !request
+                    .version_range
+                    .as_deref()
+                    .is_some_and(|range| range.starts_with('=') && range.len() > 1))
+        {
+            return Err(M4Error::new(M4ErrorCode::InvalidInput));
+        }
         let project = self
             .store
             .get_project(access.principal().clone(), request.project_id)
@@ -839,6 +875,18 @@ where
             return Err(M4Error::new(M4ErrorCode::RepositoryRefreshRequired));
         }
         let action = format!("packages.{}", request.action.as_str());
+        let requested_override =
+            request
+                .allow_unity_incompatible
+                .then(|| PackageUnityCompatibilityOverride {
+                    package_id: request.package_id.clone().unwrap_or_default(),
+                    version: request
+                        .version_range
+                        .as_deref()
+                        .and_then(|range| range.strip_prefix('='))
+                        .unwrap_or_default()
+                        .to_owned(),
+                });
         let target = crate::log_path("project", project.observation.root_path.clone());
         let draft = crate::log_execution_step(
             &action,
@@ -849,6 +897,11 @@ where
             |error| error.path().map(str::to_owned),
         )
         .await?;
+        if draft.change_set.unity_compatibility_overrides
+            != requested_override.into_iter().collect::<Vec<_>>()
+        {
+            return Err(M4Error::new(M4ErrorCode::Internal));
+        }
         self.store
             .create_package_plan(access.principal().clone(), draft, m4_time_ms()?)
             .await
@@ -1083,6 +1136,7 @@ mod tests {
     #[test]
     fn change_set_limits_are_not_truncating() {
         let mut change_set = PackageChangeSet {
+            unity_compatibility_overrides: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),

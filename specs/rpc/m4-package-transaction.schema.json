@@ -120,7 +120,9 @@
             "required": ["formatVersion", "mutations", "dependencyEdges", "vpmManifestSha256"],
             "if": {"required": ["legacyRemovals"]},
             "then": {"properties": {"formatVersion": {"const": 4}}},
+            "allOf": [{"if": {"required": ["unityCompatibilityOverrides"]}, "then": {"properties": {"formatVersion": {"const": 4}}}}],
             "properties": {
+                "unityCompatibilityOverrides": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["packageId", "version"], "properties": {"packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}}}},
                 "formatVersion": {"enum": [1, 2, 3, 4]},
                 "mutations": {
                     "type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/packageMutation"}
@@ -181,7 +183,8 @@
                         "packageId": {"$ref": "#/$defs/packageId"},
                         "versionRange": {"$ref": "#/$defs/versionText"},
                         "repositoryId": {"$ref": "#/$defs/uuid"},
-                        "includePrerelease": {"type": "boolean", "default": false}
+                        "includePrerelease": {"type": "boolean", "default": false},
+                        "allowUnityIncompatible": {"type": "boolean", "default": false}
                     }
                 }
             ]
@@ -208,6 +211,7 @@
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "packageId": {"$ref": "#/$defs/packageId"},
                 "version": {"$ref": "#/$defs/versionText"},
+                "allowUnityIncompatible": {"type": "boolean", "default": false},
                 "repositoryId": {"$ref": "#/$defs/uuid"}
             }
         },
