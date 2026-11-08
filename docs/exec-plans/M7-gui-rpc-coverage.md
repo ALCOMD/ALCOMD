@@ -53,7 +53,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `packages.planResolve` | `packages.plan.v1` | Project Packages | plan deterministic resolve | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
 | `packages.planReinstall` | `packages.plan.v2` | Project Packages | plan reinstall locked packages | R/Plan | review follows | no | data/stale/source ambiguity | `gui.m7-package-workspace` |
 | `packages.planBulk` | `packages.plan.v2` | Project Packages | one Plan for full selected set or Update All | R/Plan | review follows | no | data/complete evidence/256 limit/stale | `gui.m7-package-workspace` |
-| `packages.queryProjectCandidates` | `packages.candidates.v1` | Project Packages | read Core summaries and lazy version pages | R | no | no | data/snapshot/paging/quota/stale | `gui.m7-package-workspace` |
+| `packages.queryProjectCandidates` | `packages.candidates.v2` | Project Packages | read Core summaries and lazy version pages | R | no | no | data/snapshot/paging/quota/stale | `gui.m7-package-workspace` |
 | `packages.applyPlan` | `packages.apply.v1` | Project Packages | apply reviewed Plan | W | required | yes | mutation/stale/recovery | `gui.m7-operation-flows` |
 | `packages.userPackages.list` | `packages.user-packages.v1` | Resources / User Packages | page enrolled packages | R | no | no | data/keyset | `gui.m7-package-workspace` |
 | `packages.userPackages.get` | `packages.user-packages.v1` | User Package detail | load enrolled package | R | no | no | data | `gui.m7-package-workspace` |

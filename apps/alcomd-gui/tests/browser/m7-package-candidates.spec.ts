@@ -171,7 +171,8 @@ test("Disabled package version options reject pointer and Material keyboard acti
     await row.getByRole("combobox", { name: "Version for com.example.remote: Not installed", exact: true }).click();
     await opened.evaluate((events) => events.opened);
     await opened.dispose();
-    const blocked = menu.locator("md-select-option").filter({ hasText: "9.0.0 · Example packages" });
+    await expect(menu.locator("md-select-option").filter({ hasText: "9.0.0" })).toHaveCount(0);
+    const blocked = menu.locator("md-select-option").filter({ hasText: "legacy · Example packages" });
     await expect(blocked).toHaveJSProperty("disabled", true);
     await blocked.evaluate((element) => {
         element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -309,9 +310,9 @@ test("Summary pages share the first fingerprint while versions are read only aft
     expect(requests.filter((request) => request.view.kind === "versions")).toHaveLength(0);
     expect(requests.filter((request) => request.cursor).every((request) => request.expectedSnapshot === request.cursor?.snapshotFingerprint)).toBe(true);
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
-    await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6, 9]);
+    await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
     const options = page.locator(".package-version-picker").first().locator("md-select-option");
-    await expect(options).toHaveCount(13);
+    await expect(options).toHaveCount(10);
     await expect(options.filter({ hasText: "1.1.0" }).last()).toHaveJSProperty("disabled", false);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").every((request) => request.limit === 64 && request.expectedSnapshot === (request.cursor?.snapshotFingerprint ?? request.expectedSnapshot)))).toBe(true);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
@@ -327,12 +328,12 @@ test("Closing a loading version selector stops paging and reopening resumes with
     await closed.evaluate(({ event }) => event);
     await closed.dispose();
     await page.evaluate(() => window.resumeCandidateVersions?.());
-    await expect(select.locator("md-select-option")).toHaveCount(4);
+    await expect(select.locator("md-select-option")).toHaveCount(5);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length)).toBe(1);
     await expect(select.getByRole("combobox")).toBeFocused();
     await select.getByRole("combobox").click();
-    await expect(select.locator("md-select-option")).toHaveCount(13);
-    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6, 9]);
+    await expect(select.locator("md-select-option")).toHaveCount(10);
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
@@ -506,7 +507,7 @@ test("Candidate reads share a two-request bound across independent menu/traversa
                 maximum = Math.max(maximum, active);
                 await new Promise((resolve) => setTimeout(resolve, 5));
                 active -= 1;
-                return { projectId: request.projectId, snapshot: { fingerprint: "0".repeat(64), projectRevision: request.expectedRevision, configRevision: 1 }, showPrerelease: false, catalogComplete: true, nextCursor: null, view: "summary", items: [] };
+                return { projectId: request.projectId, snapshot: { fingerprint: "0".repeat(64), projectRevision: request.expectedRevision, configRevision: 1 }, showPrerelease: false, catalogComplete: true, presentationComplete: true, nextCursor: null, view: "summary", items: [] };
             }
         };
         await Promise.all(Array.from({ length: 7 }, () => window.queryCandidates(client, { projectId, expectedRevision: 1, view: { kind: "summary" } })));

@@ -6,7 +6,7 @@ export const RPC_CAPABILITIES = {
     repositoriesListFiles: "repositories.list-files.v1",
     repositoriesListImport: "repositories.list-import.v1",
     unityHubOpen: "unity.hub.open.v1",
-    packagesCandidates: "packages.candidates.v1",
+    packagesCandidates: "packages.candidates.v2",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1",
     extensionsPermissionsRead: "extensions.permissions.read.v1"

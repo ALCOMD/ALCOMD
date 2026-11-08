@@ -144,7 +144,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
-                alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),

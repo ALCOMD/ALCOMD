@@ -19,6 +19,7 @@ export interface DesktopListColumn {
 
 export interface DesktopListRow {
     key: string;
+    className?: string;
     cells: ReactNode[];
 }
 
@@ -56,7 +57,7 @@ export function DesktopList({
                     <colgroup>{columns.map((column) => <col key={column.key} style={column.width === undefined ? undefined : { width: column.width }} />)}</colgroup>
                     <thead><tr>{columns.map((column) => <DesktopListHeader column={column} key={column.key} />)}</tr></thead>
                     <tbody>
-                        {rows.map((row) => <tr key={row.key} data-row-key={row.key}>{row.cells.map((cell, index) => {
+                        {rows.map((row) => <tr className={row.className} key={row.key} data-row-key={row.key}>{row.cells.map((cell, index) => {
                             const column = columns[index];
                             return <td className={column?.className} data-cell-flow={column?.cellFlow ?? "truncate"} key={column?.key}>{cell}</td>;
                         })}</tr>)}

@@ -353,12 +353,54 @@ async function openHarness(page: Page, state: string) {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/projects/${PROJECT_ID}`)}&state=${state}`);
 }
 
+test("closing a repository preserves installed facts and makes its source match a missing repository", async ({ page }) => {
+    await openHarness(page, "ready&versions=1");
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    const filters = page.getByRole("dialog", { name: "Package filters", exact: true });
+    const repository = filters.getByRole("checkbox", { name: "Example packages", exact: true });
+    await repository.uncheck();
+    const installed = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.avatar", exact: true }) });
+    await expect(installed).toContainText("1.2.3");
+    await expect(installed).toContainText("Unknown source");
+    await expect(installed.getByRole("combobox", { name: /^Source for/ })).toHaveCount(0);
+    await expect(page.getByRole("checkbox", { name: "Select Remote tools", exact: true })).toHaveCount(0);
+    await repository.check();
+    await expect(page.getByRole("checkbox", { name: "Select Avatar tools", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+
+    await openHarness(page, "package-no-repositories");
+    const missing = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.avatar", exact: true }) });
+    await expect(missing).toContainText("1.2.3");
+    await expect(missing).toContainText("Unknown source");
+});
+
+test("a changed visibility revision cannot reuse source metadata while the new Core read is pending", async ({ page }) => {
+    await openHarness(page, "ready&holdCandidateVisibility=1");
+    const table = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(table.getByText("Avatar tools", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    await page.getByRole("dialog", { name: "Package filters", exact: true }).getByRole("checkbox", { name: "Example packages", exact: true }).uncheck();
+    await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVisibility)).toBe("function");
+    await expect(table.getByText("Avatar tools", { exact: true })).toHaveCount(0);
+    await expect(table.getByText("Remote tools", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("status", { name: "Loading", exact: true })).toBeVisible();
+    await expect(table.getByRole("combobox", { name: /^Source for/ })).toHaveCount(0);
+    await page.evaluate(() => window.resumeCandidateVisibility?.());
+    await expect(table.getByRole("checkbox", { name: "Select com.example.avatar", exact: true })).toBeVisible();
+    await expect(table).toContainText("1.2.3");
+    await expect(table).toContainText("Unknown source");
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
 test("Inline version selection pins the chosen source and preserves installed state until Apply", async ({ page }) => {
     await openHarness(page, "package-multiple&versions=1");
     const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" });
     await trigger.click();
     await expect(page.locator("md-select-option").filter({ hasText: "1.2.3 · Local packages · Installed" })).toHaveJSProperty("disabled", true);
-    for (const version of ["legacy", "9.0.0", "2.0.0-beta.1"]) await expect(page.locator("md-select-option").filter({ hasText: version }).first()).toHaveJSProperty("disabled", true);
+    await expect(page.locator("md-select-option").filter({ hasText: "legacy" }).first()).toHaveJSProperty("disabled", true);
+    await expect(page.locator("md-select-option").filter({ hasText: "9.0.0" })).toHaveCount(0);
+    await expect(page.locator("md-select-option").filter({ hasText: "2.0.0-beta.1" })).toHaveCount(0);
     const closed = await page.locator(".package-version-picker").first().evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
     await page.keyboard.press("Escape");
     await closed.evaluate(({ event }) => event);

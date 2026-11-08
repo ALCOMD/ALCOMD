@@ -211,7 +211,7 @@ fn catalogue_identity_lock_and_frozen_task_are_independent_of_display_names() {
         "internal_error",
         &OperationId::new().to_string(),
         None,
-        29,
+        30,
     )
     .expect("finish failed create");
     assert!(
@@ -290,6 +290,7 @@ fn publish_intent_fences_cancel_and_restart_commits_registration_with_task() {
     assert_eq!(recovered.project_id, created.project_id);
 
     let observation = ProjectObservation {
+        package_presentations: Default::default(),
         root_path: "/canonical/Project".to_owned(),
         path_identity_key: vec![20],
         project_type: ProjectType::Unknown,

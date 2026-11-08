@@ -292,10 +292,11 @@ fn load_project(
 pub(super) fn register_project(
     connection: &mut Connection,
     owner: &PrincipalId,
-    observation: ProjectObservation,
+    mut observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+    let presentation = std::mem::take(&mut observation.package_presentations);
     let fingerprint = project_fingerprint(&observation)?;
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
@@ -350,6 +351,8 @@ pub(super) fn register_project(
         last_modified_at_ms: Some(now_ms),
         favorite: false,
     };
+    crate::m7_presentation::write(&transaction, id, record.revision.get(), &presentation)
+        .map_err(sql_failure)?;
     insert_event(
         &transaction,
         owner,
@@ -589,10 +592,11 @@ pub(super) fn refresh_project(
     owner: &PrincipalId,
     id: ProjectId,
     expected: Revision,
-    observation: ProjectObservation,
+    mut observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+    let presentation = std::mem::take(&mut observation.package_presentations);
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
@@ -637,7 +641,10 @@ pub(super) fn refresh_project(
             ],
         )
         .map_err(sql_failure)?;
-    if changed {
+    let presentation_changed =
+        crate::m7_presentation::write(&transaction, id, next_revision.get(), &presentation)
+            .map_err(sql_failure)?;
+    if changed || presentation_changed {
         insert_event(
             &transaction,
             owner,
@@ -733,6 +740,7 @@ pub(super) fn set_project_favorite(
                 ],
             )
             .map_err(sql_failure)?;
+        transaction.execute("UPDATE project_presentation_observations SET project_revision=?1 WHERE project_id=?2 AND project_revision=?3", params![integer(revision.get())?, id.to_string(), integer(current.revision.get())?]).map_err(sql_failure)?;
         insert_event(
             &transaction,
             owner,
@@ -893,7 +901,7 @@ fn load_packages(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present, presentation_json
          FROM repository_package_versions WHERE repository_id=?1
          ORDER BY package_id ASC, version_text ASC",
         )
@@ -901,6 +909,11 @@ fn load_packages(
     let rows = statement
         .query_map(params![id.to_string()], |row| {
             Ok(RepositoryPackageVersion {
+                presentation: row
+                    .get::<_, Option<String>>(19)?
+                    .map(|v| serde_json::from_str(&v))
+                    .transpose()
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
                 package_id: row.get(0)?,
                 version: row.get(1)?,
                 display_name: row.get(2)?,
@@ -1000,9 +1013,9 @@ fn insert_packages(
                 repository_id, package_id, version_text, display_name, description, yanked,
                 unity_text, semantic_version, author_name, author_email, artifact_url,
                 zip_sha256, unity_release_text, dependencies_json, manifest_fingerprint,
-                legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
+                legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present, presentation_json
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                       coalesce(?14, '{}'), ?15, ?16, ?17, ?18, ?19, ?20)",
+                       coalesce(?14, '{}'), ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
         )
         .map_err(sql_failure)?;
     let id = id.to_string();
@@ -1040,6 +1053,12 @@ fn insert_packages(
                     .as_ref()
                     .and_then(|value| value.changelog.as_deref()),
                 resolver.is_some_and(|value| value.download_headers_present),
+                package
+                    .presentation
+                    .as_ref()
+                    .map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|_| internal())?,
             ])
             .map_err(sql_failure)?;
     }
@@ -1568,7 +1587,7 @@ pub(super) fn list_repository_packages(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url, download_headers_present, presentation_json
          FROM repository_package_versions WHERE repository_id=?1 AND
          (?2 IS NULL OR package_id > ?2 OR (package_id = ?2 AND version_text > ?3))
          ORDER BY package_id ASC, version_text ASC LIMIT ?4",
@@ -1586,6 +1605,11 @@ pub(super) fn list_repository_packages(
             ],
             |row| {
                 Ok(RepositoryPackageVersion {
+                    presentation: row
+                        .get::<_, Option<String>>(19)?
+                        .map(|v| serde_json::from_str(&v))
+                        .transpose()
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     package_id: row.get(0)?,
                     version: row.get(1)?,
                     display_name: row.get(2)?,

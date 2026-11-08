@@ -28,11 +28,16 @@ export interface PackageCandidateEvidence {
 }
 export type CandidateChoice = { kind: "candidate"; candidate: PackageCandidateEvidence } | { kind: "none" | "unknown"; reasons: CandidateReason[] } | { kind: "ambiguous"; reason: "source_ambiguous" };
 export type PackageUpdateEvidence = { kind: "target"; candidate: PackageCandidateEvidence } | { kind: "no_update"; reason: "same_precedence" | "installed_newer" | "not_installed" } | { kind: "unavailable"; reasons: CandidateReason[] };
+export type PresentationState = "complete" | "partial" | "unobserved";
+export interface CandidateProvider { source: CandidateSource; sourceRevision: number; displayName?: string; name?: string; builtin?: "official" | "curated"; sourceKind: "remote" | "local" | "user-package"; displayOrder: number }
 export interface PackageCandidateSummary {
+    description?: string;
+    installedYanked?: boolean;
+    presentationState: PresentationState;
     packageId: string;
     displayName?: string;
     links?: { documentation?: string; changelog?: string };
-    providers: Array<{ source: CandidateSource; sourceRevision: number }>;
+    providers: CandidateProvider[];
     direct: boolean;
     installed: { kind: "absent" } | { kind: "locked"; version: string } | { kind: "unknown"; reason: "installed_evidence_unknown" };
     latest: CandidateChoice;
@@ -60,5 +65,5 @@ export interface CandidateBulkActions {
     remove: CandidateBulkIntent[];
     reinstall: CandidateBulkIntent[];
 }
-interface CandidatePageBase { projectId: string; snapshot: CandidateSnapshot; showPrerelease: boolean; catalogComplete: boolean; nextCursor: CandidateCursor | null }
+interface CandidatePageBase { presentationComplete: boolean; projectId: string; snapshot: CandidateSnapshot; showPrerelease: boolean; catalogComplete: boolean; nextCursor: CandidateCursor | null }
 export type ProjectCandidatePage = (CandidatePageBase & { view: "summary"; items: PackageCandidateSummary[]; bulk?: CandidateBulkActions }) | (CandidatePageBase & { view: "versions"; packageId: string; items: PackageCandidateEvidence[] });

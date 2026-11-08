@@ -97,6 +97,7 @@ pub enum CandidatePageItems {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCandidatePage {
+    pub presentation_complete: bool,
     pub project_id: String,
     pub snapshot: CandidateSnapshot,
     pub show_prerelease: bool,
@@ -121,6 +122,7 @@ pub enum CandidateQueryError {
 }
 
 pub struct CandidateStoreSnapshot {
+    pub installed_presentations: ProjectPackagePresentations,
     pub project: ProjectRecord,
     pub entries: Vec<CandidateCatalogEntry>,
     pub fingerprint_records: Vec<String>,
@@ -128,7 +130,12 @@ pub struct CandidateStoreSnapshot {
     pub source_metadata: HashMap<String, CandidateSourceMetadata>,
 }
 
+#[derive(Clone, Debug)]
 pub struct CandidateSourceMetadata {
+    pub display_name: Option<String>,
+    pub name: Option<String>,
+    pub builtin: Option<BuiltinRepository>,
+    pub display_order: u32,
     pub kind: CandidateFilterSource,
     pub search_name: String,
 }
@@ -190,6 +197,7 @@ struct CachedSummary {
 struct PreparedSummary {
     items: Vec<CandidateSummary>,
     source_metadata: HashMap<String, CandidateSourceMetadata>,
+    presentation_complete: bool,
 }
 
 enum PreparedCandidates {
@@ -197,6 +205,7 @@ enum PreparedCandidates {
     Versions {
         package_id: String,
         items: Vec<CandidateEvidence>,
+        presentation_complete: bool,
     },
 }
 
@@ -331,6 +340,8 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 snapshot.fingerprint_records,
             )?;
             let input = CandidateEvidenceInput {
+                installed_presentations: snapshot.installed_presentations,
+                source_metadata: snapshot.source_metadata.clone(),
                 project: snapshot.project.observation,
                 entries: snapshot.entries,
                 settings: config.settings.packages.clone(),
@@ -368,7 +379,13 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                             return Err(CandidateQueryError::EvidenceStale);
                         }
                     }
+                    let presentation_complete = input.installed_presentations.state
+                        == PresentationState::Complete
+                        && items
+                            .iter()
+                            .all(|item| item.presentation_state == PresentationState::Complete);
                     let data = Arc::new(PreparedSummary {
+                        presentation_complete,
                         items,
                         source_metadata: snapshot.source_metadata,
                     });
@@ -393,11 +410,20 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                     PreparedCandidates::Summary(data)
                 }
                 CandidateView::Versions { package_id, source } => PreparedCandidates::Versions {
+                    presentation_complete: input.installed_presentations.state
+                        == PresentationState::Complete,
                     package_id: package_id.clone(),
                     items: self.engine.versions(&input, package_id, source.as_ref()),
                 },
             };
             (fingerprint, snapshot.catalog_complete, items)
+        };
+        let presentation_complete = match &items {
+            PreparedCandidates::Summary(data) => data.presentation_complete,
+            PreparedCandidates::Versions {
+                presentation_complete,
+                ..
+            } => *presentation_complete,
         };
         let offset = request.cursor.as_ref().map_or(0, |c| c.offset);
         let limit = request.limit.unwrap_or(64) as usize;
@@ -436,7 +462,12 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 }
                 (CandidatePageItems::Summary { items }, total)
             }
-            (PreparedCandidates::Versions { package_id, items }, _) => {
+            (
+                PreparedCandidates::Versions {
+                    package_id, items, ..
+                },
+                _,
+            ) => {
                 let total = items.len();
                 (
                     CandidatePageItems::Versions {
@@ -468,6 +499,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
             offset: offset + limit,
         });
         let page = ProjectCandidatePage {
+            presentation_complete,
             project_id: request.project_id,
             snapshot: CandidateSnapshot {
                 fingerprint,
@@ -601,6 +633,10 @@ fn matches_filter(
                     .display_name
                     .as_ref()
                     .is_some_and(|name| name.to_lowercase().contains(search))
+                || item
+                    .search_terms
+                    .iter()
+                    .any(|term| term.to_lowercase().contains(search))
                 || provider_metadata().any(|source| source.search_name.contains(search))
         })
 }
@@ -1011,5 +1047,51 @@ mod tests {
                 CandidateQueryError::InvalidInput
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod presentation_filter_tests {
+    use super::*;
+    #[test]
+    fn aliases_and_keywords_are_searchable_but_not_serialized() {
+        let empty = CandidateChoice::None {
+            reasons: vec![CandidateReason::NoVisibleCandidate],
+        };
+        let row = CandidateSummary {
+            description: None,
+            installed_yanked: None,
+            presentation_state: PresentationState::Unobserved,
+            search_terms: vec!["HiddenAlias".into()],
+            package_id: "com.example.package".into(),
+            display_name: None,
+            links: None,
+            providers: vec![],
+            direct: false,
+            installed: CandidateInstalled::Absent,
+            latest: empty.clone(),
+            latest_stable: empty.clone(),
+            project_latest: empty.clone(),
+            project_latest_stable: empty,
+            update: CandidateUpdate::NoUpdate {
+                reason: CandidateNoUpdateReason::NotInstalled,
+            },
+            stable_update: CandidateUpdate::NoUpdate {
+                reason: CandidateNoUpdateReason::NotInstalled,
+            },
+        };
+        assert!(matches_filter(
+            &row,
+            &HashMap::new(),
+            &CandidateFilter {
+                search: Some("hiddenalias".into()),
+                status: None,
+                source: None
+            },
+            Some("hiddenalias")
+        ));
+        let encoded = serde_json::to_string(&row).expect("presentation fixture or query succeeds");
+        assert!(!encoded.contains("HiddenAlias"));
+        assert!(!encoded.contains("searchTerms"));
     }
 }

@@ -40,17 +40,17 @@ fn approved_candidate_wire_shapes_round_trip_through_production_dtos() {
 }
 
 #[test]
-fn candidate_public_contract_is_additive_and_permission_names_are_reused() {
+fn candidate_v2_contract_is_approved_breaking_and_permission_names_are_reused() {
     let schema: Value = serde_json::from_str(SCHEMA).expect("candidate schema");
     assert_eq!(schema["x-alcomd-approval"], "owner-approved");
-    assert_eq!(schema["x-alcomd-breaking-change"], false);
+    assert_eq!(schema["x-alcomd-breaking-change"], true);
     assert_eq!(
         schema["x-alcomd-method"],
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
     );
     assert_eq!(
         schema["x-alcomd-capability"],
-        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1
+        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V2
     );
     assert_eq!(
         schema["x-alcomd-method-permissions"]["packages.queryProjectCandidates"],
@@ -175,7 +175,7 @@ fn candidate_sources_keep_snake_case_independently_of_p6_selectors() {
             assert!(serde_json::from_value::<ProjectCandidateRequest>(foreign).is_err());
         }
 
-        let provider = serde_json::json!({"source": snake, "sourceRevision": 3});
+        let provider = serde_json::json!({"source": snake, "sourceRevision": 3, "sourceKind": if kind == "user_package" {"user-package"} else {"remote"}, "displayOrder": 3});
         let decoded: CandidateProvider =
             serde_json::from_value(provider.clone()).expect("candidate provider source");
         assert_eq!(
@@ -206,4 +206,22 @@ fn candidate_sources_keep_snake_case_independently_of_p6_selectors() {
         foreign_evidence["source"] = camel;
         assert!(serde_json::from_value::<CandidateEvidence>(foreign_evidence).is_err());
     }
+}
+
+#[test]
+fn candidate_v2_requires_presentation_evidence_and_rejects_v1_pages() {
+    let vectors: Value =
+        serde_json::from_str(VECTORS).expect("presentation fixture or query succeeds");
+    let mut page = vectors["shapeCases"]
+        .as_array()
+        .expect("presentation fixture or query succeeds")
+        .iter()
+        .find(|case| case["id"] == "summary-target")
+        .expect("presentation fixture or query succeeds")["value"]
+        .clone();
+    page.as_object_mut()
+        .expect("presentation fixture or query succeeds")
+        .remove("presentationComplete");
+    assert!(serde_json::from_value::<ProjectCandidatePage>(page).is_err());
+    assert!(serde_json::from_value::<CandidateProvider>(serde_json::json!({"source":{"kind":"repository","repository_id":"r"},"sourceRevision":1})).is_err());
 }

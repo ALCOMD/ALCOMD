@@ -77,10 +77,16 @@ pub fn evaluate_candidate_summary(
 ) -> Vec<CandidateSummary> {
     let mut catalog: BTreeMap<&str, Vec<&CandidateCatalogEntry>> = BTreeMap::new();
     for entry in &input.entries {
-        if visible(input, &entry.source) {
+        if entry_visible(input, entry) {
             catalog.entry(&entry.package_id).or_default().push(entry);
         }
     }
+    let presentations: BTreeMap<_, _> = input
+        .installed_presentations
+        .packages
+        .iter()
+        .map(|item| (item.package_id.as_str(), item))
+        .collect();
     let direct: BTreeSet<&str> = input
         .project
         .direct_dependencies
@@ -106,7 +112,8 @@ pub fn evaluate_candidate_summary(
             .chain(locked.keys().copied())
             .collect(),
     };
-    ids.into_iter()
+    let mut summaries: Vec<_> = ids
+        .into_iter()
         .map(|package_id| {
             let source = overrides.get(package_id).copied();
             // Provider membership describes the whole visible package set, not the
@@ -115,14 +122,20 @@ pub fn evaluate_candidate_summary(
                 .get(package_id)
                 .into_iter()
                 .flatten()
-                .map(|entry| {
-                    (
+                .filter_map(|entry| {
+                    let metadata = input.source_metadata.get(&source_key(&entry.source))?;
+                    Some((
                         source_key(&entry.source),
                         CandidateProvider {
+                            display_name: metadata.display_name.clone(),
+                            name: metadata.name.clone(),
+                            builtin: metadata.builtin,
+                            source_kind: metadata.kind,
+                            display_order: metadata.display_order,
                             source: entry.source.clone(),
                             source_revision: entry.source_revision,
                         },
-                    )
+                    ))
                 })
                 .collect();
             let installed = installed_from_lock(locked.get(package_id).copied());
@@ -162,17 +175,93 @@ pub fn evaluate_candidate_summary(
             );
             let update = update_evidence(&project_latest, &installed);
             let stable_update = update_evidence(&project_latest_stable, &installed);
-            let (display_name, links) = summary_presentation(
+            let (mut display_name, mut links) = summary_presentation(
                 &rows,
                 locked.get(package_id).copied(),
                 &project_latest,
                 &latest,
             );
+            let local = presentations.get(package_id).copied().filter(|item| {
+                locked
+                    .get(package_id)
+                    .is_some_and(|version| *version == item.version)
+            });
+            let preferred = locked
+                .get(package_id)
+                .and_then(|version| rows.iter().find(|row| row.entry.version == *version))
+                .or_else(|| {
+                    [&project_latest, &latest]
+                        .into_iter()
+                        .find_map(|choice| match choice {
+                            CandidateChoice::Candidate { candidate } => rows.iter().find(|row| {
+                                row.entry.source == candidate.source
+                                    && row.entry.version == candidate.version
+                            }),
+                            _ => None,
+                        })
+                });
+            let mut description = preferred.and_then(|row| row.entry.description.clone());
+            let mut search_terms = Vec::new();
+            for row in &rows {
+                if let Some(metadata) = &row.entry.presentation {
+                    search_terms.extend(metadata.aliases.iter().chain(&metadata.keywords).cloned());
+                }
+            }
+            let mut installed_yanked = locked.get(package_id).and_then(|version| {
+                let exact: Vec<_> = rows
+                    .iter()
+                    .filter(|row| row.entry.version == *version)
+                    .collect();
+                if exact.is_empty() {
+                    None
+                } else if exact.iter().any(|row| yanked(row.entry)) {
+                    Some(true)
+                } else if exact.iter().all(|row| row.entry.presentation.is_some()) {
+                    Some(false)
+                } else {
+                    None
+                }
+            });
+            let presentation_state = if let Some(local) = local {
+                display_name = local.display_name.clone().or(display_name);
+                description = local.description.clone().or(description);
+                links = (local.links.documentation.is_some() || local.links.changelog.is_some())
+                    .then(|| local.links.clone());
+                installed_yanked = Some(local.yanked || installed_yanked.unwrap_or(false));
+                search_terms.extend(
+                    local
+                        .metadata
+                        .aliases
+                        .iter()
+                        .chain(&local.metadata.keywords)
+                        .cloned(),
+                );
+                alcomd_application::PresentationState::Complete
+            } else if locked.contains_key(package_id) {
+                if input.installed_presentations.state
+                    == alcomd_application::PresentationState::Unobserved
+                {
+                    alcomd_application::PresentationState::Unobserved
+                } else {
+                    alcomd_application::PresentationState::Partial
+                }
+            } else if preferred.is_some_and(|row| row.entry.presentation.is_some()) {
+                alcomd_application::PresentationState::Complete
+            } else {
+                alcomd_application::PresentationState::Unobserved
+            };
+            let mut providers: Vec<_> = providers.into_values().collect();
+            providers
+                .sort_by_key(|provider| (provider.display_order, source_key(&provider.source)));
             CandidateSummary {
+                description,
+                installed_yanked,
+                presentation_state,
+                search_terms,
                 package_id: package_id.to_owned(),
                 display_name,
                 links,
-                providers: providers.into_values().collect(),
+                providers,
                 direct: direct.contains(package_id),
                 installed,
                 latest,
@@ -183,7 +272,96 @@ pub fn evaluate_candidate_summary(
                 stable_update,
             }
         })
-        .collect()
+        .collect();
+    if package_ids.is_none() {
+        summaries.retain(|item| {
+            !matches!(item.installed, CandidateInstalled::Absent)
+                || direct.contains(item.package_id.as_str())
+                || catalog
+                    .get(item.package_id.as_str())
+                    .is_some_and(|entries| entries.iter().any(|entry| !yanked(entry)))
+        });
+    }
+    prune_display_rows(input, &catalog, &mut summaries);
+    summaries
+}
+
+fn yanked(entry: &CandidateCatalogEntry) -> bool {
+    entry.yanked
+        || entry
+            .presentation
+            .as_ref()
+            .is_some_and(|metadata| metadata.yanked)
+}
+
+fn prune_display_rows(
+    input: &CandidateEvidenceInput,
+    catalog: &BTreeMap<&str, Vec<&CandidateCatalogEntry>>,
+    rows: &mut Vec<CandidateSummary>,
+) {
+    let installed: BTreeMap<_, _> = input
+        .project
+        .locked_dependencies
+        .iter()
+        .map(|item| (item.package_id.as_str(), item.value.as_str()))
+        .collect();
+    let mut excluded = BTreeSet::<String>::new();
+    const AVATARS: &str = "com.vrchat.avatars";
+    const WORLDS: &str = "com.vrchat.worlds";
+    match (
+        installed.contains_key(AVATARS),
+        installed.contains_key(WORLDS),
+    ) {
+        (true, false) => {
+            excluded.insert(WORLDS.into());
+        }
+        (false, true) => {
+            excluded.insert(AVATARS.into());
+        }
+        _ => (),
+    }
+    if !excluded.is_empty() {
+        let mut dependents: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for row in rows.iter() {
+            let CandidateChoice::Candidate { candidate } = &row.project_latest else {
+                continue;
+            };
+            if let Some(entry) = catalog
+                .get(row.package_id.as_str())
+                .into_iter()
+                .flatten()
+                .find(|entry| {
+                    entry.source == candidate.source && entry.version == candidate.version
+                })
+            {
+                for dependency in entry.dependencies.keys() {
+                    dependents
+                        .entry(dependency)
+                        .or_default()
+                        .push(&row.package_id);
+                }
+            }
+        }
+        let mut pending: Vec<_> = excluded.iter().cloned().collect();
+        while let Some(id) = pending.pop() {
+            for dependent in dependents.get(id.as_str()).into_iter().flatten() {
+                if excluded.insert((*dependent).to_owned()) {
+                    pending.push((*dependent).to_owned());
+                }
+            }
+        }
+    }
+    for local in &input.installed_presentations.packages {
+        if installed
+            .get(local.package_id.as_str())
+            .is_some_and(|version| *version == local.version)
+        {
+            excluded.extend(local.metadata.legacy_packages.iter().cloned());
+        }
+    }
+    rows.retain(|row| {
+        installed.contains_key(row.package_id.as_str()) || !excluded.contains(&row.package_id)
+    });
 }
 
 fn summary_presentation(
@@ -270,7 +448,10 @@ pub fn evaluate_candidate_versions(
         }
     }
     rows.sort_by(display_order);
-    rows.into_iter().map(|row| row.evidence).collect()
+    rows.into_iter()
+        .filter(|row| !yanked(row.entry))
+        .map(|row| row.evidence)
+        .collect()
 }
 
 fn visible(input: &CandidateEvidenceInput, source: &PackageSourceSelector) -> bool {
@@ -280,6 +461,12 @@ fn visible(input: &CandidateEvidenceInput, source: &PackageSourceSelector) -> bo
         }
         PackageSourceSelector::UserPackage { .. } => !input.settings.hide_local_user_packages,
     }
+}
+
+fn entry_visible(input: &CandidateEvidenceInput, entry: &CandidateCatalogEntry) -> bool {
+    visible(input, &entry.source)
+        && (input.settings.show_prerelease
+            || !Version::parse(&entry.version).is_ok_and(|version| !version.pre.is_empty()))
 }
 
 fn installed(input: &CandidateEvidenceInput, package_id: &str) -> CandidateInstalled {
@@ -316,7 +503,7 @@ fn observed<'a>(
         input
             .entries
             .iter()
-            .filter(|entry| entry.package_id == package_id),
+            .filter(|entry| entry.package_id == package_id && entry_visible(input, entry)),
         source,
         installed,
     )
@@ -330,9 +517,7 @@ fn observed_entries<'a>(
 ) -> Vec<Observed<'a>> {
     let project_unity = UnityVersion::parse_editor(&input.project.unity_version);
     entries
-        .filter(|entry| {
-            visible(input, &entry.source) && source.is_none_or(|source| source == &entry.source)
-        })
+        .filter(|entry| source.is_none_or(|source| source == &entry.source))
         .map(|entry| {
             let version = Version::parse(&entry.version).ok();
             let classification = match &version {
@@ -362,7 +547,7 @@ fn observed_entries<'a>(
                 Err(()) => CandidateUnity::Unknown,
             };
             let mut reasons = BTreeSet::new();
-            if entry.yanked {
+            if yanked(entry) {
                 reasons.insert(CandidateReason::AllYanked);
             }
             if classification == CandidateClassification::Prerelease
@@ -434,7 +619,7 @@ fn exact_group(row: &Observed<'_>) -> Option<(String, Version)> {
 fn resolver_direct_match(row: &Observed<'_>) -> bool {
     row.entry.metadata_ready
         && row.version.is_some()
-        && !row.entry.yanked
+        && !yanked(row.entry)
         && matches!(
             row.evidence.unity,
             CandidateUnity::Compatible | CandidateUnity::NotRequired
@@ -507,7 +692,7 @@ fn choose(
     let mut blocked_reasons = BTreeSet::new();
     for row in rows {
         let mut reasons = BTreeSet::new();
-        if row.entry.yanked {
+        if yanked(row.entry) {
             reasons.insert(CandidateReason::AllYanked);
         }
         if row.evidence.classification == CandidateClassification::Prerelease
@@ -669,6 +854,9 @@ mod tests {
 
     fn entry(version: &str) -> CandidateCatalogEntry {
         CandidateCatalogEntry {
+            description: None,
+            presentation: None,
+            dependencies: Default::default(),
             display_name: None,
             links: CandidateLinks::default(),
             package_id: PACKAGE.to_owned(),
@@ -688,7 +876,33 @@ mod tests {
 
     fn input(versions: &[&str], installed: Option<&str>) -> CandidateEvidenceInput {
         CandidateEvidenceInput {
+            installed_presentations: Default::default(),
+            source_metadata: [
+                "repository:repository-a",
+                "repository:repository-b",
+                "user_package:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            ]
+            .into_iter()
+            .map(|key| {
+                (
+                    key.into(),
+                    alcomd_application::CandidateSourceMetadata {
+                        display_name: None,
+                        name: Some(key.into()),
+                        builtin: None,
+                        display_order: 3,
+                        kind: if key.starts_with("user_package:") {
+                            alcomd_application::CandidateFilterSource::UserPackage
+                        } else {
+                            alcomd_application::CandidateFilterSource::Remote
+                        },
+                        search_name: key.into(),
+                    },
+                )
+            })
+            .collect(),
             project: ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: String::new(),
                 path_identity_key: vec![],
                 project_type: ProjectType::VpmStarter,
@@ -887,7 +1101,96 @@ mod tests {
         input.settings.show_prerelease = false;
         assert_eq!(candidate(&summary(&input).latest).version, "1.9.0");
         let versions = evaluate_candidate_versions(&input, PACKAGE, None);
-        assert_eq!(versions[0].reasons, [CandidateReason::PrereleaseExcluded]);
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].version, "1.9.0");
+        assert!(versions[0].reasons.is_empty());
+    }
+
+    #[test]
+    fn versions_omit_closed_prereleases_for_every_source_and_installed_version() {
+        let mut input = input(&["2.0.0-beta.1", "1.9.0"], Some("2.0.0-beta.1"));
+        let mut user_package = entry("3.0.0-beta.1");
+        user_package.source = PackageSourceSelector::UserPackage {
+            user_package_id: UserPackageId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+                .expect("fixture user package ID"),
+        };
+        input.entries.push(user_package);
+        for source in [
+            None,
+            Some(&input.entries[0].source),
+            Some(&input.entries[2].source),
+        ] {
+            let versions = evaluate_candidate_versions(&input, PACKAGE, source);
+            assert!(
+                versions
+                    .iter()
+                    .all(|row| row.classification != CandidateClassification::Prerelease)
+            );
+        }
+        input.settings.show_prerelease = true;
+        let versions = evaluate_candidate_versions(&input, PACKAGE, None);
+        assert_eq!(versions.len(), 3);
+        assert_eq!(versions[0].version, "3.0.0-beta.1");
+        assert_eq!(versions[1].version, "2.0.0-beta.1");
+    }
+
+    #[test]
+    fn closed_versions_never_introduce_packages_or_providers() {
+        let mut input = input(&["1.9.0"], None);
+        input.project.direct_dependencies.clear();
+        let mut prerelease_provider = entry("2.0.0-beta.1");
+        prerelease_provider.source = PackageSourceSelector::Repository {
+            repository_id: "repository-b".to_owned(),
+        };
+        let mut prerelease_only = prerelease_provider.clone();
+        prerelease_only.package_id = "com.example.prerelease-only".to_owned();
+        input.entries.extend([prerelease_provider, prerelease_only]);
+        let rows = evaluate_candidate_summary(&input, None, &[]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].package_id, PACKAGE);
+        assert_eq!(rows[0].providers.len(), 1);
+        assert_eq!(rows[0].providers[0].source, input.entries[0].source);
+
+        input.settings.show_prerelease = true;
+        let rows = evaluate_candidate_summary(&input, None, &[]);
+        assert_eq!(rows.len(), 2);
+        let package = rows
+            .iter()
+            .find(|row| row.package_id == PACKAGE)
+            .expect("visible package");
+        assert_eq!(package.providers.len(), 2);
+    }
+
+    #[test]
+    fn installed_package_with_closed_sources_matches_a_missing_catalog() {
+        let mut hidden = input(&["1.0.0", "2.0.0"], Some("1.0.0"));
+        hidden
+            .settings
+            .hidden_repository_ids
+            .push("repository-a".to_owned());
+        let mut missing = hidden.clone();
+        missing.entries.clear();
+        let hidden_rows = evaluate_candidate_summary(&hidden, None, &[]);
+        let missing_rows = evaluate_candidate_summary(&missing, None, &[]);
+        assert_eq!(hidden_rows, missing_rows);
+        assert_eq!(hidden_rows.len(), 1);
+        assert!(matches!(
+            hidden_rows[0].installed,
+            CandidateInstalled::Locked { .. }
+        ));
+        assert!(hidden_rows[0].providers.is_empty());
+        assert!(hidden_rows[0].display_name.is_none());
+        assert!(hidden_rows[0].links.is_none());
+        assert!(evaluate_candidate_versions(&hidden, PACKAGE, None).is_empty());
+
+        hidden.entries.push(entry("3.0.0"));
+        hidden.entries[2].source = PackageSourceSelector::Repository {
+            repository_id: "repository-b".to_owned(),
+        };
+        let visible = summary(&hidden);
+        assert_eq!(visible.providers.len(), 1);
+        assert_eq!(visible.providers[0].source, hidden.entries[2].source);
+        assert_eq!(candidate(&visible.latest).version, "3.0.0");
     }
 
     #[test]
@@ -1041,10 +1344,7 @@ mod tests {
                 reasons: vec![CandidateReason::AllYanked]
             }
         );
-        assert_eq!(
-            evaluate_candidate_versions(&input, PACKAGE, None)[0].eligibility,
-            CandidateEligibility::Blocked
-        );
+        assert!(evaluate_candidate_versions(&input, PACKAGE, None).is_empty());
         input.entries[0].yanked = false;
         input.entries[0].legacy_metadata_present = true;
         assert_eq!(candidate(&summary(&input).latest).version, "2.0.0");
@@ -1156,6 +1456,11 @@ mod tests {
         assert_eq!(
             row.providers[1],
             CandidateProvider {
+                display_name: None,
+                name: Some("repository:repository-b".into()),
+                builtin: None,
+                source_kind: alcomd_application::CandidateFilterSource::Remote,
+                display_order: 3,
                 source: other.clone(),
                 source_revision: 11
             }
@@ -1269,6 +1574,174 @@ mod tests {
         assert!(
             matches!(result, Err(crate::ResolveError::DependencyConflict { .. })),
             "{result:?}"
+        );
+    }
+    fn local_presentation(id: &str) -> alcomd_application::InstalledPackagePresentation {
+        alcomd_application::InstalledPackagePresentation {
+            package_id: id.into(),
+            version: "1.0.0".into(),
+            display_name: Some("Installed local title".into()),
+            description: Some("Installed local description".into()),
+            metadata: alcomd_application::PackageDisplayMetadata {
+                keywords: vec!["needle".into()],
+                ..Default::default()
+            },
+            links: CandidateLinks {
+                documentation: Some("https://example.invalid/installed".into()),
+                changelog: None,
+            },
+            yanked: true,
+            manifest_sha256: "a".repeat(64),
+        }
+    }
+
+    #[test]
+    fn installed_presentation_survives_closed_or_missing_sources_without_revealing_them() {
+        let mut input = input(&["2.0.0"], Some("1.0.0"));
+        input.installed_presentations = alcomd_application::ProjectPackagePresentations {
+            state: alcomd_application::PresentationState::Complete,
+            fingerprint: "a".repeat(64),
+            packages: vec![local_presentation(PACKAGE)],
+        };
+        input
+            .settings
+            .hidden_repository_ids
+            .push("repository-a".into());
+        let closed = summary(&input);
+        assert!(closed.providers.is_empty());
+        assert_eq!(
+            closed.display_name.as_deref(),
+            Some("Installed local title")
+        );
+        assert_eq!(
+            closed.description.as_deref(),
+            Some("Installed local description")
+        );
+        assert_eq!(closed.installed_yanked, Some(true));
+        assert_eq!(closed.search_terms, ["needle"]);
+        assert_eq!(
+            closed.presentation_state,
+            alcomd_application::PresentationState::Complete
+        );
+        input.entries.clear();
+        assert_eq!(closed, summary(&input));
+        input.installed_presentations.packages.clear();
+        let partial = summary(&input);
+        assert_eq!(
+            partial.presentation_state,
+            alcomd_application::PresentationState::Partial
+        );
+        assert!(matches!(
+            partial.installed,
+            CandidateInstalled::Locked { .. }
+        ));
+        assert_eq!(partial.installed_yanked, None);
+    }
+
+    #[test]
+    fn yanked_versions_are_not_selectable_and_provider_facts_still_exist() {
+        let mut input = input(&["2.0.0", "1.0.0"], Some("1.0.0"));
+        input.entries[0].presentation = Some(alcomd_application::PackageDisplayMetadata {
+            yanked: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            evaluate_candidate_versions(&input, PACKAGE, None)
+                .iter()
+                .map(|item| item.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0"]
+        );
+        assert_eq!(candidate(&summary(&input).project_latest).version, "1.0.0");
+        input.entries[1].yanked = true;
+        assert!(evaluate_candidate_versions(&input, PACKAGE, None).is_empty());
+        assert_eq!(summary(&input).installed_yanked, Some(true));
+        assert_eq!(summary(&input).providers.len(), 1);
+        input.project.locked_dependencies.clear();
+        input.project.direct_dependencies.clear();
+        assert!(evaluate_candidate_summary(&input, None, &[]).is_empty());
+    }
+
+    #[test]
+    fn sdk_and_legacy_pruning_uses_known_compatible_dependencies_and_preserves_installed_conflicts()
+    {
+        let mut input = input(&[], None);
+        input.project.direct_dependencies.clear();
+        input.project.locked_dependencies = vec![alcomd_application::DependencyIdentity {
+            package_id: "com.vrchat.avatars".into(),
+            value: "1.0.0".into(),
+        }];
+        for id in [
+            "com.vrchat.avatars",
+            "com.vrchat.worlds",
+            "com.example.world-tools",
+            "com.example.world-tools-child",
+            "com.example.unknown",
+            "com.example.modern",
+            "com.example.legacy",
+        ] {
+            let mut item = entry("1.0.0");
+            item.package_id = id.into();
+            input.entries.push(item);
+        }
+        input.entries[2]
+            .dependencies
+            .insert("com.vrchat.worlds".into(), "*".into());
+        input.entries[3]
+            .dependencies
+            .insert("com.example.world-tools".into(), "*".into());
+        input.entries[4]
+            .dependencies
+            .insert("com.vrchat.worlds".into(), "*".into());
+        input.entries[4].metadata_ready = false;
+        input
+            .project
+            .locked_dependencies
+            .push(alcomd_application::DependencyIdentity {
+                package_id: "com.example.modern".into(),
+                value: "1.0.0".into(),
+            });
+        let mut modern = local_presentation("com.example.modern");
+        modern
+            .metadata
+            .legacy_packages
+            .push("com.example.legacy".into());
+        input.installed_presentations.packages.push(modern);
+        let ids = |input: &CandidateEvidenceInput| {
+            evaluate_candidate_summary(input, None, &[])
+                .into_iter()
+                .map(|item| item.package_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ids(&input),
+            [
+                "com.example.modern",
+                "com.example.unknown",
+                "com.vrchat.avatars"
+            ]
+        );
+        input
+            .project
+            .locked_dependencies
+            .push(alcomd_application::DependencyIdentity {
+                package_id: "com.example.legacy".into(),
+                value: "1.0.0".into(),
+            });
+        assert!(ids(&input).iter().any(|id| id == "com.example.legacy"));
+        input
+            .project
+            .locked_dependencies
+            .push(alcomd_application::DependencyIdentity {
+                package_id: "com.vrchat.worlds".into(),
+                value: "1.0.0".into(),
+            });
+        let conflict = ids(&input);
+        assert!(conflict.iter().any(|id| id == "com.vrchat.worlds"));
+        assert!(
+            conflict
+                .iter()
+                .any(|id| id == "com.example.world-tools-child")
         );
     }
 }

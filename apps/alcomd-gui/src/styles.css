@@ -627,6 +627,17 @@ md-linear-progress {
 .package-workspace-list td { padding: 8px 12px; }
 .package-workspace-list .material-toggle > span { display: none; }
 .package-column-name { min-width: 0; }
+.package-workspace-list .package-row--installed .package-column-name strong {
+    color: var(--md-sys-color-on-surface);
+    font-weight: 600;
+}
+.package-workspace-list .package-row--available > td {
+    color: var(--md-sys-color-on-surface-variant);
+}
+.package-workspace-list .package-row--available .package-column-name strong {
+    color: var(--md-sys-color-on-surface-variant);
+    font-weight: 400;
+}
 .package-column-name strong,
 .package-workspace-list td small { display: block; }
 .package-column-name strong,
@@ -646,6 +657,7 @@ md-linear-progress {
 .package-row-actions > .package-more-actions { grid-column: 2; }
 .package-version-picker,
 .package-source-picker { width: 100%; min-width: 0; }
+.package-source-summary { width: 100%; min-width: 0; }
 .package-source-missing { color: var(--error); font-size: 0.8rem; }
 .package-actions-menu-item--danger,
 .project-actions-menu-item--danger { color: var(--error); }
@@ -1728,4 +1740,8 @@ code {
 
 [role="alert"] code {
     overflow-wrap: anywhere;
+}
+
+.package-column-name .package-yanked-status {
+    color: var(--md-sys-color-error);
 }

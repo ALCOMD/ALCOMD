@@ -31,6 +31,7 @@ mod m7_candidates_types;
 mod m7_copy;
 mod m7_delete;
 mod m7_official;
+mod m7_presentation;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod operation_logs;
@@ -51,6 +52,7 @@ pub use m7_candidates_types::*;
 pub use m7_copy::*;
 pub use m7_delete::*;
 pub use m7_official::*;
+pub use m7_presentation::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 pub use operation_logs::*;
@@ -149,6 +151,10 @@ pub struct ReadIssue {
 /// Normalized project observation produced without modifying the project.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProjectObservation {
+    /// Transport from the inspector to the store's presentation sidecar only.
+    /// Excluded from project snapshots and all frozen Plan/Apply projections.
+    #[serde(skip)]
+    pub package_presentations: Box<ProjectPackagePresentations>,
     pub root_path: String,
     pub path_identity_key: Vec<u8>,
     pub project_type: ProjectType,
@@ -209,7 +215,8 @@ impl std::fmt::Debug for RepositoryCredentials {
 pub const VRCHAT_OFFICIAL_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101";
 pub const VRCHAT_CURATED_REPOSITORY_ID: &str = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b102";
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum BuiltinRepository {
     Official,
     Curated,
@@ -250,6 +257,8 @@ pub struct RepositoryValidators {
 /// Raw package/version display row; no SemVer meaning is implied.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepositoryPackageVersion {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PackageDisplayMetadata>,
     pub package_id: String,
     pub version: String,
     pub display_name: Option<String>,

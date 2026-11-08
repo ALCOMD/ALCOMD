@@ -366,6 +366,13 @@ pub(super) fn finish(
             ],
         )
         .map_err(db_error)?;
+    crate::m7_presentation::write(
+        &transaction,
+        ProjectId::parse(project_id).map_err(|_| internal())?,
+        1,
+        &observation.package_presentations,
+    )
+    .map_err(db_error)?;
     transaction
         .execute(
             "INSERT INTO events (

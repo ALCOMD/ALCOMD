@@ -1341,6 +1341,7 @@ mod tests {
         ProjectRecord {
             project_id: ProjectId::new(),
             observation: crate::ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: "fixture-project".to_owned(),
                 path_identity_key: vec![7],
                 project_type: crate::ProjectType::Unknown,

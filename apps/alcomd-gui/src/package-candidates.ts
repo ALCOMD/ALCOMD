@@ -40,7 +40,7 @@ export async function queryCandidates(client: GuiRpcClient, request: ProjectCand
     try { return await client.packageQueryProjectCandidates(request); }
     finally { const next = waiting.shift(); if (next) next(); else inFlight -= 1; }
 }
-export interface CandidateSummarySet { items: PackageCandidateSummary[]; snapshot: CandidateSnapshot; catalogComplete: boolean }
+export interface CandidateSummarySet { items: PackageCandidateSummary[]; snapshot: CandidateSnapshot; catalogComplete: boolean; presentationComplete: boolean }
 export interface CandidateSummaryPage extends CandidateSummarySet { nextCursor: CandidateCursor | null }
 
 export async function readCandidateSummaryPage(client: GuiRpcClient, request: ProjectCandidateRequest): Promise<CandidateSummaryPage> {
@@ -57,6 +57,7 @@ export async function readCandidateSummaryPage(client: GuiRpcClient, request: Pr
 export async function finishCandidateSummary(client: GuiRpcClient, request: ProjectCandidateRequest, first: CandidateSummaryPage, isCurrent: () => boolean): Promise<CandidateSummarySet | undefined> {
     let cursor = first.nextCursor;
     let catalogComplete = first.catalogComplete;
+    let presentationComplete = first.presentationComplete;
     const items = [...first.items];
     const seenIds = new Set(items.map((item) => item.packageId));
     if (seenIds.size !== items.length) throw { code: "package_candidate_evidence_stale" };
@@ -65,6 +66,7 @@ export async function finishCandidateSummary(client: GuiRpcClient, request: Proj
         if (pageIndex >= 1563 || cursor.offset > 100000) throw { code: "package_candidate_limit_exceeded" };
         const page = await readCandidateSummaryPage(client, { ...request, expectedSnapshot: first.snapshot.fingerprint, cursor });
         catalogComplete &&= page.catalogComplete;
+        presentationComplete &&= page.presentationComplete;
         for (const item of page.items) {
             if (seenIds.has(item.packageId)) throw { code: "package_candidate_evidence_stale" };
             seenIds.add(item.packageId);
@@ -73,7 +75,7 @@ export async function finishCandidateSummary(client: GuiRpcClient, request: Proj
         if (items.length > 100000) throw { code: "package_candidate_limit_exceeded" };
         cursor = page.nextCursor;
     }
-    return { items, snapshot: first.snapshot, catalogComplete };
+    return { items, snapshot: first.snapshot, catalogComplete, presentationComplete };
 }
 export function actionableVersion(candidate: PackageCandidateEvidence): boolean {
     return candidate.eligibility === "eligible" && ["not_installed", "newer", "older"].includes(candidate.relation);

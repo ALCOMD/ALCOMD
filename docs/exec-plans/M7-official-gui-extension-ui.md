@@ -319,7 +319,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
   已获准的其他既有页面基础可用性修正已在 H2-A 验收；H2–H6 原签收保持，当前只推进已批准 H7 最终整体验收。
   Open Unity 保留单个 leading play 图标和 Material 按钮的 18px 图标尺寸。Projects 的视图入口
   显示当前模式并保留视图偏好；内容包装透明，卡片和表格使用自己的表面。
-- `packages.queryProjectCandidates` / `packages.candidates.v1` 按已批准的
+- `packages.queryProjectCandidates` / `packages.candidates.v2` 按已批准的
   `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
   SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
   复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。

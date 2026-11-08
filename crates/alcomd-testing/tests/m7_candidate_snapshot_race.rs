@@ -71,6 +71,7 @@ impl CandidateStore for PausedReadStore {
         self.entered.notify_one();
         self.release.notified().await;
         Ok(CandidateStoreSnapshot {
+            installed_presentations: Default::default(),
             project: self.project.clone(),
             entries: vec![],
             fingerprint_records: vec!["unchanged-project-and-source-snapshot".into()],
@@ -145,6 +146,9 @@ impl CandidateStore for TrackingStore {
         .into_iter()
         .map(
             |(package_id, repository_id, priority)| CandidateCatalogEntry {
+                description: None,
+                presentation: None,
+                dependencies: Default::default(),
                 package_id: package_id.into(),
                 version: "1.0.0".into(),
                 display_name: Some("Package name".into()),
@@ -163,6 +167,7 @@ impl CandidateStore for TrackingStore {
         )
         .collect();
         Ok(CandidateStoreSnapshot {
+            installed_presentations: Default::default(),
             project: self.project.clone(),
             entries,
             fingerprint_records: authority.fingerprint_records,
@@ -171,6 +176,10 @@ impl CandidateStore for TrackingStore {
                 (
                     format!("repository:{remote}"),
                     CandidateSourceMetadata {
+                        display_name: None,
+                        name: None,
+                        builtin: None,
+                        display_order: 0,
                         kind: CandidateFilterSource::Remote,
                         search_name: "remote registry".into(),
                     },
@@ -178,6 +187,10 @@ impl CandidateStore for TrackingStore {
                 (
                     format!("repository:{local}"),
                     CandidateSourceMetadata {
+                        display_name: None,
+                        name: None,
+                        builtin: None,
+                        display_order: 0,
                         kind: CandidateFilterSource::Local,
                         search_name: "local registry".into(),
                     },
@@ -197,6 +210,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: fixture
                     .0
                     .join("unopened-project")
@@ -393,6 +407,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: fixture
                     .0
                     .join("project-not-on-disk")
@@ -507,6 +522,7 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
         let mut project = ProjectRecord {
             project_id,
             observation: ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: "unopened-project".into(),
                 path_identity_key: vec![1],
                 project_type: ProjectType::Unknown,
@@ -604,6 +620,7 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: "unopened-project".into(),
                 path_identity_key: vec![1],
                 project_type: ProjectType::Unknown,

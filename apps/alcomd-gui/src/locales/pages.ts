@@ -2,6 +2,14 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const pageMessages: TranslationTable = {
+    "Refresh package details": { "zh-CN": "刷新软件包信息", "ja-JP": "パッケージ情報を更新" },
+    "Refreshing package details…": { "zh-CN": "正在刷新软件包信息…", "ja-JP": "パッケージ情報を更新中…" },
+    "Some package details are unavailable.": { "zh-CN": "部分软件包信息暂不可用。", "ja-JP": "一部のパッケージ情報を利用できません。" },
+    "Unable to load repositories": { "zh-CN": "无法加载存储库", "ja-JP": "リポジトリを読み込めません" },
+    "Installed version is yanked": { "zh-CN": "已安装版本已撤回", "ja-JP": "インストール済みバージョンは撤回されています" },
+    "Compatible versions": { "zh-CN": "兼容版本", "ja-JP": "互換性のあるバージョン" },
+    "Incompatible versions": { "zh-CN": "不兼容版本", "ja-JP": "互換性のないバージョン" },
+    "Compatibility unknown": { "zh-CN": "兼容性未知", "ja-JP": "互換性不明" },
     " · Installed precedence": {
         "zh-CN": " · 与已安装版本同优先级",
         "ja-JP": " · インストール済みと同じ優先順位"
@@ -190,9 +198,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "候选版本信息已过期。",
         "ja-JP": "候補バージョンの情報が古くなっています。"
     },
-    "Candidate evidence unavailable: packages.candidates.v1 was not negotiated.": {
-        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v1。",
-        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v1 が確認できませんでした。"
+    "Candidate evidence unavailable: packages.candidates.v2 was not negotiated.": {
+        "zh-CN": "候选版本信息不可用：未协商 packages.candidates.v2。",
+        "ja-JP": "候補バージョンの情報を利用できません。packages.candidates.v2 が確認できませんでした。"
     },
     "Change the search or package filter.": {
         "zh-CN": "请更改搜索内容或软件包筛选条件。",
@@ -505,6 +513,18 @@ export const pageMessages: TranslationTable = {
     "Missing source": {
         "zh-CN": "来源缺失",
         "ja-JP": "取得元が見つかりません"
+    },
+    "Unknown source": {
+        "zh-CN": "未知来源",
+        "ja-JP": "不明な提供元"
+    },
+    "Multiple sources": {
+        "zh-CN": "多个来源",
+        "ja-JP": "複数の提供元"
+    },
+    "Incompatible version: {version}": {
+        "zh-CN": "不兼容版本：{version}",
+        "ja-JP": "非互換バージョン：{version}"
     },
     "moments ago": {
         "zh-CN": "刚才",

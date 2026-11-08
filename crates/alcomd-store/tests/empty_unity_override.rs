@@ -53,6 +53,19 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
         .position(|(name, _)| name == "repository_credential_cleanup")
         .expect("State25 credential cleanup table");
     assert!(retained.remove(cleanup).1.is_empty());
+    for table in [
+        "project_package_presentations",
+        "project_presentation_observations",
+    ] {
+        let index = retained
+            .iter()
+            .position(|(name, _)| name == table)
+            .expect("State30 presentation table");
+        assert!(
+            retained.remove(index).1.is_empty(),
+            "old projects start unobserved"
+        );
+    }
     assert_eq!(retained, before, "every pre-existing row remains unchanged");
     assert_eq!(
         integer(

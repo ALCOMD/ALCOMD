@@ -489,6 +489,8 @@ export function SearchField({ className, label, ...props }: Omit<TextFieldProps,
 
 export interface SelectOption {
     disabled?: boolean;
+    /** Public Material option text used by the trigger, independently of its menu label. */
+    displayText?: string;
     label: string;
     value: string;
 }
@@ -564,7 +566,8 @@ export function Select({
         element.addEventListener("closed", closed);
         return () => { element.removeEventListener("opening", opening); element.removeEventListener("closed", closed); };
     });
-    const selectedLabel = options.find((option) => option.value === value)?.label;
+    const selectedOption = options.find((option) => option.value === value);
+    const selectedLabel = selectedOption?.displayText ?? selectedOption?.label;
     useEffect(() => {
         const element = ref.current;
         if (element === null) return;
@@ -611,6 +614,7 @@ export function Select({
         } as MaterialProps,
         options.map((option) => createElement(materialElements.selectOption, {
             disabled: option.disabled,
+            ...(option.displayText === undefined ? {} : { displayText: option.displayText }),
             key: option.value,
             selected: option.value === value,
             value: option.value

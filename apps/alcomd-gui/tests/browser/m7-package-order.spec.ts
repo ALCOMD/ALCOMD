@@ -1,11 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { CandidateSource, PackageCandidateSummary } from "@alcomd/sdk";
-import type { RepositorySnapshot } from "../../src/core-models";
 import { orderPackageWorkspaceRows } from "../../src/package-workspace-order";
-
-function repository(repositoryId: string, builtin?: RepositorySnapshot["builtin"]): RepositorySnapshot {
-    return { repositoryId, builtin, source: { kind: "local", path: repositoryId }, issues: [], refreshedAtMs: 0 };
-}
 
 function row(packageId: string, sources: string[], installed = false) {
     return {
@@ -13,12 +8,12 @@ function row(packageId: string, sources: string[], installed = false) {
         ...(installed ? { installedVersion: "1.0.0" } : {}),
         evidence: { providers: sources.map((id) => {
             const source: CandidateSource = id === "user" ? { kind: "user_package", user_package_id: id } : { kind: "repository", repository_id: id };
-            return { source, sourceRevision: 1 };
+            return { source, sourceRevision: 1, sourceKind: id === "user" ? "user-package" as const : "remote" as const, displayOrder: ({ official: 0, curated: 1, user: 2, third: 3, fourth: 4 } as Record<string, number>)[id] ?? 5 };
         }) }
     };
 }
 
-const repositories = [repository("third"), repository("curated", "curated"), repository("official", "official"), repository("fourth")];
+
 
 test("Installed groups follow official, curated, user and configured repositories, retaining source enumeration", () => {
     // IDs and repository IDs deliberately disagree with the desired display order.
@@ -26,7 +21,7 @@ test("Installed groups follow official, curated, user and configured repositorie
         row("d.curated", ["curated"]), row("z.official", ["official"]), row("e.official", ["official"])];
     const installed = available.map((entry) => ({ ...entry, packageId: "installed." + entry.packageId, installedVersion: "1.0.0" }));
     const input = [...available, ...installed];
-    const ordered = orderPackageWorkspaceRows(input, repositories);
+    const ordered = orderPackageWorkspaceRows(input);
     const sourceOrder = ["z.official", "e.official", "d.curated", "c.user", "b.third", "a.fourth"];
     expect(ordered.map((entry) => entry.packageId)).toEqual([...sourceOrder.map((id) => "installed." + id), ...sourceOrder]);
     expect(input).toEqual([...available, ...installed]);
@@ -36,22 +31,22 @@ test("Installed groups follow official, curated, user and configured repositorie
 test("Shared packages keep their earliest visible provider regardless of selected candidate source", () => {
     const input = [row("third", ["third"]), row("user", ["user"]),
         { ...row("shared", ["fourth", "user", "official"]), selectedSource: "fourth" }, row("curated", ["curated"])];
-    expect(orderPackageWorkspaceRows(input, repositories).map((entry) => entry.packageId)).toEqual(["shared", "curated", "user", "third"]);
+    expect(orderPackageWorkspaceRows(input).map((entry) => entry.packageId)).toEqual(["shared", "curated", "user", "third"]);
     const hiddenOfficial = input.map((entry) => entry.packageId === "shared" ? row("shared", ["fourth", "user"]) : entry);
-    expect(orderPackageWorkspaceRows(hiddenOfficial, repositories).map((entry) => entry.packageId)).toEqual(["curated", "user", "shared", "third"]);
+    expect(orderPackageWorkspaceRows(hiddenOfficial).map((entry) => entry.packageId)).toEqual(["curated", "user", "shared", "third"]);
 });
 
 test("Unlisted providers and missing-source packages retain their order after known sources within installed groups", () => {
     const input = [row("missing.available", []), row("missing.installed", [], true), row("unlisted", ["unlisted"]),
         row("known", ["fourth"]), row("missing.second", []), row("missing.second.installed", [], true)];
-    expect(orderPackageWorkspaceRows(input, repositories).map((entry) => entry.packageId)).toEqual([
+    expect(orderPackageWorkspaceRows(input).map((entry) => entry.packageId)).toEqual([
         "missing.installed", "missing.second.installed", "known", "unlisted", "missing.available", "missing.second"
     ]);
     const withoutEvidence: Array<{ packageId: string; installedVersion?: string; evidence?: Pick<PackageCandidateSummary, "providers"> }> = [
         { packageId: "requested" }, { packageId: "locked", installedVersion: "1.0.0" }
     ];
-    expect(orderPackageWorkspaceRows(withoutEvidence, []).map((entry) => entry.packageId)).toEqual(["locked", "requested"]);
-    expect(orderPackageWorkspaceRows([], repositories)).toEqual([]);
+    expect(orderPackageWorkspaceRows(withoutEvidence).map((entry) => entry.packageId)).toEqual(["locked", "requested"]);
+    expect(orderPackageWorkspaceRows([])).toEqual([]);
 });
 
 test("Package search and status filters preserve installed-first source ordering across candidate pages", async ({ page }) => {

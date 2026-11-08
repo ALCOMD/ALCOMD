@@ -946,7 +946,9 @@ permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence
 
 项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
-`packages.candidates.v1`；RPC major 仍为 1，不新增权限或持久 Schema。
+`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准与 State30 配套的不兼容读合同，替换 v1 能力，旧客户端须重新协商。
+
+候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。规范形状见候选 Schema，展示持久化见 State30。
 所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`
 及既有 Principal / Project / source scope。此查询与后续 Package Plan 使用同一应用层。
 

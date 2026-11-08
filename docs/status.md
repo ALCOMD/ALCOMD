@@ -6,10 +6,14 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-08 软件包展示补齐完成本地实施：[候选 v2 与 State30](exec-plans/M7-package-presentation-completion.md)已获所有者批准并配套更新 Core、协议、SDK 和 GUI。补齐本地安装元数据、说明/搜索词、撤回、SDK/legacy 显示规则；已安装/未安装名称层级不同，可见 provider 直接提供来源标签/顺序，版本按 Core Unity 分类分组。旧观测有明确状态与手动补采入口。受影响 Rust 461 通过、3 项既有忽略；严格 Clippy、GUI Rust all-targets、fmt、xtask、公开形状与元数据检查、全工作区前端检查/构建通过；浏览器 86 个独立用例覆盖与验证复用范围见[记录](testing/package-presentation-20261108.md)。未提交、推送、部署或迁移真实数据，运行中的 Core/GUI 与 H7 人工状态保持。
+
+- 2026-11-08 按所有者澄清修正项目候选可见性：Core 在形成软件包/provider/版本候选前排除关闭来源和关闭的预发布版本，不再下发禁用的预发布条目。安装/声明事实保留；无可见 provider 时显示“未知来源”，与本地缺少存储库的来源证据一致。另隔离设置 revision 改变前的旧候选。前端检查/构建、62 项定向浏览器、Core VPM 完整回归 163 通过/3 既有忽略、应用层 4 项、RPC 合同 5 项、fmt 与受影响严格 Clippy 通过；早期失败与运行环境边界见[验证记录](testing/package-candidate-visibility-20261108.md)。未提交、推送或部署运行中的 Core/GUI，M7/H7 状态保持。
+
 - 2026-11-08 文件选择器重置基线：按所有者授权移除旧选择器专用提交，混合提交只保留共享弹窗动画；旧 `FilePicker` / `FilePickerControl` 及 CSS 全部不存在。相关入口直接拼接路径输入框和原生选择按钮，GUI 类型、Material 与本地化检查通过。下一步仅重建并接入明确指定的四处。历史重写后的 SHA 与既有 CI 证据 SHA 不同，历史结果不作为新候选通过；当前 Core/GUI 均未重启。
 - 随后按已确认外观重建唯一 `FilePicker`，仅接入仓库列表导入、模板导入、添加已有项目和添加用户软件包；其余入口使用普通路径输入框和选择按钮。全工作区前端检查/构建及定向浏览器回归通过；早期旧焦点断言与截图宿主错误、复验范围及原生限制见[重置与重建记录](testing/file-picker-reset-rebuild-20261108.md)。软件包排序、100ms 等待与顶部加载条保留；未部署或主动重启原生 GUI/Core，未操作真实项目。
 
-- `main` 源码使用 [State29](../specs/storage/state-v29.md) 与 [Config12](../specs/config/settings-v12.md)。State29 增加仓库显示名。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
+- `main` 当前工作树源码使用 [State30](../specs/storage/state-v30.md) 与 [Config12](../specs/config/settings-v12.md)。State30 增加软件包展示观测，保留 State29 仓库显示名。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
 - 此前 Core 部署基于 `0a73acca`，报告 State29 / Config12 和 `ready`，已核对九组业务读取。历史证据位于 `target/m7-core-boundary-update-20261107/`；当前新路径运行环境见下方记录。
 - 随后的 GUI 单独更新基于 `0a73acca` 加文件选择器工作树改动，记录了窗口响应、GUI profile 和同一 Core 进程。证据位于 `target/m7-shared-file-picker-update-20261107/`。CLI 仍匹配 `7fe5f157` 部署记录中的产物摘要，见 `target/m7-repository-core-update-20261107/`。各自的证据只覆盖对应构建。
 - 此前一次 GUI 部署使用 `34cac0a2` 加当时文件选择器工作树修改，证据位于 `target/m7-file-picker-integration-update-20261107/`。当轮验证后恢复原 Core/GUI 二进制、数据目录和 profile；九组业务读取一致，Unity 进程未变，没有另行部署。

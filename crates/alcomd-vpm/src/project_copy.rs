@@ -999,6 +999,7 @@ mod tests {
         let project = ProjectRecord {
             project_id,
             observation: alcomd_application::ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: fs::canonicalize(&source)
                     .expect("canonical source")
                     .to_string_lossy()

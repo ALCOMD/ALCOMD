@@ -142,6 +142,7 @@ fn project_template_save_rechecks_the_source_revision_at_commit() {
         &mut connection,
         &owner,
         ProjectObservation {
+            package_presentations: Default::default(),
             root_path: "/canonical/project".to_owned(),
             path_identity_key: vec![20],
             project_type: ProjectType::Unknown,

@@ -158,7 +158,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .as_array()
             .expect("capabilities")
             .iter()
-            .any(|c| c == "packages.candidates.v1")
+            .any(|c| c == "packages.candidates.v2")
     );
     let registered = client
         .project_register(

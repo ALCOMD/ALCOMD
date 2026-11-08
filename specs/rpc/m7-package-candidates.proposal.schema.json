@@ -6,7 +6,7 @@
     "x-alcomd-approval": "owner-approved",
     "x-alcomd-active-rpc-modified": true,
     "x-alcomd-method": "packages.queryProjectCandidates",
-    "x-alcomd-capability": "packages.candidates.v1",
+    "x-alcomd-capability": "packages.candidates.v2",
     "x-alcomd-method-permissions": {
         "packages.queryProjectCandidates": [
             "projects.read",
@@ -117,14 +117,34 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                        "search": { "type": "string", "maxLength": 256, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$" },
-                        "status": { "enum": ["installed", "available", "missing"] },
-                        "source": { "enum": ["local", "remote", "user-package"] }
+                        "search": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+                        },
+                        "status": {
+                            "enum": [
+                                "installed",
+                                "available",
+                                "missing"
+                            ]
+                        },
+                        "source": {
+                            "enum": [
+                                "local",
+                                "remote",
+                                "user-package"
+                            ]
+                        }
                     }
                 },
                 "bulkPackageIds": {
                     "type": "array",
-                    "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
                     "maxItems": 4096,
                     "uniqueItems": true
                 },
@@ -167,8 +187,22 @@
                 "kind"
             ],
             "allOf": [
-                { "not": { "required": ["bulkPackageIds", "packageIds"] } },
-                { "not": { "required": ["bulkPackageIds", "filter"] } }
+                {
+                    "not": {
+                        "required": [
+                            "bulkPackageIds",
+                            "packageIds"
+                        ]
+                    }
+                },
+                {
+                    "not": {
+                        "required": [
+                            "bulkPackageIds",
+                            "filter"
+                        ]
+                    }
+                }
             ],
             "additionalProperties": false
         },
@@ -236,8 +270,17 @@
                 "view"
             ],
             "not": {
-                "required": ["view", "cursor"],
-                "properties": { "view": { "required": ["bulkPackageIds"] } }
+                "required": [
+                    "view",
+                    "cursor"
+                ],
+                "properties": {
+                    "view": {
+                        "required": [
+                            "bulkPackageIds"
+                        ]
+                    }
+                }
             },
             "additionalProperties": false
         },
@@ -293,6 +336,7 @@
         },
         "Candidate": {
             "type": "object",
+            "description": "Core applies source and prerelease visibility before producing this record. Closed sources and policy-excluded prerelease versions are never returned as disabled candidate records.",
             "properties": {
                 "version": {
                     "type": "string",
@@ -599,9 +643,28 @@
                     "minProperties": 1,
                     "additionalProperties": false,
                     "properties": {
-                        "documentation": { "type": "string", "maxLength": 2048, "pattern": "^https?://" },
-                        "changelog": { "type": "string", "maxLength": 2048, "pattern": "^https?://" }
+                        "documentation": {
+                            "type": "string",
+                            "maxLength": 2048,
+                            "pattern": "^https?://"
+                        },
+                        "changelog": {
+                            "type": "string",
+                            "maxLength": 2048,
+                            "pattern": "^https?://"
+                        }
                     }
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 65536
+                },
+                "installedYanked": {
+                    "type": "boolean"
+                },
+                "presentationState": {
+                    "$ref": "#/$defs/PresentationState"
                 }
             },
             "required": [
@@ -614,7 +677,8 @@
                 "projectLatestStable",
                 "update",
                 "stableUpdate",
-                "providers"
+                "providers",
+                "presentationState"
             ],
             "additionalProperties": false
         },
@@ -646,66 +710,153 @@
         "BulkIntent": {
             "type": "object",
             "properties": {
-                "kind": { "enum": ["install", "upgrade", "remove", "reinstall"] },
-                "packageId": { "type": "string", "minLength": 1, "maxLength": 128 },
-                "versionRange": { "type": "string", "minLength": 1, "maxLength": 257 },
-                "source": { "$ref": "#/$defs/SourceSelector" },
-                "includePrerelease": { "type": "boolean" }
+                "kind": {
+                    "enum": [
+                        "install",
+                        "upgrade",
+                        "remove",
+                        "reinstall"
+                    ]
+                },
+                "packageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "versionRange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 257
+                },
+                "source": {
+                    "$ref": "#/$defs/SourceSelector"
+                },
+                "includePrerelease": {
+                    "type": "boolean"
+                }
             },
-            "required": ["kind", "packageId"],
+            "required": [
+                "kind",
+                "packageId"
+            ],
             "oneOf": [
                 {
-                    "properties": { "kind": { "enum": ["install", "upgrade"] } },
-                    "required": ["versionRange", "source", "includePrerelease"]
+                    "properties": {
+                        "kind": {
+                            "enum": [
+                                "install",
+                                "upgrade"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "versionRange",
+                        "source",
+                        "includePrerelease"
+                    ]
                 },
                 {
-                    "properties": { "kind": { "const": "remove" }, "versionRange": false, "source": false, "includePrerelease": false }
+                    "properties": {
+                        "kind": {
+                            "const": "remove"
+                        },
+                        "versionRange": false,
+                        "source": false,
+                        "includePrerelease": false
+                    }
                 },
                 {
-                    "properties": { "kind": { "const": "reinstall" }, "versionRange": false, "includePrerelease": false }
+                    "properties": {
+                        "kind": {
+                            "const": "reinstall"
+                        },
+                        "versionRange": false,
+                        "includePrerelease": false
+                    }
                 }
             ],
             "additionalProperties": false
         },
         "BulkIntents": {
             "type": "array",
-            "items": { "$ref": "#/$defs/BulkIntent" },
+            "items": {
+                "$ref": "#/$defs/BulkIntent"
+            },
             "maxItems": 256
         },
         "BulkAction": {
             "type": "object",
             "properties": {
-                "targetCount": { "type": "integer", "minimum": 0 },
-                "intents": { "$ref": "#/$defs/BulkIntents" },
+                "targetCount": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "intents": {
+                    "$ref": "#/$defs/BulkIntents"
+                },
                 "exclusions": {
                     "type": "array",
                     "maxItems": 256,
                     "items": {
                         "type": "object",
                         "properties": {
-                            "packageId": { "type": "string", "minLength": 1, "maxLength": 128 },
-                            "update": { "$ref": "#/$defs/Update" }
+                            "packageId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "update": {
+                                "$ref": "#/$defs/Update"
+                            }
                         },
-                        "required": ["packageId", "update"],
+                        "required": [
+                            "packageId",
+                            "update"
+                        ],
                         "additionalProperties": false
                     }
                 },
-                "omittedExclusions": { "type": "integer", "minimum": 0 }
+                "omittedExclusions": {
+                    "type": "integer",
+                    "minimum": 0
+                }
             },
-            "required": ["targetCount", "intents", "exclusions", "omittedExclusions"],
+            "required": [
+                "targetCount",
+                "intents",
+                "exclusions",
+                "omittedExclusions"
+            ],
             "additionalProperties": false
         },
         "BulkActions": {
             "type": "object",
             "properties": {
-                "updateAll": { "$ref": "#/$defs/BulkAction" },
-                "updateAllStable": { "$ref": "#/$defs/BulkAction" },
-                "installUpdate": { "$ref": "#/$defs/BulkAction" },
-                "installUpdateStable": { "$ref": "#/$defs/BulkAction" },
-                "remove": { "$ref": "#/$defs/BulkIntents" },
-                "reinstall": { "$ref": "#/$defs/BulkIntents" }
+                "updateAll": {
+                    "$ref": "#/$defs/BulkAction"
+                },
+                "updateAllStable": {
+                    "$ref": "#/$defs/BulkAction"
+                },
+                "installUpdate": {
+                    "$ref": "#/$defs/BulkAction"
+                },
+                "installUpdateStable": {
+                    "$ref": "#/$defs/BulkAction"
+                },
+                "remove": {
+                    "$ref": "#/$defs/BulkIntents"
+                },
+                "reinstall": {
+                    "$ref": "#/$defs/BulkIntents"
+                }
             },
-            "required": ["updateAll", "installUpdate", "remove", "reinstall"],
+            "required": [
+                "updateAll",
+                "installUpdate",
+                "remove",
+                "reinstall"
+            ],
             "additionalProperties": false
         },
         "SummaryPage": {
@@ -748,6 +899,9 @@
                     },
                     "minItems": 0,
                     "maxItems": 128
+                },
+                "presentationComplete": {
+                    "type": "boolean"
                 }
             },
             "required": [
@@ -757,10 +911,24 @@
                 "catalogComplete",
                 "nextCursor",
                 "view",
-                "items"
+                "items",
+                "presentationComplete"
             ],
-            "if": { "required": ["bulk"] },
-            "then": { "properties": { "items": { "maxItems": 0 }, "nextCursor": { "type": "null" } } },
+            "if": {
+                "required": [
+                    "bulk"
+                ]
+            },
+            "then": {
+                "properties": {
+                    "items": {
+                        "maxItems": 0
+                    },
+                    "nextCursor": {
+                        "type": "null"
+                    }
+                }
+            },
             "additionalProperties": false
         },
         "VersionsPage": {
@@ -805,6 +973,9 @@
                     },
                     "minItems": 0,
                     "maxItems": 128
+                },
+                "presentationComplete": {
+                    "type": "boolean"
                 }
             },
             "required": [
@@ -815,7 +986,8 @@
                 "nextCursor",
                 "view",
                 "packageId",
-                "items"
+                "items",
+                "presentationComplete"
             ],
             "additionalProperties": false
         },
@@ -839,13 +1011,50 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 18446744073709551615
+                },
+                "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                },
+                "builtin": {
+                    "enum": [
+                        "official",
+                        "curated"
+                    ]
+                },
+                "sourceKind": {
+                    "enum": [
+                        "remote",
+                        "local",
+                        "user-package"
+                    ]
+                },
+                "displayOrder": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
                 }
             },
             "required": [
                 "source",
-                "sourceRevision"
+                "sourceRevision",
+                "sourceKind",
+                "displayOrder"
             ],
             "additionalProperties": false
+        },
+        "PresentationState": {
+            "enum": [
+                "complete",
+                "partial",
+                "unobserved"
+            ]
         }
     },
     "oneOf": [
@@ -856,7 +1065,7 @@
             "$ref": "#/$defs/Result"
         }
     ],
-    "x-alcomd-breaking-change": false,
+    "x-alcomd-breaking-change": true,
     "x-alcomd-quotas": {
         "requestUtf8Bytes": 65536,
         "responseUtf8Bytes": 1048576,
@@ -867,5 +1076,6 @@
         "relatedVersionRecords": 100000,
         "guiConcurrentRequests": 2,
         "rpcFrameEnvelopeIncluded": true
-    }
+    },
+    "x-alcomd-state-version": 30
 }

@@ -225,6 +225,7 @@ fn key(value: &str) -> IdempotencyKey {
 
 fn project() -> ProjectObservation {
     ProjectObservation {
+        package_presentations: Default::default(),
         root_path: "C:/fixture/project".to_owned(),
         path_identity_key: vec![1; 24],
         project_type: ProjectType::Avatars,

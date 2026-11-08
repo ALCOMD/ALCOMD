@@ -114,9 +114,25 @@ pub enum CandidateUpdate {
     Unavailable { reasons: Vec<CandidateReason> },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PresentationState {
+    Complete,
+    Partial,
+    Unobserved,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateProvider {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<crate::BuiltinRepository>,
+    pub source_kind: CandidateFilterSource,
+    pub display_order: u32,
     pub source: CandidateSource,
     pub source_revision: u64,
 }
@@ -124,6 +140,11 @@ pub struct CandidateProvider {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_yanked: Option<bool>,
+    pub presentation_state: PresentationState,
     pub package_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
@@ -349,6 +370,7 @@ pub struct CandidateBulkActions {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectCandidatePage {
+    pub presentation_complete: bool,
     pub project_id: String,
     pub snapshot: CandidateSnapshot,
     pub show_prerelease: bool,
@@ -373,6 +395,8 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 show_prerelease: bool,
                 #[serde(rename = "catalogComplete")]
                 catalog_complete: bool,
+                #[serde(rename = "presentationComplete")]
+                presentation_complete: bool,
                 items: Vec<CandidateSummary>,
                 #[serde(rename = "nextCursor", deserialize_with = "nullable_required")]
                 next_cursor: Option<CandidateCursor>,
@@ -387,6 +411,8 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 show_prerelease: bool,
                 #[serde(rename = "catalogComplete")]
                 catalog_complete: bool,
+                #[serde(rename = "presentationComplete")]
+                presentation_complete: bool,
                 #[serde(rename = "packageId")]
                 package_id: String,
                 items: Vec<CandidateEvidence>,
@@ -400,6 +426,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 snapshot,
                 show_prerelease,
                 catalog_complete,
+                presentation_complete,
                 items,
                 next_cursor,
                 bulk,
@@ -408,6 +435,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 snapshot,
                 show_prerelease,
                 catalog_complete,
+                presentation_complete,
                 page: CandidatePageItems::Summary { items },
                 next_cursor,
                 bulk: bulk.map(|actions| *actions),
@@ -417,6 +445,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 snapshot,
                 show_prerelease,
                 catalog_complete,
+                presentation_complete,
                 package_id,
                 items,
                 next_cursor,
@@ -425,6 +454,7 @@ impl<'de> Deserialize<'de> for ProjectCandidatePage {
                 snapshot,
                 show_prerelease,
                 catalog_complete,
+                presentation_complete,
                 page: CandidatePageItems::Versions { package_id, items },
                 next_cursor,
                 bulk: None,

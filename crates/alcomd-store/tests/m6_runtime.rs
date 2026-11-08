@@ -113,6 +113,7 @@ async fn permission_project(store: &StateStoreHandle, index: u8) -> ProjectId {
         .register_project(
             PrincipalId::local_owner(),
             ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: format!("<PROJECT_ROOT>/permissions-{index}"),
                 path_identity_key: vec![index],
                 project_type: ProjectType::Avatars,
@@ -1171,6 +1172,7 @@ async fn project_scope_data_namespace_and_revoke_revalidate_each_lease_call() {
         .register_project(
             owner.clone(),
             ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: "<PROJECT_ROOT>/fixture".to_owned(),
                 path_identity_key: vec![1, 2, 3],
                 project_type: ProjectType::Avatars,
@@ -1467,6 +1469,7 @@ async fn policy_capability_outcome(
         .register_project(
             owner.clone(),
             ProjectObservation {
+                package_presentations: Default::default(),
                 root_path: format!("<PROJECT_ROOT>/{name}"),
                 path_identity_key: name.as_bytes().to_vec(),
                 project_type: ProjectType::Avatars,

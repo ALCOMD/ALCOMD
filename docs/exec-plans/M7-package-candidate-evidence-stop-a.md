@@ -2,6 +2,17 @@
 
 Status: **APPROVED FOR IMPLEMENTATION**, owner approval 2026-09-17, after contract
 review commit `c9b1d162e01d1fc6ec911dbfaa2f535618cade54`. No further proposal-only gate.
+
+2026-11-08: the owner subsequently approved [presentation completion](M7-package-presentation-completion.md), replacing the v1 read capability with `packages.candidates.v2` and adding State30 presentation observations. Its approved read DTO/storage sections supersede the corresponding v1/no-migration constraints below. Existing permissions and frozen mutation authority remain in force.
+
+2026-11-08 owner clarification supersedes the earlier retained-disabled prerelease policy:
+closed sources and prerelease versions are absent from the visible candidate set. Core applies
+this policy before summary IDs/providers/metadata and version evidence are produced. Installed
+and declared project facts remain; an installed package with no visible provider has unknown
+source, exactly like a package whose repository is absent locally. Another visible provider
+still counts. Registration/filter inventory is not evidence that a package has a visible source.
+This intentionally changes read-view semantics without changing RPC shapes, permissions,
+storage, resolver/Plan/Apply, or the installed lock observation.
 This is the approved H2-A implementation contract; `docs/status.md` remains the sole
 current-stage entrypoint. Implement, test and build a local functional/visual candidate,
 then stop for owner Visual Gate 2 acceptance. Visual Gate 2 remains **PENDING**.
@@ -92,8 +103,11 @@ to JSON Schema. Examples/vectors are in the neighboring `.contract-vectors.json`
 `CandidateSummaryView`: `{kind:"summary", packageIds?, sources?}`.
 Explicit packageIds: 1..256 distinct valid IDs; every ID returns a row, including absent
 packages. Omission enumerates the union of locked IDs, direct IDs, and IDs in the visible
-registered source snapshots. `sources` is at most 256 unique `{packageId,source}` overrides;
-with explicit IDs it must be a subset. A stale/missing/hidden override does not silently
+registered source snapshots.
+Here visible snapshots exclude entries blocked by the confirmed prerelease visibility setting,
+so a prerelease-only package or provider does not appear solely through excluded entries.
+`sources` is at most 256 unique `{packageId,source}` overrides; with explicit IDs it must
+be a subset. A stale/missing/hidden override does not silently
 fall back to another source. Summary pages sort packageId by UTF-8 bytes ascending.
 
 `CandidateVersionsView`: `{kind:"versions",packageId,source?}`. Omit source to show each
@@ -118,7 +132,8 @@ snapshot and use separate cursors. Bulk actions continue to use the complete sum
 `providers` is a bounded array of `{source: CandidateSource, sourceRevision}`,
 unique by source identity and sorted by source kind/ID bytes. It contains **all visible recorded
 providers for this package**, including non-winning/unknown candidates, before any per-row explicit
-source override; confirmed hidden settings still exclude providers. Maximum4096 under the existing
+source override; confirmed source and prerelease visibility settings exclude closed entries before
+provider membership is calculated. Maximum4096 under the existing
 source and response-byte caps, empty for an absent package. GUI joins these identities with existing
 repository registration metadata to preserve Local/Remote/User source filtering. Winner-only fields
 cannot establish complete source membership; draining all version pages is forbidden. This narrow
@@ -143,8 +158,9 @@ using existing Project read errors rather than pretending every package is unins
 `eligibility` = eligible | blocked | unknown; `reasons` = distinct reason codes.
 This is direct eligibility only: known valid version/classification, visible selected source,
 current prerelease policy, not yanked, supported normalized metadata, and direct Unity check.
-The versions view retains yanked, policy-excluded prerelease and unknown entries for explanation
-but disables them. Hidden sources are omitted, not just disabled. Each source's valid
+The versions view omits policy-excluded prerelease entries before returning evidence, including
+an exact installed prerelease and explicit source queries. It retains yanked and unknown entries
+for explanation but disables them. Hidden sources are omitted, not just disabled. Each source's valid
 versions are in Core SemVer precedence descending; combined pages use that precedence,
 then existing numeric priority, then source kind/ID and full version UTF-8 order solely for
 deterministic display. Invalid versions sort last, source kind/ID then raw version bytes.

@@ -184,6 +184,7 @@ async fn repository_list_snapshot_covers_all_pages_and_registered_project_roots(
 
 fn project(identity: u8) -> ProjectObservation {
     ProjectObservation {
+        package_presentations: Default::default(),
         root_path: format!("C:/fixture/{identity}"),
         path_identity_key: vec![identity; 24],
         project_type: ProjectType::Avatars,
@@ -404,6 +405,7 @@ fn repository(identity: u8, refreshed_at_ms: u64) -> RepositoryObservation {
         declared_url: None,
         issues: Vec::new(),
         packages: vec![RepositoryPackageVersion {
+            presentation: None,
             package_id: "com.example.package".to_owned(),
             version: "1.0.0".to_owned(),
             display_name: Some("Example".to_owned()),
@@ -1224,6 +1226,7 @@ async fn large_repository_write_replays_keep_metadata_and_paginate_package_versi
     let package = index.packages.pop().expect("fixture package");
     index.packages = (0..1100)
         .map(|version| RepositoryPackageVersion {
+            presentation: None,
             version: format!("1.0.{version}"),
             ..package.clone()
         })
@@ -1344,6 +1347,7 @@ fn resolver_index_fixture() -> RepositoryObservation {
         download_headers_present: false,
     });
     observation.packages.push(RepositoryPackageVersion {
+        presentation: None,
         version: "2.0.0".into(),
         resolver: None,
         ..observation.packages[0].clone()

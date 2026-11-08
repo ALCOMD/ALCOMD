@@ -358,7 +358,7 @@ v3 审计证明 hidden 不是一个布尔业务属性：`gui_hidden_repositories
 unavailable source、Unity incompatible 与折叠 section 是不同原因。P6-B 因此冻结分离原因：
 
 - `hidden_repository`：repository 在 Config v2 列表；official GUI 隐藏该 repository/source，并不改变 Core catalog。
-- `prerelease_preference`：`showPrerelease=false` 时从默认可选候选中排除。
+- `prerelease_preference`：2026-11-08 所有者明确 `showPrerelease=false` 时由 Core 在生成可见候选前排除，不再返回灰色禁用的预发布版本；仅含关闭版本的软件包/来源不凭这些版本进入候选清单。
 - `yanked`：保持现有 Core policy，绝不因“显示隐藏项”而可被新选择；installed exact row 仅显示警告。
 - `source_unavailable` / `classification_unavailable`：不可新选择；installed exact row 保留并显示原因。
 - `unity_incompatible`：仍是独立 compatibility reason，不与 hidden 合并。
@@ -369,6 +369,8 @@ unavailable source、Unity incompatible 与折叠 section 是不同原因。P6-B
 repository refresh、已创建 Plan、pinned source、Apply 或 recovery。用户选择可见 repository 后，GUI把该 RepositoryId 作为
 existing source selector显式传入；不得通过隐藏配置隐式改变authority。`hideLocalUserPackages` 同样不注销source、不删除cache、
 不使Plan失效。public DTO 应返回可组合 reason，不增加 `hidden: bool`。
+
+所有者随后澄清：安装事实与来源是否可见是两件事。已安装/已声明的软件包保留；Core 仅以仍可见的版本和来源计算 providers、名称、链接和候选。没有任何可见 provider 时，关闭来源与本地缺少来源在项目候选读视图中相同，GUI 显示“未知来源”；存在其他可见 provider 则照常显示其来源。注册/筛选清单中的记录不能直接用来认定包有来源。配置 revision 改变时，不继续展示旧候选快照。
 
 ### Docs / Changelog 与 official GUI closed opener
 

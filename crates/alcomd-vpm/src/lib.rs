@@ -9,6 +9,7 @@ mod http_clients;
 mod legacy;
 mod package;
 mod plan;
+mod presentation;
 mod project_copy;
 mod project_create;
 mod project_delete;
@@ -251,7 +252,9 @@ impl VpmReader {
         };
         let project_type =
             detect_project_type(&root, &locked_dependencies, &upm_dependencies).await?;
+        let package_presentations = presentation::inspect(&root, &locked_dependencies).await;
         Ok(ProjectObservation {
+            package_presentations: Box::new(package_presentations),
             root_path: root_text,
             path_identity_key,
             project_type,
@@ -897,6 +900,9 @@ fn parse_repository(
                     push_issue(&mut issues, "version_mismatch", "version", &item)?;
                 }
                 rows.push(RepositoryPackageVersion {
+                    presentation: alcomd_application::normalize_package_display_metadata(
+                        manifest_value,
+                    ),
                     package_id: package_key.to_owned(),
                     version: version_key.to_owned(),
                     display_name: repository_display_field(

@@ -24,7 +24,7 @@ pub use project_create::*;
 pub use repository_list::*;
 
 pub const METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES: &str = "packages.queryProjectCandidates";
-pub const CAPABILITY_PACKAGES_CANDIDATES_V1: &str = "packages.candidates.v1";
+pub const CAPABILITY_PACKAGES_CANDIDATES_V2: &str = "packages.candidates.v2";
 
 /// Current ALCOMD RPC major version.
 pub const RPC_VERSION: u32 = 1;

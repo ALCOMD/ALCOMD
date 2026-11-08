@@ -7,6 +7,9 @@ use crate::{ConfigPackageSettings, PackageSourceSelector, ProjectObservation};
 /// A registered observation, including entries not ready for the resolver.
 #[derive(Clone, Debug)]
 pub struct CandidateCatalogEntry {
+    pub description: Option<String>,
+    pub presentation: Option<crate::PackageDisplayMetadata>,
+    pub dependencies: std::collections::BTreeMap<String, String>,
     pub package_id: String,
     pub version: String,
     pub display_name: Option<String>,
@@ -23,6 +26,8 @@ pub struct CandidateCatalogEntry {
 
 #[derive(Clone, Debug)]
 pub struct CandidateEvidenceInput {
+    pub installed_presentations: crate::ProjectPackagePresentations,
+    pub source_metadata: std::collections::HashMap<String, crate::CandidateSourceMetadata>,
     pub project: ProjectObservation,
     pub entries: Vec<CandidateCatalogEntry>,
     pub settings: ConfigPackageSettings,
@@ -131,6 +136,14 @@ pub enum CandidateUpdate {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateProvider {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<crate::BuiltinRepository>,
+    pub source_kind: crate::CandidateFilterSource,
+    pub display_order: u32,
     pub source: PackageSourceSelector,
     pub source_revision: u64,
 }
@@ -138,6 +151,13 @@ pub struct CandidateProvider {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_yanked: Option<bool>,
+    pub presentation_state: crate::PresentationState,
+    #[serde(skip)]
+    pub search_terms: Vec<String>,
     pub package_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
