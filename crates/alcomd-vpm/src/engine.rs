@@ -108,48 +108,23 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 .package_id
                 .as_deref()
                 .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
-            let candidates = candidates_from_catalog(&catalog).map_err(map_resolve_error)?;
-            let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
-            let remaining_requests = project
-                .observation
-                .direct_dependencies
-                .iter()
-                .filter(|dependency| dependency.package_id != package_id)
-                .map(|dependency| {
-                    Ok(ResolveRequest {
-                        allow_unity_incompatible: false,
-                        package_id: dependency.package_id.clone(),
-                        range: crate::range::ProjectDependencyRange::parse(&dependency.value)
-                            .map_err(|cause| {
-                                M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
-                            })?
-                            .canonical(),
-                        source: None,
-                        include_prerelease: request.include_prerelease,
-                        unity_version,
-                    })
-                })
-                .collect::<Result<Vec<_>, M4Error>>()?;
-            let remaining = if remaining_requests.is_empty() {
-                None
-            } else {
-                Some(
-                    resolve_project_packages(
-                        &self.cache,
-                        &self.store,
-                        &owner,
-                        &snapshot.root,
-                        &candidates,
-                        &remaining_requests,
-                    )
-                    .await?,
-                )
-            };
-            return build_remove_plan(&snapshot, package_id, remaining.as_ref());
+            return build_remove_plan(&snapshot, package_id);
         } else {
             let mut candidates = candidates_from_catalog(&catalog).map_err(map_resolve_error)?;
             let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
-            let requests = resolution_requests(&project, &request, unity_version)?;
+            let mut requests = resolution_requests(&project, &request, unity_version)?;
+            if request.action == PlanAction::Resolve {
+                requests.extend(snapshot.unlocked.values().flatten().map(|dependency| {
+                    ResolveRequest {
+                        allow_unity_incompatible: false,
+                        package_id: dependency.package_id.clone(),
+                        range: dependency.range.clone(),
+                        source: None,
+                        include_prerelease: request.include_prerelease,
+                        unity_version,
+                    }
+                }));
+            }
             if request.action == PlanAction::Resolve {
                 let locked = project
                     .observation
@@ -274,19 +249,30 @@ async fn prepare_reinstall(
     };
     let selectors = reinstall_selectors(&targets, &request.reinstall_sources)?;
     let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
-    let requests = locked
+    let requests = targets
         .iter()
-        .map(|(package_id, version)| ResolveRequest {
+        .map(|package_id| ResolveRequest {
             allow_unity_incompatible: false,
             package_id: package_id.clone(),
-            range: format!("={version}"),
+            range: format!("={}", locked[package_id]),
             source: selectors.get(package_id).cloned(),
-            include_prerelease: version.contains('-'),
+            include_prerelease: locked[package_id].contains('-'),
             unity_version,
         })
         .collect::<Vec<_>>();
-    let candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
-    let mut resolution = if requests.is_empty() {
+    // Reinstall selects artifacts, not a new dependency graph. The project's
+    // original locked graph and manifest remain authoritative, including sources
+    // that are unavailable for packages outside this explicit selection.
+    let candidates = candidates_from_catalog(catalog)
+        .map_err(map_resolve_error)?
+        .into_iter()
+        .filter(|candidate| targets.contains(&candidate.package_id))
+        .map(|mut candidate| {
+            candidate.dependencies.clear();
+            candidate
+        })
+        .collect::<Vec<_>>();
+    let resolution = if requests.is_empty() {
         crate::Resolution {
             packages: Vec::new(),
             dependency_edges: Vec::new(),
@@ -295,25 +281,7 @@ async fn prepare_reinstall(
         resolve_migrating_packages(cache, store, owner, &candidates, &requests, &targets, None)
             .await?
     };
-    normalize_direct_authority(project, &mut resolution);
-    let remaining = locked
-        .iter()
-        .filter(|(id, _)| {
-            resolution
-                .packages
-                .iter()
-                .any(|package| package.package_id == **id)
-        })
-        .map(|(id, version)| (id.clone(), version.clone()))
-        .collect::<BTreeMap<_, _>>();
-    validate_locked_versions(&remaining, &resolution)?;
-    if remaining.len() == locked.len() {
-        build_reinstall_plan(snapshot, &resolution, &targets)
-    } else {
-        let mut draft = build_bulk_plan(snapshot, &resolution, &targets)?;
-        draft.action = PlanAction::Reinstall;
-        Ok(draft)
-    }
+    build_reinstall_plan(snapshot, &resolution, &targets)
 }
 
 async fn prepare_bulk(
@@ -336,6 +304,10 @@ async fn prepare_bulk(
         {
             return Err(M4Error::new(M4ErrorCode::PackageIntentConflict));
         }
+    }
+    if request.is_removal_only() {
+        let removed = intents.keys().cloned().collect();
+        return crate::plan::build_removal_plan(snapshot, &removed, PlanAction::Bulk);
     }
     let locked = project
         .observation
@@ -455,6 +427,20 @@ async fn prepare_bulk(
             unity_version,
         });
     }
+    requests.extend(
+        snapshot
+            .unlocked
+            .values()
+            .flatten()
+            .map(|dependency| ResolveRequest {
+                allow_unity_incompatible: false,
+                package_id: dependency.package_id.clone(),
+                range: dependency.range.clone(),
+                source: None,
+                include_prerelease: request.include_prerelease,
+                unity_version,
+            }),
+    );
     let candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
     let mut resolution = if requests.is_empty() {
         crate::Resolution {
@@ -556,21 +542,6 @@ fn normalize_direct_authority(project: &ProjectRecord, resolution: &mut crate::R
     resolution
         .dependency_edges
         .retain(|edge| !edge.direct || direct.contains(edge.to_package_id.as_str()));
-}
-
-fn validate_locked_versions(
-    locked: &BTreeMap<String, String>,
-    resolution: &crate::Resolution,
-) -> Result<(), M4Error> {
-    if locked.len() != resolution.packages.len() {
-        return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
-    }
-    for package in &resolution.packages {
-        if locked.get(&package.package_id) != Some(&package.version.to_string()) {
-            return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
-        }
-    }
-    Ok(())
 }
 
 fn selection_limit<T>() -> Result<T, M4Error> {
@@ -696,15 +667,21 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 ResourceKey::Operation(operation_id),
             ])
             .await;
-        let catalog = self
-            .store
-            .resolver_catalog(
-                plan.owner.clone(),
-                plan.source_set
-                    .iter()
-                    .any(alcomd_application::PackageSourcePin::is_user_package),
-            )
-            .await?;
+        let catalog = if plan.source_set.is_empty() {
+            ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            }
+        } else {
+            self.store
+                .resolver_catalog(
+                    plan.owner.clone(),
+                    plan.source_set
+                        .iter()
+                        .any(alcomd_application::PackageSourcePin::is_user_package),
+                )
+                .await?
+        };
         revalidate(&project, &catalog, &plan).await?;
         if self
             .store
@@ -1724,10 +1701,14 @@ fn replace_packages(
     for mutation in &plan.change_set.mutations {
         let target = packages_root.join(&mutation.package_id);
         if mutation.kind == PackageMutationKind::Remove
-            && plan
+            && (plan
                 .change_set
                 .legacy_packages
                 .contains(&mutation.package_id)
+                || plan
+                    .change_set
+                    .absent_removal_packages
+                    .contains(&mutation.package_id))
         {
             require_absent(&target)?;
             continue;
@@ -2319,6 +2300,88 @@ mod tests {
         }
     }
 
+    #[test]
+    fn package_snapshot_reads_metadata_without_opening_payload_files() {
+        let installed = vec![("com.example.fixture".to_owned(), "1.0.0".to_owned())];
+        let (root, project, _) = planning_fixture(&installed, &installed);
+        let folder = root.join("Packages/com.example.fixture");
+        std::fs::create_dir_all(folder.join("Runtime")).expect("package folder");
+        let manifest = folder.join("package.json");
+        let metadata = br#"{"name":"com.example.fixture","version":"1.0.0"}"#;
+        std::fs::write(&manifest, metadata).expect("package metadata");
+        let payload = folder.join("Runtime/payload.bin");
+        std::fs::write(&payload, b"first payload").expect("payload");
+        let before = inspect_package_project(&project).expect("metadata snapshot");
+        let migration_before = crate::plan::inspect_migration_package_project(&project)
+            .expect("migration still freezes payload contents");
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            let _exclusive = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&payload)
+                .expect("payload denies every other reader");
+            assert_eq!(
+                inspect_package_project(&project)
+                    .expect("payload is not opened")
+                    .fingerprint,
+                before.fingerprint
+            );
+        }
+        #[cfg(unix)]
+        {
+            let link = folder.join("Runtime/not-a-planning-input");
+            std::os::unix::fs::symlink("missing-payload", &link).expect("unreadable payload entry");
+            assert_eq!(
+                inspect_package_project(&project)
+                    .expect("payload is not traversed")
+                    .fingerprint,
+                before.fingerprint
+            );
+            std::fs::remove_file(link).expect("remove link");
+        }
+        std::fs::write(
+            &payload,
+            b"payload changed independently of package metadata",
+        )
+        .expect("edit payload");
+        assert_ne!(
+            crate::plan::inspect_migration_package_project(&project)
+                .expect("migration detects payload edit")
+                .fingerprint,
+            migration_before.fingerprint
+        );
+        assert_eq!(
+            inspect_package_project(&project)
+                .expect("payload edit")
+                .fingerprint,
+            before.fingerprint
+        );
+        std::fs::write(
+            &manifest,
+            br#"{"name":"com.example.fixture","version":"2.0.0"}"#,
+        )
+        .expect("edit metadata");
+        assert_ne!(
+            inspect_package_project(&project)
+                .expect("metadata edit")
+                .fingerprint,
+            before.fingerprint
+        );
+        std::fs::write(&manifest, metadata).expect("restore metadata");
+        std::fs::rename(&folder, root.join("old-package")).expect("replace directory identity");
+        std::fs::create_dir(&folder).expect("replacement directory");
+        std::fs::write(&manifest, metadata).expect("same metadata in replacement");
+        assert_ne!(
+            inspect_package_project(&project)
+                .expect("directory replacement")
+                .fingerprint,
+            before.fingerprint
+        );
+        std::fs::remove_dir_all(root).expect("fixture cleanup");
+    }
+
     #[tokio::test]
     async fn old_unaccepted_plan_is_stale_before_filesystem_or_source_reads() {
         let mut old = plan(PackageMutationKind::Install);
@@ -2522,6 +2585,98 @@ mod tests {
                 .code(),
             M4ErrorCode::InvalidInput
         );
+    }
+
+    #[test]
+    fn unlocked_requirements_protect_installed_versions_and_payloads_are_not_read() {
+        for (installed_version, selected_version, range) in
+            [("1.0.0", "2.0.0", "^1.0.0"), ("2.0.0", "1.0.0", ">=2.0.0")]
+        {
+            let installed = [(
+                "com.example.fixture".to_owned(),
+                installed_version.to_owned(),
+            )];
+            let (root, project, _) = planning_fixture(&installed, &installed);
+            let local = root.join("Packages/com.example.local");
+            std::fs::create_dir(&local).expect("owned local package");
+            std::fs::write(local.join("package.json"), format!(r#"{{"name":"com.example.local","version":"1.0.0","vpmDependencies":{{"com.example.fixture":"{range}"}}}}"#)).expect("local requirements");
+            std::fs::write(local.join("payload.bin"), b"not a planning input").expect("payload");
+            let snapshot = inspect_package_project(&project).expect("metadata snapshot");
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                let _held = std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(0)
+                    .open(local.join("payload.bin"))
+                    .expect("deny payload access");
+                assert_eq!(
+                    inspect_package_project(&project)
+                        .expect("no payload reads")
+                        .fingerprint,
+                    snapshot.fingerprint
+                );
+            }
+            let rules = snapshot
+                .resolution_rules(BTreeSet::from(["com.example.fixture".into()]), true)
+                .expect("rules include local requirements");
+            let candidates =
+                candidates_from_catalog(&catalog(&[("com.example.fixture", selected_version)]))
+                    .expect("candidate");
+            let error = crate::resolver::resolve_project_change(
+                &candidates,
+                &[ResolveRequest {
+                    allow_unity_incompatible: false,
+                    package_id: "com.example.fixture".into(),
+                    range: format!("={selected_version}"),
+                    source: None,
+                    include_prerelease: false,
+                    unity_version: None,
+                }],
+                &rules,
+            )
+            .expect_err("local package blocks an incompatible selected version");
+            assert!(matches!(error, ResolveError::DependencyConflict { .. }));
+            std::fs::remove_dir_all(root).expect("owned fixture cleanup");
+        }
+    }
+
+    #[test]
+    fn frozen_absent_removal_and_repeated_rollback_do_not_touch_a_later_directory() {
+        let root = temporary_root("absent-removal-race");
+        let packages = root.join("Packages");
+        let attempt = root.join("attempt");
+        let staging = attempt.join("staging");
+        let backup = attempt.join("backup");
+        for path in [&packages, &staging, &backup] {
+            std::fs::create_dir_all(path).expect("owned directories");
+        }
+        let mut plan = plan(PackageMutationKind::Remove);
+        plan.change_set.format_version = 4;
+        plan.change_set.absent_removal_packages = vec!["com.example.fixture".into()];
+        plan.change_set
+            .validate_bounds()
+            .expect("bound absent evidence");
+        replace_packages(&packages, &staging, &backup, &attempt, &plan)
+            .expect("frozen absent target needs no filesystem mutation");
+        let later = packages.join("com.example.fixture");
+        std::fs::create_dir(&later).expect("later external package");
+        std::fs::write(later.join("sentinel"), b"preserve later data").expect("external content");
+        assert!(replace_packages(&packages, &staging, &backup, &attempt, &plan).is_err());
+        for _ in 0..2 {
+            rollback_attempt(
+                &packages,
+                &packages.join("vpm-manifest.json"),
+                &attempt,
+                &plan,
+            )
+            .expect("idempotent rollback");
+            assert_eq!(
+                std::fs::read(later.join("sentinel")).expect("later package remains"),
+                b"preserve later data"
+            );
+        }
+        std::fs::remove_dir_all(root).expect("owned fixture cleanup");
     }
 
     #[tokio::test]
@@ -2921,6 +3076,46 @@ mod tests {
         std::fs::remove_dir_all(over_root).expect("remove over-limit fixture");
     }
 
+    #[tokio::test]
+    async fn mixed_bulk_still_rejects_removing_a_dependency_required_by_a_reinstall() {
+        let installed = [
+            ("com.example.alpha".to_owned(), "1.0.0".to_owned()),
+            ("com.example.beta".to_owned(), "1.0.0".to_owned()),
+        ];
+        let (root, project, snapshot) = planning_fixture(&installed, &installed);
+        let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
+        let mut catalog = catalog(&[
+            ("com.example.alpha", "1.0.0"),
+            ("com.example.beta", "1.0.0"),
+        ]);
+        catalog.entries[0].dependencies_json = r#"{"com.example.beta":"1.0.0"}"#.into();
+        let mut request = package_request(PlanAction::Bulk);
+        request.plan_version = PackagePlanVersion::V2;
+        request.bulk_intents = vec![
+            PackageBulkIntent::Remove {
+                package_id: "com.example.beta".into(),
+            },
+            PackageBulkIntent::Reinstall {
+                package_id: "com.example.alpha".into(),
+                source: None,
+            },
+        ];
+        assert!(!request.is_removal_only());
+        let error = prepare_bulk(
+            &cache,
+            &UnexpectedArchivePin,
+            &PrincipalId::local_owner(),
+            &snapshot,
+            &project,
+            &catalog,
+            &request,
+        )
+        .await
+        .expect_err("mixed intent cannot authorize missing dependencies");
+        assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
+        std::fs::remove_dir_all(root).expect("remove owned fixture");
+    }
+
     fn project_with_locked_version(version: &str) -> ProjectRecord {
         ProjectRecord {
             project_id: ProjectId::new(),
@@ -3114,6 +3309,8 @@ mod tests {
             change_set_fingerprint: [2; 32],
             change_set: PackageChangeSet {
                 unity_compatibility_overrides: Vec::new(),
+                removal_conflicts: Vec::new(),
+                absent_removal_packages: Vec::new(),
                 format_version: 1,
                 legacy_removals: Vec::new(),
                 legacy_packages: Vec::new(),

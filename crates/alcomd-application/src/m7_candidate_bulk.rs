@@ -162,10 +162,9 @@ pub(super) fn bulk_actions(
         .iter()
         .filter(|row| ids.contains(row.package_id.as_str()))
         .collect();
-    let valid = catalog_complete
-        && !selected.is_empty()
-        && selected.len() == ids.len()
-        && ids.len() <= MAX_TARGETS;
+    let selection_valid =
+        !selected.is_empty() && selected.len() == ids.len() && ids.len() <= MAX_TARGETS;
+    let valid = catalog_complete && selection_valid;
     let install_update = |stable| {
         let intents: Vec<_> = selected
             .iter()
@@ -186,7 +185,11 @@ pub(super) fn bulk_actions(
     let install_update_stable = (latest.target_count != stable.target_count
         || latest.intents != stable.intents)
         .then_some(stable);
-    let remove = if valid && selected.iter().all(|row| row.direct) {
+    let remove = if selection_valid
+        && selected
+            .iter()
+            .all(|row| matches!(row.installed, CandidateInstalled::Locked { .. }))
+    {
         selected
             .iter()
             .map(|row| CandidateBulkIntent::Remove {
@@ -224,5 +227,62 @@ pub(super) fn bulk_actions(
         install_update_stable,
         remove,
         reinstall,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removal_eligibility_uses_installed_state_without_direct_or_catalog_requirements() {
+        let empty = CandidateChoice::None {
+            reasons: Vec::new(),
+        };
+        let mut row = CandidateSummary {
+            package_id: "com.example.transitive".into(),
+            requested_range: None,
+            description: None,
+            installed_yanked: None,
+            presentation_state: crate::PresentationState::Complete,
+            search_terms: Vec::new(),
+            display_name: None,
+            links: None,
+            providers: Vec::new(),
+            direct: false,
+            installed: CandidateInstalled::Locked {
+                version: "1.0.0".into(),
+            },
+            latest: empty.clone(),
+            latest_stable: empty.clone(),
+            project_latest: empty.clone(),
+            project_latest_stable: empty,
+            update: CandidateUpdate::NoUpdate {
+                reason: crate::CandidateNoUpdateReason::NotInstalled,
+            },
+            stable_update: CandidateUpdate::NoUpdate {
+                reason: crate::CandidateNoUpdateReason::NotInstalled,
+            },
+        };
+        let selected = vec![row.package_id.clone()];
+        let actions = bulk_actions(&[row.clone()], &selected, &[], false);
+        assert_eq!(
+            actions.remove,
+            vec![CandidateBulkIntent::Remove {
+                package_id: row.package_id.clone()
+            }]
+        );
+        assert!(actions.install_update.intents.is_empty());
+        assert!(actions.reinstall.is_empty());
+        row.installed = CandidateInstalled::Absent;
+        row.direct = true;
+        assert!(
+            bulk_actions(&[row], &selected, &[], true).remove.is_empty(),
+            "a declaration is not an installed package"
+        );
+        assert!(
+            bulk_actions(&[], &selected, &[], false).remove.is_empty(),
+            "unknown selection is not actionable"
+        );
     }
 }

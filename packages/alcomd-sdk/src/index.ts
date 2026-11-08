@@ -1,5 +1,11 @@
 export const RPC_VERSION = 1 as const;
 
+/** Frozen dependency conflicts for a reviewed removal-only package plan. */
+export interface PackageRemovalConflict {
+    packageId: string;
+    requiredBy: { packageId: string; range: string }[];
+}
+
 export const RPC_CAPABILITIES = {
     eventsLive: "events.live.v1",
     logsRead: "logs.read.v1",

@@ -120,8 +120,32 @@
             "required": ["formatVersion", "mutations", "dependencyEdges", "vpmManifestSha256"],
             "if": {"required": ["legacyRemovals"]},
             "then": {"properties": {"formatVersion": {"const": 4}}},
-            "allOf": [{"if": {"required": ["unityCompatibilityOverrides"]}, "then": {"properties": {"formatVersion": {"const": 4}}}}],
+            "allOf": [
+                {"if": {"required": ["unityCompatibilityOverrides"]}, "then": {"properties": {"formatVersion": {"const": 4}}}},
+                {"if": {"required": ["removalConflicts"]}, "then": {"properties": {"formatVersion": {"const": 4}, "mutations": {"items": {"properties": {"kind": {"const": "remove"}}}}}}}
+            ],
             "properties": {
+                "removalConflicts": {
+                    "type": "array", "minItems": 1, "maxItems": 1024,
+                    "items": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["packageId", "requiredBy"],
+                        "properties": {
+                            "packageId": {"$ref": "#/$defs/packageId"},
+                            "requiredBy": {
+                                "type": "array", "minItems": 1, "maxItems": 4096,
+                                "items": {
+                                    "type": "object", "additionalProperties": false,
+                                    "required": ["packageId", "range"],
+                                    "properties": {
+                                        "packageId": {"$ref": "#/$defs/packageId"},
+                                        "range": {"$ref": "#/$defs/versionText"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 "unityCompatibilityOverrides": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["packageId", "version"], "properties": {"packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}}}},
                 "formatVersion": {"enum": [1, 2, 3, 4]},
                 "mutations": {

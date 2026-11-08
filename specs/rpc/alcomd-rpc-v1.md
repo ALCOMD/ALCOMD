@@ -561,9 +561,33 @@ migration。完整 GUI/CLI/MCP、credential、完整 legacy VPM 和 v3 parity �
 method 已接通而描述为完整 package manager。
 
 所有 Plan 方法是 bounded 同步 RPC，需要 `projects.read + repositories.read + packages.read` 及目标
-resource scope。它们保存 immutable durable Plan，使用已登记的 resolver-ready snapshot，不写 Unity
+resource scope。它们保存 immutable durable Plan，安装、更新等来源选择使用已登记的 resolver-ready snapshot，不写 Unity
 项目或触发 repository refresh。为验证旧资产声明可读取对应清单；选中 HTTP(S) 包缺少发布方摘要时，
 仅下载尚未锁定的归档以验证并固定实际 SHA-256。
+
+单包卸载和纯卸载批量意图依据项目现有锁定依赖图及未锁定本地包的清单依赖，不读取仓库候选、不为保留包重新选择版本，
+亦不因缺少来源而拒绝保留已安装包。包计划的项目指纹及 Apply 复验覆盖项目身份、VPM/UPM 清单、
+已锁定包目录身份与有界包清单，以及 Packages 直属未锁定目录的身份和有界包清单，
+不遍历包内容文件；内容独立编辑不作依赖计划失效依据。
+归档摘要、路径边界、旧资产清理证据及事务恢复继续按原合同校验。
+
+2026-11-09 所有者批准卸载确认修正：`packages.planRemove`及仅含remove的
+`packages.planBulk`以locked中的已安装记录判断目标存在，允许传递包；明确目标必须实际
+移除其安装目录、直接声明及锁定记录，不以仅撤声明代替卸载。不存在的已安装记录返回
+`package_not_found`。保留包不自动级联删除，其版本、元数据和原有依赖声明保持；仅按
+所选目标旧依赖闭包清理不再使用的锁定包，无关孤立包保留；未锁定本地包依赖参与保留和冲突判断。
+混合批量和其他计划的依赖拒绝规则保持。目录在计划前已缺失的待移除项以内部证据冻结，
+允许仅移除清单记录；计划后目录出现/消失仍拒绝执行，该内部证据不投影到公开 DTO。
+
+若仍保留的包依赖明确移除的目标，ChangeSet使用formatVersion 4并增加可选
+`removalConflicts: [{packageId, requiredBy: [{packageId, range}]}]`，无冲突时省略。
+目标及依赖方确定排序、去重；目标最多1024，总依赖关系最多4096。
+每个目标必须对应remove mutation，每个依赖方必须保留，关系必须存在于冻结的
+dependencyEdges中；该字段仅允许用于单包/纯卸载计划。Core计算并纳入不可变计划、
+摘要和恢复证据，公开DTO不暴露路径或内部对象。GUI在现有确认框中列出实际移除项及
+依赖冲突，用户取消不写项目，明确Apply后允许该冻结卸载造成已审阅的依赖缺失。
+Apply继续复验原项目身份、修订、清单、包目录身份和包元数据，不重新求解或扩大范围。
+无新增RPC、权限、数据库迁移、自动级联删除或失败呈现流程。
 
 Plan 的 action 与 method 一一对应，返回 `planId`、`state=unapplied`、project revision、byte-stable
 ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 4,096 dependency edge，

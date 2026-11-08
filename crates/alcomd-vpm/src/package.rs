@@ -357,7 +357,7 @@ fn hex_nibble(value: u8) -> u8 {
     }
 }
 
-fn parse_dependencies(
+pub(crate) fn parse_dependencies(
     value: Option<&Value>,
 ) -> Result<(Vec<PackageDependency>, String), PackageManifestError> {
     let Some(value) = value else {

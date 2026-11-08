@@ -1343,6 +1343,38 @@ fn m4_package_change_set_exposes_only_reviewable_legacy_removal_fields() {
 }
 
 #[test]
+fn removal_conflicts_are_reviewable_bounded_and_omitted_from_old_wire_plans() {
+    let contract = schema("m4-package-transaction");
+    let conflict = &contract["$defs"]["changeSet"]["properties"]["removalConflicts"];
+    assert_eq!(conflict["maxItems"], 1024);
+    assert_eq!(
+        conflict["items"]["properties"]["requiredBy"]["maxItems"],
+        4096
+    );
+    assert_eq!(
+        conflict["items"]["required"],
+        json!(["packageId", "requiredBy"])
+    );
+    let mut value = json!({
+        "formatVersion":4,"mutations":[],"dependencyEdges":[],"vpmManifestSha256":"0".repeat(64),
+        "removalConflicts":[{"packageId":"com.example.dependency","requiredBy":[{"packageId":"com.example.root","range":"^1.0.0"}]}]
+    });
+    let decoded: alcomd_protocol::PackageChangeSet =
+        serde_json::from_value(value.clone()).expect("new wire field");
+    assert_eq!(serde_json::to_value(&decoded).expect("round trip"), value);
+    value["removalConflicts"][0]["requiredBy"][0]["path"] = json!("not a public field");
+    assert!(serde_json::from_value::<alcomd_protocol::PackageChangeSet>(value.clone()).is_err());
+    value
+        .as_object_mut()
+        .expect("object")
+        .remove("removalConflicts");
+    let old: alcomd_protocol::PackageChangeSet =
+        serde_json::from_value(value.clone()).expect("no conflict plan");
+    assert!(old.removal_conflicts.is_empty());
+    assert_eq!(serde_json::to_value(old).expect("omit empty field"), value);
+}
+
+#[test]
 fn m4_error_codes_are_machine_readable_and_have_no_expiry_error() {
     let errors = schema("rpc-error");
     let codes = errors["properties"]["code"]["enum"]

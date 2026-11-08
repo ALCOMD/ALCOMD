@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use alcomd_application::{
-    AccessContext, IdempotencyKey, M3Application, M4Application, M4ErrorCode, M4Store, OperationId,
-    OperationLogQuery, OperationRecord, OperationState, PackagePlanRequest, PackagePlanVersion,
-    PlanAction, PrincipalId, ProjectRecord, RepositorySource, ResolverCatalogSource, StateStore,
-    read_operation_logs, with_log_caller,
+    AccessContext, IdempotencyKey, M3Application, M3ReadAdapter, M3RegistryStore, M4Application,
+    M4ErrorCode, M4Store, OperationId, OperationLogQuery, OperationRecord, OperationState,
+    PackageBulkIntent, PackagePlanRequest, PackagePlanVersion, PlanAction, PrincipalId,
+    ProjectRecord, RepositorySource, ResolverCatalogSource, StateStore, read_operation_logs,
+    with_log_caller,
 };
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::{PackageCache, PackageEngine, VpmReader};
@@ -28,12 +29,905 @@ const FOLDER_GUID: &str = "22222222222222222222222222222222";
 
 type Packages = M4Application<StateStoreHandle, PackageEngine<StateStoreHandle>>;
 
+fn seed_package(root: &Path, id: &str, version: &str, dependencies: Value) {
+    let path = root.join("Packages").join(id);
+    fs::create_dir_all(&path).expect("owned package directory");
+    fs::write(
+        path.join("package.json"),
+        serde_json::to_vec(&json!({"name":id,"version":version,"vpmDependencies":dependencies}))
+            .expect("package JSON"),
+    )
+    .expect("owned metadata");
+    fs::write(
+        path.join("payload.txt"),
+        b"do not inspect installed payload",
+    )
+    .expect("owned content");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn unlocked_dependencies_protect_removals_report_conflicts_and_invalidate_changed_evidence() {
+    const LOCAL: &str = "com.example.local";
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    seed_package(&fixture.project_root, NEW, "2.0.0", json!({CHILD:"1.0.0"}));
+    seed_package(&fixture.project_root, CHILD, "1.0.0", json!({}));
+    seed_package(
+        &fixture.project_root,
+        LOCAL,
+        "1.0.0",
+        json!({CHILD:"^1.0.0"}),
+    );
+    let graph = json!({"dependencies":{KEEP:{"version":"1.0.0"},NEW:{"version":"2.0.0"}},
+        "locked":{KEEP:{"version":"1.0.0","dependencies":{}},NEW:{"version":"2.0.0","dependencies":{CHILD:"1.0.0"}},CHILD:{"version":"1.0.0","dependencies":{},"custom":"keep"}}});
+    fixture.replace_project_manifest(&graph).await;
+    let access = AccessContext::local_owner();
+    let mut request = fixture.request();
+    request.action = PlanAction::Remove;
+    request.version_range = None;
+    let remove = fixture
+        .packages
+        .plan(&access, request.clone())
+        .await
+        .expect("local dependent keeps child");
+    assert_eq!(remove.change_set.mutations.len(), 1);
+    assert_eq!(remove.change_set.mutations[0].package_id, NEW);
+    assert!(remove.change_set.removal_conflicts.is_empty());
+    request.package_id = Some(CHILD.into());
+    let explicit = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("explicit conflict review");
+    assert!(
+        explicit.change_set.removal_conflicts[0]
+            .required_by
+            .iter()
+            .any(|required| required.package_id == LOCAL)
+    );
+    let local = fixture.project_root.join("Packages").join(LOCAL);
+    let metadata = fs::read(local.join("package.json")).expect("before edit");
+    fs::write(local.join("package.json"), br#"{"name":"com.example.local","version":"1.0.0","vpmDependencies":{"com.example.child":"2.0.0"}}"#).expect("edit local requirements");
+    let stale = fixture
+        .packages
+        .apply_plan(
+            &access,
+            remove.plan_id,
+            fixture.project.revision,
+            key("local-edit"),
+        )
+        .await
+        .expect_err("local metadata stays frozen");
+    assert_eq!(stale.code(), M4ErrorCode::PlanStale);
+    fs::write(local.join("package.json"), &metadata).expect("restore requirements");
+    let held = fixture.project_root.join("held-local");
+    fs::rename(&local, &held).expect("local package removed externally");
+    assert_eq!(
+        fixture
+            .packages
+            .apply_plan(
+                &access,
+                remove.plan_id,
+                fixture.project.revision,
+                key("local-disappeared")
+            )
+            .await
+            .expect_err("missing local invalidates")
+            .code(),
+        M4ErrorCode::PlanStale
+    );
+    fs::rename(&held, &local).expect("restore same local directory identity");
+    let added = fixture.project_root.join("Packages/com.example.added");
+    seed_package(
+        &fixture.project_root,
+        "com.example.added",
+        "1.0.0",
+        json!({CHILD:"1.0.0"}),
+    );
+    assert_eq!(
+        fixture
+            .packages
+            .apply_plan(
+                &access,
+                remove.plan_id,
+                fixture.project.revision,
+                key("local-appeared")
+            )
+            .await
+            .expect_err("new local invalidates")
+            .code(),
+        M4ErrorCode::PlanStale
+    );
+    fs::remove_file(added.join("package.json")).expect("owned metadata");
+    fs::remove_file(added.join("payload.txt")).expect("owned payload");
+    fs::remove_dir(added).expect("owned empty directory");
+    fs::write(local.join("payload.txt"), b"independent source edit")
+        .expect("payload is not package metadata");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            remove.plan_id,
+            fixture.project.revision,
+            key("protected-child-apply"),
+        )
+        .await
+        .expect("apply only requested removal");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let after: Value = serde_json::from_slice(
+        &fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("final manifest"),
+    )
+    .expect("JSON");
+    assert_eq!(after["locked"][CHILD], graph["locked"][CHILD]);
+    assert!(fixture.project_root.join("Packages").join(CHILD).is_dir());
+    assert_eq!(
+        fs::read(local.join("payload.txt")).expect("local retained"),
+        b"independent source edit"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn resolve_restores_an_unlocked_packages_dependency_without_promoting_it_to_a_direct_root() {
+    const LOCAL: &str = "com.example.local";
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    fixture
+        .replace_project_manifest(&json!({"dependencies":{},"locked":{}}))
+        .await;
+    seed_package(
+        &fixture.project_root,
+        LOCAL,
+        "1.0.0",
+        json!({CHILD:"^1.0.0"}),
+    );
+    let local_manifest = fixture
+        .project_root
+        .join("Packages")
+        .join(LOCAL)
+        .join("package.json");
+    let original = fs::read(&local_manifest).expect("local metadata");
+    let access = AccessContext::local_owner();
+    let mut request = fixture.request();
+    request.action = PlanAction::Resolve;
+    request.package_id = None;
+    request.version_range = None;
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("resolve local requirement");
+    assert_eq!(plan.change_set.mutations.len(), 1);
+    assert_eq!(plan.change_set.mutations[0].package_id, CHILD);
+    assert!(plan.change_set.dependency_edges.iter().any(|edge| {
+        !edge.direct && edge.from_package_id == LOCAL && edge.to_package_id == CHILD
+    }));
+    assert!(
+        !plan
+            .change_set
+            .dependency_edges
+            .iter()
+            .any(|edge| edge.direct)
+    );
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("restore-local-dependency"),
+        )
+        .await
+        .expect("accept local dependency repair");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("result manifest"),
+    )
+    .expect("JSON");
+    assert_eq!(manifest["dependencies"], json!({}));
+    assert_eq!(manifest["locked"][CHILD]["version"], "1.0.0");
+    assert!(manifest["locked"].get(LOCAL).is_none());
+    assert_eq!(fs::read(local_manifest).expect("local preserved"), original);
+    assert!(
+        fixture
+            .project_root
+            .join("Packages")
+            .join(CHILD)
+            .join("package.json")
+            .is_file()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bulk_install_checks_and_freezes_unlocked_requirements() {
+    const LOCAL: &str = "com.example.local";
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    fixture
+        .replace_project_manifest(&json!({"dependencies":{},"locked":{}}))
+        .await;
+    seed_package(
+        &fixture.project_root,
+        LOCAL,
+        "1.0.0",
+        json!({CHILD:"^2.0.0"}),
+    );
+    let local_manifest = fixture
+        .project_root
+        .join("Packages")
+        .join(LOCAL)
+        .join("package.json");
+    let access = AccessContext::local_owner();
+    let mut request = fixture.request();
+    request.action = PlanAction::Bulk;
+    request.package_id = None;
+    request.version_range = None;
+    request.bulk_intents = vec![PackageBulkIntent::Install {
+        package_id: NEW.into(),
+        version_range: Some("2.0.0".into()),
+        source: None,
+        include_prerelease: false,
+    }];
+    assert!(
+        fixture
+            .packages
+            .plan(&access, request.clone())
+            .await
+            .is_err(),
+        "bulk install must reject a version incompatible with the local consumer"
+    );
+    assert!(!fixture.project_root.join("Packages").join(NEW).exists());
+    fs::write(
+        &local_manifest,
+        serde_json::to_vec(&json!({
+            "name":LOCAL,"version":"1.0.0","vpmDependencies":{CHILD:"^1.0.0"}
+        }))
+        .expect("valid local metadata"),
+    )
+    .expect("change local requirement");
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("compatible bulk install");
+    assert!(plan.change_set.dependency_edges.iter().any(|edge| {
+        !edge.direct && edge.from_package_id == LOCAL && edge.to_package_id == CHILD
+    }));
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("bulk-local-dependency"),
+        )
+        .await
+        .expect("accept bulk");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let manifest: Value = serde_json::from_slice(
+        &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("result manifest"),
+    )
+    .expect("JSON");
+    assert_eq!(manifest["locked"][CHILD]["version"], "1.0.0");
+    assert!(manifest["dependencies"].get(CHILD).is_none());
+    assert!(manifest["locked"].get(LOCAL).is_none());
+    assert!(local_manifest.is_file());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn removing_a_package_keeps_an_unrelated_orphan_and_its_directory() {
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    seed_package(&fixture.project_root, NEW, "2.0.0", json!({}));
+    seed_package(&fixture.project_root, CHILD, "1.0.0", json!({}));
+    let graph = json!({"dependencies":{KEEP:{"version":"1.0.0"},NEW:{"version":"2.0.0"}},
+        "locked":{KEEP:{"version":"1.0.0","dependencies":{}},NEW:{"version":"2.0.0","dependencies":{}},CHILD:{"version":"1.0.0","dependencies":{},"custom":"unrelated"}}});
+    fixture.replace_project_manifest(&graph).await;
+    let access = AccessContext::local_owner();
+    let mut request = fixture.request();
+    request.action = PlanAction::Remove;
+    request.version_range = None;
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("bounded removal closure");
+    assert_eq!(plan.change_set.mutations.len(), 1);
+    assert_eq!(plan.change_set.mutations[0].package_id, NEW);
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("unrelated-apply"),
+        )
+        .await
+        .expect("apply");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let after: Value = serde_json::from_slice(
+        &fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("manifest"),
+    )
+    .expect("JSON");
+    assert_eq!(after["locked"][CHILD], graph["locked"][CHILD]);
+    assert!(
+        fixture
+            .project_root
+            .join("Packages")
+            .join(CHILD)
+            .join("payload.txt")
+            .is_file()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn selected_reinstall_needs_only_selected_sources_and_keeps_the_original_manifest_bytes() {
+    let fixture = Fixture::new(false, ExistingLegacy::None).await;
+    let access = AccessContext::local_owner();
+    let install = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("install known target with unknown unrelated sources");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            install.plan_id,
+            fixture.project.revision,
+            key("reinstall-seed"),
+        )
+        .await
+        .expect("install");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let project = fixture
+        .store
+        .get_project(PrincipalId::local_owner(), fixture.project.project_id)
+        .await
+        .expect("new revision");
+    let manifest =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("original bytes");
+    let mut request = fixture.request();
+    request.action = PlanAction::Reinstall;
+    request.package_id = None;
+    request.version_range = None;
+    request.expected_revision = project.revision;
+    request.reinstall_selection = Some(alcomd_application::ReinstallSelection::Packages(vec![
+        NEW.into(),
+    ]));
+    let reinstall = fixture
+        .packages
+        .plan(&access, request.clone())
+        .await
+        .expect("unrelated KEEP has no source and does not block selected NEW");
+    assert_eq!(reinstall.change_set.mutations.len(), 1);
+    assert_eq!(reinstall.change_set.mutations[0].package_id, NEW);
+    assert_eq!(reinstall.source_set.len(), 1);
+    assert_eq!(reinstall.source_set[0].package_id(), NEW);
+    request.reinstall_selection = Some(alcomd_application::ReinstallSelection::All);
+    assert_eq!(
+        fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect_err("all still needs every selected source")
+            .code(),
+        M4ErrorCode::PackageNotFound
+    );
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            reinstall.plan_id,
+            project.revision,
+            key("selected-reinstall"),
+        )
+        .await
+        .expect("reinstall");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("same manifest"),
+        manifest
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn removal_freezes_preexisting_absence_and_rejects_later_directory_changes() {
+    for missing_before_plan in [true, false] {
+        let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+        if !missing_before_plan {
+            seed_package(&fixture.project_root, NEW, "2.0.0", json!({}));
+        }
+        let graph = json!({"dependencies":{KEEP:{"version":"1.0.0"},NEW:{"version":"2.0.0"}},
+            "locked":{KEEP:{"version":"1.0.0","dependencies":{}},NEW:{"version":"2.0.0","dependencies":{}}}});
+        fixture.replace_project_manifest(&graph).await;
+        let access = AccessContext::local_owner();
+        let mut request = fixture.request();
+        request.action = PlanAction::Remove;
+        request.version_range = None;
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("removal plan");
+        assert_eq!(
+            plan.change_set.absent_removal_packages,
+            if missing_before_plan {
+                vec![NEW.to_owned()]
+            } else {
+                vec![]
+            }
+        );
+        let path = fixture.project_root.join("Packages").join(NEW);
+        let held = fixture.project_root.join("held-target");
+        if missing_before_plan {
+            seed_package(&fixture.project_root, NEW, "2.0.0", json!({}));
+        } else {
+            fs::rename(&path, &held).expect("external disappearance");
+        }
+        assert_eq!(
+            fixture
+                .packages
+                .apply_plan(
+                    &access,
+                    plan.plan_id,
+                    fixture.project.revision,
+                    key("late-directory-change")
+                )
+                .await
+                .expect_err("changed presence is stale")
+                .code(),
+            M4ErrorCode::PlanStale
+        );
+        if missing_before_plan {
+            fs::rename(&path, &held).expect("preserve later user's directory outside Packages");
+        } else {
+            fs::rename(&held, &path).expect("restore original directory identity");
+        }
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("frozen-remove"),
+            )
+            .await
+            .expect("frozen original state");
+        assert_eq!(
+            fixture.terminal(accepted.operation_id).await.state,
+            OperationState::Succeeded
+        );
+        assert!(!path.exists());
+        if missing_before_plan {
+            assert!(held.join("payload.txt").is_file());
+        }
+        let after: Value = serde_json::from_slice(
+            &fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("manifest"),
+        )
+        .expect("JSON");
+        assert!(after["locked"].get(NEW).is_none());
+        assert_eq!(after["locked"][KEEP], graph["locked"][KEEP]);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sdk_removal_reviews_direct_and_transitive_conflicts_then_applies_only_frozen_removal() {
+    const AVATARS: &str = "com.vrchat.avatars";
+    const BASE: &str = "com.vrchat.base";
+    for (target, bulk) in [
+        (AVATARS, false),
+        (BASE, false),
+        (AVATARS, true),
+        (BASE, true),
+    ] {
+        let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+        let graph = json!({
+            "dependencies": {AVATARS:{"version":"3.10.5"},KEEP:{"version":"1.0.0"}},
+            "locked": {
+                AVATARS:{"version":"3.10.6","dependencies":{BASE:"3.10.6"}},
+                BASE:{"version":"3.10.6","dependencies":{}},
+                KEEP:{"version":"1.0.0","dependencies":{AVATARS:"^3.9.0",BASE:">=3.10.0"},"custom":"unchanged"}
+            }
+        });
+        for id in [AVATARS, BASE] {
+            let directory = fixture.project_root.join("Packages").join(id);
+            fs::create_dir(&directory).expect("owned SDK directory");
+            fs::write(
+                directory.join("package.json"),
+                serde_json::to_vec(&json!({"name":id,"version":"3.10.6"})).expect("metadata"),
+            )
+            .expect("owned SDK metadata");
+            fs::write(directory.join("payload.txt"), b"installed content").expect("owned payload");
+        }
+        fixture.replace_project_manifest(&graph).await;
+        let access = AccessContext::local_owner();
+        let registry = M3Application::new(fixture.store.clone(), VpmReader::new().expect("reader"));
+        for source in registry
+            .list_repositories(&access, None, 10)
+            .await
+            .expect("sources")
+            .repositories
+        {
+            registry
+                .unregister_repository(
+                    &access,
+                    source.repository_id,
+                    source.revision,
+                    key("sdk-unregister"),
+                )
+                .await
+                .expect("no package sources");
+        }
+        let before =
+            fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("before plan");
+        let keep_metadata = fs::read(
+            fixture
+                .project_root
+                .join("Packages")
+                .join(KEEP)
+                .join("package.json"),
+        )
+        .expect("dependent metadata");
+        let mut request = fixture.request();
+        request.action = if bulk {
+            PlanAction::Bulk
+        } else {
+            PlanAction::Remove
+        };
+        request.package_id = (!bulk).then(|| target.to_owned());
+        request.version_range = None;
+        if bulk {
+            request.bulk_intents = vec![PackageBulkIntent::Remove {
+                package_id: target.into(),
+            }];
+        }
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("review installed target with no sources");
+        assert!(plan.source_set.is_empty());
+        assert_eq!(plan.change_set.mutations.len(), 1);
+        assert_eq!(plan.change_set.mutations[0].package_id, target);
+        assert_eq!(plan.change_set.removal_conflicts.len(), 1);
+        assert_eq!(plan.change_set.removal_conflicts[0].package_id, target);
+        assert_eq!(
+            plan.change_set.removal_conflicts[0].required_by.len(),
+            if target == AVATARS { 1 } else { 2 }
+        );
+        let saved = fixture
+            .store
+            .get_package_plan(PrincipalId::local_owner(), plan.plan_id)
+            .await
+            .expect("persisted immutable evidence");
+        assert_eq!(saved.change_set, plan.change_set);
+        assert_eq!(saved.change_set_fingerprint, plan.change_set_fingerprint);
+        assert_eq!(
+            fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("plan does not write"),
+            before
+        );
+        // A rejected Apply must not consume or alter this same frozen plan.
+        let metadata_path = fixture
+            .project_root
+            .join("Packages")
+            .join(target)
+            .join("package.json");
+        let original = fs::read(&metadata_path).expect("target metadata");
+        let mut changed = original.clone();
+        changed.push(b'\n');
+        fs::write(&metadata_path, changed).expect("external metadata edit");
+        assert_eq!(
+            fixture
+                .packages
+                .apply_plan(
+                    &access,
+                    plan.plan_id,
+                    fixture.project.revision,
+                    key("sdk-stale")
+                )
+                .await
+                .expect_err("stale evidence rejected")
+                .code(),
+            M4ErrorCode::PlanStale
+        );
+        fs::write(metadata_path, original).expect("restore owned metadata");
+        assert_eq!(
+            fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("stale Apply did not write"),
+            before
+        );
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("sdk-apply"),
+            )
+            .await
+            .expect("explicit Apply");
+        assert_eq!(
+            fixture.terminal(accepted.operation_id).await.state,
+            OperationState::Succeeded
+        );
+        let replay = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("sdk-apply"),
+            )
+            .await
+            .expect("same Apply");
+        assert_eq!(replay.operation_id, accepted.operation_id);
+        let after: Value = serde_json::from_slice(
+            &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("final manifest"),
+        )
+        .expect("JSON");
+        assert!(after["dependencies"].get(target).is_none());
+        assert!(after["locked"].get(target).is_none());
+        assert!(!fixture.project_root.join("Packages").join(target).exists());
+        for retained in [KEEP, if target == AVATARS { BASE } else { AVATARS }] {
+            assert_eq!(after["locked"][retained], graph["locked"][retained]);
+            assert!(
+                fixture
+                    .project_root
+                    .join("Packages")
+                    .join(retained)
+                    .is_dir()
+            );
+        }
+        assert_eq!(
+            fs::read(
+                fixture
+                    .project_root
+                    .join("Packages")
+                    .join(KEEP)
+                    .join("package.json")
+            )
+            .expect("dependent preserved"),
+            keep_metadata
+        );
+    }
+}
+
 struct Fixture {
     project_root: PathBuf,
     store: StateStoreHandle,
     packages: Packages,
     project: ProjectRecord,
     _directory: TestDirectory,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn installed_packages_without_sources_do_not_block_install_or_removal() {
+    let mut fixture = Fixture::new(false, ExistingLegacy::None).await;
+    fixture
+        .replace_project_manifest(&json!({
+            "dependencies": {KEEP: {"version":"1.0.0"}},
+            "locked": {KEEP: {"version":"1.0.0","dependencies":{},"custom":"preserved"}}
+        }))
+        .await;
+    let access = AccessContext::local_owner();
+    let install = fixture
+        .packages
+        .plan(&access, fixture.request())
+        .await
+        .expect("install preserves unknown source package");
+    assert!(
+        install
+            .change_set
+            .mutations
+            .iter()
+            .all(|mutation| mutation.package_id != KEEP)
+    );
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            install.plan_id,
+            fixture.project.revision,
+            key("metadata-install"),
+        )
+        .await
+        .expect("apply install");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    let project = fixture
+        .store
+        .get_project(PrincipalId::local_owner(), fixture.project.project_id)
+        .await
+        .expect("installed project");
+    let registry = M3Application::new(fixture.store.clone(), VpmReader::new().expect("reader"));
+    for source in registry
+        .list_repositories(&access, None, 10)
+        .await
+        .expect("sources")
+        .repositories
+    {
+        registry
+            .unregister_repository(
+                &access,
+                source.repository_id,
+                source.revision,
+                key("metadata-unregister"),
+            )
+            .await
+            .expect("remove every repository");
+    }
+    let mut request = fixture.request();
+    request.action = PlanAction::Remove;
+    request.expected_revision = project.revision;
+    request.version_range = None;
+    let manifest_path = fixture.project_root.join("Packages/vpm-manifest.json");
+    let before = fs::read(&manifest_path).expect("before plan");
+    let remove = fixture
+        .packages
+        .plan(&access, request.clone())
+        .await
+        .expect("removal without sources");
+    assert!(remove.source_set.is_empty());
+    assert_eq!(fs::read(&manifest_path).expect("after plan"), before);
+    assert!(
+        remove
+            .change_set
+            .mutations
+            .iter()
+            .all(|mutation| mutation.package_id != KEEP)
+    );
+    let keep = fixture.project_root.join("Packages").join(KEEP);
+    let metadata = fs::read(keep.join("package.json")).expect("kept metadata");
+    for (path, mutation_key) in [
+        (manifest_path.clone(), "vpm-metadata-stale"),
+        (
+            fixture.project_root.join("Packages/manifest.json"),
+            "upm-metadata-stale",
+        ),
+    ] {
+        let original = fs::read(&path).expect("manifest before change");
+        let mut changed = original.clone();
+        changed.push(b'\n');
+        fs::write(&path, changed).expect("manifest change");
+        let error = fixture
+            .packages
+            .apply_plan(&access, remove.plan_id, project.revision, key(mutation_key))
+            .await
+            .expect_err("project manifests remain frozen");
+        assert_eq!(error.code(), M4ErrorCode::PlanStale);
+        fs::write(path, original).expect("restore manifest");
+    }
+    fs::write(
+        keep.join("package.json"),
+        br#"{"name":"com.example.keep","version":"2.0.0"}"#,
+    )
+    .expect("metadata edit");
+    let error = fixture
+        .packages
+        .apply_plan(
+            &access,
+            remove.plan_id,
+            project.revision,
+            key("metadata-stale"),
+        )
+        .await
+        .expect_err("metadata invalidates plan");
+    assert_eq!(error.code(), M4ErrorCode::PlanStale);
+    assert_eq!(fs::read(&manifest_path).expect("no writes"), before);
+    fs::write(keep.join("package.json"), &metadata).expect("restore metadata");
+    fs::write(keep.join("keep.txt"), b"edited payload").expect("unrelated payload edit");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            remove.plan_id,
+            project.revision,
+            key("metadata-remove"),
+        )
+        .await
+        .expect("payload is not a resolver input");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert!(!fixture.project_root.join("Packages").join(NEW).exists());
+    assert!(!fixture.project_root.join("Packages").join(CHILD).exists());
+    assert_eq!(
+        fs::read(keep.join("package.json")).expect("preserved metadata"),
+        metadata
+    );
+    assert_eq!(
+        fs::read(keep.join("keep.txt")).expect("preserved payload"),
+        b"edited payload"
+    );
+    let project = fixture
+        .store
+        .get_project(PrincipalId::local_owner(), project.project_id)
+        .await
+        .expect("removed project");
+    let alcomd_application::RepositoryReadOutcome::Fresh(raw) = VpmReader::new()
+        .expect("reader")
+        .inspect_repository(
+            RepositorySource::Local {
+                path: fixture
+                    ._directory
+                    .0
+                    .join("index.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            },
+            None,
+        )
+        .await
+        .expect("local source")
+    else {
+        panic!("fresh local repository")
+    };
+    // Startup can retain raw repository rows before resolver indexing. Use the
+    // real bootstrap write to cover that state without mutating the user Core.
+    fixture
+        .store
+        .ensure_builtin_repositories(
+            PrincipalId::local_owner(),
+            vec![(alcomd_application::RepositoryId::new(), raw)],
+            1,
+        )
+        .await
+        .expect("unindexed source");
+    assert!(
+        !fixture
+            .store
+            .resolver_catalog(PrincipalId::local_owner(), true)
+            .await
+            .expect("incomplete catalog")
+            .complete
+    );
+    request.action = PlanAction::Bulk;
+    request.expected_revision = project.revision;
+    request.package_id = None;
+    request.bulk_intents = vec![PackageBulkIntent::Remove {
+        package_id: KEEP.into(),
+    }];
+    let bulk = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("bulk removal without catalog");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            bulk.plan_id,
+            project.revision,
+            key("metadata-bulk"),
+        )
+        .await
+        .expect("apply bulk removal");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert!(!keep.exists());
 }
 
 #[derive(Clone, Copy)]
@@ -682,14 +1576,16 @@ async fn a_legacy_target_created_after_planning_fails_apply_before_changing_pack
 async fn failed_package_publish_restores_quarantined_assets_without_touching_conflict() {
     let fixture = Fixture::new(true, ExistingLegacy::MovedGuid).await;
     let access = AccessContext::local_owner();
+    // Freeze a pre-existing non-package collision so this still exercises the
+    // publication/rollback guard after local-folder changes became stale inputs.
+    let conflict = fixture.project_root.join("Packages").join(NEW);
+    fs::create_dir(&conflict).expect("create a conflicting package directory");
+    fs::write(conflict.join("sentinel"), b"external directory").expect("seed conflict sentinel");
     let plan = fixture
         .packages
         .plan(&access, fixture.request())
         .await
         .expect("plan");
-    let conflict = fixture.project_root.join("Packages").join(NEW);
-    fs::create_dir(&conflict).expect("create a conflicting package directory");
-    fs::write(conflict.join("sentinel"), b"external directory").expect("seed conflict sentinel");
     let accepted = fixture
         .packages
         .apply_plan(

@@ -368,6 +368,7 @@ pub(super) struct ProjectResolutionRules {
     pub explicit: BTreeSet<String>,
     // Complete bulk resolution already checks the selected graph itself.
     pub preserve_unselected: bool,
+    pub unlocked: BTreeMap<String, Vec<PackageDependency>>,
 }
 
 impl ProjectResolutionRules {
@@ -417,6 +418,19 @@ impl ProjectResolutionRules {
                         version,
                         include_prerelease || !locked.version.pre.is_empty(),
                     ) {
+                        return Err(conflict());
+                    }
+                }
+            }
+            for dependencies in self.unlocked.values() {
+                for dependency in dependencies
+                    .iter()
+                    .filter(|dependency| &dependency.package_id == id)
+                {
+                    if !VpmRange::parse(&dependency.range)
+                        .map_err(|_| ResolveError::InvalidRange)?
+                        .matches(version, include_prerelease)
+                    {
                         return Err(conflict());
                     }
                 }

@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::future::Future;
 
 use serde::{Deserialize, Serialize};
@@ -166,6 +167,20 @@ pub struct PackageDependencyEdge {
     pub direct: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageRemovalConflict {
+    pub package_id: String,
+    pub required_by: Vec<PackageRemovalRequirement>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageRemovalRequirement {
+    pub package_id: String,
+    pub range: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LegacyRemovalKind {
@@ -191,6 +206,11 @@ pub struct PackageChangeSet {
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removal_conflicts: Vec<PackageRemovalConflict>,
+    // Internal frozen filesystem evidence; never projected to the public DTO.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub absent_removal_packages: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_removals: Vec<LegacyRemoval>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_packages: Vec<String>,
@@ -212,6 +232,20 @@ impl PackageChangeSet {
         if !matches!(self.format_version, 1..=4)
             || self.mutations.len() > MAX_PACKAGE_MUTATIONS
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
+            || !self.valid_removal_conflicts()
+            || self.absent_removal_packages.len() > MAX_PACKAGE_MUTATIONS
+            || (!self.absent_removal_packages.is_empty() && self.format_version != 4)
+            || self
+                .absent_removal_packages
+                .windows(2)
+                .any(|ids| ids[0] >= ids[1])
+            || self.absent_removal_packages.iter().any(|id| {
+                !self.mutations.iter().any(|mutation| {
+                    mutation.package_id == *id
+                        && mutation.kind == PackageMutationKind::Remove
+                        && mutation.source.is_none()
+                })
+            })
             || self.legacy_removals.len() > 4096
             || self.legacy_packages.len() > MAX_PACKAGE_MUTATIONS
             || self.unity_compatibility_overrides.len() > 1
@@ -247,6 +281,67 @@ impl PackageChangeSet {
             return Err(M4Error::new(M4ErrorCode::PlanTooLarge));
         }
         Ok(())
+    }
+
+    fn valid_removal_conflicts(&self) -> bool {
+        if self.removal_conflicts.is_empty() {
+            return true;
+        }
+        if self.format_version != 4
+            || self.removal_conflicts.len() > MAX_PACKAGE_MUTATIONS
+            || self.removal_conflicts.iter().fold(0usize, |count, item| {
+                count.saturating_add(item.required_by.len())
+            }) > MAX_DEPENDENCY_EDGES
+            || self
+                .mutations
+                .iter()
+                .any(|item| item.kind != PackageMutationKind::Remove)
+            || self
+                .removal_conflicts
+                .windows(2)
+                .any(|items| items[0].package_id >= items[1].package_id)
+        {
+            return false;
+        }
+        let removed = self
+            .mutations
+            .iter()
+            .map(|item| item.package_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let edges = self
+            .dependency_edges
+            .iter()
+            .filter(|edge| !edge.direct)
+            .map(|edge| {
+                (
+                    edge.from_package_id.as_str(),
+                    edge.to_package_id.as_str(),
+                    edge.range.as_str(),
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        self.removal_conflicts.iter().all(|item| {
+            !item.required_by.is_empty()
+                && !item.package_id.is_empty()
+                && item.package_id.len() <= 128
+                && removed.contains(item.package_id.as_str())
+                && !item
+                    .required_by
+                    .windows(2)
+                    .any(|items| items[0] >= items[1])
+                && item.required_by.iter().all(|required| {
+                    !required.package_id.is_empty()
+                        && required.package_id.len() <= 128
+                        && !required.range.is_empty()
+                        && required.range.len() <= 1_024
+                        && !removed.contains(required.package_id.as_str())
+                        && edges.contains(&(
+                            required.package_id.as_str(),
+                            item.package_id.as_str(),
+                            required.range.as_str(),
+                        ))
+                })
+        })
     }
 }
 
@@ -336,6 +431,19 @@ pub struct PackagePlanRequest {
     pub reinstall_selection: Option<ReinstallSelection>,
     pub reinstall_sources: Vec<(String, PackageSourceSelector)>,
     pub bulk_intents: Vec<PackageBulkIntent>,
+}
+
+impl PackagePlanRequest {
+    #[must_use]
+    pub fn is_removal_only(&self) -> bool {
+        self.action == PlanAction::Remove
+            || (self.action == PlanAction::Bulk
+                && !self.bulk_intents.is_empty()
+                && self
+                    .bulk_intents
+                    .iter()
+                    .all(|intent| matches!(intent, PackageBulkIntent::Remove { .. })))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -864,13 +972,19 @@ where
         if project.revision != request.expected_revision {
             return Err(M4Error::new(M4ErrorCode::RevisionConflict));
         }
-        let catalog = self
-            .store
-            .resolver_catalog(
-                access.principal().clone(),
-                request.plan_version == PackagePlanVersion::V2,
-            )
-            .await?;
+        let catalog = if request.is_removal_only() {
+            ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            }
+        } else {
+            self.store
+                .resolver_catalog(
+                    access.principal().clone(),
+                    request.plan_version == PackagePlanVersion::V2,
+                )
+                .await?
+        };
         if request.action != PlanAction::Remove && !catalog.complete {
             return Err(M4Error::new(M4ErrorCode::RepositoryRefreshRequired));
         }
@@ -887,6 +1001,7 @@ where
                         .unwrap_or_default()
                         .to_owned(),
                 });
+        let removal_only = request.is_removal_only();
         let target = crate::log_path("project", project.observation.root_path.clone());
         let draft = crate::log_execution_step(
             &action,
@@ -897,6 +1012,9 @@ where
             |error| error.path().map(str::to_owned),
         )
         .await?;
+        if !removal_only && !draft.change_set.removal_conflicts.is_empty() {
+            return Err(M4Error::new(M4ErrorCode::Internal));
+        }
         if draft.change_set.unity_compatibility_overrides
             != requested_override.into_iter().collect::<Vec<_>>()
         {
@@ -946,15 +1064,21 @@ where
             .get_project(access.principal().clone(), plan.project_id)
             .await
             .map_err(map_m3_error)?;
-        let catalog = self
-            .store
-            .resolver_catalog(
-                access.principal().clone(),
-                plan.source_set
-                    .iter()
-                    .any(PackageSourcePin::is_user_package),
-            )
-            .await?;
+        let catalog = if plan.source_set.is_empty() {
+            ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            }
+        } else {
+            self.store
+                .resolver_catalog(
+                    access.principal().clone(),
+                    plan.source_set
+                        .iter()
+                        .any(PackageSourcePin::is_user_package),
+                )
+                .await?
+        };
         let target = crate::log_path("project", project.observation.root_path.clone());
         let action = format!("packages.{}", plan.action.as_str());
         crate::log_execution_step(
@@ -1137,6 +1261,8 @@ mod tests {
     fn change_set_limits_are_not_truncating() {
         let mut change_set = PackageChangeSet {
             unity_compatibility_overrides: Vec::new(),
+            removal_conflicts: Vec::new(),
+            absent_removal_packages: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),

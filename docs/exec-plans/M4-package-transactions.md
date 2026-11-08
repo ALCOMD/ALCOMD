@@ -230,6 +230,17 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - reinstall、legacy cleanup、local user package 不在首个切片；不能通过 install action 偷渡。
 - 相同输入与相同 snapshots 产生相同 canonical fingerprint；Plan record 不保存 token、完整私密
   path、raw repository/package JSON 或 archive bytes。
+- 2026-11-09 按所有者纠正收窄包计划输入：项目 snapshot 指纹覆盖项目身份、VPM/UPM 清单、
+  已锁定包目录身份及有界 `package.json`，不遍历/散列安装目录内的脚本、贴图等 payload。
+  payload 独立编辑不再作计划失效依据；清单、包元数据和目录身份仍在 Apply 复验。
+  旧资产清理的具体路径/内容证据、归档及缓存摘要继续按各自合同验证。旧未执行计划因指纹域
+  改变而失效，须重新 Plan；不增持久列或旧指纹兼容分支。
+- 单包卸载及纯移除批量意图使用现有锁定依赖图，不重选仓库版本、不要求保留包具有来源，
+  不读取仓库索引；保留版本和未修改清单字段。安装/更新及混合意图仍需要其来源证据。
+- 2026-11-09 所有者另批准[卸载确认修正](M7-package-removal-confirmation.md)：目标按locked判断，
+  传递包可卸载，明确目标实际移除；保留依赖方不级联删除，以formatVersion 4的可选
+  removalConflicts冻结并显示仍需该依赖的包，明确Apply后执行。该条取代此前单包仅撤直接
+  声明及纯批量冲突拒绝的语义，不放宽混合意图、安装/解析、来源或其他验证。
 
 ### Apply
 

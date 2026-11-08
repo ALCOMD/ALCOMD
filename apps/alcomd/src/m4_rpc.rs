@@ -314,6 +314,22 @@ fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
         project_revision: value.project_revision.get(),
         change_set_fingerprint: hex(&value.change_set_fingerprint),
         change_set: rpc::PackageChangeSet {
+            removal_conflicts: value
+                .change_set
+                .removal_conflicts
+                .into_iter()
+                .map(|conflict| rpc::PackageRemovalConflict {
+                    package_id: conflict.package_id,
+                    required_by: conflict
+                        .required_by
+                        .into_iter()
+                        .map(|required| rpc::PackageRemovalRequirement {
+                            package_id: required.package_id,
+                            range: required.range,
+                        })
+                        .collect(),
+                })
+                .collect(),
             unity_compatibility_overrides: value
                 .change_set
                 .unity_compatibility_overrides
@@ -436,6 +452,45 @@ fn hex(value: &[u8; 32]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removal_conflicts_survive_the_core_to_rpc_projection() {
+        let change_set: app::PackageChangeSet = serde_json::from_value(serde_json::json!({
+            "formatVersion":4,"mutations":[{"kind":"remove","packageId":"com.example.sdk","fromVersion":"1.0.0","toVersion":null,"source":null}],
+            "dependencyEdges":[{"fromPackageId":"com.example.addon","toPackageId":"com.example.sdk","range":"^1.0.0","direct":false}],
+            "vpmManifestSha256":"00".repeat(32),
+            "removalConflicts":[{"packageId":"com.example.sdk","requiredBy":[{"packageId":"com.example.addon","range":"^1.0.0"}]}],
+            "absentRemovalPackages":["com.example.sdk"]
+        })).expect("internal frozen evidence");
+        change_set
+            .validate_bounds()
+            .expect("valid conflict authority");
+        let wire = plan_to_rpc(app::PackagePlanRecord {
+            plan_id: app::PlanId::new(),
+            owner: app::PrincipalId::local_owner(),
+            project_id: app::ProjectId::new(),
+            action: app::PlanAction::Remove,
+            state: app::PlanState::Unapplied,
+            project_revision: app::Revision::INITIAL,
+            project_snapshot_fingerprint: [1; 32],
+            change_set_fingerprint: [2; 32],
+            change_set,
+            source_set: Vec::new(),
+            apply_operation_id: None,
+            created_at_ms: 1,
+        });
+        let encoded = serde_json::to_value(&wire).expect("RPC response");
+        assert!(encoded["changeSet"].get("absentRemovalPackages").is_none());
+        assert_eq!(
+            encoded["changeSet"]["removalConflicts"],
+            serde_json::json!([{
+                "packageId":"com.example.sdk","requiredBy":[{"packageId":"com.example.addon","range":"^1.0.0"}]
+            }])
+        );
+        let decoded: rpc::PackagePlan =
+            serde_json::from_value(encoded).expect("SDK/client response");
+        assert_eq!(decoded, wire);
+    }
 
     #[test]
     fn manual_unity_flag_defaults_to_false_and_only_enters_the_three_approved_methods() {

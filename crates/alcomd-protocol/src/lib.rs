@@ -1579,6 +1579,20 @@ pub struct PackageDependencyEdge {
     pub direct: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageRemovalConflict {
+    pub package_id: String,
+    pub required_by: Vec<PackageRemovalRequirement>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageRemovalRequirement {
+    pub package_id: String,
+    pub range: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PackageLegacyRemovalKind {
@@ -1600,6 +1614,8 @@ pub struct PackageChangeSet {
     pub format_version: u32,
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removal_conflicts: Vec<PackageRemovalConflict>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_removals: Vec<PackageLegacyRemoval>,
     pub vpm_manifest_sha256: String,

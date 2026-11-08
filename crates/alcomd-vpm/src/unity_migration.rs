@@ -22,15 +22,14 @@ use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::package::validate_extracted_package;
-use crate::plan::tree_fingerprint;
+use crate::plan::{inspect_migration_package_project, tree_fingerprint};
 use crate::resolver::{
     LegacyCleanupObligation, PackageSourceAuthority, ResolveRequest,
     resolve_unity_migration_packages,
 };
 use crate::staging_package::{extract_package_objects, fetch_package_objects};
 use crate::{
-    PackageCache, VpmReader, build_bulk_plan, candidates_from_catalog, inspect_package_project,
-    materialize_vpm_manifest,
+    PackageCache, VpmReader, build_bulk_plan, candidates_from_catalog, materialize_vpm_manifest,
 };
 
 const PROJECT_VERSION_LIMIT: u64 = 64 * 1024;
@@ -519,7 +518,7 @@ where
         std::fs::create_dir_all(&package_staging)
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
 
-        let snapshot = inspect_package_project(&plan.draft.project)
+        let snapshot = inspect_migration_package_project(&plan.draft.project)
             .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         let catalog = self
             .store
@@ -743,9 +742,10 @@ where
         }
         let mut phase = latest_transaction_phase(&operation_root)?;
         if phase.is_none() {
-            let snapshot = inspect_package_project(&plan.draft.project).map_err(|cause| {
-                error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause)
-            })?;
+            let snapshot =
+                inspect_migration_package_project(&plan.draft.project).map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause)
+                })?;
             if snapshot.fingerprint != artifact.project_snapshot_fingerprint
                 || project_version_marker_sha256(&root)? != plan.draft.project_version_marker_sha256
             {
