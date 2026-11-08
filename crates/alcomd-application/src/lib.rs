@@ -39,6 +39,7 @@ mod project_authority;
 mod project_create;
 mod project_discovery;
 mod repository_list;
+mod repository_refresh;
 
 pub use error_context::*;
 pub use events::*;
@@ -60,6 +61,7 @@ pub use project_authority::*;
 pub use project_create::*;
 pub use project_discovery::*;
 pub use repository_list::*;
+pub use repository_refresh::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2234,6 +2236,41 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
         let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        self.refresh_repository_locked(access, id, expected, key)
+            .await
+    }
+
+    /// Separate Core maintenance command; ordinary queries remain side-effect free.
+    pub async fn refresh_repository_if_stale(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        key: IdempotencyKey,
+    ) -> Result<bool, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        let current = self
+            .store
+            .get_repository(access.principal().clone(), id)
+            .await?;
+        let now_ms = m3_time_ms()?;
+        if current.resolver_indexed
+            && !repository_refresh_due(current.observation.refreshed_at_ms, now_ms)
+        {
+            return Ok(false);
+        }
+        self.refresh_repository_locked(access, id, current.revision, key)
+            .await?;
+        Ok(true)
+    }
+
+    async fn refresh_repository_locked(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
         let current = self
             .store
             .get_repository(access.principal().clone(), id)

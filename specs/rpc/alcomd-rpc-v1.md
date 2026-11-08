@@ -962,7 +962,8 @@ Latest 在确认展示来源集合中按 Core precedence 选择，Project Latest
 Summary 的 `bulkPackageIds` 请求返回同一候选快照上的批量动作与排除原因。空数组只查看全项目更新；传入 ID 同时计算所选包的安装、更新、移除及重新安装。该投影不分页，不与 `filter` 或 `packageIds` 同用。Core 生成精确版本和来源的计划意图；目标超过 256 项、目录证据不完整或选中项不符合条件时，相应动作没有可提交意图。排除明细最多返回 256 项，并给出其余项数量。实际变更仍通过既有批量 Plan/Apply。
 
 候选查询使用正常读取的 Project 与已登记 source/Config 快照，本身不得网络访问、刷新可变源、下载、写业务状态或创建
-Plan/Operation/Event。无持久 snapshot/session/catalog revision。指纹和 cursor 绑定快照及查询，
+Plan/Operation/Event。成功的本机仓库 list/get/packages 或项目候选读取可通知独立 Core 维护任务：先返回已有索引，后台合并通知并按5分钟时效刷新；关闭仓库跳过，失败尝试同样限频，手动刷新不受时效限制。维护任务沿用现有刷新用例、权限和 repository 事件，客户端重查取得新索引。无新增 RPC、权限或存储结构；不改变任何已返回页的快照，期间的源变化仍由既有过期检测拒绝。
+无持久 snapshot/session/catalog revision。指纹和 cursor 绑定快照及查询，
 每页重新鉴权；快照变化返回 `package_candidate_evidence_stale`，额度失败返回
 `package_candidate_limit_exceeded`。其余权限、参数、项目/revision 错误复用已有 code。
 请求最多 64 KiB、响应最多 1 MiB（实际编码且符合 envelope 后 RPC frame 边界），每页默认64/最大128，

@@ -3,6 +3,12 @@
 Status: **APPROVED FOR IMPLEMENTATION**, owner approval 2026-09-17, after contract
 review commit `c9b1d162e01d1fc6ec911dbfaa2f535618cade54`. No further proposal-only gate.
 
+2026-11-08 latest owner clarification: project package presentation is now read from
+project files without a persistent duplicate. Successful local repository/candidate reads
+may hint a separate Core background refresh command under the [current contract](M7-package-presentation-completion.md).
+The query implementation itself remains side-effect free; refresh is not awaited by the
+query and does not change its read permissions, snapshot checks or Plan/Apply authority.
+
 2026-11-08: the owner subsequently approved [presentation completion](M7-package-presentation-completion.md), replacing the v1 read capability with `packages.candidates.v2` and adding State30 presentation observations. Its approved read DTO/storage sections supersede the corresponding v1/no-migration constraints below. Existing permissions and frozen mutation authority remain in force.
 
 2026-11-08 owner clarification supersedes the earlier retained-disabled prerelease policy:

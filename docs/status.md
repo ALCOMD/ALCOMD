@@ -6,6 +6,7 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-08 按所有者要求补齐仓库按需后台刷新：成功的本机仓库/候选读取先返回已有索引，独立 Core 任务按5分钟时效刷新，合并通知、跳过关闭仓库并对失败限频；手动刷新保持立即执行。沿用现有用例、条件请求、锁和事件，无新增 RPC/权限/Schema。受影响 Rust 209通过、1既有忽略，严格 Clippy、all-targets check、fmt、xtask、元数据、公开形状及 Core locked 构建通过。Core已更新并 ready，GUI沿用原构建/profile重开；两份内置仓库已自动检查且语义 revision 不变，项目/计划/操作和设置保持。本轮已按所有者要求本地提交，未推送，H7保持，见[记录](testing/repository-auto-refresh-20261108.md)。
 
 - 2026-11-08 按所有者最新要求完成撤除额外项目展示数据库副本与补采流程，落实[正常读取合同](exec-plans/M7-package-presentation-completion.md)：普通候选请求由 Core 直接读取项目文件，分页仅暂存有界内存结果；GUI 不再先调用 projects.refresh 填库。受影响 Rust 460 项通过、3 项既有忽略，82 项浏览器回归、严格 Clippy、fmt、公开形状、元数据、xtask、前端检查/构建及原生 Core/GUI 构建通过。现有数据仅删除两张展示表，其余 34 张表记录、设置与模板文件一致。Core/GUI 已配套更新并打开，ready / State31 / Config12，原 profile 保留。本轮已按所有者要求本地提交，未推送，H7 保持；详见[验证与更新记录](testing/package-direct-read-20261108.md)。
 

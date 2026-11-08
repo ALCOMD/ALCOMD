@@ -113,6 +113,9 @@ struct Applications {
     store: StateStoreHandle,
     m2: M2Application,
     m3: M3ReadApplication,
+    repository_auto_refresh:
+        alcomd_application::RepositoryAutoRefresh<StateStoreHandle, alcomd_vpm::VpmReader>,
+    repository_refresh_requested: tokio::sync::Notify,
     project_discovery: ProjectDiscoveryApplication,
     repository_lists: RepositoryListApplication,
     m4: M4PackageApplication,
@@ -332,10 +335,15 @@ async fn initialize_daemon_with_directories(
         official_gui.clone(),
     )
     .with_locks(Arc::clone(&locks));
+    let m3 = M3ReadApplication::new(store.clone(), reader.clone());
+    let repository_auto_refresh =
+        alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
     let applications = Arc::new(Applications {
         store: store.clone(),
         m2,
-        m3: M3ReadApplication::new(store.clone(), reader.clone()),
+        m3,
+        repository_auto_refresh,
+        repository_refresh_requested: tokio::sync::Notify::new(),
         project_discovery: ProjectDiscoveryApplication::with_locks(
             store.clone(),
             reader,
@@ -394,6 +402,7 @@ where
         >,
     > = tokio::task::JoinSet::new();
     let mut discovery_requested = false;
+    let mut repository_refresh_tasks = tokio::task::JoinSet::new();
     tokio::pin!(shutdown);
     loop {
         tokio::select! {
@@ -408,6 +417,24 @@ where
                 let _ = result;
             }
             _ = discovery_tick.tick() => discovery_requested = true,
+            () = applications.repository_refresh_requested.notified(), if repository_refresh_tasks.is_empty() => {
+                let maintenance = applications.repository_auto_refresh.clone();
+                repository_refresh_tasks.spawn(async move {
+                    // Keep first paint independent of refresh I/O and coalesce bursts of reads.
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    match maintenance.refresh_due().await {
+                        Ok(outcomes) => {
+                            for (id, result) in outcomes {
+                                if let Err(code) = result {
+                                    eprintln!("Automatic repository refresh {id} failed: {code:?}");
+                                }
+                            }
+                        }
+                        Err(error) => eprintln!("Automatic repository refresh unavailable: {:?}", error.code()),
+                    }
+                });
+            }
+            _ = repository_refresh_tasks.join_next(), if !repository_refresh_tasks.is_empty() => {}
             () = discovery_notify.notified() => discovery_requested = true,
             () = project_recovery_notify.notified() => discovery_requested = true,
             _ = discovery_tasks.join_next(), if !discovery_tasks.is_empty() => {}
@@ -437,6 +464,7 @@ where
     }
 
     discovery_tasks.abort_all();
+    repository_refresh_tasks.shutdown().await;
     while discovery_tasks.join_next().await.is_some() {}
     connections.abort_all();
     while connections.join_next().await.is_some() {}
@@ -559,7 +587,14 @@ async fn dispatch_payload(
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
     let access = AccessContext::local_owner().with_actor(state.actor.clone());
-    if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
+    let repository_read = matches!(
+        request.method.as_str(),
+        alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
+            | alcomd_protocol::METHOD_REPOSITORIES_LIST
+            | alcomd_protocol::METHOD_REPOSITORIES_GET
+            | alcomd_protocol::METHOD_REPOSITORIES_PACKAGES
+    );
+    let action = if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
         m7_candidates_rpc::failure(
             request.id,
             alcomd_application::CandidateQueryError::LimitExceeded,
@@ -573,7 +608,13 @@ async fn dispatch_payload(
             dispatch_m2(request, state, applications, &access),
         )
         .await
+    };
+    // A successful read only hints a separate Core maintenance command. Invalid or
+    // unauthorized requests cannot trigger network access; query implementations stay pure.
+    if repository_read && action.response.get("result").is_some() {
+        applications.repository_refresh_requested.notify_one();
     }
+    action
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
