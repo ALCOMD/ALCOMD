@@ -7,11 +7,24 @@ type PageReadKey = "primary" | "settings.unity" | "settings.repositories";
 
 /** At most three initial read slots per visit, shared across render retries, never across visits. */
 export function createPageRead() {
-    return { visit: ++nextVisit, deferUntil: performance.now() + 100, results: new Map<PageReadKey, Promise<PageReadResult<unknown>>>() };
+    return { visit: ++nextVisit, deferUntil: performance.now() + 100,
+        results: new Map<PageReadKey, Promise<PageReadResult<unknown>>>(),
+        settled: new Map<PageReadKey, PageReadResult<unknown>>() };
 }
 
 export const PageReadContext = createContext<ReturnType<typeof createPageRead> | undefined>(undefined);
 export const LocalPageReadContext = createContext(false);
+
+/** Start a visit's read before its deferred component mounts; never share across visits. */
+export function primePageRead<T>(scope: ReturnType<typeof createPageRead>, key: PageReadKey, load: () => Promise<T>): Promise<PageReadResult<T>> {
+    if (!scope.results.has(key)) {
+        scope.results.set(key, Promise.resolve().then(load).then(
+            (value): PageReadResult<T> => ({ kind: "ready", value }),
+            (error: unknown): PageReadResult<T> => ({ kind: "error", error })
+        ).then((result) => { scope.settled.set(key, result); return result; }));
+    }
+    return scope.results.get(key)! as Promise<PageReadResult<T>>;
+}
 
 /** Only read-only page loaders belong here. Mutations and extension session actions remain in events/effects. */
 export function usePageReadPromise<T>(key: PageReadKey, load: () => Promise<T>): Promise<PageReadResult<T>>;
@@ -20,13 +33,7 @@ export function usePageReadPromise<T>(key: PageReadKey, load: () => Promise<T>, 
     const scope = useContext(PageReadContext);
     if (!enabled) return undefined;
     if (scope === undefined) throw new Error("Page reads require a route visit scope");
-    if (!scope.results.has(key)) {
-        scope.results.set(key, Promise.resolve().then(load).then(
-            (value): PageReadResult<T> => ({ kind: "ready", value }),
-            (error: unknown): PageReadResult<T> => ({ kind: "error", error })
-        ));
-    }
-    return scope.results.get(key)! as Promise<PageReadResult<T>>;
+    return primePageRead(scope, key, load);
 }
 
 export function useInitialPageRead<T>(load: () => Promise<T>): PageReadResult<T> | undefined {
@@ -34,5 +41,7 @@ export function useInitialPageRead<T>(load: () => Promise<T>): PageReadResult<T>
     const scope = useContext(PageReadContext);
     // Reusable workspaces load locally unless they are inside a primary navigation scope.
     const promise = usePageReadPromise("primary", load, !local && scope !== undefined);
-    return promise === undefined ? undefined : use(promise);
+    // An already settled prefetch must not suspend once just so React can observe its thenable.
+    const settled = !local ? scope?.settled.get("primary") as PageReadResult<T> | undefined : undefined;
+    return promise === undefined ? undefined : settled ?? use(promise);
 }

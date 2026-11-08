@@ -5,9 +5,10 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
 test("Repeated version selection closes once and creates one reviewed package intent", async ({ page }) => {
     await open(page, "versions=1");
+    await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
     const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" });
     await trigger.click();
-    const option = page.locator("md-select-option").filter({ hasText: "1.1.0 · Local packages" });
+    const option = page.locator("md-select-option").filter({ hasText: "1.1.0" });
     await expect(option).toBeVisible();
     await expect(option).toHaveJSProperty("disabled", false);
     await option.getByRole("option").evaluate((element) => {
@@ -80,6 +81,7 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
         const method = entry === "primary Update" ? "upgrade" : "install";
         const packageName = entry === "primary Update" ? "Avatar tools" : "com.example.remote";
         const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${packageName}`, exact: true }) });
+        if (entry === "version menu") await chooseVersionSource(page, row, "Example packages");
         const trigger = row.getByRole(entry === "version menu" ? "combobox" : "button", { name: entry === "version menu" ? "Version for com.example.remote: Not installed" : entry === "primary Update" ? "Update" : "Install", exact: true });
         const menu = row.locator(".package-version-picker");
         const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
@@ -89,7 +91,7 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
             await page.keyboard.press("Enter");
             await opened.evaluate((events) => events.opened);
             await opened.dispose();
-            await menu.getByRole("option", { name: "1.1.0 · Example packages", exact: true }).click();
+            await menu.getByRole("option", { name: "1.1.0", exact: true }).click();
         } else {
             await trigger.focus();
             await page.keyboard.press("Enter");
@@ -125,7 +127,7 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
             await page.keyboard.press("Enter");
             await reopened.evaluate(({ event }) => event);
             await reopened.dispose();
-            await expect(menu.getByRole("option", { name: "1.1.0 · Example packages", exact: true })).toBeVisible();
+            await expect(menu.getByRole("option", { name: "1.1.0", exact: true })).toBeVisible();
             expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method]);
         } else {
             await page.keyboard.press("Enter");
@@ -139,6 +141,7 @@ for (const key of ["Enter", "Space", "Escape"]) {
     test(`Package version selector ${key} preserves one explicit activation`, async ({ page }) => {
         await open(page, "versions=1");
         const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
+        await chooseVersionSource(page, row, "Example packages");
         const trigger = row.getByRole("combobox", { name: "Version for com.example.remote: Not installed", exact: true });
         const menu = row.locator(".package-version-picker");
         const opened = await packageMenuLifecycle(row, ".package-version-picker");
@@ -146,7 +149,7 @@ for (const key of ["Enter", "Space", "Escape"]) {
         await page.keyboard.press("Enter");
         await opened.evaluate((events) => events.opened);
         await opened.dispose();
-        const option = menu.getByRole("option", { name: "1.1.0 · Example packages", exact: true });
+        const option = menu.getByRole("option", { name: "1.1.0", exact: true });
         await option.focus();
         await expect(option).toBeFocused();
         const closed = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
@@ -164,7 +167,7 @@ for (const key of ["Enter", "Space", "Escape"]) {
 }
 
 test("Disabled package version options reject pointer and Material keyboard activation events", async ({ page }) => {
-    await open(page, "versions=1");
+    await open(page, "versions=1&versionGroups=1");
     const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
     const menu = row.locator(".package-version-picker");
     const opened = await packageMenuLifecycle(row, ".package-version-picker");
@@ -172,7 +175,7 @@ test("Disabled package version options reject pointer and Material keyboard acti
     await opened.evaluate((events) => events.opened);
     await opened.dispose();
     await expect(menu.locator("md-select-option").filter({ hasText: "9.0.0" })).toHaveCount(0);
-    const blocked = menu.locator("md-select-option").filter({ hasText: "legacy · Example packages" });
+    const blocked = menu.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.0.0", exact: true }) });
     await expect(blocked).toHaveJSProperty("disabled", true);
     await blocked.evaluate((element) => {
         element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -262,7 +265,7 @@ test("Incomplete catalog keeps versions readable and disables Plan actions inclu
     await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeDisabled();
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
-    const option = page.locator("md-select-option").filter({ hasText: "1.10.0 · Example packages" });
+    const option = page.locator("md-select-option").filter({ hasText: "1.10.0" });
     await expect(option).toHaveJSProperty("disabled", true);
     await option.evaluate((element) => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await page.keyboard.press("Enter");
@@ -305,35 +308,42 @@ test("Candidate quota failure is unavailable evidence, never empty/latest or a P
 });
 
 test("Summary pages share the first fingerprint while versions are read only after opening a row", async ({ page }) => {
-    await open(page, "paged=1");
+    await open(page, "paged=1&versions=1");
     const requests = await page.evaluate(() => window.candidateRequests);
     expect(requests.filter((request) => request.view.kind === "versions")).toHaveLength(0);
     expect(requests.filter((request) => request.cursor).every((request) => request.expectedSnapshot === request.cursor?.snapshotFingerprint)).toBe(true);
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
     const options = page.locator(".package-version-picker").first().locator("md-select-option");
-    await expect(options).toHaveCount(10);
-    await expect(options.filter({ hasText: "1.1.0" }).last()).toHaveJSProperty("disabled", false);
+    await expect(options).toHaveText(["1.10.0", "1.2.3", "1.1.0"]);
+    await expect(options.filter({ hasText: "1.1.0" })).toHaveJSProperty("disabled", true);
+    await page.keyboard.press("Escape");
+    await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
+    await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
+    await expect(options.filter({ hasText: "1.1.0" })).toHaveJSProperty("disabled", false);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").every((request) => request.limit === 64 && request.expectedSnapshot === (request.cursor?.snapshotFingerprint ?? request.expectedSnapshot)))).toBe(true);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
 test("Closing a loading version selector stops paging and reopening resumes without a package change", async ({ page }) => {
-    await open(page, "paged=1&delayVersions=1");
+    await open(page, "paged=1&delayVersions=1&versions=1");
     const select = page.locator(".package-version-picker").first();
+    const opened = await select.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
     await select.getByRole("combobox").click();
+    await opened.evaluate(({ event }) => event);
+    await opened.dispose();
     await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
     const closed = await select.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
     await page.keyboard.press("Escape");
     await closed.evaluate(({ event }) => event);
     await closed.dispose();
     await page.evaluate(() => window.resumeCandidateVersions?.());
-    await expect(select.locator("md-select-option")).toHaveCount(5);
+    await expect(select.locator("md-select-option")).toHaveCount(3);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length)).toBe(1);
     await expect(select.getByRole("combobox")).toBeFocused();
     await select.getByRole("combobox").click();
-    await expect(select.locator("md-select-option")).toHaveCount(10);
-    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
+    await expect(select.locator("md-select-option")).toHaveCount(3);
+    await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
@@ -447,7 +457,7 @@ test("Package row actions support the first keyboard selection and later Escape"
     try {
         await page.keyboard.press("Enter");
         await next.evaluate((events) => events.opened);
-        await expect(menu.getByRole("menuitem", { name: "Remove", exact: true })).toBeEnabled();
+        await expect(menu.getByRole("menuitem", { name: "Reinstall", exact: true })).toBeEnabled();
         await page.keyboard.press("Escape");
         await next.evaluate((events) => events.closed);
     } finally {
@@ -533,3 +543,13 @@ test("Changing source immediately invalidates the old target until the matching 
     expect(await page.evaluate(() => window.repositoryPackageRequests.length)).toBe(initialMetadataRequests);
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } }]);
 });
+
+async function chooseVersionSource(page: Page, row: Locator, source: string) {
+    if (await row.locator(".package-source-picker").count() === 0) {
+        await expect(row.locator(".package-source-summary")).toHaveText(source);
+        return;
+    }
+    await row.locator(".package-source-picker").getByRole("combobox").click();
+    await page.getByRole("option", { name: source, exact: true }).click();
+    await expect(row.locator(".package-version-picker")).toHaveJSProperty("disabled", false);
+}

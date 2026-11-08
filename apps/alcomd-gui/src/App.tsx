@@ -33,7 +33,7 @@ import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
+import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, PageLoadingState } from "./LoadingState";
@@ -127,7 +127,12 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
             if (!navigating) window.requestAnimationFrame(focusRouteTitle);
             return;
         }
-        setNavigation({ route: next, client, connectionGeneration, read: createPageRead() });
+        const read = createPageRead();
+        if ((next.kind === "project-detail" || next.kind === "project-packages") && negotiatedCapabilities?.kind === "ready"
+            && negotiatedCapabilities.values.has(capabilities.projectsRead) && negotiatedCapabilities.values.has(capabilities.repositoriesRead)) {
+            primePackageWorkspaceRead(client, events, read, next.projectId, negotiatedCapabilities.values.has(capabilities.packagesCandidates));
+        }
+        setNavigation({ route: next, client, connectionGeneration, read });
     };
     const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
@@ -230,7 +235,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-    }, [route]);
+    }, [route, client, connectionGeneration, events, negotiatedCapabilities]);
 
     useEffect(() => {
         const beforeUnload = (event: BeforeUnloadEvent) => {

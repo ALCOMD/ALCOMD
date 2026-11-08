@@ -272,6 +272,7 @@ export interface PackageMutation {
 }
 
 export interface PackageChangeSet {
+    unityCompatibilityOverrides?: { packageId: string; version: string }[];
     formatVersion: number;
     legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];
     mutations: PackageMutation[];
@@ -290,6 +291,7 @@ export interface PackagePlan {
 }
 
 export interface PackagePlanInstallParams {
+    allowUnityIncompatible?: boolean;
     projectId: string;
     expectedRevision: number;
     packageId: string;
@@ -300,7 +302,7 @@ export interface PackagePlanInstallParams {
 }
 
 export interface PackagePlanRemoveParams { projectId: string; expectedRevision: number; packageId: string }
-export interface PackagePlanDowngradeParams { projectId: string; expectedRevision: number; packageId: string; version: string; repositoryId?: string; source?: PackageSourceSelector }
+export interface PackagePlanDowngradeParams { allowUnityIncompatible?: boolean; projectId: string; expectedRevision: number; packageId: string; version: string; repositoryId?: string; source?: PackageSourceSelector }
 export interface PackagePlanResolveParams { projectId: string; expectedRevision: number; includePrerelease: boolean }
 export type PackageReinstallSelection = { kind: "packages"; packageIds: string[] } | { kind: "all" };
 export interface PackageReinstallSource { packageId: string; source: PackageSourceSelector }

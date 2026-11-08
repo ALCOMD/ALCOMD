@@ -293,6 +293,7 @@ export interface PackageActionSelection {
     source?: PackageSourceSelector;
     version?: string;
     includePrerelease?: boolean;
+    allowUnityIncompatible?: boolean;
     intents?: import("./core-models").PackageBulkIntent[];
     exclusions?: string[];
     candidateSnapshot?: string;
@@ -306,11 +307,12 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
     const [plan, setPlan] = useState<PackagePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [operationFinished, setOperationFinished] = useState(false);
-    useEffect(() => onBusyChanged?.(feedback.busy || plan !== undefined || (feedback.operationId !== undefined && !operationFinished)), [feedback.busy, feedback.operationId, onBusyChanged, operationFinished, plan]);
+    const [confirmUnity, setConfirmUnity] = useState(false);
+    useEffect(() => onBusyChanged?.(confirmUnity || feedback.busy || plan !== undefined || (feedback.operationId !== undefined && !operationFinished)), [confirmUnity, feedback.busy, feedback.operationId, onBusyChanged, operationFinished, plan]);
     const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease = false) => {
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease = false, allowUnityIncompatible = false) => {
         if (revision === undefined || projectId === undefined) return;
         const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-candidates" || action === "downgrade";
         if ((requiresV2 && !canPlanV2) || (!requiresV2 && !canPlanV1)) {
@@ -335,9 +337,9 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
             else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
             else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
             else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
-            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(selectedSource === undefined ? {} : { source: selectedSource }) });
+            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
-                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
+                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
                 result = action === "upgrade" ? await client.packagePlanUpgrade(params) : await client.packagePlanInstall(params);
             }
             setPlan(result);
@@ -353,6 +355,8 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
         handledSelectionKey.current = selection.key;
         setPlan(undefined);
         setFeedback(INITIAL_FEEDBACK);
+        setConfirmUnity(selection.allowUnityIncompatible === true);
+        if (selection.allowUnityIncompatible) return;
         void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease);
     }, [prepareChanges, selection]);
     const apply = async () => {
@@ -373,11 +377,18 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
     const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0 || legacyRemovals.length > 0;
     return (
         <>
+            <MaterialDialog onClose={() => setConfirmUnity(false)} open={confirmUnity} returnFocus={selection?.origin} returnFocusReady={returnFocusReady} title={t("Use incompatible version?")}>
+                <p>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: selection?.packageId ?? "", version: selection?.version?.replace(/^=/, "") ?? "" })}</p>
+                <div className="dialog-actions"><DialogCloseButton variant="text">{t("Cancel")}</DialogCloseButton><DialogCloseButton afterClose={() => {
+                    if (selection) void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease, true);
+                }}>{t("Continue with this version")}</DialogCloseButton></div>
+            </MaterialDialog>
             <MaterialDialog onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
                 {selection?.exclusions?.length ? <div role="status"><p>{t("Not included in this update:")}</p><ul>{selection.exclusions.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>
+                        {plan.changeSet.unityCompatibilityOverrides?.map((item) => <p className="package-compatibility-warning" key={item.packageId}>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: item.packageId, version: item.version })}</p>)}
                         <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{t(packageChangeLabel(mutation.kind))}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion, t)}</small>}</li>)}</ul>
                         {legacyRemovals.length === 0 ? null : <>
                             <p>{t("The following legacy files and folders will be removed.")}</p>

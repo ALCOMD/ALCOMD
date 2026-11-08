@@ -2,8 +2,12 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const pageMessages: TranslationTable = {
+    "Use incompatible version?": { "zh-CN": "使用不兼容版本？", "ja-JP": "互換性のないバージョンを使用しますか？" },
+    "Continue with this version": { "zh-CN": "继续使用此版本", "ja-JP": "このバージョンで続行" },
+    "{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.": { "zh-CN": "{package} {version} 不支持此项目的 Unity 版本。继续可能导致项目无法正常使用。", "ja-JP": "{package} {version} はこのプロジェクトの Unity バージョンをサポートしていません。続行するとプロジェクトが正常に動作しない可能性があります。" },
+    "Select a source to choose this version": { "zh-CN": "请选择来源后选择此版本", "ja-JP": "このバージョンを選ぶにはソースを指定してください" },
+    "Remove {value0}": { "zh-CN": "移除 {value0}", "ja-JP": "{value0} を削除" },
     "Unable to load repositories": { "zh-CN": "无法加载存储库", "ja-JP": "リポジトリを読み込めません" },
-    "Installed version is yanked": { "zh-CN": "已安装版本已撤回", "ja-JP": "インストール済みバージョンは撤回されています" },
     "Compatible versions": { "zh-CN": "兼容版本", "ja-JP": "互換性のあるバージョン" },
     "Incompatible versions": { "zh-CN": "不兼容版本", "ja-JP": "互換性のないバージョン" },
     "Compatibility unknown": { "zh-CN": "兼容性未知", "ja-JP": "互換性不明" },
@@ -906,10 +910,6 @@ export const pageMessages: TranslationTable = {
     "Repository packages": {
         "zh-CN": "仓库软件包",
         "ja-JP": "リポジトリのパッケージ"
-    },
-    "Requested ": {
-        "zh-CN": "请求版本 ",
-        "ja-JP": "要求バージョン "
     },
     "Resolve Dependencies…": {
         "zh-CN": "解析依赖…",

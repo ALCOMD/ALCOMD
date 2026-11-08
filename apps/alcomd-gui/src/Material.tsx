@@ -35,6 +35,7 @@ type MaterialElement = HTMLElement & {
     checked?: boolean;
     close?(): void;
     disabled?: boolean;
+    displayText?: string;
     indeterminate?: boolean;
     open?: boolean;
     selected?: boolean;
@@ -42,6 +43,11 @@ type MaterialElement = HTMLElement & {
     show?(): void;
     updateComplete?: Promise<boolean>;
     value?: number | string;
+};
+
+type MaterialSelectElement = MaterialElement & {
+    addController(controller: { hostUpdated(): void }): void;
+    removeController(controller: { hostUpdated(): void }): void;
 };
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
@@ -488,6 +494,8 @@ export function SearchField({ className, label, ...props }: Omit<TextFieldProps,
 }
 
 export interface SelectOption {
+    kind?: "heading" | "separator";
+    title?: string;
     disabled?: boolean;
     /** Public Material option text used by the trigger, independently of its menu label. */
     displayText?: string;
@@ -501,6 +509,7 @@ export interface SelectProps {
     "aria-label"?: string;
     className?: string;
     disabled?: boolean;
+    displayText?: string;
     id?: string;
     label: string;
     onChange?(value: string): void;
@@ -520,6 +529,7 @@ export function Select({
     "aria-label": ariaLabel,
     className,
     disabled,
+    displayText,
     id,
     label,
     onChange,
@@ -532,7 +542,7 @@ export function Select({
     value
 }: SelectProps) {
     const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
-    const ref = useRef<MaterialElement>(null);
+    const ref = useRef<MaterialSelectElement>(null);
     const open = useRef(false);
     const pendingSelection = useRef<string | undefined>(undefined);
     const commitSelection = () => {
@@ -541,7 +551,8 @@ export function Select({
         pendingSelection.current = undefined;
         if (element === null || selected === undefined) return;
         element.select?.(value);
-        if (!disabled && options.some((option) => option.value === selected && !option.disabled)) onSelect?.(selected, ref);
+        if (displayText !== undefined) element.displayText = displayText;
+        if (!disabled && options.some((option) => !option.kind && option.value === selected && !option.disabled)) onSelect?.(selected, ref);
     };
     useEffect(() => {
         const element = ref.current;
@@ -567,7 +578,21 @@ export function Select({
         return () => { element.removeEventListener("opening", opening); element.removeEventListener("closed", closed); };
     });
     const selectedOption = options.find((option) => option.value === value);
-    const selectedLabel = selectedOption?.displayText ?? selectedOption?.label;
+    const selectedLabel = displayText ?? selectedOption?.displayText ?? selectedOption?.label;
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null || displayText === undefined) return;
+        // Async option lists can be empty even though the caller already knows
+        // the current value. Keep that explicit text controlled across Material's
+        // initialization and option updates, before the browser paints.
+        const synchronize = () => {
+            if (element.displayText !== displayText) element.displayText = displayText;
+        };
+        const controller = { hostUpdated: synchronize };
+        element.addController(controller);
+        synchronize();
+        return () => element.removeController(controller);
+    }, [displayText]);
     useEffect(() => {
         const element = ref.current;
         if (element === null) return;
@@ -585,9 +610,10 @@ export function Select({
                 root.append(style);
             }
             element.select?.(value);
+            if (displayText !== undefined) element.displayText = displayText;
         });
         return () => { active = false; };
-    }, [selectedLabel, value]);
+    }, [selectedLabel, value, displayText]);
     return createElement(
         materialElements.select.filled,
         {
@@ -600,11 +626,23 @@ export function Select({
             label: "",
             onChange: (event: FormEvent<MaterialElement>) => {
                 const selected = event.currentTarget.value as string;
-                if (disabled || !options.some((option) => option.value === selected && !option.disabled)) return;
+                if (disabled || !options.some((option) => !option.kind && option.value === selected && !option.disabled)) return;
                 if (onSelect) {
                     pendingSelection.current = selected;
                     if (!open.current) commitSelection();
                 } else onChange?.(selected);
+            },
+            onKeyDownCapture: (event: ReactKeyboardEvent<MaterialElement>) => {
+                if (event.key !== "Escape" || !open.current) return;
+                if (event.nativeEvent.composedPath().some((node) => node instanceof HTMLElement && node.matches(materialElements.selectOption))) return;
+                // Async options may arrive after opening, while focus remains
+                // in the field. Use Material's normal focusout closing path.
+                const element = event.currentTarget;
+                pendingSelection.current = undefined;
+                element.addEventListener("closed", () => element.focus(), { once: true });
+                element.blur();
+                event.preventDefault();
+                event.stopPropagation();
             },
             quick: reduce,
             ref,
@@ -612,8 +650,13 @@ export function Select({
             supportingText,
             value
         } as MaterialProps,
-        options.map((option) => createElement(materialElements.selectOption, {
+        options.map((option) => option.kind ? createElement("div", {
+            className: option.kind === "heading" ? "alcomd-select-heading" : "alcomd-select-separator",
+            key: option.value,
+            role: option.kind === "heading" ? "presentation" : "separator"
+        }, option.kind === "heading" ? option.label : null) : createElement(materialElements.selectOption, {
             disabled: option.disabled,
+            title: option.title,
             ...(option.displayText === undefined ? {} : { displayText: option.displayText }),
             key: option.value,
             selected: option.value === value,
@@ -685,8 +728,9 @@ export function Switch({
     );
 }
 
-export function Checkbox({ checked, disabled, label, labelHidden = false, onChange }: { checked: boolean; disabled?: boolean; label: string; labelHidden?: boolean; onChange?(checked: boolean): void }) {
+export function Checkbox({ checked, disabled, label, labelHidden = false, onChange }: { checked: boolean; disabled?: boolean; label: string; labelHidden?: boolean; onChange?(checked: boolean, shiftKey: boolean): void }) {
     const ref = useRef<MaterialElement>(null);
+    const shift = useRef(false);
     // A Material checkbox changes its own property before dispatching change.
     // Reconcile even when the owner rejects the change (e.g. confirmation cancelled).
     useEffect(() => { if (ref.current !== null) ref.current.checked = checked; });
@@ -697,7 +741,9 @@ export function Checkbox({ checked, disabled, label, labelHidden = false, onChan
                 checked,
                 disabled,
                 ref,
-                onChange: (event: FormEvent<MaterialElement>) => onChange?.(Boolean(event.currentTarget.checked))
+                onClickCapture: (event: ReactMouseEvent<MaterialElement>) => { shift.current = event.shiftKey; },
+                onKeyDownCapture: (event: ReactKeyboardEvent<MaterialElement>) => { shift.current = event.shiftKey; },
+                onChange: (event: FormEvent<MaterialElement>) => onChange?.(Boolean(event.currentTarget.checked), shift.current)
             } as MaterialProps)}
             {labelHidden ? null : <span>{label}</span>}
         </label>

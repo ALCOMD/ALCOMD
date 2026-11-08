@@ -71,6 +71,7 @@ declare global {
         resumeCandidateFilter?: () => void;
         resumePackageCandidates?: (error?: string) => void;
         resumePackageProject?: () => void;
+        resumePackageBulk?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
@@ -341,6 +342,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ exportedCount: 230, byteCount: 12000, sha256: HASH });
     }
     private candidateSourceWasDelayed = false;
+    private packageProjectReads = 0;
+    private packageBulkReads = 0;
     private candidateVisibilityReady?: Promise<void>;
     private initialCandidateConfigRevision?: number;
     private hubDefaultReady = query.has("hub-default");
@@ -686,6 +689,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value(result);
     }
     async projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
+        if (query.has("holdPackageRefresh") && this.packageProjectReads++ > 0) {
+            await new Promise<void>((resolve) => { window.resumePackageProject = () => { window.resumePackageProject = undefined; resolve(); }; });
+            this.repositoryRefreshCompleted = true;
+        }
         if (query.has("holdPackageProject") && window.resumePackageProject === undefined) {
             await new Promise<void>((resolve) => { window.resumePackageProject = resolve; });
         }
@@ -959,6 +966,9 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
+        if (query.has("holdPackageRefresh") && params.view.kind === "summary" && params.view.bulkPackageIds !== undefined && this.packageBulkReads++ > 0) {
+            await new Promise<void>((resolve) => { window.resumePackageBulk = () => { window.resumePackageBulk = undefined; resolve(); }; });
+        }
         if (query.has("holdPackageCandidates") && params.view.kind === "summary" && !params.cursor
             && !params.view.filter && params.view.bulkPackageIds === undefined && window.resumePackageCandidates === undefined) {
             await new Promise<void>((resolve, reject) => {
@@ -995,9 +1005,12 @@ class DeterministicGuiClient implements GuiRpcClient {
             const providers = (this.mode === "package-user-source" ? [REPOSITORY_ID, USER_PACKAGE_ID] : this.mode === "package-multiple" ? [REPOSITORY_ID, LOCAL_REPOSITORY_ID] : [REPOSITORY_ID])
                 .filter((id) => id === USER_PACKAGE_ID ? !this.settings.settings.packages.hideLocalUserPackages
                     : this.mode !== "package-no-repositories" && !this.settings.settings.packages.hiddenRepositoryIds.includes(id));
+            const packageProviders = params.view.packageId === "com.example.remote" ? providers.filter((id) => id === REPOSITORY_ID) : providers;
+            const requestedSource = params.view.source;
+            const sourceIds = requestedSource ? packageProviders.filter((id) => requestedSource.kind === "repository" ? id === requestedSource.repository_id : id === requestedSource.user_package_id) : packageProviders;
             const installed = params.view.packageId === "com.example.avatar" || (Boolean(query.get("twoInstalled")) && params.view.packageId === "com.example.remote");
             const relation = (value: PackageCandidateEvidence["relation"]): PackageCandidateEvidence["relation"] => installed ? value : "not_installed";
-            const items = providers.flatMap((id) => [
+            const items = sourceIds.flatMap((id) => [
                 ...(this.settings.settings.packages.showPrerelease ? [candidate("2.0.0-beta.1", relation("newer"), id, [], "prerelease")] : []),
                 candidate("1.10.0", relation("newer"), id),
                 candidate("1.2.3", relation("same_precedence"), id),
@@ -1005,8 +1018,8 @@ class DeterministicGuiClient implements GuiRpcClient {
                 candidate("legacy", "unknown", id, ["classification_unknown", "metadata_invalid"], "unknown")
             ]);
             if (query.has("versionGroups")) for (const item of items) {
-                if (item.version === "1.1.0") { item.unity = "incompatible"; item.eligibility = "blocked"; item.reasons = ["unity_incompatible"]; }
-                if (item.version === "legacy") item.unity = "unknown";
+                if (item.version === "1.1.0") { item.unity = "incompatible"; item.eligibility = "blocked"; item.reasons = ["unity_incompatible"]; item.manualUnityOverrideAllowed = true; }
+                if (item.version === "legacy") { item.version = "1.0.0"; item.classification = "stable"; item.unity = "unknown"; item.reasons = ["project_unity_unknown"]; }
             }
             const offset = params.cursor?.offset ?? 0;
             const count = query.get("paged") ? 3 : items.length;
@@ -1158,6 +1171,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.packageRequests.push({ method: "downgrade", params });
         const plan = packagePlan("downgrade");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.version }];
+        if (params.allowUnityIncompatible) {
+            plan.changeSet.formatVersion = 4;
+            plan.changeSet.unityCompatibilityOverrides = [{ packageId: params.packageId, version: params.version }];
+        }
         return this.value(plan);
     }
     packagePlanResolve(): ReturnType<GuiRpcClient["packagePlanResolve"]> { return this.value(packagePlan("resolve")); }

@@ -1,7 +1,33 @@
 import { expect, test, type Page } from "@playwright/test";
 import { requestErrorMessage } from "../../src/request-errors";
+import { createPageRead, primePageRead } from "../../src/PageRead";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
+
+test("Priming a visit shares its in-flight read with render retries and never reuses another visit", async () => {
+    const visit = createPageRead();
+    let calls = 0;
+    let release!: (value: string) => void;
+    const first = primePageRead(visit, "primary", () => { calls++; return new Promise<string>((resolve) => { release = resolve; }); });
+    const retry = primePageRead(visit, "primary", async () => { throw new Error("duplicate read"); });
+    expect(retry).toBe(first);
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    release("current visit");
+    expect(await first).toEqual({ kind: "ready", value: "current visit" });
+    expect(visit.settled.get("primary")).toEqual({ kind: "ready", value: "current visit" });
+    const next = createPageRead();
+    expect(await primePageRead(next, "primary", async () => "next visit")).toEqual({ kind: "ready", value: "next visit" });
+    expect(next.results.get("primary")).not.toBe(first);
+});
+
+test("A failed primed read remains an error without an unhandled rejection or automatic duplicate request", async () => {
+    const visit = createPageRead();
+    const error = { code: "daemon_unavailable" };
+    const result = primePageRead(visit, "primary", async () => { throw error; });
+    expect(await result).toEqual({ kind: "error", error });
+    expect(await primePageRead(visit, "primary", async () => "must not retry")).toEqual({ kind: "error", error });
+});
 
 async function prepareTimedNavigation(page: Page, hold = "holdPackageCandidates") {
     await page.clock.install();
@@ -180,4 +206,50 @@ test("An invalidation during the candidate read discards its stale response and 
     await expect.poll(() => page.evaluate(() => window.candidateRequests.length)).toBeGreaterThan(before.requests);
     await expect(page.getByRole("button", { name: "Update All (1)", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("Repeated background refresh leaves the displayed snapshot unchanged until all replacement reads complete", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&holdPackageRefresh=1");
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
+    const updateAll = page.getByRole("button", { name: "Update All (1)", exact: true });
+    const update = page.locator(".package-latest-update");
+    const picker = page.locator(".package-version-picker").first();
+    await expect(updateAll).toBeEnabled();
+    const nodes = await Promise.all([updateAll.elementHandle(), update.elementHandle(), picker.elementHandle()]);
+    for (let cycle = 0; cycle < 3; cycle++) {
+        const displayed = await page.locator(".project-workspace").innerText();
+        await page.evaluate((revision) => window.coreEvents.emit("repository", "00000000-0000-4000-8000-000000000201", "repository.refreshed", revision), cycle + 2);
+        await expect.poll(() => page.evaluate(() => typeof window.resumePackageProject)).toBe("function");
+        await expect(updateAll).toBeVisible();
+        await expect(updateAll).toBeEnabled();
+        await expect(update).toBeVisible();
+        await expect(update).toHaveJSProperty("disabled", false);
+        await expect(picker).toHaveJSProperty("disabled", false);
+        expect(await page.locator(".project-workspace").innerText()).toBe(displayed);
+        const shape = await picker.evaluate((element) => {
+            const field = element.shadowRoot!.querySelector("#field")!;
+            const container = field.shadowRoot!.querySelector(".container")!;
+            const indicator = field.shadowRoot!.querySelector(".active-indicator")!;
+            return { radius: getComputedStyle(container).borderBottomLeftRadius, underline: getComputedStyle(indicator, "::before").borderBottomWidth };
+        });
+        expect(shape).toEqual({ radius: "9999px", underline: "0px" });
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+        if (cycle === 0) await page.screenshot({ path: test.info().outputPath("refresh-controls-preserved.png") });
+        await page.evaluate(() => window.resumePackageProject?.());
+        await expect.poll(() => page.evaluate(() => typeof window.resumePackageBulk)).toBe("function");
+        await expect(picker).toHaveJSProperty("disabled", false);
+        await expect(updateAll).toBeVisible();
+        await expect(updateAll).toBeEnabled();
+        expect(await page.locator(".project-workspace").innerText()).toBe(displayed);
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+        await page.evaluate(() => window.resumePackageBulk?.());
+        await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText("Refreshed package", { exact: true })).toBeVisible();
+        await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "summary" && request.view.bulkPackageIds !== undefined).length)).toBe(cycle + 2);
+        await expect(updateAll).toBeEnabled();
+        await expect(update).toHaveJSProperty("disabled", false);
+        for (const node of nodes) expect(await node!.evaluate((element) => element.isConnected)).toBe(true);
+    }
+    await updateAll.click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["bulk"]);
 });

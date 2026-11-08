@@ -12,7 +12,7 @@
 
 ## 公开合同与清理范围
 
-沿用 packages.candidates.v2 与同一查询方法、四项读权限。summary 增加可选 requestedRange（最长 256 字节），与本次正常读取的 installed 信息共同供 GUI 展示，避免拼接旧登记事实。既有 presentationState/presentationComplete 只表示本次可读信息的质量，不再对应数据库观测或补采流程；缺失已安装撤回信息仍表示未知。
+沿用 packages.candidates.v2 与同一查询方法、四项读权限。summary 的可选 requestedRange（最长 256 字节）表达当前清单的依赖声明；GUI 版本列按所有者后续要求对齐 v3，仅展示本次正常读取的 installed 版本或“未安装”，不额外展示依赖声明。已撤回标记跟随已安装版本显示，不放在名称列。既有 presentationState/presentationComplete 只表示本次可读信息的质量，不再对应数据库观测或补采流程；缺失已安装撤回信息仍表示未知。
 
 按所有者明确的撤除要求删除以下两张表及其读写模块、观察 revision、缓存失效记录和所有项目发布钩子：
 
