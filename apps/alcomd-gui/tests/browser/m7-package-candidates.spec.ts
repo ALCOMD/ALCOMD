@@ -588,8 +588,13 @@ test("Stable bulk actions use the distinct Core stable target and one explicit A
     await expect(review).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", includePrerelease: false }] } }]);
     await review.getByRole("button", { name: "Apply changes", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Package changes", exact: true })).toBeVisible();
+    await expect(review).toBeHidden();
+    await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.coreEvents.pending)).toBe(0);
     expect(await page.evaluate(() => window.packageRequests.map((item) => item.method))).toEqual(["bulk", "apply"]);
+    await page.getByRole("navigation", { name: "Utilities", exact: true }).locator("md-list-item").filter({ hasText: /^Tasks/ }).click();
+    await expect(page.getByRole("table", { name: "Tasks", exact: true }).getByRole("row").filter({ hasText: "Change packages" })).toContainText("succeeded");
 });
 
 test("Candidate reads share a two-request bound across independent menu/traversal callers", async ({ page }) => {

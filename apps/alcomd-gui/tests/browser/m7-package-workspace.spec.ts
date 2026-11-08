@@ -439,7 +439,7 @@ test("Inline version selection pins the chosen source and preserves installed st
     expect(await page.evaluate(() => window.packageRequests[1]?.params)).toMatchObject({ versionRange: "=1.10.0" });
 });
 
-test("Inline prerelease selection uses daemon classification and surfaces plan failure", async ({ page }) => {
+test("Inline prerelease selection uses daemon classification without inserting a plan-failure notice", async ({ page }) => {
     await openHarness(page, "ready&versions=1&planError=1");
     await page.getByRole("button", { name: "Filter packages" }).click();
     await page.getByRole("checkbox", { name: "Show prerelease versions" }).click();
@@ -452,10 +452,48 @@ test("Inline prerelease selection uses daemon classification and surfaces plan f
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toContainText("Package changes were not applied");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     await expect(page.locator(".mutation-feedback")).toHaveCount(0);
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
     await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
+});
+
+test("a missing package during planning leaves the page unchanged and the original action remains available", async ({ page }) => {
+    await openHarness(page, "ready&planError=package_not_found");
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    const install = packages.getByRole("button", { name: "Install", exact: true });
+    await expect(install).toBeEnabled();
+    const content = await page.getByRole("main").innerText();
+    const before = await packages.boundingBox();
+    await install.click();
+    await expect.poll(() => page.evaluate(() => window.packageRequests.length)).toBe(1);
+    await expect(install).toBeEnabled();
+    await expect(page.getByRole("main")).toHaveText(content, { useInnerText: true });
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    expect(await packages.boundingBox()).toEqual(before);
+    await install.click();
+    await expect.poll(() => page.evaluate(() => window.packageRequests.length)).toBe(2);
+    expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["install", "install"]);
+});
+
+test("an Apply failure stays in its existing review and closing it leaves no page feedback", async ({ page }) => {
+    await openHarness(page, "stale");
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    await packages.getByRole("button", { name: "Install", exact: true }).click();
+    const review = page.locator("md-dialog[open]").filter({ hasText: "Apply package changes?" });
+    await expect(review).toBeVisible();
+    await review.getByRole("button", { name: "Apply changes", exact: true }).click();
+    await expect(review.getByRole("alert")).toContainText("plan_stale");
+    await expect(review.getByRole("button", { name: "Apply changes", exact: true })).toBeDisabled();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await review.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(review).toHaveCount(0);
+    await expect(packages).toBeVisible();
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".operation-follow")).toHaveCount(0);
+    expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["install", "apply"]);
 });
 
 test("Selected installed packages remain in one bulk request when hidden by search", async ({ page }) => {

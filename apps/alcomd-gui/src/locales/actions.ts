@@ -572,10 +572,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "已开始应用软件包更改。",
         "ja-JP": "パッケージの変更を開始しました。"
     },
-    "Package changes were not applied": {
-        "zh-CN": "软件包更改未应用",
-        "ja-JP": "パッケージの変更は適用されませんでした"
-    },
     "Packages already installed in projects stay installed.": {
         "zh-CN": "已安装到项目中的软件包将保留。",
         "ja-JP": "プロジェクトにインストール済みのパッケージは保持されます。"

@@ -1149,7 +1149,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     async packagePlanInstall(params: Parameters<GuiRpcClient["packagePlanInstall"]>[0]): ReturnType<GuiRpcClient["packagePlanInstall"]> {
         window.packageRequests.push({ method: "install", params });
         if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
-        if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
+        if (query.has("planError")) return Promise.reject({ code: query.get("planError") === "1" ? "package_source_ambiguous" : query.get("planError") });
         const plan = packagePlan("install");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
         if (query.has("legacy-removals")) {
@@ -1165,7 +1165,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     async packagePlanUpgrade(params: Parameters<GuiRpcClient["packagePlanUpgrade"]>[0]): ReturnType<GuiRpcClient["packagePlanUpgrade"]> {
         window.packageRequests.push({ method: "upgrade", params });
         if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
-        if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
+        if (query.has("planError")) return Promise.reject({ code: query.get("planError") === "1" ? "package_source_ambiguous" : query.get("planError") });
         const plan = packagePlan("upgrade");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange?.replace(/^=/, "") ?? "1.10.0" }];
         return this.value(plan);
