@@ -292,11 +292,10 @@ fn load_project(
 pub(super) fn register_project(
     connection: &mut Connection,
     owner: &PrincipalId,
-    mut observation: ProjectObservation,
+    observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
-    let presentation = std::mem::take(&mut observation.package_presentations);
     let fingerprint = project_fingerprint(&observation)?;
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
@@ -351,8 +350,7 @@ pub(super) fn register_project(
         last_modified_at_ms: Some(now_ms),
         favorite: false,
     };
-    crate::m7_presentation::write(&transaction, id, record.revision.get(), &presentation)
-        .map_err(sql_failure)?;
+
     insert_event(
         &transaction,
         owner,
@@ -592,11 +590,10 @@ pub(super) fn refresh_project(
     owner: &PrincipalId,
     id: ProjectId,
     expected: Revision,
-    mut observation: ProjectObservation,
+    observation: ProjectObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
-    let presentation = std::mem::take(&mut observation.package_presentations);
     let fingerprint = aggregate_fingerprint(id, expected)?;
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
@@ -641,10 +638,8 @@ pub(super) fn refresh_project(
             ],
         )
         .map_err(sql_failure)?;
-    let presentation_changed =
-        crate::m7_presentation::write(&transaction, id, next_revision.get(), &presentation)
-            .map_err(sql_failure)?;
-    if changed || presentation_changed {
+
+    if changed {
         insert_event(
             &transaction,
             owner,
@@ -740,7 +735,7 @@ pub(super) fn set_project_favorite(
                 ],
             )
             .map_err(sql_failure)?;
-        transaction.execute("UPDATE project_presentation_observations SET project_revision=?1 WHERE project_id=?2 AND project_revision=?3", params![integer(revision.get())?, id.to_string(), integer(current.revision.get())?]).map_err(sql_failure)?;
+
         insert_event(
             &transaction,
             owner,

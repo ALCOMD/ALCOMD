@@ -82,7 +82,6 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
 
 pub(super) fn project_observation() -> ProjectObservation {
     ProjectObservation {
-        package_presentations: Default::default(),
         root_path: "<FIXTURE>/Project".to_owned(),
         path_identity_key: vec![1],
         project_type: ProjectType::Avatars,

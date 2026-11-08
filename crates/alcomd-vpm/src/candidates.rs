@@ -254,6 +254,12 @@ pub fn evaluate_candidate_summary(
             providers
                 .sort_by_key(|provider| (provider.display_order, source_key(&provider.source)));
             CandidateSummary {
+                requested_range: input
+                    .project
+                    .direct_dependencies
+                    .iter()
+                    .find(|item| item.package_id == package_id)
+                    .map(|item| item.value.clone()),
                 description,
                 installed_yanked,
                 presentation_state,
@@ -902,7 +908,6 @@ mod tests {
             })
             .collect(),
             project: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: String::new(),
                 path_identity_key: vec![],
                 project_type: ProjectType::VpmStarter,

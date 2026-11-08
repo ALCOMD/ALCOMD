@@ -1442,7 +1442,8 @@
                         ],
                         "presentationState": "complete",
                         "description": "Installed package description",
-                        "installedYanked": true
+                        "installedYanked": true,
+                        "requestedRange": "^1.0.0"
                     }
                 ],
                 "presentationComplete": true

@@ -46,6 +46,8 @@ const MIGRATION_V28: &str = include_str!("../migrations/0028_project_template_ar
 const MIGRATION_V29: &str = include_str!("../migrations/0029_repository_display_name.sql");
 const MIGRATION_V30: &str = include_str!("../migrations/0030_package_presentations.sql");
 
+const MIGRATION_V31: &str = include_str!("../migrations/0031_remove_project_presentations.sql");
+
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     initialize_connection_with_report(path).map(|(connection, _)| connection)
@@ -234,6 +236,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 29 {
         connection
             .execute_batch(MIGRATION_V30)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 30 {
+        connection
+            .execute_batch(MIGRATION_V31)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection

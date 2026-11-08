@@ -646,7 +646,6 @@ fn create_project(root: &Path) {
 fn observation(root: &Path) -> ProjectObservation {
     let canonical = fs::canonicalize(root).expect("canonical project");
     ProjectObservation {
-        package_presentations: Default::default(),
         root_path: canonical.to_string_lossy().into_owned(),
         path_identity_key: alcomd_platform::file_identity_key(&canonical).expect("identity"),
         project_type: ProjectType::Avatars,

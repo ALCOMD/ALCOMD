@@ -1485,7 +1485,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         const source = row === undefined ? undefined : selectedSource(row);
         setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
     };
-    const refreshRepositories = async (reload: () => void) => {
+    const refreshPackages = async (reload: () => void) => {
         if (repositoryRefreshPending.current) return;
         repositoryRefreshPending.current = true;
         setRepositoriesRefreshing(true);
@@ -1558,7 +1558,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
-                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || refreshing || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshRepositories(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? repositoryRefreshFailure ?? t("Refresh packages")} />
+                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || refreshing || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshPackages(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? repositoryRefreshFailure ?? t("Refresh packages")} />
                              <span className="visually-hidden" role="status" aria-live="polite">{repositoryRefreshFailure}</span>
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
@@ -1581,7 +1581,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}
-                        {currentEvidence && !candidatesPending && !candidates.presentationComplete ? <PackagePresentationStatus client={client} onChanged={refresh} project={project} /> : null}
                         <div aria-busy={candidatesPending || filterPending} className="package-workspace-list-region">
                             {rows.length === 0 ? candidatesPending || filterPending ? <LoadingState title={t("Loading")} /> : filterError ? <p role="alert">{evidenceFailure}</p> : readError ? null : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
                                  <DesktopList
@@ -1619,39 +1618,14 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     );
 }
 
-function PackagePresentationStatus({ client, project, onChanged }: { client: GuiRpcClient; project: ProjectSnapshot; onChanged(): void }) {
-    const { t } = useTranslation();
-    const current = useActionScope(client);
-    const canRefresh = useCapability(capabilities.projectsRegistry);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<RpcError>();
-    const refresh = async () => {
-        if (busy || project.projectId === undefined || project.revision === undefined) return;
-        setBusy(true); setError(undefined);
-        try {
-            await client.projectRefresh(project.projectId, project.revision);
-            if (current()) onChanged();
-        } catch (caught: unknown) {
-            if (current()) setError(normalizeRequestError(caught));
-        } finally {
-            if (current()) setBusy(false);
-        }
-    };
-    return <div className="package-presentation-status">
-        <p className="muted">{t("Some package details are unavailable.")}</p>
-        <Button disabled={!canRefresh || busy || project.projectId === undefined || project.revision === undefined} onClick={() => void refresh()} type="button" variant="text">{t(busy ? "Refreshing package details…" : "Refresh package details")}</Button>
-        {error === undefined ? null : <p role="alert">{t(requestErrorMessage(error.code))}</p>}
-    </div>;
-}
-
 function packageWorkspaceRows(t: Translate, project: ProjectSnapshot, summaries: PackageCandidateSummary[] | undefined): PackageWorkspaceRow[] {
     const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
     const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
     const evidenceById = new Map(summaries?.map((item) => [item.packageId, item]));
     const packageIds = summaries?.map((item) => item.packageId) ?? [...new Set([...installed.keys(), ...requested.keys()])];
     return orderPackageWorkspaceRows(packageIds.map((packageId) => {
-        const installedVersion = installed.get(packageId);
         const evidence = evidenceById.get(packageId);
+        const installedVersion = evidence === undefined ? installed.get(packageId) : evidence.installed.kind === "locked" ? evidence.installed.version : evidence.installed.kind === "unknown" ? t("Unknown") : undefined;
         const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: provider.displayName ?? (provider.builtin === "official" ? t("Official") : provider.builtin === "curated" ? t("Curated") : provider.name ?? t(provider.sourceKind === "user-package" ? "Local / User Package" : "Unnamed")), selector: candidateSource(provider.source) }; });
         return {
             ...(evidence ? { evidence } : {}),
@@ -1659,7 +1633,7 @@ function packageWorkspaceRows(t: Translate, project: ProjectSnapshot, summaries:
             ...(evidence?.links === undefined ? {} : { links: evidence.links }),
             ...(installedVersion === undefined ? {} : { installedVersion }),
             packageId,
-            ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
+            ...((evidence?.requestedRange ?? (evidence === undefined ? requested.get(packageId) : undefined)) === undefined ? {} : { requestedRange: evidence?.requestedRange ?? requested.get(packageId) }),
             sourceOptions
         };
     }));

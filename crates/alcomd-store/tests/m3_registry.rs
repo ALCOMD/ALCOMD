@@ -184,7 +184,6 @@ async fn repository_list_snapshot_covers_all_pages_and_registered_project_roots(
 
 fn project(identity: u8) -> ProjectObservation {
     ProjectObservation {
-        package_presentations: Default::default(),
         root_path: format!("C:/fixture/{identity}"),
         path_identity_key: vec![identity; 24],
         project_type: ProjectType::Avatars,

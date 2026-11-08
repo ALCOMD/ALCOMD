@@ -252,9 +252,8 @@ impl VpmReader {
         };
         let project_type =
             detect_project_type(&root, &locked_dependencies, &upm_dependencies).await?;
-        let package_presentations = presentation::inspect(&root, &locked_dependencies).await;
+
         Ok(ProjectObservation {
-            package_presentations: Box::new(package_presentations),
             root_path: root_text,
             path_identity_key,
             project_type,
@@ -396,6 +395,36 @@ impl VpmReader {
             response_validators,
             refreshed_at_ms,
         )?))
+    }
+}
+
+impl alcomd_application::CandidateProjectReader for VpmReader {
+    async fn read_candidate_project(
+        &self,
+        registered: &ProjectObservation,
+    ) -> Result<alcomd_application::CandidateProjectRead, alcomd_application::CandidateQueryError>
+    {
+        use alcomd_application::CandidateQueryError as Error;
+        let project = self
+            .inspect_project(
+                registered.root_path.clone(),
+                ProjectDiscoveryMode::ExactRoot,
+            )
+            .await
+            .map_err(|error| match error.code() {
+                M3ErrorCode::ProjectManifestInvalid => Error::ProjectManifestInvalid,
+                _ => Error::Unavailable,
+            })?;
+        if project.path_identity_key != registered.path_identity_key {
+            return Err(Error::EvidenceStale);
+        }
+        let presentations =
+            presentation::inspect(Path::new(&project.root_path), &project.locked_dependencies)
+                .await;
+        Ok(alcomd_application::CandidateProjectRead {
+            project,
+            presentations,
+        })
     }
 }
 

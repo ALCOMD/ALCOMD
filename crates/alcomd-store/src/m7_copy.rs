@@ -385,13 +385,7 @@ pub(super) fn complete(
             ],
         )
         .map_err(failure)?;
-    crate::m7_presentation::write(
-        &transaction,
-        plan.draft.target_project_id,
-        1,
-        &observation.package_presentations,
-    )
-    .map_err(failure)?;
+
     insert_journal(
         &transaction,
         operation_id,

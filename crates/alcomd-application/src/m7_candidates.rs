@@ -122,7 +122,6 @@ pub enum CandidateQueryError {
 }
 
 pub struct CandidateStoreSnapshot {
-    pub installed_presentations: ProjectPackagePresentations,
     pub project: ProjectRecord,
     pub entries: Vec<CandidateCatalogEntry>,
     pub fingerprint_records: Vec<String>,
@@ -141,6 +140,7 @@ pub struct CandidateSourceMetadata {
 }
 
 pub struct CandidateStoreAuthority {
+    pub project: ProjectObservation,
     pub project_revision: Revision,
     pub fingerprint_records: Vec<String>,
     pub catalog_complete: bool,
@@ -160,6 +160,27 @@ pub trait CandidateStore: Clone + Send + Sync + 'static {
         package_ids: Option<Vec<String>>,
     ) -> impl std::future::Future<Output = Result<CandidateStoreSnapshot, CandidateQueryError>> + Send;
 }
+#[derive(Clone)]
+pub struct CandidateProjectRead {
+    pub project: ProjectObservation,
+    pub presentations: ProjectPackagePresentations,
+}
+
+pub trait CandidateProjectReader: Clone + Send + Sync + 'static {
+    fn read_candidate_project(
+        &self,
+        registered: &ProjectObservation,
+    ) -> impl std::future::Future<Output = Result<CandidateProjectRead, CandidateQueryError>> + Send;
+}
+
+#[derive(Clone)]
+struct CachedProjectRead {
+    owner: PrincipalId,
+    project_id: ProjectId,
+    revision: Revision,
+    read: Arc<CandidateProjectRead>,
+}
+
 pub trait CandidateEvidenceEngine: Clone + Send + Sync + 'static {
     fn summarize(
         &self,
@@ -179,9 +200,12 @@ pub trait CandidateEvidenceEngine: Clone + Send + Sync + 'static {
 }
 
 #[derive(Clone)]
-pub struct ProjectCandidateApplication<S, E> {
+pub struct ProjectCandidateApplication<S, E, R> {
     store: S,
     engine: E,
+    reader: R,
+    locks: Arc<ResourceLockCoordinator>,
+    project_read: Arc<Mutex<Option<CachedProjectRead>>>,
     config: M7OfficialApplication,
     summary: Arc<Mutex<Option<CachedSummary>>>,
 }
@@ -209,15 +233,25 @@ enum PreparedCandidates {
     },
 }
 
-impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<S, E> {
-    pub fn new(store: S, engine: E, config: M7OfficialApplication) -> Self {
+impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
+    ProjectCandidateApplication<S, E, R>
+{
+    pub fn new(store: S, engine: E, reader: R, config: M7OfficialApplication) -> Self {
         Self {
             store,
             engine,
+            reader,
+            locks: Arc::new(ResourceLockCoordinator::default()),
+            project_read: Arc::new(Mutex::new(None)),
             config,
             summary: Arc::new(Mutex::new(None)),
         }
     }
+    pub fn with_locks(mut self, locks: Arc<ResourceLockCoordinator>) -> Self {
+        self.locks = locks;
+        self
+    }
+
     pub async fn query(
         &self,
         access: &AccessContext,
@@ -275,6 +309,12 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         {
             return Err(CandidateQueryError::InvalidInput);
         }
+        // Share the project fence with Core package writers while combining registered
+        // authority, repository snapshot and the normal filesystem read.
+        let _project_guard = self
+            .locks
+            .acquire(vec![ResourceKey::Project(project_id)])
+            .await;
         let config = self
             .config
             .candidate_settings()
@@ -300,17 +340,30 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
         } else {
             None
         };
+        let mut project_read = None;
         let reused = if let Some(cached) = cached {
             let authority = self
                 .store
                 .candidate_authority(owner.clone(), project_id)
                 .await?;
+            let read = self
+                .read_project(
+                    &request,
+                    owner,
+                    project_id,
+                    authority.project_revision,
+                    &authority.project,
+                )
+                .await?;
+            project_read = Some(read.clone());
+            let mut records = authority.fingerprint_records;
+            records.push(self.project_fingerprint(&read)?);
             let fingerprint = self.validated_fingerprint(
                 &request,
                 owner,
                 &config,
                 authority.project_revision,
-                authority.fingerprint_records,
+                records,
             )?;
             (cached.snapshot_fingerprint == fingerprint).then_some((
                 fingerprint,
@@ -332,17 +385,41 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 .store
                 .candidate_snapshot(owner.clone(), project_id, ids)
                 .await?;
+            if snapshot.project.revision.get() != request.expected_revision {
+                return Err(
+                    if request.cursor.is_some() || request.expected_snapshot.is_some() {
+                        CandidateQueryError::EvidenceStale
+                    } else {
+                        CandidateQueryError::RevisionConflict
+                    },
+                );
+            }
+            let read = match project_read {
+                Some(read) => read,
+                None => {
+                    self.read_project(
+                        &request,
+                        owner,
+                        project_id,
+                        snapshot.project.revision,
+                        &snapshot.project.observation,
+                    )
+                    .await?
+                }
+            };
+            let mut records = snapshot.fingerprint_records;
+            records.push(self.project_fingerprint(&read)?);
             let fingerprint = self.validated_fingerprint(
                 &request,
                 owner,
                 &config,
                 snapshot.project.revision,
-                snapshot.fingerprint_records,
+                records,
             )?;
             let input = CandidateEvidenceInput {
-                installed_presentations: snapshot.installed_presentations,
+                installed_presentations: read.presentations.clone(),
                 source_metadata: snapshot.source_metadata.clone(),
-                project: snapshot.project.observation,
+                project: read.project.clone(),
                 entries: snapshot.entries,
                 settings: config.settings.packages.clone(),
             };
@@ -360,6 +437,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                     // Raw M3 identities may be wider than the public candidate DTO.
                     if items.iter().any(|item| {
                         item.package_id.len() > 128
+                            || item.requested_range.as_ref().is_some_and(|range| range.len() > 256)
                             || matches!(&item.installed, CandidateInstalled::Locked { version } if version.len() > 256)
                     }) {
                         return Err(CandidateQueryError::LimitExceeded);
@@ -526,6 +604,61 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine> ProjectCandidateApplication<
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(update);
         }
         Ok(page)
+    }
+
+    async fn read_project(
+        &self,
+        request: &ProjectCandidateRequest,
+        owner: &PrincipalId,
+        project_id: ProjectId,
+        revision: Revision,
+        registered: &ProjectObservation,
+    ) -> Result<Arc<CandidateProjectRead>, CandidateQueryError> {
+        if revision.get() != request.expected_revision {
+            return Err(
+                if request.cursor.is_some() || request.expected_snapshot.is_some() {
+                    CandidateQueryError::EvidenceStale
+                } else {
+                    CandidateQueryError::RevisionConflict
+                },
+            );
+        }
+        if request.cursor.is_some() || request.expected_snapshot.is_some() {
+            let cached = self
+                .project_read
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            if let Some(cached) = cached.filter(|cached| {
+                &cached.owner == owner
+                    && cached.project_id == project_id
+                    && cached.revision == revision
+            }) {
+                return Ok(cached.read);
+            }
+        }
+        let read = Arc::new(self.reader.read_candidate_project(registered).await?);
+        *self
+            .project_read
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(CachedProjectRead {
+            owner: owner.clone(),
+            project_id,
+            revision,
+            read: read.clone(),
+        });
+        Ok(read)
+    }
+
+    fn project_fingerprint(
+        &self,
+        read: &CandidateProjectRead,
+    ) -> Result<String, CandidateQueryError> {
+        let project =
+            serde_json::to_string(&read.project).map_err(|_| CandidateQueryError::Unavailable)?;
+        Ok(self
+            .engine
+            .fingerprint(&[project, read.presentations.fingerprint.clone()]))
     }
 
     fn validated_fingerprint(
@@ -854,6 +987,14 @@ mod tests {
             panic!("unauthorized query reached store")
         }
     }
+    impl CandidateProjectReader for NeverRead {
+        async fn read_candidate_project(
+            &self,
+            _: &ProjectObservation,
+        ) -> Result<CandidateProjectRead, CandidateQueryError> {
+            panic!("must not read project files before authorization and input validation")
+        }
+    }
     impl CandidateEvidenceEngine for NeverRead {
         fn summarize(
             &self,
@@ -918,6 +1059,7 @@ mod tests {
     #[tokio::test]
     async fn all_four_permissions_and_exact_project_scope_are_required_before_reads() {
         let application = ProjectCandidateApplication::new(
+            NeverRead,
             NeverRead,
             NeverRead,
             M7OfficialApplication::new(
@@ -1004,6 +1146,7 @@ mod tests {
         let application = ProjectCandidateApplication::new(
             NeverRead,
             engine,
+            NeverRead,
             M7OfficialApplication::new(
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
@@ -1059,6 +1202,7 @@ mod presentation_filter_tests {
             reasons: vec![CandidateReason::NoVisibleCandidate],
         };
         let row = CandidateSummary {
+            requested_range: None,
             description: None,
             installed_yanked: None,
             presentation_state: PresentationState::Unobserved,

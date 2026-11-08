@@ -151,10 +151,6 @@ pub struct ReadIssue {
 /// Normalized project observation produced without modifying the project.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProjectObservation {
-    /// Transport from the inspector to the store's presentation sidecar only.
-    /// Excluded from project snapshots and all frozen Plan/Apply projections.
-    #[serde(skip)]
-    pub package_presentations: Box<ProjectPackagePresentations>,
     pub root_path: String,
     pub path_identity_key: Vec<u8>,
     pub project_type: ProjectType,

@@ -1906,7 +1906,6 @@ mod tests {
         let record = ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: root.to_string_lossy().into_owned(),
                 path_identity_key: alcomd_platform::file_identity_key(&root).expect("identity"),
                 project_type: ProjectType::VpmStarter,

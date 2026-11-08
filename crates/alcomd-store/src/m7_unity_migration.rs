@@ -367,13 +367,7 @@ pub(super) fn commit_project(
     {
         return Err(error(M7UnityMigrationErrorCode::SourceChanged));
     }
-    crate::m7_presentation::write(
-        &transaction,
-        plan.draft.project.project_id,
-        next_project.get(),
-        &observation.package_presentations,
-    )
-    .map_err(failure)?;
+
     transaction.execute(
         "INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json)
          VALUES (?1,'project.unity_version_migrated','project',?2,?3,?4,?5,?6)",

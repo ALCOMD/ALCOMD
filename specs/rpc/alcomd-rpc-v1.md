@@ -946,9 +946,9 @@ permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence
 
 项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
-`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准与 State30 配套的不兼容读合同，替换 v1 能力，旧客户端须重新协商。
+`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准候选 v2，随后明确撤除项目展示数据库副本。当前配套 State31，沿用读权限，Core/SDK/GUI 一起更新。
 
-候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。规范形状见候选 Schema，展示持久化见 State30。
+候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照；没有项目展示数据库副本或 projects.refresh 补采前置步骤。登记 revision 与候选文件指纹分离，Plan/Apply 的既有冻结授权和过期检测保持。规范形状见候选 Schema，移除旧开发缓存表见 State31。
 所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`
 及既有 Principal / Project / source scope。此查询与后续 Package Plan 使用同一应用层。
 
@@ -961,7 +961,7 @@ Latest 在确认展示来源集合中按 Core precedence 选择，Project Latest
 
 Summary 的 `bulkPackageIds` 请求返回同一候选快照上的批量动作与排除原因。空数组只查看全项目更新；传入 ID 同时计算所选包的安装、更新、移除及重新安装。该投影不分页，不与 `filter` 或 `packageIds` 同用。Core 生成精确版本和来源的计划意图；目标超过 256 项、目录证据不完整或选中项不符合条件时，相应动作没有可提交意图。排除明细最多返回 256 项，并给出其余项数量。实际变更仍通过既有批量 Plan/Apply。
 
-使用已登记 Project/source/Config 快照；不得网络访问、刷新可变源、下载、写业务状态或创建
+候选查询使用正常读取的 Project 与已登记 source/Config 快照，本身不得网络访问、刷新可变源、下载、写业务状态或创建
 Plan/Operation/Event。无持久 snapshot/session/catalog revision。指纹和 cursor 绑定快照及查询，
 每页重新鉴权；快照变化返回 `package_candidate_evidence_stale`，额度失败返回
 `package_candidate_limit_exceeded`。其余权限、参数、项目/revision 错误复用已有 code。

@@ -226,7 +226,6 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         .register_project(
             PrincipalId::local_owner(),
             ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: text(&source),
                 path_identity_key: alcomd_platform::file_identity_key(&source).expect("identity"),
                 project_type: ProjectType::Unknown,

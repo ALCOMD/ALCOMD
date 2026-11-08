@@ -717,13 +717,7 @@ pub(super) fn complete_package_apply(
             ],
         )
         .map_err(store_error)?;
-    crate::m7_presentation::write(
-        &transaction,
-        plan.project_id,
-        next_project_revision as u64,
-        &observation.package_presentations,
-    )
-    .map_err(store_error)?;
+
     insert_aggregate_event(
         &transaction,
         &context.owner,

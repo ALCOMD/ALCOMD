@@ -665,6 +665,11 @@
                 },
                 "presentationState": {
                     "$ref": "#/$defs/PresentationState"
+                },
+                "requestedRange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
                 }
             },
             "required": [
@@ -1077,5 +1082,5 @@
         "guiConcurrentRequests": 2,
         "rpcFrameEnvelopeIncluded": true
     },
-    "x-alcomd-state-version": 30
+    "x-alcomd-state-version": 31
 }

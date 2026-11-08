@@ -4,7 +4,7 @@ use alcomd_application::{
     MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId,
     ProjectAuthorityFingerprint, ProjectId, ProjectRecord, UserPackageId,
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 
 pub(super) fn snapshot(
     connection: &mut Connection,
@@ -131,11 +131,7 @@ pub(super) fn snapshot(
     {
         return Err(Error::LimitExceeded);
     }
-    let installed_presentations =
-        crate::m7_presentation::load(&transaction, project_id, project.revision.get())
-            .map_err(|_| Error::Unavailable)?;
     Ok(CandidateStoreSnapshot {
-        installed_presentations,
         project,
         entries,
         fingerprint_records: authority.fingerprint_records,
@@ -244,14 +240,10 @@ fn read_authority(
             _ => Error::Unavailable,
         })?;
     let mut fingerprint_records = vec![
-        "project-candidates-snapshot-v2".to_owned(),
+        "project-candidates-snapshot-v3".to_owned(),
         serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
             .map_err(|_| Error::Unavailable)?,
     ];
-    let presentation: Option<String> = transaction.query_row(
-        "SELECT json_array(revision,project_revision,state,fingerprint) FROM project_presentation_observations WHERE project_id=?1",
-        [project_id.to_string()], |row| row.get(0)).optional().map_err(|_| Error::Unavailable)?;
-    fingerprint_records.push(presentation.unwrap_or_else(|| "unobserved".into()));
     let mut statement = transaction.prepare(
         "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key),resolver_indexed) FROM repositories WHERE owner_principal_id=?1
          UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1
@@ -270,6 +262,7 @@ fn read_authority(
         .map_err(|_| Error::Unavailable)?;
     fingerprint_records.push(incomplete.to_string());
     let authority = CandidateStoreAuthority {
+        project: project.observation.clone(),
         project_revision: project.revision,
         fingerprint_records,
         catalog_complete: !incomplete,
@@ -290,7 +283,6 @@ mod tests {
             project_id: ProjectId::parse("00000000-0000-4000-8000-000000000101")
                 .expect("project ID"),
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: "C:\\Projects\\日本語".into(),
                 path_identity_key: vec![0, 255],
                 project_type: ProjectType::Avatars,
@@ -392,7 +384,6 @@ mod tests {
             let mut connection = crate::sqlite::initialize_connection(&path)
                 .expect("candidate fixture or query must succeed");
             let observation = ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: "unopened-project".into(),
                 path_identity_key: vec![1],
                 project_type: ProjectType::Unknown,
@@ -430,177 +421,54 @@ mod tests {
     }
 
     #[test]
-    fn presentation_observation_invalidates_candidates_without_changing_frozen_project_authority() {
-        let mut f = Fixture::new();
-        let before = snapshot(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            None,
-        )
-        .expect("presentation fixture or query succeeds");
-        assert_eq!(
-            before.installed_presentations.state,
-            alcomd_application::PresentationState::Unobserved
-        );
-        let frozen =
-            serde_json::to_string(&before.project).expect("presentation fixture or query succeeds");
-        let value = alcomd_application::ProjectPackagePresentations {
-            fingerprint: "a".repeat(64),
-            state: alcomd_application::PresentationState::Complete,
-            packages: vec![],
-        };
-        assert!(
-            crate::m7_presentation::write(&f.connection, f.project, 1, &value)
-                .expect("presentation fixture or query succeeds")
-        );
-        assert!(
-            !crate::m7_presentation::write(&f.connection, f.project, 1, &value)
-                .expect("presentation fixture or query succeeds")
-        );
-        let after = snapshot(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            None,
-        )
-        .expect("presentation fixture or query succeeds");
-        assert_ne!(before.fingerprint_records, after.fingerprint_records);
-        assert_eq!(
-            serde_json::to_string(&after.project).expect("presentation fixture or query succeeds"),
-            frozen
-        );
-        assert_eq!(
-            after.installed_presentations.state,
-            alcomd_application::PresentationState::Complete
-        );
-        let mut with_transient = after.project.clone();
-        *with_transient.observation.package_presentations = value;
-        assert_eq!(
-            serde_json::to_string(&with_transient).expect("presentation fixture or query succeeds"),
-            frozen
-        );
-        assert_eq!(
-            crate::m7_presentation::load(&f.connection, f.project, 2)
-                .expect("presentation fixture or query succeeds")
-                .state,
-            alcomd_application::PresentationState::Partial
-        );
-        let cached = authority(&mut f.connection, &PrincipalId::local_owner(), f.project)
-            .expect("presentation fixture or query succeeds");
-        assert_eq!(cached.fingerprint_records, after.fingerprint_records);
-    }
-
-    #[test]
-    fn metadata_only_project_refresh_publishes_sidecar_and_favorite_preserves_it() {
-        let mut f = Fixture::new();
-        let before = snapshot(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            None,
-        )
-        .expect("initial snapshot");
-        let mut observation = before.project.observation.clone();
-        *observation.package_presentations = alcomd_application::ProjectPackagePresentations {
-            fingerprint: "b".repeat(64),
-            state: alcomd_application::PresentationState::Complete,
-            packages: vec![],
-        };
-        let refreshed = crate::m3::refresh_project(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            Revision::INITIAL,
-            observation,
-            &IdempotencyKey::parse("presentation-refresh").expect("key"),
-            2,
-        )
-        .expect("refresh metadata");
-        assert_eq!(refreshed.value.revision, Revision::INITIAL);
-        assert_eq!(refreshed.value.observation, before.project.observation);
-        let after = snapshot(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            None,
-        )
-        .expect("refreshed snapshot");
-        assert_eq!(
-            after.installed_presentations.state,
-            alcomd_application::PresentationState::Complete
-        );
-        assert_ne!(after.fingerprint_records, before.fingerprint_records);
-        let favorited = crate::m3::set_project_favorite(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            true,
-            Revision::INITIAL,
-            &IdempotencyKey::parse("presentation-favorite").expect("key"),
-            3,
-        )
-        .expect("favorite");
-        let favorite_snapshot = snapshot(
-            &mut f.connection,
-            &PrincipalId::local_owner(),
-            f.project,
-            None,
-        )
-        .expect("favorite snapshot");
-        assert_eq!(favorite_snapshot.project.revision, favorited.value.revision);
-        assert_eq!(
-            favorite_snapshot.installed_presentations,
-            after.installed_presentations
-        );
-    }
-    #[test]
-    fn state30_upgrade_preserves_existing_records_and_starts_unobserved() {
-        let mut f = Fixture::new();
+    fn retired_development_copy_is_removed_without_changing_project_authority_or_history() {
+        let f = Fixture::new();
         f.repository();
-        // Reconstruct the exact State29 shape from the additive-only State30 fixture.
-        f.connection.execute_batch("DROP TABLE project_package_presentations; DROP TABLE project_presentation_observations; ALTER TABLE repository_package_versions DROP COLUMN presentation_json; PRAGMA user_version=29;").expect("presentation fixture or query succeeds");
-        let frozen_project: String = f
+        let before: String = f
             .connection
             .query_row("SELECT snapshot_json FROM projects", [], |row| row.get(0))
-            .expect("presentation fixture or query succeeds");
+            .expect("project snapshot");
         let events: i64 = f
             .connection
             .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
-            .expect("presentation fixture or query succeeds");
+            .expect("history");
+        f.connection.execute_batch("CREATE TABLE project_presentation_observations(project_id TEXT PRIMARY KEY, revision INTEGER, project_revision INTEGER, state TEXT, fingerprint TEXT); CREATE TABLE project_package_presentations(project_id TEXT,package_id TEXT,presentation_json TEXT); PRAGMA user_version=30;").expect("old development copy");
         f.connection
-            .execute_batch(include_str!("../migrations/0030_package_presentations.sql"))
-            .expect("presentation fixture or query succeeds");
+            .execute(
+                "INSERT INTO project_package_presentations VALUES(?1,'com.example.obsolete','{}')",
+                [f.project.to_string()],
+            )
+            .expect("obsolete cache");
+        f.connection
+            .execute_batch(include_str!(
+                "../migrations/0031_remove_project_presentations.sql"
+            ))
+            .expect("approved removal");
+        assert_eq!(f.connection.query_row::<i64,_,_>("SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('project_package_presentations','project_presentation_observations')",[],|row|row.get(0)).expect("absence"),0);
         assert_eq!(
             f.connection
                 .query_row::<String, _, _>("SELECT snapshot_json FROM projects", [], |row| row
                     .get(0))
-                .expect("presentation fixture or query succeeds"),
-            frozen_project
+                .expect("project after removal"),
+            before
         );
         assert_eq!(
             f.connection
                 .query_row::<i64, _, _>("SELECT COUNT(*) FROM events", [], |row| row.get(0))
-                .expect("presentation fixture or query succeeds"),
+                .expect("history after removal"),
             events
         );
         assert_eq!(
             f.connection
                 .query_row::<i64, _, _>("PRAGMA user_version", [], |row| row.get(0))
-                .expect("presentation fixture or query succeeds"),
-            30
+                .expect("format"),
+            31
         );
         assert_eq!(
-            snapshot(
-                &mut f.connection,
-                &PrincipalId::local_owner(),
-                f.project,
-                None
-            )
-            .expect("presentation fixture or query succeeds")
-            .installed_presentations
-            .state,
-            alcomd_application::PresentationState::Unobserved
+            f.connection
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM repositories", [], |row| row.get(0))
+                .expect("repository retained"),
+            1
         );
     }
     #[test]

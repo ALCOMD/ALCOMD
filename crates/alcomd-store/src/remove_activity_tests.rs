@@ -152,11 +152,8 @@ fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence()
         crate::sqlite::initialize_connection(&fixture.database()).expect("approved removal");
     let mut after = business_rows(&connection);
     assert_eq!(after.remove("repository_credential_cleanup"), Some(vec![]));
-    assert_eq!(after.remove("project_package_presentations"), Some(vec![]));
-    assert_eq!(
-        after.remove("project_presentation_observations"),
-        Some(vec![])
-    );
+    assert_eq!(after.remove("project_package_presentations"), None);
+    assert_eq!(after.remove("project_presentation_observations"), None);
     assert_eq!(after, before);
     assert_eq!(
         connection

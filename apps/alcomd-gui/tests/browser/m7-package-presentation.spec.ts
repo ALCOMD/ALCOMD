@@ -85,25 +85,21 @@ test("version groups follow Core compatibility and yanked versions are absent", 
 });
 
 
-test("incomplete presentation keeps installed facts and package actions visible", async ({ page }) => {
-    await open(page,"ready","presentationIncomplete=1");
-    await expect(page.getByText("Some package details are unavailable.",{exact:true})).toBeVisible();
-    const installed=row(page,"Avatar tools");
-    await expect(installed).toContainText("1.2.3");
-    await expect(installed.getByRole("button",{name:"Update",exact:true})).toBeEnabled();
-    await expect(installed).not.toContainText("Installed version is yanked");
-    await page.getByRole("button",{name:"Refresh package details",exact:true}).click();
-    await expect(page.getByText("Some package details are unavailable.",{exact:true})).toHaveCount(0);
-    await expect(row(page,"Avatar tools")).toContainText("1.2.3");
+test("normal package reads have no separate fill region or project-refresh requests", async ({ page }) => {
+    await open(page, "ready", "partialPackageManifest=1");
+    await expect(page.locator(".package-presentation-status")).toHaveCount(0);
+    await expect(page.getByText("Some package details are unavailable.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Refresh package details", exact: true })).toHaveCount(0);
+    await expect(row(page, "Avatar tools")).toContainText("1.2.3");
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(row(page, "Refreshed package")).toBeVisible();
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "projects.refresh"))).toEqual([]);
 });
 
-
-test("failed presentation refresh keeps the installed list and allows retry", async ({ page }) => {
-    await open(page,"ready","presentationIncomplete=1&presentationRefreshError=1");
-    const refresh=page.getByRole("button",{name:"Refresh package details",exact:true});
-    await refresh.click();
-    await expect(page.getByRole("alert")).toContainText("Core is unavailable.");
-    await expect(refresh).toBeEnabled();
-    await expect(row(page,"Avatar tools")).toContainText("1.2.3");
-    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+test("installed version and requested range use the normal Core read rather than old registry facts", async ({ page }) => {
+    await open(page, "ready", "freshProjectPackage=1");
+    const installed=row(page, "Avatar tools");
+    await expect(installed.getByRole("combobox", { name: "Version for Avatar tools: 1.2.4", exact: true })).toBeVisible();
+    await expect(installed).toContainText("Requested ^1.2.4");
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "projects.refresh"))).toEqual([]);
 });

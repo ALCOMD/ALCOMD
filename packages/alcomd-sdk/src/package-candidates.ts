@@ -31,6 +31,7 @@ export type PackageUpdateEvidence = { kind: "target"; candidate: PackageCandidat
 export type PresentationState = "complete" | "partial" | "unobserved";
 export interface CandidateProvider { source: CandidateSource; sourceRevision: number; displayName?: string; name?: string; builtin?: "official" | "curated"; sourceKind: "remote" | "local" | "user-package"; displayOrder: number }
 export interface PackageCandidateSummary {
+    requestedRange?: string;
     description?: string;
     installedYanked?: boolean;
     presentationState: PresentationState;

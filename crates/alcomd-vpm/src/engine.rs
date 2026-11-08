@@ -2883,7 +2883,6 @@ mod tests {
         ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: String::new(),
                 path_identity_key: Vec::new(),
                 project_type: ProjectType::Unknown,
@@ -2994,7 +2993,6 @@ mod tests {
         let project = ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: root.to_string_lossy().into_owned(),
                 path_identity_key: identity,
                 project_type: ProjectType::Unknown,

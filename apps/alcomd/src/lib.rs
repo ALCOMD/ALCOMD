@@ -96,6 +96,7 @@ type M7OfficialGuiApplication = M7OfficialApplication;
 type ProjectCandidateApplication = alcomd_application::ProjectCandidateApplication<
     StateStoreHandle,
     alcomd_vpm::ProjectCandidateEngine,
+    alcomd_vpm::VpmReader,
 >;
 type ProjectCopyApplication =
     ProjectCopyService<StateStoreHandle, alcomd_vpm::ProjectCopyEngine, M5UnityApplication>;
@@ -327,8 +328,10 @@ async fn initialize_daemon_with_directories(
     let candidates = ProjectCandidateApplication::new(
         store.clone(),
         alcomd_vpm::ProjectCandidateEngine,
+        reader.clone(),
         official_gui.clone(),
-    );
+    )
+    .with_locks(Arc::clone(&locks));
     let applications = Arc::new(Applications {
         store: store.clone(),
         m2,

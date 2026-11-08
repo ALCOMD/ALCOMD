@@ -925,7 +925,6 @@ mod tests {
         let record = ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: source.to_str().expect("source path").to_owned(),
                 path_identity_key,
                 project_type: ProjectType::VpmStarter,

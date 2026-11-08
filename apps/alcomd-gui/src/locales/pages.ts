@@ -2,9 +2,6 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const pageMessages: TranslationTable = {
-    "Refresh package details": { "zh-CN": "刷新软件包信息", "ja-JP": "パッケージ情報を更新" },
-    "Refreshing package details…": { "zh-CN": "正在刷新软件包信息…", "ja-JP": "パッケージ情報を更新中…" },
-    "Some package details are unavailable.": { "zh-CN": "部分软件包信息暂不可用。", "ja-JP": "一部のパッケージ情報を利用できません。" },
     "Unable to load repositories": { "zh-CN": "无法加载存储库", "ja-JP": "リポジトリを読み込めません" },
     "Installed version is yanked": { "zh-CN": "已安装版本已撤回", "ja-JP": "インストール済みバージョンは撤回されています" },
     "Compatible versions": { "zh-CN": "兼容版本", "ja-JP": "互換性のあるバージョン" },

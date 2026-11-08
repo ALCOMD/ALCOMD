@@ -57,7 +57,6 @@ mod m6;
 mod m7_candidates;
 mod m7_copy;
 mod m7_delete;
-mod m7_presentation;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod operation_logs;
@@ -72,7 +71,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 30;
+pub const CURRENT_DATA_SCHEMA: u32 = 31;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]

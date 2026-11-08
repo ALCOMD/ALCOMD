@@ -697,7 +697,6 @@ fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io()
     let restored = RestoredProject {
         project_id: project,
         observation: ProjectObservation {
-            package_presentations: Default::default(),
             root_path: directory.0.join("Restored").to_string_lossy().into_owned(),
             path_identity_key: vec![3],
             project_type: ProjectType::Unknown,

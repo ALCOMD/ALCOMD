@@ -324,13 +324,7 @@ pub(super) fn complete(
                     ],
                 )
                 .map_err(failure)?;
-            crate::m7_presentation::write(
-                &transaction,
-                restored.project_id,
-                1,
-                &restored.observation.package_presentations,
-            )
-            .map_err(failure)?;
+
             transaction
                 .execute(
                     "INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,

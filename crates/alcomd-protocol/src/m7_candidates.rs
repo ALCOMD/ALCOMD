@@ -141,6 +141,8 @@ pub struct CandidateProvider {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub requested_range: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed_yanked: Option<bool>,

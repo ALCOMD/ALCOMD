@@ -12,6 +12,7 @@ publish.workspace = true
 [dependencies]
 
 [dev-dependencies]
+rusqlite.workspace = true
 alcomd-daemon = { package = "alcomd", path = "../../apps/alcomd", features = ["test-kill-gates"] }
 alcomd-client.workspace = true
 alcomd-application.workspace = true

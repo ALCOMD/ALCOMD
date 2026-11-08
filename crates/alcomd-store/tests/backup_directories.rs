@@ -51,7 +51,6 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .register_project(
             owner.clone(),
             ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: directory.0.join("project").to_string_lossy().into_owned(),
                 path_identity_key: vec![1; 24],
                 project_type: ProjectType::VpmStarter,

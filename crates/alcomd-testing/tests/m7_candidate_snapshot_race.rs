@@ -8,6 +8,20 @@ use alcomd_application::*;
 use alcomd_vpm::ProjectCandidateEngine;
 use tokio::sync::Notify;
 
+#[derive(Clone)]
+struct SnapshotProjectReader;
+impl CandidateProjectReader for SnapshotProjectReader {
+    async fn read_candidate_project(
+        &self,
+        registered: &ProjectObservation,
+    ) -> Result<CandidateProjectRead, CandidateQueryError> {
+        Ok(CandidateProjectRead {
+            project: registered.clone(),
+            presentations: Default::default(),
+        })
+    }
+}
+
 struct NoHubInspection;
 impl StorageDirectoryPlatform for NoHubInspection {
     fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
@@ -71,7 +85,6 @@ impl CandidateStore for PausedReadStore {
         self.entered.notify_one();
         self.release.notified().await;
         Ok(CandidateStoreSnapshot {
-            installed_presentations: Default::default(),
             project: self.project.clone(),
             entries: vec![],
             fingerprint_records: vec!["unchanged-project-and-source-snapshot".into()],
@@ -111,6 +124,7 @@ impl TrackingStore {
         assert_eq!(owner, PrincipalId::local_owner());
         assert_eq!(project, self.project.project_id);
         CandidateStoreAuthority {
+            project: self.project.observation.clone(),
             project_revision: self.project.revision,
             fingerprint_records: vec![self.inventory_revision.load(Ordering::SeqCst).to_string()],
             catalog_complete: true,
@@ -167,7 +181,6 @@ impl CandidateStore for TrackingStore {
         )
         .collect();
         Ok(CandidateStoreSnapshot {
-            installed_presentations: Default::default(),
             project: self.project.clone(),
             entries,
             fingerprint_records: authority.fingerprint_records,
@@ -210,7 +223,6 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: fixture
                     .0
                     .join("unopened-project")
@@ -252,8 +264,12 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         .initialize_settings()
         .await
         .expect("initialize settings");
-    let application =
-        ProjectCandidateApplication::new(store.clone(), ProjectCandidateEngine, config);
+    let application = ProjectCandidateApplication::new(
+        store.clone(),
+        ProjectCandidateEngine,
+        SnapshotProjectReader,
+        config,
+    );
     let owner = AccessContext::local_owner();
     let request = ProjectCandidateRequest {
         project_id: project_id.to_string(),
@@ -407,7 +423,6 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: fixture
                     .0
                     .join("project-not-on-disk")
@@ -440,8 +455,12 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         .await
         .expect("initialize Config");
     let initial = config.candidate_settings().await.expect("initial snapshot");
-    let application =
-        ProjectCandidateApplication::new(store.clone(), ProjectCandidateEngine, config.clone());
+    let application = ProjectCandidateApplication::new(
+        store.clone(),
+        ProjectCandidateEngine,
+        SnapshotProjectReader,
+        config.clone(),
+    );
     let request = ProjectCandidateRequest {
         project_id: project_id.to_string(),
         expected_revision: 1,
@@ -522,7 +541,6 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
         let mut project = ProjectRecord {
             project_id,
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: "unopened-project".into(),
                 path_identity_key: vec![1],
                 project_type: ProjectType::Unknown,
@@ -575,8 +593,12 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
             .initialize_settings()
             .await
             .expect("initialize Config");
-        let application =
-            ProjectCandidateApplication::new(store.clone(), ProjectCandidateEngine, config);
+        let application = ProjectCandidateApplication::new(
+            store.clone(),
+            ProjectCandidateEngine,
+            SnapshotProjectReader,
+            config,
+        );
         store.release.notify_one();
         let result = application
             .query(
@@ -620,7 +642,6 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
         project: ProjectRecord {
             project_id,
             observation: ProjectObservation {
-                package_presentations: Default::default(),
                 root_path: "unopened-project".into(),
                 path_identity_key: vec![1],
                 project_type: ProjectType::Unknown,
@@ -650,8 +671,12 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
         .expect("initialize Config");
     let before_bytes = std::fs::read(&path).expect("Config bytes");
     let before_config = config.candidate_settings().await.expect("confirmed Config");
-    let application =
-        ProjectCandidateApplication::new(store.clone(), ProjectCandidateEngine, config.clone());
+    let application = ProjectCandidateApplication::new(
+        store.clone(),
+        ProjectCandidateEngine,
+        SnapshotProjectReader,
+        config.clone(),
+    );
     let task = tokio::spawn(async move {
         application
             .query(

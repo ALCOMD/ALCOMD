@@ -1201,7 +1201,6 @@ fn create_project(path: &Path) {
 
 fn project_observation(root: &Path) -> ProjectObservation {
     ProjectObservation {
-        package_presentations: Default::default(),
         root_path: fs::canonicalize(root)
             .expect("canonical Project root")
             .to_string_lossy()
