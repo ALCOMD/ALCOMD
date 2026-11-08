@@ -47,3 +47,8 @@ GUI TypeScript、Material 边界、本地化检查、根 `npm run build`、`git 
 | 仓库 | cargo fmt --all -- --check、cargo xtask check、validate-metadata.py、git diff --check 通过 |
 
 后续库重跑与严格检查期间只修正测试夹具参数顺序及已分配 Box 的原位赋值，没有放宽任何业务断言。最终库回归 331 项全通过，Store 集成范围复用先前已通过的 105 项。最终工作树文件摘要另存本地 verification-v2.json，避免把先前界面批次或历史 SHA 的结果当作本轮结果。
+
+
+## 后续提交与本机更新
+
+所有者随后明确要求“提交并更新”，实现已提交为 `e0073759` 并部署 Core/GUI，复用原数据与 profile。State30 迁移和候选 v2 实际只读核验通过，GUI 已打开且响应；备份、产物摘要与执行边界见[更新记录](package-presentation-update-20261108.md)。上文未部署的描述仅对应实施验证批次。
