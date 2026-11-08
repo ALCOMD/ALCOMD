@@ -12,8 +12,6 @@ export const actionMessages: TranslationTable = {
     "VCC links": { "zh-CN": "VCC 链接", "ja-JP": "VCC リンク" },
     "Handle VCC links": { "zh-CN": "处理 VCC 链接", "ja-JP": "VCC リンクを処理する" },
     "Register ALCOMD for VCC links": { "zh-CN": "注册 ALCOMD 处理 VCC 链接", "ja-JP": "VCC リンクの処理に ALCOMD を登録" },
-    "ALCOMD was registered for VCC links.": { "zh-CN": "已注册 ALCOMD 处理 VCC 链接。", "ja-JP": "VCC リンクの処理に ALCOMD を登録しました。" },
-    "Could not register ALCOMD for VCC links.": { "zh-CN": "无法注册 ALCOMD 处理 VCC 链接。", "ja-JP": "VCC リンクの処理に ALCOMD を登録できませんでした。" },
     "Authentication": { "zh-CN": "认证", "ja-JP": "認証" },
     "Save name": { "zh-CN": "保存名称", "ja-JP": "名前を保存" },
     "Leave blank to use the default name.": { "zh-CN": "留空则使用默认名称。", "ja-JP": "空欄にすると既定の名前が使われます。" },

@@ -153,7 +153,6 @@ function NetworkProxySettings({ hidden, proxy, settingsWriter, disabled }: {
                 (proxy.mode === "custom" && selected.url === proxy.url && error === undefined)}>{t("Save")}</Button>
         </form> : error === undefined ? null :
             <Button type="button" disabled={disabled} onClick={() => void save(selected)}>{t("Retry")}</Button>}
-        {error === undefined ? null : <p role="alert">{t(requestErrorMessage(error.code))}</p>}
     </SettingsSection>;
 }
 
@@ -162,7 +161,7 @@ function VccLinkRegistration({ hidden, enabled, disabled, onChange }: {
 }) {
     const { t } = useTranslation();
     const [available, setAvailable] = useState(false);
-    const [status, setStatus] = useState<"ready" | "busy" | "registered" | "failed">("ready");
+    const [busy, setBusy] = useState(false);
     useEffect(() => {
         let active = true;
         void invoke<boolean>("gui_vcc_registration_available").then((value) => {
@@ -171,22 +170,21 @@ function VccLinkRegistration({ hidden, enabled, disabled, onChange }: {
         return () => { active = false; };
     }, []);
     const register = async () => {
-        setStatus("busy");
+        setBusy(true);
         try {
             await invoke("gui_register_vcc_links");
-            setStatus("registered");
         } catch {
-            setStatus("failed");
+            // This action has no result surface; keep the original control available for retry.
+        } finally {
+            setBusy(false);
         }
     };
     if (!available) return null;
     return <SettingsSection title={t("VCC links")} hidden={hidden}>
-        <Checkbox checked={enabled} disabled={disabled || status === "busy"} label={t("Handle VCC links")}
-            onChange={(value) => { setStatus("ready"); onChange(value); }} />
+        <Checkbox checked={enabled} disabled={disabled || busy} label={t("Handle VCC links")}
+            onChange={onChange} />
         {enabled ? <div className="settings-row">
-            <Button disabled={disabled || status === "busy"} onClick={() => void register()} type="button">{t("Register ALCOMD for VCC links")}</Button>
-            {status === "registered" ? <span role="status">{t("ALCOMD was registered for VCC links.")}</span> : null}
-            {status === "failed" ? <span role="alert">{t("Could not register ALCOMD for VCC links.")}</span> : null}
+            <Button disabled={disabled || busy} onClick={() => void register()} type="button">{t("Register ALCOMD for VCC links")}</Button>
         </div> : null}
     </SettingsSection>;
 }
@@ -495,6 +493,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const available = useCapability(capabilities.unityRead);
     const manage = useCapability(capabilities.unityManage);
     const initial = use(initialRead);
+    const [loaded, setLoaded] = useState(initial.kind === "ready");
     const [items, setItems] = useState<UnityInstallation[]>(initial.kind === "ready" ? initial.value?.installations ?? [] : []);
     const [cursor, setCursor] = useState<string | undefined>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
     const [busy, setBusy] = useState(false);
@@ -516,6 +515,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
         try {
             const page = await client.unityInstallationsList(next);
             if (request !== requestRef.current) return;
+            setLoaded(true);
             setItems((current) => next === undefined ? page.installations : [...current, ...page.installations]);
             setCursor(page.nextCursor);
         } catch (caught: unknown) {
@@ -543,11 +543,11 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
         }>
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
-                    {error === undefined || items.length > 0 ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
+                    {error === undefined || loaded ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </div>}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
-                    {items.length === 0 && error === undefined ? busy ? <LoadingState title={t("Loading Unity installations…")} /> : <p role="status">{t("No Unity installations registered")}</p> : null}
+                    {items.length === 0 ? loaded ? <p role="status">{t("No Unity installations registered")}</p> : busy ? <LoadingState title={t("Loading Unity installations…")} /> : null : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}
                 </>
             )}

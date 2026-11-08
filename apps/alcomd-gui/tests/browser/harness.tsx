@@ -352,6 +352,9 @@ class DeterministicGuiClient implements GuiRpcClient {
     private settingsReady: Promise<void> | undefined;
     private settingsHoldArmed = !query.has("armSettingsHold");
     private themeSaveRejected = false;
+    private proxySaveRejected = false;
+    private projectReadFailurePending = false;
+    private unityReadFailurePending = false;
     private argumentsSaveRejected = false;
     private argumentsReadFailurePending = false;
     private unityReady: Promise<void> | undefined;
@@ -431,6 +434,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("test-template-list-readable", () => { this.templatesUnavailable = false; });
         window.addEventListener("test-hub-default-ready", () => { this.hubDefaultReady = true; });
         window.addEventListener("test-hub-read-error", () => { this.hubReadFailurePending = true; });
+        window.addEventListener("test-project-read-error", () => { this.projectReadFailurePending = true; });
+        window.addEventListener("test-unity-read-error", () => { this.unityReadFailurePending = true; });
         const hubPath = query.get("hub-path");
         if (hubPath !== null) {
             this.settings.settings.unity.hubPath = hubPath;
@@ -552,6 +557,7 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
         window.settingsReads += 1;
+        if (query.has("settings-read-error")) throw { code: "internal_error" };
         if (this.argumentsReadFailurePending) { this.argumentsReadFailurePending = false; throw { code: "internal_error" }; }
         if (this.hubReadFailurePending) { this.hubReadFailurePending = false; throw { code: "internal_error" }; }
         this.settings.unityHub = this.hubLocation(this.settings.settings.unity.hubPath);
@@ -575,6 +581,10 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async settingsUpdate(expectedRevision: number, update: Parameters<GuiRpcClient["settingsUpdate"]>[1]): ReturnType<GuiRpcClient["settingsUpdate"]> {
         window.settingsRequests.push({ expectedRevision, update: structuredClone(update) });
+        if (update.network !== undefined && query.has("proxy-save-error-once") && !this.proxySaveRejected) {
+            this.proxySaveRejected = true;
+            throw { code: "permission_denied" };
+        }
         const argumentsChange = update.unity?.defaultLaunchArguments !== undefined;
         const argumentsFailure = query.get("arguments-save");
         if (argumentsChange && argumentsFailure === "denied") throw { code: "permission_denied" };
@@ -644,6 +654,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     async projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): ReturnType<GuiRpcClient["projectsList"]> {
         window.projectListReads += 1;
+        if (this.projectReadFailurePending) { this.projectReadFailurePending = false; throw { code: "internal_error" }; }
         if (query.has("holdProjectsList") && window.resumeProjectsList === undefined) {
             await new Promise<void>((resolve, reject) => { window.resumeProjectsList = (code) => code === undefined ? resolve() : reject({ code }); });
         }
@@ -1240,6 +1251,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 : [installation()];
     }
     async unityInstallationsList(_cursor?: string, includeVersionOptions?: boolean): ReturnType<GuiRpcClient["unityInstallationsList"]> {
+        if (this.unityReadFailurePending) { this.unityReadFailurePending = false; throw { code: "internal_error" }; }
         if (query.has("holdUnity")) {
             this.unityReady ??= new Promise<void>((resolve) => window.addEventListener("test-unity-ready", () => resolve(), { once: true }));
             await this.unityReady;
@@ -1614,7 +1626,12 @@ if (query.has("vcc-settings-fixture")) {
     mockWindows("main");
     mockIPC((command) => {
         if (command === "gui_vcc_registration_available") return true;
-        if (command === "gui_register_vcc_links" || command === "gui_window_state_configure") return undefined;
+        if (command === "gui_register_vcc_links") {
+            window.resourceRequests.push({ method: command, params: {} });
+            if (query.has("vcc-registration-error")) throw new Error("Fixture registration failed");
+            return undefined;
+        }
+        if (command === "gui_window_state_configure") return undefined;
         throw new Error(`Unexpected native fixture command: ${command}`);
     });
     Object.defineProperty(window, "isTauri", { value: true });

@@ -198,8 +198,7 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
 
     const disconnected = connection.kind === "disconnected" || connection.kind === "failed";
     const problem = error ?? (disconnected ? connection.error?.code ?? "daemon_unavailable" : undefined);
-    const errorMessage = problem === undefined ? undefined : model.entries.length === 0
-        ? t(requestErrorMessage(problem)) : t("Refresh failed. The last loaded result is still shown.");
+    const errorMessage = problem === undefined || initialized.current ? undefined : t(requestErrorMessage(problem));
     return <OperationLogPage entries={model.entries.map((entry) => {
         return {
             id: `${entry.sequence}:${entry.entryId}`, actor: entry.actor, occurredAtMs: entry.occurredAtMs,

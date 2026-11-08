@@ -246,9 +246,10 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const initial = usePageReadPromise("primary", load);
     const [state, setState] = useState<{
         error?: RpcError;
+        loaded: boolean;
         loading: boolean;
         projects: ProjectSnapshot[];
-    }>({ loading: true, projects: [] });
+    }>({ loaded: false, loading: true, projects: [] });
     const [view, setView] = useState<"list" | "grid">(() => {
         try {
             return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
@@ -276,8 +277,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         const generation = listReadGeneration.current;
         void initial.then((result) => {
             if (!active || listReadGeneration.current !== generation || loadRef.current !== initialLoad) return;
-            setState(result.kind === "ready" ? { loading: false, projects: result.value }
-                : { loading: false, projects: [], error: normalizeRequestError(result.error) });
+            setState(result.kind === "ready" ? { loaded: true, loading: false, projects: result.value }
+                : { loaded: false, loading: false, projects: [], error: normalizeRequestError(result.error) });
         });
         return () => { active = false; };
     }, [initial, initialLoad]);
@@ -304,7 +305,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         const read = loadRef.current;
         try {
             const projects = await read();
-            if (request === listReadGeneration.current && read === loadRef.current) setState({ loading: false, projects });
+            if (request === listReadGeneration.current && read === loadRef.current) setState({ loaded: true, loading: false, projects });
         } catch (caught: unknown) {
             if (request === listReadGeneration.current && read === loadRef.current) {
                 listError.current = caught;
@@ -385,8 +386,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             ) : null}
             <div className="projects-content" aria-busy={state.loading}>
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
-                {state.error !== undefined ? <ErrorState error={state.error} retry={retryProjects} /> : null}
-                {!state.loading && state.error === undefined && projects.length === 0 ? (
+                {state.error !== undefined && !state.loaded ? <ErrorState error={state.error} retry={retryProjects} /> : null}
+                {state.loaded && projects.length === 0 ? (
                     <section className="projects-empty" role="status">
                         <h2>{search.length === 0 ? t("No registered projects") : t("No matching projects")}</h2>
                         <p>{search.length === 0 ? t("Register an existing Unity project from the toolbar.") : t("Change the search text to see other projects.")}</p>
@@ -1639,7 +1640,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
                              <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshPackages(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? repositoryRefreshFailure ?? t("Refresh packages")} />
-                             <span className="visually-hidden" role="status" aria-live="polite">{repositoryRefreshFailure}</span>
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {allLatest ? <>
                                  <Button disabled={bulkDisabled(allLatest?.intents)} onClick={(event) => submitBulk(allLatest?.intents, { current: event.currentTarget }, allLatest)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest?.targetCount ?? 0 })}</Button>
@@ -1751,12 +1751,9 @@ function RepositoryTable({ client, onChanged, repositories, settings, error }: {
     const selected = selectedId === undefined ? undefined : repositories.find((repository) => repository.repositoryId === selectedId);
     const failure = display.error ?? error;
     return <>
-        {failure === undefined ? null : <div role="alert">
-            <p>{t(requestErrorMessage(failure.code))}</p>
-            <code>{failure.code}</code>
-            {failure.diagnosticId === undefined ? null : <p><code>{failure.diagnosticId}</code></p>}
+        {failure === undefined ? null : <>
             <Button onClick={display.reload} type="button" variant="text">{t("Reload filters")}</Button>
-        </div>}
+        </>}
         {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList
             columns={[
                 { key: "visibility", header: <span className="visually-hidden">{t("Enabled")}</span>, width: 48 },

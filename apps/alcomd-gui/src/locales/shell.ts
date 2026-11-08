@@ -454,10 +454,6 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "刷新",
         "ja-JP": "更新"
     },
-    "Refresh failed. The last loaded result is still shown.": {
-        "zh-CN": "刷新失败，仍显示上次加载的结果。",
-        "ja-JP": "更新に失敗しました。前回の読み込み結果を表示しています。"
-    },
     "Refreshing…": {
         "zh-CN": "正在刷新…",
         "ja-JP": "更新中…"

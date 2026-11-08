@@ -182,17 +182,18 @@ test("H5 Auto detect read failure does not claim an unknown save or submit a set
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh"))).toEqual([]);
 });
 
-test("Project package sources report a safe read failure and Retry loads every repository page", async ({ page }) => {
+test("Project package sources load on opening filters and reopening retries every repository page", async ({ page }) => {
     await openSettings(page);
     await fail(page, "repositories.list", "permission_denied");
     await openProject(page);
-    const feedback = page.getByRole("alert");
-    await expect(feedback).toContainText("You do not have permission for this action.");
-    expect(await changes(page)).toEqual([]);
-    await expect(page.getByRole("button", { name: "Filter packages", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Reconnect and retry", exact: true }).click();
-    await expect(feedback).toHaveCount(0);
     await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    const feedback = filters(page).getByRole("alert");
+    await expect(feedback).toContainText("Unable to load repositories");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    expect(await changes(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    await expect(feedback).toHaveCount(0);
     await expect(filters(page).getByRole("checkbox", { name: "H5 hidden source", exact: true })).toBeVisible();
     await expect(filters(page).getByRole("checkbox", { name: "H5 visible source", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "repositories.list").slice(-2).map((request) => request.params))).toEqual([{}, { cursor: H5_REPOSITORY_CURSOR }]);
