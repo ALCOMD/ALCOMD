@@ -1,4 +1,4 @@
-import type { ExtensionRecord } from "@alcomd/sdk";
+import type { ExtensionRecord, PackageRemovalConflict } from "@alcomd/sdk";
 
 export interface SystemStatus {
     product: string;
@@ -272,6 +272,7 @@ export interface PackageMutation {
 }
 
 export interface PackageChangeSet {
+    removalConflicts?: PackageRemovalConflict[];
     unityCompatibilityOverrides?: { packageId: string; version: string }[];
     formatVersion: number;
     legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];

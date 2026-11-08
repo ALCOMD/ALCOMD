@@ -16,15 +16,15 @@ export function useDelayedPending(pending: boolean): boolean {
 }
 
 /** Keep short reads quiet, while exposing pending state immediately to assistive technology. */
-export function LoadingState({ title, detail }: { title: string; detail?: string }) {
+export function LoadingState({ title, detail, variant = "inline" }: { title: string; detail?: string; variant?: "inline" | "bar" }) {
     const visible = useDelayedPending(true);
 
     return (
-        <section className="loading-state" role="status" aria-label={title} aria-live="polite" aria-busy="true">
+        <section className={variant === "bar" ? "loading-state loading-state--bar" : "loading-state"} role="status" aria-label={title} aria-live="polite" aria-busy="true">
             <div className="loading-state-indicator" hidden={!visible}>
                 <Progress label={title} />
-                <h2>{title}</h2>
-                {detail === undefined ? null : <p>{detail}</p>}
+                {variant === "bar" ? null : <h2>{title}</h2>}
+                {detail === undefined ? null : <p className={variant === "bar" ? "visually-hidden" : undefined}>{detail}</p>}
             </div>
         </section>
     );

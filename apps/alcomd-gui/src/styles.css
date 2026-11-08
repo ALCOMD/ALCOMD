@@ -236,14 +236,16 @@ md-linear-progress {
 
 .route-content { height: 100%; min-width: 0; min-height: 0; }
 
-.page-loading-state {
+.page-loading-state,
+.loading-state--bar {
     position: absolute;
     inset: 0 0 auto;
     z-index: 1;
     pointer-events: none;
 }
 
-.page-loading-state md-linear-progress {
+.page-loading-state md-linear-progress,
+.loading-state--bar md-linear-progress {
     display: block;
     width: 100%;
     --md-linear-progress-track-height: 4px;
@@ -625,6 +627,13 @@ md-linear-progress {
 .package-bulk-bar strong { margin-right: auto; font-size: 0.84rem; }
 .package-workspace-list-region { min-height: 0; flex: 1; overflow: hidden; }
 .package-workspace-list td { padding: 8px 12px; }
+/* Override the final table row's corner clipping for the thin loading track. */
+.desktop-list.package-workspace-list .desktop-list-empty:has(.loading-state--bar) {
+    position: relative;
+    height: 4px;
+    padding: 0;
+    border-radius: 0;
+}
 .package-workspace-list .material-toggle > span { display: none; }
 .package-column-name { min-width: 0; }
 .package-workspace-list .package-row--installed .package-column-name strong {
@@ -1027,6 +1036,9 @@ md-linear-progress {
     font-size: 14px;
     font-weight: 400;
 }
+
+.loading-state--bar { min-height: 0; padding: 0; }
+.loading-state--bar .loading-state-indicator:not([hidden]) { display: block; max-width: none; }
 
 .route-state--error {
     background: var(--error-container);

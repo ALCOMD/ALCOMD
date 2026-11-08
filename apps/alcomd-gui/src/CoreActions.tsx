@@ -323,7 +323,8 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
         setFeedback({ busy: true });
         setOperationFinished(false);
         try {
-            if (selection?.candidateSnapshot && action !== "remove") {
+            const removalOnly = action === "remove" || (action === "bulk-candidates" && selection?.intents?.length && selection.intents.every((intent) => intent.kind === "remove"));
+            if (selection?.candidateSnapshot && !removalOnly) {
                 const ids = selection.intents?.map((intent) => intent.packageId) ?? (selectedPackageId ? [selectedPackageId] : undefined);
                 const evidence = await queryCandidates(client, { projectId, expectedRevision: revision, expectedSnapshot: selection.candidateSnapshot, view: { kind: "summary", ...(ids ? { packageIds: ids } : {}) }, limit: 1 });
                 if (!evidence.catalogComplete) throw { code: "package_catalog_incomplete" };
@@ -393,6 +394,10 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>
                         {plan.changeSet.unityCompatibilityOverrides?.map((item) => <p className="package-compatibility-warning" key={item.packageId}>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: item.packageId, version: item.version })}</p>)}
                         <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{t(packageChangeLabel(mutation.kind))}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion, t)}</small>}</li>)}</ul>
+                        {plan.changeSet.removalConflicts?.length ? <section aria-label={t("Dependency conflicts")}>
+                            <p className="package-compatibility-warning">{t("Continuing will leave these installed packages without required dependencies.")}</p>
+                            <ul>{plan.changeSet.removalConflicts.flatMap((conflict) => conflict.requiredBy.map((required) => <li key={`${conflict.packageId}-${required.packageId}`}>{t("{package} requires {dependency} ({range}).", { package: required.packageId, dependency: conflict.packageId, range: required.range })}</li>))}</ul>
+                        </section> : null}
                         {legacyRemovals.length === 0 ? null : <>
                             <p>{t("The following legacy files and folders will be removed.")}</p>
                             <ul className="change-list">{legacyRemovals.map(({ path, packageId }) => (

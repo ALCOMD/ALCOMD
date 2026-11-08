@@ -1601,9 +1601,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
                 setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", ...(option.manualUnityOverrideAllowed ? { allowUnityIncompatible: true } : {}), candidateSnapshot: candidates.snapshot.fingerprint });
             };
-            const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !catalogReady || !intents?.length;
+            const bulkReady = (intents: CandidateBulkIntent[] | undefined) => intents?.length && intents.every((intent) => intent.kind === "remove") ? currentEvidence && !candidatesPending && !packageMutationBusy : catalogReady;
+            const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !bulkReady(intents) || !intents?.length;
             const submitBulk = (intents: CandidateBulkIntent[] | undefined, origin: DialogOrigin, action?: CandidateBulkAction) => {
-                if (!catalogReady || !canPlanPackagesV2 || !intents?.length) return;
+                if (!candidates || !bulkReady(intents) || !canPlanPackagesV2 || !intents?.length) return;
                 const names = new Map(workspaceRows.map((row) => [row.packageId, row.displayName]));
                 const exclusions = action?.exclusions.map(({ packageId, update }) => `${names.get(packageId) ?? packageId}: ${updateReason(update, t)}`) ?? [];
                 if (action?.omittedExclusions) exclusions.push(t("{count} more packages were not included.", { count: action.omittedExclusions }));
@@ -1662,43 +1663,42 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             </div>
                         )}
                         <div aria-busy={candidatesPending || filterPending} className="package-workspace-list-region">
-                            {rows.length === 0 ? candidatesPending || filterPending ? <LoadingState title={t("Loading")} /> : filterError ? <p role="alert">{evidenceFailure}</p> : readError ? null : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section> : (
-                                 <DesktopList
-                                     className="package-workspace-list"
-                                     columns={[
-                                         { key: "select", header: <Checkbox checked={rows.length > 0 && rows.every((row) => bulkSelection.includes(row.packageId))} label={t("Select all visible packages")} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, ...rows.map((row) => row.packageId)])] : current.filter((id) => !rows.some((row) => row.packageId === id)))} />, width: 48, className: "package-column-select" },
-                                         { key: "package", header: t("Package"), width: "100%", className: "package-column-name" },
-                                         { key: "installed", header: t("Installed"), width: 220, className: "package-column-installed" },
-                                         { key: "latest", header: t("Latest"), width: 160, className: "package-column-latest" },
-                                         { key: "source", header: t("Source"), width: 210, className: "package-column-source" },
-                                         { key: "actions", header: <span className="visually-hidden">{t("Actions")}</span>, width: 112, className: "package-column-actions" }
-                                     ]}
-                                     label={t("Packages")}
-                                     minWidth={880}
-                                     sizing="fixed"
-                                     rows={rows.map((row) => {
-                                         const evidence = currentEvidence ? row.evidence : undefined;
-                                         const selectRow = (checked: boolean, shiftKey: boolean) => {
-                                             const anchor = rows.findIndex((item) => item.packageId === selectionAnchor.current);
-                                             const end = rows.findIndex((item) => item.packageId === row.packageId);
-                                             const ids = shiftKey && anchor >= 0 ? rows.slice(Math.min(anchor, end), Math.max(anchor, end) + 1).map((item) => item.packageId) : [row.packageId];
-                                             setBulkSelection((current) => checked ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id)));
-                                             selectionAnchor.current = row.packageId;
-                                         };
-                                         return { key: row.packageId, className: row.installedVersion === undefined ? "package-row--available" : "package-row--installed", cells: [
-                                             <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={selectRow} />,
-                                             <><strong title={evidence?.description}>{row.displayName}</strong><small>{row.packageId}</small></>,
-                                             <PackageVersionPicker client={client} project={project} source={selectedSource(row)} snapshot={candidates?.snapshot.fingerprint} disabled={!canQueryCandidates || !currentEvidence} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
-                                             <PackageLatestInfo canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
-                                             row.sourceOptions.length === 0 ? <span>{evidence === undefined ? "—" : t("Unknown source")}</span> : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
-                                             <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onRemove={(origin) => selectAction("remove", origin, row)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
-                                         ] };
-                                     })}
-                                 />
-                            )}
+                            <DesktopList
+                                className="package-workspace-list"
+                                emptyMessage={candidatesPending || filterPending ? <LoadingState title={t("Loading")} variant="bar" /> : filterError ? <p role="alert">{evidenceFailure}</p> : readError ? undefined : <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? t("No packages") : t("No matching packages")}</h3><p>{workspaceRows.length === 0 ? t("This project has no packages to manage.") : t("Change the search or package filter.")}</p></section>}
+                                columns={[
+                                    { key: "select", header: <Checkbox checked={rows.length > 0 && rows.every((row) => bulkSelection.includes(row.packageId))} disabled={rows.length === 0} label={t("Select all visible packages")} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, ...rows.map((row) => row.packageId)])] : current.filter((id) => !rows.some((row) => row.packageId === id)))} />, width: 48, className: "package-column-select" },
+                                    { key: "package", header: t("Package"), width: "100%", className: "package-column-name" },
+                                    { key: "installed", header: t("Installed"), width: 220, className: "package-column-installed" },
+                                    { key: "latest", header: t("Latest"), width: 160, className: "package-column-latest" },
+                                    { key: "source", header: t("Source"), width: 210, className: "package-column-source" },
+                                    { key: "actions", header: <span className="visually-hidden">{t("Actions")}</span>, width: 112, className: "package-column-actions" }
+                                ]}
+                                label={t("Packages")}
+                                minWidth={880}
+                                sizing="fixed"
+                                rows={rows.map((row) => {
+                                    const evidence = currentEvidence ? row.evidence : undefined;
+                                    const selectRow = (checked: boolean, shiftKey: boolean) => {
+                                        const anchor = rows.findIndex((item) => item.packageId === selectionAnchor.current);
+                                        const end = rows.findIndex((item) => item.packageId === row.packageId);
+                                        const ids = shiftKey && anchor >= 0 ? rows.slice(Math.min(anchor, end), Math.max(anchor, end) + 1).map((item) => item.packageId) : [row.packageId];
+                                        setBulkSelection((current) => checked ? [...new Set([...current, ...ids])] : current.filter((id) => !ids.includes(id)));
+                                        selectionAnchor.current = row.packageId;
+                                    };
+                                    return { key: row.packageId, className: row.installedVersion === undefined ? "package-row--available" : "package-row--installed", cells: [
+                                        <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={selectRow} />,
+                                        <><strong title={evidence?.description}>{row.displayName}</strong><small>{row.packageId}</small></>,
+                                        <PackageVersionPicker client={client} project={project} source={selectedSource(row)} snapshot={candidates?.snapshot.fingerprint} disabled={!canQueryCandidates || !currentEvidence} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
+                                        <PackageLatestInfo canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
+                                        row.sourceOptions.length === 0 ? <span>{evidence === undefined ? "—" : t("Unknown source")}</span> : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
+                                        <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onRemove={(origin) => selectAction("remove", origin, row)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
+                                    ] };
+                                })}
+                            />
                         </div>
                     </section>
-                    <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} returnFocusReady={catalogReady} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
+                    <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} returnFocusReady={currentEvidence && !candidatesPending && !packageMutationBusy} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
                 </section>
             );
         }}</PackageWorkspaceData>}</ResourcePage>

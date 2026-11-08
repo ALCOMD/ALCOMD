@@ -130,7 +130,13 @@ test("Only the package list waits: project context, Unity actions and toolbar ap
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
     await expect(page.locator(".route-content")).not.toHaveAttribute("inert", "");
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("table", { name: "Packages", exact: true })).toHaveCount(0);
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(packages).toBeVisible();
+    for (const name of ["Package", "Installed", "Latest", "Source"]) {
+        await expect(packages.getByRole("columnheader", { name, exact: true })).toBeVisible();
+    }
+    await expect(packages.locator("tbody tr[data-row-key]")).toHaveCount(0);
+    await expect(packages.getByRole("checkbox", { name: "Select all visible packages", exact: true })).toBeDisabled();
     await expect(page.getByText("No packages", { exact: true })).toHaveCount(0);
     await expect(page.locator(".package-workspace-list-region")).toHaveAttribute("aria-busy", "true");
     await expect(page.locator(".package-workspace-list-region .loading-state-indicator")).toBeVisible();

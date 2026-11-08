@@ -578,6 +578,18 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "软件包已是最新版本",
         "ja-JP": "パッケージは最新です"
     },
+    "Dependency conflicts": {
+        "zh-CN": "依赖冲突",
+        "ja-JP": "依存関係の競合"
+    },
+    "Continuing will leave these installed packages without required dependencies.": {
+        "zh-CN": "继续卸载会使以下已安装的软件包缺少必需的依赖。",
+        "ja-JP": "続行すると、以下のインストール済みパッケージに必要な依存パッケージが不足します。"
+    },
+    "{package} requires {dependency} ({range}).": {
+        "zh-CN": "{package} 依赖 {dependency}（{range}）。",
+        "ja-JP": "{package} には {dependency}（{range}）が必要です。"
+    },
     "patch or minor downgrade": {
         "zh-CN": "补丁或次版本降级",
         "ja-JP": "パッチまたはマイナーバージョンのダウングレード"

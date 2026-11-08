@@ -3,6 +3,46 @@ import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
+for (const [packageId, displayName] of [["com.vrchat.avatars", "VRChat SDK - Avatars"], ["com.vrchat.base", "VRChat SDK - Base"]] as const) {
+    test(`Removing ${displayName} reviews its actual removal and dependent packages before Apply`, async ({ page }) => {
+        await openHarness(page, "ready&removal-sdk&catalogIncomplete=1");
+        const row = page.getByRole("table", { name: "Packages", exact: true }).getByRole("row").filter({ hasText: displayName });
+        const remove = row.getByRole("button", { name: "Remove", exact: true });
+        await remove.click();
+        const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+        const visibleReview = page.getByRole("dialog", { name: "Apply package changes?", exact: true });
+        await expect(visibleReview).toBeVisible();
+        await expect(review.locator(".change-list")).toContainText(packageId);
+        const conflicts = review.getByRole("region", { name: "Dependency conflicts", exact: true });
+        await expect(conflicts).toContainText(`com.example.dependent requires ${packageId} (>=3.10.0).`);
+        if (packageId === "com.vrchat.base") await expect(conflicts).toContainText("com.vrchat.avatars requires com.vrchat.base (3.10.6).");
+        await expect(page.getByRole("dialog", { name: "Packages are up to date", exact: true })).toHaveCount(0);
+        expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["remove"]);
+        await review.getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(visibleReview).toHaveCount(0);
+        await expect(remove).toBeFocused();
+        expect(await page.evaluate(() => window.packageRequests.filter(({ method }) => method === "apply"))).toHaveLength(0);
+        await remove.click();
+        await expect(visibleReview).toBeVisible();
+        await review.getByRole("button", { name: "Apply changes", exact: true }).click();
+        await expect(visibleReview).toHaveCount(0);
+        expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["remove", "remove", "apply"]);
+    });
+}
+
+test("Bulk removal includes installed transitive packages even without a complete catalog", async ({ page }) => {
+    await openHarness(page, "ready&removal-sdk&catalogIncomplete=1");
+    await page.getByRole("checkbox", { name: "Select VRChat SDK - Base", exact: true }).check();
+    await page.getByRole("button", { name: "Remove selected", exact: true }).click();
+    const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    const visibleReview = page.getByRole("dialog", { name: "Apply package changes?", exact: true });
+    await expect(visibleReview).toBeVisible();
+    await expect(review.getByRole("region", { name: "Dependency conflicts" })).toContainText("com.vrchat.avatars requires com.vrchat.base (3.10.6).");
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.vrchat.base" }] } }]);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await page.evaluate(() => window.packageRequests.filter(({ method }) => method === "apply"))).toHaveLength(0);
+});
+
 test("Package confirmation lists legacy paths and Cancel does not apply", async ({ page }) => {
     await openHarness(page, "ready&legacy-removals");
     await page.getByRole("table", { name: "Packages", exact: true }).getByRole("button", { name: "Install", exact: true }).click();
@@ -225,6 +265,11 @@ test("Package source filter uses daemon source kinds and only changes presentati
     await expect(page.getByText("2 packages")).toBeVisible();
     await page.getByRole("combobox", { name: "Status", exact: true }).click();
     await page.getByRole("option", { name: "Available", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.candidateRequests.some((request) =>
+        request.view.kind === "summary"
+        && request.view.filter?.status === "available"
+        && request.view.filter?.source === "remote"
+    ))).toBe(true);
     await page.keyboard.press("Escape");
     await page.getByRole("searchbox", { name: "Search packages" }).fill("EXAMPLE PACKAGES");
     await expect(packageName(page, "Remote tools")).toBeVisible();

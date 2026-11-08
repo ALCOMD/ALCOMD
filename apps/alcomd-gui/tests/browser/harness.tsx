@@ -1041,9 +1041,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
         const visibleRemote = !this.settings.settings.packages.hiddenRepositoryIds.includes(REPOSITORY_ID) && this.mode !== "package-no-repositories";
         const visibleLocal = (["package-multiple", "package-partial-failure"].includes(this.mode) || Boolean(query.get("twoInstalled"))) && !this.settings.settings.packages.hiddenRepositoryIds.includes(LOCAL_REPOSITORY_ID);
-        const ids = params.view.packageIds ?? (query.get("bulk257") ? Array.from({ length: 257 }, (_, index) => `com.example.batch${String(index).padStart(3, "0")}`) : ["com.example.avatar", ...(visibleRemote ? ["com.example.remote", ...(this.repositoryRefreshCompleted ? ["com.example.refreshed"] : [])] : []), ...(visibleLocal ? ["com.example.local"] : [])]);
+        const ids = params.view.packageIds ?? (query.has("removal-sdk") ? ["com.vrchat.avatars", "com.vrchat.base"] : undefined) ?? (query.get("bulk257") ? Array.from({ length: 257 }, (_, index) => `com.example.batch${String(index).padStart(3, "0")}`) : ["com.example.avatar", ...(visibleRemote ? ["com.example.remote", ...(this.repositoryRefreshCompleted ? ["com.example.refreshed"] : [])] : []), ...(visibleLocal ? ["com.example.local"] : [])]);
         const items: PackageCandidateSummary[] = ids.map((packageId) => {
-            const installed = packageId === "com.example.avatar" || packageId.startsWith("com.example.batch") || (Boolean(query.get("twoInstalled")) && packageId === "com.example.remote");
+            const installed = query.has("removal-sdk") || packageId === "com.example.avatar" || packageId.startsWith("com.example.batch") || (Boolean(query.get("twoInstalled")) && packageId === "com.example.remote");
             const override = params.view.kind === "summary" ? params.view.sources?.find((item) => item.packageId === packageId)?.source : undefined;
             const target = candidate(installed ? "1.10.0" : "1.0.0", installed ? "newer" : "not_installed", packageId === "com.example.local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID);
             if (override) target.source = override;
@@ -1073,7 +1073,9 @@ class DeterministicGuiClient implements GuiRpcClient {
                 "com.example.avatar": "Avatar tools",
                 "com.example.remote": "Remote tools",
                 "com.example.local": "Local tools",
-                "com.example.refreshed": "Refreshed package"
+                "com.example.refreshed": "Refreshed package",
+                "com.vrchat.avatars": "VRChat SDK - Avatars",
+                "com.vrchat.base": "VRChat SDK - Base"
             };
             const hasFixtureName = !query.has("metadata") && (query.get("versions") !== "1" || packageId === "com.example.avatar");
             const displayName = providers.length > 0 && hasFixtureName ? displayNames[packageId] : undefined;
@@ -1081,13 +1083,14 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? { documentation: "https://fixture.example/docs" } : undefined;
             const latest: CandidateChoice = query.has("incompatibleLatest") && installed && visibleRemote
                 ? { kind: "candidate", candidate: { ...target, version: "3.0.0", unity: "incompatible", eligibility: "blocked", reasons: ["unity_incompatible"] } } : choice;
-            return { packageId, requestedRange: installed && query.get("transitive") !== "1" ? query.has("freshProjectPackage") ? "^1.2.4" : "^1.2.0" : undefined, presentationState: "complete", description: query.has("presentation") ? "Package description from Core" : undefined, installedYanked: installed && query.has("installedYanked") ? true : undefined, displayName, links, providers, direct: (installed && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: query.has("freshProjectPackage") ? "1.2.4" : "1.2.3" } : { kind: "absent" }, latest, latestStable: query.has("incompatibleLatest") ? latest : stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+            return { packageId, requestedRange: installed && query.get("transitive") !== "1" ? query.has("freshProjectPackage") ? "^1.2.4" : "^1.2.0" : undefined, presentationState: "complete", description: query.has("presentation") ? "Package description from Core" : undefined, installedYanked: installed && query.has("installedYanked") ? true : undefined, displayName, links, providers, direct: (installed && packageId !== "com.vrchat.base" && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: query.has("removal-sdk") ? "3.10.6" : query.has("freshProjectPackage") ? "1.2.4" : "1.2.3" } : { kind: "absent" }, latest, latestStable: query.has("incompatibleLatest") ? latest : stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
         });
         if (query.has("reverse-candidate-order")) items.reverse();
         if (params.view.bulkPackageIds !== undefined) {
             const selected = new Set(params.view.bulkPackageIds);
             const selectedItems = items.filter((item) => selected.has(item.packageId));
-            const completeSelection = base.catalogComplete && selected.size > 0 && selected.size <= 256 && selectedItems.length === selected.size;
+            const validSelection = selected.size > 0 && selected.size <= 256 && selectedItems.length === selected.size;
+            const completeSelection = base.catalogComplete && validSelection;
             const intent = (item: PackageCandidateSummary, stable: boolean): CandidateBulkIntent[] => {
                 const choice = stable ? item.projectLatestStable : item.projectLatest;
                 const update = stable ? item.stableUpdate : item.update;
@@ -1129,7 +1132,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             const bulk: CandidateBulkActions = {
                 updateAll, ...(differs(updateAll, updateAllStable) ? { updateAllStable } : {}),
                 installUpdate, ...(differs(installUpdate, installUpdateStable) ? { installUpdateStable } : {}),
-                remove: completeSelection && selectedItems.every((item) => item.direct)
+                remove: validSelection && selectedItems.every((item) => item.installed.kind === "locked")
                     ? selectedItems.map(({ packageId }) => ({ kind: "remove", packageId })) : [],
                 reinstall: completeSelection && selectedItems.every((item) => item.installed.kind === "locked")
                     ? selectedItems.map(({ packageId }) => ({ kind: "reinstall", packageId, source: sources?.find((item) => item.packageId === packageId)?.source })) : []
@@ -1172,7 +1175,12 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
         return this.value(plan);
     }
-    packagePlanRemove(): ReturnType<GuiRpcClient["packagePlanRemove"]> { return this.value(packagePlan("remove")); }
+    packagePlanRemove(params: Parameters<GuiRpcClient["packagePlanRemove"]>[0]): ReturnType<GuiRpcClient["packagePlanRemove"]> {
+        window.packageRequests.push({ method: "remove", params });
+        const plan = query.has("removal-sdk") ? sdkRemovalPlan("remove", [params.packageId]) : packagePlan("remove");
+        plan.changeSet.mutations[0]!.packageId = params.packageId;
+        return this.value(plan);
+    }
     async packagePlanUpgrade(params: Parameters<GuiRpcClient["packagePlanUpgrade"]>[0]): ReturnType<GuiRpcClient["packagePlanUpgrade"]> {
         window.packageRequests.push({ method: "upgrade", params });
         if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
@@ -1195,7 +1203,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     packagePlanReinstall(params: Parameters<GuiRpcClient["packagePlanReinstall"]>[0]): ReturnType<GuiRpcClient["packagePlanReinstall"]> { window.packageRequests.push({ method: "reinstall", params }); return this.value(packagePlan("reinstall")); }
     packagePlanBulk(params: Parameters<GuiRpcClient["packagePlanBulk"]>[0]): ReturnType<GuiRpcClient["packagePlanBulk"]> {
         window.packageRequests.push({ method: "bulk", params });
-        const plan = packagePlan("bulk");
+        const plan = query.has("removal-sdk") ? sdkRemovalPlan("bulk", params.intents.map((intent) => intent.packageId)) : packagePlan("bulk");
         plan.changeSet.mutations = params.intents.map((intent) => ({ kind: intent.kind === "remove" ? "remove" : "replace", packageId: intent.packageId, fromVersion: "1.2.3", toVersion: intent.kind === "remove" ? null : "1.2.3" }));
         return this.value(plan);
     }
@@ -1660,3 +1668,14 @@ ReactDOM.createRoot(root).render(
             : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}
     </React.StrictMode>
 );
+
+function sdkRemovalPlan(action: "remove" | "bulk", packageIds: string[]): PackagePlan {
+    const plan = packagePlan(action);
+    plan.changeSet.formatVersion = 4;
+    plan.changeSet.mutations = packageIds.map((packageId) => ({ kind: "remove", packageId, fromVersion: "3.10.6", toVersion: null }));
+    plan.changeSet.removalConflicts = packageIds.map((packageId) => ({ packageId, requiredBy: [
+        ...(packageId === "com.vrchat.base" && !packageIds.includes("com.vrchat.avatars") ? [{ packageId: "com.vrchat.avatars", range: "3.10.6" }] : []),
+        { packageId: "com.example.dependent", range: ">=3.10.0" }
+    ] }));
+    return plan;
+}
