@@ -282,11 +282,13 @@ test("Transitive selection cannot be silently removed but can be reinstalled", a
 
 test("Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry", async ({ page }) => {
     await open(page, "versionsStale=1");
-    await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
+    await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).focus();
     await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", "Candidate evidence is stale.");
     await expect(page.getByRole("table", { name: "Packages", exact: true })).not.toContainText("Candidate evidence is stale.");
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    await expect(page.locator(".package-version-picker").first()).toHaveJSProperty("disabled", true);
+    await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toHaveAttribute("aria-expanded", "false");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await open(page, "intentStale=1");
     await page.getByRole("button", { name: "Update All (1)", exact: true }).click();
@@ -307,7 +309,7 @@ test("Candidate quota failure is unavailable evidence, never empty/latest or a P
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
-test("Summary pages share the first fingerprint while versions are read only after opening a row", async ({ page }) => {
+test("Summary pages share the first fingerprint while versions are prepared only for an intended row", async ({ page }) => {
     await open(page, "paged=1&versions=1");
     const requests = await page.evaluate(() => window.candidateRequests);
     expect(requests.filter((request) => request.view.kind === "versions")).toHaveLength(0);
@@ -325,6 +327,90 @@ test("Summary pages share the first fingerprint while versions are read only aft
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
+test("A slow version menu has a non-option loading status from its first opening frame", async ({ page }) => {
+    await open(page, "delayVersions=1");
+    const select = page.locator(".package-version-picker").first();
+    // Check before opening: Material must not need a later React commit to
+    // populate the menu it is about to display.
+    await expect(select.locator(".alcomd-select-status")).toHaveText("Loading versions…");
+    await expect(select.locator("md-select-option")).toHaveCount(0);
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions"))).toEqual([]);
+    await select.getByRole("combobox").click();
+    const loading = select.getByRole("status");
+    await expect(loading).toBeVisible();
+    await expect(select.getByRole("option")).toHaveCount(0);
+    await expect(select).toHaveJSProperty("displayText", "1.2.3");
+    await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
+    await loading.evaluate((element) => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await expect(select.getByRole("combobox")).toHaveAttribute("aria-expanded", "true");
+    await page.evaluate(() => window.resumeCandidateVersions?.());
+    await expect(select.locator("md-select-option")).toHaveText(["1.10.0", "1.2.3", "1.1.0"]);
+    await expect(select.getByRole("combobox")).toHaveAttribute("aria-expanded", "true");
+    await expect(loading).toHaveCount(0);
+    await expect(select).toHaveJSProperty("displayText", "1.2.3");
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("Fast paged versions are complete at opening without a loading menu", async ({ page }) => {
+    await open(page, "paged=1");
+    const select = page.locator(".package-version-picker").first();
+    const first = await select.evaluateHandle((element) => {
+        const state = { labels: [] as string[], loading: false };
+        element.addEventListener("opening", () => {
+            state.labels = [...element.querySelectorAll("md-select-option")].map((option) => option.textContent ?? "");
+            state.loading = element.querySelector(".alcomd-select-status") !== null;
+        }, { once: true });
+        return state;
+    });
+    await select.getByRole("combobox").click();
+    await expect(select.getByRole("combobox")).toHaveAttribute("aria-expanded", "true");
+    expect(await first.evaluate((state) => state)).toEqual({ labels: ["1.10.0", "1.2.3", "1.1.0"], loading: false });
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await first.dispose();
+});
+
+test("A pending continuation page keeps the menu loading until the complete version list is ready", async ({ page }) => {
+    await open(page, "paged=1&delayVersionContinuation=1");
+    const select = page.locator(".package-version-picker").first();
+    await select.getByRole("combobox").click();
+    await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
+    await expect(select.getByRole("status")).toBeVisible();
+    await expect(select.locator("md-select-option")).toHaveCount(0);
+    await page.evaluate(() => window.resumeCandidateVersions?.());
+    await expect(select.locator("md-select-option")).toHaveText(["1.10.0", "1.2.3", "1.1.0"]);
+    await expect(select.getByRole("combobox")).toHaveAttribute("aria-expanded", "true");
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+for (const cancel of [false, true]) {
+    test(`Version opening waits at most 100ms and ${cancel ? "Escape cancels a pending opening" : "shows loading only at the deadline"}`, async ({ page }) => {
+        await open(page, "delayVersions=1");
+        await page.clock.install();
+        await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+        const field = page.locator(".package-version-picker").first().getByRole("combobox");
+        await field.focus();
+        await field.evaluate((element) => element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, composed: true })));
+        await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
+        await page.clock.runFor(99);
+        await expect(field).toHaveAttribute("aria-expanded", "false");
+        if (cancel) {
+            await field.evaluate((element) => element.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true, composed: true })));
+            await page.clock.runFor(101);
+            await expect(field).toHaveAttribute("aria-expanded", "false");
+        } else {
+            await page.clock.runFor(1);
+            await expect(field).toHaveAttribute("aria-expanded", "true");
+            await expect(page.locator(".package-version-picker").first().getByRole("status")).toBeVisible();
+        }
+        await page.clock.resume();
+        await page.evaluate(() => window.resumeCandidateVersions?.());
+        if (cancel) await expect(field).toHaveAttribute("aria-expanded", "false");
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    });
+}
+
 test("Closing a loading version selector stops paging and reopening resumes without a package change", async ({ page }) => {
     await open(page, "paged=1&delayVersions=1&versions=1");
     const select = page.locator(".package-version-picker").first();
@@ -338,7 +424,7 @@ test("Closing a loading version selector stops paging and reopening resumes with
     await closed.evaluate(({ event }) => event);
     await closed.dispose();
     await page.evaluate(() => window.resumeCandidateVersions?.());
-    await expect(select.locator("md-select-option")).toHaveCount(3);
+    await expect(select.locator("md-select-option")).toHaveCount(0);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length)).toBe(1);
     await expect(select.getByRole("combobox")).toBeFocused();
     await select.getByRole("combobox").click();

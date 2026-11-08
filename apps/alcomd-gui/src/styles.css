@@ -662,6 +662,7 @@ md-linear-progress {
 .package-source-picker { width: 100%; min-width: 0; }
 .package-source-summary { width: 100%; min-width: 0; }
 .alcomd-select-heading { padding: 8px 16px; color: var(--on-surface-variant); font-size: 0.75rem; pointer-events: none; }
+.alcomd-select-status { display: flex; align-items: center; min-height: 56px; padding: 0 16px; box-sizing: border-box; color: var(--on-surface-variant); pointer-events: none; }
 .alcomd-select-separator { height: 1px; margin: 8px 0; background: var(--md-sys-color-outline-variant); pointer-events: none; }
 .package-source-missing { color: var(--error); font-size: 0.8rem; }
 .package-actions-menu-item--danger,

@@ -27,6 +27,7 @@ import {
     viewListIcon
 } from "@alcomd/ui/icons";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 import type {
     OfficialSettings,
@@ -1009,12 +1010,10 @@ interface PackageWorkspaceRow {
 
 function PackageVersionPicker({ client, project, snapshot, source, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; source?: PackageSourceSelector; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
-    const [open, setOpen] = useState(false);
     const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
     const [error, setError] = useState<string>();
     const [busy, setBusy] = useState(false);
-    const showLoading = useDelayedPending(open && busy && items.length === 0);
-    const pending = useRef<number | undefined>(undefined);
+    const pending = useRef<{ generation: number; read: Promise<void> } | undefined>(undefined);
     const opened = useRef(false);
     const generation = useRef(0);
     const traversal = useRef<{ pages: number; count: number; cursor?: CandidateCursor; complete: boolean }>({ pages: 0, count: 0, complete: false });
@@ -1028,34 +1027,42 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
         setItems([]); setError(undefined); setBusy(false);
         return () => { generation.current += 1; opened.current = false; };
     }, [snapshot, sourceKey]);
-    const load = async () => {
+    const load = (): Promise<void> => {
         const current = generation.current;
-        if (pending.current === current || traversal.current.complete || !snapshot || project.revision === undefined || project.projectId === undefined) return;
-        pending.current = current;
+        if (pending.current?.generation === current) return pending.current.read;
+        if (traversal.current.complete || !snapshot || project.revision === undefined || project.projectId === undefined) return Promise.resolve();
+        const projectId = project.projectId;
+        const projectRevision = project.revision;
         setBusy(true);
         setError(undefined);
-        try {
-            do {
-                const next = traversal.current.cursor;
-                const page = await queryCandidates(client, { projectId: project.projectId, expectedRevision: project.revision, expectedSnapshot: snapshot, view: { kind: "versions", packageId: row.packageId, ...(source ? { source: source.kind === "repository" ? { kind: "repository" as const, repository_id: source.repositoryId } : { kind: "user_package" as const, user_package_id: source.userPackageId } } : {}) }, limit: 64, ...(next ? { cursor: next } : {}) });
+        const read = (async () => {
+            try {
+                do {
+                    const next = traversal.current.cursor;
+                    const page = await queryCandidates(client, { projectId, expectedRevision: projectRevision, expectedSnapshot: snapshot, view: { kind: "versions", packageId: row.packageId, ...(source ? { source: source.kind === "repository" ? { kind: "repository" as const, repository_id: source.repositoryId } : { kind: "user_package" as const, user_package_id: source.userPackageId } } : {}) }, limit: 64, ...(next ? { cursor: next } : {}) });
+                    if (current !== generation.current) return;
+                    validateVersionPage(page, { projectId, projectRevision, packageId: row.packageId, fingerprint: snapshot, ...traversal.current, offset: next?.offset ?? 0 });
+                    traversal.current = { pages: traversal.current.pages + 1, count: traversal.current.count + page.items.length, cursor: page.nextCursor ?? undefined, complete: page.nextCursor === null };
+                    setItems((existing) => next ? [...existing, ...page.items] : page.items);
+                } while (opened.current && !traversal.current.complete);
+            } catch (caught) {
                 if (current !== generation.current) return;
-                validateVersionPage(page, { projectId: project.projectId, projectRevision: project.revision, packageId: row.packageId, fingerprint: snapshot, ...traversal.current, offset: next?.offset ?? 0 });
-                traversal.current = { pages: traversal.current.pages + 1, count: traversal.current.count + page.items.length, cursor: page.nextCursor ?? undefined, complete: page.nextCursor === null };
-                setItems((existing) => next ? [...existing, ...page.items] : page.items);
-            } while (opened.current && !traversal.current.complete);
-        } catch (caught) {
-            if (current !== generation.current) return;
-            const code = safeError(t, locale, caught).code;
-            traversal.current = { pages: 0, count: 0, complete: false };
-            setItems([]); setError(code);
-            if (code === "package_candidate_evidence_stale") onStale();
-        } finally {
-            if (pending.current === current) pending.current = undefined;
-            if (current === generation.current) setBusy(false);
-        }
+                const code = safeError(t, locale, caught).code;
+                traversal.current = { pages: 0, count: 0, complete: false };
+                setItems([]); setError(code);
+                if (code === "package_candidate_evidence_stale") onStale();
+            } finally {
+                if (pending.current?.generation === current) pending.current = undefined;
+                // The imperative picker may open as soon as this promise resolves.
+                // Commit options before Material measures and focuses its menu.
+                if (current === generation.current) flushSync(() => setBusy(false));
+            }
+        })();
+        pending.current = { generation: current, read };
+        return read;
     };
     const versions = new Map<string, PackageCandidateEvidence[]>();
-    for (const item of items) {
+    for (const item of traversal.current.complete ? items : []) {
         if (item.classification === "unknown") continue;
         const entries = versions.get(item.version) ?? [];
         entries.push(item);
@@ -1065,9 +1072,10 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
         className={`package-version-picker alcomd-select--constrained${installedYanked ? " package-version-picker--yanked" : ""}`}
         label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: displayedVersion })}
         displayText={displayedVersion}
+        prepareOpen={() => { opened.current = true; return load(); }}
         disabled={disabled || !snapshot}
-        onOpen={() => { opened.current = true; setOpen(true); void load(); }}
-        onClose={() => { opened.current = false; setOpen(false); }}
+        onOpen={() => { opened.current = true; void load(); }}
+        onClose={() => { opened.current = false; }}
         onSelect={(value, origin) => {
             if (value === row.installedVersion) return;
             const matches = versions.get(value);
@@ -1094,7 +1102,10 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
                     }))
                 ];
             }),
-            ...(showLoading ? [{ value: "loading", label: t("Loading versions…"), disabled: true }] : []),
+            // Material opens before onOpen can commit React's pending state.
+            // Prepare this row while idle too, so its first visible frame is
+            // never an empty menu. It is not a selectable package version.
+            ...(!error && !traversal.current.complete && versions.size === 0 ? [{ kind: "status" as const, value: "loading", label: t("Loading versions…") }] : []),
             ...(error ? [{ value: "error", label: t("Versions unavailable: {value0}", { value0: t(requestErrorMessage(error)) }), disabled: true }] : []),
             ...(!busy && !error && traversal.current.complete && versions.size === 0 ? [{ value: "empty", label: t("No recorded versions"), disabled: true }] : [])
         ]}

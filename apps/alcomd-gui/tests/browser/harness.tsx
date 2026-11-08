@@ -985,6 +985,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("delayVersions") && params.view.kind === "versions" && !params.cursor) {
             await new Promise<void>((resolve) => { window.resumeCandidateVersions = resolve; });
         }
+        if (query.has("delayVersionContinuation") && params.view.kind === "versions" && params.cursor?.offset === 3 && window.resumeCandidateVersions === undefined) {
+            await new Promise<void>((resolve) => { window.resumeCandidateVersions = resolve; });
+        }
         if (query.get("delaySource") && !this.candidateSourceWasDelayed && params.view.kind === "summary" && params.view.sources?.length) {
             this.candidateSourceWasDelayed = true;
             await new Promise<void>((resolve) => { window.resumeCandidateSource = resolve; });

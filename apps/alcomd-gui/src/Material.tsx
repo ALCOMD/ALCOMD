@@ -48,6 +48,7 @@ type MaterialElement = HTMLElement & {
 type MaterialSelectElement = MaterialElement & {
     addController(controller: { hostUpdated(): void }): void;
     removeController(controller: { hostUpdated(): void }): void;
+    showPicker(): void;
 };
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
@@ -494,7 +495,7 @@ export function SearchField({ className, label, ...props }: Omit<TextFieldProps,
 }
 
 export interface SelectOption {
-    kind?: "heading" | "separator";
+    kind?: "heading" | "separator" | "status";
     title?: string;
     disabled?: boolean;
     /** Public Material option text used by the trigger, independently of its menu label. */
@@ -510,6 +511,8 @@ export interface SelectProps {
     className?: string;
     disabled?: boolean;
     displayText?: string;
+    /** Prepare async options on intent; opening waits at most 100ms. */
+    prepareOpen?(): Promise<void>;
     id?: string;
     label: string;
     onChange?(value: string): void;
@@ -530,6 +533,7 @@ export function Select({
     className,
     disabled,
     displayText,
+    prepareOpen,
     id,
     label,
     onChange,
@@ -544,6 +548,28 @@ export function Select({
     const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialSelectElement>(null);
     const open = useRef(false);
+    const pendingOpen = useRef<object | undefined>(undefined);
+    const replayingOpen = useRef(false);
+    const cancelOpen = () => { pendingOpen.current = undefined; onClose?.(); };
+    useEffect(() => () => { pendingOpen.current = undefined; }, []);
+    useEffect(() => { if (disabled) pendingOpen.current = undefined; }, [disabled]);
+    const requestOpen = async (activate: () => void) => {
+        if (!prepareOpen || disabled || pendingOpen.current) return;
+        const request = {};
+        pendingOpen.current = request;
+        let timer: number | undefined;
+        try {
+            await Promise.race([
+                Promise.resolve().then(prepareOpen).catch(() => undefined),
+                new Promise<void>((resolve) => { timer = window.setTimeout(resolve, 100); })
+            ]);
+            await ref.current?.updateComplete;
+            if (pendingOpen.current !== request || !ref.current?.isConnected || ref.current.disabled) return;
+            pendingOpen.current = undefined;
+            replayingOpen.current = true;
+            try { activate(); } finally { replayingOpen.current = false; }
+        } finally { window.clearTimeout(timer); }
+    };
     const pendingSelection = useRef<string | undefined>(undefined);
     const commitSelection = () => {
         const element = ref.current;
@@ -624,6 +650,19 @@ export function Select({
             disabled,
             id,
             label: "",
+            onPointerEnter: () => { if (prepareOpen && !disabled && !open.current) void prepareOpen(); },
+            onPointerLeave: () => { if (prepareOpen && !open.current && !pendingOpen.current) onClose?.(); },
+            onFocusCapture: (event: ReactFocusEvent<MaterialElement>) => {
+                if (prepareOpen && !disabled && !open.current && event.target === event.currentTarget) void prepareOpen();
+            },
+            onBlur: (event: ReactFocusEvent<MaterialElement>) => {
+                if (pendingOpen.current && !event.currentTarget.contains(event.relatedTarget as Node | null)) cancelOpen();
+            },
+            onClickCapture: (event: ReactMouseEvent<MaterialElement>) => {
+                if (!prepareOpen || disabled || open.current || replayingOpen.current) return;
+                event.preventDefault(); event.stopPropagation();
+                void requestOpen(() => ref.current?.showPicker());
+            },
             onChange: (event: FormEvent<MaterialElement>) => {
                 const selected = event.currentTarget.value as string;
                 if (disabled || !options.some((option) => !option.kind && option.value === selected && !option.disabled)) return;
@@ -633,6 +672,16 @@ export function Select({
                 } else onChange?.(selected);
             },
             onKeyDownCapture: (event: ReactKeyboardEvent<MaterialElement>) => {
+                if (event.key === "Escape" && pendingOpen.current) {
+                    cancelOpen(); event.preventDefault(); event.stopPropagation(); return;
+                }
+                if (prepareOpen && !disabled && !open.current && !replayingOpen.current && ["Enter", "Space", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.code)) {
+                    const target = event.nativeEvent.composedPath()[0];
+                    const key = { key: event.key, code: event.code, bubbles: true, composed: true };
+                    event.preventDefault(); event.stopPropagation();
+                    void requestOpen(() => { if (target instanceof HTMLElement && target.isConnected) target.dispatchEvent(new KeyboardEvent("keydown", key)); });
+                    return;
+                }
                 if (event.key !== "Escape" || !open.current) return;
                 if (event.nativeEvent.composedPath().some((node) => node instanceof HTMLElement && node.matches(materialElements.selectOption))) return;
                 // Async options may arrive after opening, while focus remains
@@ -651,10 +700,11 @@ export function Select({
             value
         } as MaterialProps,
         options.map((option) => option.kind ? createElement("div", {
-            className: option.kind === "heading" ? "alcomd-select-heading" : "alcomd-select-separator",
+            className: `alcomd-select-${option.kind}`,
             key: option.value,
-            role: option.kind === "heading" ? "presentation" : "separator"
-        }, option.kind === "heading" ? option.label : null) : createElement(materialElements.selectOption, {
+            role: option.kind === "status" ? "status" : option.kind === "heading" ? "presentation" : "separator",
+            "aria-live": option.kind === "status" ? "polite" : undefined
+        }, option.kind === "separator" ? null : option.label) : createElement(materialElements.selectOption, {
             disabled: option.disabled,
             title: option.title,
             ...(option.displayText === undefined ? {} : { displayText: option.displayText }),
