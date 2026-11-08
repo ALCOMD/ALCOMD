@@ -4,25 +4,42 @@ use alcomd_protocol::{
     ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult,
     ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError,
 };
-use tauri::async_runtime::Mutex;
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 mod events;
 mod repository_links;
+mod rpc_clients;
 mod unity_windows;
 mod window_state;
 
-#[derive(Default)]
 struct GuiClientState {
-    client: Mutex<Option<AlcomdClient>>,
+    reads: rpc_clients::ClientPool,
+    work: rpc_clients::ClientPool,
+    control: rpc_clients::ClientPool,
+    repository: rpc_clients::ClientPool,
+    extension_ui: rpc_clients::ClientPool,
+}
+
+impl Default for GuiClientState {
+    fn default() -> Self {
+        Self {
+            reads: rpc_clients::ClientPool::new(4),
+            work: rpc_clients::ClientPool::new(4),
+            control: rpc_clients::ClientPool::new(2),
+            // These contracts bind previews/sessions to a connection. Preserve
+            // their affinity without serializing unrelated GUI commands.
+            repository: rpc_clients::ClientPool::new(1),
+            extension_ui: rpc_clients::ClientPool::new(1),
+        }
+    }
 }
 
 #[tauri::command]
 async fn gui_system_status(
     state: State<'_, GuiClientState>,
 ) -> Result<alcomd_protocol::SystemStatusResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.control.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.system_status().await,
@@ -36,7 +53,7 @@ async fn gui_state_check(
     state: State<'_, GuiClientState>,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::OperationAccepted, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.control.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.state_check(idempotency_key).await,
@@ -50,7 +67,7 @@ async fn gui_logs_read(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::LogsReadParams,
 ) -> Result<alcomd_protocol::LogsReadResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.logs_read(params).await,
@@ -64,7 +81,7 @@ async fn gui_operations_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::OperationsListParams,
 ) -> Result<alcomd_protocol::OperationsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.control.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -82,7 +99,7 @@ async fn gui_operation_get(
     state: State<'_, GuiClientState>,
     operation_id: String,
 ) -> Result<alcomd_protocol::Operation, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.control.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.operation_get(operation_id).await,
@@ -98,7 +115,7 @@ async fn gui_operation_cancel(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::OperationWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.control.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -116,7 +133,7 @@ async fn gui_settings_get(
     app: tauri::AppHandle,
     state: State<'_, GuiClientState>,
 ) -> Result<alcomd_protocol::SettingsGetResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.settings_get().await,
@@ -136,7 +153,7 @@ async fn gui_settings_update(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::SettingsUpdateParams,
 ) -> Result<alcomd_protocol::SettingsGetResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.settings_update(params).await,
@@ -155,7 +172,7 @@ async fn gui_projects_inspect(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsInspectParams,
 ) -> Result<alcomd_protocol::ProjectResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -173,7 +190,7 @@ async fn gui_projects_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsListParams,
 ) -> Result<alcomd_protocol::ProjectsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.projects_list_with_view(params).await,
@@ -187,7 +204,7 @@ async fn gui_project_get(
     state: State<'_, GuiClientState>,
     project_id: String,
 ) -> Result<alcomd_protocol::ProjectResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_get(project_id).await,
@@ -202,7 +219,7 @@ async fn gui_open_project_directory(
     project_id: String,
 ) -> Result<(), RpcError> {
     let project = {
-        let mut client = state.client.lock().await;
+        let mut client = state.reads.lock().await;
         connect_if_needed(&mut client).await?;
         let result = match client.as_mut() {
             Some(client) => client.project_get(project_id).await,
@@ -228,7 +245,7 @@ async fn gui_unity_hub_open(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::UnityHubOpenParams,
 ) -> Result<alcomd_protocol::UnityHubOpenResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_hub_open(params).await,
@@ -404,7 +421,7 @@ async fn gui_repository_list_inspect_file(
     state: State<'_, GuiClientState>,
     path: String,
 ) -> Result<alcomd_protocol::RepositoryListInspection, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_list_inspect_file(path).await,
@@ -443,7 +460,7 @@ async fn gui_repository_list_cancel_registration(
 async fn gui_repository_list_preview_export(
     state: State<'_, GuiClientState>,
 ) -> Result<alcomd_protocol::RepositoryListPreview, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_list_preview_export().await,
@@ -458,7 +475,7 @@ async fn gui_repository_list_export_file(
     target_path: String,
     expected_fingerprint: String,
 ) -> Result<alcomd_protocol::RepositoryListExportResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -476,7 +493,7 @@ async fn gui_project_plan_copy(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsPlanCopyParams,
 ) -> Result<alcomd_protocol::ProjectsPlanCopyResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_plan_copy(params).await,
@@ -490,7 +507,7 @@ async fn gui_project_apply_copy(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsApplyCopyParams,
 ) -> Result<alcomd_protocol::ProjectsApplyCopyResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_apply_copy(params).await,
@@ -504,7 +521,7 @@ async fn gui_project_plan_delete_directory(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsPlanDeleteDirectoryParams,
 ) -> Result<alcomd_protocol::ProjectsPlanDeleteDirectoryResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_plan_delete_directory(params).await,
@@ -518,7 +535,7 @@ async fn gui_project_apply_delete_directory(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsApplyDeleteDirectoryParams,
 ) -> Result<alcomd_protocol::ProjectsApplyDeleteDirectoryResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_apply_delete_directory(params).await,
@@ -532,7 +549,7 @@ async fn gui_project_plan_unity_migration(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsPlanUnityMigrationParams,
 ) -> Result<alcomd_protocol::ProjectsPlanUnityMigrationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_plan_unity_migration(params).await,
@@ -546,7 +563,7 @@ async fn gui_project_apply_unity_migration(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsApplyUnityMigrationParams,
 ) -> Result<alcomd_protocol::ProjectsApplyUnityMigrationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_apply_unity_migration(params).await,
@@ -580,7 +597,7 @@ async fn gui_project_register(
     path: String,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::ProjectWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_register(path, idempotency_key).await,
@@ -596,7 +613,7 @@ async fn gui_project_refresh(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::ProjectWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -614,7 +631,7 @@ async fn gui_project_set_favorite(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectSetFavoriteParams,
 ) -> Result<alcomd_protocol::ProjectWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_set_favorite(params).await,
@@ -630,7 +647,7 @@ async fn gui_project_unregister(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::ProjectUnregisterResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -648,7 +665,7 @@ async fn gui_repositories_inspect(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositoryInspectParams,
 ) -> Result<alcomd_protocol::RepositoryResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.repository.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -666,7 +683,7 @@ async fn gui_repositories_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RegistryListParams,
 ) -> Result<alcomd_protocol::RepositoriesListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repositories_list(params.cursor, params.limit).await,
@@ -680,7 +697,7 @@ async fn gui_repository_get(
     state: State<'_, GuiClientState>,
     repository_id: String,
 ) -> Result<alcomd_protocol::RepositoryResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_get(repository_id).await,
@@ -694,7 +711,7 @@ async fn gui_repository_packages(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositoryPackagesParams,
 ) -> Result<alcomd_protocol::RepositoryPackagesResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -738,7 +755,7 @@ async fn gui_repository_register(
     idempotency_key: String,
     credentials: Option<alcomd_protocol::RepositoryCredentials>,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.repository.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -756,7 +773,7 @@ async fn gui_repository_set_credentials(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositorySetCredentialsParams,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_set_credentials(params).await,
@@ -770,7 +787,7 @@ async fn gui_repository_set_display_name(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::RepositorySetDisplayNameParams,
 ) -> Result<alcomd_protocol::RepositoryWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.repository_set_display_name(params).await,
@@ -818,7 +835,7 @@ async fn gui_repository_unregister(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::RepositoryUnregisterResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -836,7 +853,7 @@ async fn gui_package_plan_install(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanInstallParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_install(params).await,
@@ -850,7 +867,7 @@ async fn gui_package_plan_remove(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanRemoveParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_remove(params).await,
@@ -864,7 +881,7 @@ async fn gui_package_plan_upgrade(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanUpgradeParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_upgrade(params).await,
@@ -878,7 +895,7 @@ async fn gui_package_plan_downgrade(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanDowngradeParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_downgrade(params).await,
@@ -892,7 +909,7 @@ async fn gui_package_plan_resolve(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanResolveParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_resolve(params).await,
@@ -906,7 +923,7 @@ async fn gui_package_plan_reinstall(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanReinstallParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_reinstall(params).await,
@@ -920,7 +937,7 @@ async fn gui_package_query_project_candidates(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectCandidateRequest,
 ) -> Result<alcomd_protocol::ProjectCandidatePage, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_query_project_candidates(params).await,
@@ -934,7 +951,7 @@ async fn gui_package_plan_bulk(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanBulkParams,
 ) -> Result<alcomd_protocol::PackagePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_plan_bulk(params).await,
@@ -948,7 +965,7 @@ async fn gui_user_packages_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::UserPackagesListParams,
 ) -> Result<alcomd_protocol::UserPackagesListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.user_packages_list(params).await,
@@ -962,7 +979,7 @@ async fn gui_user_package_get(
     state: State<'_, GuiClientState>,
     user_package_id: String,
 ) -> Result<alcomd_protocol::UserPackageResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -981,7 +998,7 @@ async fn gui_user_package_enroll(
     source_path: String,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UserPackageWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -1004,7 +1021,7 @@ async fn gui_user_package_refresh(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UserPackageWriteResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -1028,7 +1045,7 @@ async fn gui_user_package_remove(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UserPackageRemoveResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -1050,7 +1067,7 @@ async fn gui_package_apply_plan(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackageApplyPlanParams,
 ) -> Result<alcomd_protocol::PackageApplyPlanResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.package_apply_plan(params).await,
@@ -1064,7 +1081,7 @@ async fn gui_unity_installations_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::UnityInstallationsListParams,
 ) -> Result<alcomd_protocol::UnityInstallationsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_installations_list(params).await,
@@ -1078,7 +1095,7 @@ async fn gui_unity_installation_get(
     state: State<'_, GuiClientState>,
     installation_id: String,
 ) -> Result<alcomd_protocol::UnityInstallationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_installation_get(installation_id).await,
@@ -1093,7 +1110,7 @@ async fn gui_unity_installation_register(
     executable_path: String,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UnityInstallationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -1116,7 +1133,7 @@ async fn gui_unity_installation_remove(
     expected_revision: u64,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UnityInstallationRemoveResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
@@ -1138,7 +1155,7 @@ async fn gui_unity_installations_refresh(
     state: State<'_, GuiClientState>,
     idempotency_key: String,
 ) -> Result<alcomd_protocol::UnityInstallationsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_installations_refresh(idempotency_key).await,
@@ -1152,7 +1169,7 @@ async fn gui_unity_project_launch_config_get(
     state: State<'_, GuiClientState>,
     project_id: String,
 ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_project_launch_config_get(project_id).await,
@@ -1166,7 +1183,7 @@ async fn gui_unity_project_launch_config_set(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectUnityLaunchConfigSetParams,
 ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_project_launch_config_set(params).await,
@@ -1180,7 +1197,7 @@ async fn gui_unity_project_launch_config_clear(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectUnityLaunchConfigClearParams,
 ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_project_launch_config_clear(params).await,
@@ -1194,7 +1211,7 @@ async fn gui_unity_launch_options(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::UnityLaunchOptionsParams,
 ) -> Result<alcomd_protocol::UnityLaunchOptionsResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_launch_options(params).await,
@@ -1208,7 +1225,7 @@ async fn gui_unity_writer_state(
     state: State<'_, GuiClientState>,
     project_id: String,
 ) -> Result<alcomd_protocol::UnityWriterState, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_writer_state(project_id).await,
@@ -1223,7 +1240,7 @@ async fn gui_unity_launch(
     windows: State<'_, unity_windows::UnityWindows>,
     params: alcomd_protocol::UnityLaunchParams,
 ) -> Result<alcomd_protocol::UnityLaunchResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_launch(params).await,
@@ -1239,7 +1256,7 @@ async fn gui_projects_create(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsCreateParams,
 ) -> Result<alcomd_protocol::ProjectsCreateResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.projects_create(params).await,
@@ -1253,7 +1270,7 @@ async fn gui_project_templates_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesListParams,
 ) -> Result<alcomd_protocol::ProjectTemplatesListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_templates_list(params).await,
@@ -1267,7 +1284,7 @@ async fn gui_project_templates_save(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesSaveParams,
 ) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_templates_save(params).await,
@@ -1281,7 +1298,7 @@ async fn gui_project_templates_export(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesExportParams,
 ) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_templates_export(params).await,
@@ -1295,7 +1312,7 @@ async fn gui_project_templates_remove(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesRemoveParams,
 ) -> Result<alcomd_protocol::ProjectTemplatesRemoveResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.project_templates_remove(params).await,
@@ -1309,7 +1326,7 @@ async fn gui_backups_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::BackupsListParams,
 ) -> Result<alcomd_protocol::BackupsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.backups_list(params).await,
@@ -1323,7 +1340,7 @@ async fn gui_backup_get(
     state: State<'_, GuiClientState>,
     backup_id: String,
 ) -> Result<alcomd_protocol::BackupRecord, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.backup_get(backup_id).await,
@@ -1337,7 +1354,7 @@ async fn gui_backup_create(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::BackupCreateParams,
 ) -> Result<alcomd_protocol::BackupCreateResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.backup_create(params).await,
@@ -1351,7 +1368,7 @@ async fn gui_backup_plan_restore(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::BackupPlanRestoreParams,
 ) -> Result<alcomd_protocol::BackupRestorePlan, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.backup_plan_restore(params).await,
@@ -1365,7 +1382,7 @@ async fn gui_backup_apply_restore(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::BackupApplyRestoreParams,
 ) -> Result<alcomd_protocol::BackupApplyRestoreResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.backup_apply_restore(params).await,
@@ -1379,7 +1396,7 @@ async fn gui_extensions_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionsListParams,
 ) -> Result<alcomd_protocol::ExtensionsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extensions_list(params).await,
@@ -1393,7 +1410,7 @@ async fn gui_extension_get(
     state: State<'_, GuiClientState>,
     extension_id: String,
 ) -> Result<ExtensionResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_get(extension_id).await,
@@ -1407,7 +1424,7 @@ async fn gui_extension_permissions_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionPermissionsListParams,
 ) -> Result<alcomd_protocol::ExtensionPermissionsListResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.reads.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_permissions_list(params).await,
@@ -1421,7 +1438,7 @@ async fn gui_extension_plan_install(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionPlanInstallParams,
 ) -> Result<alcomd_protocol::ExtensionPlanResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_plan_install(params).await,
@@ -1435,7 +1452,7 @@ async fn gui_extension_apply_install(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionApplyParams,
 ) -> Result<alcomd_protocol::ExtensionOperationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_apply_install(params).await,
@@ -1449,7 +1466,7 @@ async fn gui_extension_enable(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionLifecycleParams,
 ) -> Result<ExtensionResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_enable(params).await,
@@ -1463,7 +1480,7 @@ async fn gui_extension_disable(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionLifecycleParams,
 ) -> Result<ExtensionResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_disable(params).await,
@@ -1477,7 +1494,7 @@ async fn gui_extension_plan_uninstall(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionPlanUninstallParams,
 ) -> Result<alcomd_protocol::ExtensionPlanResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_plan_uninstall(params).await,
@@ -1491,7 +1508,7 @@ async fn gui_extension_apply_uninstall(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionApplyParams,
 ) -> Result<alcomd_protocol::ExtensionOperationResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_apply_uninstall(params).await,
@@ -1505,7 +1522,7 @@ async fn gui_extension_set_grant(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionGrantParams,
 ) -> Result<alcomd_protocol::ExtensionGrantResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_set_grant(params).await,
@@ -1519,7 +1536,7 @@ async fn gui_extension_revoke_grant(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionGrantParams,
 ) -> Result<alcomd_protocol::ExtensionGrantResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_revoke_grant(params).await,
@@ -1533,7 +1550,7 @@ async fn gui_extension_ui_open(
     state: State<'_, GuiClientState>,
     params: ExtensionUiOpenParams,
 ) -> Result<ExtensionUiOpenResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.extension_ui.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_ui_open(params).await,
@@ -1547,7 +1564,7 @@ async fn gui_extension_ui_refresh(
     state: State<'_, GuiClientState>,
     params: ExtensionUiRefreshParams,
 ) -> Result<ExtensionUiSnapshotResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.extension_ui.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_ui_refresh(params).await,
@@ -1561,7 +1578,7 @@ async fn gui_extension_ui_dispatch(
     state: State<'_, GuiClientState>,
     params: ExtensionUiDispatchParams,
 ) -> Result<ExtensionUiDispatchResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.extension_ui.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_ui_dispatch(params).await,
@@ -1575,7 +1592,7 @@ async fn gui_extension_ui_close(
     state: State<'_, GuiClientState>,
     params: ExtensionUiCloseParams,
 ) -> Result<ExtensionUiCloseResult, RpcError> {
-    let mut client = state.client.lock().await;
+    let mut client = state.extension_ui.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.extension_ui_close(params).await,
@@ -1589,7 +1606,10 @@ async fn connect_if_needed(client: &mut Option<AlcomdClient>) -> Result<(), RpcE
         *client = Some(
             AlcomdClient::connect(ClientConfig::default().with_client_name(env!("CARGO_PKG_NAME")))
                 .await
-                .map_err(client_error)?,
+                .map_err(|error| {
+                    rpc_clients::invalidate_connections();
+                    client_error(error)
+                })?,
         );
     }
     Ok(())
@@ -1603,6 +1623,7 @@ fn finish_call<T>(
         Ok(value) => Ok(value),
         Err(ClientError::Remote(error)) => Err(error),
         Err(error) => {
+            rpc_clients::invalidate_connections();
             *client = None;
             Err(client_error(error))
         }

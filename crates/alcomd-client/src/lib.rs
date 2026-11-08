@@ -103,6 +103,13 @@ pub struct AlcomdClient {
 }
 
 impl AlcomdClient {
+    /// Whether the last exchange completed and this stream can serve another request.
+    /// Cancelled or interrupted exchanges must be discarded rather than pooled.
+    #[must_use]
+    pub fn is_usable(&self) -> bool {
+        self.usable
+    }
+
     /// Connects to the per-user daemon, optionally starting its sibling binary.
     pub async fn connect(config: ClientConfig) -> Result<Self, ClientError> {
         let stream = connect_with_policy(&config).await?;
@@ -1308,5 +1315,99 @@ impl ClientError {
             ),
             Self::StartDaemon(_) | Self::DaemonPathUnavailable | Self::InvalidResponse => false,
         }
+    }
+}
+
+#[cfg(test)]
+mod connection_reuse_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    async fn pair() -> (IpcStream, IpcStream) {
+        IpcStream::pair().expect("private stream pair")
+    }
+
+    #[cfg(windows)]
+    async fn pair() -> (IpcStream, IpcStream) {
+        use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+        let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let pipe = format!(
+            r"\\.\pipe\alcomd-client-reuse-test-{}-{sequence}",
+            std::process::id()
+        );
+        let server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .reject_remote_clients(true)
+            .create(&pipe)
+            .expect("private server");
+        let client = ClientOptions::new().open(&pipe).expect("private client");
+        server.connect().await.expect("accept private client");
+        (IpcStream::Client(client), IpcStream::Server(server))
+    }
+
+    fn client(stream: IpcStream) -> AlcomdClient {
+        AlcomdClient {
+            stream,
+            next_request_id: 1,
+            usable: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_success_and_remote_error_keep_the_connection_reusable() {
+        let (stream, mut server) = pair().await;
+        let mut client = client(stream);
+        let task = tokio::spawn(async move {
+            for index in 0..3 {
+                let request: serde_json::Value =
+                    serde_json::from_slice(&read_frame(&mut server).await.expect("frame"))
+                        .expect("request");
+                let response = if index == 1 {
+                    json!({"id":request["id"],"error":{"code":"permission_denied","message":"denied"}})
+                } else {
+                    json!({"id":request["id"],"result":{"index":index}})
+                };
+                server
+                    .write_all(
+                        &encode_frame(&serde_json::to_vec(&response).expect("JSON"))
+                            .expect("encode"),
+                    )
+                    .await
+                    .expect("response");
+            }
+        });
+        for index in 0..3 {
+            let result: Result<serde_json::Value, _> = client.call("reuse-test", json!({})).await;
+            if index == 1 {
+                assert!(matches!(result, Err(ClientError::Remote(_))));
+            } else {
+                assert_eq!(result.expect("success")["index"], index);
+            }
+            assert!(client.is_usable());
+        }
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn abandoning_an_in_flight_frame_marks_the_connection_unusable() {
+        let (stream, mut server) = pair().await;
+        let mut client = client(stream);
+        let mut request = Box::pin(client.call::<_, serde_json::Value>("blocked-test", json!({})));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::select! {
+                result = &mut request => panic!("no response was sent: {result:?}"),
+                frame = read_frame(&mut server) => { assert!(frame.is_ok()); }
+            }
+        })
+        .await
+        .expect("request reaches private server");
+        drop(request);
+        assert!(!client.is_usable());
+        assert!(matches!(
+            client
+                .call::<_, serde_json::Value>("next-test", json!({}))
+                .await,
+            Err(ClientError::InvalidResponse)
+        ));
     }
 }

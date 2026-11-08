@@ -9,6 +9,7 @@ type PageReadKey = "primary" | "settings.unity" | "settings.repositories";
 export function createPageRead() {
     return { visit: ++nextVisit, deferUntil: performance.now() + 100,
         results: new Map<PageReadKey, Promise<PageReadResult<unknown>>>(),
+        reactReads: new Set<PageReadKey>(),
         settled: new Map<PageReadKey, PageReadResult<unknown>>() };
 }
 
@@ -43,5 +44,12 @@ export function useInitialPageRead<T>(load: () => Promise<T>): PageReadResult<T>
     const promise = usePageReadPromise("primary", load, !local && scope !== undefined);
     // An already settled prefetch must not suspend once just so React can observe its thenable.
     const settled = !local ? scope?.settled.get("primary") as PageReadResult<T> | undefined : undefined;
-    return promise === undefined ? undefined : settled ?? use(promise);
+    if (promise === undefined) return undefined;
+    // Once a mount has suspended here, retries must consume the same thenable.
+    // Bypassing use() on retry can leave later hooks in React's update mode even
+    // though they have not mounted yet. Prefetches settled before the first
+    // render still take the synchronous path without an extra suspension.
+    if (settled !== undefined && !scope?.reactReads.has("primary")) return settled;
+    scope?.reactReads.add("primary");
+    return use(promise);
 }

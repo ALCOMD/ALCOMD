@@ -271,7 +271,7 @@ pub(crate) async fn gui_focus_project_unity(
         use alcomd_platform::UnityWindowFocus;
         use alcomd_protocol::UnityWriterStateKind;
         let path = {
-            let mut client = state.client.lock().await;
+            let mut client = state.reads.lock().await;
             super::connect_if_needed(&mut client).await?;
             let connection = client.as_mut().ok_or_else(super::daemon_unavailable)?;
             let result = connection.project_get(project_id.clone()).await;
