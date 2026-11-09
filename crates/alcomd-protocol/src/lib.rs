@@ -2500,7 +2500,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 12;
+pub const CONFIG_SCHEMA_VERSION: u32 = 13;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2807,7 +2807,15 @@ pub struct UnityHubOpenResult {
 pub struct PackageSettings {
     pub show_prerelease: bool,
     pub hidden_repository_ids: Vec<String>,
+    pub hidden_repository_packages: Vec<RepositoryPackageSettings>,
     pub hide_local_user_packages: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryPackageSettings {
+    pub repository_id: String,
+    pub package_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -3020,6 +3028,12 @@ impl<'de> Deserialize<'de> for UnitySettingsUpdate {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageSettingsUpdate {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hidden_repository_packages: Option<Vec<RepositoryPackageSettings>>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",

@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-09 按所有者批准完成[存储库内软件包开关](exec-plans/M7-repository-package-switches.md)及[Config13](../specs/config/settings-v13.md)：仓库列表/详情以仓库+包ID关闭全部版本，Store尽早过滤，候选/求解/Plan/Apply一致；其他来源独立，已安装事实与管理重开入口保留。原设置16KiB基线、旧格式16KiB完整文件限制保持，新增偏好扩展至1MiB；无State/RPC方法/权限/依赖变更。547项不同Rust测试、92项不同浏览器用例最终分批通过，3项既有Rust忽略；严格Clippy、前端检查/构建及浅色外观已核对。最后fmt/xtask/差异检查及失败轮次见[记录](testing/repository-package-switches-20261109.md)。所有者随后授权本项本地提交；未推送/替换运行实例或操作真实项目，M7/H7保持。
+
 - 2026-11-09 所有者明确授权“提交，推送，打开新的”，本批次Core/GUI按用途分组交付至既有`origin/main`，不强推。7项Rust和77项GUI最终输入摘要匹配既有验证，fmt/xtask及独立Core/嵌入式GUI构建通过。已备份旧程序/数据并更新打开：Core PID294584、GUI PID282808，ready/State31/Config12、0活动任务；原2项目、30存储库、设置、WebView profile及v3进程保持。原生UIA只读确认官方仓库分组浏览及标题行刷新，未代替用户操作。提交/推送及运行证据见[交付记录](testing/delivery-20261109.md)，下文“未提交/未更新”等保留其历史含义，M7/H7不扩大。
 
 - 2026-11-09 按所有者要求完成[存储库列表与包浏览](exec-plans/M7-repository-browser.md)：行内勾选统一到40px控件令牌，仓库行60px；内置编辑/移除禁用。刷新移出编辑，按后续纠正并入浏览标题右侧，与标题同排；独立详情页同理。目录按包名称去重，单独查看版本/ID/说明/Unity条件/文档和日志链接，跨页完整后显示版本选择，刷新保留选择并原子替换。全工作区前端检查、生产构建、分批115项不同用例最终通过覆盖、失败与复用边界见[记录](testing/repository-browser-20261109.md)；中文浅/深色宽窄窗口已核对。无Core/公开合同/依赖变更，未更新运行GUI/Core或提交/推送，M7/H7保持。
@@ -77,7 +79,7 @@
 - 2026-11-08 文件选择器重置基线：按所有者授权移除旧选择器专用提交，混合提交只保留共享弹窗动画；旧 `FilePicker` / `FilePickerControl` 及 CSS 全部不存在。相关入口直接拼接路径输入框和原生选择按钮，GUI 类型、Material 与本地化检查通过。下一步仅重建并接入明确指定的四处。历史重写后的 SHA 与既有 CI 证据 SHA 不同，历史结果不作为新候选通过；当前 Core/GUI 均未重启。
 - 随后按已确认外观重建唯一 `FilePicker`，仅接入仓库列表导入、模板导入、添加已有项目和添加用户软件包；其余入口使用普通路径输入框和选择按钮。全工作区前端检查/构建及定向浏览器回归通过；早期旧焦点断言与截图宿主错误、复验范围及原生限制见[重置与重建记录](testing/file-picker-reset-rebuild-20261108.md)。软件包排序、100ms 等待与顶部加载条保留；未部署或主动重启原生 GUI/Core，未操作真实项目。
 
-- `main` 当前工作树使用 [State31](../specs/storage/state-v31.md) 与 [Config12](../specs/config/settings-v12.md)。State31 清理撤除的项目展示副本，保留仓库规范化索引与 State29 仓库显示名；内部数据格式编号不代表产品发布版本。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
+- `main` 当前工作树使用 [State31](../specs/storage/state-v31.md) 与 [Config13](../specs/config/settings-v13.md)。State31 清理撤除的项目展示副本，保留仓库规范化索引与 State29 仓库显示名；内部数据格式编号不代表产品发布版本。仓库操作资格、项目列表、包批量操作、Unity 版本选项和操作日志筛选由 Core 提供。GUI 使用同一套用例结果。
 - 此前 Core 部署基于 `0a73acca`，报告 State29 / Config12 和 `ready`，已核对九组业务读取。历史证据位于 `target/m7-core-boundary-update-20261107/`；当前新路径运行环境见下方记录。
 - 随后的 GUI 单独更新基于 `0a73acca` 加文件选择器工作树改动，记录了窗口响应、GUI profile 和同一 Core 进程。证据位于 `target/m7-shared-file-picker-update-20261107/`。CLI 仍匹配 `7fe5f157` 部署记录中的产物摘要，见 `target/m7-repository-core-update-20261107/`。各自的证据只覆盖对应构建。
 - 此前一次 GUI 部署使用 `34cac0a2` 加当时文件选择器工作树修改，证据位于 `target/m7-file-picker-integration-update-20261107/`。当轮验证后恢复原 Core/GUI 二进制、数据目录和 profile；九组业务读取一致，Unity 进程未变，没有另行部署。

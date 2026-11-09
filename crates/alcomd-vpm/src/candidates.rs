@@ -473,6 +473,7 @@ fn visible(input: &CandidateEvidenceInput, source: &PackageSourceSelector) -> bo
 
 fn entry_visible(input: &CandidateEvidenceInput, entry: &CandidateCatalogEntry) -> bool {
     visible(input, &entry.source)
+        && !matches!(&entry.source, PackageSourceSelector::Repository { repository_id } if input.settings.repository_package_hidden(repository_id, &entry.package_id))
         && (input.settings.show_prerelease
             || !Version::parse(&entry.version).is_ok_and(|version| !version.pre.is_empty()))
 }
@@ -940,6 +941,7 @@ mod tests {
             },
             entries: versions.iter().map(|version| entry(version)).collect(),
             settings: ConfigPackageSettings {
+                hidden_repository_packages: Vec::new(),
                 show_prerelease: false,
                 hidden_repository_ids: vec![],
                 hide_local_user_packages: false,
@@ -1451,6 +1453,35 @@ mod tests {
             }
         );
         assert!(evaluate_candidate_versions(&input, PACKAGE, None).is_empty());
+    }
+
+    #[test]
+    fn package_switch_filters_all_versions_and_providers_only_for_its_repository() {
+        let mut input = input(&["1.0.0", "2.0.0", "3.0.0"], Some("1.0.0"));
+        input.settings.hidden_repository_packages =
+            vec![alcomd_application::ConfigRepositoryPackages {
+                repository_id: "repository-a".into(),
+                package_ids: vec![PACKAGE.into()],
+            }];
+        assert!(evaluate_candidate_versions(&input, PACKAGE, None).is_empty());
+        let row = summary(&input);
+        assert!(matches!(row.installed, CandidateInstalled::Locked { .. }));
+        assert!(row.providers.is_empty());
+        let mut other = input.entries[0].clone();
+        other.source = PackageSourceSelector::Repository {
+            repository_id: "repository-b".into(),
+        };
+        other.display_name = Some("Independent source".into());
+        input.entries.push(other);
+        assert_eq!(evaluate_candidate_versions(&input, PACKAGE, None).len(), 1);
+        let row = summary(&input);
+        assert_eq!(row.providers.len(), 1);
+        assert_eq!(row.display_name.as_deref(), Some("Independent source"));
+        input.settings.hidden_repository_ids = vec!["repository-a".into()];
+        input.settings.hidden_repository_ids.clear();
+        assert_eq!(evaluate_candidate_versions(&input, PACKAGE, None).len(), 1);
+        input.settings.hidden_repository_packages.clear();
+        assert_eq!(evaluate_candidate_versions(&input, PACKAGE, None).len(), 4);
     }
 
     #[test]

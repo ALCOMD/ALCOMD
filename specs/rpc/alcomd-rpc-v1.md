@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config12 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config13 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
 
 ## 1. M1 合同范围
 
@@ -264,7 +264,7 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 ```
 
 `dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v28 由 daemon 的存储
-组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 12，
+组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 13，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
 不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
@@ -876,6 +876,13 @@ M7 保留设置 base methods 与独立 `unity.hub.open.v1`。所有者于2026-11
 | `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
 | `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
+
+Config13 的 `settings.packages.hiddenRepositoryPackages` 按仓库 ID 分组保存关闭的包 ID，默认空清单。
+每组关闭该来源的全部现有及未来版本，不影响其他仓库或本地用户来源；整库开关叠加且保留包偏好。
+Core 在候选、提供方、依赖求解、Plan 与冻结 Apply 来源复验中统一过滤。已安装包事实保留，
+没有其他开启来源时显示未知来源，本地卸载保持；仅仓库筛选管理查询保留关闭项供重开。
+省略字段保留，空清单清除，null 非法，保存沿用设置 revision CAS。容量、规范化及升级边界见
+[Config13](../config/settings-v13.md)。严格客户端须同步新增必填字段，不增加 RPC 方法、权限或 State Schema。
 
 Config12 的 `settings.network.proxy` 是完整的代理模式对象。省略 `update.network` 保留当前偏好。
 显式更新复用 settings revision CAS，保存成功后新请求采用该偏好。模式、地址边界和迁移见

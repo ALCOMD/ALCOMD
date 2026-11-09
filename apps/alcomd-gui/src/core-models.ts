@@ -1,4 +1,4 @@
-import type { ExtensionRecord, PackageRemovalConflict } from "@alcomd/sdk";
+import type { ExtensionRecord, PackageRemovalConflict, PackageSettings } from "@alcomd/sdk";
 
 export interface SystemStatus {
     product: string;
@@ -65,17 +65,13 @@ export interface OfficialSettings {
         motion: AppearanceMotion;
     };
     locale: SettingsLocale;
-    packages: {
-        showPrerelease: boolean;
-        hiddenRepositoryIds: string[];
-        hideLocalUserPackages: boolean;
-    };
+    packages: PackageSettings;
 }
 
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 12;
+    configSchema: 13;
     revision: number;
     settings: OfficialSettings;
 }
@@ -95,11 +91,7 @@ export interface SettingsUpdate {
         motion?: AppearanceMotion;
     };
     locale?: SettingsLocale;
-    packages?: {
-        showPrerelease?: boolean;
-        hiddenRepositoryIds?: string[];
-        hideLocalUserPackages?: boolean;
-    };
+    packages?: Partial<PackageSettings>;
 }
 
 

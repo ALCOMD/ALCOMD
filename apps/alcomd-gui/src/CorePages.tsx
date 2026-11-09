@@ -63,7 +63,7 @@ import {
 } from "./CoreActions";
 import { DesktopList, TableLoading, type DesktopListColumn } from "./DesktopList";
 import { NavigationButton } from "./NavigationButton";
-import { RepositoryPackageCatalog, RepositoryRefresh } from "./RepositoryPackageBrowser";
+import { RepositoryPackageCatalog, RepositoryRefresh, repositoryPackageColumns } from "./RepositoryPackageBrowser";
 import { readInitialOperationLogs } from "./OperationLogsRoute";
 import { withPreloadWork } from "./preload-cache";
 import { displayChildPath, displayPath } from "./display-path";
@@ -1853,6 +1853,18 @@ function RepositoryTable({ client, onChanged, repositories, settings, error }: {
 
 function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: { client: GuiRpcClient; repository: RepositorySnapshot; onChanged(): void; initial?: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["repositoryPackages"]>>>>; dialog?: { title: string; onClose(): void } }) {
     const { t, locale } = useTranslation();
+    const [settings, setSettings] = useState<SettingsGetResult>();
+    const [settingsError, setSettingsError] = useState(false);
+    const current = useActionScope(client);
+    const readSettings = useCallback(async () => {
+        try {
+            const next = await client.settingsGet();
+            if (current()) { setSettings(next); setSettingsError(false); }
+        } catch { if (current()) setSettingsError(true); }
+    }, [client]);
+    useEffect(() => { void readSettings(); }, [readSettings]);
+    useWorkspaceInvalidation([], readSettings);
+    const display = usePackageDisplaySettings(client, settings, () => void readSettings(), onChanged);
     const [generation, setGeneration] = useState(0);
     const selectedPackage = useRef<string | undefined>(undefined);
     const repositoryId = repository.repositoryId;
@@ -1875,7 +1887,13 @@ function RepositoryBrowser({ client, repository, onChanged, initial, dialog }: {
     if (repositoryId === undefined) return null;
     const refresh = <RepositoryRefresh client={client} repository={repository} onChanged={() => { setGeneration((value) => value + 1); onChanged(); }} />;
     const content = isBuiltinRepository(repository) && repository.refreshedAtMs === 0 ? <p>{t("Pending first sync")}</p> :
-        <ResourcePage initialRequest={initial} changes={["repositories"]} load={load} loading={<TableLoading label={t("Repository packages")} headers={[t("Package")]} minWidth={320} />}>{(catalog) => <RepositoryPackageCatalog client={client} repositoryId={repositoryId} initial={catalog} onSelect={(id) => { selectedPackage.current = id; }} />}</ResourcePage>;
+        <ResourcePage initialRequest={initial} changes={["repositories"]} load={load} loading={<TableLoading label={t("Repository packages")} columns={repositoryPackageColumns(t)} minWidth={320} />}>{(catalog) => <>
+            {settingsError || display.error ? <Button variant="text" type="button" onClick={display.reload}>{t("Reload filters")}</Button> : null}
+            <RepositoryPackageCatalog client={client} repositoryId={repositoryId} initial={catalog}
+                visibility={{ groups: display.snapshot?.settings.packages.hiddenRepositoryPackages, busy: display.busy,
+                    save: (hiddenRepositoryPackages) => void display.save({ hiddenRepositoryPackages }) }}
+                onSelect={(id) => { selectedPackage.current = id; }} />
+        </>}</ResourcePage>;
     if (dialog) return <Dialog wide open title={dialog.title} headlineActions={refresh} actions={<DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>} onClose={dialog.onClose}>
         {content}
     </Dialog>;

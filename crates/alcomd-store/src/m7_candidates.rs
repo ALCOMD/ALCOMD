@@ -29,13 +29,22 @@ pub(super) fn snapshot(
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
          WHERE r.owner_principal_id=?1 AND (r.resolver_indexed=0 OR p.resolver_ready=1)
          AND r.repository_id NOT IN (SELECT value FROM json_each(?3))
+         AND (r.repository_id,p.package_id) NOT IN (SELECT json_extract(g.value,'$.repository_id'),disabled.value
+                 FROM json_each(?5) g, json_each(g.value,'$.package_ids') disabled)
          AND (?4 OR p.semantic_version IS NULL OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
          AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
          ORDER BY r.repository_id,p.package_id,p.version_text LIMIT 100001"
     ).map_err(|_| Error::Unavailable)?;
     let mut entries = statement
         .query_map(
-            params![owner.as_str(), ids_json, hidden, settings.show_prerelease],
+            params![
+                owner.as_str(),
+                ids_json,
+                hidden,
+                settings.show_prerelease,
+                serde_json::to_string(&settings.hidden_repository_packages)
+                    .map_err(|_| Error::Unavailable)?
+            ],
             |row| {
                 Ok(CandidateCatalogEntry {
                     description: row.get(13)?,
@@ -711,6 +720,24 @@ mod tests {
             .entries
             .is_empty()
         );
+        let mut settings = alcomd_application::ConfigSnapshot::default()
+            .settings
+            .packages;
+        settings.hidden_repository_packages = vec![alcomd_application::ConfigRepositoryPackages {
+            repository_id: "22222222-2222-4222-8222-222222222222".into(),
+            package_ids: vec!["com.example.package".into()],
+        }];
+        let hidden = snapshot(
+            &mut f.connection,
+            &PrincipalId::local_owner(),
+            f.project,
+            None,
+            &settings,
+        )
+        .expect("disabled versions are filtered before the record cap");
+        assert!(hidden.entries.is_empty());
+        assert!(hidden.catalog_complete);
+        assert_eq!(changes, f.connection.total_changes());
         f.connection.execute("WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<4096) INSERT INTO repositories(repository_id,owner_principal_id,source_kind,source_locator,source_identity_key,issues_json,revision,registered_at_ms,refreshed_at_ms,updated_at_ms,priority) SELECT printf('%08d-2222-4222-8222-222222222222',i),?1,'local','unopened',CAST(printf('identity-%d',i) AS BLOB),'[]',1,1,1,1,1 FROM n", [PrincipalId::local_owner().as_str()]).expect("candidate fixture or query must succeed");
         assert!(matches!(
             snapshot(

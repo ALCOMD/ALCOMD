@@ -354,9 +354,9 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     );
 
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
-    .expect("Config12 schema must be valid JSON");
+    .expect("Config13 schema must be valid JSON");
     assert_eq!(
         settings["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -366,14 +366,14 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         settings["$defs"]["partialUpdate"]["additionalProperties"],
         false
     );
-    assert_eq!(settings["properties"]["schema"]["const"], 12);
+    assert_eq!(settings["properties"]["schema"]["const"], 13);
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["properties"]["configSchema"]["const"],
-        12
+        13
     );
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["properties"]["settings"]["$ref"],
-        "https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/settings"
+        "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/settings"
     );
     for historical in [
         include_str!("../../../specs/config/settings-v1.schema.json"),
@@ -496,7 +496,7 @@ fn theme_scheme_contract_matches_typed_rpc_and_rejects_unknown_or_null_values() 
     use alcomd_protocol::{AppearanceScheme, AppearanceSettingsUpdate};
 
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
     .expect("current Config schema");
     let schemes = settings["$defs"]["scheme"]["enum"]
@@ -548,7 +548,7 @@ fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_i
             .is_none()
     );
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
     .expect("current Config schema");
     assert_eq!(
@@ -604,7 +604,7 @@ fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_i
 fn config_v5_public_settings_and_updates_omit_and_reject_removed_density() {
     use alcomd_protocol::{AppearanceSettings, AppearanceSettingsUpdate, SettingsUpdateParams};
 
-    assert_eq!(alcomd_protocol::CONFIG_SCHEMA_VERSION, 12);
+    assert_eq!(alcomd_protocol::CONFIG_SCHEMA_VERSION, 13);
     let appearance =
         json!({"mode":"dark", "scheme":"fidelity", "sourceColor":"#AABBCC", "motion":"reduced"});
     let typed: AppearanceSettings =
@@ -614,9 +614,9 @@ fn config_v5_public_settings_and_updates_omit_and_reject_removed_density() {
         appearance
     );
     let schema: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
-    .expect("Config12 schema");
+    .expect("Config13 schema");
     for properties in [
         &schema["$defs"]["appearance"]["properties"],
         &schema["$defs"]["partialUpdate"]["properties"]["appearance"]["properties"],
@@ -653,6 +653,90 @@ fn config_v5_public_settings_and_updates_omit_and_reject_removed_density() {
 }
 
 #[test]
+fn config13_package_preferences_are_required_closed_nonnullable_and_bounded() {
+    use alcomd_protocol::{PackageSettings, SettingsUpdate};
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v13.schema.json"
+    ))
+    .expect("schema");
+    assert_eq!(schema["properties"]["schema"]["const"], 13);
+    assert_eq!(schema["x-alcomd-migration"]["to"], 13);
+    assert_eq!(schema["x-alcomd-storage"]["maxUtf8Bytes"], 1048576);
+    assert_eq!(schema["x-alcomd-storage"]["maxLegacyFileUtf8Bytes"], 16384);
+    assert_eq!(schema["$defs"]["hiddenRepositoryPackages"]["maxItems"], 256);
+    assert_eq!(
+        schema["$defs"]["hiddenRepositoryPackages"]["x-alcomd-maxTotalPackageIds"],
+        4096
+    );
+    assert!(
+        schema["$defs"]["packages"]["required"]
+            .as_array()
+            .expect("required")
+            .contains(&json!("hiddenRepositoryPackages"))
+    );
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v13.contract-vectors.json"
+    ))
+    .expect("vectors");
+    let packages = vectors["current"]["getResult"]["settings"]["packages"].clone();
+    let typed: PackageSettings =
+        serde_json::from_value(packages.clone()).expect("complete Config13");
+    assert!(typed.hidden_repository_packages.is_empty());
+    let mut missing = packages;
+    missing
+        .as_object_mut()
+        .expect("packages")
+        .remove("hiddenRepositoryPackages");
+    assert!(serde_json::from_value::<PackageSettings>(missing).is_err());
+    for update in vectors["acceptedPackageUpdates"]
+        .as_array()
+        .expect("updates")
+    {
+        let typed: SettingsUpdate =
+            serde_json::from_value(update.clone()).expect("package preference update");
+        assert!(
+            typed
+                .packages
+                .expect("packages")
+                .hidden_repository_packages
+                .is_some()
+        );
+    }
+    let omitted: SettingsUpdate =
+        serde_json::from_value(json!({"packages":{"showPrerelease":true}})).expect("omission");
+    assert!(
+        omitted
+            .packages
+            .expect("packages")
+            .hidden_repository_packages
+            .is_none()
+    );
+    for value in [
+        Value::Null,
+        json!({}),
+        json!([{"repositoryId":"repo","packageIds":[],"extra":true}]),
+        json!([{"repositoryId":"repo","packageIds":null}]),
+    ] {
+        assert!(
+            serde_json::from_value::<SettingsUpdate>(
+                json!({"packages":{"hiddenRepositoryPackages":value}})
+            )
+            .is_err()
+        );
+    }
+    let legacy: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v12.schema.json"
+    ))
+    .expect("frozen migration schema");
+    assert_eq!(legacy["properties"]["schema"]["const"], 12);
+    assert!(
+        legacy["$defs"]["packages"]["properties"]
+            .get("hiddenRepositoryPackages")
+            .is_none()
+    );
+}
+
+#[test]
 fn config5_directory_updates_are_closed_nullable_and_snapshot_complete() {
     use alcomd_protocol::{NullableUpdate, PathSettings, SettingsGetResult, SettingsUpdateParams};
     for invalid in [
@@ -686,12 +770,12 @@ fn config5_directory_updates_are_closed_nullable_and_snapshot_complete() {
     );
     assert!(serde_json::from_value::<PathSettings>(json!({"projectDirectory":null})).is_err());
     let vectors: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.contract-vectors.json"
+        "../../../specs/config/settings-v13.contract-vectors.json"
     ))
     .expect("vectors");
     let current: SettingsGetResult =
         serde_json::from_value(vectors["current"]["getResult"].clone()).expect("current result");
-    assert_eq!(current.config_schema, 12);
+    assert_eq!(current.config_schema, 13);
     assert_eq!(current.settings.paths.project_directory, None);
     assert_eq!(
         current.directories.backup_directory,
@@ -720,6 +804,8 @@ fn settings_partial_updates_reject_explicit_null_except_nullable_values() {
         json!({"appearance": {"motion": null}, "locale": "ja-JP"}),
         json!({"packages": {"showPrerelease": null}, "locale": "ja-JP"}),
         json!({"packages": {"hiddenRepositoryIds": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hiddenRepositoryPackages": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hiddenRepositoryPackages": [{"repositoryId":"a", "packageIds":[], "extra":true}]}}),
         json!({"packages": {"hideLocalUserPackages": null}, "locale": "ja-JP"}),
         json!({"unity": null, "locale": "ja-JP"}),
         json!({"unity": {}, "locale": "ja-JP"}),
@@ -791,7 +877,7 @@ fn config6_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
         serde_json::from_value::<UnitySettings>(json!({"defaultLaunchArguments":null})).is_err()
     );
     let current: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
     .expect("Config6");
     assert_eq!(
@@ -803,7 +889,10 @@ fn config6_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
         current["$defs"]["launchArguments"]["items"]["x-alcomd-maxUtf8Bytes"],
         4096
     );
-    assert_eq!(current["x-alcomd-storage"]["maxUtf8Bytes"], 16384);
+    assert_eq!(
+        current["x-alcomd-storage"]["maxBaseUtf8BytesExcludingHiddenRepositoryPackages"],
+        16384
+    );
     assert_eq!(
         schema("m7-official-gui")["x-alcomd-field-permissions"]["settings.update.unity.defaultLaunchArguments"],
         json!(["settings.manage", "unity.manage"])
@@ -884,9 +973,9 @@ fn config7_window_settings_are_closed_required_bool_and_false_is_an_explicit_upd
         json!({})
     );
     let vectors: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.contract-vectors.json"
+        "../../../specs/config/settings-v13.contract-vectors.json"
     ))
-    .expect("Config12 vectors");
+    .expect("Config13 vectors");
     let settings: Settings =
         serde_json::from_value(vectors["current"]["getResult"]["settings"].clone())
             .expect("complete current settings");
@@ -926,12 +1015,12 @@ fn config7_window_settings_are_closed_required_bool_and_false_is_an_explicit_upd
 fn config9_projects_and_backups_are_complete_closed_and_partial_updates_are_non_nullable() {
     use alcomd_protocol::{Settings, SettingsUpdate};
     let vectors: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.contract-vectors.json"
+        "../../../specs/config/settings-v13.contract-vectors.json"
     ))
-    .expect("Config12 vectors");
+    .expect("Config13 vectors");
     let settings: Settings =
         serde_json::from_value(vectors["current"]["getResult"]["settings"].clone())
-            .expect("Config12 settings");
+            .expect("Config13 settings");
     assert!(settings.projects.auto_discover);
     assert_eq!(
         settings.backups.compression_mode,
@@ -1022,9 +1111,9 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
 
     let contract = schema("m7-official-gui");
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
-    .expect("Config12 schema");
+    .expect("Config13 schema");
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["required"],
         json!([
@@ -1068,7 +1157,7 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
     ))
     .expect("approved proposal");
     let mut expected = proposal["schemaFragments"]["$defs"]["hubLocation"].clone();
-    expected["properties"]["path"] = json!({"$ref":"https://alcomd.vrclearn.com/schema/config/settings-v12.json#/$defs/hubPath"});
+    expected["properties"]["path"] = json!({"$ref":"https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/hubPath"});
     assert_eq!(contract["$defs"]["unityHubLocation"], expected);
 }
 
@@ -1771,7 +1860,7 @@ fn m5_backup_create_contract_is_additive_and_published() {
     let choices = json!(["store", "fast", "level3", "level5", "level7", "maximum"]);
     assert_eq!(contract["$defs"]["compressionMode"]["enum"], choices);
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
+        "../../../specs/config/settings-v13.schema.json"
     ))
     .expect("current settings schema");
     for definition in ["backupSettings", "partialBackupsUpdate"] {

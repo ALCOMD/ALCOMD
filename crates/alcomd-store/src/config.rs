@@ -8,11 +8,13 @@ use alcomd_application::ConfigProxy;
 use alcomd_application::{
     BackupCompression, ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion,
     ConfigAppearanceScheme, ConfigBackupSettings, ConfigIntegrationSettings, ConfigLocale,
-    ConfigPackageSettings, ConfigPathSettings, ConfigProjectSettings, ConfigSettings,
-    ConfigSnapshot, ConfigStore, ConfigStoreError, ConfigUnitySettings, ConfigWindowSettings,
+    ConfigPackageSettings, ConfigPathSettings, ConfigProjectSettings, ConfigRepositoryPackages,
+    ConfigSettings, ConfigSnapshot, ConfigStore, ConfigStoreError, ConfigUnitySettings,
+    ConfigWindowSettings,
 };
 
-const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
+const MAX_SETTINGS_BYTES: u64 = 1024 * 1024;
+const MAX_BASE_SETTINGS_BYTES: u64 = 16 * 1024;
 
 /// The daemon's bounded, recoverable settings.toml storage adapter.
 #[derive(Clone, Debug)]
@@ -21,7 +23,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 12;
+    pub const SCHEMA_VERSION: u32 = 13;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -53,7 +55,9 @@ impl ConfigStore for FileConfigStore {
             if snapshot.revision == 0 {
                 return Err(ConfigStoreError::Corrupt);
             }
-            if contents.len() as u64 > MAX_SETTINGS_BYTES {
+            if contents.len() as u64 > MAX_SETTINGS_BYTES
+                || serialize_settings_base(snapshot).len() as u64 > MAX_BASE_SETTINGS_BYTES
+            {
                 return Err(ConfigStoreError::TooLarge);
             }
             publish_settings(&self.path, &contents)
@@ -85,6 +89,9 @@ fn initialize_settings_file(path: &Path) -> Result<(), ConfigStoreError> {
     }
     let (snapshot, schema) = read_settings_with_schema(path)?;
     if schema < u64::from(FileConfigStore::SCHEMA_VERSION) {
+        if serialize_settings_base(&snapshot).len() as u64 > MAX_BASE_SETTINGS_BYTES {
+            return Err(ConfigStoreError::TooLarge);
+        }
         publish_settings(path, &serialize_settings(&snapshot))?;
     }
     Ok(())
@@ -104,7 +111,7 @@ fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), Confi
         return Err(ConfigStoreError::Corrupt.with_reason("settings path is not a regular file"));
     }
     if metadata.len() > MAX_SETTINGS_BYTES {
-        return Err(ConfigStoreError::Corrupt.with_reason("settings file exceeds the 16 KiB limit"));
+        return Err(ConfigStoreError::Corrupt.with_reason("settings file exceeds the 1 MiB limit"));
     }
     let mut bytes =
         Vec::with_capacity(usize::try_from(metadata.len()).map_err(|_| ConfigStoreError::Corrupt)?);
@@ -115,7 +122,7 @@ fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), Confi
         .map_err(map_io)?;
     if bytes.len() as u64 > MAX_SETTINGS_BYTES {
         return Err(ConfigStoreError::Corrupt
-            .with_reason("settings file grew beyond the 16 KiB limit while reading"));
+            .with_reason("settings file grew beyond the 1 MiB limit while reading"));
     }
     if bytes.contains(&0) {
         return Err(ConfigStoreError::Corrupt.with_reason("settings document contains a NUL byte"));
@@ -124,6 +131,13 @@ fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), Confi
         std::str::from_utf8(&bytes)
             .map_err(|error| ConfigStoreError::Corrupt.with_source(error))?,
     )
+    .map_err(|error| {
+        if error == ConfigStoreError::TooLarge {
+            ConfigStoreError::Corrupt.with_source(error)
+        } else {
+            error
+        }
+    })
 }
 
 #[cfg(test)]
@@ -163,6 +177,7 @@ struct RawAppearance {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawPackages {
+    hidden_repository_packages: Option<Vec<ConfigRepositoryPackages>>,
     show_prerelease: bool,
     hidden_repository_ids: Vec<String>,
     hide_local_user_packages: bool,
@@ -232,6 +247,16 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         ))
     })?;
     let schema = raw.schema;
+    if schema < 13 && text.len() as u64 > MAX_BASE_SETTINGS_BYTES {
+        return Err(ConfigStoreError::TooLarge);
+    }
+    let hidden_repository_packages = raw
+        .packages
+        .as_ref()
+        .and_then(|v| v.hidden_repository_packages.clone());
+    if hidden_repository_packages.is_some() != (schema >= 13) {
+        return Err(ConfigStoreError::Corrupt);
+    }
     let revision = Some(raw.revision);
     let locale = Some(parse_locale(&raw.locale)?);
     let mode = Some(parse_mode(&raw.appearance.mode)?);
@@ -358,6 +383,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             return Err(ConfigStoreError::Corrupt);
         }
         ConfigPackageSettings {
+            hidden_repository_packages: Vec::new(),
             show_prerelease: false,
             hidden_repository_ids: Vec::new(),
             hide_local_user_packages: false,
@@ -367,6 +393,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             return Err(ConfigStoreError::Corrupt);
         }
         ConfigPackageSettings {
+            hidden_repository_packages: hidden_repository_packages.unwrap_or_default(),
             show_prerelease: show_prerelease.ok_or(ConfigStoreError::Corrupt)?,
             hidden_repository_ids: hidden_repository_ids.ok_or(ConfigStoreError::Corrupt)?,
             hide_local_user_packages: hide_local_user_packages.ok_or(ConfigStoreError::Corrupt)?,
@@ -429,10 +456,43 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         .settings
         .validate()
         .map_err(|_| ConfigStoreError::Corrupt)?;
+    if schema >= 13 && serialize_settings_base(&snapshot).len() as u64 > MAX_BASE_SETTINGS_BYTES {
+        return Err(ConfigStoreError::TooLarge);
+    }
     Ok((snapshot, schema))
 }
 
 fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
+    let groups = snapshot
+        .settings
+        .packages
+        .hidden_repository_packages
+        .iter()
+        .map(|group| {
+            let ids = group
+                .package_ids
+                .iter()
+                .map(|id| serde_json::to_string(id).expect("validated package ID"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "{{ repository_id = \"{}\", package_ids = [{ids}] }}",
+                group.repository_id
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    String::from_utf8(serialize_settings_base(snapshot))
+        .expect("UTF-8 settings")
+        .replacen(
+            "[packages]\n",
+            &format!("[packages]\nhidden_repository_packages = [{groups}]\n"),
+            1,
+        )
+        .into_bytes()
+}
+
+fn serialize_settings_base(snapshot: &ConfigSnapshot) -> Vec<u8> {
     let source = snapshot
         .settings
         .appearance
@@ -806,7 +866,7 @@ mod tests {
             Some(vec!["sensitive-argv-marker".to_owned()]);
         let text = String::from_utf8(serialize_settings(&snapshot))
             .expect("settings UTF-8")
-            .replace("schema = 12", "schema = 'sensitive-schema-marker'");
+            .replace("schema = 13", "schema = 'sensitive-schema-marker'");
         fs::write(&path, text).expect("isolated malformed settings");
         let error = FileConfigStore::new(path.clone())
             .load()
@@ -868,7 +928,7 @@ mod tests {
         let canonical = String::from_utf8(serialize_settings(&snapshot)).expect("UTF-8");
         let variants = [
             canonical
-                .replace("schema = 12", "schema = 12 # current schema")
+                .replace("schema = 13", "schema = 13 # current schema")
                 .replace("mode = \"system\"", "mode = 'system' # same value"),
             canonical
                 .replace("[appearance]", "[\"appearance\"]")
@@ -1106,7 +1166,8 @@ mod tests {
             current
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", "schema = 7")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 7")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", ""),
         ] {
@@ -1133,12 +1194,13 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", "schema = 7")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 7")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "")
         };
-        let mut remaining =
-            usize::try_from(MAX_SETTINGS_BYTES).expect("file limit") - legacy_file(&expected).len();
+        let mut remaining = usize::try_from(MAX_BASE_SETTINGS_BYTES).expect("file limit")
+            - legacy_file(&expected).len();
         for argument in expected
             .settings
             .unity
@@ -1152,7 +1214,7 @@ mod tests {
         }
         assert_eq!(remaining, 0);
         let legacy = legacy_file(&expected);
-        assert_eq!(legacy.len() as u64, MAX_SETTINGS_BYTES);
+        assert_eq!(legacy.len() as u64, MAX_BASE_SETTINGS_BYTES);
         assert_eq!(parse_settings(&legacy), Ok(expected));
         fs::write(&path, &legacy).expect("valid Config7 at byte bound");
         assert_eq!(
@@ -1173,7 +1235,7 @@ mod tests {
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../specs/config/settings-v12.contract-vectors.json"
+            "../../../specs/config/settings-v13.contract-vectors.json"
         ))
         .expect("Config12 vectors");
         for vector in vectors["legacyInputs"]
@@ -1221,7 +1283,7 @@ mod tests {
             let store = FileConfigStore::new(path.clone());
             assert_eq!(store.initialize(), Ok(expected.clone()));
             let accepted = fs::read_to_string(&path).expect("migrated file");
-            assert!(accepted.starts_with("schema = 12\n"));
+            assert!(accepted.starts_with("schema = 13\n"));
             assert!(accepted.contains(&format!(
                 "\n[window]\nremember_state = {}\n",
                 expected.settings.window.remember_state
@@ -1261,7 +1323,8 @@ mod tests {
                 let historical = current
                     .replace("fullscreen = false\n", "")
                     .replace("fullscreen = true\n", "")
-                    .replace("schema = 12", &format!("schema = {schema}"))
+                    .replace("hidden_repository_packages = []\n", "")
+                    .replace("schema = 13", &format!("schema = {schema}"))
                     .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                     .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
                 fs::write(&path, &historical).expect("historical schema with unapproved level");
@@ -1308,7 +1371,8 @@ mod tests {
             .replace(CONFIG8_DEFAULTS_TOML, "")
             .replace("fullscreen = false\n", "")
             .replace("fullscreen = true\n", "")
-            .replace("schema = 12", "schema = 6")
+            .replace("hidden_repository_packages = []\n", "")
+            .replace("schema = 13", "schema = 6")
             .replace("\n[network]\nproxy_mode = \"system\"\n", "")
             .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
         fs::write(&path, &legacy).expect("Config6 with retained preferences");
@@ -1408,7 +1472,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", "schema = 6")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 6")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", ""),
         );
@@ -1445,7 +1510,8 @@ mod tests {
             .replace(CONFIG8_DEFAULTS_TOML, "")
             .replace("fullscreen = false\n", "")
             .replace("fullscreen = true\n", "")
-            .replace("schema = 12", "schema = 5")
+            .replace("hidden_repository_packages = []\n", "")
+            .replace("schema = 13", "schema = 5")
             .replace("\n[network]\nproxy_mode = \"system\"\n", "")
             .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
         fs::write(&path, &legacy).expect("Config5");
@@ -1464,7 +1530,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", &format!("schema = {schema}"))
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", &format!("schema = {schema}"))
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
             if schema < 5 {
@@ -1593,13 +1660,14 @@ mod tests {
             .replace(CONFIG8_DEFAULTS_TOML, "")
             .replace("fullscreen = false\n", "")
             .replace("fullscreen = true\n", "")
-            .replace("schema = 12", "schema = 4")
+            .replace("hidden_repository_packages = []\n", "")
+            .replace("schema = 13", "schema = 4")
             .replace("\n[network]\nproxy_mode = \"system\"\n", "")
             .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
         fs::write(&path, &legacy).expect("legacy Config4");
         assert_eq!(store.initialize(), Ok(original.clone()));
         let migrated = fs::read_to_string(&path).expect("migrated current config");
-        assert!(migrated.starts_with("schema = 12\n"));
+        assert!(migrated.starts_with("schema = 13\n"));
         assert!(!migrated.contains("[paths]"));
         for candidate in [r"C:\用户\项目", "/home/测试/备份 \"local\""] {
             let mut saved = original.clone();
@@ -1685,6 +1753,7 @@ mod tests {
             backup_directory: ConfigNullableUpdate::Set(format!("/{}", "\\".repeat(4000))),
         });
         update.packages = Some(ConfigPackageSettingsUpdate {
+            hidden_repository_packages: None,
             show_prerelease: None,
             hide_local_user_packages: None,
             hidden_repository_ids: Some(
@@ -1783,7 +1852,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", &format!("schema = {schema}"))
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", &format!("schema = {schema}"))
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "")
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
@@ -1891,7 +1961,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 12\n"));
+            assert!(encoded.starts_with("schema = 13\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1915,7 +1985,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", &format!("schema = {schema}"))
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", &format!("schema = {schema}"))
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "")
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
@@ -1977,6 +2048,7 @@ mod tests {
                     }),
                     locale: Some(ConfigLocale::JaJp),
                     packages: Some(ConfigPackageSettingsUpdate {
+                        hidden_repository_packages: None,
                         show_prerelease: Some(true),
                         hidden_repository_ids: None,
                         hide_local_user_packages: Some(true),
@@ -2052,7 +2124,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 12\n"));
+            assert!(encoded.starts_with("schema = 13\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -2078,7 +2150,8 @@ mod tests {
                         .replace(CONFIG8_DEFAULTS_TOML, "")
                         .replace("fullscreen = false\n", "")
                         .replace("fullscreen = true\n", "")
-                        .replace("schema = 12", &format!("schema = {schema}"))
+                        .replace("hidden_repository_packages = []\n", "")
+                        .replace("schema = 13", &format!("schema = {schema}"))
                         .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                         .replace("\n[integrations]\nhandle_vcc_links = true\n", "")
                         .replace(
@@ -2124,6 +2197,7 @@ mod tests {
                     }),
                     locale: Some(ConfigLocale::ZhCn),
                     packages: Some(ConfigPackageSettingsUpdate {
+                        hidden_repository_packages: None,
                         show_prerelease: Some(true),
                         hidden_repository_ids: Some(vec![
                             "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
@@ -2204,7 +2278,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 12\n")
+                .starts_with("schema = 13\n")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -2296,7 +2370,7 @@ mod tests {
         ];
         expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
         let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        assert!(canonical.starts_with("schema = 12\n"));
+        assert!(canonical.starts_with("schema = 13\n"));
         assert!(!canonical.contains("density"));
         for density in ["default", "compact"] {
             let legacy = canonical
@@ -2304,7 +2378,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", "schema = 3")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 3")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "")
                 .replace(
@@ -2344,7 +2419,8 @@ mod tests {
                 .replace(CONFIG8_DEFAULTS_TOML, "")
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
-                .replace("schema = 12", &format!("schema = {schema}"))
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", &format!("schema = {schema}"))
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
             legacy = if schema < 3 {
@@ -2417,7 +2493,7 @@ mod tests {
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 12", "schema = 13"));
+        invalid.push(current.replace("schema = 13", "schema = 14"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -2460,6 +2536,7 @@ mod tests {
                     }),
                     locale: Some(ConfigLocale::ZhCn),
                     packages: Some(ConfigPackageSettingsUpdate {
+                        hidden_repository_packages: None,
                         show_prerelease: Some(true),
                         hidden_repository_ids: Some(vec![
                             "00000000-0000-0000-0000-000000000001".to_owned(),
@@ -2680,11 +2757,75 @@ mod tests {
             .map(|value| format!("00000000-0000-0000-0000-{value:012x}"))
             .collect();
         let encoded = serialize_settings(&snapshot);
-        assert!(encoded.len() as u64 <= MAX_SETTINGS_BYTES);
+        assert!(encoded.len() as u64 <= MAX_BASE_SETTINGS_BYTES);
         assert_eq!(
             parse_settings(std::str::from_utf8(&encoded).expect("utf8")),
             Ok(snapshot)
         );
+    }
+
+    #[test]
+    fn config13_package_preferences_roundtrip_above_old_limit_and_preserve_legacy_authority() {
+        let root = temporary_path("config13-package-preferences");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let store = FileConfigStore::new(path.clone());
+        let original = store.initialize().expect("initialize");
+        let mut saved = original.clone();
+        saved.revision += 1;
+        saved.settings.packages.hidden_repository_packages = vec![ConfigRepositoryPackages {
+            repository_id: "00000000-0000-4000-8000-000000000102".into(),
+            package_ids: (0..4096)
+                .map(|n| format!("com.example.{n:04}.{}", "a".repeat(105)))
+                .collect(),
+        }];
+        store
+            .publish(&saved)
+            .expect("bounded preferences exceed former file budget");
+        assert!(fs::metadata(&path).expect("file").len() > MAX_BASE_SETTINGS_BYTES);
+        assert_eq!(
+            FileConfigStore::new(path.clone()).initialize(),
+            Ok(saved.clone())
+        );
+        let bytes = fs::read_to_string(&path).expect("saved");
+        let invalid = bytes.replace("schema = 13", "schema = 12");
+        assert!(parse_settings(&invalid).is_err());
+        let mut extra = saved.clone();
+        extra.settings.unity.default_launch_arguments = Some(vec!["x".repeat(4096); 5]);
+        assert_eq!(store.publish(&extra), Err(ConfigStoreError::TooLarge));
+        assert_eq!(fs::read_to_string(&path).expect("unchanged"), bytes);
+        let legacy = String::from_utf8(serialize_settings_base(&original))
+            .expect("UTF-8")
+            .replace("schema = 13", "schema = 12");
+        fs::write(&path, &legacy).expect("valid legacy");
+        assert_eq!(store.initialize(), Ok(original.clone()));
+        let current = fs::read_to_string(&path).expect("migrated");
+        assert!(current.contains("hidden_repository_packages = []"));
+        let old_with_new = legacy.replace(
+            "[packages]\n",
+            "[packages]\nhidden_repository_packages = []\n",
+        );
+        assert_eq!(
+            parse_settings(&old_with_new),
+            Err(ConfigStoreError::Corrupt)
+        );
+        assert_eq!(
+            parse_settings(&current.replace("hidden_repository_packages = []\n", "")),
+            Err(ConfigStoreError::Corrupt)
+        );
+        let padded = format!("{legacy}#{}", " ".repeat(MAX_BASE_SETTINGS_BYTES as usize));
+        assert_eq!(parse_settings(&padded), Err(ConfigStoreError::TooLarge));
+        fs::write(&path, &padded).expect("oversized legacy file");
+        assert_eq!(store.load(), Err(ConfigStoreError::Corrupt));
+        assert_eq!(fs::read_to_string(&path).expect("legacy unchanged"), padded);
+        let mut padded = current.clone();
+        padded.push('#');
+        padded.push_str(&" ".repeat(MAX_SETTINGS_BYTES as usize - padded.len()));
+        assert_eq!(parse_settings(&padded), Ok(original));
+        padded.push(' ');
+        fs::write(&path, padded).expect("oversized file");
+        assert_eq!(store.load(), Err(ConfigStoreError::Corrupt));
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]
@@ -2701,7 +2842,7 @@ mod tests {
             .map(|value| format!("00000000-0000-0000-0000-{value:012x}"))
             .collect();
         oversized.settings.unity.hub_path = Some(format!("/{}", "\\".repeat(4095)));
-        assert!(serialize_settings(&oversized).len() as u64 > MAX_SETTINGS_BYTES);
+        assert!(serialize_settings_base(&oversized).len() as u64 > MAX_BASE_SETTINGS_BYTES);
         assert_eq!(store.publish(&oversized), Err(ConfigStoreError::TooLarge));
         assert_eq!(fs::read(&path).expect("accepted bytes"), original_bytes);
         assert_eq!(store.load().expect("accepted revision"), original);
@@ -2758,7 +2899,8 @@ mod tests {
         assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
         for schema in 7..=9 {
             let invalid = canonical
-                .replace("schema = 12", &format!("schema = {schema}"))
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", &format!("schema = {schema}"))
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
             fs::write(&path, &invalid).expect("unapproved historical field");
@@ -2769,7 +2911,8 @@ mod tests {
             );
         }
         let legacy9 = missing
-            .replace("schema = 12", "schema = 9")
+            .replace("hidden_repository_packages = []\n", "")
+            .replace("schema = 13", "schema = 9")
             .replace("\n[network]\nproxy_mode = \"system\"\n", "")
             .replace("\n[integrations]\nhandle_vcc_links = true\n", "");
         fs::write(&path, legacy9).expect("valid Config9");
@@ -2778,7 +2921,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("migrated")
-                .starts_with("schema = 12\n")
+                .starts_with("schema = 13\n")
         );
         fs::remove_dir_all(root).expect("cleanup fixture");
     }
@@ -2795,7 +2938,8 @@ mod tests {
         let section = "\n[integrations]\nhandle_vcc_links = true\n";
         let current = String::from_utf8(serialize_settings(&expected)).expect("canonical");
         let legacy = current
-            .replace("schema = 12", "schema = 10")
+            .replace("hidden_repository_packages = []\n", "")
+            .replace("schema = 13", "schema = 10")
             .replace("\n[network]\nproxy_mode = \"system\"\n", "")
             .replace(section, "");
         fs::write(&path, legacy).expect("valid Config10");
@@ -2812,7 +2956,8 @@ mod tests {
             current.replace(section, ""),
             current.replace("handle_vcc_links = true", "handle_vcc_links = \"true\""),
             current
-                .replace("schema = 12", "schema = 10")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 10")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", ""),
         ] {
             fs::write(&path, &invalid).expect("invalid fixture");
@@ -2836,7 +2981,8 @@ mod tests {
         fs::write(
             &path,
             canonical
-                .replace("schema = 12", "schema = 11")
+                .replace("hidden_repository_packages = []\n", "")
+                .replace("schema = 13", "schema = 11")
                 .replace(section, ""),
         )
         .expect("Config11 fixture");

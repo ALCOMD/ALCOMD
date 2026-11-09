@@ -1,6 +1,6 @@
 # settings.toml Config Schema 5
 
-状态：保留的 Config5 启动迁移输入；当前设置合同见 [Config12](settings-v12.md)。以下保留 Config5 的原始字段与验证形状。
+状态：保留的 Config5 启动迁移输入；当前设置合同见 [Config13](settings-v13.md)。以下保留 Config5 的原始字段与验证形状。
 
 Config5 在 Config4 上增加 `paths`，仍由 `alcomd` 经 application 用例层持有唯一设置权威。
 Config1–4 只作为经过各自严格校验的启动迁移输入；保留 revision、主题、语言、包偏好及 Hub 路径，

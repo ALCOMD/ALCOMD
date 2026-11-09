@@ -907,6 +907,10 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "仓库",
         "ja-JP": "リポジトリ"
     },
+    "Enable {name} from this repository": {
+        "zh-CN": "启用此仓库中的{name}",
+        "ja-JP": "このリポジトリの{name}を有効にする"
+    },
     "Repository packages": {
         "zh-CN": "仓库软件包",
         "ja-JP": "リポジトリのパッケージ"

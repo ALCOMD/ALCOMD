@@ -131,6 +131,7 @@ async fn automatic_refresh_skips_fresh_and_hidden_throttles_failures_and_manual_
             1,
             ConfigUpdate {
                 packages: Some(ConfigPackageSettingsUpdate {
+                    hidden_repository_packages: None,
                     hidden_repository_ids: Some(vec![hidden.repository_id.to_string()]),
                     show_prerelease: None,
                     hide_local_user_packages: None,

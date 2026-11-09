@@ -237,7 +237,7 @@ test("Resources sections and detail return controls work through ordinary clicks
     const repositoryHost = dialogHost(page, "Example packages");
     await expect(repositoryDialog).toBeVisible();
     await expect(repositoryHost.getByRole("button", { name: "Refresh repository", exact: true })).toBeVisible();
-    await expect(repositoryHost.getByRole("table", { name: "Repository packages" }).getByRole("columnheader")).toHaveText(["Package"]);
+    await expect(repositoryHost.getByRole("table", { name: "Repository packages" }).getByRole("columnheader")).toHaveText(["Enabled", "Package"]);
     for (const header of await repositoryHost.getByRole("columnheader").all()) {
         await expect(header).toHaveCSS("font-size", "14px");
         await expect(header).toHaveCSS("line-height", "20px");

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PackageCursor, RepositoryPackagesResult, RepositoryPackageVersion, RepositorySnapshot } from "./core-models";
-import type { RpcError } from "@alcomd/sdk";
+import type { RepositoryPackageSettings, RpcError } from "@alcomd/sdk";
 import { useActionScope } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
-import { DesktopList } from "./DesktopList";
+import { DesktopList, type DesktopListColumn } from "./DesktopList";
+import type { Translate } from "./i18n-types";
 import { useTranslation } from "./i18n";
 import { LoadingState } from "./LoadingState";
-import { Button, RefreshButton, Select } from "./Material";
+import { Button, Checkbox, RefreshButton, Select } from "./Material";
 import { PagedItems } from "./PagedItems";
 import { normalizeRequestError } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
@@ -40,17 +41,28 @@ export function RepositoryRefresh({ client, repository, onChanged }: { client: G
         label={t("Refresh repository")} refreshingLabel={t("Refreshing repository")} refreshing={busy} onClick={() => void refresh()} />;
 }
 
-export function RepositoryPackageCatalog({ client, repositoryId, initial, onSelect }: { client: GuiRpcClient; repositoryId: string; initial: RepositoryPackagesResult; onSelect(id: string | undefined): void }) {
+interface PackageVisibility {
+    groups?: RepositoryPackageSettings[];
+    busy: boolean;
+    save(groups: RepositoryPackageSettings[]): void;
+}
+
+export function repositoryPackageColumns(t: Translate): DesktopListColumn[] {
+    return [{ key: "enabled", header: t("Enabled"), width: "64px" }, { key: "name", header: t("Package") }];
+}
+
+export function RepositoryPackageCatalog({ client, repositoryId, initial, onSelect, visibility }: { client: GuiRpcClient; repositoryId: string; initial: RepositoryPackagesResult; onSelect(id: string | undefined): void; visibility: PackageVisibility }) {
     const [selectedId, setSelectedId] = useState<string>();
     const [version, setVersion] = useState<string>();
     const select = (id: string | undefined) => { setSelectedId(id); setVersion(undefined); onSelect(id); };
     return <PagedItems initialItems={initial.packages} initialCursor={initial.nextCursor} showPagination={selectedId === undefined}
         loadMore={async (cursor) => { const result = await client.repositoryPackages(repositoryId, cursor); return { items: result.packages, nextCursor: result.nextCursor }; }}>
-        {(items, pagination) => <CatalogContents client={client} items={items} selectedId={selectedId} select={select} version={version} setVersion={setVersion} pagination={pagination} />}
+        {(items, pagination) => <CatalogContents client={client} repositoryId={repositoryId} visibility={visibility} items={items} selectedId={selectedId} select={select} version={version} setVersion={setVersion} pagination={pagination} />}
     </PagedItems>;
 }
 
-function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion }: {
+function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion, repositoryId, visibility }: {
+    repositoryId: string; visibility: PackageVisibility;
     client: GuiRpcClient; items: RepositoryPackageVersion[]; selectedId?: string; select(id: string | undefined): void;
     pagination: { cursor?: PackageCursor; loading: boolean; error?: RpcError; next(): Promise<void> };
     version?: string; setVersion(version: string): void;
@@ -59,6 +71,21 @@ function CatalogContents({ client, items, selectedId, select, pagination, versio
     const origins = useRef(new Map<string, HTMLElement>());
     const returnTo = useRef<string | undefined>(undefined);
     const heading = useRef<HTMLHeadingElement>(null);
+    const toggle = (id: string, name: string, labelHidden = false) => {
+        const groups = visibility.groups;
+        const group = groups?.find((item) => item.repositoryId === repositoryId);
+        const checked = groups !== undefined && !group?.packageIds.includes(id);
+        const count = groups?.reduce((total, item) => total + item.packageIds.length, 0) ?? 0;
+        return <Checkbox checked={checked} label={t("Enable {name} from this repository", { name })} labelHidden={labelHidden}
+            disabled={groups === undefined || visibility.busy || checked && (count >= 4096 || group === undefined && groups.length >= 256)}
+            onChange={(enabled) => {
+                if (groups === undefined || enabled === checked) return;
+                const ids = enabled ? group?.packageIds.filter((item) => item !== id) ?? [] : [...group?.packageIds ?? [], id];
+                const next = groups.filter((item) => item.repositoryId !== repositoryId);
+                if (ids.length) next.push({ repositoryId, packageIds: ids });
+                visibility.save(next);
+            }} />;
+    };
     const groups = useMemo(() => {
         const result = new Map<string, RepositoryPackageVersion[]>();
         const seen = new Set<string>();
@@ -95,13 +122,15 @@ function CatalogContents({ client, items, selectedId, select, pagination, versio
     if (versions !== undefined && selectedId !== undefined) return <section className="repository-package-detail">
         <Button variant="text" type="button" onClick={() => { returnTo.current = selectedId; select(undefined); }}>{t("Back to packages")}</Button>
         <h2 ref={heading} tabIndex={-1}>{versions.find((item) => item.displayName)?.displayName ?? selectedId}</h2>
+        {toggle(selectedId, versions.find((item) => item.displayName)?.displayName ?? selectedId)}
         {incomplete ? <>
             <dl className="detail-grid"><div><dt>{t("Package ID")}</dt><dd>{selectedId}</dd></div></dl>
             {pagination.error ? <Button variant="text" type="button" disabled={pagination.loading} onClick={() => void pagination.next()}>{t("Retry loading more")}</Button> : <LoadingState title={t("Loading versions…")} variant="bar" />}
         </> : <PackageDetails client={client} versions={versions} version={version} setVersion={setVersion} />}
     </section>;
     return <DesktopList className="repository-package-list" label={t("Repository packages")} minWidth={320}
-        columns={[{ key: "name", header: t("Package") }]} emptyMessage={t("No matching items")} rows={[...groups].map(([id, group]) => ({ key: id, cells: [
+        columns={repositoryPackageColumns(t)} emptyMessage={t("No matching items")} rows={[...groups].map(([id, group]) => ({ key: id, cells: [
+            toggle(id, group.find((item) => item.displayName)?.displayName ?? id, true),
             <Button className="repository-package-name" ref={(element) => { if (element) origins.current.set(id, element); else origins.current.delete(id); }}
                 variant="text" type="button" title={group.find((item) => item.displayName)?.displayName ?? id} onClick={() => select(id)}>{group.find((item) => item.displayName)?.displayName ?? id}</Button>
         ] }))} />;

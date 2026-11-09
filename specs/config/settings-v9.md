@@ -1,6 +1,6 @@
 # settings.toml Config Schema 9
 
-状态：Config9历史迁移输入；当前合同为[Config12](settings-v12.md)。所有者选择NanaZip截图的六档压缩等级，沿用已说明的最小Schema迁移及已有数据保留方案。
+状态：Config9历史迁移输入；当前合同为[Config13](settings-v13.md)。所有者选择NanaZip截图的六档压缩等级，沿用已说明的最小Schema迁移及已有数据保留方案。
 
 Config9与Config8的字段、权限、默认值、串行CAS和16 KiB边界相同，仅扩展`backups.compressionMode`的合法枚举。
 `system.hello.configSchema`和成功settings.get/update返回9。GUI默认设置及单次备份共用以下档位：

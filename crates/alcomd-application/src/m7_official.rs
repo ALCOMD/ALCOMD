@@ -308,7 +308,28 @@ pub trait UnityHubLauncher: Send + Sync + 'static {
 pub struct ConfigPackageSettings {
     pub show_prerelease: bool,
     pub hidden_repository_ids: Vec<String>,
+    pub hidden_repository_packages: Vec<ConfigRepositoryPackages>,
     pub hide_local_user_packages: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConfigRepositoryPackages {
+    pub repository_id: String,
+    pub package_ids: Vec<String>,
+}
+
+impl ConfigPackageSettings {
+    #[must_use]
+    pub fn repository_package_hidden(&self, repository_id: &str, package_id: &str) -> bool {
+        self.hidden_repository_ids
+            .iter()
+            .any(|id| id == repository_id)
+            || self.hidden_repository_packages.iter().any(|group| {
+                group.repository_id == repository_id
+                    && group.package_ids.iter().any(|id| id == package_id)
+            })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -367,6 +388,9 @@ impl ConfigSettings {
             .is_some_and(|value| !valid_source_color(value))
             || validate_hidden_repository_ids(self.packages.hidden_repository_ids.clone())?
                 != self.packages.hidden_repository_ids
+            || validate_hidden_repository_packages(
+                self.packages.hidden_repository_packages.clone(),
+            )? != self.packages.hidden_repository_packages
             || self
                 .unity
                 .hub_path
@@ -416,6 +440,7 @@ pub struct ConfigUpdate {
 pub struct ConfigPackageSettingsUpdate {
     pub show_prerelease: Option<bool>,
     pub hidden_repository_ids: Option<Vec<String>>,
+    pub hidden_repository_packages: Option<Vec<ConfigRepositoryPackages>>,
     pub hide_local_user_packages: Option<bool>,
 }
 
@@ -867,6 +892,7 @@ fn default_snapshot() -> ConfigSnapshot {
             packages: ConfigPackageSettings {
                 show_prerelease: false,
                 hidden_repository_ids: Vec::new(),
+                hidden_repository_packages: Vec::new(),
                 hide_local_user_packages: false,
             },
             unity: ConfigUnitySettings::default(),
@@ -981,6 +1007,10 @@ fn apply_update(
         if let Some(value) = packages.hidden_repository_ids {
             settings.packages.hidden_repository_ids = validate_hidden_repository_ids(value)?;
         }
+        if let Some(value) = packages.hidden_repository_packages {
+            settings.packages.hidden_repository_packages =
+                validate_hidden_repository_packages(value)?;
+        }
         if let Some(value) = packages.hide_local_user_packages {
             settings.packages.hide_local_user_packages = value;
         }
@@ -1036,6 +1066,7 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
         && update.packages.as_ref().is_none_or(|value| {
             value.show_prerelease.is_none()
                 && value.hidden_repository_ids.is_none()
+                && value.hidden_repository_packages.is_none()
                 && value.hide_local_user_packages.is_none()
         })
 }
@@ -1076,6 +1107,45 @@ fn validate_hidden_repository_ids(
     values.sort_unstable();
     Ok(values)
 }
+
+fn validate_hidden_repository_packages(
+    mut groups: Vec<ConfigRepositoryPackages>,
+) -> Result<Vec<ConfigRepositoryPackages>, OfficialGuiError> {
+    if groups.len() > 256
+        || groups
+            .iter()
+            .map(|group| group.package_ids.len())
+            .sum::<usize>()
+            > 4096
+    {
+        return Err(OfficialGuiError::InvalidInput);
+    }
+    let mut repositories = HashSet::with_capacity(groups.len());
+    for group in &mut groups {
+        if !canonical_uuid(&group.repository_id)
+            || !repositories.insert(group.repository_id.clone())
+            || group.package_ids.is_empty()
+        {
+            return Err(OfficialGuiError::InvalidInput);
+        }
+        let mut ids = HashSet::with_capacity(group.package_ids.len());
+        for id in &group.package_ids {
+            if id.is_empty()
+                || id.len() > 128
+                || !id.as_bytes()[0].is_ascii_alphanumeric()
+                || !id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+                || !ids.insert(id.clone())
+            {
+                return Err(OfficialGuiError::InvalidInput);
+            }
+        }
+        group.package_ids.sort_unstable();
+    }
+    groups.sort_unstable_by(|a, b| a.repository_id.cmp(&b.repository_id));
+    Ok(groups)
+}
 fn canonical_uuid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| match index {
@@ -1096,6 +1166,131 @@ fn valid_hub_path_text(value: &str) -> bool {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn package_preferences_are_bounded_distinct_and_canonical_without_folding_identity() {
+        let group = |repo: &str, ids: Vec<String>| ConfigRepositoryPackages {
+            repository_id: repo.into(),
+            package_ids: ids,
+        };
+        let a = "00000000-0000-4000-8000-000000000001";
+        let b = "00000000-0000-4000-8000-000000000002";
+        let sorted = validate_hidden_repository_packages(vec![
+            group(b, vec!["z".into(), "A".into(), "a".into()]),
+            group(a, vec!["com.test".into()]),
+        ])
+        .expect("normalize request");
+        assert_eq!(sorted[0].repository_id, a);
+        assert_eq!(sorted[1].package_ids, vec!["A", "a", "z"]);
+        for invalid in [
+            vec![group(a, vec![])],
+            vec![group(a, vec!["a".into(), "a".into()])],
+            vec![group(a, vec!["a".into()]), group(a, vec!["b".into()])],
+            vec![group("NOT-A-UUID", vec!["a".into()])],
+        ] {
+            assert_eq!(
+                validate_hidden_repository_packages(invalid),
+                Err(OfficialGuiError::InvalidInput)
+            );
+        }
+        for id in [
+            "".to_owned(),
+            ".bad".into(),
+            "has space".into(),
+            "日本語".into(),
+            "a/../b".into(),
+            "a".repeat(129),
+        ] {
+            assert_eq!(
+                validate_hidden_repository_packages(vec![group(a, vec![id])]),
+                Err(OfficialGuiError::InvalidInput)
+            );
+        }
+        let maximum: Vec<_> = (0..256)
+            .map(|i| {
+                group(
+                    &format!("00000000-0000-4000-8000-{i:012x}"),
+                    (0..16).map(|n| format!("com.example.{n:04}")).collect(),
+                )
+            })
+            .collect();
+        assert!(validate_hidden_repository_packages(maximum.clone()).is_ok());
+        let mut over = maximum.clone();
+        over[0].package_ids.push("com.extra".into());
+        assert_eq!(
+            validate_hidden_repository_packages(over),
+            Err(OfficialGuiError::InvalidInput)
+        );
+        let mut over = maximum;
+        over.push(group(b, vec!["another".into()]));
+        assert_eq!(
+            validate_hidden_repository_packages(over),
+            Err(OfficialGuiError::InvalidInput)
+        );
+        let mut settings = ConfigSnapshot::default().settings;
+        settings.packages.hidden_repository_packages = vec![group(b, vec!["z".into(), "a".into()])];
+        assert_eq!(settings.validate(), Err(OfficialGuiError::InvalidInput));
+    }
+
+    #[tokio::test]
+    async fn package_switch_updates_are_atomic_cas_authority_and_omission_preserves_them() {
+        let (app, config, _, _) = open_fixture(UnityHubLocation::unavailable(false));
+        app.initialize_settings().await.expect("initialize");
+        let access = AccessContext::local_owner();
+        let patch = |groups| ConfigUpdate {
+            packages: Some(ConfigPackageSettingsUpdate {
+                hidden_repository_packages: Some(groups),
+                hidden_repository_ids: None,
+                show_prerelease: None,
+                hide_local_user_packages: None,
+            }),
+            ..ConfigUpdate::default()
+        };
+        let group = ConfigRepositoryPackages {
+            repository_id: "00000000-0000-4000-8000-000000000001".into(),
+            package_ids: vec!["z".into(), "a".into()],
+        };
+        let saved = app
+            .update_settings(&access, 1, patch(vec![group.clone()]))
+            .await
+            .expect("save");
+        assert_eq!(
+            saved.settings.packages.hidden_repository_packages[0].package_ids,
+            vec!["a", "z"]
+        );
+        assert_eq!(app.candidate_settings().await, Ok(saved.clone()));
+        assert_eq!(
+            app.update_settings(&access, 1, patch(vec![])).await,
+            Err(OfficialGuiError::RevisionConflict)
+        );
+        assert_eq!(
+            app.update_settings(&access, saved.revision, patch(vec![group.clone(), group]))
+                .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(config.snapshot.lock().expect("durable").clone(), saved);
+        let locale = app
+            .update_settings(&access, saved.revision, locale_update(ConfigLocale::JaJp))
+            .await
+            .expect("unrelated update");
+        assert_eq!(locale.settings.packages, saved.settings.packages);
+        let read_only = AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsRead]);
+        assert_eq!(
+            app.update_settings(&read_only, locale.revision, patch(vec![]))
+                .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        let cleared = app
+            .update_settings(&access, locale.revision, patch(vec![]))
+            .await
+            .expect("reenable");
+        assert!(
+            cleared
+                .settings
+                .packages
+                .hidden_repository_packages
+                .is_empty()
+        );
+    }
     struct TestDirectories;
     impl StorageDirectoryPlatform for TestDirectories {
         fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {

@@ -696,6 +696,10 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
                 .to_string(),
         ]);
         let mut hidden = config.settings.packages.hidden_repository_ids.clone();
+        records.push(
+            serde_json::to_string(&config.settings.packages.hidden_repository_packages)
+                .map_err(|_| CandidateQueryError::Unavailable)?,
+        );
         hidden.sort();
         records.extend(hidden);
         let fingerprint = self.engine.fingerprint(&records);

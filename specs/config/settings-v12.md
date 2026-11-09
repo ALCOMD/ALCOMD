@@ -1,5 +1,7 @@
 # Config12 全局代理
 
+状态：历史 Config12 迁移输入；当前设置合同见 [Config13](settings-v13.md)。
+
 状态：2026-11-06 项目所有者批准。
 
 `settings.network.proxy` 是 ALCOMD 的出站 HTTP(S) 代理偏好。「设置 → 常规 → 网络」可选择跟随系统（`system`，默认）、不使用代理（`direct`）和自定义代理（`custom`）。自定义模式需要完整 HTTP(S) 代理地址，可带端口，地址不含账号、密码、路径、查询参数或片段。Core 校验和规范化地址；其他模式拒绝代理地址。设置更新以完整的 `network.proxy` 对象替换该偏好，沿用 `settings.read`、`settings.manage` 和 revision CAS。

@@ -1,6 +1,6 @@
 # Config11：VCC 链接偏好
 
-状态：历史迁移输入。当前设置合同为 [Config12](settings-v12.md)。
+状态：历史迁移输入。当前设置合同为 [Config13](settings-v13.md)。
 
 `settings.integrations.handleVccLinks` 是默认开启的布尔值，TOML 使用 `[integrations]` 下的 `handle_vcc_links`。完整读取与指定该组的更新均须包含布尔值，未知字段、空组、null 和错误类型均拒绝。沿用 `settings.read`、`settings.manage` 和 revision CAS。
 

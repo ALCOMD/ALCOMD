@@ -40,7 +40,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 12);
+    assert_eq!(defaults.config_schema, 13);
     assert_eq!(defaults.revision, 1);
     assert!(defaults.settings.projects.auto_discover);
     assert_eq!(
@@ -102,6 +102,12 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
                 }),
                 locale: Some(SettingsLocale::ZhCn),
                 packages: Some(PackageSettingsUpdate {
+                    hidden_repository_packages: Some(vec![
+                        alcomd_protocol::RepositoryPackageSettings {
+                            repository_id: "00000000-0000-4000-8000-000000000102".into(),
+                            package_ids: vec!["com.example.z".into(), "com.example.a".into()],
+                        },
+                    ]),
                     show_prerelease: Some(true),
                     hidden_repository_ids: Some(vec![
                         "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
@@ -142,6 +148,10 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     );
     assert_eq!(updated.settings.locale, SettingsLocale::ZhCn);
     assert!(updated.settings.packages.show_prerelease);
+    assert_eq!(
+        updated.settings.packages.hidden_repository_packages[0].package_ids,
+        vec!["com.example.a", "com.example.z"]
+    );
     assert_eq!(
         updated.settings.packages.hidden_repository_ids,
         [
@@ -224,6 +234,8 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         json!({"appearance": {"motion": null}, "locale": "ja-JP"}),
         json!({"packages": {"showPrerelease": null}, "locale": "ja-JP"}),
         json!({"packages": {"hiddenRepositoryIds": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hiddenRepositoryPackages": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hiddenRepositoryPackages": [{"repositoryId":"a", "packageIds":[], "extra":true}]}}),
         json!({"packages": {"hideLocalUserPackages": null}, "locale": "ja-JP"}),
         json!({"unity": null, "locale": "ja-JP"}),
         json!({"unity": {}, "locale": "ja-JP"}),
@@ -557,7 +569,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        r#"schema = 12
+        r#"schema = 13
 revision = 14
 locale = "ja-JP"
 
@@ -567,6 +579,7 @@ scheme = "fruit-salad"
 motion = "full"
 
 [packages]
+hidden_repository_packages = [{ repository_id = "00000000-0000-4000-8000-000000000102", package_ids = ["com.example.a", "com.example.z"] }]
 show_prerelease = true
 hidden_repository_ids = ["00000000-0000-0000-0000-000000000000", "ffffffff-ffff-ffff-ffff-ffffffffffff"]
 hide_local_user_packages = true
@@ -598,7 +611,8 @@ proxy_mode = "direct"
         .expect("Config12-only suffix");
     // Config9 has no fullscreen, VCC link, or proxy preferences.
     let config9 = legacy_settings
-        .replacen("schema = 12\n", "schema = 9\n", 1)
+        .replacen("schema = 13\n", "schema = 9\n", 1)
+        .replacen("hidden_repository_packages = [{ repository_id = \"00000000-0000-4000-8000-000000000102\", package_ids = [\"com.example.a\", \"com.example.z\"] }]\n", "", 1)
         .replacen("fullscreen = false\n", "", 1);
     let settings_path = data.join("config/settings.toml");
     fs::write(&settings_path, config9).expect("isolated Config9 migration input");
@@ -609,17 +623,22 @@ proxy_mode = "direct"
         wait_for_shutdown(Arc::clone(&restarted_shutdown)),
     )
     .await
-    .expect("migrate owned Config9 daemon to Config12");
+    .expect("migrate owned Config9 daemon to Config13");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
-    assert_eq!(persisted.config_schema, 12);
+    assert_eq!(persisted.config_schema, 13);
     assert_eq!(persisted.revision, 14);
     let mut expected_settings = hub_cleared.settings;
     expected_settings.integrations = defaults.settings.integrations;
     expected_settings.network = defaults.settings.network;
+    expected_settings
+        .packages
+        .hidden_repository_packages
+        .clear();
     assert_eq!(persisted.settings, expected_settings);
     assert!(!persisted.settings.window.fullscreen);
     let expected_file = settings_file
+        .replacen("hidden_repository_packages = [{ repository_id = \"00000000-0000-4000-8000-000000000102\", package_ids = [\"com.example.a\", \"com.example.z\"] }]", "hidden_repository_packages = []", 1)
         .replacen("handle_vcc_links = false", "handle_vcc_links = true", 1)
         .replacen("proxy_mode = \"direct\"", "proxy_mode = \"system\"", 1);
     assert_eq!(
@@ -653,7 +672,7 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     .expect("owned daemon");
     let mut client = connect_with_retry(config.clone()).await;
     let defaults = client.settings_get().await.expect("defaults");
-    assert_eq!(defaults.config_schema, 12);
+    assert_eq!(defaults.config_schema, 13);
     assert!(!defaults.settings.window.fullscreen);
     let enabled = client
         .settings_update(SettingsUpdateParams {

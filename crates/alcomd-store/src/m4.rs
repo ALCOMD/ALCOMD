@@ -17,11 +17,14 @@ pub(super) fn repository_catalog_needs_refresh(
              WHERE r.owner_principal_id=?1 AND r.resolver_indexed=0
              AND r.repository_id NOT IN (SELECT value FROM json_each(?2))
              AND EXISTS (SELECT 1 FROM repository_package_versions p
-                         WHERE p.repository_id=r.repository_id)
+                         WHERE p.repository_id=r.repository_id
+                         AND (r.repository_id,p.package_id) NOT IN (SELECT json_extract(g.value,'$.repository_id'),disabled.value
+                 FROM json_each(?3) g, json_each(g.value,'$.package_ids') disabled))
          )",
         params![
             owner.as_str(),
-            serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| invalid_query())?
+            serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| invalid_query())?,
+            serde_json::to_string(&settings.hidden_repository_packages).map_err(|_| invalid_query())?
         ],
         |row| row.get(0),
     )
@@ -125,6 +128,8 @@ pub(super) fn resolver_catalog(
              JOIN repositories r ON r.repository_id=p.repository_id
              WHERE r.owner_principal_id=?1 AND r.resolver_indexed=1 AND p.resolver_ready=1
              AND r.repository_id NOT IN (SELECT value FROM json_each(?2))
+             AND (r.repository_id,p.package_id) NOT IN (SELECT json_extract(g.value,'$.repository_id'),disabled.value
+                 FROM json_each(?4) g, json_each(g.value,'$.package_ids') disabled)
              AND (?3 OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
              ORDER BY p.package_id ASC, p.semantic_version ASC, r.priority ASC,
                       r.repository_id ASC",
@@ -132,7 +137,13 @@ pub(super) fn resolver_catalog(
         .map_err(store_error)?;
     let rows = statement
         .query_map(
-            params![owner.as_str(), hidden, settings.show_prerelease],
+            params![
+                owner.as_str(),
+                hidden,
+                settings.show_prerelease,
+                serde_json::to_string(&settings.hidden_repository_packages)
+                    .map_err(|_| M4Error::new(M4ErrorCode::Internal))?
+            ],
             |row| {
                 let source_locator: String = row.get(4)?;
                 Ok(ResolverCatalogEntry {

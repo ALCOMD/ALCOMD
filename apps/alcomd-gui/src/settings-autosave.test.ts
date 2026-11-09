@@ -2,7 +2,7 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 12, revision: 7,
+    configSchema: 13, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
@@ -15,7 +15,7 @@ const initial: SettingsGetResult = {
         network: { proxy: { mode: "system" } },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
-        packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
+        packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [], hiddenRepositoryPackages: [] }
     }
 };
 
@@ -40,7 +40,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 12, revision: expectedRevision + 1,
+                configSchema: 13, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -465,7 +465,7 @@ function customizedModel() {
         network: { proxy: { mode: "system" } },
         locale: "zh-CN",
         appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive", motion: "full" },
-        packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"] }
+        packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"], hiddenRepositoryPackages: [] }
     };
     current.directories = { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" };
     fixture.writer.seed(structuredClone(current));

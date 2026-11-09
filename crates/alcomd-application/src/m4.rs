@@ -940,7 +940,7 @@ pub fn validate_package_source_settings(
                 .contains('-'))
             || match source {
                 PackageSourcePin::Repository(pin) => {
-                    settings.hidden_repository_ids.contains(&pin.repository_id)
+                    settings.repository_package_hidden(&pin.repository_id, &pin.package_id)
                 }
                 PackageSourcePin::UserPackage(_) => settings.hide_local_user_packages,
             }

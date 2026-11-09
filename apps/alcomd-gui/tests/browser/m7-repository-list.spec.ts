@@ -104,13 +104,78 @@ test("repository rows share the ordinary resource row height", async ({ page }) 
     expect((await template.boundingBox())!.height).toBe(height);
 });
 
+test("package switches persist per repository across details, pagination and resource sections", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1");
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    const host = page.locator("md-dialog[open]");
+    const toggle = host.getByRole("checkbox", { name: "Enable Avatar tools from this repository", exact: true });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).not.toBeChecked();
+    await page.screenshot({ path: test.info().outputPath("package-switch-list.png"), animations: "disabled" });
+    await host.getByRole("button", { name: "Avatar tools", exact: true }).click();
+    await expect(host.getByRole("combobox", { name: "Version", exact: true })).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+    await page.screenshot({ path: test.info().outputPath("package-switch-detail.png"), animations: "disabled" });
+    await host.getByRole("button", { name: "Back to packages", exact: true }).click();
+    await expect(toggle).not.toBeChecked();
+    await expect(host.getByRole("checkbox", { name: "Enable Remote tools from this repository", exact: true })).toBeChecked();
+    await host.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "User Packages", exact: true }).click();
+    await page.getByRole("button", { name: "Repositories", exact: true }).click();
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeEnabled();
+    await expect(toggle).toBeChecked();
+    expect(await page.evaluate(() => window.settingsRequests.map(({ update }) => update.packages?.hiddenRepositoryPackages))).toEqual([
+        [{ repositoryId: "00000000-0000-4000-8000-000000000102", packageIds: ["com.example.avatar"] }], []
+    ]);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("package preferences remain editable while their whole repository is closed", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories/00000000-0000-4000-8000-000000000102&repository-browser-details=1");
+    const toggle = page.getByRole("checkbox", { name: "Enable Avatar tools from this repository", exact: true });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeEnabled();
+    await page.locator("#primary-navigation .navigation-item").filter({ hasText: "Resources" }).click();
+    const repository = page.getByRole("checkbox", { name: /Show packages from/ }).first();
+    await expect(repository).toBeChecked();
+    await repository.click();
+    await expect(repository).toBeEnabled();
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await expect(repository).not.toBeChecked();
+});
+
+for (const mode of ["package-filter-denied", "package-filter-conflict"]) {
+    test(`package preference ${mode} retains confirmed state and offers reload`, async ({ page }) => {
+        await page.goto(`/browser-harness.html?route=/repositories&state=${mode}`);
+        await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+        const host = page.locator("md-dialog[open]");
+        const toggle = host.getByRole("checkbox", { name: "Enable Avatar tools from this repository", exact: true });
+        await expect(toggle).toBeChecked();
+        await toggle.click();
+        await expect(host.getByRole("button", { name: "Reload filters", exact: true })).toBeVisible();
+        await expect(toggle).toBeChecked();
+        await expect(toggle).toBeEnabled();
+        await host.getByRole("button", { name: "Reload filters", exact: true }).click();
+        await expect(toggle).toBeChecked();
+    });
+}
+
 test("package browsing groups versions and reads only the selected trailing package through its boundary", async ({ page }) => {
     test.setTimeout(45_000);
     await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&holdRepositoryDetail=1");
     await page.getByRole("button", { name: "Browse packages", exact: true }).click();
     const host = page.locator("md-dialog[open]");
     const table = host.getByRole("table", { name: "Repository packages", exact: true });
-    await expect(table.getByRole("columnheader")).toHaveText(["Package"]);
+    await expect(table.getByRole("columnheader")).toHaveText(["Enabled", "Package"]);
     await expect(table.locator("tbody tr")).toHaveCount(1);
     await expect(table.locator("tbody")).toHaveText("Avatar tools");
     await table.getByRole("button", { name: "Avatar tools", exact: true }).click();

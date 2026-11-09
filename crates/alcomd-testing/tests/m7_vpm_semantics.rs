@@ -319,6 +319,7 @@ impl Fixture {
                 current.revision,
                 ConfigUpdate {
                     packages: Some(ConfigPackageSettingsUpdate {
+                        hidden_repository_packages: Some(value.hidden_repository_packages),
                         show_prerelease: Some(value.show_prerelease),
                         hidden_repository_ids: Some(value.hidden_repository_ids),
                         hide_local_user_packages: Some(value.hide_local_user_packages),
@@ -611,6 +612,181 @@ async fn enroll_local(f: &Fixture, manifest: Value) {
         .enroll_user_package(PrincipalId::local_owner(), snapshot, key("enroll-local"), 1)
         .await
         .expect("owned VPM regression fixture succeeds");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn package_switch_keeps_installed_facts_and_local_removal_but_blocks_dependency_and_bulk_plans()
+ {
+    let graph = json!({"dependencies":{A:{"version":"1.0.0"}},"locked":{A:{"version":"1.0.0","dependencies":{}}}});
+    let f = fixture(
+        "hidden-installed-package",
+        graph.clone(),
+        vec![
+            package(A, "1.0.0", json!({})),
+            package(A, "2.0.0", json!({})),
+            package(D, "1.0.0", json!({A:"^2.0.0"})),
+        ],
+        None,
+    )
+    .await;
+    f.settings(|settings| {
+        settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+            repository_id: f.repository.to_string(),
+            package_ids: vec![A.into()],
+        }]
+    })
+    .await;
+    let CandidatePageItems::Summary { items } = f.summary().await.page else {
+        panic!("summary")
+    };
+    let row = items
+        .iter()
+        .find(|item| item.package_id == A)
+        .expect("installed fact");
+    assert!(matches!(&row.installed, CandidateInstalled::Locked { version } if version == "1.0.0"));
+    assert!(row.providers.is_empty());
+    assert!(items.iter().any(|item| item.package_id == D));
+    let access = AccessContext::local_owner();
+    for intent in [
+        install(&f, D, "1.0.0"),
+        bulk(&f, vec![install_intent(A, "2.0.0")]),
+        request(&f, PlanAction::Reinstall, Some(A)),
+    ] {
+        assert!(f.packages.plan(&access, intent).await.is_err());
+        assert_eq!(f.manifest(), graph);
+    }
+    let plan = f
+        .packages
+        .plan(&access, request(&f, PlanAction::Remove, Some(A)))
+        .await
+        .expect("local removal needs no enabled source");
+    assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+    assert!(!f.root.join("Packages").join(A).exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn package_switch_isolates_sources_and_versions_without_hiding_management_or_user_packages() {
+    let f = fixture(
+        "per-source-package",
+        empty(),
+        vec![
+            package(A, "1.0.0", json!({})),
+            package(A, "2.0.0", json!({})),
+            package(B, "1.0.0", json!({})),
+        ],
+        None,
+    )
+    .await;
+    let mut index: Value =
+        serde_json::from_slice(&fs::read(f.directory.join("index.json")).expect("index"))
+            .expect("JSON");
+    index["id"] = json!("independent.audit");
+    index["name"] = json!("Independent source");
+    index["packages"][A]["versions"]
+        .as_object_mut()
+        .expect("versions")
+        .remove("2.0.0");
+    index["packages"]
+        .as_object_mut()
+        .expect("packages")
+        .remove(B);
+    let second = f.directory.join("second.json");
+    fs::write(&second, serde_json::to_vec(&index).expect("JSON")).expect("file");
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(f.store.clone(), f.reader.clone());
+    let other = registry
+        .register_repository(
+            &access,
+            RepositorySource::Local {
+                path: second.to_string_lossy().into_owned(),
+            },
+            key("second-source"),
+        )
+        .await
+        .expect("second repository")
+        .value;
+    f.settings(|settings| {
+        settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+            repository_id: f.repository.to_string(),
+            package_ids: vec![A.into()],
+        }]
+    })
+    .await;
+    let CandidatePageItems::Summary { items } = f.summary().await.page else {
+        panic!("summary")
+    };
+    assert!(items.iter().any(|item| item.package_id == B));
+    let row = items
+        .iter()
+        .find(|item| item.package_id == A)
+        .expect("other source retained");
+    assert_eq!(row.providers.len(), 1);
+    let query = ProjectCandidateApplication::new(
+        f.store.clone(),
+        ProjectCandidateEngine,
+        f.reader.clone(),
+        f.config.clone(),
+    );
+    let versions = query
+        .query(
+            &access,
+            ProjectCandidateRequest {
+                project_id: f.project.project_id.to_string(),
+                expected_revision: f.project.revision.get(),
+                view: CandidateView::Versions {
+                    package_id: A.into(),
+                    source: None,
+                },
+                limit: None,
+                expected_snapshot: None,
+                cursor: None,
+            },
+        )
+        .await
+        .expect("versions");
+    let CandidatePageItems::Versions { items, .. } = versions.page else {
+        panic!("versions")
+    };
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].version, "1.0.0");
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("alternative provider");
+    assert!(
+        matches!(&plan.source_set[0],PackageSourcePin::Repository(pin) if pin.repository_id==other.repository_id.to_string())
+    );
+    // Only the explicit management endpoint retains disabled package rows.
+    let raw = registry
+        .list_repository_packages(&access, f.repository, None, 100)
+        .await
+        .expect("management catalog");
+    assert!(
+        raw.packages
+            .iter()
+            .any(|item| item.package_id == A && item.version == "2.0.0")
+    );
+    enroll_local(&f, package(A, "3.0.0", json!({}))).await;
+    let CandidatePageItems::Summary { items } = f.summary().await.page else {
+        panic!("summary")
+    };
+    assert_eq!(
+        items
+            .iter()
+            .find(|item| item.package_id == A)
+            .expect("sources")
+            .providers
+            .len(),
+        2
+    );
+    let persisted = alcomd_store::FileConfigStore::new(f.directory.join("settings.toml"))
+        .initialize()
+        .expect("restart preferences");
+    assert_eq!(
+        persisted.settings.packages.hidden_repository_packages[0].package_ids,
+        vec![A]
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1258,4 +1434,117 @@ async fn resolve_does_not_add_a_package_against_an_incompatible_local_provider()
     );
     assert_eq!(f.manifest(), empty());
     assert!(!f.root.join("Packages").join(D).exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn closed_repository_package_is_absent_from_queries_plans_and_frozen_revalidation() {
+    let f = fixture(
+        "closed-repository-package",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let access = AccessContext::local_owner();
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("owned VPM regression fixture succeeds");
+    f.settings(|settings| {
+        settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+            repository_id: f.repository.to_string(),
+            package_ids: vec![A.into()],
+        }]
+    })
+    .await;
+    let page = f.summary().await;
+    assert!(page.catalog_complete);
+    assert!(matches!(page.page,CandidatePageItems::Summary{items} if items.is_empty()));
+    let mut selected = install(&f, A, "1.0.0");
+    selected.source_selector = Some(PackageSourceSelector::Repository {
+        repository_id: f.repository.to_string(),
+    });
+    assert_eq!(
+        f.packages
+            .plan(&access, selected)
+            .await
+            .expect_err("the audited invalid request must be rejected")
+            .code(),
+        M4ErrorCode::PackageNotFound
+    );
+    assert_eq!(
+        f.packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                f.project.revision,
+                key("hidden-apply")
+            )
+            .await
+            .expect_err("the audited invalid request must be rejected")
+            .code(),
+        M4ErrorCode::PlanStale
+    );
+    assert!(!f.root.join("Packages").join(A).exists());
+    f.settings(|settings| settings.hidden_repository_packages.clear())
+        .await;
+    assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hidden_unindexed_repository_package_does_not_block_visible_queries_or_installation() {
+    let f = fixture(
+        "hidden-unindexed",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let index = f.directory.join("unindexed.json");
+    let mut manifest = package(B, "1.0.0", json!({}));
+    manifest["displayName"] = json!("Unindexed");
+    manifest["author"] = json!({"name":"Fixture"});
+    manifest["url"] = json!("https://network-must-not-be-used.invalid/not-used.zip");
+    fs::write(
+        &index,
+        serde_json::to_vec(
+            &json!({"id":"unindexed.audit","packages":{B:{"versions":{"1.0.0":manifest}}}}),
+        )
+        .expect("owned VPM regression fixture succeeds"),
+    )
+    .expect("owned VPM regression fixture succeeds");
+    let RepositoryReadOutcome::Fresh(raw) = f
+        .reader
+        .inspect_repository(
+            RepositorySource::Local {
+                path: index.to_string_lossy().into_owned(),
+            },
+            None,
+        )
+        .await
+        .expect("owned VPM regression fixture succeeds")
+    else {
+        panic!("fresh fixture index")
+    };
+    let other = RepositoryId::new();
+    f.store
+        .ensure_builtin_repositories(PrincipalId::local_owner(), vec![(other, raw)], 1)
+        .await
+        .expect("owned VPM regression fixture succeeds");
+    assert!(!f.summary().await.catalog_complete);
+    f.settings(|settings| {
+        settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+            repository_id: other.to_string(),
+            package_ids: vec![B.into()],
+        }]
+    })
+    .await;
+    assert!(f.summary().await.catalog_complete);
+    let plan = f
+        .packages
+        .plan(&AccessContext::local_owner(), install(&f, A, "1.0.0"))
+        .await
+        .expect("owned VPM regression fixture succeeds");
+    assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
 }

@@ -1,5 +1,19 @@
 export const RPC_VERSION = 1 as const;
 
+/** Disabled package identities from one repository, across all versions. */
+export interface RepositoryPackageSettings {
+    repositoryId: string;
+    packageIds: string[];
+}
+
+/** Config13 package source preferences. Core normalizes and validates writes. */
+export interface PackageSettings {
+    showPrerelease: boolean;
+    hiddenRepositoryIds: string[];
+    hiddenRepositoryPackages: RepositoryPackageSettings[];
+    hideLocalUserPackages: boolean;
+}
+
 /** Frozen dependency conflicts for a reviewed removal-only package plan. */
 export interface PackageRemovalConflict {
     packageId: string;

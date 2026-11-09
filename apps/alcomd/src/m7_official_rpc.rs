@@ -134,6 +134,17 @@ pub(super) async fn dispatch(
                     .map(|value| app::ConfigPackageSettingsUpdate {
                         show_prerelease: value.show_prerelease,
                         hidden_repository_ids: value.hidden_repository_ids,
+                        hidden_repository_packages: value.hidden_repository_packages.map(
+                            |groups| {
+                                groups
+                                    .into_iter()
+                                    .map(|group| app::ConfigRepositoryPackages {
+                                        repository_id: group.repository_id,
+                                        package_ids: group.package_ids,
+                                    })
+                                    .collect()
+                            },
+                        ),
                         hide_local_user_packages: value.hide_local_user_packages,
                     }),
             };
@@ -280,6 +291,16 @@ fn settings_result(
             packages: rpc::PackageSettings {
                 show_prerelease: value.settings.packages.show_prerelease,
                 hidden_repository_ids: value.settings.packages.hidden_repository_ids,
+                hidden_repository_packages: value
+                    .settings
+                    .packages
+                    .hidden_repository_packages
+                    .into_iter()
+                    .map(|group| rpc::RepositoryPackageSettings {
+                        repository_id: group.repository_id,
+                        package_ids: group.package_ids,
+                    })
+                    .collect(),
                 hide_local_user_packages: value.settings.packages.hide_local_user_packages,
             },
         },
@@ -432,7 +453,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 12);
+        assert_eq!(result.config_schema, 13);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION
