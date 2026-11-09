@@ -347,7 +347,8 @@ test("project workspace keeps package discovery and user actions in project cont
     await search.fill("");
     await row.getByRole("button", { name: "Update" }).click();
     const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
-    await expect(dialog).toContainText("com.example.avatar");
+    await expect(dialog).toContainText("Avatar tools");
+    await expect(dialog.locator('strong[title="com.example.avatar"]')).toBeVisible();
     await expect(dialog).not.toContainText(/plan|revision|fingerprint/i);
 });
 
@@ -391,7 +392,8 @@ test("package changes use a v3-style confirmation while the durable Plan stays i
     await page.getByRole("row").filter({ hasText: "Avatar tools" }).getByRole("button", { name: "Update" }).click();
     const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(dialog).toContainText("Review the changes ALCOMD will make");
-    await expect(dialog).toContainText("com.example.avatar");
+    await expect(dialog).toContainText("Avatar tools");
+    await expect(dialog.locator('strong[title="com.example.avatar"]')).toBeVisible();
     await expect(dialog).not.toContainText(/plan|revision|fingerprint/i);
     await page.getByRole("button", { name: "Apply changes" }).click();
     const follow = page.getByRole("status").filter({ hasText: "Package changes" });
@@ -406,7 +408,7 @@ test("a changed project is explained without exposing stale Plan internals", asy
     await page.getByRole("button", { name: "Apply changes" }).click();
     await expect(page.getByRole("alert")).toContainText("This project changed");
     await expect(page.getByRole("alert")).toContainText("plan_stale");
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "Package changes" })).toHaveCount(0);
 });
 
 test("direct writes and the remaining high-impact workflows retain confirmation and Operation boundaries", async ({ page }) => {
@@ -440,6 +442,7 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await clickDialogAction(page, "Create backup", "Create backup");
     const backupDialog = page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Create backup", exact: true }) });
     await expect(backupDialog.locator(".operation-follow")).toContainText("Create backup");
+    await expect(backupDialog.getByRole("status")).toContainText("succeeded");
     await backupDialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(backupDialog).toHaveCount(0);
 
@@ -457,7 +460,7 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await expect(page.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Create install plan" }).click();
     await clickDialogAction(page, "Install extension", "Apply reviewed plan");
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Install extension" })).toBeVisible();
 
     await page.goto("/browser-harness.html?route=/operations/00000000-0000-4000-8000-000000000105&state=ready&hold-core-operation=1");
     await page.getByRole("button", { name: "Cancel operation" }).click();
@@ -471,9 +474,12 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
 
 test("failed and cancelled Operations expose stable terminal states", async ({ page }) => {
     for (const state of ["failed", "cancelled"] as const) {
-        await openHarness(page, "/operations/00000000-0000-4000-8000-000000000105", state);
+        await page.goto("/browser-harness.html?route=/operations&hold-core-operation=1");
+        const id = await page.evaluate(async () => (await window.fixtureCore.stateCheck()).operationId);
+        await page.evaluate(({ id, state }) => window.completeGuiTask(id, state), { id, state });
+        await page.getByRole("row").filter({ hasText: "Check state" }).getByRole("button", { name: "View operation", exact: true }).click();
         const main = page.getByRole("main");
-        await expect(main.getByText(state, { exact: true })).toBeVisible();
+        await expect(main.getByRole("status")).toContainText(state);
         await expect(main.getByRole("button", { name: "Cancel operation" })).toBeDisabled();
     }
 });

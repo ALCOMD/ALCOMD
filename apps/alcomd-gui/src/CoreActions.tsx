@@ -3,7 +3,7 @@ import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
 import type { ExtensionRecord, RepositoryCredentials, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
-import { useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
+import { useUtilityDialogComplete, useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
@@ -729,7 +729,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
             const result = await client.projectApplyUnityMigration(migrationPlan.planId);
             if (!isCurrent()) return;
             setMigrationPlan(undefined);
-            navigate(`/operations/${result.operationId}`);
+            setFeedback({ busy: false, operationId: result.operationId });
         } catch (caught: unknown) {
             if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) });
         } finally { pending.current = false; }
@@ -782,9 +782,9 @@ export function useActionScope(client: GuiRpcClient, active = true) {
 
 export function BackupCreatePanel({ client, navigate, onAccepted, project }: { client: GuiRpcClient; navigate(path: string): void; onAccepted(result: BackupCreateResult): void; project: ProjectSnapshot }) {
     const { t } = useTranslation();
+    const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.backupsCreate);
     const [options, setOptions] = useState<OfficialSettings["backups"]>();
-    const [accepted, setAccepted] = useState<BackupCreateResult>();
     const [readGeneration, setReadGeneration] = useState(0);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const showLoading = useDelayedPending(options === undefined && feedback.error === undefined);
@@ -807,21 +807,11 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         try {
             const result = await client.backupCreate(project.projectId, project.revision, options.compressionMode, !options.includeVpmPackages, options.includeLibrary);
             if (!isCurrent()) return;
-            setFeedback(INITIAL_FEEDBACK); setAccepted(result); onAccepted(result);
+            setFeedback(INITIAL_FEEDBACK); onAccepted(result); completeDialog?.();
         }
         catch (caught: unknown) { if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
-    if (accepted !== undefined) return <OperationFollow client={client} operationId={accepted.operationId}>
-        {(operation, error) => <>
-            <OperationProgress error={error} operation={operation} title={t("Create backup")} />
-            <div className="dialog-actions">
-                <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
-                <Button onClick={() => navigate(`/operations/${accepted.operationId}`)} type="button" variant="text">{t("View operation")}</Button>
-                {operation?.state !== "succeeded" ? null : <Button onClick={() => navigate(`/backups/${accepted.backupId}`)} type="button">{t("View backup")}</Button>}
-            </div>
-        </>}
-    </OperationFollow>;
     return <ActionSection title={t("Create backup")}>
         <p><Translated message="Back up {name}." values={{ name: <strong>{project.displayName ?? t("Unity project")}</strong> }} /></p>
         {options === undefined ? showLoading ? <LoadingState title={t("Loading backup defaults…")} /> : null : <>
@@ -871,6 +861,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
 
 export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionProps & { onAccepted?(operationId: string): void }) {
     const { t } = useTranslation();
+    const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
     const [path, setPath] = useState("");
     const [approvePublisher, setApprovePublisher] = useState(false);
@@ -892,6 +883,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
                 if (!current()) return;
                 setFeedback({ busy: false, operationId: result.operationId });
                 onAccepted?.(result.operationId);
+                completeDialog?.();
             } else {
                 // Core accepts new installs only; zero binds the plan to expected absence.
                 const result = await client.extensionPlanInstall(path, 0, approvePublisher ? "approve_for_extension" : "none");
@@ -934,7 +926,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}
-        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 
@@ -967,6 +959,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 const result = await client.extensionApplyUninstall(plan.planId);
                 if (!current()) return;
                 setPlan(undefined);
+                setMode("none");
                 setFeedback({ busy: false, operationId: result.operationId });
                 onAccepted?.(result.operationId);
             } else if (kind === "enable" || kind === "disable") {
@@ -1168,7 +1161,7 @@ export function OperationFollow({ background = false, children, client, initialO
 export function OperationProgress({ error, operation, title = "Operation" }: { error?: RpcError; operation?: Operation; title?: string }) {
     const { t } = useTranslation();
     return <>
-        <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
+        <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{isTerminal(operation.state) || operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
         {operation?.state !== "failed" ? null : <div role="alert"><strong>{t("Operation failed")}</strong><p>{t(requestErrorMessage(({ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }).code))}</p><code>{operation.errorCode ?? "internal_error"}</code>{operation.diagnosticId === undefined ? null : <p><code>{operation.diagnosticId}</code></p>}</div>}
     </>;
 }

@@ -20,6 +20,20 @@ const READS = new Set(["operationsList", "logsRead", "operationGet", "projectsLi
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
     "unityWriterState", "unityLaunchOptions", "projectTemplatesList", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
+const TASK_TITLES = {
+    stateCheck: "Check state",
+    packageApplyPlan: "Package changes",
+    projectsCreate: "Create project",
+    projectApplyCopy: "Copy project",
+    projectApplyDeleteDirectory: "Delete project directory",
+    projectApplyUnityMigration: "Unity migration",
+    backupCreate: "Create backup",
+    backupApplyRestore: "Restore project",
+    extensionApplyInstall: "Install extension",
+    extensionApplyUninstall: "Uninstall extension"
+} satisfies Partial<Record<keyof GuiRpcClient, string>>;
+export interface AcceptedGuiTask { operationId: string; title: string; resultPath?: string; resultLabel?: string }
+
 /** One disposable notification/read coordinator per GUI connection. It owns no business state. */
 export class CoreEvents {
     readonly client: GuiRpcClient;
@@ -67,6 +81,7 @@ export class CoreEvents {
     private readonly urgentCollections = new Map<string, number>();
     private readonly operations = new Map<string, OperationEntry>();
     private readonly operationListeners = new Set<(value: Operation) => void>();
+    private readonly acceptedTaskListeners = new Set<(task: AcceptedGuiTask) => void>();
     private readonly lookups = new Set<string>();
     private readonly consumedTerminal = new Set<string>();
     private readonly views = new Map<string, ViewRecord>();
@@ -78,10 +93,24 @@ export class CoreEvents {
         this.client = new Proxy(source, { get: (target, key, receiver) => {
             const value: unknown = Reflect.get(target, key, receiver);
             if (typeof value !== "function") return value;
+            const taskTitle = TASK_TITLES[key as keyof typeof TASK_TITLES];
             if (!methods.has(key)) methods.set(key, READS.has(String(key))
                 ? (...args: unknown[]) => !this.active && (key === "systemStatus" || key === "settingsGet")
                     ? Reflect.apply(value, target, args) : this.read(String(key), args, () => Reflect.apply(value, target, args))
-                : value.bind(target));
+                : taskTitle === undefined ? value.bind(target) : async (...args: unknown[]) => {
+                    const result: unknown = await Reflect.apply(value, target, args);
+                    if (typeof result === "object" && result !== null && "operationId" in result && uuid(result.operationId)) {
+                        const projectId = key === "projectApplyCopy" && "targetProjectId" in result ? result.targetProjectId
+                            : ["projectsCreate", "backupApplyRestore"].includes(String(key)) && "projectId" in result ? result.projectId : undefined;
+                        const backupId = key === "backupCreate" && "backupId" in result ? result.backupId : undefined;
+                        this.acceptedTaskListeners.forEach((listener) => listener({ operationId: result.operationId as string, title: taskTitle,
+                            ...(uuid(projectId) ? { resultPath: `/projects/${projectId}`, resultLabel: "Open project" } : {}),
+                            ...(uuid(backupId) ? { resultPath: `/backups/${backupId}`, resultLabel: "View backup" } : {}),
+                            ...(key === "projectApplyDeleteDirectory" ? { resultPath: "/projects", resultLabel: "Projects" } : {}),
+                            ...(key === "extensionApplyUninstall" ? { resultPath: "/extensions", resultLabel: "Extensions" } : {}) }));
+                    }
+                    return result;
+                });
             return methods.get(key);
         } });
     }
@@ -94,6 +123,7 @@ export class CoreEvents {
     }
     getSnapshot = () => this.state;
     subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+    subscribeAcceptedTasks(listener: (task: AcceptedGuiTask) => void) { this.acceptedTaskListeners.add(listener); return () => { this.acceptedTaskListeners.delete(listener); }; }
     subscribePreloadInvalidation = (listener: () => void) => { this.preloadListeners.add(listener); return () => { this.preloadListeners.delete(listener); }; };
     preloadVersion(scopes: readonly string[]) { return `${this.generation}:${scopes.map((scope) => this.categoryVersions.get(scope) ?? 0).join(":")}`; }
     private publish(state: EventConnectionState) { this.state = { ...state, retained: this.displayed }; this.listeners.forEach((listener) => listener()); }

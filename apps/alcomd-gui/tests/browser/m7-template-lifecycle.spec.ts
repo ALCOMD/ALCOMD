@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
 const avatarId = "com.vrclearn.alcomd.templates.vrchat.avatars.2022";
@@ -12,7 +12,7 @@ test("manual creation submits one exact editor and the package list as a tracked
     await packages.getByLabel("Package ID", { exact: true }).fill("com.example.avatar");
     await packages.getByLabel("Version", { exact: true }).fill("^1.2.3");
     await dialog.getByRole("button", { name: "Save template", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     await expect(row(page, "com.example.avatar-tools")).toContainText("Avatar starter");
     await expect(row(page, "com.example.avatar-tools").getByRole("cell", { name: "User template", exact: true })).toBeVisible();
     await expect(row(page, avatarId)).toContainText("VRChat Avatars 2022");
@@ -40,7 +40,7 @@ test("project source sends the selected revision and both explicit content choic
     await includeAssets.check();
     await lockVersions.check();
     await dialog.getByRole("button", { name: "Save template", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     await expect(row(page, "com.example.from-project")).toContainText("From my project");
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "project", id: "com.example.from-project", name: "From my project",
@@ -59,7 +59,7 @@ test("file import waits for a selected archive and an explicit confirmation", as
     await expect(dialog.getByLabel("Template file", { exact: true })).toHaveValue("C:\\Fixture\\input.alcomdtemplate");
     expect(await request(page, "projectTemplates.save")).toBeUndefined();
     await submit.click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     await expect(row(page, "com.example.imported")).toContainText("Imported template");
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "file", sourceFile: "C:\\Fixture\\input.alcomdtemplate" }, idempotencyKey: expect.any(String)
@@ -109,6 +109,7 @@ test("user template replacement binds the selected revision and supports removal
     await expect(dialog).toContainText(userId);
     await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await dialog.getByRole("button", { name: "Replace template", exact: true }).click();
+    await closeCompletedTemplate(dialog);
     await expect(row(page, userId)).toContainText("Imported replacement");
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "file", sourceFile: "C:\\Fixture\\input.alcomdtemplate" }, expectedRevision: 8, idempotencyKey: expect.any(String)
@@ -162,7 +163,7 @@ test("retrying a lost import response sends the same file and idempotency key", 
     await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
     await expect(dialog.getByRole("button", { name: "Select", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     await expect(row(page, "com.example.imported")).toHaveCount(1);
     const writes = await page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.save"));
     expect(writes).toHaveLength(2);
@@ -201,7 +202,7 @@ test("manual templates default to Blank and inherit a chosen base's fixed Editor
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2019.4.31f1");
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
     await dialog.getByRole("button", { name: "Save template", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     expect(await request(page, "projectTemplates.save")).toMatchObject({ source: {
         kind: "manual", id: "com.example.derived", unityVersion: "2019.4.31f1",
         baseTemplate: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019", revision: 3 }
@@ -234,7 +235,7 @@ test("a changed base revision preserves the manual draft and requires explicit r
     await expect(dialog.getByRole("button", { name: "Save template", exact: true })).toBeDisabled();
     await choose();
     await dialog.getByRole("button", { name: "Save template", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    await closeCompletedTemplate(dialog);
     expect(await request(page, "projectTemplates.save")).toMatchObject({ source: { baseTemplate: { id: "com.example.fixture", revision: 9 } } });
 });
 
@@ -256,4 +257,10 @@ for (const [width, theme] of [[1280, "light"], [640, "dark"]] as const) {
         await expect(dialog.getByRole("button", { name: "保存模板", exact: true })).toBeEnabled();
         await page.screenshot({ path: testInfo.outputPath(`template-base-${width}-${theme}.png`), animations: "disabled" });
     });
+}
+
+async function closeCompletedTemplate(dialog: Locator) {
+    await expect(dialog.getByRole("status")).toContainText("succeeded");
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
 }

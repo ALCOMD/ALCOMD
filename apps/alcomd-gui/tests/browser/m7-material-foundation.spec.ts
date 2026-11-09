@@ -502,7 +502,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await page.getByRole("button", { name: "Review copy" }).click();
     await expect(page.getByText(/C:\\Fixture\\Avatar/)).toBeVisible();
     await page.getByRole("button", { name: "Start copy" }).click();
-    await expect(page.locator('[role="status"]').filter({ hasText: "Copy succeeded" })).toBeVisible({ timeout: 3_000 });
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible({ timeout: 3_000 });
     await page.getByRole("button", { name: "Close" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
     await moreActions.click();
@@ -612,6 +612,8 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
     await dialogHost.getByRole("button", { name: /Choose/ }).click();
     await page.getByRole("button", { name: "Review copy" }).click();
     await page.getByRole("button", { name: "Start copy" }).click();
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000061$/);
 });
 

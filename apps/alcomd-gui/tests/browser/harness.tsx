@@ -46,6 +46,8 @@ declare global {
     interface Window {
         unityWindowEvidence?: BrowserUnityWindows;
         fixtureCore: GuiRpcClient;
+        completeGuiTask(operationId: string, state: "succeeded" | "failed" | "cancelled"): void;
+        taskReadError?: string;
         fixtureLogs: { entries: OperationLogEntry[]; reads: LogsReadParams[]; replace(entries: OperationLogEntry[]): void; fail: boolean };
         h3ReadError?: string;
         queryCandidates: CandidateQuery;
@@ -519,6 +521,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: this.beginOperation("state.check"), replayed: false });
     }
 
+    completeGuiTask(operationId: string, state: "succeeded" | "failed" | "cancelled") {
+        const previous = this.genericTasks.get(operationId);
+        if (previous === undefined) throw new Error("Unknown fixture task");
+        const next: Operation = { ...previous, state, revision: previous.revision + 1,
+            ...(state === "failed" ? { errorCode: "package_archive_invalid", diagnosticId: "fixture-task-diagnostic" } : {}) };
+        this.genericTasks.set(operationId, next);
+        browserCoreEvents.emit("operation", operationId, `operation.${state}`, next.revision);
+    }
+
     operationsList(cursor?: Parameters<GuiRpcClient["operationsList"]>[0], activeOnly = false): ReturnType<GuiRpcClient["operationsList"]> {
         let operations = query.has("h3") ? [window.h3Operation] : [...this.genericTasks.values()];
         const activeCount = operations.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state)).length;
@@ -531,6 +542,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     operationGet(operationId: string): ReturnType<GuiRpcClient["operationGet"]> {
+        if (window.taskReadError !== undefined) return Promise.reject({ code: window.taskReadError });
         if (query.has("h3")) {
             window.h3Requests.push({ method: "operations.get", params: { operationId } });
             if (window.h3ReadError !== undefined) return Promise.reject({ code: window.h3ReadError });
@@ -1663,6 +1675,7 @@ function extensionPlan(action: string) { return { planId: PLAN_ID, action, state
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");
 const baseClient = new DeterministicGuiClient(mode);
+window.completeGuiTask = (id, state) => baseClient.completeGuiTask(id, state);
 const managementClient = query.has("h4-management") ? withH4ManagementClient(baseClient, query) : baseClient;
 const browserClient = query.has("h4-portable") ? withH4PortableClient(managementClient, query) : managementClient;
 const utilitiesClient = query.has("h5-utilities") ? withH5UtilitiesClient(browserClient, query) : browserClient;

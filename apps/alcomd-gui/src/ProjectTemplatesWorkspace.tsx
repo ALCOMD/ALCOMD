@@ -211,7 +211,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
             }
             if (!current()) return;
             operations.accept(accepted.operationId, () => {
-                if (current() && submitted.request.kind === "save") { onChanged(); onClose(); }
+                if (current() && submitted.request.kind === "save") onChanged();
             });
             attempt.current = undefined;
             setOperationId(accepted.operationId);
@@ -240,7 +240,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
                 {selection.kind === "export" ? <PathField label={t("Destination file")} readOnly value={destinationFile} /> : null}
                 <div className="dialog-actions">
                     {terminalFailure ? <Button onClick={() => setOperationId(undefined)} type="button" variant="text">{t("Back")}</Button> : null}
-                    <DialogCloseButton>{t("Close")}</DialogCloseButton>
+                    <DialogCloseButton>{t(operation !== undefined && ["succeeded", "failed", "cancelled"].includes(operation.state) ? "Close" : "Minimize")}</DialogCloseButton>
                 </div>
             </div> : <form className="project-create-flow" onSubmit={(event) => { event.preventDefault(); submit(); }}>
                 {selection.kind === "view" ? <>

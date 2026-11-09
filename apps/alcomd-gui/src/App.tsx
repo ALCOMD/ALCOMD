@@ -31,6 +31,7 @@ import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
+import { TaskProgressDialog } from "./TaskProgressDialog";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
 import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
@@ -348,6 +349,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                     </div>
                 </MaterialDialog>
                 {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
+                <TaskProgressDialog events={events} navigate={navigate} />
             </div>
             </RoutePreloadContext.Provider></PreloadContext.Provider>
             </CoreEventsProvider>

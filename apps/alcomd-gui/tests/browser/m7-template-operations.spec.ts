@@ -17,6 +17,9 @@ test("a lost creation reply retries the identical request after a catalog change
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
     await expect.poll(() => page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.list").length)).toBeGreaterThan(1);
     await submit.click();
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     const calls = await page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projects.create"));
     expect(calls).toHaveLength(2);
@@ -43,6 +46,9 @@ test("catalog changes invalidate a selected revision until the user reselects", 
     await chooseTemplate();
     await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2022.3.22f1");
     await submit.click();
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests.find(({ method }) => method === "projects.create")?.params))
         .toMatchObject({ name: "Selected again", template: { id: "com.example.fixture", revision: 9 } });

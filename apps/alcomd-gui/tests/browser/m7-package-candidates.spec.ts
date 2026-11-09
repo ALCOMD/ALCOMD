@@ -605,6 +605,9 @@ test("Stable bulk actions use the distinct Core stable target and one explicit A
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.coreEvents.pending)).toBe(0);
     expect(await page.evaluate(() => window.packageRequests.map((item) => item.method))).toEqual(["bulk", "apply"]);
+    const progress = page.locator('md-dialog[open][data-aria-label="Package changes"]');
+    await expect(progress.getByRole("status")).toContainText("succeeded");
+    await progress.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("navigation", { name: "Utilities", exact: true }).locator("md-list-item").filter({ hasText: /^Tasks/ }).click();
     await expect(page.getByRole("table", { name: "Tasks", exact: true }).getByRole("row").filter({ hasText: "Change packages" })).toContainText("succeeded");
 });

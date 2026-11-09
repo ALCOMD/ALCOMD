@@ -191,11 +191,11 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
             const projectId = operationResultProjectId(completed);
             if (projectId === undefined || projectId !== accepted.projectId) throw { code: "internal_error" };
             void callbacks.current.onChanged().catch(() => {});
-            if (current() && generation === draft.current && callbacks.current.open) callbacks.current.onCompleted(projectId);
+
         });
         if (ownsDraft()) {
             attempt.current = undefined;
-            setOperationId(accepted.operationId);
+            onClose();
         }
     });
     const cancelOperation = () => run(async () => {
@@ -372,7 +372,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
         setError(undefined);
         try {
             const result = await client.backupApplyRestore(plan.planId);
-            if (isCurrent()) setAccepted(result);
+            if (isCurrent()) onClose();
         } catch (caught: unknown) {
             if (isCurrent()) setError(safeError(caught));
         } finally {
@@ -410,7 +410,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                 ) : accepted !== undefined ? <>
                     <OperationFollow client={client} onSnapshot={setOperation} onTerminal={(next) => {
                         if (next.state !== "succeeded" || completionReported.current) return;
-                        completionReported.current = true; onCompleted(accepted.projectId);
+                        completionReported.current = true;
                     }} operationId={accepted.operationId} title={t("Restore project")} />
                     <div className="dialog-actions">
                         {operation === undefined || terminal ? null : <Button disabled={busy || operation.state === "cancelling"} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel restore")}</Button>}

@@ -197,19 +197,19 @@ test("a user package removal error cannot reuse an earlier refresh failure notif
 });
 
 for (const state of ["failed", "cancelled"]) {
-    test(`an immediately ${state} project deletion keeps its real result in the destructive review`, async ({ page }) => {
+    test(`an immediately ${state} project deletion keeps its real result in the task window`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/projects/00000000-0000-4000-8000-000000000101&state=${state}`);
         await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }).click();
         await page.getByRole("menuitem", { name: "Delete Project Directory…", exact: true }).click();
         const review = page.locator("md-dialog[open]");
         await review.getByRole("textbox", { name: "Confirm project directory name", exact: true }).fill("Sample");
-        await review.getByRole("button", { name: "Permanently delete", exact: true }).click();
-        await expect(review.getByRole("alert")).toContainText("Unable to delete project directory:");
-        if (state === "failed") await expectRequestError(review.getByRole("alert"), "package_archive_invalid");
-        else await expect(review.getByRole("alert")).toContainText("cancelled");
-        await expect(page.locator(".reminder-floating .reminder--success")).toHaveCount(0);
         await expect(review).toContainText("does not use the Recycle Bin or Trash");
-        await expect(review.getByRole("button", { name: "Back", exact: true })).toBeEnabled();
+        await review.getByRole("button", { name: "Permanently delete", exact: true }).click();
+        await expect(review.getByRole("status")).toContainText(state);
+        if (state === "failed") await expectRequestError(review.getByRole("alert"), "package_archive_invalid");
+        else await expect(review.getByRole("status")).toContainText("cancelled");
+        await expect(page.locator(".reminder-floating .reminder--success")).toHaveCount(0);
+        await expect(review.getByRole("button", { name: "Close", exact: true })).toBeVisible();
     });
 }
 
@@ -220,6 +220,8 @@ test("a completed project deletion closes its review and reloads the project lis
     const review = page.locator("md-dialog[open]");
     await review.getByRole("textbox", { name: "Confirm project directory name", exact: true }).fill("Sample");
     await review.getByRole("button", { name: "Permanently delete", exact: true }).click();
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Projects", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No registered projects", exact: true })).toBeVisible();
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);

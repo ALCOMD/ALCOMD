@@ -109,6 +109,8 @@ test("backup detail reuses managed restore, survives its first progress failure,
     await expect(dialog.locator(".operation-follow")).toContainText("running");
     expect(await requests(page, "backups.planRestore")).toEqual([{ method: "backups.planRestore", params: { backupId: selected, targetParent: "C:\\Fixture\\Avatar", targetLeaf: "H3 Restored" } }]);
     await state(page, "succeeded");
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${restoredProjectId}$`));
     expect(await requests(page, "backups.applyRestore")).toHaveLength(1);
     expect((await requests(page, "operations.get")).every((request) => request.params.operationId === operationId)).toBe(true);

@@ -85,7 +85,7 @@ test("new backups inherit saved defaults and a one-time override does not rewrit
     await dialog.getByRole("checkbox", { name: "Keep Library cache in backups", exact: true }).uncheck();
     await dialog.getByRole("button", { name: "Create backup", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "View operation", exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog.getByRole("button", { name: "Minimize", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(await page.evaluate(() => window.h3Requests.filter((request) => request.method === "backups.create"))).toEqual([
         { method: "backups.create", params: { projectId, expectedRevision: 2, compressionMode: "level3", excludeVpmPackages: false, includeLibrary: false } }

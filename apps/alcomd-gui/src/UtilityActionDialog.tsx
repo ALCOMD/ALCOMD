@@ -3,7 +3,11 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { Dialog, DialogCloseButton } from "./Material";
 
 const BusyContext = createContext<(busy: boolean) => void>(() => {});
-const CloseContext = createContext<{ busy: boolean; close(): void; registerCancel(): () => void } | undefined>(undefined);
+const CloseContext = createContext<{ busy: boolean; close(): void; complete(): void; registerCancel(): () => void } | undefined>(undefined);
+
+export function useUtilityDialogComplete() {
+    return useContext(CloseContext)?.complete;
+}
 
 export function useUtilityDialogBusy(busy: boolean) {
     const setBusy = useContext(BusyContext);
@@ -31,11 +35,12 @@ export function UtilityActionDialog({ children, onClose, title, wide = false }: 
     const [busy, setBusy] = useState(false);
     const [cancelCount, setCancelCount] = useState(0);
     const close = useCallback(() => { if (!busy) setOpen(false); }, [busy]);
+    const complete = useCallback(() => setOpen(false), []);
     const registerCancel = useCallback(() => {
         setCancelCount((count) => count + 1);
         return () => setCancelCount((count) => count - 1);
     }, []);
-    const context = useMemo(() => ({ busy, close, registerCancel }), [busy, close, registerCancel]);
+    const context = useMemo(() => ({ busy, close, complete, registerCancel }), [busy, close, complete, registerCancel]);
     return <BusyContext.Provider value={setBusy}><CloseContext.Provider value={context}>
         <Dialog open={open} title={title} wide={wide} dismissible={!busy} onClose={onClose}>
             <div className="utility-action-dialog">{children}</div>

@@ -10,6 +10,9 @@ test("Projects Create submits without a template and opens the registered projec
     await expect(dialog.getByLabel("Create target parent")).toHaveValue("C:\\Fixture\\Avatar");
     await dialog.getByLabel("Create project name").fill("Created Project");
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     expect(await page.evaluate(() => window.templateRequests)).toEqual([{
         method: "projects.create", params: { name: "Created Project", targetParent: "C:\\Fixture\\Avatar", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) }
@@ -93,6 +96,9 @@ test("Projects Restore uses a managed Backup Plan Apply Operation and opens the 
     await expect(page.getByText(/ALCOMD Core will validate the managed archive/)).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Restore project" }).click();
 
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000109$/, { timeout: 5_000 });
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "Restored Project" })).toBeVisible();

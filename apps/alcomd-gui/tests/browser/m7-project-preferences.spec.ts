@@ -440,7 +440,8 @@ test("Project workspace Unity version selector creates one reviewed migration Op
     await expect(review).toContainText("2022.3.22f1");
     await expect(review).toContainText("2022.3.23f1");
     await review.getByRole("button", { name: "Apply reviewed plan" }).click();
-    await expect(page).toHaveURL(new RegExp(`/operations/${OPERATION_ID}$`));
+    await expect(page.locator('md-dialog[open][data-aria-label="Unity migration"]').getByRole("status")).toContainText("succeeded");
+    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/packages$`));
 });
 
 test("Open Unity migration composition revalidates options before the exact launch", async ({ page }) => {

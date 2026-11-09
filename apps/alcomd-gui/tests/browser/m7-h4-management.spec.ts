@@ -167,12 +167,15 @@ test("H4 uninstall defaults to retaining data and keeps a failed delete-data ope
     await expect(page.getByRole("main").getByRole("button", { name: "Uninstall extension", exact: true, includeHidden: true })).toBeDisabled();
 });
 
-test("H4 successful uninstall returns to the refreshed list instead of showing a missing-detail error", async ({ page }) => {
+test("H4 successful uninstall retains completion until the user opens the refreshed list", async ({ page }) => {
     await open(page, true);
     await uninstallReview(page);
     await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
     await expect(page.locator(".operation-follow")).toContainText(/running/i);
     await page.evaluate(() => window.h4Management.complete("succeeded"));
+    await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/extensions\//);
+    await modal(page).getByRole("button", { name: "Extensions", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Extensions", exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: H4_BETA, exact: true })).toBeVisible();
     await expect(page.getByRole("article", { name: H4_ALPHA, exact: true })).toHaveCount(0);
