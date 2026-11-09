@@ -741,6 +741,7 @@ mod tests {
             unity_compatibility_overrides: Vec::new(),
             removal_conflicts: Vec::new(),
             absent_removal_packages: Vec::new(),
+            legacy_reinstall_packages: Vec::new(),
             format_version: 1,
             legacy_removals: Vec::new(),
             legacy_packages: Vec::new(),

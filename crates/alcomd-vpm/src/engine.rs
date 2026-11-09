@@ -208,7 +208,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             &self.reader.package_settings().await?,
             &plan.source_set,
         )?;
-        revalidate(&project, &catalog, &plan).await
+        revalidate(&project, &catalog, &plan).await.map(|_| ())
     }
 
     async fn execute_plan(
@@ -632,11 +632,6 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         test_kill_gate(&attempt, "archive_ready")?;
 
         extract_package_objects(&staging, &plan.change_set, &archives).await?;
-        if plan.change_set.format_version == 3 {
-            for package_id in archives.keys() {
-                verify_extracted_legacy(&root, &staging.join(package_id))?;
-            }
-        }
         append_phase(
             &self.store,
             &plan,
@@ -697,7 +692,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             &self.reader.package_settings().await?,
             &plan.source_set,
         )?;
-        revalidate(&project, &catalog, &plan).await?;
+        let snapshot = revalidate(&project, &catalog, &plan).await?;
+        let installed_legacy = snapshot
+            .installed_legacy(&plan.source_set, &plan.change_set.legacy_reinstall_packages)?;
         if self
             .store
             .cancellation_requested(operation_id)
@@ -771,7 +768,15 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             next_step - 1,
         )?;
         // No awaited work separates this proof from the first project write.
-        verify_plan_legacy(&self.cache, &root, &staging, &catalog, &plan, false)?;
+        verify_plan_legacy(
+            &self.cache,
+            &root,
+            &staging,
+            &catalog,
+            &plan,
+            &installed_legacy,
+            false,
+        )?;
         let replaced = quarantine_legacy(&root, &attempt, &plan)
             .and_then(|()| replace_packages(&packages_root, &staging, &backup, &attempt, &plan));
         if let Err(error) = replaced {
@@ -835,8 +840,16 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         )?;
         // Core's package swap must not introduce or conceal a cleanup obligation.
         // A late target change uses the same established rollback path.
-        let commit = verify_plan_legacy(&self.cache, &root, &packages_root, &catalog, &plan, true)
-            .and_then(|()| commit_manifest(&manifest_path, &attempt));
+        let commit = verify_plan_legacy(
+            &self.cache,
+            &root,
+            &packages_root,
+            &catalog,
+            &plan,
+            &installed_legacy,
+            true,
+        )
+        .and_then(|()| commit_manifest(&manifest_path, &attempt));
         if let Err(error) = commit {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
@@ -1035,7 +1048,7 @@ async fn revalidate(
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
-) -> Result<(), M4Error> {
+) -> Result<crate::ProjectPackageSnapshot, M4Error> {
     if plan.state == alcomd_application::PlanState::Unapplied && plan.change_set.format_version < 3
     {
         return stale("implementation_basis_changed");
@@ -1162,7 +1175,7 @@ async fn revalidate(
             _ => return stale("source_authority_changed"),
         }
     }
-    Ok(())
+    Ok(snapshot)
 }
 
 fn resolution_requests(
@@ -1441,10 +1454,15 @@ async fn prepare_legacy_removals(
     .await?;
     let snapshot = snapshot.clone();
     tokio::task::spawn_blocking(move || {
+        let installed = snapshot.installed_legacy(
+            &draft.source_set,
+            &draft.change_set.legacy_reinstall_packages,
+        )?;
         for (id, archive) in archives {
             let metadata = crate::cache::read_archive_legacy(&archive).map_err(map_cache_error)?;
             merge_legacy(&mut declarations, &id, metadata)?;
         }
+        exclude_installed_legacy_paths(&mut declarations, &installed)?;
         if declarations.values().all(LegacyMetadata::is_empty) {
             return Ok(draft);
         }
@@ -1455,6 +1473,35 @@ async fn prepare_legacy_removals(
     })
     .await
     .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))?
+}
+
+fn exclude_installed_legacy_paths(
+    declarations: &mut BTreeMap<String, LegacyMetadata>,
+    installed: &BTreeMap<String, LegacyMetadata>,
+) -> Result<(), M4Error> {
+    for (id, metadata) in declarations {
+        let Some(old) = installed.get(id) else {
+            continue;
+        };
+        for (paths, previous) in [
+            (&mut metadata.files, &old.files),
+            (&mut metadata.folders, &old.folders),
+        ] {
+            let previous = previous
+                .keys()
+                .map(|path| crate::legacy::removal_path(path))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            let mut new_paths = BTreeMap::new();
+            for (path, guid) in std::mem::take(paths) {
+                let path = crate::legacy::removal_path(&path)?;
+                if !previous.contains(&path) {
+                    new_paths.insert(path, guid);
+                }
+            }
+            *paths = new_paths;
+        }
+    }
+    Ok(())
 }
 
 fn merge_legacy(
@@ -1582,10 +1629,6 @@ fn extracted_legacy(extracted: &Path) -> Result<LegacyMetadata, M4Error> {
     .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))
 }
 
-fn verify_extracted_legacy(root: &Path, extracted: &Path) -> Result<(), M4Error> {
-    crate::legacy::verify_absent(root, &extracted_legacy(extracted)?)
-}
-
 fn pinned_legacy_declarations(
     cache: &PackageCache,
     catalog: &ResolverCatalog,
@@ -1633,26 +1676,22 @@ fn verify_plan_legacy(
     payload_root: &Path,
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
+    installed: &BTreeMap<String, LegacyMetadata>,
     after_replace: bool,
 ) -> Result<(), M4Error> {
     if plan.change_set.format_version < 3 {
         return Ok(());
     }
     let mut declarations = pinned_legacy_declarations(cache, catalog, &plan.source_set)?;
-    if plan.change_set.format_version == 3 {
-        for metadata in declarations.values() {
-            crate::legacy::verify_absent(root, metadata)?;
-        }
-    }
     for mutation in &plan.change_set.mutations {
         if mutation.source.is_some() {
             let metadata = extracted_legacy(&payload_root.join(&mutation.package_id))?;
-            if plan.change_set.format_version == 3 {
-                crate::legacy::verify_absent(root, &metadata)?;
-            } else {
-                merge_legacy(&mut declarations, &mutation.package_id, metadata)?;
-            }
+            merge_legacy(&mut declarations, &mutation.package_id, metadata)?;
         }
+    }
+    exclude_installed_legacy_paths(&mut declarations, installed)?;
+    if plan.change_set.format_version == 3 {
+        crate::legacy::verify_all_absent(root, declarations.values())?;
     }
     if plan.change_set.format_version == 4 {
         let actual = crate::legacy::collect_removals(root, &declarations)?;
@@ -2221,7 +2260,7 @@ fn hex(value: &[u8; 32]) -> String {
     result
 }
 
-fn stale(reason: &str) -> Result<(), M4Error> {
+fn stale<T>(reason: &str) -> Result<T, M4Error> {
     Err(M4Error::with_subreason(M4ErrorCode::PlanStale, reason))
 }
 
@@ -3351,6 +3390,7 @@ mod tests {
                 unity_compatibility_overrides: Vec::new(),
                 removal_conflicts: Vec::new(),
                 absent_removal_packages: Vec::new(),
+                legacy_reinstall_packages: Vec::new(),
                 format_version: 1,
                 legacy_removals: Vec::new(),
                 legacy_packages: Vec::new(),

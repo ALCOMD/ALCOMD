@@ -1475,6 +1475,548 @@ async fn ordinary_apply_removes_reviewed_paths_moved_assets_and_legacy_packages(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn large_importer_metadata_preserves_recursive_guid_discovery_and_real_apply() {
+    for action in [
+        PlanAction::Install,
+        PlanAction::Upgrade,
+        PlanAction::Reinstall,
+    ] {
+        let mut fixture = Fixture::new(true, ExistingLegacy::MovedGuid).await;
+        let moved = "Assets/User/Legacy/Nested/Moved.txt";
+        fs::create_dir_all(fixture.project_root.join("Assets/User/Legacy/Nested"))
+            .expect("deep moved location");
+        for suffix in ["", ".meta"] {
+            fs::rename(
+                fixture
+                    .project_root
+                    .join(format!("Assets/Moved.txt{suffix}")),
+                fixture.project_root.join(format!("{moved}{suffix}")),
+            )
+            .expect("move old resource outside shallow lookup");
+        }
+        if action != PlanAction::Install {
+            let version = if action == PlanAction::Upgrade {
+                "1.0.0"
+            } else {
+                "2.0.0"
+            };
+            if action == PlanAction::Upgrade {
+                // No old declarations: these are new migration obligations.
+                seed_package(&fixture.project_root, NEW, version, json!({}));
+            }
+            // A missing installed directory gives reinstall no old declaration basis.
+            seed_package(&fixture.project_root, CHILD, "1.0.0", json!({}));
+            let mut graph: Value = serde_json::from_slice(
+                &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                    .expect("project manifest"),
+            )
+            .expect("JSON");
+            graph["dependencies"][NEW] = json!({"version":version});
+            graph["locked"][NEW] = json!({"version":version,"dependencies":{CHILD:"^1.0.0"}});
+            graph["locked"][CHILD] = json!({"version":"1.0.0","dependencies":{}});
+            fixture.replace_project_manifest(&graph).await;
+        }
+        let model = fixture.project_root.join("Assets/Character.fbx");
+        let meta = fixture.project_root.join("Assets/Character.fbx.meta");
+        let bytes = format!("fileFormatVersion: 2\nguid: 99999999999999999999999999999999\nModelImporter:\n  userData: {}\n", "x".repeat(160_000)).into_bytes();
+        fs::write(&model, b"unrelated model").expect("model sentinel");
+        fs::write(&meta, &bytes).expect("large importer meta");
+        let mut request = fixture.request();
+        request.action = action;
+        if action == PlanAction::Reinstall {
+            request.package_id = None;
+            request.version_range = None;
+            request.reinstall_selection =
+                Some(alcomd_application::ReinstallSelection::Packages(vec![
+                    NEW.into(),
+                ]));
+        }
+        let access = AccessContext::local_owner();
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("large valid importer metadata must not block GUID discovery");
+        assert_eq!(
+            plan.change_set
+                .legacy_removals
+                .iter()
+                .map(|r| r.path.as_str())
+                .collect::<Vec<_>>(),
+            [moved, &format!("{moved}.meta")]
+        );
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("large-meta-guid"),
+            )
+            .await
+            .expect("accept reviewed cleanup");
+        let result = fixture.terminal(accepted.operation_id).await;
+        assert_eq!(
+            result.state,
+            OperationState::Succeeded,
+            "{:?}",
+            result.error_code
+        );
+        assert!(!fixture.project_root.join(moved).exists());
+        assert!(!fixture.project_root.join(format!("{moved}.meta")).exists());
+        assert_eq!(fs::read(&meta).expect("unrelated metadata retained"), bytes);
+        assert_eq!(
+            fs::read(&model).expect("unrelated model retained"),
+            b"unrelated model"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn existing_legacy_declarations_do_not_rescan_assets_during_single_or_bulk_upgrade() {
+    for action in [PlanAction::Upgrade, PlanAction::Bulk] {
+        let mut fixture = Fixture::new(true, ExistingLegacy::File).await;
+        fs::write(
+            fixture.project_root.join("Assets/Old.txt.meta"),
+            format!("guid: {FILE_GUID}\n"),
+        )
+        .expect("existing old resource metadata");
+        let version = "1.0.0";
+        seed_package(&fixture.project_root, NEW, version, json!({}));
+        let mut old = json!({"name":NEW,"version":version});
+        add_legacy(&mut old);
+        // Existing and new declarations may spell the same path with different separators.
+        old["legacyFiles"] = json!({"Assets\\Old.txt":null});
+        old["legacyFolders"] = json!({"Assets\\Legacy":FOLDER_GUID});
+        fs::write(
+            fixture
+                .project_root
+                .join("Packages")
+                .join(NEW)
+                .join("package.json"),
+            serde_json::to_vec(&old).expect("old package JSON"),
+        )
+        .expect("old package metadata");
+        let mut graph: Value = serde_json::from_slice(
+            &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                .expect("project manifest"),
+        )
+        .expect("JSON");
+        graph["dependencies"][NEW] = json!({"version":version});
+        graph["locked"][NEW] = json!({"version":version,"dependencies":{}});
+        fixture.replace_project_manifest(&graph).await;
+        let unrelated = fixture.project_root.join("Assets/Unrelated.meta");
+        let bytes = vec![b'x'; 80_532];
+        fs::write(&unrelated, &bytes).expect("out-of-scope metadata");
+        let mut request = fixture.request();
+        request.action = action;
+        if action == PlanAction::Bulk {
+            request.package_id = None;
+            request.version_range = None;
+            request.bulk_intents = vec![PackageBulkIntent::Upgrade {
+                package_id: NEW.into(),
+                source: None,
+                version_range: Some("2.0.0".into()),
+                include_prerelease: false,
+            }];
+        }
+        let access = AccessContext::local_owner();
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("existing declarations must not trigger asset discovery");
+        assert!(plan.change_set.legacy_removals.is_empty());
+        assert!(
+            plan.change_set
+                .mutations
+                .iter()
+                .any(|m| m.package_id == NEW)
+        );
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("existing-legacy-paths"),
+            )
+            .await
+            .expect("accept bounded change");
+        let result = fixture.terminal(accepted.operation_id).await;
+        assert_eq!(
+            result.state,
+            OperationState::Succeeded,
+            "{:?}",
+            result.error_code
+        );
+        assert_eq!(
+            fs::read(&unrelated).expect("unrelated meta retained"),
+            bytes
+        );
+        assert_eq!(
+            fs::read(fixture.project_root.join("Assets/Old.txt"))
+                .expect("already known legacy path retained"),
+            b"legacy content"
+        );
+        assert!(fixture.project_root.join("Assets/Old.txt.meta").exists());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn explicit_reinstall_rechecks_all_legacy_declarations_and_preserves_update_scope() {
+    for mode in ["single", "all", "bulk", "mixed"] {
+        let mut fixture = Fixture::new(true, ExistingLegacy::MovedGuid).await;
+        seed_package(&fixture.project_root, NEW, "2.0.0", json!({CHILD:"^1.0.0"}));
+        let mut old = json!({"name":NEW,"version":"2.0.0","vpmDependencies":{CHILD:"^1.0.0"}});
+        add_legacy(&mut old);
+        fs::write(
+            fixture
+                .project_root
+                .join("Packages")
+                .join(NEW)
+                .join("package.json"),
+            serde_json::to_vec(&old).expect("old JSON"),
+        )
+        .expect("old metadata");
+        let child_version = if mode == "mixed" { "0.9.0" } else { "1.0.0" };
+        seed_package(&fixture.project_root, CHILD, child_version, json!({}));
+        let child_old =
+            json!({"name":CHILD,"version":child_version,"legacyFiles":{"Assets/ChildOld.txt":""}});
+        fs::write(
+            fixture
+                .project_root
+                .join("Packages")
+                .join(CHILD)
+                .join("package.json"),
+            serde_json::to_vec(&child_old).expect("child old JSON"),
+        )
+        .expect("child metadata");
+        fs::write(
+            fixture.project_root.join("Assets/ChildOld.txt"),
+            b"child legacy resource",
+        )
+        .expect("child resource");
+        let child_target =
+            json!({"name":CHILD,"version":"1.0.0","legacyFiles":{"Assets/ChildOld.txt":""}});
+        let digest = cache_package(
+            &PackageCache::new(fixture._directory.0.join("package-cache")).expect("cache"),
+            &child_target,
+        );
+        let mut indexed_child = child_target;
+        add_repository_fields(&mut indexed_child, &digest);
+        let index_path = fixture._directory.0.join("index.json");
+        let mut index: Value =
+            serde_json::from_slice(&fs::read(&index_path).expect("index")).expect("index JSON");
+        index["packages"][CHILD]["versions"]["1.0.0"] = indexed_child;
+        fs::write(&index_path, serde_json::to_vec(&index).expect("index JSON"))
+            .expect("updated child");
+        let registry = M3Application::new(fixture.store.clone(), VpmReader::new().expect("reader"));
+        let access = AccessContext::local_owner();
+        let repositories = registry
+            .list_repositories(&access, None, 10)
+            .await
+            .expect("repositories");
+        let repository = &repositories.repositories[0];
+        registry
+            .refresh_repository(
+                &access,
+                repository.repository_id,
+                repository.revision,
+                key("refresh-reinstall-child"),
+            )
+            .await
+            .expect("refresh child");
+        let graph = json!({"dependencies":{NEW:{"version":"2.0.0","custom":"keep direct identity"}},"locked":{NEW:{"version":"2.0.0","dependencies":{CHILD:"^1.0.0"}},CHILD:{"version":child_version,"dependencies":{}}}});
+        fixture.replace_project_manifest(&graph).await;
+        let before =
+            fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("old graph");
+        let mut request = fixture.request();
+        request.package_id = None;
+        request.version_range = None;
+        request.action = if matches!(mode, "single" | "all") {
+            PlanAction::Reinstall
+        } else {
+            PlanAction::Bulk
+        };
+        if mode == "all" {
+            request.reinstall_selection = Some(alcomd_application::ReinstallSelection::All);
+        } else if mode == "single" {
+            request.reinstall_selection =
+                Some(alcomd_application::ReinstallSelection::Packages(vec![
+                    NEW.into(),
+                ]));
+        } else {
+            request.bulk_intents = vec![PackageBulkIntent::Reinstall {
+                package_id: NEW.into(),
+                source: None,
+            }];
+            if mode == "mixed" {
+                request.bulk_intents.push(PackageBulkIntent::Upgrade {
+                    package_id: CHILD.into(),
+                    version_range: Some("1.0.0".into()),
+                    source: None,
+                    include_prerelease: false,
+                });
+            }
+        }
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("reinstall reviews old declarations");
+        let expected_targets = if mode == "all" {
+            vec![CHILD.to_owned(), NEW.to_owned()]
+        } else {
+            vec![NEW.to_owned()]
+        };
+        assert_eq!(plan.change_set.legacy_reinstall_packages, expected_targets);
+        let round_trip: alcomd_application::PackageChangeSet =
+            serde_json::from_slice(&serde_json::to_vec(&plan.change_set).expect("frozen JSON"))
+                .expect("restore frozen intent");
+        assert_eq!(round_trip, plan.change_set);
+        let mut invalid = plan.change_set.clone();
+        invalid
+            .legacy_reinstall_packages
+            .push("com.example.unselected".into());
+        assert!(
+            invalid.validate_bounds().is_err(),
+            "an unselected package cannot acquire reinstall intent"
+        );
+        let mut without_intent = plan.change_set.clone();
+        without_intent.legacy_reinstall_packages.clear();
+        assert_ne!(
+            <[u8; 32]>::from(Sha256::digest(
+                serde_json::to_vec(&without_intent).expect("modified JSON")
+            )),
+            plan.change_set_fingerprint,
+            "the frozen digest binds reinstall intent"
+        );
+        assert!(
+            plan.change_set
+                .legacy_removals
+                .iter()
+                .any(|r| r.path == "Assets/Moved.txt")
+        );
+        assert_eq!(
+            plan.change_set
+                .legacy_removals
+                .iter()
+                .any(|r| r.path == "Assets/ChildOld.txt"),
+            mode == "all",
+            "only explicit reinstall targets recheck old declarations"
+        );
+        assert!(
+            fixture.project_root.join("Assets/Moved.txt").exists(),
+            "planning never deletes a reviewed resource"
+        );
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("explicit-reinstall"),
+            )
+            .await
+            .expect("apply frozen reinstall");
+        let result = fixture.terminal(accepted.operation_id).await;
+        assert_eq!(
+            result.state,
+            OperationState::Succeeded,
+            "{mode}: {:?}",
+            result.error_code
+        );
+        assert!(!fixture.project_root.join("Assets/Moved.txt").exists());
+        assert!(!fixture.project_root.join("Assets/Moved.txt.meta").exists());
+        assert_eq!(
+            fixture.project_root.join("Assets/ChildOld.txt").exists(),
+            mode != "all"
+        );
+        let after = fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("result graph");
+        if mode != "mixed" {
+            assert_eq!(
+                after, before,
+                "reinstall preserves the original manifest bytes"
+            );
+        }
+        let after: Value = serde_json::from_slice(&after).expect("result JSON");
+        if mode != "mixed" {
+            assert!(
+                after["dependencies"].get(CHILD).is_none(),
+                "reinstall keeps a transitive dependency transitive"
+            );
+        }
+        assert_eq!(after["dependencies"][NEW]["custom"], "keep direct identity");
+        assert_eq!(after["locked"][NEW]["version"], "2.0.0");
+        assert_eq!(
+            fs::read(
+                fixture
+                    .project_root
+                    .join("Packages")
+                    .join(KEEP)
+                    .join("keep.txt")
+            )
+            .expect("unrelated package"),
+            b"existing package bytes"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reinstall_publication_failure_restores_reviewed_legacy_resources_and_old_package() {
+    let mut fixture = Fixture::new(true, ExistingLegacy::MovedGuid).await;
+    seed_package(&fixture.project_root, NEW, "2.0.0", json!({}));
+    let mut old = json!({"name":NEW,"version":"2.0.0"});
+    add_legacy(&mut old);
+    let old_bytes = serde_json::to_vec(&old).expect("old JSON");
+    let package_root = fixture.project_root.join("Packages").join(NEW);
+    fs::write(package_root.join("package.json"), &old_bytes).expect("old metadata");
+    let graph = json!({"dependencies":{NEW:{"version":"2.0.0"}},"locked":{NEW:{"version":"2.0.0","dependencies":{}}}});
+    fixture.replace_project_manifest(&graph).await;
+    let before =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("old graph");
+    let conflict = fixture.project_root.join("Packages").join(CHILD);
+    fs::create_dir(&conflict).expect("untracked collision");
+    fs::write(conflict.join("sentinel"), b"external directory").expect("collision sentinel");
+    let mut request = fixture.request();
+    request.action = PlanAction::Bulk;
+    request.package_id = None;
+    request.version_range = None;
+    request.bulk_intents = vec![
+        PackageBulkIntent::Reinstall {
+            package_id: NEW.into(),
+            source: None,
+        },
+        PackageBulkIntent::Install {
+            package_id: CHILD.into(),
+            version_range: Some("1.0.0".into()),
+            source: None,
+            include_prerelease: false,
+        },
+    ];
+    let access = AccessContext::local_owner();
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("review reinstall before publication");
+    assert!(
+        plan.change_set
+            .legacy_removals
+            .iter()
+            .any(|r| r.path == "Assets/Moved.txt")
+    );
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("reinstall-rollback"),
+        )
+        .await
+        .expect("accept frozen plan");
+    assert_eq!(
+        fixture.terminal(accepted.operation_id).await.state,
+        OperationState::Failed
+    );
+    assert_eq!(
+        fs::read(package_root.join("package.json")).expect("old package restored"),
+        old_bytes
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("graph restored"),
+        before
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Assets/Moved.txt")).expect("resource restored"),
+        b"moved legacy content"
+    );
+    assert!(fixture.project_root.join("Assets/Moved.txt.meta").exists());
+    assert_eq!(
+        fs::read(conflict.join("sentinel")).expect("collision retained"),
+        b"external directory"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_reviews_new_legacy_paths_and_keeps_already_declared_resources() {
+    let mut fixture = Fixture::new(true, ExistingLegacy::Folder).await;
+    seed_package(&fixture.project_root, NEW, "1.0.0", json!({}));
+    let old = json!({"name":NEW,"version":"1.0.0","legacyFiles":{"Assets/Old.txt":FILE_GUID}});
+    fs::write(
+        fixture
+            .project_root
+            .join("Packages")
+            .join(NEW)
+            .join("package.json"),
+        serde_json::to_vec(&old).expect("old JSON"),
+    )
+    .expect("old metadata");
+    fs::write(
+        fixture.project_root.join("Assets/Old.txt"),
+        b"previously declared resource",
+    )
+    .expect("old resource");
+    fs::write(
+        fixture.project_root.join("Assets/Old.txt.meta"),
+        format!("guid: {FILE_GUID}\n"),
+    )
+    .expect("old resource meta");
+    let mut graph: Value = serde_json::from_slice(
+        &fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("project manifest"),
+    )
+    .expect("JSON");
+    graph["dependencies"][NEW] = json!({"version":"1.0.0"});
+    graph["locked"][NEW] = json!({"version":"1.0.0","dependencies":{}});
+    fixture.replace_project_manifest(&graph).await;
+    let mut request = fixture.request();
+    request.action = PlanAction::Upgrade;
+    let access = AccessContext::local_owner();
+    let plan = fixture
+        .packages
+        .plan(&access, request)
+        .await
+        .expect("review new declaration only");
+    assert_eq!(
+        plan.change_set
+            .legacy_removals
+            .iter()
+            .map(|r| r.path.as_str())
+            .collect::<Vec<_>>(),
+        ["Assets/Legacy", "Assets/Legacy.meta"]
+    );
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            plan.plan_id,
+            fixture.project.revision,
+            key("new-legacy-path"),
+        )
+        .await
+        .expect("apply reviewed new declaration");
+    let result = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(
+        result.state,
+        OperationState::Succeeded,
+        "{:?}",
+        result.error_code
+    );
+    assert!(!fixture.project_root.join("Assets/Legacy").exists());
+    assert!(!fixture.project_root.join("Assets/Legacy.meta").exists());
+    assert_eq!(
+        fs::read(fixture.project_root.join("Assets/Old.txt"))
+            .expect("previously declared resource retained"),
+        b"previously declared resource"
+    );
+    assert!(fixture.project_root.join("Assets/Old.txt.meta").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn indexed_legacy_evidence_remains_authoritative_when_the_archive_omits_it() {
     let fixture = Fixture::new(false, ExistingLegacy::File).await;
     let plan = fixture

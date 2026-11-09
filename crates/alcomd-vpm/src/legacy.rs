@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use crate::package::LegacyMetadata;
 
 const ENTRY_LIMIT: usize = 65_536;
+#[cfg(test)]
 const META_BYTE_LIMIT: usize = 64 * 1024;
 const TOTAL_META_BYTE_LIMIT: usize = 64 * 1024 * 1024;
 
@@ -129,6 +130,20 @@ impl<'a> Snapshot<'a> {
             return Err(unsupported());
         }
         Ok(bytes)
+    }
+
+    fn read_meta_guid(&mut self, path: &Path, total_bytes: &mut usize) -> Result<String, M4Error> {
+        let before = self.observe(path)?;
+        if !before.file || before.len > TOTAL_META_BYTE_LIMIT.saturating_sub(*total_bytes) as u64 {
+            return Err(unsupported());
+        }
+        let expected_len = before.len;
+        let mut file = std::fs::File::open(path).map_err(|_| unsupported())?;
+        let (guid, read) = read_meta_guid(&mut file, total_bytes)?;
+        if read != expected_len || self.observe(path)?.len != read {
+            return Err(unsupported());
+        }
+        Ok(guid)
     }
 
     fn verify(&self) -> Result<(), M4Error> {
@@ -295,12 +310,7 @@ fn find_moved_assets(
             .to_str()
             .and_then(|path| path.strip_suffix(".meta"))
         {
-            let bytes = snapshot.read_file(&path, META_BYTE_LIMIT)?;
-            total_bytes += bytes.len();
-            if total_bytes > TOTAL_META_BYTE_LIMIT {
-                return Err(unsupported());
-            }
-            let guid = meta_guid(&bytes)?;
+            let guid = snapshot.read_meta_guid(&path, &mut total_bytes)?;
             if guids.contains(guid.as_str()) && found.insert(guid, removal_path(asset)?).is_some() {
                 return Err(unsupported());
             }
@@ -395,19 +405,39 @@ fn fingerprint(path: &Path, kind: LegacyRemovalKind) -> Result<[u8; 32], M4Error
 }
 
 pub(crate) fn verify_absent(root: &Path, metadata: &LegacyMetadata) -> Result<(), M4Error> {
-    verify_absent_before_final_check(root, metadata, || {})
+    verify_all_absent(root, std::iter::once(metadata))
 }
 
+pub(crate) fn verify_all_absent<'a>(
+    root: &Path,
+    declarations: impl IntoIterator<Item = &'a LegacyMetadata>,
+) -> Result<(), M4Error> {
+    verify_all_absent_before_final_check(root, declarations, || {})
+}
+
+#[cfg(test)]
 fn verify_absent_before_final_check(
     root: &Path,
     metadata: &LegacyMetadata,
     before_final_check: impl FnOnce(),
 ) -> Result<(), M4Error> {
-    if metadata.is_empty() {
+    verify_all_absent_before_final_check(root, std::iter::once(metadata), before_final_check)
+}
+
+fn verify_all_absent_before_final_check<'a>(
+    root: &Path,
+    declarations: impl IntoIterator<Item = &'a LegacyMetadata>,
+    before_final_check: impl FnOnce(),
+) -> Result<(), M4Error> {
+    let declarations: Vec<_> = declarations.into_iter().filter(|m| !m.is_empty()).collect();
+    if declarations.is_empty() {
         return Ok(());
     }
     let mut snapshot = Snapshot::new(root)?;
-    for path in metadata.folders.keys().chain(metadata.files.keys()) {
+    for path in declarations
+        .iter()
+        .flat_map(|m| m.folders.keys().chain(m.files.keys()))
+    {
         let path = legacy_relative_path(path)?;
         if !snapshot.missing(Path::new(&path))?
             || !snapshot.missing(Path::new(&format!("{path}.meta")))?
@@ -415,7 +445,8 @@ fn verify_absent_before_final_check(
             return Err(unsupported());
         }
     }
-    if !metadata.packages.is_empty() {
+    let packages: BTreeSet<_> = declarations.iter().flat_map(|m| &m.packages).collect();
+    if !packages.is_empty() {
         let relative = Path::new("Packages/vpm-manifest.json");
         if snapshot.missing(relative)? {
             return Err(unsupported());
@@ -430,7 +461,7 @@ fn verify_absent_before_final_check(
                 return Err(unsupported());
             }
         }
-        for package in &metadata.packages {
+        for package in packages {
             if ["dependencies", "locked"].iter().any(|key| {
                 manifest
                     .get(*key)
@@ -442,10 +473,9 @@ fn verify_absent_before_final_check(
             }
         }
     }
-    let guids = metadata
-        .folders
-        .values()
-        .chain(metadata.files.values())
+    let guids = declarations
+        .iter()
+        .flat_map(|m| m.folders.values().chain(m.files.values()))
         .filter(|guid| !guid.is_empty())
         .cloned()
         .collect::<BTreeSet<_>>();
@@ -469,17 +499,9 @@ fn verify_absent_before_final_check(
             } else if path
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("meta"))
+                && guids.contains(&snapshot.read_meta_guid(&path, &mut total_bytes)?)
             {
-                let bytes = snapshot.read_file(&path, META_BYTE_LIMIT)?;
-                total_bytes = total_bytes
-                    .checked_add(bytes.len())
-                    .ok_or_else(unsupported)?;
-                if total_bytes > TOTAL_META_BYTE_LIMIT {
-                    return Err(unsupported());
-                }
-                if guids.contains(&meta_guid(&bytes)?) {
-                    return Err(unsupported());
-                }
+                return Err(unsupported());
             }
         }
     }
@@ -507,23 +529,135 @@ fn legacy_relative_path(value: &str) -> Result<String, M4Error> {
     Ok(normalized)
 }
 
-/// Unity-generated meta files use one unquoted hexadecimal GUID. Other syntax
-/// is unknown to this bounded reader and cannot establish absence.
-fn meta_guid(bytes: &[u8]) -> Result<String, M4Error> {
-    let text = std::str::from_utf8(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes))
-        .map_err(|_| unsupported())?;
-    let mut guids = text.lines().filter_map(|line| {
-        let (key, value) = line.trim().split_once(':')?;
-        (key.trim() == "guid").then_some(value.trim())
-    });
-    let guid = guids.next().ok_or_else(unsupported)?;
-    if guid.len() != 32
-        || !guid.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || guids.next().is_some()
-    {
-        return Err(unsupported());
+/// Validate the complete UTF-8 stream and every GUID declaration without retaining
+/// importer data or limiting a file/line to 64 KiB. The aggregate scan budget and
+/// final file identity/length/timestamp proof still apply.
+fn read_meta_guid(
+    reader: &mut impl Read,
+    total_bytes: &mut usize,
+) -> Result<(String, u64), M4Error> {
+    let mut buffer = [0_u8; 8192];
+    let mut pending = 0;
+    let mut bytes_read = 0_u64;
+    let mut scanner = MetaGuidScanner::default();
+    loop {
+        let read = reader
+            .read(&mut buffer[pending..])
+            .map_err(|_| unsupported())?;
+        if read == 0 {
+            if pending != 0 {
+                return Err(unsupported());
+            }
+            scanner.finish_line()?;
+            return Ok((scanner.guid.ok_or_else(unsupported)?, bytes_read));
+        }
+        *total_bytes = total_bytes.checked_add(read).ok_or_else(unsupported)?;
+        if *total_bytes > TOTAL_META_BYTE_LIMIT {
+            return Err(unsupported());
+        }
+        bytes_read += read as u64;
+        let end = pending + read;
+        let valid = match std::str::from_utf8(&buffer[..end]) {
+            Ok(_) => end,
+            Err(error) if error.error_len().is_none() => error.valid_up_to(),
+            Err(_) => return Err(unsupported()),
+        };
+        scanner.push_text(std::str::from_utf8(&buffer[..valid]).map_err(|_| unsupported())?)?;
+        buffer.copy_within(valid..end, 0);
+        pending = end - valid;
     }
-    Ok(guid.to_ascii_lowercase())
+}
+
+#[derive(Default)]
+enum MetaGuidLine {
+    #[default]
+    Leading,
+    Key(usize),
+    AfterKey,
+    BeforeValue,
+    Value,
+    AfterValue,
+    Other,
+}
+
+#[derive(Default)]
+struct MetaGuidScanner {
+    line: MetaGuidLine,
+    value: String,
+    guid: Option<String>,
+    started: bool,
+}
+
+impl MetaGuidScanner {
+    fn push_text(&mut self, text: &str) -> Result<(), M4Error> {
+        for part in text.split_inclusive('\n') {
+            let body = part.strip_suffix('\n').unwrap_or(part);
+            if !matches!(self.line, MetaGuidLine::Other) {
+                for character in body.chars() {
+                    self.push(character)?;
+                    if matches!(self.line, MetaGuidLine::Other) {
+                        break;
+                    }
+                }
+            }
+            if body.len() != part.len() {
+                self.push('\n')?;
+            }
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, character: char) -> Result<(), M4Error> {
+        if !self.started {
+            self.started = true;
+            if character == '\u{feff}' {
+                return Ok(());
+            }
+        }
+        if character == '\n' {
+            return self.finish_line();
+        }
+        self.line = match self.line {
+            MetaGuidLine::Leading if character.is_whitespace() => MetaGuidLine::Leading,
+            MetaGuidLine::Leading if character == 'g' => MetaGuidLine::Key(1),
+            MetaGuidLine::Key(index) if character == ['g', 'u', 'i', 'd'][index] => {
+                if index == 3 {
+                    MetaGuidLine::AfterKey
+                } else {
+                    MetaGuidLine::Key(index + 1)
+                }
+            }
+            MetaGuidLine::AfterKey if character.is_whitespace() => MetaGuidLine::AfterKey,
+            MetaGuidLine::AfterKey if character == ':' => MetaGuidLine::BeforeValue,
+            MetaGuidLine::BeforeValue if character.is_whitespace() => MetaGuidLine::BeforeValue,
+            MetaGuidLine::Value if character.is_whitespace() => MetaGuidLine::AfterValue,
+            MetaGuidLine::AfterValue if character.is_whitespace() => MetaGuidLine::AfterValue,
+            MetaGuidLine::BeforeValue | MetaGuidLine::Value => {
+                if !character.is_ascii_hexdigit() || self.value.len() == 32 {
+                    return Err(unsupported());
+                }
+                self.value.push(character.to_ascii_lowercase());
+                MetaGuidLine::Value
+            }
+            MetaGuidLine::AfterValue => return Err(unsupported()),
+            _ => MetaGuidLine::Other,
+        };
+        Ok(())
+    }
+
+    fn finish_line(&mut self) -> Result<(), M4Error> {
+        if matches!(
+            self.line,
+            MetaGuidLine::BeforeValue | MetaGuidLine::Value | MetaGuidLine::AfterValue
+        ) {
+            if self.value.len() != 32 || self.guid.is_some() {
+                return Err(unsupported());
+            }
+            self.guid = Some(std::mem::take(&mut self.value));
+        }
+        self.line = MetaGuidLine::Leading;
+        Ok(())
+    }
 }
 
 fn unsafe_entry(metadata: &std::fs::Metadata) -> bool {
@@ -671,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_or_oversized_meta_never_becomes_absence() {
+    fn unreadable_or_invalid_meta_never_becomes_absence() {
         let fixture = Fixture::new();
         let root = &fixture.0;
         let path = root.join("Assets/Unrelated.meta");
@@ -685,6 +819,99 @@ mod tests {
         }
         std::fs::write(&path, "guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n").expect("unrelated meta");
         verify_absent(root, &fixture.metadata()).expect("valid unrelated GUID");
+    }
+
+    #[test]
+    fn large_importer_lines_stream_without_hiding_late_guid_or_encoding_errors() {
+        let guid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let mut bytes =
+            format!("\u{feff}fileFormatVersion: 2\nguid: {guid}\nModelImporter:\n  userData: ")
+                .into_bytes();
+        bytes.extend(std::iter::repeat_n(b'x', 160_000));
+        bytes.extend_from_slice(" 中文🦀\n".as_bytes());
+        let mut total = 0;
+        let (actual, length) =
+            read_meta_guid(&mut bytes.as_slice(), &mut total).expect("large valid importer data");
+        assert_eq!(actual, guid);
+        assert_eq!(length, bytes.len() as u64);
+        assert_eq!(total, bytes.len());
+        let mut duplicate = bytes.clone();
+        duplicate.extend_from_slice(format!("guid: {guid}\n").as_bytes());
+        assert!(
+            read_meta_guid(&mut duplicate.as_slice(), &mut 0).is_err(),
+            "a late duplicate is still ambiguous"
+        );
+        bytes.push(0xff);
+        assert!(
+            read_meta_guid(&mut bytes.as_slice(), &mut 0).is_err(),
+            "invalid importer encoding is not absence"
+        );
+    }
+
+    #[test]
+    fn guid_stream_handles_split_utf8_and_enforces_the_aggregate_budget() {
+        struct ShortRead<'a>(&'a [u8]);
+        impl Read for ShortRead<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                self.0.read(&mut buffer[..1])
+            }
+        }
+        let guid = "abcdef0123456789abcdef0123456789";
+        let mut bytes = vec![b'x'; 8191];
+        bytes.extend_from_slice(format!("🦀\n  guid : {guid}\r\n").as_bytes());
+        assert_eq!(
+            read_meta_guid(&mut bytes.as_slice(), &mut 0)
+                .expect("split UTF-8")
+                .0,
+            guid
+        );
+        let mut budget = TOTAL_META_BYTE_LIMIT - bytes.len();
+        read_meta_guid(&mut bytes.as_slice(), &mut budget).expect("exact scan budget");
+        assert_eq!(budget, TOTAL_META_BYTE_LIMIT);
+        assert!(read_meta_guid(&mut bytes.as_slice(), &mut budget).is_err());
+        let short = format!("\u{feff}Importer: 中文🦀\r\n guid : {guid}");
+        assert_eq!(
+            read_meta_guid(&mut ShortRead(short.as_bytes()), &mut 0)
+                .expect("BOM, UTF-8, key and value split across short reads")
+                .0,
+            guid
+        );
+        let mut truncated = short.into_bytes();
+        truncated.extend_from_slice(b"\nImporter: \xe4\xb8");
+        assert!(read_meta_guid(&mut ShortRead(&truncated), &mut 0).is_err());
+        for invalid in [
+            b"guid:\n".as_slice(),
+            b"guid: malformed\n",
+            b"guid: abcdef0123456789abcdef0123456789 extra\n",
+        ] {
+            assert!(read_meta_guid(&mut &invalid[..], &mut 0).is_err());
+        }
+    }
+
+    #[test]
+    fn large_meta_scan_still_revalidates_file_identity() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("Assets/Model.meta");
+        let bytes = format!(
+            "guid: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nImporter: {}",
+            "x".repeat(80_532)
+        );
+        std::fs::write(&path, &bytes).expect("large meta");
+        let mut snapshot = Snapshot::new(&fixture.0).expect("snapshot");
+        snapshot.read_meta_guid(&path, &mut 0).expect("stream meta");
+        let original = EntryStamp::read(&path).expect("original stamp");
+        std::fs::rename(&path, fixture.0.join("original.meta")).expect("preserve original");
+        std::fs::write(&path, bytes).expect("replacement meta");
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .expect("replacement")
+            .set_modified(original.modified)
+            .expect("same timestamp");
+        assert!(
+            snapshot.verify().is_err(),
+            "same length and timestamp cannot conceal a new file identity"
+        );
     }
 
     #[test]

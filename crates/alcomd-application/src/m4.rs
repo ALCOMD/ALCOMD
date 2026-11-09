@@ -210,6 +210,9 @@ pub struct PackageChangeSet {
     // Internal frozen filesystem evidence; never projected to the public DTO.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub absent_removal_packages: Vec<String>,
+    // Internal frozen reinstall intent; never projected to the public DTO.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legacy_reinstall_packages: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub legacy_removals: Vec<LegacyRemoval>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -244,6 +247,23 @@ impl PackageChangeSet {
                     mutation.package_id == *id
                         && mutation.kind == PackageMutationKind::Remove
                         && mutation.source.is_none()
+                })
+            })
+            || self.legacy_reinstall_packages.len() > MAX_PACKAGE_MUTATIONS
+            || (!self.legacy_reinstall_packages.is_empty() && self.format_version != 4)
+            || self
+                .legacy_reinstall_packages
+                .windows(2)
+                .any(|ids| ids[0] >= ids[1])
+            || self.legacy_reinstall_packages.iter().any(|id| {
+                !self.mutations.iter().any(|mutation| {
+                    mutation.package_id == *id
+                        && matches!(
+                            mutation.kind,
+                            PackageMutationKind::Install | PackageMutationKind::Replace
+                        )
+                        && mutation.source.is_some()
+                        && mutation.to_version.is_some()
                 })
             })
             || self.legacy_removals.len() > 4096
@@ -1303,6 +1323,7 @@ mod tests {
             unity_compatibility_overrides: Vec::new(),
             removal_conflicts: Vec::new(),
             absent_removal_packages: Vec::new(),
+            legacy_reinstall_packages: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             dependency_edges: Vec::new(),

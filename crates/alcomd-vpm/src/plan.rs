@@ -27,9 +27,78 @@ pub struct ProjectPackageSnapshot {
     pub(crate) vpm_manifest_bytes: Vec<u8>,
     pub(super) unlocked: BTreeMap<String, crate::resolver::LockedPackage>,
     absent_packages: BTreeSet<String>,
+    package_manifest_hashes: BTreeMap<String, [u8; 32]>,
 }
 
 impl ProjectPackageSnapshot {
+    pub(super) fn installed_legacy(
+        &self,
+        sources: &[PackageSourcePin],
+        reinstall_packages: &[String],
+    ) -> Result<BTreeMap<String, crate::package::LegacyMetadata>, M4Error> {
+        let mut result = BTreeMap::new();
+        for source in sources {
+            let id = source.package_id();
+            if reinstall_packages
+                .binary_search_by(|item| item.as_str().cmp(id))
+                .is_ok()
+            {
+                continue;
+            }
+            let Some(expected) = self.package_manifest_hashes.get(id) else {
+                continue;
+            };
+            if result.contains_key(id) {
+                continue;
+            }
+            let bytes = read_regular_component(
+                &self.root,
+                &["Packages", id, "package.json"],
+                PROJECT_MANIFEST_LIMIT,
+            )?;
+            if <[u8; 32]>::from(Sha256::digest(&bytes)) != *expected {
+                return Err(M4Error::with_subreason(
+                    M4ErrorCode::PlanStale,
+                    "project_snapshot_changed",
+                ));
+            }
+            let manifest =
+                crate::parse_bounded_json(&bytes, crate::M3ErrorCode::ProjectManifestInvalid)
+                    .map_err(|cause| {
+                        M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                    })?;
+            let object = manifest
+                .as_object()
+                .filter(|object| object.get("name").and_then(Value::as_str) == Some(id))
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+            // Only the old path keys establish that migration already happened.
+            // Old optional/null GUIDs and legacyPackages are not deletion authority.
+            let mut previous_paths = Map::new();
+            for key in ["legacyFiles", "legacyFolders"] {
+                if let Some(paths) = object.get(key) {
+                    let paths = paths
+                        .as_object()
+                        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+                    previous_paths.insert(
+                        key.into(),
+                        Value::Object(
+                            paths
+                                .keys()
+                                .map(|path| (path.clone(), Value::String(String::new())))
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+            let metadata =
+                crate::package::LegacyMetadata::parse(&previous_paths).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                })?;
+            result.insert(id.to_owned(), metadata);
+        }
+        Ok(result)
+    }
+
     fn dependency_edges(&self) -> Result<Vec<PackageDependencyEdge>, M4Error> {
         let invalid = || M4Error::new(M4ErrorCode::PackageManifestInvalid);
         let mut edges = vpm_version_map(self.vpm_manifest.get("dependencies"))?
@@ -219,7 +288,7 @@ fn inspect_package_inputs(
     hash_field(
         &mut hasher,
         match scope {
-            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v4",
+            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v6",
             PackageSnapshotScope::Contents => b"alcomd-project-package-snapshot-v1",
         },
     );
@@ -227,14 +296,20 @@ fn inspect_package_inputs(
     hash_field(&mut hasher, &vpm_bytes);
     hash_field(&mut hasher, &upm_bytes);
     let mut absent_packages = BTreeSet::new();
+    let mut package_manifest_hashes = BTreeMap::new();
     for package_id in actual_locked.keys() {
         validate_package_id(package_id)?;
         hash_field(&mut hasher, package_id.as_bytes());
         let package_root = root.join("Packages").join(package_id);
         match scope {
             PackageSnapshotScope::Metadata => {
-                if !hash_package_metadata(&mut hasher, &package_root)?.present {
+                let metadata = hash_package_metadata(&mut hasher, &package_root)?;
+                if !metadata.present {
                     absent_packages.insert(package_id.clone());
+                }
+                if let Some(bytes) = metadata.manifest {
+                    package_manifest_hashes
+                        .insert(package_id.clone(), Sha256::digest(bytes).into());
                 }
             }
             PackageSnapshotScope::Contents => {
@@ -256,6 +331,7 @@ fn inspect_package_inputs(
         vpm_manifest_bytes: vpm_bytes,
         unlocked,
         absent_packages,
+        package_manifest_hashes,
     })
 }
 
@@ -438,14 +514,16 @@ pub fn build_reinstall_plan(
         });
         sources.push(source);
     }
-    build_draft_from_bytes(
+    let mut draft = build_draft_from_bytes(
         snapshot,
         PlanAction::Reinstall,
         snapshot.vpm_manifest_bytes.clone(),
         mutations,
         snapshot.dependency_edges()?,
         sources,
-    )
+    )?;
+    freeze_legacy_reinstall(&mut draft, targets)?;
+    Ok(draft)
 }
 
 pub fn build_bulk_plan(
@@ -454,14 +532,33 @@ pub fn build_bulk_plan(
     reinstall_targets: &BTreeSet<String>,
     removed: &BTreeSet<String>,
 ) -> Result<PackagePlanDraft, M4Error> {
-    build_resolution_plan_with_ranges(
+    let mut draft = build_resolution_plan_with_ranges(
         snapshot,
         PlanAction::Bulk,
         resolution,
         false,
         reinstall_targets,
         removed,
+    )?;
+    freeze_legacy_reinstall(&mut draft, reinstall_targets)?;
+    Ok(draft)
+}
+
+fn freeze_legacy_reinstall(
+    draft: &mut PackagePlanDraft,
+    targets: &BTreeSet<String>,
+) -> Result<(), M4Error> {
+    if targets.is_empty() {
+        return Ok(());
+    }
+    draft.change_set.legacy_reinstall_packages = targets.iter().cloned().collect();
+    draft.change_set.format_version = 4;
+    draft.change_set.validate_bounds()?;
+    draft.change_set_fingerprint = Sha256::digest(
+        serde_json::to_vec(&draft.change_set).map_err(|_| M4Error::new(M4ErrorCode::Internal))?,
     )
+    .into();
+    Ok(())
 }
 
 pub(super) fn build_migration_plan(
@@ -1272,6 +1369,7 @@ fn build_draft_from_bytes(
         .collect::<Vec<_>>();
     let change_set = PackageChangeSet {
         absent_removal_packages: absent_removal_packages.clone(),
+        legacy_reinstall_packages: Vec::new(),
         unity_compatibility_overrides: Vec::new(),
         removal_conflicts: Vec::new(),
         format_version: if absent_removal_packages.is_empty() {
@@ -1582,6 +1680,7 @@ mod tests {
             unity_compatibility_overrides: Vec::new(),
             removal_conflicts: Vec::new(),
             absent_removal_packages: Vec::new(),
+            legacy_reinstall_packages: Vec::new(),
             format_version: 1,
             mutations: Vec::new(),
             legacy_removals: Vec::new(),
@@ -1899,6 +1998,7 @@ mod tests {
             root: PathBuf::new(),
             unlocked: BTreeMap::new(),
             absent_packages: BTreeSet::new(),
+            package_manifest_hashes: BTreeMap::new(),
             path_identity_key: vec![1],
             fingerprint: [1; 32],
             vpm_manifest_bytes: serialize_manifest(&value).expect("original"),
