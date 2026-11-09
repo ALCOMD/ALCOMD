@@ -35,3 +35,7 @@
 当前设置只有 `showPrerelease`、`hiddenRepositoryIds`、`hideLocalUserPackages`，没有单包字段。设置文件预算为16KiB，不能直接增加大量逐包记录而不处理容量。早期过滤入口在 Store `m4.rs`/`m7_candidates.rs`，冻结资格在 Application `validate_package_source_settings`，候选资格在 VPM `candidates.rs`；现有关闭来源合同见[M7七项修正](M7-vpm-seven-gaps.md)。GUI可复用设置CAS和存储库浏览分组。
 
 项目[AGENTS.md第6行](../../AGENTS.md)规定“公共 RPC、数据库 Schema、Extension API、权限名称和迁移删除清单须经人工审批”。本项增加公开设置字段与格式升级，故先提交具体方案审批，所有者已明确批准“继续实现”；这不是要求额外批准已获授权的界面常规实现。
+
+## 2026-11-10 运行更新
+
+所有者随后明确要求“更新”，本项已随配套Core/GUI构建并替换原运行版本。原数据及profile离线备份，Config12升级13保持原设置和revision，2项目/30仓库/4原模板保持并新增空白。进程、窗口响应及只读RPC验证通过；原生界面内容读取未获Computer Use应用授权，未计入视觉签收。见[运行记录](../testing/runtime-update-20261110.md)。未提交/推送，H7保持；上方未更新描述属于原验证轮次。
