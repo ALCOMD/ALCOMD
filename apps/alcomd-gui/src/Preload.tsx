@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, useRef, type FocusEvent } from "react";
+import { createContext, useContext, useEffect, useId, useRef, type FocusEvent, type PointerEvent } from "react";
 import { PreloadCache, PRELOAD_HOVER_MS } from "./preload-cache";
 
 export const PreloadContext = createContext<PreloadCache | undefined>(undefined);
@@ -16,6 +16,7 @@ export function usePreloadIntent<T>({ key, load, discard = () => {}, enabled = t
     const signals = useRef({ pointer: false, focus: false, opened: false });
     const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const read = () => cache.retain(key, owner, (signal) => options.current.load(signal), () => options.current.discard(), weight === undefined ? undefined : () => options.current.weight?.() ?? 0, valid);
+    const prepare = () => cache.foreground(key, owner, (signal) => options.current.load(signal), () => options.current.discard(), weight === undefined ? undefined : () => options.current.weight?.() ?? 0, valid);
     const sync = (immediate: boolean) => {
         window.clearTimeout(timer.current);
         const active = Object.values(signals.current).some(Boolean);
@@ -33,12 +34,20 @@ export function usePreloadIntent<T>({ key, load, discard = () => {}, enabled = t
     return {
         onPointerEnter: () => { signals.current.pointer = true; sync(false); },
         onPointerLeave: () => { signals.current.pointer = false; sync(false); },
+        onPointerDown: (event: PointerEvent<HTMLElement>) => {
+            if (!options.current.enabled || !event.isPrimary || event.button !== 0) return;
+            window.clearTimeout(timer.current);
+            signals.current.pointer = true;
+            // A primary press confirms intent before click or focus; reuse and promote the read.
+            void prepare().catch(() => {});
+        },
+        onPointerCancel: () => { signals.current.pointer = false; sync(false); },
         onFocusCapture: () => { signals.current.focus = true; sync(true); },
         onBlurCapture: (event: FocusEvent<HTMLElement>) => {
             if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { signals.current.focus = false; sync(false); }
         },
         pin: (opened: boolean) => { signals.current.opened = opened; sync(opened); },
-        prepare: () => cache.foreground(key, owner, (signal) => options.current.load(signal), () => options.current.discard(), weight === undefined ? undefined : () => options.current.weight?.() ?? 0),
+        prepare,
     };
 }
 

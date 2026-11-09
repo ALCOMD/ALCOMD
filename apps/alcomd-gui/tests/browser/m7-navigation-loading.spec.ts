@@ -53,6 +53,7 @@ test("Discarded in-flight preloads retain their slots while queued navigation ca
     cache.drop("a");
     await expect(a).rejects.toHaveProperty("name", "AbortError");
     expect(started).toEqual(["a", "b"]);
+    expect(cache.foreground("c", "c", async () => { throw new Error("duplicate preparation"); }, () => {})).toBe(c);
     expect(cache.take<string>("c")).toBe(c);
     expect(await c).toBe("foreground");
     const d = cache.retain("d", "d", async () => { started.push("d"); return "next"; });
@@ -137,6 +138,98 @@ test("Navigation hover prepares a read without navigating and a click takes over
     expect(await page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-repositories-ready")));
     await expect(page.getByRole("table", { name: "Repositories", exact: true }).locator("tbody")).toContainText("Example packages");
+    expect(await page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+});
+
+test("Navigation hover ignores a quick pass and starts preparing at 50ms", async ({ page }) => {
+    await open(page, "holdRepositories=1");
+    await page.clock.install();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+    const target = navigation(page, "Resources");
+    const before = await page.evaluate(() => window.repositoryListReads);
+    await target.dispatchEvent("pointerover", { pointerType: "mouse", isPrimary: true });
+    await page.clock.runFor(20);
+    await target.dispatchEvent("pointerout", { pointerType: "mouse", isPrimary: true });
+    await page.clock.runFor(100);
+    expect(await page.evaluate(() => window.repositoryListReads)).toBe(before);
+    await target.dispatchEvent("pointerover", { pointerType: "mouse", isPrimary: true });
+    await page.clock.runFor(49);
+    expect(await page.evaluate(() => window.repositoryListReads)).toBe(before);
+    await page.clock.runFor(1);
+    await expect.poll(() => page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await page.clock.resume();
+});
+
+for (const pointerType of ["mouse", "touch"]) {
+    test(`A fast primary ${pointerType} press prepares navigation before focus or click and shares the pending read`, async ({ page }) => {
+        await open(page, "holdRepositories=1");
+        await page.clock.install();
+        await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+        const target = navigation(page, "Resources");
+        const before = await page.evaluate(() => window.repositoryListReads);
+        await target.dispatchEvent("pointerover", { pointerType, isPrimary: true });
+        await page.clock.runFor(10);
+        expect(await page.evaluate(() => window.repositoryListReads)).toBe(before);
+        await target.dispatchEvent("pointerdown", { pointerType, isPrimary: true, button: 0 });
+        await expect.poll(() => page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+        expect(await target.evaluate((element) => element.contains(document.activeElement))).toBe(false);
+        await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+        await target.dispatchEvent("pointerup", { pointerType, isPrimary: true, button: 0 });
+        await target.dispatchEvent("click");
+        await page.clock.runFor(100);
+        await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeVisible();
+        await page.evaluate(() => window.dispatchEvent(new Event("test-repositories-ready")));
+        await page.clock.resume();
+        await expect(page.getByRole("table", { name: "Repositories", exact: true })).toContainText("Example packages");
+        expect(await page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+    });
+}
+
+test("Non-primary presses do not prepare navigation and a cancelled press expires without navigating", async ({ page }) => {
+    await open(page, "holdRepositories=1");
+    await page.clock.install();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+    const target = navigation(page, "Resources");
+    const before = await page.evaluate(() => window.repositoryListReads);
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 2 });
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 1 });
+    await target.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: false, button: 0 });
+    expect(await page.evaluate(() => window.repositoryListReads)).toBe(before);
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    await expect.poll(() => page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+    await target.dispatchEvent("pointercancel", { pointerType: "mouse", isPrimary: true });
+    await page.clock.runFor(3_000);
+    await page.evaluate(() => window.dispatchEvent(new Event("test-repositories-ready")));
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    await expect.poll(() => page.evaluate(() => window.repositoryListReads)).toBe(before + 2);
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await page.clock.resume();
+});
+
+test("A project Manage press prepares its package workspace before navigation", async ({ page }) => {
+    await open(page, "holdPackageCandidates=1");
+    const target = page.getByRole("button", { name: "Manage", exact: true });
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    await expect.poll(() => page.evaluate(() => typeof window.resumePackageCandidates)).toBe("function");
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await target.click();
+    await page.evaluate(() => window.resumePackageCandidates?.());
+    await expect(page.getByRole("table", { name: "Packages", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "summary" && !request.cursor && !request.view.filter && request.view.bulkPackageIds === undefined).length)).toBe(1);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("A resource segment press prepares the destination before switching sections", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fuser-packages&state=ready&holdRepositories=1");
+    const target = page.getByRole("navigation", { name: "Resources", exact: true }).getByRole("button", { name: "Repositories", exact: true });
+    await expect(target).toBeVisible();
+    const before = await page.evaluate(() => window.repositoryListReads);
+    await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    await expect.poll(() => page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
+    await target.click();
+    await page.evaluate(() => window.dispatchEvent(new Event("test-repositories-ready")));
+    await expect(page.getByRole("table", { name: "Repositories", exact: true })).toContainText("Example packages");
     expect(await page.evaluate(() => window.repositoryListReads)).toBe(before + 1);
 });
 

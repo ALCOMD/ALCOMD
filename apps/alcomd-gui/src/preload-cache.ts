@@ -1,5 +1,5 @@
 export const PRELOAD_IDLE_MS = 3000;
-export const PRELOAD_HOVER_MS = 80;
+export const PRELOAD_HOVER_MS = 50;
 const MAX_ENTRIES = 16;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_RUNNING = 2;
@@ -92,8 +92,8 @@ export class PreloadCache {
         return entry.promise as Promise<T>;
     }
 
-    foreground<T>(key: string, owner: string, run: (signal: AbortSignal) => Promise<T | ReturnType<typeof withPreloadWork<T>>>, discard: () => void, weight?: () => number): Promise<T> {
-        const result = this.retain(key, owner, run, discard, weight);
+    foreground<T>(key: string, owner: string, run: (signal: AbortSignal) => Promise<T | ReturnType<typeof withPreloadWork<T>>>, discard: () => void, weight?: () => number, valid?: () => boolean): Promise<T> {
+        const result = this.retain(key, owner, run, discard, weight, valid);
         const entry = this.entries.get(key);
         if (entry && !entry.started) this.start(entry);
         return result;

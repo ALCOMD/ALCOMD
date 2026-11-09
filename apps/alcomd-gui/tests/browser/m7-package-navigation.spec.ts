@@ -30,6 +30,27 @@ test("Version preloads survive a quick return and keyboard focus, then expire af
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").every((request) => request.view.kind === "versions" && request.view.packageId === "com.example.avatar"))).toBe(true);
 });
 
+for (const pointerType of ["mouse", "touch"]) {
+    test(`A primary ${pointerType} press prepares versions before focus or opening and reuses the read`, async ({ page }) => {
+        await page.goto(`/browser-harness.html?route=%2Fprojects%2F${projectId}&state=ready&versions=1&delayVersions=1`);
+        const select = page.locator(".package-version-picker").first();
+        const picker = select.getByRole("combobox");
+        const reads = () => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length);
+        await expect(picker).toBeEnabled();
+        expect(await reads()).toBe(0);
+        await picker.dispatchEvent("pointerdown", { pointerType, isPrimary: true, button: 0, composed: true });
+        await expect.poll(reads).toBe(1);
+        await expect(picker).toHaveAttribute("aria-expanded", "false");
+        await expect(picker).not.toBeFocused();
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+        await page.evaluate(() => window.resumeCandidateVersions?.());
+        await picker.click();
+        await expect(page.getByRole("option", { name: "1.10.0", exact: true })).toBeVisible();
+        expect(await reads()).toBe(1);
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    });
+}
+
 test("Priming a visit shares its in-flight read with render retries and never reuses another visit", async () => {
     const visit = createPageRead();
     let calls = 0;

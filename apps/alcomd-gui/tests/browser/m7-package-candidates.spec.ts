@@ -294,7 +294,11 @@ test("Stale versions and stale pre-Plan evidence discard eligibility without aut
     await expect(page.getByRole("table", { name: "Packages", exact: true })).not.toContainText("Candidate evidence is stale.");
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
-    await expect(page.locator(".package-version-picker").first()).toHaveJSProperty("disabled", true);
+    const disabledPicker = page.locator(".package-version-picker").first();
+    await expect(disabledPicker).toHaveJSProperty("disabled", true);
+    const versionReads = await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length);
+    await disabledPicker.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length)).toBe(versionReads);
     await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toHaveAttribute("aria-expanded", "false");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await open(page, "intentStale=1");

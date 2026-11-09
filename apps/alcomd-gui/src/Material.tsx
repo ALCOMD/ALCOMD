@@ -666,6 +666,8 @@ export function Select({
             id,
             label: "",
             onPointerEnter: preload.onPointerEnter,
+            onPointerDown: preload.onPointerDown,
+            onPointerCancel: preload.onPointerCancel,
             onPointerLeave: () => { preload.onPointerLeave(); if (prepareOpen && !open.current && !pendingOpen.current) onClose?.(); },
             onFocusCapture: (event: ReactFocusEvent<MaterialElement>) => {
                 if (prepareOpen && !disabled && event.target === event.currentTarget) preload.onFocusCapture();
