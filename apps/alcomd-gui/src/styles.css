@@ -282,6 +282,7 @@ md-linear-progress {
 .projects-empty h2 { font-size: 1.1rem; font-weight: 600; }
 .projects-empty p { color: var(--on-surface-variant); }
 .desktop-list-viewport { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-lowest); isolation: isolate; }
+.desktop-list-viewport.alcomd-scroll-area > .os-scrollbar.os-scrollbar-vertical { top: var(--desktop-list-header-height, 0px); }
 /* Clip the spaced table perimeter without introducing another scroll container. */
 .desktop-list-content { display: flow-root; min-width: fit-content; overflow: clip; }
 .desktop-list {
@@ -628,7 +629,7 @@ md-linear-progress {
 .package-workspace-list-region { min-height: 0; flex: 1; overflow: hidden; }
 .package-workspace-list td { padding: 8px 12px; }
 /* Override the final table row's corner clipping for the thin loading track. */
-.desktop-list.package-workspace-list .desktop-list-empty:has(.loading-state--bar) {
+.desktop-list-viewport .desktop-list .desktop-list-empty:has(.loading-state--bar) {
     position: relative;
     height: 4px;
     padding: 0;
@@ -693,6 +694,16 @@ md-linear-progress {
 .package-action-version { width: 100%; }
 .package-plan-review { display: grid; width: 100%; max-width: 100%; min-width: 0; gap: 12px; }
 .package-plan-review p { margin: 0; }
+.package-plan-review .change-list,
+.package-conflict-list { list-style: none; margin: 0; padding: 0; }
+.package-plan-review .change-list { gap: 4px; }
+.package-plan-review .change-list li,
+.package-conflict-list li { padding: 10px 12px; min-width: 0; }
+.package-plan-review :is(p, h3) { overflow-wrap: anywhere; line-height: 1.6; }
+.package-change-groups > .change-list + .change-list { border-top: 1px solid var(--outline); margin-top: 4px; padding-top: 4px; }
+.package-plan-conflicts h3 { margin: 0; font-size: inherit; font-weight: 500; color: var(--error); }
+.package-review-notice { padding: 10px 12px; border: 1px solid var(--warning); color: var(--on-surface); }
+.package-legacy-owner { margin-inline-start: 8px; color: var(--on-surface-variant); }
 .project-workspace > .operation-follow {
     position: absolute;
     z-index: 8;
@@ -753,13 +764,20 @@ md-linear-progress {
     min-height: 0;
     overflow: auto;
 }
+.utility-workspace-body--table { display: flex; flex-direction: column; overflow: hidden; }
+.utility-workspace-body--table > .desktop-list-viewport,
+.utility-workspace-body--table > .user-packages,
+.utility-workspace-body--table > .operation-items { flex: 1; min-height: 0; height: auto; }
+.utility-workspace-body--table > :is(.user-packages, .operation-items) { display: flex; flex-direction: column; }
+.utility-workspace-body--table > :is(.user-packages, .operation-items) > .desktop-list-viewport { flex: 1; min-height: 0; height: auto; }
 
 .utility-workspace-body > .desktop-list-viewport {
     height: auto;
 }
 
 .utility-workspace-body:not(:has(> :not(.desktop-list-viewport, .os-scrollbar))) > .desktop-list-viewport {
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
 }
 
 .material-dialog-content--wide { width: min(800px, calc(100vw - 96px)); }
@@ -792,6 +810,17 @@ md-linear-progress {
 .unity-argument-row md-outlined-text-field { flex: 1; min-width: 0; }
 .unity-argument-row > :last-child:not(md-outlined-text-field) { flex: none; }
 .repository-row-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.repository-list .material-toggle { min-height: var(--alcomd-button-height); }
+.material-dialog-headline { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.material-dialog-headline-title { min-width: 0; overflow-wrap: anywhere; }
+.material-dialog-headline-actions { display: flex; align-items: center; flex: none; gap: 4px; }
+.repository-browser-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.repository-browser-heading h2 { margin: 0; }
+.repository-package-detail .detail-grid { margin-block: 20px; }
+.repository-package-detail dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.repository-package-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.repository-package-version { display: flex; align-items: center; gap: 16px; }
+.repository-package-version .alcomd-select { min-width: 0; max-width: 100%; }
 
 .page-surface.page-surface--utility {
     min-height: 0;

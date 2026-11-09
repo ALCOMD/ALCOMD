@@ -68,7 +68,7 @@ test("source and version use the shared standard Select with selection spacing a
     await opened.evaluate(({ event }) => event);
     await opened.dispose();
     await expect(versions).not.toHaveClass(/alcomd-action-menu/);
-    const version = versions.locator("md-select-option").filter({ hasText: "1.1.0 · Local packages" });
+    const version = versions.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.1.0", exact: true }) });
     await expect(version).toBeVisible();
     expect((await version.boundingBox())!.height).toBe(56);
     await expect(version.locator("md-item .default-slot")).toHaveCSS("font-size", "16px");

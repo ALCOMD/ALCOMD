@@ -53,6 +53,9 @@ declare global {
         projectSnapshots: ProjectSnapshot[][];
         autoDiscoveryProjects: ProjectSnapshot[];
         projectListReads: number;
+        repositoryListReads: number;
+        resumeRepositoryPackages?: () => void;
+        resumeRepositoryDetail?: () => void;
         resumeProjectPoll?: () => void;
         resumeProjectsList?: (error?: string) => void;
         unityRequests: Array<{ method: string; params: unknown }>;
@@ -106,6 +109,7 @@ window.autoDiscoveryProjects = new Proxy(discovered, {
     }
 });
 window.projectListReads = 0;
+window.repositoryListReads = 0;
 window.unityRequests = [];
 window.candidateRequests = [];
 window.repositoryPackageRequests = [];
@@ -342,6 +346,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ exportedCount: 230, byteCount: 12000, sha256: HASH });
     }
     private candidateSourceWasDelayed = false;
+    private repositoryDetailFailed = false;
     private packageProjectReads = 0;
     private packageBulkReads = 0;
     private candidateVisibilityReady?: Promise<void>;
@@ -824,6 +829,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ repository: preview });
     }
     async repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+        window.repositoryListReads++;
         if (query.has("list-import")) window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
         if (query.has("resource-lifecycle")) {
             window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
@@ -868,7 +874,19 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ repository: this.refreshedRepository(this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value) });
     }
     async repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
+        if (query.has("holdRepositoryPackages") && window.resumeRepositoryPackages === undefined) {
+            await new Promise<void>((resolve) => { window.resumeRepositoryPackages = resolve; });
+        }
         window.repositoryPackageRequests.push({ repositoryId, ...(cursor === undefined ? {} : { cursor }) });
+        if (query.has("repository-browser-details")) {
+            if (cursor && query.has("holdRepositoryDetail") && window.resumeRepositoryDetail === undefined) await new Promise<void>((resolve) => { window.resumeRepositoryDetail = resolve; });
+            if (cursor && query.has("repository-browser-next-error") && !this.repositoryDetailFailed) { this.repositoryDetailFailed = true; throw { code: "repository_unavailable" }; }
+            const avatar = { packageId: "com.example.avatar", displayName: "Avatar tools", yanked: false, unity: ">=2022.3", description: "Avatar package description", links: { documentation: { url: "https://fixture.example/docs" }, changelog: { url: "https://fixture.example/changelog" } } };
+            const remote = { packageId: "com.example.remote", displayName: "Remote tools", yanked: false };
+            if (!cursor) return this.value({ packages: [{ ...avatar, version: "1.0.0" }, { ...avatar, version: "1.1.0", yanked: true }], nextCursor: { packageId: avatar.packageId, version: "1.1.0" } });
+            if (cursor.packageId === avatar.packageId) return this.value({ packages: [{ ...avatar, version: "2.0.0-beta.1", prerelease: true, description: "Preview package description", links: { documentation: { url: "https://fixture.example/preview-docs" }, changelog: { url: "https://fixture.example/preview-changelog" } } }, { ...remote, version: "1.0.0" }], nextCursor: { packageId: remote.packageId, version: "1.0.0" } });
+            return this.value({ packages: [{ ...remote, version: "2.0.0" }, { packageId: "com.example.unnamed", version: "1.0.0", yanked: false }] });
+        }
         if (query.has("resource-lifecycle")) return this.value({ packages: [{ packageId: cursor === undefined ? "com.example.first" : "com.example.second", version: "1.0.0", displayName: cursor === undefined ? (this.lifecycleRepositories.get(repositoryId)?.revision ?? 0) > 1 ? "Updated catalog package" : "First catalog package" : "Second catalog package", yanked: false, prerelease: false }], ...(cursor === undefined ? { nextCursor: { packageId: "com.example.first", version: "1.0.0" } } : {}) });
         if (query.get("metadata") === "error") return Promise.reject({ code: "repository_unavailable" });
         if (query.get("versions") === "1") return this.value({ packages: [
@@ -897,7 +915,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ packages: packages.map((item) => ({ ...item, prerelease: false, ...(query.has("package-link-error") && item.packageId === "com.example.avatar" && item.version === "1.2.3" ? { links: { documentation: { url: "https://fixture.example/docs" } } } : {}) })) });
     }
 
-    openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
+    openPackageLink(url: string): ReturnType<GuiRpcClient["openPackageLink"]> {
+        window.resourceRequests.push({ method: "openPackageLink", params: { url } });
         if (query.has("package-link-error")) return Promise.reject({ code: "permission_denied" });
         return this.value(undefined);
     }
@@ -945,6 +964,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("hold-resource-refresh")) await new Promise<void>((resolve) => window.addEventListener("test-resource-refresh-ready", () => resolve(), { once: true }));
         const attempts = (this.repositoryRefreshAttempts.get(repositoryId) ?? 0) + 1;
         this.repositoryRefreshAttempts.set(repositoryId, attempts);
+        if (query.has("builtin-repositories") && repositoryId.startsWith("7e2233c8-")) {
+            const current = (await this.repositoriesList()).repositories.find((record) => record.repositoryId === repositoryId)!;
+            if (current.revision !== expectedRevision) throw { code: "revision_conflict" };
+            const next = { ...current, revision: expectedRevision + 1, refreshedAtMs: Date.now() };
+            this.lifecycleRepositories.set(repositoryId, next);
+            return this.value({ repository: next, replayed: false });
+        }
         if (query.has("resource-lifecycle")) {
             const record = this.lifecycleRepositories.get(repositoryId);
             if (record === undefined) return Promise.reject({ code: "repository_not_registered" });

@@ -3,7 +3,7 @@ import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
-import { DesktopList } from "./DesktopList";
+import { DesktopList, TableLoading } from "./DesktopList";
 import { DialogCloseButton, Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
 import { FilePicker } from "./FilePicker";
 import { PagedItems } from "./PagedItems";
@@ -45,7 +45,7 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
         setSelection({ ...next, key: ++session.current, closed: false, origin: { get current() { return origin?.isConnected ? origin : createButton.current; } } });
     }
 
-    return <UtilityWorkspace changes={["templates"]} title={t(navigationLabels.resources)} navigation={navigation} load={load}
+    return <UtilityWorkspace table loading={<TableLoading label={t("Templates")} headers={[t("Template name"), t("Template ID"), t("Template source"), t("Actions")]} />} changes={["templates"]} title={t(navigationLabels.resources)} navigation={navigation} load={load}
         tools={() => <SplitButton label={t("Create template")} menuButtonRef={createMenu} menuLabel={t("More template creation options")}
             primaryRef={createButton} onClick={() => select({ kind: "save", source: "manual" }, createButton.current)}>
             <MenuItem label={t("Create template from project")} onClick={() => select({ kind: "save", source: "project" }, createMenu.current)} />

@@ -1,6 +1,6 @@
 import { requestErrorMessage } from "./request-errors";
 import type { RpcError } from "@alcomd/sdk";
-import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
+import { Suspense, use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
 import { StorageDirectoryConflictError, UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
 import type { NetworkProxy, OfficialSettings, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
@@ -9,7 +9,7 @@ import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
-import { DesktopList } from "./DesktopList";
+import { DesktopList, TableLoading } from "./DesktopList";
 import { Button, Checkbox, PathField, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -94,7 +94,9 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                     </SettingsSection>
                     <div className="settings-unity-group" hidden={category !== "unity"}>
                         <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
-                        <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
+                        <Suspense fallback={<SettingsSection title={t("Unity installations")}><TableLoading label={t("Unity installations")} columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} /></SettingsSection>}>
+                            <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
+                        </Suspense>
                         <UnityDefaultArgumentsSettings settingsWriter={settingsWriter} snapshot={snapshot} />
                     </div>
                     <NetworkProxySettings hidden={category !== "general"} proxy={accepted.settings.network.proxy}

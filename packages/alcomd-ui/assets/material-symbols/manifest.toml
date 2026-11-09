@@ -7,6 +7,13 @@ grade = 0
 fill = 0
 
 [[asset]]
+name = "add_circle"
+optical_size = 24
+path = "24/add_circle.svg"
+upstream_path = "symbols/web/add_circle/materialsymbolsrounded/add_circle_24px.svg"
+sha256 = "6ebeb98f8bb4a5129018b9b86740cc5e513cf27661d11a7cc2542400d2f6c883"
+
+[[asset]]
 name = "cancel"
 optical_size = 24
 path = "24/cancel.svg"

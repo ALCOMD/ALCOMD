@@ -4,6 +4,32 @@ import { createPageRead, primePageRead } from "../../src/PageRead";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
 
+test("Version preloads survive a quick return and keyboard focus, then expire after the interaction is idle", async ({ page }) => {
+    await page.goto(`/browser-harness.html?route=%2Fprojects%2F${projectId}&state=ready&versions=1`);
+    const picker = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true });
+    const reads = () => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").length);
+    await expect(picker).toBeEnabled();
+    await picker.hover();
+    await expect.poll(reads).toBe(1);
+    await page.locator("#route-title").hover();
+    await page.waitForTimeout(300);
+    await picker.hover();
+    expect(await reads()).toBe(1);
+    await picker.focus();
+    await page.locator("#route-title").hover();
+    await page.waitForTimeout(3200);
+    await picker.click();
+    await expect(page.getByRole("option", { name: "1.10.0", exact: true })).toBeVisible();
+    expect(await reads()).toBe(1);
+    await page.keyboard.press("Escape");
+    await page.getByRole("searchbox", { name: "Search packages", exact: true }).focus();
+    await page.locator("#route-title").hover();
+    await page.waitForTimeout(3200);
+    await picker.hover();
+    await expect.poll(reads).toBe(2);
+    expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").every((request) => request.view.kind === "versions" && request.view.packageId === "com.example.avatar"))).toBe(true);
+});
+
 test("Priming a visit shares its in-flight read with render retries and never reuses another visit", async () => {
     const visit = createPageRead();
     let calls = 0;
@@ -78,8 +104,8 @@ test("Slow project metadata cannot keep the old page indefinitely past 100ms", a
     await page.clock.runFor(99);
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
     await page.clock.runFor(1);
-    await expect(page.locator(".route-content > .page-loading-state")).toBeAttached();
-    await expect(page.locator(".route-content > .page-loading-state md-linear-progress")).toBeVisible();
+    await expect(page.locator(".route-content .page-loading-state")).toBeAttached();
+    await expect(page.locator(".route-content .page-loading-state md-linear-progress")).toBeVisible();
     await expect(page.locator(".projects-page")).toBeHidden();
     await page.evaluate(() => window.resumePackageProject?.());
     await page.clock.resume();

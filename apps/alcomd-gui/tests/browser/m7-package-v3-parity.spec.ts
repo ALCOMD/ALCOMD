@@ -92,6 +92,8 @@ test("manual incompatible selection requires confirmation and cancellation creat
     await picker.getByRole("option", { name: "1.1.0", exact: true }).click();
     const confirmation = page.locator("md-dialog").filter({ hasText: "Use incompatible version?" });
     await expect(confirmation).toBeVisible();
+    await expect(confirmation).toContainText("Avatar tools 1.1.0 does not support");
+    await expect(confirmation).not.toContainText("com.example.avatar");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await confirmation.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(confirmation).toBeHidden();
@@ -102,5 +104,6 @@ test("manual incompatible selection requires confirmation and cancellation creat
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(review).toBeVisible();
     await expect(review.locator(".package-compatibility-warning")).toContainText("1.1.0");
+    await expect(review.locator(".package-compatibility-warning")).toContainText("Avatar tools");
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "downgrade", params: { version: "1.1.0", allowUnityIncompatible: true } }]);
 });

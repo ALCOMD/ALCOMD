@@ -12,10 +12,16 @@ for (const [packageId, displayName] of [["com.vrchat.avatars", "VRChat SDK - Ava
         const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
         const visibleReview = page.getByRole("dialog", { name: "Apply package changes?", exact: true });
         await expect(visibleReview).toBeVisible();
-        await expect(review.locator(".change-list")).toContainText(packageId);
+        await expect(review.locator(".change-list")).toContainText(displayName);
+        await expect(review.locator(".package-change-name")).toHaveAttribute("title", packageId);
+        await expect(review.locator(".change-list")).toHaveCSS("list-style-type", "none");
         const conflicts = review.getByRole("region", { name: "Dependency conflicts", exact: true });
-        await expect(conflicts).toContainText(`com.example.dependent requires ${packageId} (>=3.10.0).`);
-        if (packageId === "com.vrchat.base") await expect(conflicts).toContainText("com.vrchat.avatars requires com.vrchat.base (3.10.6).");
+        await expect(conflicts.locator("li")).toHaveCount(1);
+        await expect(conflicts).toContainText(`These packages still need ${displayName}:`);
+        await expect(conflicts).toContainText("com.example.dependent");
+        await expect(conflicts).not.toContainText(">=3.10.0");
+        if (packageId === "com.vrchat.base") await expect(conflicts).toContainText("VRChat SDK - Avatars");
+        await expect(review.locator('[slot="actions"]')).toContainText("Apply changes");
         await expect(page.getByRole("dialog", { name: "Packages are up to date", exact: true })).toHaveCount(0);
         expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["remove"]);
         await review.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -37,7 +43,7 @@ test("Bulk removal includes installed transitive packages even without a complet
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     const visibleReview = page.getByRole("dialog", { name: "Apply package changes?", exact: true });
     await expect(visibleReview).toBeVisible();
-    await expect(review.getByRole("region", { name: "Dependency conflicts" })).toContainText("com.vrchat.avatars requires com.vrchat.base (3.10.6).");
+    await expect(review.getByRole("region", { name: "Dependency conflicts" })).toContainText("These packages still need VRChat SDK - Base: VRChat SDK - Avatars and com.example.dependent.");
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.vrchat.base" }] } }]);
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await page.evaluate(() => window.packageRequests.filter(({ method }) => method === "apply"))).toHaveLength(0);
@@ -348,7 +354,7 @@ test("Package removal review presents nullable wire versions as user-facing stat
     await row.getByRole("button", { name: "Remove", exact: true }).click();
 
     const host = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
-    await expect(host).toContainText("1.2.3 → Removed");
+    await expect(host).toContainText("Remove Avatar tools.");
     await expect(host).not.toContainText("null");
     await expect(page.locator(".desktop-list-viewport")).toHaveCSS("isolation", "isolate");
     const dialogBox = await page.getByRole("dialog", { name: "Apply package changes?" }).boundingBox();
@@ -496,11 +502,11 @@ test("Inline prerelease selection uses daemon classification without inserting a
     await expect(page.getByRole("dialog", { name: "Package filters", exact: true })).toBeHidden();
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     await expect(page.locator(".mutation-feedback")).toHaveCount(0);
-    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
     await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
 });
 
@@ -552,10 +558,10 @@ test("Selected installed packages remain in one bulk request when hidden by sear
     await expect(packageName(page, "Avatar tools")).toHaveCount(0);
     await page.getByRole("button", { name: "Reinstall selected", exact: true }).click();
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
-    await expect(review).toContainText("com.example.avatar");
+    await expect(review.locator(".change-list")).toContainText("Avatar tools");
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByRole("button", { name: "Remove selected", exact: true }).click();
-    await expect(review).toContainText("1.2.3 → Removed");
+    await expect(review).toContainText("Remove Avatar tools.");
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([
         { method: "bulk", params: { intents: [{ kind: "reinstall", packageId: "com.example.avatar", source: { kind: "user_package", userPackageId: "00000000-0000-4000-8000-000000000113" } }, { kind: "reinstall", packageId: "com.example.remote" }] } },
         { method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.example.avatar" }, { kind: "remove", packageId: "com.example.remote" }] } }

@@ -5,8 +5,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { Button } from "./Material";
 import { PageHeader } from "./PageHeader";
-import { LoadingState } from "./LoadingState";
-import { useInitialPageRead } from "./PageRead";
+import { PageLoadingState } from "./LoadingState";
+import { useInitialPageRequest } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 import { useReconnect } from "./capabilities";
 import type { RpcError } from "@alcomd/sdk";
@@ -27,6 +27,8 @@ interface UtilityWorkspaceProps<T> {
     };
     tools?(value: T, refresh: () => void): ReactNode;
     changes?: readonly ChangeScope[];
+    loading?: ReactNode;
+    table?: boolean;
 }
 
 interface WorkspaceState<T> {
@@ -44,14 +46,17 @@ export function UtilityWorkspace<T>({
     children,
     action,
     tools,
-    changes = []
+    changes = [],
+    loading,
+    table = false
 }: UtilityWorkspaceProps<T>) {
     const { t } = useTranslation();
     const reconnect = useReconnect();
     const events = useCoreEvents();
     const scopeKey = changes.join("|");
     const load = useCallback(() => events && scopeKey ? events.consistentRead(scopeKey.split("|"), sourceLoad) : sourceLoad(), [events, scopeKey, sourceLoad]);
-    const initial = useInitialPageRead(load);
+    const { promise: initialPromise, settled } = useInitialPageRequest(load);
+    const initial = useRef(settled).current;
     const initialLoader = useRef(load).current;
     const [state, setState] = useState<WorkspaceState<T>>(() => ({
         loader: load, pending: initial === undefined,
@@ -76,7 +81,10 @@ export function UtilityWorkspace<T>({
             pending: true
         }));
 
-        void Promise.resolve().then(load).then((value) => {
+        const request = generation === 0 && load === initialLoader && initialPromise
+            ? initialPromise.then((result) => { if (result.kind === "error") throw result.error; return result.value; })
+            : Promise.resolve().then(load);
+        void request.then((value) => {
             if (!active) return;
             setState({ loader: load, value, pending: queuedRefreshRef.current });
         }).catch((caught: unknown) => {
@@ -95,7 +103,7 @@ export function UtilityWorkspace<T>({
         });
 
         return () => { active = false; };
-    }, [load, generation, initialLoader, initial]);
+    }, [load, generation, initialLoader, initial, initialPromise]);
 
     const refresh = useCallback(() => {
         if (pendingRef.current) {
@@ -132,7 +140,8 @@ export function UtilityWorkspace<T>({
 
     const toolbar = value === undefined ? null : tools?.(value, refresh);
     return (
-        <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
+        <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending && loading === undefined} aria-labelledby="route-title">
+            {value === undefined && pending && loading === undefined ? <PageLoadingState title={t("Loading page…")} delayed /> : null}
             <PageHeader className="utility-workspace-toolbar" leading={back} title={title}>
                 {navigation}
                 {action === undefined && toolbar == null ? null : <div className="utility-workspace-actions">
@@ -149,10 +158,10 @@ export function UtilityWorkspace<T>({
                     )}
                 </div>}
             </PageHeader>
-            <ScrollArea className="utility-workspace-body">
+            <ScrollArea aria-busy={value === undefined && pending} className={`utility-workspace-body${table ? " utility-workspace-body--table" : ""}`}>
                 {value === undefined ? failure : null}
                 {value === undefined ? (
-                    pending ? <LoadingState title={t("Loading…")} /> : null
+                    pending ? loading ?? null : null
                 ) : (
                     <>
                         {action === undefined || !actionOpen ? null : (

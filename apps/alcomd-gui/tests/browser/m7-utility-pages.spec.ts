@@ -103,7 +103,9 @@ for (const width of [1280, 1440]) {
                         while (walker.nextNode()) {
                             const node = walker.currentNode as Text;
                             const parent = node.parentElement;
-                            if (!node.textContent?.trim() || parent === null || parent.closest("button, input, select, md-menu, md-text-button, md-filled-button, md-filled-tonal-button, md-outlined-button, md-icon-button, md-checkbox, md-icon, .material-toggle, .visually-hidden") !== null) continue;
+                            if (!node.textContent?.trim() || parent === null) continue;
+                            const control = parent.closest("button, input, select, md-menu, md-text-button, md-filled-button, md-filled-tonal-button, md-outlined-button, md-icon-button, md-checkbox, md-icon, .material-toggle, .visually-hidden");
+                            if (control !== null && !control.classList.contains("repository-package-name")) continue;
                             node.textContent += " Long label 中文路径 C:/Projects/very-long-folder/package-without-breaks\n".repeat(8);
                             probeNodes.push(node);
                             break;
@@ -228,13 +230,14 @@ test("Resources sections and detail return controls work through ordinary clicks
     }
     await page.getByRole("button", { name: "Manage repository", exact: true }).click();
     const management = dialogHost(page, "Manage repository");
-    await expect(management.getByRole("button", { name: "Refresh repository", exact: true })).toBeVisible();
+    await expect(management.getByRole("button", { name: "Refresh repository", exact: true })).toHaveCount(0);
     await management.getByRole("button", { name: "Close", exact: true }).click();
     await page.getByRole("button", { name: "Browse packages" }).click();
     const repositoryDialog = page.getByRole("dialog", { name: "Example packages", exact: true });
     const repositoryHost = dialogHost(page, "Example packages");
     await expect(repositoryDialog).toBeVisible();
-    await expect(repositoryHost.getByRole("table", { name: "Repository packages" }).getByRole("columnheader")).toHaveText(["Package", "Version", "Status"]);
+    await expect(repositoryHost.getByRole("button", { name: "Refresh repository", exact: true })).toBeVisible();
+    await expect(repositoryHost.getByRole("table", { name: "Repository packages" }).getByRole("columnheader")).toHaveText(["Package"]);
     for (const header of await repositoryHost.getByRole("columnheader").all()) {
         await expect(header).toHaveCSS("font-size", "14px");
         await expect(header).toHaveCSS("line-height", "20px");
@@ -249,6 +252,7 @@ test("Resources sections and detail return controls work through ordinary clicks
     expect(closeBounds).not.toBeNull();
     expect(firstColumn!.x).toBeGreaterThanOrEqual(modalBounds!.x);
     expect(closeBounds!.x + closeBounds!.width).toBeLessThanOrEqual(modalBounds!.x + modalBounds!.width);
+    expect(closeBounds!.y + closeBounds!.height).toBeLessThanOrEqual(modalBounds!.y + modalBounds!.height);
     await page.screenshot({ path: test.info().outputPath("repository-packages-dialog.png"), fullPage: false, animations: "disabled" });
     await repositoryHost.getByRole("button", { name: "Close", exact: true }).click();
     await expect(repositoryDialog).not.toBeVisible();

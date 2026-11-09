@@ -7,7 +7,7 @@ test("repository fetch success preserves table and toolbar geometry without a po
     await expect(row).toBeVisible();
     await page.screenshot({ animations: "disabled" });
     const before = await Promise.all([table.boundingBox(), page.locator(".utility-workspace-toolbar").boundingBox(), row.boundingBox()]);
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const refresh = dialog.getByRole("button", { name: "Refresh repository", exact: true });
     await refresh.click();
@@ -30,7 +30,7 @@ test("repository refresh failure leaves the row intact and a separate action sti
     const row = table.getByRole("row").filter({ hasText: "Local packages" });
     await expect(row).toBeVisible();
     const before = await row.boundingBox();
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const refresh = dialog.getByRole("button", { name: "Refresh repository", exact: true });
     await refresh.click();
@@ -49,7 +49,7 @@ test("successful repository operations do not create transient feedback or carry
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/repositories");
     const row = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Example packages" });
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const refresh = dialog.getByRole("button", { name: "Refresh repository", exact: true });
     await refresh.click();
@@ -69,7 +69,7 @@ test("successful repository operations do not create transient feedback or carry
 test("a late refresh completion cannot add feedback to another Resources section", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&hold-resource-refresh=1");
     const row = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Example packages" });
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expect(dialog.getByRole("button", { name: "Refreshing repository", exact: true })).toBeDisabled();

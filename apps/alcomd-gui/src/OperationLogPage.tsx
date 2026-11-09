@@ -2,6 +2,7 @@ import type { LogFilter, LogOutcome, OperationLogType } from "@alcomd/sdk";
 import { useState, type Ref, type UIEventHandler, type WheelEventHandler } from "react";
 
 import { DesktopList } from "./DesktopList";
+import { LoadingState } from "./LoadingState";
 import { displayPath } from "./display-path";
 import { useTranslation } from "./i18n";
 import { Button, SearchField, Select } from "./Material";
@@ -80,7 +81,7 @@ export function OperationLogPage({ entries, actors, filters, pending = false, er
                     { key: "target", header: t("Target"), width: "28%", cellFlow: "wrap" },
                     { key: "result", header: t("Result"), width: "10%", cellFlow: "wrap" }
                 ]}
-                emptyMessage={pending ? t("Loading…") : filtering ? t("No matching logs") : t("No logs yet")}
+                emptyMessage={pending ? <LoadingState title={t("Loading…")} variant="bar" /> : filtering ? t("No matching logs") : t("No logs yet")}
                 label={t("Logs")}
                 rows={entries.map((entry) => ({
                     key: entry.id,

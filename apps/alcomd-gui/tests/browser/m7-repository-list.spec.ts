@@ -47,13 +47,29 @@ test("repository rows show only browse, manage and remove, including disabled bu
     }
     await expect(official.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
     await expect(curated.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+    await expect(official.getByRole("button", { name: "Manage repository", exact: true })).toBeDisabled();
+    await expect(curated.getByRole("button", { name: "Manage repository", exact: true })).toBeDisabled();
     await expect(official.getByRole("checkbox")).toBeChecked();
     await expect(curated.getByRole("checkbox")).toBeChecked();
     await expect(rows.nth(2).getByRole("button", { name: "Remove", exact: true })).toBeEnabled();
     await official.getByRole("button", { name: "Browse packages" }).click();
     await expect(page.getByRole("dialog", { name: "Official" })).toBeVisible();
+    await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Refresh repository", exact: true })).toBeEnabled();
+    const headline = page.locator('md-dialog[open] > [slot="headline"]');
+    const alignment = await headline.evaluate((element) => {
+        const title = element.querySelector(".material-dialog-headline-title")!.getBoundingClientRect();
+        const refresh = element.querySelector("md-icon-button")!.getBoundingClientRect();
+        return { centerDifference: Math.abs(title.y + title.height / 2 - refresh.y - refresh.height / 2), gap: refresh.x - title.right };
+    });
+    expect(alignment.centerDifference).toBeLessThan(1);
+    expect(alignment.gap).toBeGreaterThan(0);
+    await expect(page.locator(".repository-browser-toolbar")).toHaveCount(0);
     await expect(page.locator("md-dialog[open]").getByText("Pending first sync")).toBeVisible();
     expect(await page.evaluate(() => window.repositoryPackageRequests)).toEqual([]);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh repository", exact: true }).click();
+    await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Avatar tools", exact: true })).toBeVisible();
+    await expect(official.getByRole("button", { name: "Manage repository", exact: true })).toBeDisabled();
+    expect(await requests(page, "repositories.setDisplayName")).toEqual([]);
 });
 
 test("repository visibility persists across resource sections and can be restored", async ({ page }) => {
@@ -75,9 +91,109 @@ test("repository visibility persists across resource sections and can be restore
     expect(await requests(page, "repositories.unregister")).toEqual([]);
 });
 
-test("the pencil saves and clears a built-in repository display name", async ({ page }) => {
+test("repository rows share the ordinary resource row height", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories");
+    const row = page.getByRole("table", { name: "Repositories", exact: true }).locator("tbody tr").first();
+    await expect(row.getByRole("button", { name: "Browse packages", exact: true })).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+    const height = (await row.boundingBox())!.height;
+    expect(height).toBe(60);
+    await page.getByRole("button", { name: "Templates", exact: true }).click();
+    const template = page.getByRole("table", { name: "Templates", exact: true }).locator("tbody tr").first();
+    await expect(template).toBeVisible();
+    expect((await template.boundingBox())!.height).toBe(height);
+});
+
+test("package browsing groups versions and reads only the selected trailing package through its boundary", async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&holdRepositoryDetail=1");
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    const host = page.locator("md-dialog[open]");
+    const table = host.getByRole("table", { name: "Repository packages", exact: true });
+    await expect(table.getByRole("columnheader")).toHaveText(["Package"]);
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.locator("tbody")).toHaveText("Avatar tools");
+    await table.getByRole("button", { name: "Avatar tools", exact: true }).click();
+    await expect(host.getByRole("heading", { name: "Avatar tools", exact: true })).toBeFocused();
+    await expect.poll(() => page.evaluate(() => typeof window.resumeRepositoryDetail)).toBe("function");
+    await expect(host.getByRole("combobox", { name: "Version", exact: true })).toHaveCount(0);
+    await expect(host.getByRole("progressbar", { name: "Loading versions…", exact: true })).toBeVisible();
+    await page.evaluate(() => window.resumeRepositoryDetail?.());
+    const version = host.getByRole("combobox", { name: "Version", exact: true });
+    await expect(version).toBeVisible();
+    await expect(host).toContainText("com.example.avatar");
+    await expect(host).toContainText("Avatar package description");
+    await expect(host).toContainText(">=2022.3");
+    expect(await page.evaluate(() => window.repositoryPackageRequests.length)).toBe(2);
+    await version.click();
+    await expect(host.locator("md-select-option")).toHaveText(["1.0.0", "1.1.0", "2.0.0-beta.1"]);
+    await host.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
+    await expect(host).toContainText("Preview package description");
+    await expect(host).toContainText("Prerelease");
+    await host.getByRole("button", { name: "Documentation", exact: true }).click();
+    await host.getByRole("button", { name: "Changelog", exact: true }).click();
+    expect(await requests(page, "openPackageLink")).toEqual([
+        { method: "openPackageLink", params: { url: "https://fixture.example/preview-docs" } },
+        { method: "openPackageLink", params: { url: "https://fixture.example/preview-changelog" } }
+    ]);
+    const beforeRefresh = await page.evaluate(() => window.repositoryPackageRequests.length);
+    const observed = await host.evaluateHandle((element) => {
+        const result = { partial: false, observer: undefined as MutationObserver | undefined };
+        result.observer = new MutationObserver(() => {
+            if (element.querySelector(".repository-package-detail .loading-state--bar")) result.partial = true;
+        });
+        result.observer.observe(element, { childList: true, subtree: true });
+        return result;
+    });
+    await host.getByRole("button", { name: "Refresh repository", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.repositoryPackageRequests.length)).toBeGreaterThan(beforeRefresh + 1);
+    await expect(host.locator("md-filled-select")).toHaveJSProperty("value", "2.0.0-beta.1");
+    await expect(host).toContainText("Preview package description");
+    expect(await observed.evaluate((value) => { value.observer?.disconnect(); return value.partial; })).toBe(false);
+    await observed.dispose();
+    await host.getByRole("button", { name: "Back to packages", exact: true }).click();
+    await expect(table.getByRole("button", { name: "Avatar tools", exact: true })).toBeFocused();
+    await expect(table.locator("tbody tr")).toHaveCount(2);
+    await table.getByRole("button", { name: "Remote tools", exact: true }).click();
+    await expect(host.getByRole("combobox", { name: "Version", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.repositoryPackageRequests.at(-1)?.cursor?.packageId)).toBe("com.example.remote");
+    await expect(host.getByRole("button", { name: "Documentation", exact: true })).toBeDisabled();
+    await expect(host.getByRole("button", { name: "Changelog", exact: true })).toBeDisabled();
+    await host.getByRole("button", { name: "Back to packages", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(3);
+    await expect(table).toContainText("com.example.unnamed");
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("a package detail continuation failure retries without showing an incomplete version selector", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&repository-browser-next-error=1");
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    const host = page.locator("md-dialog[open]");
+    await host.getByRole("button", { name: "Avatar tools", exact: true }).click();
+    await expect(host.getByRole("button", { name: "Retry loading more", exact: true })).toBeEnabled();
+    await expect(host.getByRole("combobox", { name: "Version", exact: true })).toHaveCount(0);
+    await host.getByRole("button", { name: "Retry loading more", exact: true }).click();
+    await expect(host.getByRole("combobox", { name: "Version", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.repositoryPackageRequests.length)).toBe(3);
+});
+
+test("leaving a held package detail discards its late continuation", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&holdRepositoryDetail=1");
+    await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+    const host = page.locator("md-dialog[open]");
+    await host.getByRole("button", { name: "Avatar tools", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => typeof window.resumeRepositoryDetail)).toBe("function");
+    await host.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "User Packages", exact: true }).click();
+    await page.evaluate(() => window.resumeRepositoryDetail?.());
+    await expect(page.getByRole("button", { name: "Enroll folder", exact: true })).toBeVisible();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    await expect(page.locator(".repository-package-detail")).toHaveCount(0);
+});
+
+test("the pencil saves and clears a user repository display name", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
-    const official = page.getByRole("row").filter({ hasText: "https://vrchat.github.io/packages/index.json" });
+    const official = page.getByRole("row").filter({ hasText: "https://packages.example.invalid/index.json" });
     const edit = official.getByRole("button", { name: "Manage repository", exact: true });
     await edit.click();
     const dialog = page.locator("md-dialog[open]");
@@ -85,15 +201,15 @@ test("the pencil saves and clears a built-in repository display name", async ({ 
     await name.fill("VRChat SDK");
     await dialog.getByRole("button", { name: "Save name", exact: true }).click();
     await expect(official.getByText("VRChat SDK", { exact: true })).toBeVisible();
-    await expect(official.getByRole("button", { name: "Remove", exact: true })).toBeDisabled();
+    await expect(official.getByRole("button", { name: "Remove", exact: true })).toBeEnabled();
     await edit.click();
     await expect(name).toHaveValue("VRChat SDK");
     await name.fill("");
     await dialog.getByRole("button", { name: "Save name", exact: true }).click();
-    await expect(official.getByText("Official", { exact: true })).toBeVisible();
+    await expect(official.getByText("Example packages", { exact: true })).toBeVisible();
     expect(await requests(page, "repositories.setDisplayName")).toEqual([
-        { method: "repositories.setDisplayName", params: { repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", expectedRevision: 2, displayName: "VRChat SDK" } },
-        { method: "repositories.setDisplayName", params: { repositoryId: "7e2233c8-0b3f-4cf2-aeb4-57d3d240b101", expectedRevision: 3, displayName: null } }
+        { method: "repositories.setDisplayName", params: { repositoryId: "00000000-0000-4000-8000-000000000102", expectedRevision: 2, displayName: "VRChat SDK" } },
+        { method: "repositories.setDisplayName", params: { repositoryId: "00000000-0000-4000-8000-000000000102", expectedRevision: 3, displayName: null } }
     ]);
 });
 

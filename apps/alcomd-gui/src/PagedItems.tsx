@@ -14,7 +14,8 @@ export interface PagedItemsProps<T, C> {
     initialItems: T[];
     initialCursor?: C;
     loadMore(cursor: C): Promise<ItemPage<T, C>>;
-    children(items: T[]): ReactNode;
+    children(items: T[], pagination: { cursor?: C; loading: boolean; error?: RpcError; next(): Promise<void> }): ReactNode;
+    showPagination?: boolean;
 }
 
 export function PagedItems<T, C>(props: PagedItemsProps<T, C>) {
@@ -26,7 +27,7 @@ export function PagedItems<T, C>(props: PagedItemsProps<T, C>) {
     return <PageSession key={source.generation} {...props} />;
 }
 
-function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: PagedItemsProps<T, C>) {
+function PageSession<T, C>({ initialItems, initialCursor, loadMore, children, showPagination = true }: PagedItemsProps<T, C>) {
     const { t } = useTranslation();
     const [items, setItems] = useState(initialItems);
     const [cursor, setCursor] = useState(initialCursor);
@@ -65,8 +66,8 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
 
     return (
         <>
-            {children(items)}
-            {cursor === undefined ? null : (
+            {children(items, { cursor, loading, error: failure, next })}
+            {cursor === undefined || !showPagination ? null : (
                 <div className="pagination-controls" aria-busy={loading}>
                     <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
                         {failure !== undefined ? t("Retry loading more") : t("Load more")}

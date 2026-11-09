@@ -3,7 +3,7 @@ import { createContext, use, useContext } from "react";
 export type PageReadResult<T> = { kind: "ready"; value: T } | { kind: "error"; error: unknown };
 
 let nextVisit = 0;
-type PageReadKey = "primary" | "settings.unity" | "settings.repositories";
+export type PageReadKey = "primary" | "settings.unity" | "settings.repositories" | "about.status" | "repository.packages" | "backups.list";
 
 /** At most three initial read slots per visit, shared across render retries, never across visits. */
 export function createPageRead() {
@@ -15,6 +15,15 @@ export function createPageRead() {
 
 export const PageReadContext = createContext<ReturnType<typeof createPageRead> | undefined>(undefined);
 export const LocalPageReadContext = createContext(false);
+
+/** Observe the same initial request without suspending the page title/toolbar. */
+export function useInitialPageRequest<T>(load: () => Promise<T>) {
+    const local = useContext(LocalPageReadContext);
+    const scope = useContext(PageReadContext);
+    const promise = usePageReadPromise("primary", load, !local && scope !== undefined);
+    const settled = !local ? scope?.settled.get("primary") as PageReadResult<T> | undefined : undefined;
+    return { promise, settled };
+}
 
 /** Start a visit's read before its deferred component mounts; never share across visits. */
 export function primePageRead<T>(scope: ReturnType<typeof createPageRead>, key: PageReadKey, load: () => Promise<T>): Promise<PageReadResult<T>> {

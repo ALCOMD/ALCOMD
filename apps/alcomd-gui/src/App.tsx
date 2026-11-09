@@ -26,18 +26,20 @@ import {
     type IconAsset
 } from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
-import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Suspense, useCallback, useContext, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
-import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
+import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, PageLoadingState } from "./LoadingState";
-import { createPageRead, PageReadContext } from "./PageRead";
+import { createPageRead, PageReadContext, primePageRead } from "./PageRead";
+import { PreloadContext, RoutePreloadContext, useRoutePreload } from "./Preload";
+import { PreloadCache, isPreloadClaimed, preloadWork } from "./preload-cache";
 import { ScrollArea, useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
 import {
@@ -60,6 +62,7 @@ import {
 } from "./capabilities";
 
 const DISCARD_MESSAGE = "Discard the unsaved changes?";
+const RouteFallbackContext = createContext<ReactNode>(null);
 
 type Route =
     | { kind: "projects" }
@@ -92,8 +95,12 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
     const [connectionGeneration, setConnectionGeneration] = useState(0);
     const events = useMemo(() => new CoreEvents(sourceClient), [sourceClient]);
     const client = events.client;
+    const preloads = useMemo(() => new PreloadCache(), [client, connectionGeneration]);
+    useEffect(() => { preloads.activate(); return () => preloads.dispose(); }, [preloads]);
+    useEffect(() => events.subscribePreloadInvalidation(() => preloads.dropInvalid()), [events, preloads]);
     const settingsConnection = useRef({ client, generation: connectionGeneration });
     const settingsAuthority = useRef<SettingsGetResult | undefined>(undefined);
+    useEffect(() => { preloads.dropInvalid(); }, [preloads, settingsAuthority.current?.revision]);
     const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
     const windowMemory = useRef<WindowStateMemory | undefined>(undefined);
     if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) {
@@ -128,7 +135,10 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
             return;
         }
         const read = createPageRead();
-        if ((next.kind === "project-detail" || next.kind === "project-packages") && negotiatedCapabilities?.kind === "ready"
+        const intent = describePreload(routePath(next));
+        const prepared = intent && preloads.take<unknown>(intent.key);
+        if (prepared) void primePageRead(read, intent!.slot ?? "primary", () => prepared);
+        else if ((next.kind === "project-detail" || next.kind === "project-packages") && negotiatedCapabilities?.kind === "ready"
             && negotiatedCapabilities.values.has(capabilities.projectsRead) && negotiatedCapabilities.values.has(capabilities.repositoriesRead)) {
             primePackageWorkspaceRead(client, events, read, next.projectId, negotiatedCapabilities.values.has(capabilities.packagesCandidates));
         }
@@ -139,6 +149,35 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const t = createTranslator(locale);
     const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
+    const describePreload = (path: string) => {
+        if (negotiatedCapabilities?.kind !== "ready") return undefined;
+        const target = new URL(path, window.location.origin);
+        if (target.origin !== window.location.origin) return undefined;
+        const descriptor = routePreloadRead(client, events, target.pathname, (capability) => negotiatedCapabilities.values.has(capability));
+        if (!descriptor) return undefined;
+        const stamp = events.preloadVersion(descriptor.scopes);
+        const settingsRevision = settingsAuthority.current?.revision;
+        const key = JSON.stringify([target.pathname, descriptor.key, connectionGeneration, stamp, settingsRevision]);
+        const valid = () => stamp === events.preloadVersion(descriptor.scopes) && settingsRevision === settingsAuthority.current?.revision;
+        return { key, slot: descriptor.slot, valid, load: async (signal: AbortSignal) => {
+            const current = () => !signal.aborted && (isPreloadClaimed(signal) || valid());
+            if (!current()) throw new DOMException("Preload expired", "AbortError");
+            let work: Promise<unknown> | undefined;
+            try {
+                const value = await events.consistentRead(descriptor.scopes, async () => {
+                    const prepared = await descriptor.load(signal);
+                    work = preloadWork(prepared);
+                    return prepared;
+                }, current);
+                if (!current()) throw new DOMException("Preload expired", "AbortError");
+                return value;
+            } catch (error) {
+                // Discarding metadata cannot release a still-running child list's slot.
+                await work?.catch(() => {});
+                throw error;
+            }
+        } };
+    };
     const reconnect = useCallback(() => {
         setConnectionGeneration((generation) => generation + 1);
     }, []);
@@ -273,6 +312,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
     return (
         <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
             <CoreEventsProvider events={events} enabled={negotiatedCapabilities !== undefined}>
+            <PreloadContext.Provider value={preloads}><RoutePreloadContext.Provider value={describePreload}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation
@@ -282,7 +322,8 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
                         <div className="route-content" inert={navigating}>
-                            <Suspense fallback={<PageLoadingState title={t("Loading page…")} />}>
+                            <RouteFallbackContext.Provider value={<RouteLoadingShell route={visibleNavigation.route} />}>
+                            <Suspense fallback={<RouteLoadingShell route={visibleNavigation.route} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
                                     <RouteErrorBoundary key={visibleNavigation.read.visit}><RouteContent
                                         client={client}
@@ -295,6 +336,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                                     /></RouteErrorBoundary>
                                 </PageReadContext.Provider>
                             </Suspense>
+                            </RouteFallbackContext.Provider>
                         </div>
                     </main>
                 </div>
@@ -307,9 +349,32 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                 </MaterialDialog>
                 {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
             </div>
+            </RoutePreloadContext.Provider></PreloadContext.Provider>
             </CoreEventsProvider>
         </CapabilityProvider></LocaleProvider>
     );
+}
+
+function RouteLoadingShell({ route }: { route: Route }) {
+    const { t } = useTranslation();
+    const title = route.kind === "projects" ? navigationLabels.projects
+        : ["repositories", "templates", "user-packages"].includes(route.kind) ? navigationLabels.resources
+        : ["settings", "unity"].includes(route.kind) ? navigationLabels.settings
+        : ["project-detail", "project-packages"].includes(route.kind) ? "Project packages"
+        : route.kind === "repository-detail" ? "Repository"
+        : route.kind === "project-unity" ? "Project Unity"
+        : route.kind === "project-backups" ? "Backups"
+        : route.kind === "backup-detail" ? "Backup detail"
+        : route.kind === "operations" ? navigationLabels.taskCenter
+        : route.kind === "logs" ? navigationLabels.logs
+        : route.kind === "operation-detail" ? "Operation detail"
+        : route.kind === "about" ? navigationLabels.about : navigationLabels.extensions;
+    return <section className="utility-workspace page-surface--utility"><PageHeader className="utility-workspace-toolbar" title={t(title)} /><PageLoadingState title={t("Loading page…")} /></section>;
+}
+
+function IntentNavigationItem({ path, ...props }: Parameters<typeof NavigationListItem>[0] & { path: string }) {
+    const { pin: _pin, prepare: _prepare, ...intent } = useRoutePreload(path, !props.disabled && !props.selected);
+    return <NavigationListItem {...props} {...intent} />;
 }
 
 function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
@@ -329,7 +394,7 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
                     {items.map((item) => {
                         const selected = routeSection(current) === item.section;
                         return (
-                            <NavigationListItem
+                            <IntentNavigationItem path={item.path}
                                 aria-label={t(item.label)}
                                 aria-current={selected ? "page" : undefined}
                                 className="navigation-item"
@@ -340,7 +405,7 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
                             >
                                 <Icon asset={item.icon} size={24} slot="start" />
                                 <span className="navigation-item-label" slot="headline">{t(item.label)}</span>
-                            </NavigationListItem>
+                            </IntentNavigationItem>
                         );
                     })}
                 </NavigationList>
@@ -386,7 +451,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
         <footer className="navigation-footer">
             <nav aria-label={t("Utilities")}>
                 <NavigationList className="navigation-list navigation-list--footer">
-                    <NavigationListItem
+                    <IntentNavigationItem path="/extensions"
                         aria-label={t(navigationLabels.extensions)}
                         aria-current={routeSection(current) === "extensions" ? "page" : undefined}
                         className="navigation-item"
@@ -396,8 +461,8 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                     >
                         <Icon asset={extensionIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.extensions)}</span>
-                    </NavigationListItem>
-                    <NavigationListItem
+                    </IntentNavigationItem>
+                    <IntentNavigationItem path="/operations"
                         aria-label={activeTasks === 0 ? t(navigationLabels.taskCenter) : t("Tasks {count} active", { count: activeTasks })}
                         aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                         className="navigation-item"
@@ -409,8 +474,8 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
                         {activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{activeTasks}</span>}
-                    </NavigationListItem>
-                    <NavigationListItem
+                    </IntentNavigationItem>
+                    <IntentNavigationItem path="/about"
                         aria-label={`${t(navigationLabels.about)} ${guiVersion}`}
                         aria-current={routeSection(current) === "about" ? "page" : undefined}
                         className="navigation-item"
@@ -421,7 +486,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         <Icon asset={infoIcon} size={24} slot="start" />
                     <span className="navigation-item-label" slot="headline">{t(navigationLabels.about)}</span>
                     <span aria-hidden="true" className="navigation-item-meta" slot="end">{guiVersion}</span>
-                    </NavigationListItem>
+                    </IntentNavigationItem>
                 </NavigationList>
             </nav>
         </footer>
@@ -482,9 +547,10 @@ function focusRouteTitle() {
 
 function CapabilityRoute({ required, children }: { required: readonly string[]; children: ReactNode }) {
     const { t } = useTranslation();
+    const fallback = useContext(RouteFallbackContext);
     const { missing, state } = useCapabilityCheck(required);
     if (state === "checking") {
-        return <PageLoadingState title={t("Loading")} detail={t("Checking daemon capabilities.")} />;
+        return fallback ?? <PageLoadingState title={t("Loading")} detail={t("Checking daemon capabilities.")} />;
     }
     if (state === "status-unavailable") {
         return children;

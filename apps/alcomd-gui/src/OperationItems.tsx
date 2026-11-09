@@ -154,7 +154,7 @@ function OperationSession({ client, initial, children }: { client: GuiRpcClient;
             if (queued.current && active.current) void latest().catch(() => {});
         }
     };
-    return <div ref={root}>
+    return <div className="operation-items" ref={root}>
         {children(items)}
         {cursor === undefined ? null : <div className="pagination-controls" aria-busy={pending}>
             <Button disabled={pending} onClick={() => void more()} type="button" variant="tonal">{t(moreError === undefined ? "Load more" : "Retry loading more")}</Button>

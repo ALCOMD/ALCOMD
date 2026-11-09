@@ -1,6 +1,7 @@
 import keyboardArrowDown20Svg from "../assets/material-symbols/20/keyboard_arrow_down.svg?raw";
 import keyboardArrowUp20Svg from "../assets/material-symbols/20/keyboard_arrow_up.svg?raw";
 import accountCircle24Svg from "../assets/material-symbols/24/account_circle.svg?raw";
+import addCircle24Svg from "../assets/material-symbols/24/add_circle.svg?raw";
 import arrowBack24Svg from "../assets/material-symbols/24/arrow_back.svg?raw";
 import arrowDownward24Svg from "../assets/material-symbols/24/arrow_downward.svg?raw";
 import arrowUpward24Svg from "../assets/material-symbols/24/arrow_upward.svg?raw";
@@ -67,6 +68,7 @@ export const arrowBackIcon = defineIcon("arrow_back", { 24: arrowBack24Svg });
 export const arrowDownwardIcon = defineIcon("arrow_downward", { 24: arrowDownward24Svg });
 export const arrowUpwardIcon = defineIcon("arrow_upward", { 24: arrowUpward24Svg });
 export const accountCircleIcon = defineIcon("account_circle", { 24: accountCircle24Svg });
+export const addCircleIcon = defineIcon("add_circle", { 24: addCircle24Svg });
 export const backupIcon = defineIcon("backup", { 24: backup24Svg });
 export const cancelIcon = defineIcon("cancel", { 24: cancel24Svg });
 export const deleteIcon = defineIcon("delete", { 24: delete24Svg });

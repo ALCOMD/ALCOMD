@@ -11,6 +11,7 @@ import {
     useContext,
     useEffect,
     useEffectEvent,
+    useId,
     useLayoutEffect,
     useRef,
     useState,
@@ -28,6 +29,7 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "./i18n";
 import { LocalPageReadContext } from "./PageRead";
+import { usePreloadIntent, useRoutePreload } from "./Preload";
 import { registerDialogSurface } from "./dialog-surface";
 
 type MaterialElement = HTMLElement & {
@@ -108,12 +110,13 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
     label: string;
 }
 
-export function SegmentedButtons({ id, label, options, value, onChange }: {
+export function SegmentedButtons({ id, label, options, value, onChange, preload = false }: {
     id?: string;
     label: string;
     options: readonly { value: string; label: string; disabled?: boolean; title?: string }[];
     value: string;
     onChange(value: string): void;
+    preload?: boolean;
 }) {
     const ref = useRef<HTMLElement>(null);
     const current = useRef(value);
@@ -137,15 +140,13 @@ export function SegmentedButtons({ id, label, options, value, onChange }: {
     }, [onChange, options]);
     return <div className="alcomd-segmented-control">
         {createElement(materialElements.segmentedButtonSet, { ariaLabel: label, id, ref } as MaterialProps,
-            options.map((option) => createElement(materialElements.segmentedButton, {
-                key: option.value,
-                disabled: option.disabled ?? false,
-                label: option.label,
-                noCheckmark: true,
-                selected: option.value === value,
-                title: option.title
-            } as MaterialProps)))}
+            options.map((option) => <IntentSegment key={option.value} option={option} selected={option.value === value} preload={preload} />))}
     </div>;
+}
+
+function IntentSegment({ option, selected, preload }: { option: { value: string; label: string; disabled?: boolean; title?: string }; selected: boolean; preload: boolean }) {
+    const { pin: _pin, prepare: _prepare, ...intent } = useRoutePreload(option.value, preload && !selected && !option.disabled);
+    return createElement(materialElements.segmentedButton, { ...intent, disabled: option.disabled ?? false, label: option.label, noCheckmark: true, selected, title: option.title } as MaterialProps);
 }
 
 export function RadioGroup({ disabled, id, label, options, value, onChange }: {
@@ -512,7 +513,10 @@ export interface SelectProps {
     disabled?: boolean;
     displayText?: string;
     /** Prepare async options on intent; opening waits at most 100ms. */
-    prepareOpen?(): Promise<void>;
+    prepareOpen?(intent?: "prefetch" | "open"): Promise<void>;
+    preloadIdentity?: string;
+    discardPrepared?(): void;
+    preparedWeight?(): number;
     id?: string;
     label: string;
     onChange?(value: string): void;
@@ -534,6 +538,9 @@ export function Select({
     disabled,
     displayText,
     prepareOpen,
+    preloadIdentity,
+    discardPrepared,
+    preparedWeight,
     id,
     label,
     onChange,
@@ -548,19 +555,25 @@ export function Select({
     const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialSelectElement>(null);
     const open = useRef(false);
+    const preloadId = useId();
+    const preload = usePreloadIntent({ key: `select:${preloadId}:${preloadIdentity ?? ""}`, enabled: Boolean(prepareOpen) && !disabled,
+        load: () => prepareOpen?.("prefetch") ?? Promise.resolve(), discard: () => discardPrepared?.(), weight: preparedWeight });
     const pendingOpen = useRef<object | undefined>(undefined);
     const replayingOpen = useRef(false);
-    const cancelOpen = () => { pendingOpen.current = undefined; onClose?.(); };
+    const cancelOpen = () => { pendingOpen.current = undefined; preload.pin(false); onClose?.(); };
     useEffect(() => () => { pendingOpen.current = undefined; }, []);
     useEffect(() => { if (disabled) pendingOpen.current = undefined; }, [disabled]);
     const requestOpen = async (activate: () => void) => {
         if (!prepareOpen || disabled || pendingOpen.current) return;
         const request = {};
         pendingOpen.current = request;
+        preload.pin(true);
         let timer: number | undefined;
         try {
             await Promise.race([
-                Promise.resolve().then(prepareOpen).catch(() => undefined),
+                preload.prepare().then(() => {
+                    if (pendingOpen.current === request) return prepareOpen("open");
+                }).catch(() => undefined),
                 new Promise<void>((resolve) => { timer = window.setTimeout(resolve, 100); })
             ]);
             await ref.current?.updateComplete;
@@ -586,6 +599,7 @@ export function Select({
         const opening = (event: Event) => {
             if (event.target !== element) return;
             open.current = true;
+            preload.pin(true);
             const bounds = element.getBoundingClientRect();
             const below = window.innerHeight - bounds.bottom - 8;
             // Reserve one standard 56px option and the menu's two 8px insets.
@@ -596,6 +610,7 @@ export function Select({
         const closed = (event: Event) => {
             if (event.target !== element) return;
             open.current = false;
+            preload.pin(false);
             onClose?.();
             commitSelection();
         };
@@ -650,11 +665,12 @@ export function Select({
             disabled,
             id,
             label: "",
-            onPointerEnter: () => { if (prepareOpen && !disabled && !open.current) void prepareOpen(); },
-            onPointerLeave: () => { if (prepareOpen && !open.current && !pendingOpen.current) onClose?.(); },
+            onPointerEnter: preload.onPointerEnter,
+            onPointerLeave: () => { preload.onPointerLeave(); if (prepareOpen && !open.current && !pendingOpen.current) onClose?.(); },
             onFocusCapture: (event: ReactFocusEvent<MaterialElement>) => {
-                if (prepareOpen && !disabled && !open.current && event.target === event.currentTarget) void prepareOpen();
+                if (prepareOpen && !disabled && event.target === event.currentTarget) preload.onFocusCapture();
             },
+            onBlurCapture: preload.onBlurCapture,
             onBlur: (event: ReactFocusEvent<MaterialElement>) => {
                 if (pendingOpen.current && !event.currentTarget.contains(event.relatedTarget as Node | null)) cancelOpen();
             },
@@ -808,6 +824,7 @@ export function DialogCloseButton({ afterClose, disabled, ...props }: Omit<Butto
 
 interface DialogView {
     actions: ReactNode;
+    headlineActions: ReactNode;
     children: ReactNode;
     title: string;
     wide: boolean;
@@ -860,7 +877,7 @@ function observeDialogSize(dialog: HTMLDialogElement, content: HTMLElement) {
     };
 }
 
-export function Dialog({ actions, children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { actions?: ReactNode; children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
+export function Dialog({ actions, headlineActions, children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { actions?: ReactNode; headlineActions?: ReactNode; children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
@@ -869,7 +886,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
     const closing = useRef(false);
     const [closingView, setClosingView] = useState<DialogView>();
     const [restoreFocus, setRestoreFocus] = useState(false);
-    const view = { actions, children, title, wide };
+    const view = { actions, headlineActions, children, title, wide };
     // The owner can clear its form in the same render that requests a close.
     const visible = closingView ?? (open ? view : lastOpenView.current ?? view);
     useLayoutEffect(() => {
@@ -983,7 +1000,9 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
         <DialogCloseContext.Provider value={{ requestClose }}>{createElement(
             materialElements.dialog,
             { ariaLabel: visible.title, quick, ref, style: visible.wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
-            createElement("div", { slot: "headline" }, visible.title),
+            createElement("div", { slot: "headline", className: visible.headlineActions === undefined ? undefined : "material-dialog-headline",
+                role: visible.headlineActions === undefined ? undefined : "group", "aria-label": visible.headlineActions === undefined ? undefined : visible.title },
+                visible.headlineActions === undefined ? visible.title : <><span className="material-dialog-headline-title">{visible.title}</span><div className="material-dialog-headline-actions">{visible.headlineActions}</div></>),
             createElement("div", { ref: contentRef, className: visible.wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <DialogOpenContext.Provider value={open}><LocalPageReadContext.Provider value={true}>{visible.children}</LocalPageReadContext.Provider></DialogOpenContext.Provider>),
             visible.actions === undefined ? null : createElement("div", { className: "material-dialog-actions", slot: "actions" }, visible.actions)
         )}</DialogCloseContext.Provider>,

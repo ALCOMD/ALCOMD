@@ -31,9 +31,10 @@ export function LoadingState({ title, detail, variant = "inline" }: { title: str
 }
 
 /** A route fallback sits at the content canvas edge without taking layout space. */
-export function PageLoadingState({ title, detail }: { title: string; detail?: string }) {
+export function PageLoadingState({ title, detail, delayed = false }: { title: string; detail?: string; delayed?: boolean }) {
+    const visible = useDelayedPending(true);
     return <section className="page-loading-state" role="status" aria-label={title} aria-live="polite" aria-busy="true">
-        <Progress label={title} />
+        {!delayed || visible ? <Progress label={title} /> : null}
         <span className="visually-hidden">{title}{detail === undefined ? null : ` ${detail}`}</span>
     </section>;
 }

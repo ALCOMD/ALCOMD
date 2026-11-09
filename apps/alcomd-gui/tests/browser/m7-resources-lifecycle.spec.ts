@@ -242,10 +242,11 @@ test("repository refresh failure retains the last catalog until a successful exp
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1&resource-refresh-error=1");
     await registerRepository(page, "remote");
     const row = repositoryRow(page, "remote");
-    const manage = row.getByRole("button", { name: "Manage repository", exact: true });
+    const manage = row.getByRole("button", { name: "Browse packages", exact: true });
     const dialog = page.locator("md-dialog[open]");
     const refresh = dialog.getByRole("button", { name: "Refresh repository", exact: true });
     await manage.click();
+    await expect(dialog.getByText("First catalog package", { exact: true })).toBeVisible();
     await refresh.click();
     await expect.poll(() => requests(page, "repositories.refresh")).toHaveLength(1);
     await expect(refresh).toBeEnabled();
@@ -258,6 +259,7 @@ test("repository refresh failure retains the last catalog until a successful exp
     await manage.click();
     await refresh.click();
     await expect(refresh).toBeEnabled();
+    await expect(dialog.getByText("Updated catalog package", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     await expect(page.locator("md-dialog[open]").getByText("Updated catalog package", { exact: true })).toBeVisible();
@@ -269,7 +271,7 @@ test("repository revision conflicts reload the list without retrying the mutatio
     await registerRepository(page, "remote");
     const row = repositoryRow(page, "remote");
     await page.evaluate(() => window.dispatchEvent(new Event("test-resource-repository-advance")));
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const refresh = page.locator("md-dialog[open]").getByRole("button", { name: "Refresh repository", exact: true });
     await refresh.click();
     await expect(row).toContainText("Example packages (updated)");

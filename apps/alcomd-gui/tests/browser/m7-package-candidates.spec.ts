@@ -259,10 +259,10 @@ test("Unknown or ambiguous evidence blocks updates without probing Plans; explic
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
-test("Incomplete catalog keeps versions readable and disables Plan actions including bulk remove", async ({ page }) => {
+test("Incomplete catalog blocks version changes while allowing a locally evidenced bulk removal", async ({ page }) => {
     await open(page, "catalogIncomplete=1");
     await page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }).check();
-    await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeEnabled();
     await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     const option = page.locator("md-select-option").filter({ hasText: "1.10.0" });
@@ -270,14 +270,21 @@ test("Incomplete catalog keeps versions readable and disables Plan actions inclu
     await option.evaluate((element) => element.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     await page.keyboard.press("Enter");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Remove selected", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.example.avatar" }] } }]);
 });
 
-test("Transitive selection cannot be silently removed but can be reinstalled", async ({ page }) => {
+test("Transitive selection supports explicit removal review and reinstall without an automatic mutation", async ({ page }) => {
     await open(page, "transitive=1");
     await page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }).check();
-    await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Reinstall selected", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await page.getByRole("button", { name: "Remove selected", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.example.avatar" }] } }]);
 });
 
 test("Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry", async ({ page }) => {

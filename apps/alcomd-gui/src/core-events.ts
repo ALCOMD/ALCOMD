@@ -45,6 +45,7 @@ export class CoreEvents {
     private state: EventConnectionState = { kind: "connecting" };
     private displayed = false;
     private readonly listeners = new Set<() => void>();
+    private readonly preloadListeners = new Set<() => void>();
     private readonly jobs = new Map<string, Job>();
     private readonly dirty = new Set<string>();
     private readonly categoryVersions = new Map<string, number>();
@@ -93,6 +94,8 @@ export class CoreEvents {
     }
     getSnapshot = () => this.state;
     subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+    subscribePreloadInvalidation = (listener: () => void) => { this.preloadListeners.add(listener); return () => { this.preloadListeners.delete(listener); }; };
+    preloadVersion(scopes: readonly string[]) { return `${this.generation}:${scopes.map((scope) => this.categoryVersions.get(scope) ?? 0).join(":")}`; }
     private publish(state: EventConnectionState) { this.state = { ...state, retained: this.displayed }; this.listeners.forEach((listener) => listener()); }
     noteDisplayedData() { if (!this.displayed) { this.displayed = true; this.publish(this.state); } }
     start() {
@@ -290,6 +293,7 @@ export class CoreEvents {
         }
         const versionKey = scope.startsWith("operation:") ? "operation-progress" : scope;
         this.categoryVersions.set(versionKey, (this.categoryVersions.get(versionKey) ?? 0) + 1);
+        this.preloadListeners.forEach((listener) => listener());
         let promoted: string | undefined;
         if (this.dirty.size < EVENT_LIMITS.dirtyKeys || this.dirty.has(scope)) this.dirty.add(scope);
         else {
@@ -476,13 +480,16 @@ export class CoreEvents {
     }
 
     /** A changed resource invalidates the in-flight snapshot before it can reach a setter. */
-    async consistentRead<T>(scopes: readonly string[], load: () => Promise<T>): Promise<T> {
+    async consistentRead<T>(scopes: readonly string[], load: () => Promise<T>, current: () => boolean = () => true): Promise<T> {
         while (true) {
+            if (!current()) throw new DOMException("Read discarded", "AbortError");
             await this.readyPromise;
+            if (!current()) throw new DOMException("Read discarded", "AbortError");
             if (!this.active) throw { code: "daemon_unavailable" };
             const generation = this.generation;
             const versions = scopes.map((scope) => this.categoryVersions.get(scope) ?? 0);
             const value = await load();
+            if (!current()) throw new DOMException("Read discarded", "AbortError");
             if (generation === this.generation && scopes.every((scope, index) => (this.categoryVersions.get(scope) ?? 0) === versions[index])) return value;
             // This delay exists only because a real invalidation superseded this read.
             await new Promise<void>((resolve) => setTimeout(resolve, EVENT_LIMITS.intervalMs));

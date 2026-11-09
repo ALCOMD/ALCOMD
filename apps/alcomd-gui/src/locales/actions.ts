@@ -2,6 +2,14 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Back to packages": { "zh-CN": "返回软件包列表", "ja-JP": "パッケージ一覧に戻る" },
+    "Prerelease": { "zh-CN": "预发行版", "ja-JP": "プレリリース" },
+    "Remove {package}.": { "zh-CN": "移除 {package}。", "ja-JP": "{package} を削除します。" },
+    "Change {package}.": { "zh-CN": "更改 {package}。", "ja-JP": "{package} を変更します。" },
+    "Install {package} ({version}).": { "zh-CN": "安装 {package}（{version}）。", "ja-JP": "{package}（{version}）をインストールします。" },
+    "Reinstall {package} ({version}).": { "zh-CN": "重新安装 {package}（{version}）。", "ja-JP": "{package}（{version}）を再インストールします。" },
+    "Change {package}: {versions}.": { "zh-CN": "更改 {package}：{versions}。", "ja-JP": "{package} を変更します：{versions}。" },
+    "These packages still need {package}: {dependents}.": { "zh-CN": "以下软件包仍需要 {package}：{dependents}。", "ja-JP": "次のパッケージは引き続き {package} を必要とします：{dependents}。" },
     "Network": { "zh-CN": "网络", "ja-JP": "ネットワーク" },
     "Global proxy": { "zh-CN": "全局代理", "ja-JP": "グローバルプロキシ" },
     "Follow system proxy": { "zh-CN": "跟随系统代理", "ja-JP": "システムプロキシに従う" },

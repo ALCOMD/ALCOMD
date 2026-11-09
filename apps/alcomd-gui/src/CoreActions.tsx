@@ -1,7 +1,6 @@
 import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
-import type { Translate } from "./i18n-types";
 import type { ExtensionRecord, RepositoryCredentials, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
 import { useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
@@ -13,6 +12,7 @@ import type {
     Operation,
     OfficialSettings,
     PackagePlan,
+    PackageMutation,
     PackageSourceSelector,
     ProjectSnapshot,
     ProjectUnityLaunchConfigResult,
@@ -23,13 +23,13 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { DialogCloseButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, Select, TextField, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { backupCompressionOptions } from "./backup-compression";
-import { repositoryDefaultName, repositoryDisplayName } from "./repository-display";
+import { isBuiltinRepository, repositoryDefaultName, repositoryDisplayName } from "./repository-display";
 import type { RepositoryLinkDraft } from "./repository-link";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
@@ -179,13 +179,14 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     const [nameDraft, setNameDraft] = useState<{ revision: number; initial: string; value: string }>();
     const [authentication, setAuthentication] = useState(EMPTY_REPOSITORY_AUTH);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const pending = useRef<"refresh" | "remove" | "credentials" | "name" | undefined>(undefined);
+    const pending = useRef<"remove" | "credentials" | "name" | undefined>(undefined);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
     const canRemove = repository.actions?.canRemove === true;
+    const canEdit = !isBuiltinRepository(repository);
     const canEditAuthentication = repository.actions?.canEditAuthentication === true;
     const savingSettings = feedback.busy && (pending.current === "credentials" || pending.current === "name");
     const openManagement = () => {
-        if (repository.revision === undefined) return;
+        if (!canEdit || repository.revision === undefined) return;
         const value = repository.displayName ?? "";
         setNameDraft({ revision: repository.revision, initial: value, value });
         setManaging(true);
@@ -194,10 +195,10 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         setManaging(false);
         setNameDraft(undefined);
         setAuthentication(EMPTY_REPOSITORY_AUTH);
-        if (pending.current !== "refresh") setFeedback(INITIAL_FEEDBACK);
+        setFeedback(INITIAL_FEEDBACK);
     };
     const saveName = async () => {
-        if (!available || pending.current || repository.repositoryId === undefined
+        if (!canEdit || !available || pending.current || repository.repositoryId === undefined
             || nameDraft === undefined || nameDraft.value === nameDraft.initial) return;
         pending.current = "name";
         setFeedback({ busy: true });
@@ -226,33 +227,24 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
             if (current()) setFeedback({ busy: false, error: safeError(caught) });
         } finally { pending.current = undefined; }
     };
-    const run = async (remove: boolean) => {
-        if (!ready || !available || pending.current || (remove && !canRemove)) return;
-        pending.current = remove ? "remove" : "refresh";
+    const remove = async () => {
+        if (!ready || !available || pending.current || !canRemove) return;
+        pending.current = "remove";
         setFeedback({ busy: true });
         try {
-            if (remove) await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
-            else {
-                const refreshed = await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
-                const revision = refreshed.repository.revision;
-                if (current() && revision !== undefined) {
-                    setNameDraft((draft) => draft !== undefined && draft.revision === repository.revision
-                        ? { ...draft, revision } : draft);
-                }
-            }
+            await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
             if (!current()) return;
             setFeedback(INITIAL_FEEDBACK);
             setConfirmRemove(false); onChanged?.();
         } catch (caught: unknown) {
             if (!current()) return;
             const error = safeError(caught);
-            setFeedback({ busy: false, error: remove ? error : undefined });
-            if (!remove && error.code === "revision_conflict") onChanged?.();
+            setFeedback({ busy: false, error });
         }
         finally { pending.current = undefined; }
     };
     return <div className="repository-row-actions">
-        <IconButton disabled={!available || !ready || feedback.busy} label={t("Manage repository")} onClick={openManagement} title={t("Manage repository")} type="button"><Icon asset={editIcon} /></IconButton>
+        <IconButton disabled={!canEdit || !available || !ready || feedback.busy} label={t("Manage repository")} onClick={openManagement} title={t("Manage repository")} type="button"><Icon asset={editIcon} /></IconButton>
         <IconButton disabled={!canRemove || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
         <MaterialDialog open={managing} title={t("Manage repository")} dismissible={!savingSettings} onClose={closeManagement}>
             {nameDraft === undefined ? null : <form onSubmit={(event) => { event.preventDefault(); void saveName(); }}>
@@ -262,7 +254,6 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
                     supportingText={t("Leave blank to use the default name.")} value={nameDraft.value} />
                 <Button disabled={feedback.busy || nameDraft.value === nameDraft.initial} type="submit">{t("Save name")}</Button>
             </form>}
-            <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && pending.current === "refresh"} refreshingLabel={t("Refreshing repository")} />
             {canEditAuthentication ? <>
                 <h3>{t("Repository authentication")}</h3>
                 {repository.credentialsConfigured ? <p>{t("Uses authentication")}</p> : null}
@@ -280,7 +271,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repositoryDisplayName(t, repository, t("this repository"))}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
-            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={feedback.busy || !available} onClick={() => void remove()} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
     </div>;
 }
@@ -299,8 +290,9 @@ export interface PackageActionSelection {
     candidateSnapshot?: string;
 }
 
-export function PackageActions({ client, project, onChanged, selection, onEvidenceStale, onBusyChanged, returnFocusReady }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection; onEvidenceStale?(): void; onBusyChanged?(busy: boolean): void; returnFocusReady: boolean }) {
-    const { t } = useTranslation();
+export function PackageActions({ client, project, packageNames, onChanged, selection, onEvidenceStale, onBusyChanged, returnFocusReady }: ActionProps & { project: ProjectSnapshot; packageNames: ReadonlyMap<string, string>; selection?: PackageActionSelection; onEvidenceStale?(): void; onBusyChanged?(busy: boolean): void; returnFocusReady: boolean }) {
+    const { t, locale } = useTranslation();
+    const packageName = (packageId: string) => packageNames.get(packageId)?.trim() || packageId;
     const canApply = useCapability(capabilities.packagesApply);
     const canPlanV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanV2 = useCapability(capabilities.packagesPlanV2);
@@ -379,44 +371,57 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
     };
     const legacyRemovals = plan?.changeSet.legacyRemovals ?? [];
     const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0 || legacyRemovals.length > 0;
+    const changeGroups = (["install", "replace", "remove"] as const)
+        .map((kind) => ({ kind, items: (plan?.changeSet.mutations ?? []).filter((item) => item.kind === kind).sort((a, b) => a.packageId.localeCompare(b.packageId)) }))
+        .filter((group) => group.items.length > 0);
+    const reviewActions = plan === undefined ? undefined : <>
+        <DialogCloseButton disabled={feedback.busy} variant="text">{t(hasChanges && feedback.error === undefined ? "Cancel" : "Close")}</DialogCloseButton>
+        {hasChanges ? <Button disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
+    </>;
     return (
         <>
             <MaterialDialog onClose={() => setConfirmUnity(false)} open={confirmUnity} returnFocus={selection?.origin} returnFocusReady={returnFocusReady} title={t("Use incompatible version?")}>
-                <p>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: selection?.packageId ?? "", version: selection?.version?.replace(/^=/, "") ?? "" })}</p>
+                <p>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: packageName(selection?.packageId ?? ""), version: selection?.version?.replace(/^=/, "") ?? "" })}</p>
                 <div className="dialog-actions"><DialogCloseButton variant="text">{t("Cancel")}</DialogCloseButton><DialogCloseButton afterClose={() => {
                     if (selection) void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease, true);
                 }}>{t("Continue with this version")}</DialogCloseButton></div>
             </MaterialDialog>
-            <MaterialDialog dismissible={!feedback.busy} onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
+            <MaterialDialog actions={reviewActions} dismissible={!feedback.busy} onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
                 {selection?.exclusions?.length ? <div role="status"><p>{t("Not included in this update:")}</p><ul>{selection.exclusions.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>
-                        {plan.changeSet.unityCompatibilityOverrides?.map((item) => <p className="package-compatibility-warning" key={item.packageId}>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: item.packageId, version: item.version })}</p>)}
-                        <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{t(packageChangeLabel(mutation.kind))}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion, t)}</small>}</li>)}</ul>
-                        {plan.changeSet.removalConflicts?.length ? <section aria-label={t("Dependency conflicts")}>
-                            <p className="package-compatibility-warning">{t("Continuing will leave these installed packages without required dependencies.")}</p>
-                            <ul>{plan.changeSet.removalConflicts.flatMap((conflict) => conflict.requiredBy.map((required) => <li key={`${conflict.packageId}-${required.packageId}`}>{t("{package} requires {dependency} ({range}).", { package: required.packageId, dependency: conflict.packageId, range: required.range })}</li>))}</ul>
+                        {plan.changeSet.unityCompatibilityOverrides?.map((item) => <p className="package-compatibility-warning package-review-notice" key={item.packageId}>{t("{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.", { package: packageName(item.packageId), version: item.version })}</p>)}
+                        {plan.changeSet.removalConflicts?.length ? <p className="package-review-notice">{t("Continuing will leave these installed packages without required dependencies.")}</p> : null}
+                        <div className="package-change-groups">{changeGroups.map((group) => <ul className="change-list" key={group.kind}>{group.items.map((mutation) => <li key={mutation.packageId}><PackageChangeDescription mutation={mutation} name={packageName(mutation.packageId)} /></li>)}</ul>)}</div>
+                        {plan.changeSet.removalConflicts?.length ? <section aria-label={t("Dependency conflicts")} className="package-plan-conflicts">
+                            <h3>{t("Dependency conflicts")}</h3>
+                            <ul className="package-conflict-list">{plan.changeSet.removalConflicts.map((conflict) => <li key={conflict.packageId}><p><Translated message="These packages still need {package}: {dependents}." values={{ package: <strong title={conflict.packageId}>{packageName(conflict.packageId)}</strong>, dependents: <strong>{new Intl.ListFormat(locale, { type: "conjunction" }).format(conflict.requiredBy.map((required) => packageName(required.packageId)))}</strong> }} /></p></li>)}</ul>
                         </section> : null}
                         {legacyRemovals.length === 0 ? null : <>
                             <p>{t("The following legacy files and folders will be removed.")}</p>
                             <ul className="change-list">{legacyRemovals.map(({ path, packageId }) => (
-                                <li key={path}><span>{displayPath(path)}</span><small>{packageId}</small></li>
+                                <li key={path}><p><span>{displayPath(path)}</span><small className="package-legacy-owner" title={packageId}>{packageName(packageId)}</small></p></li>
                             ))}</ul>
                         </>}
-                        <div className="dialog-actions">
-                            <DialogCloseButton disabled={feedback.busy} variant="text">{t(feedback.error === undefined ? "Cancel" : "Close")}</DialogCloseButton>
-                            <Button disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button>
-                        </div>
                     </div>
                 ) : (
-                    <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p><div className="dialog-actions"><DialogCloseButton>{t("Close")}</DialogCloseButton></div></div>
+                    <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p></div>
                 )}
                 {plan === undefined || feedback.error === undefined ? null : <div role="alert"><p>{t(packageErrorMessage(feedback.error))}</p><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </MaterialDialog>
             {feedback.operationId === undefined ? null : <OperationFollow background client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} />}
         </>
     );
+}
+
+function PackageChangeDescription({ mutation, name }: { mutation: PackageMutation; name: string }) {
+    const values = { package: <strong className="package-change-name" title={mutation.packageId}>{name}</strong> };
+    if (mutation.kind === "remove") return <p><Translated message="Remove {package}." values={values} /></p>;
+    if (mutation.toVersion == null) return <p><Translated message="Change {package}." values={values} /></p>;
+    if (mutation.fromVersion == null) return <p><Translated message="Install {package} ({version})." values={{ ...values, version: mutation.toVersion }} /></p>;
+    if (mutation.fromVersion === mutation.toVersion) return <p><Translated message="Reinstall {package} ({version})." values={{ ...values, version: mutation.toVersion }} /></p>;
+    return <p><Translated message="Change {package}: {versions}." values={{ ...values, versions: `${mutation.fromVersion} → ${mutation.toVersion}` }} /></p>;
 }
 
 export function UnityRegistryActions({ client, installations, onChanged }: ActionProps & { installations: UnityInstallation[] }) {
@@ -1177,17 +1182,6 @@ function safeError(caught: unknown): RpcError {
 }
 
 function humanize(value: string): string { return value.replaceAll("_", " "); }
-function packageChangeLabel(kind: string): string {
-    if (kind === "install") return "Install";
-    if (kind === "remove") return "Remove";
-    if (kind === "replace") return "Change version";
-    return "Update";
-}
-function packageVersionChange(fromVersion: string | null | undefined, toVersion: string | null | undefined, t: Translate): string {
-    if (fromVersion != null && toVersion != null) return `${fromVersion} → ${toVersion}`;
-    if (toVersion != null) return t("Version {version}", { version: toVersion });
-    return t("{version} → Removed", { version: fromVersion ?? "" });
-}
 function packageErrorMessage(error: RpcError): string {
     if (["plan_stale", "project_revision_conflict", "resource_revision_conflict", "revision_conflict"].includes(error.code)) {
         return "This project changed while the package changes were being prepared. Refresh the package list and try again.";

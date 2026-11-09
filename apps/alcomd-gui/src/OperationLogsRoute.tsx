@@ -3,11 +3,12 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSy
 
 import { useReconnect } from "./capabilities";
 import { useCoreEvents, useCoreInvalidation } from "./core-events-ui";
-import type { EventConnectionState } from "./core-events";
+import type { CoreEvents, EventConnectionState } from "./core-events";
 import { useTranslation, type Translate } from "./i18n";
 import { OperationLogPage } from "./OperationLogPage";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import type { GuiRpcClient } from "./rpc";
+import { useInitialPageRequest } from "./PageRead";
 
 type Direction = "refresh" | "older" | "newer";
 interface LogWindow { entries: OperationLogEntry[]; older: boolean; newer: boolean }
@@ -18,6 +19,10 @@ const EDGE = 160;
 const MAX_ROWS = 500;
 const MAX_BYTES = 8 * 1024 * 1024;
 const encoder = new TextEncoder();
+export function readInitialOperationLogs(client: GuiRpcClient, events?: CoreEvents) {
+    const sequence = events?.metadata<number | undefined>("operation-log", "sequence", undefined);
+    return client.logsRead({ ...(sequence !== undefined && sequence < Number.MAX_SAFE_INTEGER ? { beforeSequence: sequence + 1 } : {}), filter: {} });
+}
 const ready: EventConnectionState = { kind: "ready" };
 const noSubscription = () => () => {};
 const readReady = () => ready;
@@ -64,6 +69,9 @@ function limitWindow(entries: OperationLogEntry[], direction: Direction, anchor?
 export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
     const { t } = useTranslation();
     const events = useCoreEvents();
+    const initialLoad = useCallback(() => readInitialOperationLogs(client, events), [client, events]);
+    const initialRead = useInitialPageRequest(initialLoad).promise;
+    const usedInitial = useRef(false);
     const reconnect = useReconnect();
     const connection = useSyncExternalStore(events?.subscribe ?? noSubscription, events?.getSnapshot ?? readReady);
     const id = useId();
@@ -110,7 +118,9 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
             const params = direction === "older" ? { beforeSequence: current.entries.at(-1)?.sequence }
                 : direction === "newer" ? { afterSequence: current.entries[0]?.sequence ?? 0 }
                 : restoring ? { beforeSequence: restore.current! + 1 } : {};
-            const page = await client.logsRead({ ...params, filter: filter.current });
+            const useInitial = direction === "refresh" && !initialized.current && !usedInitial.current && Object.keys(filter.current).length === 0 && initialRead !== undefined;
+            usedInitial.current = true;
+            const page = useInitial ? await initialRead.then((result) => { if (result.kind === "error") throw result.error; return result.value; }) : await client.logsRead({ ...params, filter: filter.current });
             if (generation.current !== epoch) return;
             if (page.highWatermark < (current.entries[0]?.sequence ?? 0)) throw { code: "event_protocol_error", message: "" };
             const incoming = [...page.entries].reverse();
@@ -146,7 +156,7 @@ export function OperationLogsRoute({ client }: { client: GuiRpcClient }) {
             if (active.current === promise) active.current = undefined;
             if (generation.current === epoch) setPending(false);
         }
-    }, [apply, client, events]);
+    }, [apply, client, events, initialRead]);
     // A ready connection can start the initial read during registration.
     useEffect(() => {
         ++generation.current;

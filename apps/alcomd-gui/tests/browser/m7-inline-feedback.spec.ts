@@ -170,7 +170,7 @@ test("user package refresh retries through the same control and reloads real rev
 test("a repository removal error cannot reuse an earlier refresh failure notification", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure&resource-remove-error=1");
     const row = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Local packages" });
-    await row.getByRole("button", { name: "Manage repository", exact: true }).click();
+    await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     const management = page.locator("md-dialog[open]");
     await management.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await management.getByRole("button", { name: "Close", exact: true }).click();

@@ -1,8 +1,10 @@
 import { keyboardArrowDownIcon, keyboardArrowUpIcon } from "@alcomd/ui/icons";
-import type { CSSProperties, ReactNode } from "react";
+import { useCallback, type CSSProperties, type ReactNode } from "react";
 
 import { Button, Icon } from "./Material";
 import { ScrollArea } from "./ScrollArea";
+import { LoadingState } from "./LoadingState";
+import { useTranslation } from "./i18n";
 
 export type DesktopListSortDirection = "ascending" | "descending";
 
@@ -15,6 +17,11 @@ export interface DesktopListColumn {
     cellFlow?: "truncate" | "wrap";
     onSort?(): void;
     sortDirection?: DesktopListSortDirection;
+}
+
+export function TableLoading({ label, headers, columns, minWidth = 640 }: { label: string; headers?: readonly string[]; columns?: readonly DesktopListColumn[]; minWidth?: number }) {
+    const { t } = useTranslation();
+    return <DesktopList label={label} columns={columns ?? (headers ?? []).map((header, index) => ({ key: String(index), header }))} minWidth={minWidth} rows={[]} emptyMessage={<LoadingState title={t("Loading")} variant="bar" />} />;
 }
 
 export interface DesktopListRow {
@@ -45,6 +52,19 @@ export function DesktopList({
         if (row.cells.length !== columns.length) throw new Error(`DesktopList row ${row.key} does not match its column count`);
     }
     const style = minWidth === undefined ? undefined : { "--desktop-list-min-width": `${minWidth}px` } as CSSProperties;
+    const headerRef = useCallback((header: HTMLTableSectionElement | null) => {
+        if (header === null) return;
+        const viewport = header.closest<HTMLElement>(".desktop-list-viewport");
+        if (viewport === null) return;
+        const measure = () => viewport.style.setProperty("--desktop-list-header-height", `${header.offsetHeight}px`);
+        const observer = new ResizeObserver(measure);
+        measure();
+        observer.observe(header);
+        return () => {
+            observer.disconnect();
+            viewport.style.removeProperty("--desktop-list-header-height");
+        };
+    }, []);
     return (
         <ScrollArea className="desktop-list-viewport">
             <div className="desktop-list-content">
@@ -55,7 +75,7 @@ export function DesktopList({
                     style={style}
                 >
                     <colgroup>{columns.map((column) => <col key={column.key} style={column.width === undefined ? undefined : { width: column.width }} />)}</colgroup>
-                    <thead><tr>{columns.map((column) => <DesktopListHeader column={column} key={column.key} />)}</tr></thead>
+                    <thead ref={headerRef}><tr>{columns.map((column) => <DesktopListHeader column={column} key={column.key} />)}</tr></thead>
                     <tbody>
                         {rows.map((row) => <tr className={row.className} key={row.key} data-row-key={row.key}>{row.cells.map((cell, index) => {
                             const column = columns[index];
