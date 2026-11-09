@@ -19,6 +19,7 @@ test("manual creation submits one exact editor and the package list as a tracked
     await expect(row(page, avatarId).getByRole("cell", { name: "Built-in", exact: true })).toBeVisible();
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "manual", id: "com.example.avatar-tools", name: "Avatar starter", unityVersion: "2022.3.22f1",
+            baseTemplate: { id: "com.vrclearn.alcomd.templates.blank", revision: 1 },
             dependencies: [{ packageId: "com.example.avatar", versionRange: "^1.2.3" }] },
         idempotencyKey: expect.any(String)
     });
@@ -187,4 +188,72 @@ async function openSource(page: Page, name: string) {
 
 function request(page: Page, method: string) {
     return page.evaluate((name) => window.templateRequests.find((item) => item.method === name)?.params, method);
+}
+
+test("manual templates default to Blank and inherit a chosen base's fixed Editor", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/templates");
+    await expect(row(page, "com.vrclearn.alcomd.templates.blank")).toContainText("Blank");
+    const dialog = await create(page, "com.example.derived", "Derived");
+    const base = dialog.getByRole("combobox", { name: "Base template", exact: true });
+    await expect(base).toContainText("Blank");
+    await base.click();
+    await dialog.getByRole("option", { name: "VRChat Avatars 2019 · 2019.4.31f1", exact: true }).click();
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveValue("2019.4.31f1");
+    await expect(dialog.getByRole("textbox", { name: "Unity version", exact: true })).toHaveJSProperty("readOnly", true);
+    await dialog.getByRole("button", { name: "Save template", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(await request(page, "projectTemplates.save")).toMatchObject({ source: {
+        kind: "manual", id: "com.example.derived", unityVersion: "2019.4.31f1",
+        baseTemplate: { id: "com.vrclearn.alcomd.templates.vrchat.avatars.2019", revision: 3 }
+    } });
+});
+
+test("manual base pagination preserves the draft on failure and accepts user templates from later pages", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/templates&template-pages=1&template-page-error=1");
+    const dialog = await create(page, "com.example.from-page", "Kept draft");
+    await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Your loaded items are still available.");
+    await expect(dialog.getByLabel("Display name", { exact: true })).toHaveValue("Kept draft");
+    await dialog.getByRole("button", { name: "Retry loading more", exact: true }).click();
+    await dialog.getByRole("combobox", { name: "Base template", exact: true }).click();
+    await dialog.getByRole("option", { name: /^Catalog template 101/ }).click();
+    await expect(dialog.getByRole("button", { name: "Save template", exact: true })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Save template", exact: true }).click();
+    expect(await request(page, "projectTemplates.save")).toMatchObject({ source: { baseTemplate: { id: "com.example.catalog-101", revision: 111 } } });
+});
+
+test("a changed base revision preserves the manual draft and requires explicit reselection", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/templates&template-existing=1");
+    const dialog = await create(page, "com.example.kept-draft", "Kept manual draft");
+    const base = dialog.getByRole("combobox", { name: "Base template", exact: true });
+    const choose = async () => { await base.click(); await dialog.getByRole("option", { name: /Existing fixture/ }).click(); };
+    await choose();
+    await page.evaluate(() => window.dispatchEvent(new Event("test-template-advance")));
+    await expect(dialog.getByRole("alert")).toContainText("The selected template changed. Select it again.");
+    await expect(dialog.getByLabel("Display name", { exact: true })).toHaveValue("Kept manual draft");
+    await expect(dialog.getByRole("button", { name: "Save template", exact: true })).toBeDisabled();
+    await choose();
+    await dialog.getByRole("button", { name: "Save template", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(await request(page, "projectTemplates.save")).toMatchObject({ source: { baseTemplate: { id: "com.example.fixture", revision: 9 } } });
+});
+
+for (const [width, theme] of [[1280, "light"], [640, "dark"]] as const) {
+    test(`manual base selection remains usable in Chinese at ${width}px in ${theme} mode`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(`/browser-harness.html?route=/templates&locale=zh-CN&theme-mode=${theme}`);
+        await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+        await page.getByRole("button", { name: "创建模板", exact: true }).click();
+        const dialog = page.locator("md-dialog[open]");
+        const base = dialog.getByRole("combobox", { name: "基础模板", exact: true });
+        await expect(base).toContainText("空白");
+        await expect(dialog.getByText("基础模板", { exact: true })).toBeVisible();
+        await dialog.getByLabel("模板 ID", { exact: true }).fill("com.example.chinese");
+        await dialog.getByLabel("显示名称", { exact: true }).fill("我的基础模板");
+        await base.click();
+        await dialog.getByRole("option", { name: "VRChat Avatars 2022 · 2022.3.22f1", exact: true }).click();
+        await expect(dialog.getByRole("button", { name: "保存模板", exact: true })).toBeEnabled();
+        await page.screenshot({ path: testInfo.outputPath(`template-base-${width}-${theme}.png`), animations: "disabled" });
+    });
 }

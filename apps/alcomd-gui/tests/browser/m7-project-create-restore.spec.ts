@@ -29,7 +29,7 @@ test("creation accepts an explicit uninstalled Editor version", async ({ page })
     await dialog.getByRole("textbox", { name: "Unity version", exact: true }).fill("2022.3.99f1");
     await dialog.getByLabel("Create project name").fill("Uninstalled Version");
     await dialog.getByRole("button", { name: "Create project", exact: true }).click();
-    expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params)).toMatchObject({ unityVersion: "2022.3.99f1" });
+    expect(await page.evaluate(() => window.templateRequests.find((request) => request.method === "projects.create")?.params)).toMatchObject({ unityVersion: "2022.3.99f1", template: { id: "com.vrclearn.alcomd.templates.blank", revision: 1 } });
 });
 
 test("the catalog exposes each built-in Editor variant and creation uses its fixed version", async ({ page }) => {
@@ -37,7 +37,7 @@ test("the catalog exposes each built-in Editor variant and creation uses its fix
     await page.getByRole("button", { name: "Create project", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const template = dialog.getByRole("combobox", { name: "Project template", exact: true });
-    await expect(template).toContainText("No template");
+    await expect(template).toContainText("Blank");
     await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(6);
     await template.click();
     for (const [year, version] of [["2022", "2022.3.22f1"], ["2019", "2019.4.31f1"]]) {

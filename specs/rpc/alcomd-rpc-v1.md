@@ -757,15 +757,16 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 同 ID 异内容需提供现有修订。锁定记录拒绝替换或删除。
 
 保存支持已选 `.alcomdtemplate` 文件、已登记项目及手动填写三种来源。导入归档须在
-`ProjectSettings/ProjectVersion.txt` 声明一个完整 Unity 版本。
+`ProjectSettings/ProjectVersion.txt` 声明一个完整 Unity 版本。仅保留 ID 的内置 Blank 归档可省略该文件，并在创建时使用显式选择的完整版本。
 项目来源要求所选项目的 `projects.read` 和当前修订，两个可选开关默认关闭。
+手动来源可带 `baseTemplate: {id,revision}`，省略时从最小空白脚手架开始。GUI 默认选择内置 Blank。基础归档与修订在接受事务中冻结并保留引用，恢复或执行期间不重新跟随目录记录；派生归档复制基础工程文件、UPM 清单和 VPM 依赖/锁，再按填写的包 ID 覆盖或追加直接依赖。基础模板声明完整版本时必须精确匹配，Blank 允许任意合法完整版本。保存结果自包含，后续替换或删除基础模板不改变派生模板。
 保存与导出使用持久幂等任务，接受后返回 `{operationId,replayed}`。
 保存成功结果为 `{template}`，导出成功结果为 `{id,revision}`。
 导出目标通过独占发布产生。模板归档内部为标准 ZIP 及 VCC 目录结构。
 
 `projects.create` 以 `template: {id, revision}` 选择当前归档，在接受事务中冻结模板。
 过期引用返回 `revision_conflict`。使用模板依赖仍检查 `packages.read`、`repositories.read`
-和 `packages.manage`。请求的 Unity 版本必须与模板声明精确匹配。以前登记的无版本模板须
+和 `packages.manage`。除保留 ID 的内置 Blank 外，请求的 Unity 版本必须与模板声明精确匹配。以前登记的其他无版本模板须
 补全后替换才能用于创建项目。安装锁定或求解后的包后才发布。
 公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
 State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。

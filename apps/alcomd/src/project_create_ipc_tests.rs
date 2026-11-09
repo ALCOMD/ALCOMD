@@ -113,7 +113,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
             .collect::<std::collections::BTreeSet<_>>()
     };
     let builtins = installed();
-    assert_eq!(builtins.len(), 4);
+    assert_eq!(builtins.len(), 5);
     assert!(!root.join("project-templates").exists());
 
     let pipe = format!(r"\\.\pipe\alcomd-create-test-{}", OperationId::new());
@@ -208,7 +208,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
     .await;
     assert_eq!(locked["error"]["code"], "template_builtin_immutable");
 
-    let source = json!({"kind":"manual","id":"com.example.local","name":builtin["name"],"unityVersion":"2022.3.22f1","dependencies":[]});
+    let source = json!({"kind":"manual","id":"com.example.local","name":builtin["name"],"unityVersion":"2022.3.22f1","dependencies":[],"baseTemplate":{"id":builtin["id"],"revision":builtin["revision"]}});
     let saved = exchange(
         &mut client,
         "save",

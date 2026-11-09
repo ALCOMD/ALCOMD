@@ -296,3 +296,88 @@ fn template_export_recovers_the_frozen_archive_and_fences_cancellation() {
             .replayed
     );
 }
+
+#[test]
+fn manual_template_base_is_frozen_pinned_recovered_and_released_at_completion() {
+    let (_directory, mut connection) = fixture();
+    let owner = PrincipalId::local_owner();
+    let base = declaration();
+    let record =
+        project_templates::save(&mut connection, &owner, base.clone(), None, 1).expect("base");
+    let request = |revision, version: &str| ProjectTemplateJobRequest::Save {
+        source: ProjectTemplateSource::Manual {
+            id: "com.example.derived".to_owned(),
+            name: "Derived".to_owned(),
+            unity_version: version.to_owned(),
+            dependencies: Vec::new(),
+            base_template: Some(ProjectTemplateRef {
+                id: base.id.clone(),
+                revision,
+            }),
+        },
+        expected_revision: None,
+    };
+    assert_eq!(
+        accept(
+            &mut connection,
+            &owner,
+            request(record.revision + 1, "2022.3.22f1"),
+            &key("stale"),
+            "{}",
+            2
+        )
+        .expect_err("stale base")
+        .code(),
+        ProjectCreateErrorCode::TemplateStale
+    );
+    assert_eq!(
+        accept(
+            &mut connection,
+            &owner,
+            request(record.revision, "2019.4.31f1"),
+            &key("version"),
+            "{}",
+            2
+        )
+        .expect_err("different editor")
+        .code(),
+        ProjectCreateErrorCode::DependencyUnsatisfied
+    );
+    let request = request(record.revision, "2022.3.22f1");
+    let id = accept(
+        &mut connection,
+        &owner,
+        request.clone(),
+        &key("derive"),
+        "{}",
+        3,
+    )
+    .expect("accept")
+    .operation_id;
+    project_templates::remove(&mut connection, &owner, &base.id, record.revision, 4)
+        .expect("base removed after acceptance");
+    assert!(
+        project_templates::archive_references(&connection)
+            .expect("archive pins")
+            .contains(&base.archive_sha256)
+    );
+    assert_eq!(pending(&mut connection, 5).expect("recover pending"), [id]);
+    let work = begin_work(&mut connection, id, 6)
+        .expect("resume")
+        .expect("work");
+    assert_eq!(work.base_declaration, Some(base.clone()));
+    let mut derived = base.clone();
+    derived.id = "com.example.derived".to_owned();
+    derived.archive_sha256 = "cd".repeat(32);
+    finish_save(&mut connection, id, derived, 7).expect("finish from frozen base after deletion");
+    assert!(
+        !project_templates::archive_references(&connection)
+            .expect("released pin")
+            .contains(&base.archive_sha256)
+    );
+    assert!(
+        accept(&mut connection, &owner, request, &key("derive"), "{}", 8)
+            .expect("replay does not reread removed base")
+            .replayed
+    );
+}

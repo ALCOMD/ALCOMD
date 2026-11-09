@@ -1,3 +1,4 @@
+import { BLANK_PROJECT_TEMPLATE_ID } from "@alcomd/sdk";
 import { requestErrorMessage } from "./request-errors";
 import type { ProjectsCreateParams, ProjectTemplateRef, ProjectTemplatesListResult, RpcError } from "@alcomd/sdk";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -87,6 +88,11 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
             const next = await (events === undefined ? load() : events.consistentRead(["templates"], load));
             if (catalogRequest.current !== token) return;
             catalogDepth.current = cursor === undefined ? next.pageCount : depth + 1;
+            setSelection((previous) => {
+                if (previous !== undefined) return previous;
+                const blank = next.records.find(({ id }) => id === BLANK_PROJECT_TEMPLATE_ID);
+                return blank === undefined ? undefined : { id: blank.id, revision: blank.revision };
+            });
             setCatalog((previous) => ({
                 templates: cursor === undefined ? next.records : [...(previous?.templates ?? []), ...next.records],
                 nextCursor: next.nextCursor
@@ -153,7 +159,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         if (ownsDraft() && directory !== undefined) setTargetParent(directory);
     });
     const retrying = operationRequestOutcomeUnknown(error) && attempt.current?.client === client;
-    const ready = retrying || (!staleSelection && name.trim().length > 0 && targetParent.length > 0 && unity.version.trim().length > 0);
+    const ready = retrying || ((!canUseTemplates || selection !== undefined) && !staleSelection && name.trim().length > 0 && targetParent.length > 0 && unity.version.trim().length > 0);
     const formDisabled = busy || retrying;
     const create = () => run(async (ownsDraft) => {
         if (!ready) return;
@@ -202,9 +208,9 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
     }
     const options = [
-        { label: t("No template"), value: "none" },
         ...(catalog?.templates ?? []).map(({ id, name, editorVersion }) => {
-            const label = editorVersion === undefined ? name : name + " · " + editorVersion;
+            const displayName = id === BLANK_PROJECT_TEMPLATE_ID ? t("Blank") : name;
+            const label = editorVersion === undefined ? displayName : displayName + " · " + editorVersion;
             return { label: nameCounts.get(name) === 1 ? label : label + " (" + id + ")", value: id };
         })
     ];
@@ -218,7 +224,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                                 const next = catalog?.templates.find((record) => record.id === id);
                                 setSelection(next === undefined ? undefined : { id, revision: next.revision });
                             }}
-                            options={options} value={staleSelection ? "" : selection?.id ?? "none"} />
+                            options={options} value={staleSelection ? "" : selection?.id ?? ""} />
                         {staleSelection && !retrying ? <p role="alert">{t("The selected template changed. Select it again.")}</p> : null}
                         {catalogError !== undefined && failedCursor === undefined ? <div role="alert">
                             <p>{t("Templates could not be loaded.")}</p>

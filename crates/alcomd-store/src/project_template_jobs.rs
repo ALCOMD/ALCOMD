@@ -24,6 +24,8 @@ const EXPORT: &str = "projectTemplates.export";
 struct Journal {
     phase: Phase,
     export_declaration: Option<ProjectTemplateDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_declaration: Option<ProjectTemplateDeclaration>,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -50,19 +52,32 @@ pub(super) fn add_archive_references(
     let mut statement = connection
         .prepare(
             "SELECT o.operation_id FROM operations o
-             WHERE o.kind=?1 AND o.state NOT IN ('succeeded','failed','cancelled')",
+             WHERE o.kind IN (?1,?2) AND o.state NOT IN ('succeeded','failed','cancelled')",
         )
         .map_err(db_error)?;
     let rows = statement
-        .query_map([EXPORT], |row| row.get::<_, String>(0))
+        .query_map(params![EXPORT, SAVE], |row| row.get::<_, String>(0))
         .map_err(db_error)?;
     for row in rows {
         let id = OperationId::parse(&row.map_err(db_error)?).map_err(|_| internal())?;
-        let declaration = load(connection, id)?
-            .journal
-            .export_declaration
-            .ok_or_else(internal)?;
-        referenced.insert(declaration.archive_sha256);
+        let context = load(connection, id)?;
+        let declaration = match context.request {
+            ProjectTemplateJobRequest::Export { .. } => {
+                Some(context.journal.export_declaration.ok_or_else(internal)?)
+            }
+            ProjectTemplateJobRequest::Save {
+                source:
+                    ProjectTemplateSource::Manual {
+                        base_template: Some(_),
+                        ..
+                    },
+                ..
+            } => Some(context.journal.base_declaration.ok_or_else(internal)?),
+            _ => None,
+        };
+        if let Some(declaration) = declaration {
+            referenced.insert(declaration.archive_sha256);
+        }
     }
     Ok(())
 }
@@ -123,12 +138,39 @@ pub(super) fn accept(
             None
         }
     };
+    let base_declaration = match &request {
+        ProjectTemplateJobRequest::Save {
+            source:
+                ProjectTemplateSource::Manual {
+                    base_template: Some(reference),
+                    unity_version,
+                    ..
+                },
+            ..
+        } => {
+            let declaration = project_templates::frozen(&transaction, owner, reference)?;
+            if declaration
+                .editor_version
+                .as_ref()
+                .is_some_and(|version| version != unity_version)
+                || declaration.editor_version.is_none()
+                    && declaration.id != alcomd_application::BLANK_PROJECT_TEMPLATE_ID
+            {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::DependencyUnsatisfied,
+                ));
+            }
+            Some(declaration)
+        }
+        _ => None,
+    };
     let id = OperationId::new();
     let timestamp = integer(now_ms)?;
     let encoded_request = json(&request)?;
     let journal = json(&Journal {
         phase: Phase::Accepted,
         export_declaration,
+        base_declaration,
     })?;
     if encoded_request.len() > 65_536 || journal.len() > 65_536 {
         return Err(ProjectCreateError::new(
@@ -217,6 +259,7 @@ pub(super) fn begin_work(
         owner: context.owner,
         request: context.request,
         export_declaration: context.journal.export_declaration,
+        base_declaration: context.journal.base_declaration,
         cancel_requested: context.cancel_requested,
         publishing: context.journal.phase == Phase::PublishIntent,
     };
@@ -585,6 +628,7 @@ fn terminal(
         )
         .map_err(db_error)?;
     context.journal.export_declaration = None;
+    context.journal.base_declaration = None;
     write_journal(transaction, id, &context.journal, true, timestamp)?;
     state_event(transaction, &context.owner, id, revision, name, timestamp)
 }

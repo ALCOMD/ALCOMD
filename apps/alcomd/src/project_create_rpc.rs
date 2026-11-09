@@ -158,10 +158,15 @@ fn template_source(value: rpc::ProjectTemplateSource) -> Option<app::ProjectTemp
             name,
             unity_version,
             dependencies,
+            base_template,
         } => app::ProjectTemplateSource::Manual {
             id,
             name,
             unity_version,
+            base_template: base_template.map(|base| app::ProjectTemplateRef {
+                id: base.id,
+                revision: base.revision,
+            }),
             dependencies: dependencies
                 .into_iter()
                 .map(|dependency| app::ProjectTemplateDependency {

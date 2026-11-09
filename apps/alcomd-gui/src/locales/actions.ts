@@ -306,6 +306,8 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "新建项目",
         "ja-JP": "プロジェクトを作成"
     },
+    "Blank": { "zh-CN": "空白", "ja-JP": "空白" },
+    "Base template": { "zh-CN": "基础模板", "ja-JP": "ベーステンプレート" },
     "Create template": {
         "zh-CN": "创建模板",
         "ja-JP": "テンプレートを作成"

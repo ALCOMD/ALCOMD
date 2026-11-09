@@ -1409,6 +1409,12 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
             if (expectedRevision !== undefined && existing?.revision !== expectedRevision) throw { code: "revision_conflict" };
             if (existing?.locked) throw { code: "template_builtin_immutable" };
             if (source.kind === "project" && (source.projectId !== PROJECT_ID || source.expectedProjectRevision !== this.currentProjectRevision)) throw { code: "revision_conflict" };
+            if (source.kind === "manual" && source.baseTemplate !== undefined) {
+                const base = this.projectTemplates.find((template) => template.id === source.baseTemplate?.id)
+                    ?? (query.has("template-pages") ? Array.from({ length: 101 }, (_, index) => catalogTemplate(index + 1)).find(({ id }) => id === source.baseTemplate?.id) : undefined);
+                if (base?.revision !== source.baseTemplate.revision) throw { code: "revision_conflict" };
+                if (base.editorVersion !== undefined && base.editorVersion !== source.unityVersion) throw { code: "template_dependency_unsatisfied" };
+            }
             const editorVersion = source.kind === "manual" ? source.unityVersion : source.kind === "project" ? this.currentUnityVersion : "2022.3.22f1";
             const template = { id: archive.id, name: archive.name, editorVersion,
                 revision: ++this.templateRevision, locked: false };
@@ -1623,13 +1629,13 @@ function launchConfig(arguments_: string[], revision: number) { return { project
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
 function builtinTemplates(): ProjectTemplateRecord[] {
     const versions = ["2022.3.22f1", "2019.4.31f1"];
-    return [false, true].flatMap((worlds) => versions.map((editorVersion, index) => {
+    return [{ id: "com.vrclearn.alcomd.templates.blank", name: "Blank", revision: 1, locked: true }, ...[false, true].flatMap((worlds) => versions.map((editorVersion, index) => {
         const id = worlds ? WORLD_TEMPLATE_ID : TEMPLATE_ID;
         const year = editorVersion.slice(0, 4);
         return { id: id + "." + year,
             name: `${worlds ? "VRChat Worlds" : "VRChat Avatars"} ${year}`, editorVersion,
             revision: 2 + index + (worlds ? versions.length : 0), locked: true };
-    }));
+    }))];
 }
 
 function userTemplate(id: string, name: string): ProjectTemplateRecord {

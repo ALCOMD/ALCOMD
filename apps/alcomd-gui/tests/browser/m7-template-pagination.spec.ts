@@ -61,12 +61,12 @@ test("Create template paging retains the selected template and draft after failu
     await dialog.getByRole("button", { name: "Load more templates", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("Your loaded items are still available.");
     await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "com.example.catalog-050");
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await dialog.getByRole("button", { name: "Retry loading more", exact: true }).click();
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(102);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
     await expect(dialog.locator("#project-create-template")).toHaveJSProperty("value", "com.example.catalog-050");
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("Keep this draft");
-    expect(await dialog.locator("#project-create-template md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(102);
+    expect(await dialog.locator("#project-create-template md-select-option").evaluateAll((options) => new Set(options.map((option) => (option as HTMLElement & { value: string }).value)).size)).toBe(101);
 });
 
 test("A closed template picker rejects the old page response after a new draft opens", async ({ page }) => {
@@ -77,12 +77,12 @@ test("A closed template picker rejects the old page response after a new draft o
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toBeHidden();
     await openCreation(page);
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await dialog.getByLabel("Create project name", { exact: true }).fill("New draft");
     await page.evaluate(() => window.dispatchEvent(new Event("test-template-page-ready")));
     await expect.poll(() => page.evaluate(() => window.templatePageCompletions)).toBe(1);
     await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
-    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(101);
+    await expect(dialog.locator("#project-create-template md-select-option")).toHaveCount(100);
     await expect(dialog.getByLabel("Create project name", { exact: true })).toHaveValue("New draft");
     await expect(dialog.getByRole("button", { name: "Load more templates", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([]);
@@ -99,7 +99,7 @@ test("A template read failure stays distinct from an empty catalog and can be ex
     await expect(dialog).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-templates-ready")));
     await expect.poll(() => dialog.locator("#project-create-template md-select-option").evaluateAll((options) => options.map((option) => option.textContent?.trim()).sort())).toEqual([
-        "No template", "VRChat Avatars 2022 · 2022.3.22f1", "VRChat Worlds 2022 · 2022.3.22f1",
+        "Blank", "VRChat Avatars 2022 · 2022.3.22f1", "VRChat Worlds 2022 · 2022.3.22f1",
         "VRChat Avatars 2019 · 2019.4.31f1", "VRChat Worlds 2019 · 2019.4.31f1"
     ].sort());
     await expect(dialog.getByRole("alert")).toHaveCount(0);

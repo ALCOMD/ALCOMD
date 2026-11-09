@@ -391,3 +391,43 @@ fn accepted_cancel_survives_restart_and_wins_against_pre_publish_failure() {
     assert_eq!(complete.state, OperationState::Cancelled);
     assert!(complete.error_code.is_none());
 }
+
+#[test]
+fn blank_catalogue_reference_accepts_a_selected_editor_but_other_versionless_templates_do_not() {
+    let dir = crate::events_tests::Directory::new();
+    let mut connection = sqlite::initialize_connection(&dir.database()).expect("isolated store");
+    let owner = PrincipalId::local_owner();
+    let mut blank = declaration(alcomd_application::BLANK_PROJECT_TEMPLATE_ID, Vec::new());
+    blank.editor_version = None;
+    project_templates::seed(&mut connection, &owner, vec![blank.clone()]).expect("seed Blank");
+    let record = project_templates::list(&connection, &owner, 100, None)
+        .expect("catalogue")
+        .templates
+        .remove(0);
+    assert!(record.locked);
+    for (index, version) in ["2019.4.31f1", "2022.3.99f1"].into_iter().enumerate() {
+        let mut request = input(Some(ProjectTemplateRef {
+            id: blank.id.clone(),
+            revision: record.revision,
+        }));
+        request.unity_version = version.to_owned();
+        let mut accepted = acceptance(&owner, request);
+        accepted.key = IdempotencyKey::parse(format!("blank-{index}")).expect("key");
+        accepted.fingerprint = format!("{{\"index\":{index}}}");
+        accept(&mut connection, accepted, 2).expect("selected editor accepted for Blank");
+    }
+    let mut other = declaration("com.example.no-version", Vec::new());
+    other.editor_version = None;
+    let record = project_templates::save(&mut connection, &owner, other, None, 3)
+        .expect("historical missing editor");
+    let request = input(Some(ProjectTemplateRef {
+        id: record.declaration.id,
+        revision: record.revision,
+    }));
+    assert_eq!(
+        accept(&mut connection, acceptance(&owner, request), 4)
+            .expect_err("only Blank is flexible")
+            .code(),
+        ProjectCreateErrorCode::DependencyUnsatisfied
+    );
+}

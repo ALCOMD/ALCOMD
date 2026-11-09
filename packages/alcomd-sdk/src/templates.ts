@@ -1,3 +1,5 @@
+export const BLANK_PROJECT_TEMPLATE_ID = "com.vrclearn.alcomd.templates.blank";
+
 export interface ProjectTemplateRef {
     id: string;
     revision: number;
@@ -19,7 +21,7 @@ export interface ProjectTemplateRecord {
 export type ProjectTemplateSource =
     | { kind: "file"; sourceFile: string }
     | { kind: "project"; projectId: string; expectedProjectRevision: number; id: string; name: string; includeAssets?: boolean; lockPackageVersions?: boolean }
-    | { kind: "manual"; id: string; name: string; unityVersion: string; dependencies: ProjectTemplateDependency[] };
+    | { kind: "manual"; id: string; name: string; unityVersion: string; dependencies: ProjectTemplateDependency[]; baseTemplate?: ProjectTemplateRef };
 
 export interface ProjectsCreateParams {
     name: string;

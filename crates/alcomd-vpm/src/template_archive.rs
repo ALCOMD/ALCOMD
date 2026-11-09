@@ -71,6 +71,7 @@ impl TemplateArchiveStore {
         &self,
         source: ProjectTemplateSource,
         project: Option<ProjectRecord>,
+        base: Option<ProjectTemplateDeclaration>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         self.verify_root()?;
         match source {
@@ -79,7 +80,13 @@ impl TemplateArchiveStore {
                 name,
                 unity_version,
                 dependencies,
-            } => self.manual(id, name, unity_version, dependencies, BTreeMap::new()),
+                base_template,
+            } => {
+                if base_template.is_some() != base.is_some() {
+                    return Err(stale());
+                }
+                self.manual(id, name, unity_version, dependencies, base)
+            }
             ProjectTemplateSource::Project {
                 project_id,
                 expected_project_revision,
@@ -143,7 +150,13 @@ impl TemplateArchiveStore {
         self.verify_root()?;
         let mut projects = zip::ZipArchive::new(Cursor::new(BUILTIN_PROJECTS))
             .map_err(|error| invalid().with_source(error))?;
-        let mut result = Vec::with_capacity(4);
+        let mut result = Vec::with_capacity(5);
+        let mut blank = blank_inventory()?;
+        blank.add_bytes(
+            "package.json",
+            template_metadata(alcomd_application::BLANK_PROJECT_TEMPLATE_ID, "Blank")?,
+        )?;
+        result.push(self.publish_inventory(blank)?);
         for input in [
             include_str!("../../../specs/templates/vrchat-avatars.json"),
             include_str!("../../../specs/templates/vrchat-worlds.json"),
@@ -209,17 +222,75 @@ impl TemplateArchiveStore {
         name: String,
         version: String,
         dependencies: Vec<ProjectTemplateDependency>,
-        locked: BTreeMap<String, String>,
+        base: Option<ProjectTemplateDeclaration>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         validate_editor(&version)?;
-        let direct = dependency_map(dependencies)?;
-        let mut inventory = Inventory::default();
+        let additions = dependency_map(dependencies)?;
+        let scratch = Scratch::new(&self.root)?;
+        let mut inventory = if let Some(base) = base {
+            if base
+                .editor_version
+                .as_ref()
+                .is_some_and(|expected| expected != &version)
+                || base.editor_version.is_none()
+                    && base.id != alcomd_application::BLANK_PROJECT_TEMPLATE_ID
+            {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::DependencyUnsatisfied,
+                ));
+            }
+            let unpacked = scratch.path.join("base");
+            fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
+            unpack(&self.verified_object(&base)?, &unpacked)?;
+            let mut contents = Inventory::default();
+            for folder in ROOTS {
+                contents.add_tree(&unpacked, folder)?;
+            }
+            for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
+                let entry = entry.map_err(|error| io_error(&unpacked, error))?;
+                if let Some(name) = entry
+                    .file_name()
+                    .to_str()
+                    .filter(|name| optional_root_file(name))
+                {
+                    contents.add_file(&unpacked, name)?;
+                }
+            }
+            contents
+        } else {
+            blank_inventory()?
+        };
+        let original_manifest = match inventory.entries.get(VPM) {
+            Some(Content::File(path, _)) => {
+                fs::read(path).map_err(|error| io_error(path, error))?
+            }
+            Some(Content::Bytes(bytes)) => bytes.clone(),
+            Some(Content::Directory) => return Err(invalid()),
+            None => make_manifest(&BTreeMap::new(), &BTreeMap::new())?,
+        };
+        let (mut direct, _, mut manifest) = read_vpm(&original_manifest)?;
+        direct.extend(additions);
+        if direct.len() > 128 {
+            return Err(invalid());
+        }
         inventory.add_bytes("package.json", template_metadata(&id, &name)?)?;
-        // VCC replaces an unquoted token when giving the new project its name.
-        inventory.add_bytes(PLAYER, rewrite_product_name(None, "AlcomdTemplate", None)?)?;
-        inventory.add_bytes(UPM, b"{\"dependencies\":{}}\n".to_vec())?;
-        inventory.add_bytes(VPM, make_manifest(&direct, &locked)?)?;
-        inventory.add_bytes(EDITOR, format!("m_EditorVersion: {version}\n").into_bytes())?;
+        inventory.entries.remove(VPM);
+        if manifest.get("dependencies").is_none() {
+            manifest["dependencies"] = json!({});
+        }
+        let declarations = manifest["dependencies"]
+            .as_object_mut()
+            .ok_or_else(invalid)?;
+        for (id, range) in direct {
+            declarations.entry(id).or_insert_with(|| json!({}))["version"] = range.into();
+        }
+        inventory.add_bytes(
+            VPM,
+            serde_json::to_vec(&manifest).map_err(|error| invalid().with_source(error))?,
+        )?;
+        if !inventory.entries.contains_key(EDITOR) {
+            inventory.add_bytes(EDITOR, format!("m_EditorVersion: {version}\n").into_bytes())?;
+        }
         self.publish_inventory(inventory)
     }
 
@@ -451,7 +522,7 @@ fn rewrite_product_name(
     let name_line = format!("  productName: {yaml_scalar}");
     let Some(original) = original else {
         return Ok(format!(
-            "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!129 &1\nPlayerSettings:\n{name_line}\n"
+            "%YAML 1.1\n%TAG !u! tag:unity3d.com,2011:\n--- !u!129 &1\nPlayerSettings:\n  productGUID: 00000000000000000000000000000000\n{name_line}\n"
         ).into_bytes());
     };
     let settings = std::str::from_utf8(original).map_err(|error| invalid().with_source(error))?;
@@ -1090,6 +1161,14 @@ fn verify_lock_closure(
     Ok(())
 }
 
+fn blank_inventory() -> Result<Inventory, ProjectCreateError> {
+    let mut inventory = Inventory::default();
+    inventory.add_bytes(PLAYER, rewrite_product_name(None, "AlcomdTemplate", None)?)?;
+    inventory.add_bytes(UPM, b"{\"dependencies\":{}}\n".to_vec())?;
+    inventory.add_bytes(VPM, make_manifest(&BTreeMap::new(), &BTreeMap::new())?)?;
+    Ok(inventory)
+}
+
 fn read_declaration(
     path: &Path,
     archive_sha256: String,
@@ -1100,11 +1179,21 @@ fn read_declaration(
         serde_json::from_slice(metadata.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&metadata))
             .map_err(|error| invalid().with_source(error))?;
     validate_metadata(&metadata.name, &metadata.display_name)?;
-    let version_file = zip_bytes(&mut archive, EDITOR, crate::PROJECT_VERSION_LIMIT)?
-        .ok_or_else(|| invalid_at(path, "template requires ProjectSettings/ProjectVersion.txt"))?;
-    let (editor_version, _) = crate::parse_project_version(&version_file)
-        .map_err(|error| invalid().with_source(error))?;
-    validate_editor(&editor_version)?;
+    let editor_version = match zip_bytes(&mut archive, EDITOR, crate::PROJECT_VERSION_LIMIT)? {
+        Some(version_file) => {
+            let (version, _) = crate::parse_project_version(&version_file)
+                .map_err(|error| invalid().with_source(error))?;
+            validate_editor(&version)?;
+            Some(version)
+        }
+        None if metadata.name == alcomd_application::BLANK_PROJECT_TEMPLATE_ID => None,
+        None => {
+            return Err(invalid_at(
+                path,
+                "template requires ProjectSettings/ProjectVersion.txt",
+            ));
+        }
+    };
     if let Some(upm) = zip_bytes(&mut archive, UPM, crate::PROJECT_MANIFEST_LIMIT)? {
         let upm = parse_json(&upm)?;
         if let Some(dependencies) = upm.get("dependencies") {
@@ -1134,7 +1223,7 @@ fn read_declaration(
     let declaration = ProjectTemplateDeclaration {
         id: metadata.name,
         name: metadata.display_name.trim().to_owned(),
-        editor_version: Some(editor_version),
+        editor_version,
         archive_sha256,
         dependencies,
         locked_versions,

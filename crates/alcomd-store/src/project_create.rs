@@ -124,7 +124,9 @@ pub(super) fn accept(
         if declaration
             .editor_version
             .as_ref()
-            .is_none_or(|version| version != &input.unity_version)
+            .is_some_and(|version| version != &input.unity_version)
+            || declaration.editor_version.is_none()
+                && declaration.id != alcomd_application::BLANK_PROJECT_TEMPLATE_ID
         {
             return Err(error(ProjectCreateErrorCode::DependencyUnsatisfied));
         }

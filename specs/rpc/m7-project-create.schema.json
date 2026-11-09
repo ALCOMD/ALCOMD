@@ -154,6 +154,7 @@
             "required": ["kind", "id", "name", "unityVersion", "dependencies"],
             "properties": {
                 "kind": {"const": "manual"},
+                "baseTemplate": {"$ref": "#/$defs/templateRef"},
                 "id": {"$ref": "#/$defs/templateId"},
                 "name": {"type": "string", "minLength": 1, "maxLength": 128},
                 "unityVersion": {"$ref": "#/$defs/unityVersion"},

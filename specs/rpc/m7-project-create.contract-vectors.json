@@ -84,5 +84,30 @@
         "revision": 3,
         "destinationFile": "C:\\Templates\\avatar.alcomdtemplate",
         "idempotencyKey": "template-export"
+    },
+    "saveWithBase": {
+        "source": {
+            "kind": "manual",
+            "id": "com.example.avatar",
+            "name": "Avatar kit",
+            "unityVersion": "2022.3.22f1",
+            "dependencies": [
+                {
+                    "packageId": "com.vrchat.avatars",
+                    "versionRange": "^3.10.0"
+                }
+            ],
+            "baseTemplate": {
+                "id": "com.vrclearn.alcomd.templates.blank",
+                "revision": 1
+            }
+        },
+        "idempotencyKey": "template-with-base"
+    },
+    "blank": {
+        "id": "com.vrclearn.alcomd.templates.blank",
+        "name": "Blank",
+        "revision": 1,
+        "locked": true
     }
 }

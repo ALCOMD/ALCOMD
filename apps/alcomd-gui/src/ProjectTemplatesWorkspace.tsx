@@ -1,4 +1,5 @@
-import type { ProjectTemplateDependency, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
+import { BLANK_PROJECT_TEMPLATE_ID } from "@alcomd/sdk";
+import type { ProjectTemplatesListResult, ProjectTemplateDependency, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
 import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -65,7 +66,7 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
                         { key: "actions", header: t("Actions") }
                     ]}
                     rows={templates.map((template) => ({ key: template.id, cells: [
-                        <strong>{template.name}</strong>,
+                        <strong>{template.id === BLANK_PROJECT_TEMPLATE_ID ? t("Blank") : template.name}</strong>,
                         <span className="template-id">{template.id}</span>,
                         t(template.locked ? "Built-in" : "User template"),
                         <TemplateRowActions onSelect={select} template={template} />
@@ -79,6 +80,7 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
                 open={!selection.closed}
                 origin={selection.origin}
                 selection={selection}
+                catalog={value}
             />}
         </>}
     </UtilityWorkspace>;
@@ -104,13 +106,14 @@ function TemplateRowActions({ onSelect, template }: { onSelect(selection: Select
     </div>;
 }
 
-function TemplateDialog({ client, onChanged, onClose, open, origin, selection }: {
+function TemplateDialog({ client, onChanged, onClose, open, origin, selection, catalog }: {
     client: GuiRpcClient;
     onChanged(): void;
     onClose(): void;
     open: boolean;
     origin: DialogOrigin;
     selection: Selection;
+    catalog: ProjectTemplatesListResult;
 }) {
     const { t } = useTranslation();
     const record = selection.template;
@@ -119,6 +122,8 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
     const [name, setName] = useState(record?.name ?? "");
     const [dependencies, setDependencies] = useState<(ProjectTemplateDependency & { key: string })[]>([]);
     const [project, setProject] = useState<SelectedProject>();
+    const [base, setBase] = useState<ProjectTemplateRecord>();
+    const [baseValid, setBaseValid] = useState(false);
     const [includeAssets, setIncludeAssets] = useState(false);
     const [lockPackageVersions, setLockPackageVersions] = useState(false);
     const [sourceFile, setSourceFile] = useState("");
@@ -133,7 +138,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
     const current = useActionScope(client, open);
     const operations = useAcceptedOperations(client);
     const operation = operationId === undefined ? undefined : operations.snapshot(operationId)?.operation;
-    const unity = useCreateUnityVersion(client, undefined, open && selection.kind === "save" && source === "manual");
+    const unity = useCreateUnityVersion(client, base?.editorVersion, open && selection.kind === "save" && source === "manual");
 
     async function run(action: () => Promise<void>) {
         if (pending.current) return;
@@ -169,8 +174,9 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
             kind: "project", projectId: project.projectId, expectedProjectRevision: project.revision,
             id: id.trim(), name: name.trim(), includeAssets, lockPackageVersions
         };
-        if (unity.version.trim() === "" || dependencies.some(({ packageId, versionRange }) => packageId.trim() === "" || versionRange.trim() === "")) return undefined;
+        if (base === undefined || !baseValid || unity.version.trim() === "" || dependencies.some(({ packageId, versionRange }) => packageId.trim() === "" || versionRange.trim() === "")) return undefined;
         return { kind: "manual", id: id.trim(), name: name.trim(), unityVersion: unity.version.trim(),
+            baseTemplate: { id: base.id, revision: base.revision },
             dependencies: dependencies.map(({ packageId, versionRange }) => ({ packageId: packageId.trim(), versionRange: versionRange.trim() })) };
     }
 
@@ -269,6 +275,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection }:
                                 <Checkbox checked={includeAssets} disabled={formDisabled} label={t("Include project assets")} onChange={setIncludeAssets} />
                                 <Checkbox checked={lockPackageVersions} disabled={formDisabled} label={t("Lock package versions")} onChange={setLockPackageVersions} />
                             </> : <>
+                                <TemplateBasePicker client={client} catalog={catalog} disabled={formDisabled} onSelect={setBase} onValid={setBaseValid} value={base} />
                                 <CreateUnityVersionField disabled={formDisabled} selection={unity} />
                                 <fieldset className="template-declarations">
                                     <legend>{t("Packages")}</legend>
@@ -339,4 +346,57 @@ function TemplateProjectPicker({ client, disabled, onSelect, value }: {
                 onChange={(id) => onSelect(registered.find((item) => item.projectId === id))} />;
         }}
     </PagedItems>;
+}
+
+function TemplateBasePicker({ client, catalog, disabled, onSelect, onValid, value }: {
+    client: GuiRpcClient;
+    catalog: ProjectTemplatesListResult;
+    disabled: boolean;
+    onSelect(template: ProjectTemplateRecord): void;
+    onValid(valid: boolean): void;
+    value: ProjectTemplateRecord | undefined;
+}) {
+    const { t } = useTranslation();
+    return <PagedItems initialItems={catalog.templates} initialCursor={catalog.nextCursor} showPagination={false} loadMore={async (cursor) => {
+        const next = await client.projectTemplatesList(cursor);
+        return { items: next.templates, nextCursor: next.nextCursor };
+    }}>
+        {(templates, pagination) => <>
+            <TemplateBaseOptions disabled={disabled} onSelect={onSelect} onValid={onValid} templates={templates} value={value} />
+            {pagination.error === undefined ? null : <p role="alert">{t("Could not load more items. Your loaded items are still available.")}</p>}
+            {pagination.cursor === undefined ? null : <Button disabled={disabled || pagination.loading} onClick={() => void pagination.next()} type="button" variant="text">{t(pagination.error === undefined ? "Load more templates" : "Retry loading more")}</Button>}
+        </>}
+    </PagedItems>;
+}
+
+function TemplateBaseOptions({ disabled, onSelect, onValid, templates, value }: {
+    disabled: boolean;
+    onSelect(template: ProjectTemplateRecord): void;
+    onValid(valid: boolean): void;
+    templates: ProjectTemplateRecord[];
+    value: ProjectTemplateRecord | undefined;
+}) {
+    const { t } = useTranslation();
+    const selected = templates.find((template) => template.id === value?.id);
+    const valid = value !== undefined && selected?.revision === value.revision;
+    useEffect(() => {
+        onValid(valid);
+        if (value === undefined) {
+            const blank = templates.find(({ id }) => id === BLANK_PROJECT_TEMPLATE_ID);
+            if (blank !== undefined) onSelect(blank);
+        }
+    }, [onSelect, onValid, templates, valid, value]);
+    const names = new Map<string, number>();
+    for (const template of templates) names.set(template.name, (names.get(template.name) ?? 0) + 1);
+    return <>
+        <div className="project-create-unity-version"><span>{t("Base template")}</span>
+        <Select className="alcomd-select--constrained" disabled={disabled || templates.length === 0} label={t("Base template")} value={valid ? value.id : ""}
+            onChange={(id) => { const next = templates.find((template) => template.id === id); if (next) onSelect(next); }}
+            options={templates.map((template) => {
+                const name = template.id === BLANK_PROJECT_TEMPLATE_ID ? t("Blank") : template.name;
+                const label = template.editorVersion === undefined ? name : `${name} · ${template.editorVersion}`;
+                return { value: template.id, label: names.get(template.name) === 1 ? label : `${label} (${template.id})` };
+            })} /></div>
+        {value !== undefined && !valid ? <p role="alert">{t("The selected template changed. Select it again.")}</p> : null}
+    </>;
 }

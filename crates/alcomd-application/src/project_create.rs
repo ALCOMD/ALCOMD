@@ -13,6 +13,8 @@ use crate::{
     ResourceKey, ResourceLockCoordinator, TechnicalErrorContext,
 };
 
+pub const BLANK_PROJECT_TEMPLATE_ID: &str = "com.vrclearn.alcomd.templates.blank";
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectCreateInput {
@@ -73,6 +75,8 @@ pub enum ProjectTemplateSource {
         name: String,
         unity_version: String,
         dependencies: Vec<ProjectTemplateDependency>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base_template: Option<ProjectTemplateRef>,
     },
 }
 
@@ -99,6 +103,7 @@ pub struct ProjectTemplateJobWork {
     pub owner: PrincipalId,
     pub request: ProjectTemplateJobRequest,
     pub export_declaration: Option<ProjectTemplateDeclaration>,
+    pub base_declaration: Option<ProjectTemplateDeclaration>,
     pub cancel_requested: bool,
     pub publishing: bool,
 }
@@ -442,6 +447,7 @@ pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
         &self,
         source: ProjectTemplateSource,
         project: Option<ProjectRecord>,
+        base: Option<ProjectTemplateDeclaration>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError>;
 
     fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError>;
@@ -665,8 +671,12 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                 name,
                 unity_version,
                 dependencies,
+                base_template,
             } => {
                 validate_template_metadata(id, name)?;
+                if let Some(base) = base_template {
+                    validate_template_reference(&base.id, base.revision)?;
+                }
                 crate::canonical_unity_version(unity_version).map_err(|cause| {
                     ProjectCreateError::new(ProjectCreateErrorCode::InvalidInput).with_source(cause)
                 })?;
@@ -857,8 +867,10 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     None
                 };
                 let _archive_write = self.template_archive_writes.lock().await;
-                let declaration =
-                    template_io(move || adapter.prepare_template(source, project)).await?;
+                let declaration = template_io(move || {
+                    adapter.prepare_template(source, project, work.base_declaration)
+                })
+                .await?;
                 let result = self
                     .store
                     .project_template_job_finish_save(id, declaration, now_ms()?)

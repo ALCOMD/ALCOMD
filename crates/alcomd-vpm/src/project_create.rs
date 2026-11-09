@@ -143,8 +143,9 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
         &self,
         source: ProjectTemplateSource,
         project: Option<ProjectRecord>,
+        base: Option<ProjectTemplateDeclaration>,
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
-        self.templates.prepare(source, project)
+        self.templates.prepare(source, project, base)
     }
 
     fn builtin_templates(&self) -> Result<Vec<ProjectTemplateDeclaration>, ProjectCreateError> {
@@ -844,10 +845,253 @@ mod tests {
                         source_file: path.to_owned(),
                     },
                     None,
+                    None,
                 )
                 .expect("import");
             assert_eq!(imported, declaration);
         }
+    }
+
+    #[tokio::test]
+    async fn blank_template_creates_a_named_unity_project_for_each_selected_editor() {
+        let fixture = Fixture::new();
+        let blank = fixture
+            .engine
+            .builtin_templates()
+            .expect("builtins")
+            .into_iter()
+            .find(|entry| entry.id == alcomd_application::BLANK_PROJECT_TEMPLATE_ID)
+            .expect("Blank");
+        assert!(blank.editor_version.is_none());
+        assert!(blank.dependencies.is_empty());
+        for (index, version) in ["2019.4.31f1", "2022.3.22f1", "2022.3.99f1"]
+            .into_iter()
+            .enumerate()
+        {
+            let work = fixture.work(&format!("Blank {index}"), version, Some(blank.clone()));
+            let id = OperationId::new();
+            let stage = fixture
+                .engine
+                .stage(id, &work)
+                .expect("materialize scaffold");
+            let target = target_path(&work);
+            let observed = fixture
+                .engine
+                .publish(stage, id, &work)
+                .await
+                .expect("publish named project");
+            assert_eq!(observed.unity_version, version);
+            assert!(target.join("Assets").is_dir());
+            for file in [
+                "Packages/manifest.json",
+                "Packages/vpm-manifest.json",
+                "ProjectSettings/ProjectSettings.asset",
+                "ProjectSettings/ProjectVersion.txt",
+            ] {
+                assert!(target.join(file).is_file(), "{file}");
+            }
+            let player = fs::read_to_string(target.join("ProjectSettings/ProjectSettings.asset"))
+                .expect("player settings");
+            assert!(player.contains(&format!("Blank {index}")));
+            assert!(player.contains(&work.project_id.to_string().replace('-', "")));
+            assert!(observed.direct_dependencies.is_empty());
+            assert!(observed.locked_dependencies.is_empty());
+        }
+    }
+
+    #[test]
+    fn derived_templates_preserve_base_assets_settings_manifests_and_locked_versions() {
+        let fixture = Fixture::new();
+        for (index, base) in fixture
+            .engine
+            .builtin_templates()
+            .expect("builtins")
+            .into_iter()
+            .enumerate()
+        {
+            let version = base
+                .editor_version
+                .clone()
+                .unwrap_or_else(|| "2022.3.99f1".to_owned());
+            let id = format!("com.example.derived-{index}");
+            let derive = |version: String| {
+                fixture.engine.prepare_template(
+                    ProjectTemplateSource::Manual {
+                        id: id.clone(),
+                        name: "Derived".to_owned(),
+                        unity_version: version,
+                        dependencies: vec![alcomd_application::ProjectTemplateDependency {
+                            package_id: "com.example.extra".to_owned(),
+                            version_range: "^1.0.0".to_owned(),
+                        }],
+                        base_template: Some(ProjectTemplateRef {
+                            id: base.id.clone(),
+                            revision: 1,
+                        }),
+                    },
+                    None,
+                    Some(base.clone()),
+                )
+            };
+            if base.editor_version.is_some() {
+                assert_eq!(
+                    derive("2022.3.99f1".to_owned())
+                        .expect_err("version must match base")
+                        .code(),
+                    ProjectCreateErrorCode::DependencyUnsatisfied
+                );
+            }
+            let derived = derive(version.clone()).expect("derive from frozen archive");
+            assert_eq!(derived.editor_version.as_deref(), Some(version.as_str()));
+            assert_eq!(derived.locked_versions, base.locked_versions);
+            for dependency in &base.dependencies {
+                assert!(derived.dependencies.contains(dependency));
+            }
+            assert!(
+                derived
+                    .dependencies
+                    .iter()
+                    .any(|entry| entry.package_id == "com.example.extra")
+            );
+            let base_root = fixture.root.join(format!("base-{index}"));
+            let derived_root = fixture.root.join(format!("derived-{index}"));
+            fs::create_dir(&base_root).expect("base destination");
+            fs::create_dir(&derived_root).expect("derived destination");
+            fixture
+                .engine
+                .templates
+                .expand(&base, &base_root)
+                .expect("base content");
+            fixture
+                .engine
+                .templates
+                .expand(&derived, &derived_root)
+                .expect("derived content");
+            for folder in ["Assets", "Packages", "ProjectSettings"] {
+                let mut pending = vec![base_root.join(folder)];
+                while let Some(path) = pending.pop() {
+                    if path.is_dir() {
+                        pending.extend(
+                            fs::read_dir(path)
+                                .expect("tree")
+                                .map(|entry| entry.expect("entry").path()),
+                        );
+                    } else {
+                        let relative = path.strip_prefix(&base_root).expect("relative");
+                        if relative != Path::new("Packages/vpm-manifest.json") {
+                            assert_eq!(
+                                fs::read(&path).expect("base file"),
+                                fs::read(derived_root.join(relative)).expect("inherited file"),
+                                "{}",
+                                relative.display()
+                            );
+                        }
+                    }
+                }
+            }
+            let child = fixture
+                .engine
+                .prepare_template(
+                    ProjectTemplateSource::Manual {
+                        id: format!("com.example.child-{index}"),
+                        name: "User-derived child".to_owned(),
+                        unity_version: version,
+                        dependencies: Vec::new(),
+                        base_template: Some(ProjectTemplateRef { id, revision: 2 }),
+                    },
+                    None,
+                    Some(derived.clone()),
+                )
+                .expect("user templates are valid bases too");
+            assert_eq!(child.dependencies, derived.dependencies);
+            assert_eq!(child.locked_versions, derived.locked_versions);
+        }
+    }
+
+    #[test]
+    fn derived_template_preserves_the_full_vpm_lock_graph_and_extra_manifest_fields() {
+        let fixture = Fixture::new();
+        let input = fixture.root.join("base.alcomdtemplate");
+        let original = serde_json::json!({
+            "dependencies": { "com.example.base": { "version": "^1.0.0" } },
+            "locked": { "com.example.base": { "version": "1.2.0", "dependencies": { "com.example.child": "^2.0.0" } }, "com.example.child": { "version": "2.1.0", "dependencies": {} } },
+            "custom": { "retained": true }
+        });
+        let mut archive = zip::ZipWriter::new(fs::File::create(&input).expect("base archive"));
+        for (name, content) in [
+            (
+                "package.json",
+                r#"{"name":"com.example.base-template","displayName":"Base"}"#.to_owned(),
+            ),
+            (
+                "ProjectSettings/ProjectVersion.txt",
+                "m_EditorVersion: 2022.3.22f1\n".to_owned(),
+            ),
+            ("Packages/vpm-manifest.json", original.to_string()),
+            ("Assets/kept.txt", "asset".to_owned()),
+            (
+                "Assets/kept.txt.meta",
+                "guid: 00000000000000000000000000000001\n".to_owned(),
+            ),
+        ] {
+            archive
+                .start_file(name, zip::write::SimpleFileOptions::default())
+                .expect("entry");
+            archive.write_all(content.as_bytes()).expect("content");
+        }
+        archive.finish().expect("archive");
+        let base = fixture
+            .engine
+            .prepare_template(
+                ProjectTemplateSource::File {
+                    source_file: input.to_str().expect("path").to_owned(),
+                },
+                None,
+                None,
+            )
+            .expect("import base");
+        let derived = fixture
+            .engine
+            .prepare_template(
+                ProjectTemplateSource::Manual {
+                    id: "com.example.derived-manifest".to_owned(),
+                    name: "Derived".to_owned(),
+                    unity_version: "2022.3.22f1".to_owned(),
+                    dependencies: vec![alcomd_application::ProjectTemplateDependency {
+                        package_id: "com.example.extra".to_owned(),
+                        version_range: "*".to_owned(),
+                    }],
+                    base_template: Some(ProjectTemplateRef {
+                        id: base.id.clone(),
+                        revision: 1,
+                    }),
+                },
+                None,
+                Some(base),
+            )
+            .expect("derive");
+        let output = fixture.root.join("derived-manifest");
+        fs::create_dir(&output).expect("output");
+        fixture
+            .engine
+            .templates
+            .expand(&derived, &output)
+            .expect("expand");
+        let actual: serde_json::Value = serde_json::from_slice(
+            &fs::read(output.join("Packages/vpm-manifest.json")).expect("manifest"),
+        )
+        .expect("JSON");
+        assert_eq!(actual["locked"], original["locked"]);
+        assert_eq!(actual["custom"], original["custom"]);
+        assert_eq!(
+            actual["dependencies"]["com.example.base"],
+            original["dependencies"]["com.example.base"]
+        );
+        assert_eq!(actual["dependencies"]["com.example.extra"]["version"], "*");
+        assert_eq!(
+            fs::read(output.join("Assets/kept.txt.meta")).expect("meta"),
+            b"guid: 00000000000000000000000000000001\n"
+        );
     }
 
     #[test]
@@ -869,6 +1113,7 @@ mod tests {
                 ProjectTemplateSource::File {
                     source_file: path.to_str().expect("fixture path").to_owned(),
                 },
+                None,
                 None,
             )
             .expect_err("a template without an editor version cannot be imported");
@@ -974,6 +1219,7 @@ mod tests {
                     lock_package_versions,
                 },
                 Some(record.clone()),
+                None,
             )
         };
         let flexible = prepare(false, false).expect("unread Assets is harmless");
@@ -1066,6 +1312,7 @@ mod tests {
                     source_file: input.to_str().expect("input path").to_owned(),
                 },
                 None,
+                None,
             );
             assert!(result.is_err());
         }
@@ -1128,13 +1375,17 @@ mod tests {
         let engine = &fixture.engine;
         let catalog = sdk_fixture(engine);
         let builtins = engine.builtin_templates().expect("builtins");
-        assert_eq!(builtins.len(), 4);
+        assert_eq!(builtins.len(), 5);
         let mut ids = BTreeSet::new();
         let mut v3 = zip::ZipArchive::new(std::io::Cursor::new(include_bytes!(
             "../../../specs/templates/builtin-scaffolds/v3-projects.zip"
         )))
         .expect("frozen v3 project data");
-        for (index, declaration) in builtins.into_iter().enumerate() {
+        for (index, declaration) in builtins
+            .into_iter()
+            .filter(|entry| entry.editor_version.is_some())
+            .enumerate()
+        {
             let direct = &declaration.dependencies[0].package_id;
             assert_eq!(declaration.dependencies[0].version_range, "3.x");
             let version = declaration
