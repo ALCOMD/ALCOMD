@@ -286,7 +286,6 @@ export interface PackageActionSelection {
     includePrerelease?: boolean;
     allowUnityIncompatible?: boolean;
     intents?: import("./core-models").PackageBulkIntent[];
-    exclusions?: string[];
     candidateSnapshot?: string;
 }
 
@@ -387,7 +386,6 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 }}>{t("Continue with this version")}</DialogCloseButton></div>
             </MaterialDialog>
             <MaterialDialog actions={reviewActions} dismissible={!feedback.busy} onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
-                {selection?.exclusions?.length ? <div role="status"><p>{t("Not included in this update:")}</p><ul>{selection.exclusions.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>

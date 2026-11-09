@@ -1538,7 +1538,8 @@ pub struct RepositoryPackageSourcePin {
     pub package_id: String,
     pub version: String,
     pub artifact_url: String,
-    pub archive_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_sha256: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3583,7 +3584,7 @@ mod tests {
             package_id: "com.example.package".to_owned(),
             version: "1.2.3".to_owned(),
             artifact_url: "https://example.invalid/package.zip".to_owned(),
-            archive_sha256: "22".repeat(32),
+            archive_sha256: Some("22".repeat(32)),
         });
         assert_eq!(
             serde_json::to_value(repository).expect("repository pin"),
@@ -3614,5 +3615,30 @@ mod tests {
         assert!(value.get("repositoryId").is_none());
         assert!(value.get("artifactUrl").is_none());
         assert!(value.get("kind").is_none());
+    }
+
+    #[test]
+    fn repository_plan_can_defer_its_archive_digest_but_user_packages_cannot() {
+        let repository = json!({
+            "repositoryId": "00000000-0000-4000-8000-000000000001",
+            "repositoryRevision": 2,
+            "sourceIdentity": "repository-source",
+            "manifestFingerprint": "11".repeat(32),
+            "packageId": "com.example.package",
+            "version": "1.2.3",
+            "artifactUrl": "https://example.invalid/package.zip"
+        });
+        let pin: PackageSourcePin =
+            serde_json::from_value(repository.clone()).expect("deferred repository digest");
+        assert_eq!(serde_json::to_value(pin).expect("public plan"), repository);
+        let user = json!({
+            "userPackageId": "00000000-0000-4000-8000-000000000002",
+            "sourceRevision": 3,
+            "sourceIdentity": "opaque-user-source",
+            "manifestFingerprint": "33".repeat(32),
+            "packageId": "com.example.package",
+            "version": "1.2.3"
+        });
+        assert!(serde_json::from_value::<PackageSourcePin>(user).is_err());
     }
 }

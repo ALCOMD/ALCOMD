@@ -72,7 +72,9 @@ pub(crate) async fn fetch_package_objects(
         let cache = cache.clone();
         let locks = locks.cloned();
         async move {
-            let digest = source.archive_sha256();
+            let digest = source
+                .archive_sha256()
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PackageHashRequired))?;
             let _guard = match locks {
                 Some(locks) => Some(locks.acquire(vec![ResourceKey::PackageCache(digest)]).await),
                 None => None,
@@ -735,7 +737,7 @@ mod tests {
             package_id: "com.example.fixture".to_owned(),
             version: "1.2.3".to_owned(),
             artifact_url: "https://example.invalid/com.example.fixture.zip".to_owned(),
-            archive_sha256,
+            archive_sha256: Some(archive_sha256),
         });
         let mut change_set = PackageChangeSet {
             unity_compatibility_overrides: Vec::new(),
@@ -914,7 +916,7 @@ mod tests {
         std::fs::write(
             fixture
                 .materializer
-                .object_path(&fixture.source.archive_sha256()),
+                .object_path(&fixture.source.archive_sha256().expect("frozen digest")),
             b"corrupt",
         )
         .expect("corrupt object");
@@ -945,7 +947,7 @@ mod tests {
         let locks = Arc::new(ResourceLockCoordinator::default());
         let held = locks
             .acquire(vec![ResourceKey::PackageCache(
-                first.source.archive_sha256(),
+                first.source.archive_sha256().expect("frozen digest"),
             )])
             .await;
         let waiting = {

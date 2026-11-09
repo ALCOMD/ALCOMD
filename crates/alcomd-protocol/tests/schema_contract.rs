@@ -1346,8 +1346,7 @@ fn m4_schema_pins_source_and_stale_subreasons() {
             "manifestFingerprint",
             "packageId",
             "version",
-            "artifactUrl",
-            "archiveSha256"
+            "artifactUrl"
         ])
     );
     let stale = definitions["planStaleReason"]["enum"]

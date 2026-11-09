@@ -1430,7 +1430,7 @@ async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
         package_id: "com.example.package".into(),
         version: "1.0.0".into(),
         artifact_url: "https://example.invalid/package.zip".into(),
-        archive_sha256: [9; 32],
+        archive_sha256: Some([9; 32]),
     };
     for stale in [
         RepositoryPackageSourcePin {
@@ -1467,7 +1467,7 @@ async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
         M4ErrorCode::PlanStale
     );
     let concurrent = RepositoryPackageSourcePin {
-        archive_sha256: [10; 32],
+        archive_sha256: Some([10; 32]),
         ..pin.clone()
     };
     store
@@ -1519,7 +1519,7 @@ async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
     assert!(
         matches!(catalog.entries[0].source, ResolverCatalogSource::Repository {
         zip_sha256: None, local_zip_sha256: Some(digest), ..
-    } if digest == pin.archive_sha256)
+    } if Some(digest) == pin.archive_sha256)
     );
     let browse = store
         .list_repository_packages(owner.clone(), id, None, 100)

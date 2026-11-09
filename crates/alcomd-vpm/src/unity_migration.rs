@@ -655,7 +655,9 @@ where
             legacy_paths.extend(sealed_legacy_paths(&root, &metadata)?);
             pinned_obligations.push(PinnedLegacyObligation::from_obligation(
                 obligation,
-                source.archive_sha256(),
+                source
+                    .archive_sha256()
+                    .ok_or_else(|| error(M7UnityMigrationErrorCode::Unsupported))?,
             ));
         }
         let legacy_paths = validate_legacy_paths(&root, legacy_paths)?;

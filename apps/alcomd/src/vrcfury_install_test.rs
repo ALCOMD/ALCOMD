@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use alcomd_application::{
-    M4Store, OperationRecord, PackagePlanRequest, PackagePlanVersion, PlanAction,
+    M3RegistryStore, M4Store, OperationRecord, PackagePlanRequest, PackagePlanVersion, PlanAction,
     ResolverCatalogSource,
 };
 use serde_json::{Value, json};
@@ -71,7 +71,7 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         .expect("registered public VRCFury repository")
         .value;
     let index_elapsed = download_index.elapsed();
-    let request = PackagePlanRequest {
+    let mut request = PackagePlanRequest {
         allow_unity_incompatible: false,
         action: PlanAction::Install,
         project_id: project.project_id,
@@ -105,8 +105,55 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
         .iter()
         .find(|pin| pin.package_id() == PACKAGE_ID)
         .expect("selected package pin");
-    let digest = pin.archive_sha256();
+    assert_eq!(
+        pin.archive_sha256(),
+        None,
+        "cold plan does not download an archive"
+    );
     let version = pin.version().to_owned();
+    let cold_apply = packages
+        .apply_plan(
+            &access,
+            first.plan_id,
+            project.revision,
+            key("cold-install"),
+        )
+        .await
+        .expect("accept cold install");
+    assert_eq!(
+        terminal_operation(&operations, &access, cold_apply.operation_id)
+            .await
+            .state,
+        DomainState::Succeeded
+    );
+    assert!(!legacy.exists());
+    let project = store
+        .get_project(access.principal().clone(), project.project_id)
+        .await
+        .expect("installed revision");
+    let initial_vpm =
+        std::fs::read(project_root.join("Packages/vpm-manifest.json")).expect("installed manifest");
+    // Restore a disposable legacy asset to retain the corruption/rollback check.
+    std::fs::create_dir(&legacy).expect("reseed isolated legacy directory");
+    std::fs::write(legacy.join("sentinel.txt"), b"isolated legacy asset").expect("reseed sentinel");
+    request.action = PlanAction::Reinstall;
+    request.package_id = None;
+    request.version_range = None;
+    request.expected_revision = project.revision;
+    request.reinstall_selection = Some(alcomd_application::ReinstallSelection::Packages(vec![
+        PACKAGE_ID.into(),
+    ]));
+    let first = packages
+        .plan(&access, request.clone())
+        .await
+        .expect("review reinstall before corrupting cache");
+    let digest = first
+        .source_set
+        .iter()
+        .find(|pin| pin.package_id() == PACKAGE_ID)
+        .expect("reinstall source")
+        .archive_sha256()
+        .expect("Apply fixed the digest");
     let catalog = store
         .resolver_catalog(
             access.principal().clone(),

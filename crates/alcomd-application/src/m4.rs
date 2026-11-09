@@ -61,8 +61,12 @@ pub struct RepositoryPackageSourcePin {
     pub credential_reference: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub download_headers: Option<PackageDownloadHeaders>,
-    #[serde(with = "sha256_hex")]
-    pub archive_sha256: [u8; 32],
+    #[serde(
+        default,
+        with = "optional_sha256_hex",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub archive_sha256: Option<[u8; 32]>,
 }
 
 /// Locator only. The exact package fingerprint authorizes a transient read.
@@ -111,10 +115,10 @@ impl PackageSourcePin {
     }
 
     #[must_use]
-    pub const fn archive_sha256(&self) -> [u8; 32] {
+    pub const fn archive_sha256(&self) -> Option<[u8; 32]> {
         match self {
             Self::Repository(value) => value.archive_sha256,
-            Self::UserPackage(value) => value.archive_sha256,
+            Self::UserPackage(value) => Some(value.archive_sha256),
         }
     }
 
@@ -1273,6 +1277,28 @@ fn m4_time_ms() -> Result<u64, M4Error> {
             u64::try_from(duration.as_millis())
                 .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))
         })
+}
+
+mod optional_sha256_hex {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<[u8; 32]>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(digest) => super::sha256_hex::serialize(digest, serializer),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<[u8; 32]>, D::Error> {
+        #[derive(Deserialize)]
+        struct Digest(#[serde(with = "super::sha256_hex")] [u8; 32]);
+        Option::<Digest>::deserialize(deserializer).map(|value| value.map(|digest| digest.0))
+    }
 }
 
 mod sha256_hex {

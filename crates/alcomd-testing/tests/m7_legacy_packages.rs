@@ -5,14 +5,18 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::time::Duration;
 
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3Application, M3ReadAdapter, M3RegistryStore, M4Application,
     M4ErrorCode, M4Store, OperationId, OperationLogQuery, OperationRecord, OperationState,
     PackageBulkIntent, PackagePlanRequest, PackagePlanVersion, PlanAction, PrincipalId,
-    ProjectRecord, RepositorySource, ResolverCatalogSource, StateStore, read_operation_logs,
-    with_log_caller,
+    ProjectRecord, RepositoryArchivePinStore, RepositorySource, ResolverCatalogSource, StateStore,
+    read_operation_logs, with_log_caller,
 };
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::{PackageCache, PackageEngine, VpmReader};
@@ -2223,9 +2227,12 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
         .expect("register repository")
         .value;
 
+    let requests = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&requests);
     let server = tokio::spawn(async move {
         for _ in 0..2 {
             let (stream, _) = listener.accept().await.expect("archive request");
+            observed.fetch_add(1, Ordering::SeqCst);
             let mut reader = tokio::io::BufReader::new(stream);
             let mut line = String::new();
             while reader.read_line(&mut line).await.expect("request header") > 0 && line != "\r\n" {
@@ -2249,20 +2256,45 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
     request.package_id = Some(package.to_owned());
     request.repository_id = Some(repository.repository_id.to_string());
     request.version_range = Some("2.0.0".to_owned());
-    let error = fixture
+    let mismatch = fixture
         .packages
         .plan(&access, request.clone())
         .await
-        .expect_err("reject mismatched valid digest");
-    assert_eq!(error.code(), M4ErrorCode::PackageIntegrityMismatch);
+        .expect("plan does not download a known digest");
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    let manifest_before =
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("before download");
+    let accepted = fixture
+        .packages
+        .apply_plan(
+            &access,
+            mismatch.plan_id,
+            fixture.project.revision,
+            key("reject-digest-at-apply"),
+        )
+        .await
+        .expect("accept verification");
+    let failed = fixture.terminal(accepted.operation_id).await;
+    assert_eq!(failed.state, OperationState::Failed);
+    assert_eq!(
+        failed.error_code.as_deref(),
+        Some("package_integrity_mismatch")
+    );
+    assert_eq!(
+        fs::read(fixture.project_root.join("Packages/vpm-manifest.json")).expect("unchanged"),
+        manifest_before
+    );
+    assert!(!fixture.project_root.join("Packages").join(package).exists());
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
 
     request.version_range = Some("1.0.0".to_owned());
     let plan = fixture
         .packages
         .plan(&access, request)
         .await
-        .expect("plan from verified first download");
-    assert_eq!(plan.source_set[0].archive_sha256(), digest);
+        .expect("plan without a first download");
+    assert_eq!(plan.source_set[0].archive_sha256(), None);
+    assert_eq!(requests.load(Ordering::SeqCst), 1);
     let catalog = fixture
         .store
         .resolver_catalog(
@@ -2274,8 +2306,21 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
         )
         .await
         .expect("indexed catalog");
-    assert!(catalog.entries.iter().any(|entry| entry.package_id == package && entry.version == "1.0.0"
-        && matches!(&entry.source, ResolverCatalogSource::Repository { zip_sha256: None, local_zip_sha256: Some(pin), .. } if *pin == digest)));
+    assert!(
+        catalog
+            .entries
+            .iter()
+            .any(|entry| entry.package_id == package
+                && entry.version == "1.0.0"
+                && matches!(
+                    &entry.source,
+                    ResolverCatalogSource::Repository {
+                        zip_sha256: None,
+                        local_zip_sha256: None,
+                        ..
+                    }
+                ))
+    );
     let install = fixture
         .packages
         .apply_plan(
@@ -2290,6 +2335,20 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
         fixture.terminal(install.operation_id).await.state,
         OperationState::Succeeded
     );
+    assert_eq!(requests.load(Ordering::SeqCst), 2);
+    let catalog = fixture
+        .store
+        .resolver_catalog(
+            access.principal().clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
+        .await
+        .expect("pinned after Apply");
+    assert!(catalog.entries.iter().any(|entry| entry.package_id == package && entry.version == "1.0.0"
+        && matches!(&entry.source, ResolverCatalogSource::Repository { zip_sha256: None, local_zip_sha256: Some(pin), .. } if *pin == digest)));
     assert!(
         fixture
             .project_root
@@ -2302,6 +2361,209 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
         .await
         .expect("both downloads completed")
         .expect("fixture server");
+}
+
+#[tokio::test]
+async fn package_plans_never_download_and_apply_checks_archive_metadata_before_project_writes() {
+    for scenario in [
+        "known",
+        "unknown",
+        "bulk",
+        "observed",
+        "dependencies",
+        "unity",
+        "legacy",
+    ] {
+        let fixture = Fixture::new(false, ExistingLegacy::None).await;
+        let access = AccessContext::local_owner();
+        let package = "com.example.download";
+        let mut archive_manifest = json!({"name": package, "version": "1.0.0"});
+        if scenario == "dependencies" {
+            archive_manifest["vpmDependencies"] = json!({KEEP: "9.0.0"});
+        }
+        if scenario == "unity" {
+            archive_manifest["unity"] = json!("2023.1");
+        }
+        if scenario == "legacy" {
+            archive_manifest["legacyFiles"] = json!({"Assets/Extra.txt": ""});
+        }
+        let bytes = package_archive(&archive_manifest);
+        let owned_bytes = bytes.clone();
+        let digest: [u8; 32] = Sha256::digest(&bytes).into();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("archive listener");
+        let url = format!(
+            "http://{}/package.zip",
+            listener.local_addr().expect("address")
+        );
+        let requests = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&requests);
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("confirmed download");
+            observed.fetch_add(1, Ordering::SeqCst);
+            let mut reader = tokio::io::BufReader::new(stream);
+            let mut line = String::new();
+            while reader.read_line(&mut line).await.expect("header") > 0 && line != "\r\n" {
+                line.clear();
+            }
+            let mut stream = reader.into_inner();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        bytes.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("response");
+            stream.write_all(&bytes).await.expect("archive");
+        });
+        let mut indexed = json!({"name": package, "version": "1.0.0"});
+        add_repository_fields(&mut indexed, &digest);
+        indexed["url"] = json!(url);
+        if matches!(scenario, "unknown" | "observed" | "bulk") {
+            indexed
+                .as_object_mut()
+                .expect("manifest")
+                .remove("zipSHA256");
+        }
+        let index = fixture._directory.0.join("download-index.json");
+        fs::write(&index, serde_json::to_vec(&json!({"id":"download-fixture", "packages": {package: {"versions": {"1.0.0": indexed}}}})).expect("index")).expect("owned index");
+        let registry = M3Application::new(fixture.store.clone(), VpmReader::new().expect("reader"));
+        let repository = registry
+            .register_repository(
+                &access,
+                RepositorySource::Local {
+                    path: index.to_string_lossy().into_owned(),
+                },
+                key("register-download"),
+            )
+            .await
+            .expect("register")
+            .value;
+        let mut request = fixture.request();
+        request.package_id = Some(package.into());
+        request.repository_id = Some(repository.repository_id.to_string());
+        request.version_range = Some("1.0.0".into());
+        if scenario == "bulk" {
+            request.action = PlanAction::Bulk;
+            request.package_id = None;
+            request.version_range = None;
+            request.repository_id = None;
+            request.bulk_intents = vec![PackageBulkIntent::Install {
+                package_id: package.into(),
+                version_range: Some("1.0.0".into()),
+                source: Some(alcomd_application::PackageSourceSelector::Repository {
+                    repository_id: repository.repository_id.to_string(),
+                }),
+                include_prerelease: false,
+            }];
+        }
+        fs::write(
+            fixture.project_root.join("Assets/Extra.txt"),
+            b"preserve unconfirmed resource",
+        )
+        .expect("sentinel");
+        let before = fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+            .expect("original manifest");
+        let plan = fixture
+            .packages
+            .plan(&access, request)
+            .await
+            .expect("metadata-only plan");
+        assert_eq!(requests.load(Ordering::SeqCst), 0, "{scenario}");
+        assert_eq!(
+            plan.source_set[0].archive_sha256(),
+            (!matches!(scenario, "unknown" | "observed" | "bulk")).then_some(digest)
+        );
+        assert!(plan.change_set.legacy_removals.is_empty());
+        if scenario == "observed" {
+            let alcomd_application::PackageSourcePin::Repository(mut source) =
+                plan.source_set[0].clone()
+            else {
+                panic!("repository");
+            };
+            source.archive_sha256 = Some(digest);
+            fixture
+                .store
+                .pin_repository_archive(access.principal().clone(), source)
+                .await
+                .expect("a previous confirmed execution fixed the digest");
+            let owned_archive = fixture._directory.0.join("previous-download.zip");
+            fs::write(&owned_archive, &owned_bytes).expect("previous owned archive");
+            PackageCache::new(fixture._directory.0.join("package-cache"))
+                .expect("cache")
+                .publish_owned(&owned_archive, digest)
+                .await
+                .expect("previous cached object");
+        }
+        let accepted = fixture
+            .packages
+            .apply_plan(
+                &access,
+                plan.plan_id,
+                fixture.project.revision,
+                key("confirmed-download"),
+            )
+            .await
+            .expect("accept");
+        let operation = fixture.terminal(accepted.operation_id).await;
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            usize::from(scenario != "observed"),
+            "{scenario}"
+        );
+        let saved = fixture
+            .store
+            .get_package_plan(access.principal().clone(), plan.plan_id)
+            .await
+            .expect("immutable plan");
+        assert_eq!(saved.source_set, plan.source_set);
+        assert_eq!(saved.change_set_fingerprint, plan.change_set_fingerprint);
+        if matches!(scenario, "dependencies" | "unity" | "legacy") {
+            assert_eq!(
+                operation.state,
+                OperationState::Failed,
+                "{scenario}: {operation:?}"
+            );
+            assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
+            assert_eq!(
+                fs::read(fixture.project_root.join("Packages/vpm-manifest.json"))
+                    .expect("manifest"),
+                before
+            );
+            assert!(!fixture.project_root.join("Packages").join(package).exists());
+        } else {
+            assert_eq!(
+                operation.state,
+                OperationState::Succeeded,
+                "{scenario}: {operation:?}"
+            );
+            assert!(
+                fixture
+                    .project_root
+                    .join("Packages")
+                    .join(package)
+                    .join("package.json")
+                    .is_file()
+            );
+        }
+        assert_eq!(
+            fs::read(fixture.project_root.join("Assets/Extra.txt")).expect("preserved sentinel"),
+            b"preserve unconfirmed resource"
+        );
+        if scenario == "observed" {
+            server.abort();
+            assert!(server.await.expect_err("no network request").is_cancelled());
+            continue;
+        }
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("server completed")
+            .expect("server task");
+    }
 }
 
 fn add_legacy(manifest: &mut Value) {

@@ -385,10 +385,6 @@ fn read_archive_manifest(archive: &Path) -> Result<Value, CacheError> {
     bounded_json(normalized.as_bytes())
 }
 
-pub(crate) fn read_archive_legacy(archive: &Path) -> Result<LegacyMetadata, CacheError> {
-    legacy(&bounded_json(&read_archive_manifest_bytes(archive)?)?)
-}
-
 pub(super) fn validate_archive_manifest_identity(
     archive: &Path,
     package_id: &str,

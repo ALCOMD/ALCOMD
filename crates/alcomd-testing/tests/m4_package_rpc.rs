@@ -285,7 +285,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         })
         .await
         .expect("plan exact reinstall");
-    assert_eq!(reinstall.change_set.format_version, 3);
+    assert_eq!(reinstall.change_set.format_version, 4);
     assert_eq!(reinstall.change_set.mutations.len(), 1);
     assert_eq!(
         reinstall.change_set.mutations[0].kind,
@@ -423,7 +423,7 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
         })
         .await
         .expect("plan User Package install");
-    assert_eq!(plan.change_set.format_version, 3);
+    assert_eq!(plan.change_set.format_version, 4);
     assert!(matches!(
         plan.change_set.mutations[0].source.as_ref(),
         Some(alcomd_protocol::PackageSourcePin::UserPackage(_))

@@ -49,7 +49,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
     }
     async fn prepare_plan(
         &self,
-        owner: PrincipalId,
+        _owner: PrincipalId,
         project: ProjectRecord,
         catalog: ResolverCatalog,
         request: PackagePlanRequest,
@@ -85,27 +85,9 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         .await
         .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
         let draft = if request.action == PlanAction::Reinstall {
-            prepare_reinstall(
-                &self.cache,
-                &self.store,
-                &owner,
-                &snapshot,
-                &project,
-                &catalog,
-                &request,
-            )
-            .await?
+            prepare_reinstall(&self.cache, &snapshot, &project, &catalog, &request).await?
         } else if request.action == PlanAction::Bulk {
-            prepare_bulk(
-                &self.cache,
-                &self.store,
-                &owner,
-                &snapshot,
-                &project,
-                &catalog,
-                &request,
-            )
-            .await?
+            prepare_bulk(&self.cache, &snapshot, &project, &catalog, &request).await?
         } else if request.action == PlanAction::Remove {
             let package_id = request
                 .package_id
@@ -169,8 +151,6 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             } else {
                 resolve_migrating_packages(
                     &self.cache,
-                    &self.store,
-                    &owner,
                     &candidates,
                     &requests,
                     &protected,
@@ -227,8 +207,6 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
 
 async fn prepare_reinstall(
     cache: &PackageCache,
-    store: &impl RepositoryArchivePinStore,
-    owner: &PrincipalId,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -308,16 +286,13 @@ async fn prepare_reinstall(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_migrating_packages(cache, store, owner, &candidates, &requests, &targets, None)
-            .await?
+        resolve_migrating_packages(cache, &candidates, &requests, &targets, None).await?
     };
     build_reinstall_plan(snapshot, &resolution, &targets)
 }
 
 async fn prepare_bulk(
     cache: &PackageCache,
-    store: &impl RepositoryArchivePinStore,
-    owner: &PrincipalId,
     snapshot: &crate::ProjectPackageSnapshot,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
@@ -445,16 +420,8 @@ async fn prepare_bulk(
         let mut rules = snapshot.resolution_rules(explicit, true)?;
         rules.locked.retain(|id, _| !removed.contains(id));
         rules.direct.retain(|id, _| !removed.contains(id));
-        resolve_migrating_packages(
-            cache,
-            store,
-            owner,
-            &candidates,
-            &requests,
-            &rules.explicit,
-            Some(&rules),
-        )
-        .await?
+        resolve_migrating_packages(cache, &candidates, &requests, &rules.explicit, Some(&rules))
+            .await?
     };
     let direct_ids = project
         .observation
@@ -598,9 +565,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             .map_err(|cause| M4Error::new(M4ErrorCode::RecoveryRequired).with_source(cause))?;
         sync_directories(&[&attempt, &transaction_root])?;
 
-        let archives = fetch_package_objects(
+        let sources = pin_apply_archives(
             &self.cache,
-            Some(&locks),
+            &self.store,
+            &plan.owner,
+            self.reader.package_settings().await?,
             plan.change_set
                 .mutations
                 .iter()
@@ -608,6 +577,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 .collect(),
         )
         .await?;
+        let archives = fetch_package_objects(&self.cache, Some(&locks), sources).await?;
         append_phase(
             &self.store,
             &plan,
@@ -1139,13 +1109,12 @@ async fn revalidate(
                 {
                     return stale("manifest_fingerprint_changed");
                 }
-                if zip_sha256
+                let current_digest = zip_sha256
                     .as_deref()
                     .map(parse_digest)
                     .transpose()?
-                    .or(*local_zip_sha256)
-                    != Some(pin.archive_sha256)
-                {
+                    .or(*local_zip_sha256);
+                if pin.archive_sha256.is_some() && current_digest != pin.archive_sha256 {
                     return stale("archive_digest_changed");
                 }
             }
@@ -1343,8 +1312,6 @@ pub(crate) async fn resolve_project_packages(
 
 async fn resolve_migrating_packages(
     cache: &PackageCache,
-    store: &impl RepositoryArchivePinStore,
-    owner: &PrincipalId,
     candidates: &[crate::PackageCandidate],
     requests: &[ResolveRequest],
     protected: &BTreeSet<String>,
@@ -1420,9 +1387,7 @@ async fn resolve_migrating_packages(
                     map_resolve_error,
                 ));
             }
-            let mut resolution = solved.resolution;
-            pin_resolution_archives(cache, store, owner, &mut resolution).await?;
-            return Ok(resolution);
+            return Ok(solved.resolution);
         }
         if conflicts.iter().any(|id| {
             protected.contains(id) || !remaining.iter().any(|request| &request.package_id == id)
@@ -1441,31 +1406,13 @@ async fn prepare_legacy_removals(
     mut draft: PackagePlanDraft,
 ) -> Result<PackagePlanDraft, M4Error> {
     let mut declarations = pinned_legacy_declarations(cache, catalog, &draft.source_set)?;
-    let archives = fetch_package_objects(
-        cache,
-        None,
-        draft
-            .change_set
-            .mutations
-            .iter()
-            .filter_map(|mutation| mutation.source.clone())
-            .collect(),
-    )
-    .await?;
     let snapshot = snapshot.clone();
     tokio::task::spawn_blocking(move || {
         let installed = snapshot.installed_legacy(
             &draft.source_set,
             &draft.change_set.legacy_reinstall_packages,
         )?;
-        for (id, archive) in archives {
-            let metadata = crate::cache::read_archive_legacy(&archive).map_err(map_cache_error)?;
-            merge_legacy(&mut declarations, &id, metadata)?;
-        }
         exclude_installed_legacy_paths(&mut declarations, &installed)?;
-        if declarations.values().all(LegacyMetadata::is_empty) {
-            return Ok(draft);
-        }
         let obsolete = legacy_package_ids(&declarations)?;
         let removals = crate::legacy::collect_removals(&snapshot.root, &declarations)?;
         crate::plan::attach_legacy_removals(&snapshot, &mut draft, obsolete, removals)?;
@@ -1543,6 +1490,93 @@ fn legacy_package_ids(
     Ok(obsolete)
 }
 
+/// Resolve unknown archive digests only after the user has accepted the plan.
+/// The immutable plan retains its original source observation; the existing
+/// source pin store binds every observed digest to that exact observation.
+async fn pin_apply_archives(
+    cache: &PackageCache,
+    store: &impl M4Store,
+    owner: &PrincipalId,
+    settings: alcomd_application::ConfigPackageSettings,
+    mut sources: Vec<alcomd_application::PackageSourcePin>,
+) -> Result<Vec<alcomd_application::PackageSourcePin>, M4Error> {
+    if sources
+        .iter()
+        .any(|source| source.archive_sha256().is_none())
+    {
+        let catalog = store
+            .resolver_catalog(owner.clone(), false, settings)
+            .await?;
+        for source in &mut sources {
+            let alcomd_application::PackageSourcePin::Repository(pin) = source else {
+                continue;
+            };
+            if pin.archive_sha256.is_some() {
+                continue;
+            }
+            // A prior confirmed execution may already have acquired this source.
+            // Reuse its durable digest on retry/restart without rewriting Plan.
+            let row = catalog.entries.iter().find(|row| row.package_id == pin.package_id && row.version == pin.version
+                && matches!(&row.source, alcomd_application::ResolverCatalogSource::Repository {
+                    repository_id, repository_revision, source_identity, manifest_fingerprint, artifact_url, ..
+                } if repository_id == &pin.repository_id && repository_revision == &pin.repository_revision
+                    && source_identity == &pin.source_identity && manifest_fingerprint == &pin.manifest_fingerprint
+                    && artifact_url == &pin.artifact_url))
+                .ok_or_else(|| M4Error::with_subreason(M4ErrorCode::PlanStale, "source_revision_changed"))?;
+            if let alcomd_application::ResolverCatalogSource::Repository {
+                local_zip_sha256, ..
+            } = &row.source
+            {
+                pin.archive_sha256 = *local_zip_sha256;
+            }
+        }
+    }
+    let acquired = run_ordered_jobs(sources, PACKAGE_DOWNLOAD_CONCURRENCY, |mut source| {
+        let cache = cache.clone();
+        async move {
+            let mut observed = false;
+            if let alcomd_application::PackageSourcePin::Repository(pin) = &mut source
+                && pin.archive_sha256.is_none()
+            {
+                let digest = cache
+                    .download_first(
+                        &pin.artifact_url,
+                        &pin.package_id,
+                        &pin.version,
+                        crate::cache::ArchiveHeaders {
+                            repository: pin.credential_reference.as_deref(),
+                            package: pin.download_headers.as_ref().map(|headers| {
+                                crate::cache::PackageHeaderLookup {
+                                    source_identity: &pin.source_identity,
+                                    local_path: headers.local_path.as_deref(),
+                                    package_id: &pin.package_id,
+                                    version: &pin.version,
+                                    fingerprint: &pin.manifest_fingerprint,
+                                }
+                            }),
+                        },
+                    )
+                    .await
+                    .map_err(map_cache_error)?;
+                pin.archive_sha256 = Some(digest);
+                observed = true;
+            }
+            Ok((source, observed))
+        }
+    })
+    .await?;
+    let mut sources = Vec::with_capacity(acquired.len());
+    for (source, observed) in acquired {
+        if observed && let alcomd_application::PackageSourcePin::Repository(pin) = &source {
+            store
+                .pin_repository_archive(owner.clone(), pin.clone())
+                .await?;
+        }
+        sources.push(source);
+    }
+    Ok(sources)
+}
+
 pub(crate) async fn pin_resolution_archives(
     cache: &PackageCache,
     store: &impl RepositoryArchivePinStore,
@@ -1603,7 +1637,7 @@ pub(crate) async fn pin_resolution_archives(
                     artifact_url,
                     credential_reference,
                     download_headers,
-                    archive_sha256,
+                    archive_sha256: Some(archive_sha256),
                 },
             ))
         }
@@ -1612,7 +1646,7 @@ pub(crate) async fn pin_resolution_archives(
     for (index, pin) in downloaded {
         let digest = pin.archive_sha256;
         store.pin_repository_archive(owner.clone(), pin).await?;
-        resolution.packages[index].source.archive_sha256 = Some(digest);
+        resolution.packages[index].source.archive_sha256 = digest;
     }
     Ok(())
 }
@@ -1627,6 +1661,52 @@ fn extracted_legacy(extracted: &Path) -> Result<LegacyMetadata, M4Error> {
             .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?,
     )
     .map_err(|cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause))
+}
+
+fn verify_archive_plan_metadata(
+    payload_root: &Path,
+    catalog: &ResolverCatalog,
+    plan: &PackagePlanRecord,
+) -> Result<(), M4Error> {
+    for source in &plan.source_set {
+        let id = source.package_id();
+        let bytes = read_regular_file(
+            &payload_root.join(id).join("package.json"),
+            crate::PROJECT_MANIFEST_LIMIT,
+        )?;
+        let manifest =
+            crate::parse_bounded_json(&bytes, crate::M3ErrorCode::RepositoryDocumentInvalid)
+                .map_err(|cause| {
+                    M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                })?;
+        let object = manifest
+            .as_object()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        if let alcomd_application::PackageSourcePin::Repository(pin) = source {
+            let row = catalog.entries.iter().find(|row| row.package_id == id && row.version == source.version()
+                && matches!(&row.source, alcomd_application::ResolverCatalogSource::Repository { repository_id, manifest_fingerprint, .. }
+                    if repository_id == &pin.repository_id && manifest_fingerprint == &pin.manifest_fingerprint))
+                .ok_or_else(|| M4Error::with_subreason(M4ErrorCode::PlanStale, "source_revision_changed"))?;
+            let expected_dependencies: serde_json::Value =
+                serde_json::from_str(&row.dependencies_json).map_err(|cause| {
+                    M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
+                })?;
+            let actual_dependencies = object
+                .get("vpmDependencies")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            if actual_dependencies != expected_dependencies
+                || object.get("unity").and_then(serde_json::Value::as_str) != row.unity.as_deref()
+                || object
+                    .get("unityRelease")
+                    .and_then(serde_json::Value::as_str)
+                    != row.unity_release.as_deref()
+            {
+                return stale("manifest_fingerprint_changed");
+            }
+        }
+    }
+    Ok(())
 }
 
 fn pinned_legacy_declarations(
@@ -1682,6 +1762,7 @@ fn verify_plan_legacy(
     if plan.change_set.format_version < 3 {
         return Ok(());
     }
+    verify_archive_plan_metadata(payload_root, catalog, plan)?;
     let mut declarations = pinned_legacy_declarations(cache, catalog, &plan.source_set)?;
     for mutation in &plan.change_set.mutations {
         if mutation.source.is_some() {
@@ -2344,19 +2425,6 @@ fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
 mod tests {
     use super::*;
 
-    #[derive(Clone)]
-    struct UnexpectedArchivePin;
-
-    impl RepositoryArchivePinStore for UnexpectedArchivePin {
-        async fn pin_repository_archive(
-            &self,
-            _: PrincipalId,
-            _: RepositoryPackageSourcePin,
-        ) -> Result<(), M4Error> {
-            panic!("fixture candidates all have declared checksums")
-        }
-    }
-
     #[test]
     fn package_snapshot_reads_metadata_without_opening_payload_files() {
         let installed = vec![("com.example.fixture".to_owned(), "1.0.0".to_owned())];
@@ -2756,17 +2824,9 @@ mod tests {
         request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
             "com.example.transitive".to_owned(),
         ]));
-        let transitive = prepare_reinstall(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect("reinstall transitive package");
+        let transitive = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("reinstall transitive package");
         assert_eq!(transitive.change_set.mutations.len(), 1);
         assert_eq!(
             transitive.change_set.mutations[0].kind,
@@ -2782,17 +2842,9 @@ mod tests {
         );
 
         request.reinstall_selection = Some(ReinstallSelection::All);
-        let all = prepare_reinstall(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect("reinstall all locked packages");
+        let all = prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("reinstall all locked packages");
         assert_eq!(all.change_set.mutations.len(), 2);
         assert!(all.change_set.mutations.iter().all(|mutation| {
             mutation.kind == PackageMutationKind::Replace
@@ -2803,18 +2855,10 @@ mod tests {
             "com.example.missing".to_owned(),
         ]));
         assert_eq!(
-            prepare_reinstall(
-                &cache,
-                &UnexpectedArchivePin,
-                &PrincipalId::local_owner(),
-                &snapshot,
-                &project,
-                &catalog,
-                &request
-            )
-            .await
-            .expect_err("uninstalled target must fail")
-            .code(),
+            prepare_reinstall(&cache, &snapshot, &project, &catalog, &request)
+                .await
+                .expect_err("uninstalled target must fail")
+                .code(),
             M4ErrorCode::PackageNotInstalled
         );
         std::fs::remove_dir_all(root).expect("remove fixture");
@@ -2823,8 +2867,6 @@ mod tests {
         request.reinstall_selection = Some(ReinstallSelection::All);
         let empty = prepare_reinstall(
             &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
             &empty_snapshot,
             &empty_project,
             &ResolverCatalog {
@@ -2886,17 +2928,9 @@ mod tests {
             package_id: "com.example.beta".to_owned(),
             source: None,
         }];
-        let plan = prepare_bulk(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect("transitive reinstall");
+        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("transitive reinstall");
         assert!(
             !plan
                 .change_set
@@ -2958,17 +2992,9 @@ mod tests {
             },
         ];
 
-        let plan = prepare_bulk(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect("one atomic mixed plan");
+        let plan = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("one atomic mixed plan");
         assert_eq!(plan.action, PlanAction::Bulk);
         assert_eq!(
             plan.change_set
@@ -2997,17 +3023,9 @@ mod tests {
             ]
         );
         request.bulk_intents.reverse();
-        let reversed = prepare_bulk(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect("caller order must not change the Plan");
+        let reversed = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect("caller order must not change the Plan");
         assert_eq!(reversed.change_set, plan.change_set);
         assert_eq!(reversed.change_set_fingerprint, plan.change_set_fingerprint);
         std::fs::remove_dir_all(root).expect("remove fixture");
@@ -3035,8 +3053,6 @@ mod tests {
             .collect();
         let plan = prepare_bulk(
             &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -3057,8 +3073,6 @@ mod tests {
         });
         let too_many = prepare_bulk(
             &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
             &snapshot,
             &project,
             &ResolverCatalog {
@@ -3084,8 +3098,6 @@ mod tests {
         assert_eq!(
             prepare_bulk(
                 &cache,
-                &UnexpectedArchivePin,
-                &PrincipalId::local_owner(),
                 &snapshot,
                 &project,
                 &ResolverCatalog {
@@ -3116,8 +3128,6 @@ mod tests {
         reinstall.reinstall_selection = Some(ReinstallSelection::All);
         let too_many = prepare_reinstall(
             &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
             &over_snapshot,
             &over_project,
             &ResolverCatalog {
@@ -3167,17 +3177,9 @@ mod tests {
             },
         ];
         assert!(!request.is_removal_only());
-        let error = prepare_bulk(
-            &cache,
-            &UnexpectedArchivePin,
-            &PrincipalId::local_owner(),
-            &snapshot,
-            &project,
-            &catalog,
-            &request,
-        )
-        .await
-        .expect_err("mixed intent cannot authorize missing dependencies");
+        let error = prepare_bulk(&cache, &snapshot, &project, &catalog, &request)
+            .await
+            .expect_err("mixed intent cannot authorize missing dependencies");
         assert_eq!(error.code(), M4ErrorCode::PackageDependencyConflict);
         std::fs::remove_dir_all(root).expect("remove owned fixture");
     }

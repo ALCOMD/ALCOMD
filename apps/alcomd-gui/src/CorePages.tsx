@@ -6,7 +6,7 @@ import { OperationItems } from "./OperationItems";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
-import type { CandidateBulkAction, CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
+import type { CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
 import { actionableVersion, bulkPlanIntent, candidateSource, candidateSourceKey, finishCandidateSummary, queryCandidates, readCandidateSummaryPage, reasonText, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
 import { orderPackageWorkspaceRows } from "./package-workspace-order";
 import {
@@ -1666,11 +1666,9 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             };
             const bulkReady = (intents: CandidateBulkIntent[] | undefined) => intents?.length && intents.every((intent) => intent.kind === "remove") ? currentEvidence && !candidatesPending && !packageMutationBusy : catalogReady;
             const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !bulkReady(intents) || !intents?.length;
-            const submitBulk = (intents: CandidateBulkIntent[] | undefined, origin: DialogOrigin, action?: CandidateBulkAction) => {
+            const submitBulk = (intents: CandidateBulkIntent[] | undefined, origin: DialogOrigin) => {
                 if (!candidates || !bulkReady(intents) || !canPlanPackagesV2 || !intents?.length) return;
-                const exclusions = action?.exclusions.map(({ packageId, update }) => `${packageNames.get(packageId) ?? packageId}: ${updateReason(update, t)}`) ?? [];
-                if (action?.omittedExclusions) exclusions.push(t("{count} more packages were not included.", { count: action.omittedExclusions }));
-                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents: intents.map(bulkPlanIntent), exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
+                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents: intents.map(bulkPlanIntent), candidateSnapshot: candidates.snapshot.fingerprint });
             };
             const allLatest = allBulk?.updateAll;
             const allStable = allBulk?.updateAllStable;
@@ -1705,8 +1703,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                              <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !refreshError && !canManageRepositories) || repositoriesRefreshing} label={evidenceFailure || refreshError ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : refreshError ? refresh() : void refreshPackages(refresh)} refreshing={repositoriesRefreshing} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? repositoryRefreshFailure ?? t("Refresh packages")} />
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {allLatest ? <>
-                                 <Button disabled={bulkDisabled(allLatest?.intents)} onClick={(event) => submitBulk(allLatest?.intents, { current: event.currentTarget }, allLatest)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest?.targetCount ?? 0 })}</Button>
-                                 {allStable ? <Button disabled={bulkDisabled(allStable.intents)} onClick={(event) => submitBulk(allStable.intents, { current: event.currentTarget }, allStable)} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.targetCount })}</Button> : null}
+                                 <Button disabled={bulkDisabled(allLatest?.intents)} onClick={(event) => submitBulk(allLatest?.intents, { current: event.currentTarget })} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest?.targetCount ?? 0 })}</Button>
+                                 {allStable ? <Button disabled={bulkDisabled(allStable.intents)} onClick={(event) => submitBulk(allStable.intents, { current: event.currentTarget })} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.targetCount })}</Button> : null}
                              </> : null}
                              <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{t(rows.length === 1 ? "{count} package" : "{count} packages", { count: rows.length })}</span>

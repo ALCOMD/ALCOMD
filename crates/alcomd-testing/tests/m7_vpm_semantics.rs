@@ -387,7 +387,7 @@ fn install_intent(id: &str, version: &str) -> PackageBulkIntent {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn closing_a_source_during_archive_preparation_does_not_publish_a_plan() {
+async fn closing_a_source_during_confirmed_archive_download_does_not_modify_the_project() {
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     let f = fixture(
         "close-during-plan",
@@ -434,7 +434,7 @@ async fn closing_a_source_during_archive_preparation_does_not_publish_a_plan() {
         )
         .await
         .expect("refresh owned source");
-    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (entered_tx, mut entered_rx) = tokio::sync::oneshot::channel();
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.expect("archive request");
@@ -459,28 +459,30 @@ async fn closing_a_source_during_archive_preparation_does_not_publish_a_plan() {
             .expect("response header");
         stream.write_all(&archive).await.expect("archive body");
     });
-    let application = f.packages.clone();
-    let request = install(&f, A, "1.0.0");
-    let pending = tokio::spawn(async move {
-        application
-            .plan(&AccessContext::local_owner(), request)
-            .await
-    });
-    tokio::time::timeout(Duration::from_secs(5), entered_rx)
+    let plan = f
+        .packages
+        .plan(&AccessContext::local_owner(), install(&f, A, "1.0.0"))
         .await
-        .expect("plan reaches archive preparation")
-        .expect("preparation signal");
-    f.settings(|settings| settings.hidden_repository_ids = vec![f.repository.to_string()])
-        .await;
-    release_tx.send(()).expect("release preparation");
-    assert_eq!(
-        pending
-            .await
-            .expect("plan task")
-            .expect_err("closed source cannot publish a plan")
-            .code(),
-        M4ErrorCode::PlanStale
+        .expect("metadata-only plan");
+    assert!(
+        matches!(
+            entered_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ),
+        "planning must not request the archive"
     );
+    let close_during_download = async {
+        tokio::time::timeout(Duration::from_secs(5), entered_rx)
+            .await
+            .expect("confirmed Apply reaches download")
+            .expect("download signal");
+        f.settings(|settings| settings.hidden_repository_ids = vec![f.repository.to_string()])
+            .await;
+        release_tx.send(()).expect("release preparation");
+    };
+    let (operation, ()) = tokio::join!(apply(&f, plan), close_during_download);
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(operation.error_code.as_deref(), Some("plan_stale"));
     server.await.expect("owned server");
     assert_eq!(f.manifest(), empty());
     assert!(!f.root.join("Packages").join(A).exists());

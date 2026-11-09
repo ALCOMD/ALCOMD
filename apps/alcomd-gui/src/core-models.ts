@@ -237,7 +237,7 @@ export interface RepositoryPackageSourcePin {
     packageId: string;
     version: string;
     artifactUrl: string;
-    archiveSha256: string;
+    archiveSha256?: string;
 }
 
 export interface UserPackageSourcePin {

@@ -402,7 +402,7 @@ fn source_pin(value: app::PackageSourcePin) -> rpc::PackageSourcePin {
                 package_id: source.package_id,
                 version: source.version,
                 artifact_url: source.artifact_url,
-                archive_sha256: hex(&source.archive_sha256),
+                archive_sha256: source.archive_sha256.map(|digest| hex(&digest)),
             })
         }
         app::PackageSourcePin::UserPackage(source) => {

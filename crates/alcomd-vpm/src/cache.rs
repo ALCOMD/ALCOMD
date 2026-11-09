@@ -16,7 +16,6 @@ use crate::http_clients::{ClientPair, HttpClients, with_proxy};
 
 #[path = "legacy_manifest_cache.rs"]
 mod legacy_manifest;
-pub(super) use legacy_manifest::read_archive_legacy;
 
 pub const MAX_CACHE_BYTES: u64 = 17_179_869_184;
 pub(crate) const PACKAGE_DOWNLOAD_CONCURRENCY: usize = crate::HTTP_DOWNLOAD_CONCURRENCY;

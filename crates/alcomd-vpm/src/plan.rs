@@ -288,7 +288,7 @@ fn inspect_package_inputs(
     hash_field(
         &mut hasher,
         match scope {
-            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v6",
+            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v7",
             PackageSnapshotScope::Contents => b"alcomd-project-package-snapshot-v1",
         },
     );
@@ -1400,10 +1400,7 @@ fn build_draft_from_bytes(
 }
 
 fn source_pin(package: &ResolvedPackage) -> Result<PackageSourcePin, M4Error> {
-    let archive_sha256 = package
-        .source
-        .archive_sha256
-        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageHashRequired))?;
+    let archive_sha256 = package.source.archive_sha256;
     Ok(match &package.source.authority {
         crate::PackageSourceAuthority::Repository {
             repository_id,
@@ -1433,7 +1430,8 @@ fn source_pin(package: &ResolvedPackage) -> Result<PackageSourcePin, M4Error> {
             manifest_fingerprint: package.source.manifest_fingerprint,
             package_id: package.package_id.clone(),
             version: package.version.to_string(),
-            archive_sha256,
+            archive_sha256: archive_sha256
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PackageHashRequired))?,
         }),
     })
 }

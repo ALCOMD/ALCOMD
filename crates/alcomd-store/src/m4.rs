@@ -35,6 +35,9 @@ pub(super) fn pin_repository_archive(
     owner: &PrincipalId,
     pin: &RepositoryPackageSourcePin,
 ) -> Result<(), M4Error> {
+    let archive_sha256 = pin
+        .archive_sha256
+        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageHashRequired))?;
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(store_error)?;
@@ -75,7 +78,7 @@ pub(super) fn pin_repository_archive(
         ));
     }
     if let Some(existing) = existing {
-        if existing.as_slice() != pin.archive_sha256 {
+        if existing.as_slice() != archive_sha256 {
             return Err(M4Error::new(M4ErrorCode::PackageIntegrityMismatch));
         }
     } else {
@@ -84,7 +87,7 @@ pub(super) fn pin_repository_archive(
                 "UPDATE repository_package_versions SET local_zip_sha256=?1
                  WHERE repository_id=?2 AND package_id=?3 AND version_text=?4",
                 params![
-                    pin.archive_sha256.as_slice(),
+                    archive_sha256.as_slice(),
                     pin.repository_id,
                     pin.package_id,
                     pin.version

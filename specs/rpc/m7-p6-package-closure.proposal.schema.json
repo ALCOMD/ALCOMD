@@ -93,7 +93,7 @@
         },
         "repositorySourcePinV1": {
             "type": "object", "additionalProperties": false,
-            "required": ["repositoryId", "repositoryRevision", "sourceIdentity", "manifestFingerprint", "packageId", "version", "artifactUrl", "archiveSha256"],
+            "required": ["repositoryId", "repositoryRevision", "sourceIdentity", "manifestFingerprint", "packageId", "version", "artifactUrl"],
             "properties": {"repositoryId": {"$ref": "#/$defs/uuid"}, "repositoryRevision": {"$ref": "#/$defs/revision"}, "sourceIdentity": {"type": "string"}, "manifestFingerprint": {"type": "string"}, "packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}, "artifactUrl": {"type": "string"}, "archiveSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
         },
         "userPackageSourcePinV2": {

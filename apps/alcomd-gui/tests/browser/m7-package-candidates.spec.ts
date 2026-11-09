@@ -195,7 +195,8 @@ test("Core candidate order and relation drive update; all locked IDs ignore sear
     await page.getByRole("searchbox", { name: "Search packages" }).fill("Local tools");
     await page.getByRole("button", { name: "Update All (1)", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
-    await expect(page.locator("md-dialog").filter({ hasText: "Apply package changes?" })).toContainText("Remote tools: installed newer");
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Remote tools: installed newer");
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).not.toContainText("Not included in this update:");
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "bulk", params: { intents: [{ kind: "upgrade", packageId: "com.example.avatar", versionRange: "=1.10.0", source: { kind: "repository" } }] } }]);
     expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "summary" && request.view.packageIds?.join() === "com.example.avatar,com.example.remote"))).toBe(false);
 });

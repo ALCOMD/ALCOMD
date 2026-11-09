@@ -562,8 +562,13 @@ method 已接通而描述为完整 package manager。
 
 所有 Plan 方法是 bounded 同步 RPC，需要 `projects.read + repositories.read + packages.read` 及目标
 resource scope。它们保存 immutable durable Plan，安装、更新等来源选择使用已登记的 resolver-ready snapshot，不写 Unity
-项目或触发 repository refresh。为验证旧资产声明可读取对应清单；选中 HTTP(S) 包缺少发布方摘要时，
-仅下载尚未锁定的归档以验证并固定实际 SHA-256。
+项目或触发 repository refresh。Plan 不下载仓库软件包归档；旧资源清理由登记来源身份和清单指纹固定的元数据计算，
+已登记用户包仅使用已有的拥有归档快照。即使清理清单为空，经过来源/旧资源准备的新普通 Plan 也使用 formatVersion 4 冻结完整的确认范围；单包卸载沿原格式。
+仓库 source pin 的 `archiveSha256` 可缺省，表示发布方未提供有效摘要且本地尚未固定实际摘要；已有摘要不变，用户包摘要仍必需。
+确认后的 Apply 才下载、校验和暂存归档。缺省摘要在执行阶段按同一来源修订、清单指纹、包身份及 URL 固定实际 SHA-256，
+与并发或已有摘要冲突时拒绝执行；不可改写已确认 Plan。归档的依赖、Unity 要求或有效旧资源声明与计划依据不一致时，
+在替换项目包或删除旧资源前以 `plan_stale` 停止（元数据不符为 `manifest_fingerprint_changed`，清理目标变化为 `project_snapshot_changed`），
+客户端须重新生成并确认计划，不静默求解或扩大删除。索引中已确认的旧资源声明仍为权威，归档省略它们不撤销清理；归档新增声明不能增加未经确认的删除。
 
 单包卸载和纯卸载批量意图依据项目现有锁定依赖图及未锁定本地包的清单依赖，不读取仓库候选、不为保留包重新选择版本，
 亦不因缺少来源而拒绝保留已安装包。包计划的项目指纹及 Apply 复验覆盖项目身份、VPM/UPM 清单、
@@ -635,7 +640,8 @@ identity、manifest fingerprint、package version、artifact URL 与 SHA-256。�
 revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phase，不含完整 path/URL/entry。
 
 仓库声明 `zipSHA256` 时接受 64-lower-hex SHA-256 并严格比对，畸形值返回 `package_hash_required`。
-字段缺省时首次下载后本地固定摘要。Apply 使用计划中的固定摘要核对实际归档。
+字段缺省时在确认后的首次下载中本地固定摘要；Plan 中的仓库 `archiveSha256` 可省略。
+Apply 使用计划中已有的摘要，或执行时绑定到同一来源的实际摘要核对归档。
 `author.email` 可省略。Yanked 版本不参与新选择。
 
 所有者于2026-11-08批准手动Unity兼容性窄例外：`packages.planInstall`、
@@ -652,7 +658,7 @@ GUI依据Core候选的可选`manualUnityOverrideAllowed`资格展示确认，取
 未覆盖时字段省略，既有计划不会自动获得覆盖权，无SQL迁移、权限或新RPC方法。
 
 普通包安装、更新和解析计划处理 VPM 的 `legacyFiles`、`legacyFolders` 和
-`legacyPackages`。Plan 使用固定来源和归档清单，依据项目相对路径和 GUID 匹配旧资产，
+`legacyPackages`。Plan 使用固定来源元数据清单，依据项目相对路径和 GUID 匹配旧资产，
 随资产纳入存在的 `.meta`，并为仍登记的旧包生成 remove mutation。若所选依赖仍需要
 待移除的旧包，返回 `package_dependency_conflict`。
 
