@@ -108,7 +108,13 @@ async fn live_vrcfury_installs_with_a_locally_pinned_digest() {
     let digest = pin.archive_sha256();
     let version = pin.version().to_owned();
     let catalog = store
-        .resolver_catalog(access.principal().clone(), false)
+        .resolver_catalog(
+            access.principal().clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("indexed catalogue");
     let selected = catalog

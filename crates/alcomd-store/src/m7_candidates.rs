@@ -11,10 +11,13 @@ pub(super) fn snapshot(
     owner: &PrincipalId,
     project_id: ProjectId,
     ids: Option<Vec<String>>,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<CandidateStoreSnapshot, Error> {
     // DEFERRED read transaction gives every registry read one SQLite snapshot. No writes.
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
-    let (project, authority) = read_authority(&transaction, owner, project_id)?;
+    let (project, authority) = read_authority(&transaction, owner, project_id, settings)?;
+    let hidden =
+        serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let ids_json = ids
         .map(|v| serde_json::to_string(&v))
         .transpose()
@@ -25,41 +28,46 @@ pub(super) fn snapshot(
                 p.display_name,p.documentation_url,p.changelog_url,p.description,p.presentation_json,p.dependencies_json
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
          WHERE r.owner_principal_id=?1 AND (r.resolver_indexed=0 OR p.resolver_ready=1)
+         AND r.repository_id NOT IN (SELECT value FROM json_each(?3))
+         AND (?4 OR p.semantic_version IS NULL OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
          AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
          ORDER BY r.repository_id,p.package_id,p.version_text LIMIT 100001"
     ).map_err(|_| Error::Unavailable)?;
     let mut entries = statement
-        .query_map(params![owner.as_str(), ids_json], |row| {
-            Ok(CandidateCatalogEntry {
-                description: row.get(13)?,
-                presentation: row
-                    .get::<_, Option<String>>(14)?
-                    .map(|v| serde_json::from_str(&v))
-                    .transpose()
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                dependencies: serde_json::from_str(&row.get::<_, String>(15)?)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                package_id: row.get(0)?,
-                version: row.get(1)?,
-                display_name: row.get(10)?,
-                links: CandidateLinks {
-                    documentation: row.get(11)?,
-                    changelog: row.get(12)?,
-                },
-                source: PackageSourceSelector::Repository {
-                    repository_id: row.get(2)?,
-                },
-                source_revision: u64::try_from(row.get::<_, i64>(3)?)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                priority: u64::try_from(row.get::<_, i64>(4)?)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                yanked: row.get(5)?,
-                unity: row.get(6)?,
-                unity_release: row.get(9)?,
-                metadata_ready: row.get(7)?,
-                legacy_metadata_present: row.get(8)?,
-            })
-        })
+        .query_map(
+            params![owner.as_str(), ids_json, hidden, settings.show_prerelease],
+            |row| {
+                Ok(CandidateCatalogEntry {
+                    description: row.get(13)?,
+                    presentation: row
+                        .get::<_, Option<String>>(14)?
+                        .map(|v| serde_json::from_str(&v))
+                        .transpose()
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    dependencies: serde_json::from_str(&row.get::<_, String>(15)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    package_id: row.get(0)?,
+                    version: row.get(1)?,
+                    display_name: row.get(10)?,
+                    links: CandidateLinks {
+                        documentation: row.get(11)?,
+                        changelog: row.get(12)?,
+                    },
+                    source: PackageSourceSelector::Repository {
+                        repository_id: row.get(2)?,
+                    },
+                    source_revision: u64::try_from(row.get::<_, i64>(3)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    priority: u64::try_from(row.get::<_, i64>(4)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    yanked: row.get(5)?,
+                    unity: row.get(6)?,
+                    unity_release: row.get(9)?,
+                    metadata_ready: row.get(7)?,
+                    legacy_metadata_present: row.get(8)?,
+                })
+            },
+        )
         .map_err(|_| Error::Unavailable)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| Error::Unavailable)?;
@@ -69,55 +77,64 @@ pub(super) fn snapshot(
     let remaining = MAX_CANDIDATE_RECORDS - entries.len() + 1;
     let mut statement = transaction.prepare(
         "SELECT package_id,version,user_package_id,revision,manifest_json FROM user_package_sources
-         WHERE owner_principal_id=?1 AND (?2 IS NULL OR package_id IN (SELECT value FROM json_each(?2))) ORDER BY user_package_id LIMIT ?3"
+         WHERE owner_principal_id=?1 AND (?2 IS NULL OR package_id IN (SELECT value FROM json_each(?2))) AND ?4=0 AND (?5 OR instr(substr(version,1,instr(version||'+','+')-1),'-')=0) ORDER BY user_package_id LIMIT ?3"
     ).map_err(|_| Error::Unavailable)?;
     let user_entries = statement
-        .query_map(params![owner.as_str(), ids_json, remaining as i64], |row| {
-            let id: String = row.get(2)?;
-            let manifest: String = row.get(4)?;
-            let manifest =
-                serde_json::from_str(&manifest).map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let metadata = crate::m4::user_manifest_metadata(&manifest)?;
-            let field = |key| {
-                manifest
-                    .get(key)
-                    .and_then(serde_json::Value::as_str)
-                    .filter(|value| {
-                        !value.is_empty()
-                            && value.len() <= if key == "description" { 65_536 } else { 4_096 }
-                    })
-                    .map(str::to_owned)
-            };
-            Ok(CandidateCatalogEntry {
-                description: field("description"),
-                presentation: alcomd_application::normalize_package_display_metadata(&manifest),
-                dependencies: manifest
-                    .get("vpmDependencies")
-                    .map(|v| serde_json::from_value(v.clone()))
-                    .transpose()
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?
-                    .unwrap_or_default(),
-                package_id: row.get(0)?,
-                version: row.get(1)?,
-                display_name: field("displayName"),
-                links: CandidateLinks {
-                    documentation: field("documentationUrl"),
-                    changelog: field("changelogUrl"),
-                },
-                source: PackageSourceSelector::UserPackage {
-                    user_package_id: UserPackageId::parse(&id)
+        .query_map(
+            params![
+                owner.as_str(),
+                ids_json,
+                remaining as i64,
+                settings.hide_local_user_packages,
+                settings.show_prerelease
+            ],
+            |row| {
+                let id: String = row.get(2)?;
+                let manifest: String = row.get(4)?;
+                let manifest =
+                    serde_json::from_str(&manifest).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let metadata = crate::m4::user_manifest_metadata(&manifest)?;
+                let field = |key| {
+                    manifest
+                        .get(key)
+                        .and_then(serde_json::Value::as_str)
+                        .filter(|value| {
+                            !value.is_empty()
+                                && value.len() <= if key == "description" { 65_536 } else { 4_096 }
+                        })
+                        .map(str::to_owned)
+                };
+                Ok(CandidateCatalogEntry {
+                    description: field("description"),
+                    presentation: alcomd_application::normalize_package_display_metadata(&manifest),
+                    dependencies: manifest
+                        .get("vpmDependencies")
+                        .map(|v| serde_json::from_value(v.clone()))
+                        .transpose()
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?
+                        .unwrap_or_default(),
+                    package_id: row.get(0)?,
+                    version: row.get(1)?,
+                    display_name: field("displayName"),
+                    links: CandidateLinks {
+                        documentation: field("documentationUrl"),
+                        changelog: field("changelogUrl"),
+                    },
+                    source: PackageSourceSelector::UserPackage {
+                        user_package_id: UserPackageId::parse(&id)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    },
+                    source_revision: u64::try_from(row.get::<_, i64>(3)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                },
-                source_revision: u64::try_from(row.get::<_, i64>(3)?)
-                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                priority: 0,
-                yanked: false,
-                unity: metadata.unity,
-                unity_release: metadata.unity_release,
-                metadata_ready: true,
-                legacy_metadata_present: metadata.legacy_present,
-            })
-        })
+                    priority: 0,
+                    yanked: false,
+                    unity: metadata.unity,
+                    unity_release: metadata.unity_release,
+                    metadata_ready: true,
+                    legacy_metadata_present: metadata.legacy_present,
+                })
+            },
+        )
         .map_err(|_| Error::Unavailable)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| Error::Unavailable)?;
@@ -136,18 +153,22 @@ pub(super) fn snapshot(
         entries,
         fingerprint_records: authority.fingerprint_records,
         catalog_complete: authority.catalog_complete,
-        source_metadata: source_metadata(&transaction, owner)?,
+        source_metadata: source_metadata(&transaction, owner, settings)?,
     })
 }
 
 fn source_metadata(
     transaction: &Connection,
     owner: &PrincipalId,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<std::collections::HashMap<String, CandidateSourceMetadata>, Error> {
+    let hidden =
+        serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let mut result = std::collections::HashMap::new();
     let mut statement = transaction.prepare(
         "SELECT repository_id,source_kind,display_name,coalesce(name,declared_id,source_locator),coalesce(display_name,name,declared_id,source_locator)
          FROM repositories WHERE owner_principal_id=?1
+         AND repository_id NOT IN (SELECT value FROM json_each(?4))
          ORDER BY CASE repository_id WHEN ?2 THEN 0 WHEN ?3 THEN 1 ELSE 2 END,priority,repository_id"
     ).map_err(|_| Error::Unavailable)?;
     let repositories = statement
@@ -155,7 +176,8 @@ fn source_metadata(
             params![
                 owner.as_str(),
                 alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID,
-                alcomd_application::VRCHAT_CURATED_REPOSITORY_ID
+                alcomd_application::VRCHAT_CURATED_REPOSITORY_ID,
+                hidden
             ],
             |row| {
                 let id: String = row.get(0)?;
@@ -192,12 +214,13 @@ fn source_metadata(
         result.insert(format!("repository:{id}"), metadata);
     }
     let mut statement = transaction.prepare(
-        "SELECT user_package_id,json_extract(manifest_json,'$.displayName') FROM user_package_sources WHERE owner_principal_id=?1 ORDER BY user_package_id"
+        "SELECT user_package_id,json_extract(manifest_json,'$.displayName') FROM user_package_sources WHERE owner_principal_id=?1 AND ?2=0 ORDER BY user_package_id"
     ).map_err(|_| Error::Unavailable)?;
     let users = statement
-        .query_map([owner.as_str()], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
-        })
+        .query_map(
+            params![owner.as_str(), settings.hide_local_user_packages],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
         .map_err(|_| Error::Unavailable)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| Error::Unavailable)?;
@@ -222,9 +245,10 @@ pub(super) fn authority(
     connection: &mut Connection,
     owner: &PrincipalId,
     project_id: ProjectId,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<CandidateStoreAuthority, Error> {
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
-    let (_, authority) = read_authority(&transaction, owner, project_id)?;
+    let (_, authority) = read_authority(&transaction, owner, project_id, settings)?;
     Ok(authority)
 }
 
@@ -232,6 +256,7 @@ fn read_authority(
     transaction: &Connection,
     owner: &PrincipalId,
     project_id: ProjectId,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<(ProjectRecord, CandidateStoreAuthority), Error> {
     let project =
         crate::m3::get_project(transaction, owner, project_id).map_err(|e| match e.code() {
@@ -245,12 +270,17 @@ fn read_authority(
             .map_err(|_| Error::Unavailable)?,
     ];
     let mut statement = transaction.prepare(
-        "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key),resolver_indexed) FROM repositories WHERE owner_principal_id=?1
-         UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1
+        "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key),resolver_indexed) FROM repositories WHERE owner_principal_id=?1 AND repository_id NOT IN (SELECT value FROM json_each(?2))
+         UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1 AND ?3=0
          ORDER BY 1 LIMIT 4097"
     ).map_err(|_| Error::Unavailable)?;
+    let hidden =
+        serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let inventory = statement
-        .query_map([owner.as_str()], |row| row.get::<_, String>(0))
+        .query_map(
+            params![owner.as_str(), hidden, settings.hide_local_user_packages],
+            |row| row.get::<_, String>(0),
+        )
         .map_err(|_| Error::Unavailable)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| Error::Unavailable)?;
@@ -258,7 +288,7 @@ fn read_authority(
         return Err(Error::LimitExceeded);
     }
     fingerprint_records.extend(inventory);
-    let incomplete = crate::m4::repository_catalog_needs_refresh(transaction, owner)
+    let incomplete = crate::m4::repository_catalog_needs_refresh(transaction, owner, settings)
         .map_err(|_| Error::Unavailable)?;
     fingerprint_records.push(incomplete.to_string());
     let authority = CandidateStoreAuthority {
@@ -479,6 +509,9 @@ mod tests {
             &PrincipalId::local_owner(),
             f.project,
             None,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
         )
         .expect("read original candidate authority");
         assert_eq!(before.project.last_modified_at_ms, Some(1));
@@ -501,6 +534,9 @@ mod tests {
             &PrincipalId::local_owner(),
             f.project,
             None,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
         )
         .expect("read candidate authority after project activity");
         assert_eq!(after.project.last_modified_at_ms, Some(20));
@@ -520,15 +556,24 @@ mod tests {
             &PrincipalId::local_owner(),
             f.project,
             None,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
         )
         .expect("candidate fixture or query must succeed");
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].unity.as_deref(), Some("2022.3"));
         assert_eq!(result.entries[0].unity_release.as_deref(), Some("22f1"));
         assert!(result.entries[0].legacy_metadata_present);
-        let resolver =
-            crate::m4::resolver_catalog(&f.connection, &PrincipalId::local_owner(), true)
-                .expect("resolver sees the same registered metadata");
+        let resolver = crate::m4::resolver_catalog(
+            &f.connection,
+            &PrincipalId::local_owner(),
+            true,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
+        .expect("resolver sees the same registered metadata");
         assert_eq!(resolver.entries[0].unity_release.as_deref(), Some("22f1"));
         assert!(resolver.entries[0].legacy_metadata_present);
         assert!(result.entries[0].metadata_ready);
@@ -539,7 +584,10 @@ mod tests {
                 &PrincipalId::parse("another-principal")
                     .expect("candidate fixture or query must succeed"),
                 f.project,
-                None
+                None,
+                &alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
             ),
             Err(Error::ProjectNotRegistered)
         ));
@@ -561,14 +609,24 @@ mod tests {
                     &mut f.connection,
                     &PrincipalId::local_owner(),
                     f.project,
-                    None
+                    None,
+                    &alcomd_application::ConfigSnapshot::default()
+                        .settings
+                        .packages
                 )
                 .is_err(),
                 "candidate {manifest}"
             );
             assert!(
-                crate::m4::resolver_catalog(&f.connection, &PrincipalId::local_owner(), true)
-                    .is_err(),
+                crate::m4::resolver_catalog(
+                    &f.connection,
+                    &PrincipalId::local_owner(),
+                    true,
+                    &alcomd_application::ConfigSnapshot::default()
+                        .settings
+                        .packages
+                )
+                .is_err(),
                 "resolver {manifest}"
             );
         }
@@ -583,6 +641,9 @@ mod tests {
             &PrincipalId::local_owner(),
             f.project,
             None,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
         )
         .expect("candidate fixture or query must succeed");
         assert!(!all.catalog_complete);
@@ -592,13 +653,23 @@ mod tests {
             &PrincipalId::local_owner(),
             f.project,
             Some(vec!["com.example.absent".into()]),
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
         )
         .expect("candidate fixture or query must succeed");
         assert!(empty.entries.is_empty());
         assert!(!empty.catalog_complete);
         assert_eq!(all.fingerprint_records, empty.fingerprint_records);
-        let current = authority(&mut f.connection, &PrincipalId::local_owner(), f.project)
-            .expect("authority-only read");
+        let current = authority(
+            &mut f.connection,
+            &PrincipalId::local_owner(),
+            f.project,
+            &alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
+        .expect("authority-only read");
         assert_eq!(current.project_revision, all.project.revision);
         assert_eq!(current.catalog_complete, all.catalog_complete);
         assert_eq!(current.fingerprint_records, all.fingerprint_records);
@@ -614,7 +685,10 @@ mod tests {
                 &mut f.connection,
                 &PrincipalId::local_owner(),
                 f.project,
-                None
+                None,
+                &alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
             ),
             Err(Error::LimitExceeded)
         ));
@@ -625,7 +699,10 @@ mod tests {
                 &mut f.connection,
                 &PrincipalId::local_owner(),
                 f.project,
-                Some(vec!["com.example.absent".into()])
+                Some(vec!["com.example.absent".into()]),
+                &alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
             )
             .expect("candidate fixture or query must succeed")
             .entries
@@ -637,7 +714,10 @@ mod tests {
                 &mut f.connection,
                 &PrincipalId::local_owner(),
                 f.project,
-                Some(vec!["com.example.absent".into()])
+                Some(vec!["com.example.absent".into()]),
+                &alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
             ),
             Err(Error::LimitExceeded)
         ));

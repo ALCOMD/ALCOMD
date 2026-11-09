@@ -571,10 +571,11 @@ impl alcomd_application::CandidateStore for StateStoreHandle {
         &self,
         owner: PrincipalId,
         project: ProjectId,
+        settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<alcomd_application::CandidateStoreAuthority, alcomd_application::CandidateQueryError>
     {
         self.request_worker(
-            move |connection| m7_candidates::authority(connection, &owner, project),
+            move |connection| m7_candidates::authority(connection, &owner, project, &settings),
             || alcomd_application::CandidateQueryError::Unavailable,
         )
         .await
@@ -585,10 +586,13 @@ impl alcomd_application::CandidateStore for StateStoreHandle {
         owner: PrincipalId,
         project: ProjectId,
         package_ids: Option<Vec<String>>,
+        settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<alcomd_application::CandidateStoreSnapshot, alcomd_application::CandidateQueryError>
     {
         self.request_worker(
-            move |connection| m7_candidates::snapshot(connection, &owner, project, package_ids),
+            move |connection| {
+                m7_candidates::snapshot(connection, &owner, project, package_ids, &settings)
+            },
             || alcomd_application::CandidateQueryError::Unavailable,
         )
         .await
@@ -614,9 +618,12 @@ impl M4Store for StateStoreHandle {
         &self,
         owner: PrincipalId,
         include_user_packages: bool,
+        settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<ResolverCatalog, M4Error> {
         self.request_worker(
-            move |connection| m4::resolver_catalog(connection, &owner, include_user_packages),
+            move |connection| {
+                m4::resolver_catalog(connection, &owner, include_user_packages, &settings)
+            },
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
         )
         .await

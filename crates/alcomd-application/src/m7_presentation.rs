@@ -86,24 +86,33 @@ pub fn valid_presentation_package_id(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
 }
 
+pub fn package_yanked(manifest: &serde_json::Map<String, Value>) -> Option<bool> {
+    let top = match manifest.get("yanked") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        _ => return None,
+    };
+    let extension = match manifest.get("vrc-get") {
+        None => None,
+        Some(value) => Some(value.as_object()?),
+    };
+    let extension = match extension.and_then(|value| value.get("yanked")) {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        Some(Value::String(value)) if value.len() <= 4_096 => true,
+        _ => return None,
+    };
+    Some(top || extension)
+}
+
 pub fn normalize_package_display_metadata(manifest: &Value) -> Option<PackageDisplayMetadata> {
     let manifest = manifest.as_object()?;
     let extension = match manifest.get("vrc-get") {
         None => None,
         Some(value) => Some(value.as_object()?),
     };
-    let extension_yanked = match extension.and_then(|extension| extension.get("yanked")) {
-        None => false,
-        Some(Value::Bool(value)) => *value,
-        Some(Value::String(value)) if value.len() <= 4_096 => true,
-        _ => return None,
-    };
     Some(PackageDisplayMetadata {
-        yanked: manifest
-            .get("yanked")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-            || extension_yanked,
+        yanked: package_yanked(manifest)?,
         aliases: strings(
             extension.and_then(|extension| extension.get("aliases")),
             false,
@@ -117,6 +126,32 @@ pub fn normalize_package_display_metadata(manifest: &Value) -> Option<PackageDis
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn withdrawal_authority_is_independent_of_optional_presentation_fields() {
+        let value = json!({"keywords":false,"vrc-get":{"aliases":false,"yanked":"withdrawn"}});
+        assert_eq!(
+            package_yanked(value.as_object().expect("manifest")),
+            Some(true)
+        );
+        assert!(normalize_package_display_metadata(&value).is_none());
+        assert_eq!(
+            package_yanked(
+                json!({"yanked":false,"vrc-get":{"yanked":true}})
+                    .as_object()
+                    .expect("manifest")
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            package_yanked(
+                json!({"vrc-get":{"yanked":42}})
+                    .as_object()
+                    .expect("manifest")
+            ),
+            None
+        );
+    }
     #[test]
     fn metadata_normalization_is_bounded_and_understands_extensions() {
         let value = normalize_package_display_metadata(&json!({"keywords":["search","search"], "legacyPackages":["com.old.package"], "vrc-get":{"aliases":["alias"],"yanked":"withdrawn"}})).expect("presentation fixture or query succeeds");

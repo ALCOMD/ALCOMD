@@ -433,6 +433,9 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
 }
 
 pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
+    fn source_settings(
+        &self,
+    ) -> impl Future<Output = Result<crate::ConfigPackageSettings, ProjectCreateError>> + Send;
     type Stage: Send + Sync;
 
     fn prepare_template(
@@ -947,7 +950,11 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             if work.packages.is_none() {
                 let catalog = self
                     .store
-                    .resolver_catalog(work.owner.clone(), false)
+                    .resolver_catalog(
+                        work.owner.clone(),
+                        false,
+                        self.adapter.source_settings().await?,
+                    )
                     .await
                     .map_err(|cause| {
                         ProjectCreateError::new(ProjectCreateErrorCode::StoreUnavailable)

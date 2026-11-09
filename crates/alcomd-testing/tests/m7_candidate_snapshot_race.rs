@@ -68,6 +68,7 @@ impl CandidateStore for PausedReadStore {
         &self,
         _: PrincipalId,
         _: ProjectId,
+        _settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
         panic!("this test reads an uncached snapshot")
     }
@@ -77,6 +78,7 @@ impl CandidateStore for PausedReadStore {
         owner: PrincipalId,
         project: ProjectId,
         _: Option<Vec<String>>,
+        _settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<CandidateStoreSnapshot, CandidateQueryError> {
         assert_eq!(owner, PrincipalId::local_owner());
         assert_eq!(project, self.project.project_id);
@@ -137,6 +139,7 @@ impl CandidateStore for TrackingStore {
         &self,
         owner: PrincipalId,
         project: ProjectId,
+        _settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
         self.authority_reads.fetch_add(1, Ordering::SeqCst);
         Ok(self.authority(owner, project))
@@ -147,6 +150,7 @@ impl CandidateStore for TrackingStore {
         owner: PrincipalId,
         project: ProjectId,
         _: Option<Vec<String>>,
+        _settings: alcomd_application::ConfigPackageSettings,
     ) -> Result<CandidateStoreSnapshot, CandidateQueryError> {
         self.full_reads.fetch_add(1, Ordering::SeqCst);
         let authority = self.authority(owner, project);
@@ -268,7 +272,7 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         store.clone(),
         ProjectCandidateEngine,
         SnapshotProjectReader,
-        config,
+        config.clone(),
     );
     let owner = AccessContext::local_owner();
     let request = ProjectCandidateRequest {
@@ -381,7 +385,8 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         "com.example.a"
     );
     assert_eq!(bulk["installUpdate"]["intents"][1]["kind"], "install");
-    assert_eq!(bulk["remove"].as_array().map(Vec::len), Some(2));
+    // Direct declarations without locked installation records are not removable.
+    assert_eq!(bulk["remove"], serde_json::json!([]));
     assert_eq!(bulk["reinstall"], serde_json::json!([]));
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 1);
     assert_eq!(store.authority_reads.load(Ordering::SeqCst), 4);
@@ -404,11 +409,42 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
     );
     assert_eq!(store.authority_reads.load(Ordering::SeqCst), 6);
     let changed = application
-        .query(&owner, request)
+        .query(&owner, request.clone())
         .await
         .expect("new snapshot");
     assert_ne!(changed.snapshot, first.snapshot);
     assert_eq!(store.full_reads.load(Ordering::SeqCst), 2);
+    // Keep the positive removal assertion on actual installed records as well.
+    let mut installed_store = store.clone();
+    installed_store.project.observation.locked_dependencies = installed_store
+        .project
+        .observation
+        .direct_dependencies
+        .clone();
+    let installed_app = ProjectCandidateApplication::new(
+        installed_store,
+        ProjectCandidateEngine,
+        SnapshotProjectReader,
+        config,
+    );
+    let installed_page = installed_app
+        .query(
+            &owner,
+            ProjectCandidateRequest {
+                view: CandidateView::Summary {
+                    package_ids: None,
+                    sources: None,
+                    filter: None,
+                    bulk_package_ids: Some(vec!["com.example.a".into(), "com.example.b".into()]),
+                },
+                ..request
+            },
+        )
+        .await
+        .expect("installed bulk projection");
+    let installed_bulk = installed_page.bulk.expect("installed actions");
+    assert_eq!(installed_bulk.remove.len(), 2);
+    assert_eq!(installed_bulk.reinstall.len(), 2);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -356,6 +356,7 @@ impl Selection<'_> {
     }
 }
 
+#[derive(Clone, Debug)]
 pub(super) struct LockedPackage {
     pub version: Version,
     pub dependencies: Vec<PackageDependency>,
@@ -368,7 +369,7 @@ pub(super) struct ProjectResolutionRules {
     pub explicit: BTreeSet<String>,
     // Complete bulk resolution already checks the selected graph itself.
     pub preserve_unselected: bool,
-    pub unlocked: BTreeMap<String, Vec<PackageDependency>>,
+    pub unlocked: BTreeMap<String, LockedPackage>,
 }
 
 impl ProjectResolutionRules {
@@ -422,8 +423,9 @@ impl ProjectResolutionRules {
                     }
                 }
             }
-            for dependencies in self.unlocked.values() {
-                for dependency in dependencies
+            for package in self.unlocked.values() {
+                for dependency in package
+                    .dependencies
                     .iter()
                     .filter(|dependency| &dependency.package_id == id)
                 {
@@ -661,6 +663,25 @@ fn solve<'a>(
         });
     };
 
+    if let Some(local) = options
+        .project
+        .and_then(|project| project.unlocked.get(package_id))
+    {
+        let choice = Selection::Installed(local);
+        if !choice.satisfies(package_requirements, options) {
+            return Err(ResolveError::DependencyConflict {
+                package_id: package_id.clone(),
+            });
+        }
+        return solve_after_choice(
+            catalog,
+            &requirements,
+            &selected,
+            options,
+            package_id,
+            choice,
+        );
+    }
     let locked = options
         .project
         .filter(|project| !project.explicit.contains(package_id))

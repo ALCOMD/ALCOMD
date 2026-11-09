@@ -211,11 +211,8 @@ pub(crate) fn parse_manifest(
     let unity_release = optional_string(manifest, "unityRelease", UNITY_RELEASE_LIMIT)?;
     let unity_minimum = package_minimum(unity.as_deref(), unity_release.as_deref())
         .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
-    let yanked = match manifest.get("yanked") {
-        None => false,
-        Some(Value::Bool(value)) => *value,
-        Some(_) => return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid)),
-    };
+    let yanked = alcomd_application::package_yanked(manifest)
+        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
     let (dependencies, dependencies_json) = parse_dependencies(manifest.get("vpmDependencies"))?;
     let legacy_metadata = LegacyMetadata::parse(manifest)?;
     let legacy_metadata_present = !legacy_metadata.is_empty();

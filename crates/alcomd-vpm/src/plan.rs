@@ -25,7 +25,7 @@ pub struct ProjectPackageSnapshot {
     pub fingerprint: [u8; 32],
     vpm_manifest: Value,
     pub(crate) vpm_manifest_bytes: Vec<u8>,
-    pub(super) unlocked: BTreeMap<String, Vec<crate::PackageDependency>>,
+    pub(super) unlocked: BTreeMap<String, crate::resolver::LockedPackage>,
     absent_packages: BTreeSet<String>,
 }
 
@@ -74,13 +74,16 @@ impl ProjectPackageSnapshot {
     fn unlocked_edges(&self) -> Vec<PackageDependencyEdge> {
         self.unlocked
             .iter()
-            .flat_map(|(id, dependencies)| {
-                dependencies.iter().map(|dependency| PackageDependencyEdge {
-                    from_package_id: id.clone(),
-                    to_package_id: dependency.package_id.clone(),
-                    range: dependency.range.clone(),
-                    direct: false,
-                })
+            .flat_map(|(id, package)| {
+                package
+                    .dependencies
+                    .iter()
+                    .map(|dependency| PackageDependencyEdge {
+                        from_package_id: id.clone(),
+                        to_package_id: dependency.package_id.clone(),
+                        range: dependency.range.clone(),
+                        direct: false,
+                    })
             })
             .collect()
     }
@@ -216,7 +219,7 @@ fn inspect_package_inputs(
     hash_field(
         &mut hasher,
         match scope {
-            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v3",
+            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v4",
             PackageSnapshotScope::Contents => b"alcomd-project-package-snapshot-v1",
         },
     );
@@ -306,7 +309,7 @@ fn inspect_unlocked(
     root: &Path,
     locked: &BTreeMap<String, String>,
     hasher: &mut Sha256,
-) -> Result<BTreeMap<String, Vec<crate::PackageDependency>>, M4Error> {
+) -> Result<BTreeMap<String, crate::resolver::LockedPackage>, M4Error> {
     let invalid = || M4Error::new(M4ErrorCode::PackageManifestInvalid);
     let packages = root.join("Packages");
     let entries = std::fs::read_dir(&packages).map_err(|cause| invalid().with_source(cause))?;
@@ -373,19 +376,26 @@ fn inspect_unlocked(
         else {
             continue;
         };
-        if !manifest
+        let Some(version) = manifest
             .get("version")
             .and_then(Value::as_str)
-            .is_some_and(|version| semver::Version::parse(version).is_ok())
-        {
+            .and_then(|version| semver::Version::parse(version).ok())
+        else {
             continue;
-        }
+        };
         if locked.contains_key(id) || unlocked.contains_key(id) {
             return Err(invalid());
         }
         let (dependencies, _) = crate::package::parse_dependencies(manifest.get("vpmDependencies"))
             .map_err(|cause| invalid().with_source(cause))?;
-        unlocked.insert(id.to_owned(), dependencies);
+        unlocked.insert(
+            id.to_owned(),
+            crate::resolver::LockedPackage {
+                version,
+                dependencies,
+                installed: true,
+            },
+        );
     }
     Ok(unlocked)
 }
@@ -414,10 +424,15 @@ pub fn build_reinstall_plan(
             return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
         }
         let source = source_pin(package)?;
+        let actual = installed_package_version(&snapshot.root, id)?;
         mutations.push(PackageMutation {
-            kind: PackageMutationKind::Replace,
+            kind: if actual.is_some() {
+                PackageMutationKind::Replace
+            } else {
+                PackageMutationKind::Install
+            },
             package_id: id.clone(),
-            from_version: Some(version.clone()),
+            from_version: actual.map(|version| version.to_string()),
             to_version: Some(version.clone()),
             source: Some(source.clone()),
         });
@@ -437,11 +452,19 @@ pub fn build_bulk_plan(
     snapshot: &ProjectPackageSnapshot,
     resolution: &Resolution,
     reinstall_targets: &BTreeSet<String>,
+    removed: &BTreeSet<String>,
 ) -> Result<PackagePlanDraft, M4Error> {
-    build_complete_resolution_plan(snapshot, PlanAction::Bulk, resolution, reinstall_targets)
+    build_resolution_plan_with_ranges(
+        snapshot,
+        PlanAction::Bulk,
+        resolution,
+        false,
+        reinstall_targets,
+        removed,
+    )
 }
 
-fn build_complete_resolution_plan(
+pub(super) fn build_migration_plan(
     snapshot: &ProjectPackageSnapshot,
     action: PlanAction,
     resolution: &Resolution,
@@ -551,14 +574,28 @@ pub fn build_resolution_plan(
     action: PlanAction,
     resolution: &Resolution,
 ) -> Result<PackagePlanDraft, M4Error> {
-    build_resolution_plan_with_ranges(snapshot, action, resolution, false)
+    build_resolution_plan_with_ranges(
+        snapshot,
+        action,
+        resolution,
+        false,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    )
 }
 
 pub(crate) fn build_template_resolution_plan(
     snapshot: &ProjectPackageSnapshot,
     resolution: &Resolution,
 ) -> Result<PackagePlanDraft, M4Error> {
-    build_resolution_plan_with_ranges(snapshot, PlanAction::Resolve, resolution, true)
+    build_resolution_plan_with_ranges(
+        snapshot,
+        PlanAction::Resolve,
+        resolution,
+        true,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    )
 }
 
 fn build_resolution_plan_with_ranges(
@@ -566,6 +603,8 @@ fn build_resolution_plan_with_ranges(
     action: PlanAction,
     resolution: &Resolution,
     preserve_input_ranges: bool,
+    force_replace: &BTreeSet<String>,
+    removed: &BTreeSet<String>,
 ) -> Result<PackagePlanDraft, M4Error> {
     if action == PlanAction::Remove {
         return Err(M4Error::new(M4ErrorCode::InvalidInput));
@@ -590,7 +629,10 @@ fn build_resolution_plan_with_ranges(
         let current_version = locked.get(&package.package_id).cloned();
         let version_changed = current_version.as_deref() != Some(target_version.as_str());
         let observed_version = if current_version.is_some()
-            && (version_changed || action == PlanAction::Resolve || !package.direct)
+            && (version_changed
+                || action == PlanAction::Resolve
+                || !package.direct
+                || force_replace.contains(&package.package_id))
         {
             Some(installed_package_version(
                 &snapshot.root,
@@ -602,7 +644,7 @@ fn build_resolution_plan_with_ranges(
         let needs_repair = observed_version
             .as_ref()
             .is_some_and(|actual| actual.as_ref() != Some(&package.version));
-        if version_changed || needs_repair {
+        if version_changed || needs_repair || force_replace.contains(&package.package_id) {
             let source = source_pin(package)?;
             let from_version = match observed_version {
                 Some(actual) => actual.map(|version| version.to_string()),
@@ -632,20 +674,106 @@ fn build_resolution_plan_with_ranges(
     for package in &resolution.packages {
         source_set.push(source_pin(package)?);
     }
-    let mut edges = resolution.dependency_edges.clone();
-    edges.extend(snapshot.unlocked_edges());
-    for (id, range) in &direct {
-        if !edges
-            .iter()
-            .any(|edge| edge.direct && edge.to_package_id == *id)
-        {
-            edges.push(PackageDependencyEdge {
-                from_package_id: id.clone(),
-                to_package_id: id.clone(),
-                range: range.clone(),
-                direct: true,
-            });
+    for id in removed {
+        validate_package_id(id)?;
+        if !locked.contains_key(id) {
+            return Err(M4Error::new(M4ErrorCode::PackageNotFound));
         }
+        if resolution
+            .packages
+            .iter()
+            .any(|package| &package.package_id == id)
+        {
+            return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+        }
+        direct.remove(id);
+    }
+    let previous_locked = vpm_version_map(snapshot.vpm_manifest.get("locked"))?;
+    let changed = resolution
+        .packages
+        .iter()
+        .filter(|package| {
+            previous_locked
+                .get(&package.package_id)
+                .is_none_or(|version| *version != package.version.to_string())
+        })
+        .map(|package| package.package_id.clone())
+        .collect::<BTreeSet<_>>();
+    let old_edges = snapshot.dependency_edges()?;
+    let mut edges = old_edges
+        .iter()
+        .filter(|edge| {
+            !edge.direct
+                && !changed.contains(&edge.from_package_id)
+                && !removed.contains(&edge.from_package_id)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    edges.extend(
+        resolution
+            .dependency_edges
+            .iter()
+            .filter(|edge| !edge.direct && changed.contains(&edge.from_package_id))
+            .cloned(),
+    );
+    edges.extend(direct.iter().map(|(id, range)| PackageDependencyEdge {
+        from_package_id: id.clone(),
+        to_package_id: id.clone(),
+        range: range.clone(),
+        direct: true,
+    }));
+    if edges
+        .iter()
+        .any(|edge| !edge.direct && removed.contains(&edge.to_package_id))
+    {
+        return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+    }
+    if !matches!(action, PlanAction::Resolve | PlanAction::Reinstall) {
+        let old_graph = graph_from_edges(&old_edges);
+        let affected = dependency_closure(
+            mutations
+                .iter()
+                .map(|mutation| mutation.package_id.clone())
+                .chain(removed.iter().cloned()),
+            &old_graph,
+            &BTreeSet::new(),
+        );
+        let graph = graph_from_edges(&edges);
+        let used = dependency_closure(
+            direct
+                .keys()
+                .chain(snapshot.unlocked.keys())
+                .cloned()
+                .chain(
+                    resolution
+                        .packages
+                        .iter()
+                        .map(|package| package.package_id.clone()),
+                ),
+            &graph,
+            removed,
+        );
+        for (id, version) in locked.clone() {
+            if removed.contains(&id) || (affected.contains(&id) && !used.contains(&id)) {
+                locked.remove(&id);
+                mutations.push(PackageMutation {
+                    kind: PackageMutationKind::Remove,
+                    package_id: id,
+                    from_version: Some(version),
+                    to_version: None,
+                    source: None,
+                });
+            }
+        }
+        let removed_ids = mutations
+            .iter()
+            .filter(|mutation| mutation.kind == PackageMutationKind::Remove)
+            .map(|mutation| mutation.package_id.clone())
+            .collect::<BTreeSet<_>>();
+        edges.retain(|edge| {
+            !removed_ids.contains(&edge.from_package_id)
+                && !(edge.direct && removed_ids.contains(&edge.to_package_id))
+        });
     }
     write_manifest_maps(
         object,
@@ -655,13 +783,29 @@ fn build_resolution_plan_with_ranges(
         &mutations,
         preserves_repaired_locks(action),
     );
-    build_draft(snapshot, action, manifest, mutations, edges, source_set)
+    if manifest == snapshot.vpm_manifest {
+        build_draft_from_bytes(
+            snapshot,
+            action,
+            snapshot.vpm_manifest_bytes.clone(),
+            mutations,
+            edges,
+            source_set,
+        )
+    } else {
+        build_draft(snapshot, action, manifest, mutations, edges, source_set)
+    }
 }
 
 pub(crate) fn preserves_repaired_locks(action: PlanAction) -> bool {
     matches!(
         action,
-        PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade | PlanAction::Resolve
+        PlanAction::Install
+            | PlanAction::Upgrade
+            | PlanAction::Downgrade
+            | PlanAction::Resolve
+            | PlanAction::Reinstall
+            | PlanAction::Bulk
     )
 }
 
@@ -797,6 +941,17 @@ pub(crate) fn build_removal_plan(
     Ok(draft)
 }
 
+fn graph_from_edges(edges: &[PackageDependencyEdge]) -> BTreeMap<&str, Vec<&str>> {
+    let mut graph = BTreeMap::<&str, Vec<&str>>::new();
+    for edge in edges.iter().filter(|edge| !edge.direct) {
+        graph
+            .entry(&edge.from_package_id)
+            .or_default()
+            .push(&edge.to_package_id);
+    }
+    graph
+}
+
 fn dependency_closure(
     roots: impl IntoIterator<Item = String>,
     graph: &BTreeMap<&str, Vec<&str>>,
@@ -847,11 +1002,8 @@ fn materialize_plan_manifest_with_ranges(
     preserve_repaired_locks: bool,
     preserve_input_ranges: bool,
 ) -> Result<Vec<u8>, M4Error> {
-    if !change_set.mutations.is_empty()
-        && change_set.mutations.iter().all(|mutation| {
-            mutation.kind == PackageMutationKind::Replace
-                && mutation.from_version == mutation.to_version
-        })
+    // Frozen byte identity is authoritative when restoring packages without a manifest change.
+    if change_set.format_version >= 3
         && <[u8; 32]>::from(Sha256::digest(current)) == change_set.vpm_manifest_sha256
     {
         return Ok(current.to_vec());

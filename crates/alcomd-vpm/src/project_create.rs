@@ -129,6 +129,14 @@ struct OwnerMarker {
 }
 
 impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<S> {
+    async fn source_settings(
+        &self,
+    ) -> Result<alcomd_application::ConfigPackageSettings, ProjectCreateError> {
+        self.reader
+            .package_settings()
+            .await
+            .map_err(|cause| internal().with_source(cause))
+    }
     type Stage = ProjectCreateStage;
 
     fn prepare_template(

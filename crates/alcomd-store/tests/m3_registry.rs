@@ -1372,7 +1372,13 @@ async fn resolver_catalog_preserves_package_download_header_presence() {
         .value
         .repository_id;
     let catalog = store
-        .resolver_catalog(owner.clone(), false)
+        .resolver_catalog(
+            owner.clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("catalog");
     assert!(matches!(
@@ -1499,7 +1505,13 @@ async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
         .value;
     assert_ne!(refreshed.revision, repository.revision);
     let catalog = store
-        .resolver_catalog(owner.clone(), false)
+        .resolver_catalog(
+            owner.clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("read indexed catalog");
     assert!(catalog.complete);
@@ -1533,7 +1545,13 @@ async fn hashless_archive_pins_survive_only_matching_repository_refreshes() {
         .await
         .expect("refresh with changed artifact binding");
     let catalog = store
-        .resolver_catalog(owner, false)
+        .resolver_catalog(
+            owner,
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("read new artifact binding");
     assert!(matches!(
@@ -1568,7 +1586,14 @@ async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
         .value
         .project_id;
     let initial = store
-        .candidate_snapshot(owner.clone(), project, None)
+        .candidate_snapshot(
+            owner.clone(),
+            project,
+            None,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("read valid candidates");
     assert!(initial.catalog_complete);
@@ -1584,13 +1609,26 @@ async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
     let store = StateStoreHandle::open(directory.database()).expect("open old index fixture");
     assert!(
         !store
-            .resolver_catalog(owner.clone(), false)
+            .resolver_catalog(
+                owner.clone(),
+                false,
+                alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
+            )
             .await
             .expect("read unindexed catalog")
             .complete
     );
     let old = store
-        .candidate_snapshot(owner.clone(), project, None)
+        .candidate_snapshot(
+            owner.clone(),
+            project,
+            None,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("read previous candidate snapshot");
     assert!(!old.catalog_complete);
@@ -1626,7 +1664,14 @@ async fn only_unindexed_snapshots_block_catalog_and_require_a_full_refresh() {
     assert!(fresh.resolver_indexed);
     assert_eq!(fresh.revision, registered.revision);
     let current = store
-        .candidate_snapshot(owner, project, None)
+        .candidate_snapshot(
+            owner,
+            project,
+            None,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("read reindexed candidates");
     assert!(current.catalog_complete);

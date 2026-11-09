@@ -815,6 +815,7 @@ pub trait M4Store: RepositoryArchivePinStore {
         &self,
         owner: PrincipalId,
         include_user_packages: bool,
+        settings: crate::ConfigPackageSettings,
     ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send;
 
     fn create_package_plan(
@@ -877,6 +878,9 @@ pub trait M4Store: RepositoryArchivePinStore {
 }
 
 pub trait M4PackageAdapter: Clone + Send + Sync + 'static {
+    fn source_settings(
+        &self,
+    ) -> impl Future<Output = Result<crate::ConfigPackageSettings, M4Error>> + Send;
     fn prepare_plan(
         &self,
         owner: PrincipalId,
@@ -899,6 +903,36 @@ pub trait M4PackageAdapter: Clone + Send + Sync + 'static {
         plan: PackagePlanRecord,
         locks: std::sync::Arc<ResourceLockCoordinator>,
     ) -> impl Future<Output = Result<PackageApplyCompletion, M4Error>> + Send;
+}
+
+/// Revalidate current source authority even when a frozen user archive can outlive enrollment.
+pub fn validate_package_source_settings(
+    settings: &crate::ConfigPackageSettings,
+    sources: &[PackageSourcePin],
+) -> Result<(), M4Error> {
+    let disabled = sources.iter().any(|source| {
+        (!settings.show_prerelease
+            && source
+                .version()
+                .split('+')
+                .next()
+                .unwrap_or_default()
+                .contains('-'))
+            || match source {
+                PackageSourcePin::Repository(pin) => {
+                    settings.hidden_repository_ids.contains(&pin.repository_id)
+                }
+                PackageSourcePin::UserPackage(_) => settings.hide_local_user_packages,
+            }
+    });
+    if disabled {
+        Err(M4Error::with_subreason(
+            M4ErrorCode::PlanStale,
+            "source_authority_changed",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -982,6 +1016,7 @@ where
                 .resolver_catalog(
                     access.principal().clone(),
                     request.plan_version == PackagePlanVersion::V2,
+                    self.adapter.source_settings().await?,
                 )
                 .await?
         };
@@ -1020,6 +1055,10 @@ where
         {
             return Err(M4Error::new(M4ErrorCode::Internal));
         }
+        validate_package_source_settings(
+            &self.adapter.source_settings().await?,
+            &draft.source_set,
+        )?;
         self.store
             .create_package_plan(access.principal().clone(), draft, m4_time_ms()?)
             .await
@@ -1076,6 +1115,7 @@ where
                     plan.source_set
                         .iter()
                         .any(PackageSourcePin::is_user_package),
+                    self.adapter.source_settings().await?,
                 )
                 .await?
         };

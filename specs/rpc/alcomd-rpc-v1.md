@@ -589,6 +589,25 @@ dependencyEdges中；该字段仅允许用于单包/纯卸载计划。Core计算
 Apply继续复验原项目身份、修订、清单、包目录身份和包元数据，不重新求解或扩大范围。
 无新增RPC、权限、数据库迁移、自动级联删除或失败呈现流程。
 
+2026-11-09 所有者进一步批准七项行为修正，见
+[实施合同](../../docs/exec-plans/M7-vpm-seven-gaps.md)：
+
+- 关闭仓库、本地用户源及预发布版本是Core资格，候选读取与resolver目录使用同一配置快照先行过滤。
+  隐藏的未索引仓库不阻挡可用来源。Plan准备完成前、Apply复验及事务提交前再次检查，
+  关闭相关来源使旧未执行计划返回`plan_stale`，显式来源或请求中的预发布选项不能绕过。
+  已安装事实保留，无来源不阻挡纯卸载；已接受事务先按原合同恢复必要的文件系统状态。
+- 普通安装、升级和新依赖统一识别顶层`yanked`及`vrc-get.yanked`的布尔/有界原因文字，
+  不自动选择撤回版本。展示字段解析失败不清除撤回资格。
+- 批量非纯卸载按所选意图增量求解，保留未选包和无关孤立包，不要求无关包来源；
+  重装不提升传递包为直接依赖。安装/升级/降级只清理本次变更旧依赖闭包中的无用包。
+- Resolve认可已经存在的未锁定本地提供方，不重复安装或覆盖。真正缺失的依赖保留准确错误。
+  Reinstall按计划时目录状态冻结Install/Replace，确认后目录变化仍拒绝；无清单变更时保持原字节。
+- Resolve/Reinstall及批量重装对已有locked的精确版本允许恢复其撤回或Unity不兼容版本，
+  新添加依赖继续执行普通资格。该例外不采用`allowUnityIncompatible`开关、不放行关闭来源、
+  不放宽来源消歧、归档摘要、权限、项目过期和恢复校验。SDK专用Unity规则仍保持此前选择。
+
+普通包元数据指纹域更新，旧未执行包计划需重新生成。无公共DTO、数据库Schema、权限名称或迁移变更。
+
 Plan 的 action 与 method 一一对应，返回 `planId`、`state=unapplied`、project revision、byte-stable
 ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 4,096 dependency edge，
 同时受 4 MiB RPC frame 限制；超限返回 `plan_too_large`，不得截断。Plan 无 TTL/expiry/自动清理，

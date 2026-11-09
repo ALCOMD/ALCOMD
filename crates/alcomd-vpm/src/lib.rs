@@ -153,6 +153,26 @@ impl VpmReader {
         PackageCache::with_proxy_source(root, self.http.settings())
     }
 
+    pub(crate) async fn package_settings(
+        &self,
+    ) -> Result<alcomd_application::ConfigPackageSettings, alcomd_application::M4Error> {
+        match self.http.settings() {
+            Some(settings) => settings
+                .candidate_settings()
+                .await
+                .map(|snapshot| snapshot.settings.packages)
+                .map_err(|cause| {
+                    alcomd_application::M4Error::new(
+                        alcomd_application::M4ErrorCode::StoreUnavailable,
+                    )
+                    .with_source(cause)
+                }),
+            None => Ok(alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages),
+        }
+    }
+
     pub async fn find_project_root(
         &self,
         path: &Path,
@@ -948,10 +968,7 @@ fn parse_repository(
                         &item,
                         &mut issues,
                     )?,
-                    yanked: manifest
-                        .get("yanked")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                    yanked: alcomd_application::package_yanked(manifest).unwrap_or(false),
                     unity: repository_display_field(manifest, "unity", 1_024, &item, &mut issues)?,
                     links: package_links(manifest),
                     resolver: match package::parse_manifest(

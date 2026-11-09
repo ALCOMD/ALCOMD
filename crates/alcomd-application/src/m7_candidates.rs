@@ -151,6 +151,7 @@ pub trait CandidateStore: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
         project: ProjectId,
+        _settings: crate::ConfigPackageSettings,
     ) -> impl std::future::Future<Output = Result<CandidateStoreAuthority, CandidateQueryError>> + Send;
 
     fn candidate_snapshot(
@@ -158,6 +159,7 @@ pub trait CandidateStore: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         project: ProjectId,
         package_ids: Option<Vec<String>>,
+        _settings: crate::ConfigPackageSettings,
     ) -> impl std::future::Future<Output = Result<CandidateStoreSnapshot, CandidateQueryError>> + Send;
 }
 #[derive(Clone)]
@@ -344,7 +346,7 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
         let reused = if let Some(cached) = cached {
             let authority = self
                 .store
-                .candidate_authority(owner.clone(), project_id)
+                .candidate_authority(owner.clone(), project_id, config.settings.packages.clone())
                 .await?;
             let read = self
                 .read_project(
@@ -383,7 +385,12 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
             };
             let snapshot = self
                 .store
-                .candidate_snapshot(owner.clone(), project_id, ids)
+                .candidate_snapshot(
+                    owner.clone(),
+                    project_id,
+                    ids,
+                    config.settings.packages.clone(),
+                )
                 .await?;
             if snapshot.project.revision.get() != request.expected_revision {
                 return Err(
@@ -974,6 +981,7 @@ mod tests {
             &self,
             _: PrincipalId,
             _: ProjectId,
+            _settings: crate::ConfigPackageSettings,
         ) -> Result<CandidateStoreAuthority, CandidateQueryError> {
             panic!("unauthorized query reached store")
         }
@@ -983,6 +991,7 @@ mod tests {
             _: PrincipalId,
             _: ProjectId,
             _: Option<Vec<String>>,
+            _settings: crate::ConfigPackageSettings,
         ) -> Result<CandidateStoreSnapshot, CandidateQueryError> {
             panic!("unauthorized query reached store")
         }

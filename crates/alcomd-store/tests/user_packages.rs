@@ -89,7 +89,13 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
     assert_eq!(changed.user_package.version, "2.0.0");
     assert!(
         store
-            .resolver_catalog(owner.clone(), false)
+            .resolver_catalog(
+                owner.clone(),
+                false,
+                alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
+            )
             .await
             .expect("v1 catalog")
             .entries
@@ -97,7 +103,13 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
         "v1 resolver must exclude User Packages"
     );
     let v2_catalog = store
-        .resolver_catalog(owner.clone(), true)
+        .resolver_catalog(
+            owner.clone(),
+            true,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("v2 catalog");
     assert_eq!(v2_catalog.entries.len(), 1);

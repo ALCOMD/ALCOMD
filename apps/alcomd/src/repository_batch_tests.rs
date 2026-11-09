@@ -258,7 +258,13 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
         }
     }
     let catalogue = store
-        .resolver_catalog(access.principal().clone(), false)
+        .resolver_catalog(
+            access.principal().clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("indexed catalogue");
     assert!(catalogue.complete);
@@ -331,7 +337,13 @@ async fn repository_list_parallel_fetch_keeps_order_and_skips_existing() {
         assert_eq!(counters.requests.load(Ordering::SeqCst), limit);
         assert!((2..=limit).contains(&counters.peak.load(Ordering::SeqCst)));
         let catalogue = store
-            .resolver_catalog(access.principal().clone(), false)
+            .resolver_catalog(
+                access.principal().clone(),
+                false,
+                alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages,
+            )
             .await
             .expect("indexed catalogue");
         assert!(catalogue.complete);
@@ -431,7 +443,13 @@ async fn repository_list_refills_while_first_download_waits_and_stops_admission(
     .expect("rolling scheduler refills freed slots");
     assert!(
         store
-            .resolver_catalog(AccessContext::local_owner().principal().clone(), false)
+            .resolver_catalog(
+                AccessContext::local_owner().principal().clone(),
+                false,
+                alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
+            )
             .await
             .expect("catalogue before first response")
             .entries
@@ -451,7 +469,13 @@ async fn repository_list_refills_while_first_download_waits_and_stops_admission(
     assert_eq!(counters.requests.load(Ordering::SeqCst), 2 * limit);
     assert!(counters.peak.load(Ordering::SeqCst) <= limit);
     let catalogue = store
-        .resolver_catalog(AccessContext::local_owner().principal().clone(), false)
+        .resolver_catalog(
+            AccessContext::local_owner().principal().clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("indexed catalogue");
     let indexed = catalogue

@@ -28,9 +28,7 @@ use crate::resolver::{
     resolve_unity_migration_packages,
 };
 use crate::staging_package::{extract_package_objects, fetch_package_objects};
-use crate::{
-    PackageCache, VpmReader, build_bulk_plan, candidates_from_catalog, materialize_vpm_manifest,
-};
+use crate::{PackageCache, VpmReader, candidates_from_catalog, materialize_vpm_manifest};
 
 const PROJECT_VERSION_LIMIT: u64 = 64 * 1024;
 const RECOVERY_OBSERVATION_LIMIT_MS: u64 = 300_000;
@@ -522,7 +520,13 @@ where
             .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
         let catalog = self
             .store
-            .resolver_catalog(plan.owner.clone(), true)
+            .resolver_catalog(
+                plan.owner.clone(),
+                true,
+                self.reader.package_settings().await.map_err(|cause| {
+                    error(M7UnityMigrationErrorCode::Internal).with_source(cause)
+                })?,
+            )
             .await
             .map_err(|cause| error(M7UnityMigrationErrorCode::Internal).with_source(cause))?;
         if !catalog.complete {
@@ -552,8 +556,9 @@ where
         )
         .await
         .map_err(|cause| error(M7UnityMigrationErrorCode::SourceChanged).with_source(cause))?;
-        let package_plan = build_bulk_plan(
+        let package_plan = crate::plan::build_migration_plan(
             &snapshot,
+            alcomd_application::PlanAction::Bulk,
             &migration_resolution.resolution,
             &BTreeSet::new(),
         )

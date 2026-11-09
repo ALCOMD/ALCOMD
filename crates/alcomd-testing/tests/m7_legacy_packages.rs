@@ -897,7 +897,13 @@ async fn installed_packages_without_sources_do_not_block_install_or_removal() {
     assert!(
         !fixture
             .store
-            .resolver_catalog(PrincipalId::local_owner(), true)
+            .resolver_catalog(
+                PrincipalId::local_owner(),
+                true,
+                alcomd_application::ConfigSnapshot::default()
+                    .settings
+                    .packages
+            )
             .await
             .expect("incomplete catalog")
             .complete
@@ -1717,7 +1723,13 @@ async fn malformed_publisher_digest_is_logged_and_pinned_but_a_valid_mismatch_is
     assert_eq!(plan.source_set[0].archive_sha256(), digest);
     let catalog = fixture
         .store
-        .resolver_catalog(access.principal().clone(), false)
+        .resolver_catalog(
+            access.principal().clone(),
+            false,
+            alcomd_application::ConfigSnapshot::default()
+                .settings
+                .packages,
+        )
         .await
         .expect("indexed catalog");
     assert!(catalog.entries.iter().any(|entry| entry.package_id == package && entry.version == "1.0.0"

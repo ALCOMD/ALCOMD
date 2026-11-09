@@ -9,15 +9,20 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehav
 pub(super) fn repository_catalog_needs_refresh(
     connection: &Connection,
     owner: &PrincipalId,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> rusqlite::Result<bool> {
     connection.query_row(
         "SELECT EXISTS (
              SELECT 1 FROM repositories r
              WHERE r.owner_principal_id=?1 AND r.resolver_indexed=0
+             AND r.repository_id NOT IN (SELECT value FROM json_each(?2))
              AND EXISTS (SELECT 1 FROM repository_package_versions p
                          WHERE p.repository_id=r.repository_id)
          )",
-        [owner.as_str()],
+        params![
+            owner.as_str(),
+            serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| invalid_query())?
+        ],
         |row| row.get(0),
     )
 }
@@ -102,63 +107,77 @@ pub(super) fn resolver_catalog(
     connection: &Connection,
     owner: &PrincipalId,
     include_user_packages: bool,
+    settings: &alcomd_application::ConfigPackageSettings,
 ) -> Result<ResolverCatalog, M4Error> {
-    let incomplete = repository_catalog_needs_refresh(connection, owner).map_err(store_error)?;
+    let hidden = serde_json::to_string(&settings.hidden_repository_ids)
+        .map_err(|_| M4Error::new(M4ErrorCode::Internal))?;
+    let incomplete =
+        repository_catalog_needs_refresh(connection, owner, settings).map_err(store_error)?;
     let mut statement = connection
         .prepare(
             "SELECT r.repository_id, r.revision, r.priority, r.source_kind, r.source_locator,
-                    r.source_identity_key, p.package_id, p.semantic_version, p.yanked,
+                    r.source_identity_key, p.package_id, p.semantic_version,
+                    (p.yanked OR COALESCE(json_extract(p.presentation_json,'$.yanked'),0)),
                     p.unity_text, p.author_name, p.author_email, p.artifact_url, p.zip_sha256,
                     p.unity_release_text, p.dependencies_json, p.manifest_fingerprint,
                     p.legacy_metadata_present, p.local_zip_sha256, r.credential_reference, p.download_headers_present
              FROM repository_package_versions p
              JOIN repositories r ON r.repository_id=p.repository_id
              WHERE r.owner_principal_id=?1 AND r.resolver_indexed=1 AND p.resolver_ready=1
+             AND r.repository_id NOT IN (SELECT value FROM json_each(?2))
+             AND (?3 OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
              ORDER BY p.package_id ASC, p.semantic_version ASC, r.priority ASC,
                       r.repository_id ASC",
         )
         .map_err(store_error)?;
     let rows = statement
-        .query_map([owner.as_str()], |row| {
-            let source_locator: String = row.get(4)?;
-            Ok(ResolverCatalogEntry {
-                source: ResolverCatalogSource::Repository {
-                    repository_locator: source_locator.clone(),
-                    repository_id: row.get(0)?,
-                    repository_revision: nonnegative(row.get(1)?)?,
-                    repository_priority: nonnegative(row.get(2)?)?,
-                    source_identity: repository_source_identity(row, 3)?,
-                    artifact_url: row.get(12)?,
-                    credential_reference: row.get(19)?,
-                    download_headers_present: row.get(20)?,
-                    zip_sha256: row.get(13)?,
-                    local_zip_sha256: row.get::<_, Option<Vec<u8>>>(18)?.map(digest).transpose()?,
-                    manifest_fingerprint: digest(row.get(16)?)?,
-                },
-                package_id: row.get(6)?,
-                version: row.get(7)?,
-                yanked: row.get::<_, i64>(8)? != 0,
-                unity: row.get(9)?,
-                author_name: row.get(10)?,
-                author_email: row.get(11)?,
-                unity_release: row.get(14)?,
-                dependencies_json: row.get(15)?,
-                legacy_metadata_present: row.get::<_, i64>(17)? != 0,
-            })
-        })
+        .query_map(
+            params![owner.as_str(), hidden, settings.show_prerelease],
+            |row| {
+                let source_locator: String = row.get(4)?;
+                Ok(ResolverCatalogEntry {
+                    source: ResolverCatalogSource::Repository {
+                        repository_locator: source_locator.clone(),
+                        repository_id: row.get(0)?,
+                        repository_revision: nonnegative(row.get(1)?)?,
+                        repository_priority: nonnegative(row.get(2)?)?,
+                        source_identity: repository_source_identity(row, 3)?,
+                        artifact_url: row.get(12)?,
+                        credential_reference: row.get(19)?,
+                        download_headers_present: row.get(20)?,
+                        zip_sha256: row.get(13)?,
+                        local_zip_sha256: row
+                            .get::<_, Option<Vec<u8>>>(18)?
+                            .map(digest)
+                            .transpose()?,
+                        manifest_fingerprint: digest(row.get(16)?)?,
+                    },
+                    package_id: row.get(6)?,
+                    version: row.get(7)?,
+                    yanked: row.get::<_, i64>(8)? != 0,
+                    unity: row.get(9)?,
+                    author_name: row.get(10)?,
+                    author_email: row.get(11)?,
+                    unity_release: row.get(14)?,
+                    dependencies_json: row.get(15)?,
+                    legacy_metadata_present: row.get::<_, i64>(17)? != 0,
+                })
+            },
+        )
         .map_err(store_error)?;
     let mut entries = rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?;
-    if include_user_packages {
+    if include_user_packages && !settings.hide_local_user_packages {
         let mut statement = connection
             .prepare(
                 "SELECT user_package_id,revision,source_identity_key,package_id,version,
                         manifest_json,manifest_fingerprint,archive_sha256
                  FROM user_package_sources WHERE owner_principal_id=?1
+                 AND (?2 OR instr(substr(version,1,instr(version||'+','+')-1),'-')=0)
                  ORDER BY package_id ASC,version ASC,user_package_id ASC",
             )
             .map_err(store_error)?;
         let rows = statement
-            .query_map([owner.as_str()], |row| {
+            .query_map(params![owner.as_str(), settings.show_prerelease], |row| {
                 let identity: Vec<u8> = row.get(2)?;
                 let manifest_json: String = row.get(5)?;
                 let manifest: serde_json::Value =
@@ -184,7 +203,10 @@ pub(super) fn resolver_catalog(
                     },
                     package_id: row.get(3)?,
                     version: row.get(4)?,
-                    yanked: false,
+                    yanked: manifest
+                        .as_object()
+                        .and_then(alcomd_application::package_yanked)
+                        .ok_or_else(invalid_query)?,
                     unity: metadata.unity,
                     author_name: String::new(),
                     author_email: None,

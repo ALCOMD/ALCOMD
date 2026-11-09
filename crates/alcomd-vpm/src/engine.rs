@@ -44,6 +44,9 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
 }
 
 impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
+    async fn source_settings(&self) -> Result<alcomd_application::ConfigPackageSettings, M4Error> {
+        self.reader.package_settings().await
+    }
     async fn prepare_plan(
         &self,
         owner: PrincipalId,
@@ -114,16 +117,23 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
             let mut requests = resolution_requests(&project, &request, unity_version)?;
             if request.action == PlanAction::Resolve {
-                requests.extend(snapshot.unlocked.values().flatten().map(|dependency| {
-                    ResolveRequest {
-                        allow_unity_incompatible: false,
-                        package_id: dependency.package_id.clone(),
-                        range: dependency.range.clone(),
-                        source: None,
-                        include_prerelease: request.include_prerelease,
-                        unity_version,
-                    }
-                }));
+                requests.extend(
+                    snapshot
+                        .unlocked
+                        .values()
+                        .flat_map(|package| &package.dependencies)
+                        .filter(|dependency| {
+                            !snapshot.unlocked.contains_key(&dependency.package_id)
+                        })
+                        .map(|dependency| ResolveRequest {
+                            allow_unity_incompatible: false,
+                            package_id: dependency.package_id.clone(),
+                            range: dependency.range.clone(),
+                            source: None,
+                            include_prerelease: request.include_prerelease,
+                            unity_version,
+                        }),
+                );
             }
             if request.action == PlanAction::Resolve {
                 let locked = project
@@ -132,6 +142,16 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                     .iter()
                     .map(|entry| (entry.package_id.as_str(), entry.value.as_str()))
                     .collect::<BTreeMap<_, _>>();
+                for candidate in &mut candidates {
+                    if locked
+                        .get(candidate.package_id.as_str())
+                        .is_some_and(|version| candidate.version.to_string() == *version)
+                    {
+                        candidate.yanked = false;
+                        candidate.unity_minimum = None;
+                        candidate.dependencies.clear();
+                    }
+                }
                 candidates.retain(|candidate| {
                     locked
                         .get(candidate.package_id.as_str())
@@ -139,9 +159,8 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 });
             }
             let protected: BTreeSet<_> = request.package_id.iter().cloned().collect();
-            let rules = (request.action != PlanAction::Resolve)
-                .then(|| snapshot.resolution_rules(protected.clone(), true))
-                .transpose()?;
+            let rules = snapshot
+                .resolution_rules(protected.clone(), request.action != PlanAction::Resolve)?;
             let mut resolution = if requests.is_empty() {
                 crate::Resolution {
                     packages: Vec::new(),
@@ -155,7 +174,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                     &candidates,
                     &requests,
                     &protected,
-                    rules.as_ref(),
+                    Some(&rules),
                 )
                 .await?
             };
@@ -185,6 +204,10 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         catalog: ResolverCatalog,
         plan: PackagePlanRecord,
     ) -> Result<(), M4Error> {
+        alcomd_application::validate_package_source_settings(
+            &self.reader.package_settings().await?,
+            &plan.source_set,
+        )?;
         revalidate(&project, &catalog, &plan).await
     }
 
@@ -266,9 +289,16 @@ async fn prepare_reinstall(
     let candidates = candidates_from_catalog(catalog)
         .map_err(map_resolve_error)?
         .into_iter()
-        .filter(|candidate| targets.contains(&candidate.package_id))
+        .filter(|candidate| {
+            targets.contains(&candidate.package_id)
+                && locked
+                    .get(&candidate.package_id)
+                    .is_some_and(|version| *version == candidate.version.to_string())
+        })
         .map(|mut candidate| {
             candidate.dependencies.clear();
+            candidate.yanked = false;
+            candidate.unity_minimum = None;
             candidate
         })
         .collect::<Vec<_>>();
@@ -315,25 +345,7 @@ async fn prepare_bulk(
         .iter()
         .map(|dependency| (dependency.package_id.clone(), dependency.value.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut desired = project
-        .observation
-        .direct_dependencies
-        .iter()
-        .map(|dependency| {
-            Ok((
-                dependency.package_id.clone(),
-                (
-                    crate::range::ProjectDependencyRange::parse(&dependency.value)
-                        .map(|range| range.canonical())
-                        .map_err(|cause| {
-                            M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
-                        })?,
-                    None,
-                    false,
-                ),
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>, M4Error>>()?;
+    let mut desired = BTreeMap::new();
     let mut reinstall_targets = BTreeSet::new();
     let mut upgrade_targets = BTreeSet::new();
     let mut removed = BTreeSet::new();
@@ -374,7 +386,7 @@ async fn prepare_bulk(
                 upgrade_targets.insert(package_id.clone());
             }
             PackageBulkIntent::Remove { package_id } => {
-                if desired.remove(package_id).is_none() {
+                if !locked.contains_key(package_id) {
                     return Err(M4Error::new(M4ErrorCode::PackageNotFound));
                 }
                 removed.insert(package_id.clone());
@@ -383,18 +395,16 @@ async fn prepare_bulk(
                 let version = locked
                     .get(package_id)
                     .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?;
-                if desired.contains_key(package_id) {
-                    desired.insert(
-                        package_id.clone(),
-                        (format!("={version}"), source.clone(), version.contains('-')),
-                    );
-                }
+                desired.insert(
+                    package_id.clone(),
+                    (format!("={version}"), source.clone(), version.contains('-')),
+                );
                 reinstall_targets.insert(package_id.clone());
             }
         }
     }
     let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
-    let mut requests = desired
+    let requests = desired
         .iter()
         .map(
             |(package_id, (range, source, include_prerelease))| ResolveRequest {
@@ -407,41 +417,24 @@ async fn prepare_bulk(
             },
         )
         .collect::<Vec<_>>();
-    for package_id in &reinstall_targets {
-        if desired.contains_key(package_id) {
-            continue;
+    let mut candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
+    candidates.retain(|candidate| {
+        !reinstall_targets.contains(&candidate.package_id)
+            || locked
+                .get(&candidate.package_id)
+                .is_some_and(|version| *version == candidate.version.to_string())
+    });
+    for candidate in &mut candidates {
+        if reinstall_targets.contains(&candidate.package_id)
+            && locked
+                .get(&candidate.package_id)
+                .is_some_and(|version| *version == candidate.version.to_string())
+        {
+            candidate.dependencies.clear();
+            candidate.yanked = false;
+            candidate.unity_minimum = None;
         }
-        let version = locked
-            .get(package_id)
-            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?;
-        let source = match intents.get(package_id) {
-            Some(PackageBulkIntent::Reinstall { source, .. }) => source.clone(),
-            _ => None,
-        };
-        requests.push(ResolveRequest {
-            allow_unity_incompatible: false,
-            package_id: package_id.clone(),
-            range: format!("={version}"),
-            source,
-            include_prerelease: version.contains('-'),
-            unity_version,
-        });
     }
-    requests.extend(
-        snapshot
-            .unlocked
-            .values()
-            .flatten()
-            .map(|dependency| ResolveRequest {
-                allow_unity_incompatible: false,
-                package_id: dependency.package_id.clone(),
-                range: dependency.range.clone(),
-                source: None,
-                include_prerelease: request.include_prerelease,
-                unity_version,
-            }),
-    );
-    let candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
     let mut resolution = if requests.is_empty() {
         crate::Resolution {
             packages: Vec::new(),
@@ -449,7 +442,9 @@ async fn prepare_bulk(
         }
     } else {
         let explicit = intents.keys().cloned().collect();
-        let rules = snapshot.resolution_rules(explicit, false)?;
+        let mut rules = snapshot.resolution_rules(explicit, true)?;
+        rules.locked.retain(|id, _| !removed.contains(id));
+        rules.direct.retain(|id, _| !removed.contains(id));
         resolve_migrating_packages(
             cache,
             store,
@@ -461,7 +456,17 @@ async fn prepare_bulk(
         )
         .await?
     };
-    let desired_ids = desired.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    let direct_ids = project
+        .observation
+        .direct_dependencies
+        .iter()
+        .map(|dependency| dependency.package_id.as_str())
+        .collect::<BTreeSet<_>>();
+    let desired_ids = desired
+        .keys()
+        .filter(|id| !reinstall_targets.contains(*id) || direct_ids.contains(id.as_str()))
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     for package in &mut resolution.packages {
         package.direct = desired_ids.contains(package.package_id.as_str());
     }
@@ -505,7 +510,7 @@ async fn prepare_bulk(
             return Err(M4Error::new(M4ErrorCode::InvalidInput));
         }
     }
-    build_bulk_plan(snapshot, &resolution, &reinstall_targets)
+    build_bulk_plan(snapshot, &resolution, &reinstall_targets, &removed)
 }
 
 fn reinstall_selectors(
@@ -573,6 +578,11 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         {
             return Ok(completion);
         }
+
+        alcomd_application::validate_package_source_settings(
+            &self.reader.package_settings().await?,
+            &plan.source_set,
+        )?;
 
         let mut next_step = self
             .store
@@ -679,9 +689,14 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                     plan.source_set
                         .iter()
                         .any(alcomd_application::PackageSourcePin::is_user_package),
+                    self.reader.package_settings().await?,
                 )
                 .await?
         };
+        alcomd_application::validate_package_source_settings(
+            &self.reader.package_settings().await?,
+            &plan.source_set,
+        )?;
         revalidate(&project, &catalog, &plan).await?;
         if self
             .store
@@ -1347,6 +1362,9 @@ async fn resolve_migrating_packages(
                 omitted.insert(id.clone());
                 remaining.retain(|request| &request.package_id != id);
                 first_error.get_or_insert(error);
+                if remaining.is_empty() {
+                    return Err(map_resolve_error(first_error.expect("a root failed")));
+                }
                 continue;
             }
         };
@@ -3082,7 +3100,16 @@ mod tests {
             ("com.example.alpha".to_owned(), "1.0.0".to_owned()),
             ("com.example.beta".to_owned(), "1.0.0".to_owned()),
         ];
-        let (root, project, snapshot) = planning_fixture(&installed, &installed);
+        let (root, project, _snapshot) = planning_fixture(&installed, &installed);
+        // Reinstall preserves the installed locked graph, not new declarations published for the same version.
+        let path = root.join("Packages/vpm-manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("manifest")).expect("JSON");
+        manifest["locked"]["com.example.alpha"]["dependencies"] =
+            serde_json::json!({"com.example.beta":"1.0.0"});
+        std::fs::write(path, serde_json::to_vec(&manifest).expect("JSON"))
+            .expect("dependency graph");
+        let snapshot = inspect_package_project(&project).expect("updated installed graph");
         let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
         let mut catalog = catalog(&[
             ("com.example.alpha", "1.0.0"),
@@ -3193,6 +3220,19 @@ mod tests {
     ) -> (PathBuf, ProjectRecord, crate::ProjectPackageSnapshot) {
         let root = temporary_root("planning");
         std::fs::create_dir_all(root.join("Packages")).expect("Packages");
+        for (id, version) in locked {
+            let folder = root.join("Packages").join(id);
+            std::fs::create_dir_all(&folder).expect("installed fixture directory");
+            std::fs::write(
+                folder.join("package.json"),
+                serde_json::to_vec(
+                    &serde_json::json!({"name":id,"version":version,"vpmDependencies":{}}),
+                )
+                .expect("metadata"),
+            )
+            .expect("installed fixture metadata");
+        }
+
         let dependencies = direct
             .iter()
             .map(|(package_id, version)| {
@@ -3207,7 +3247,7 @@ mod tests {
             .map(|(package_id, version)| {
                 (
                     package_id.clone(),
-                    serde_json::json!({ "version": version }),
+                    serde_json::json!({ "version": version, "dependencies": {} }),
                 )
             })
             .collect::<serde_json::Map<_, _>>();
