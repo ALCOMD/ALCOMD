@@ -139,7 +139,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     return <Dialog wide={inspection !== undefined} open dismissible={!busy && !choosing} title={t("Import list")} onClose={onClose} actions={actions}>
         {inspection ? null : <>
             <p>{t("Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.")}</p>
-            <FilePicker client={client} kind="file" choosePath={() => client.selectRepositoryListFile("open")} disabled={busy}
+            <FilePicker client={client} kind="file" choosePath={() => client.selectRepositoryListFile("open", undefined, path)} disabled={busy}
                 label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
                 onPathChange={(next) => { setPath(next); setError(undefined); }} />
         </>}
@@ -175,6 +175,7 @@ function ExportRepositoryList({ client, onClose }: { client: GuiRpcClient; onClo
     const [error, setError] = useState<RpcError>();
     const [saved, setSaved] = useState<RepositoryListExportResult>();
     const [fileName, setFileName] = useState("repositories.txt");
+    const [destinationFile, setDestinationFile] = useState("");
     const nameValid = fileName.length > 0 && fileName.length <= 255 && !/[\\/:*?"<>|\u0000-\u001f]/.test(fileName) && !/[. ]$/.test(fileName);
     const load = async () => {
         if (pending.current) return;
@@ -188,8 +189,9 @@ function ExportRepositoryList({ client, onClose }: { client: GuiRpcClient; onClo
         if (!preview || !confirmed || pending.current || saved || !nameValid) return;
         pending.current = true; setBusy(true); setError(undefined);
         try {
-            const path = await client.selectRepositoryListFile("save", fileName);
+            const path = await client.selectRepositoryListFile("save", fileName, destinationFile);
             if (!current() || path === undefined) return;
+            setDestinationFile(path);
             const result = await client.repositoryListExportFile(path, preview.fingerprint);
             if (current()) setSaved(result);
         } catch (caught) { if (current()) { const failure = safeError(caught); setError(failure); if (failure.code === "repository_list_changed") { setPreview(undefined); setConfirmed(false); } } }

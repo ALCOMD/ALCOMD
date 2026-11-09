@@ -250,7 +250,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
         setBusy(true);
         try {
             if (action === "select") {
-                const path = await client.selectDirectory();
+                const path = await client.selectDirectory(edit.current.value || acceptedRef.current.directories[directoryKey]);
                 if (request !== generation.current || path === undefined) return;
                 intent = { path, previousPath: acceptedRef.current.settings.paths[directoryKey] };
             }
@@ -365,7 +365,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         setBusy(true);
         try {
             if (action.kind === "auto" || action.kind === "select") {
-                const path = action.kind === "auto" ? null : await client.selectUnityHub(acceptedRef.current.unityHub.path);
+                const path = action.kind === "auto" ? null : await client.selectUnityHub(edit.current.value || acceptedRef.current.unityHub.path);
                 if (request !== generation.current) return;
                 if (path === undefined) { restoreDraftFocus = edit.current.dirty; return; }
                 intent = { path, previousPath: acceptedRef.current.settings.unity.hubPath, origin: action.kind };

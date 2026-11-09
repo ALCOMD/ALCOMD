@@ -128,6 +128,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     const [lockPackageVersions, setLockPackageVersions] = useState(false);
     const [sourceFile, setSourceFile] = useState("");
     const [destinationFile, setDestinationFile] = useState("");
+    const [destinationHint, setDestinationHint] = useState("");
     const [fileName, setFileName] = useState(record === undefined ? "" : record.id + ".alcomdtemplate");
     const [busy, setBusy] = useState(false);
     const [choosing, setChoosing] = useState(false);
@@ -156,13 +157,14 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     const retrying = attempt.current !== undefined && operationRequestOutcomeUnknown(error);
     const formDisabled = busy || retrying;
     const selectDestination = () => run(async () => {
-        const path = await client.selectProjectTemplateFile("save", fileName.trim());
+        const path = await client.selectProjectTemplateFile("save", fileName.trim(), destinationFile || destinationHint);
         if (!current() || path === undefined) return;
         setDestinationFile(path);
+        setDestinationHint(path);
     });
 
     const selectSource = () => run(async () => {
-        const path = await client.selectProjectTemplateFile("open");
+        const path = await client.selectProjectTemplateFile("open", undefined, sourceFile);
         if (!current() || path === undefined) return;
         setSourceFile(path);
     });
@@ -259,7 +261,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
                                 options={Object.entries(sourceLabels).map(([value, label]) => ({ value, label: t(label) }))} value={source} />
                         </>}
                         {importing ? <FilePicker client={client} kind="file" disabled={formDisabled} label={t("Template file")} value={sourceFile}
-                            choosePath={() => client.selectProjectTemplateFile("open")} onChoosingChange={setChoosing}
+                            choosePath={() => client.selectProjectTemplateFile("open", undefined, sourceFile)} onChoosingChange={setChoosing}
                             onPathChange={(path) => { setSourceFile(path); setError(undefined); }} />
                             : source === "file" ? <div className="project-target-picker">
                             <PathField disabled={formDisabled} label={t("Template file")} value={sourceFile} onInput={(path) => { setSourceFile(path); setError(undefined); }} />

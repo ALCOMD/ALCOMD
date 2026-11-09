@@ -138,7 +138,7 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            const selected = await client.selectFile("repositoryManifest");
+            const selected = await client.selectFile("repositoryManifest", value);
             if (current()) {
                 if (selected !== undefined) setValue(selected);
                 setFeedback(INITIAL_FEEDBACK);
@@ -451,7 +451,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            const selected = await client.selectFile("unityEditor");
+            const selected = await client.selectFile("unityEditor", path);
             if (isCurrent()) {
                 if (selected !== undefined) setPath(selected);
                 setFeedback(INITIAL_FEEDBACK);
@@ -912,7 +912,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         pending.current = true;
         setFeedback({ busy: true });
         try {
-            const selected = await client.selectFile("extensionPackage");
+            const selected = await client.selectFile("extensionPackage", path);
             if (current()) {
                 if (selected !== undefined) setPath(selected);
                 setFeedback(INITIAL_FEEDBACK);

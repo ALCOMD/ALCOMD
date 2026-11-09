@@ -50,6 +50,7 @@ declare global {
         h3ReadError?: string;
         queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
+        nativePickerRequests: Array<{ kind: string; currentPath?: string | null; mode?: string; fileName?: string }>;
         projectSnapshots: ProjectSnapshot[][];
         autoDiscoveryProjects: ProjectSnapshot[];
         projectListReads: number;
@@ -89,6 +90,7 @@ declare global {
 // The concurrency probe supplies only the read method used by the shared function.
 window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
+window.nativePickerRequests = [];
 window.fixtureLogs = {
     entries: [], reads: [], fail: false,
     replace(entries) {
@@ -286,7 +288,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationSequence = 0;
     private listExportAttempts = 0;
     private listPreviewReads = 0;
-    selectFile(kind: NativeFileKind): ReturnType<GuiRpcClient["selectFile"]> {
+    selectFile(kind: NativeFileKind, currentPath?: string): ReturnType<GuiRpcClient["selectFile"]> {
+        window.nativePickerRequests.push({ kind, currentPath });
         return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdext" }[kind]);
     }
     async subscribeFileDrag(receive: (event: FileDrag) => void) {
@@ -294,7 +297,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.addEventListener("fixture-file-drag", listener);
         return () => window.removeEventListener("fixture-file-drag", listener);
     }
-    async selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
+    async selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
+        window.nativePickerRequests.push({ kind: "repositoryList", mode, fileName, currentPath });
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
@@ -751,11 +755,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("hub-download-error")) throw { code: "unity_hub_download_open_failed" };
     }
     async selectUnityHub(currentPath: string | null): ReturnType<GuiRpcClient["selectUnityHub"]> {
+        window.nativePickerRequests.push({ kind: "unityHub", currentPath });
         window.unityRequests.push({ method: "selectUnityHub", params: { currentPath } });
         if (query.get("hub-picker") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-picker-ready", () => resolve(), { once: true }));
         return query.get("hub-picker") === "cancel" ? undefined : "C:\\Tools\\Unity Hub\\Unity Hub.exe";
     }
-    async selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> {
+    async selectDirectory(currentPath?: string): ReturnType<GuiRpcClient["selectDirectory"]> {
+        window.nativePickerRequests.push({ kind: "directory", currentPath });
         if (query.has("resource-lifecycle")) window.resourceRequests.push({ method: "selectDirectory", params: {} });
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         return this.value(query.has("cancel-directory") ? undefined : "C:\\Fixture\\Avatar");
@@ -1389,7 +1395,8 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
     }
 
 
-    async selectProjectTemplateFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectProjectTemplateFile"]> {
+    async selectProjectTemplateFile(mode: "open" | "save", fileName?: string, currentPath?: string): ReturnType<GuiRpcClient["selectProjectTemplateFile"]> {
+        window.nativePickerRequests.push({ kind: "projectTemplate", mode, fileName, currentPath });
         window.templateRequests.push({ method: "selectProjectTemplateFile", params: { mode, fileName } });
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
         if (query.has("template-file-cancel")) return this.value(undefined);

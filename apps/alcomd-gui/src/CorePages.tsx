@@ -446,6 +446,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             </div>
             <DirectorySelectionDialog
                 client={client}
+                defaultDirectory="projectDirectory"
                 label={t("Project location")}
                 onChanged={() => void refresh()}
                 onClose={() => setRegisterOpen(false)}
@@ -778,7 +779,9 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
         setBusy(true);
         setError(undefined);
         try {
-            const selected = await client.selectDirectory();
+            const currentPath = targetParent || await client.settingsGet().then((value) => value.directories.projectDirectory, () => undefined);
+            if (!current()) return;
+            const selected = await client.selectDirectory(currentPath);
             if (current() && selected !== undefined) setTargetParent(selected);
         } catch (caught: unknown) {
             if (current()) setError(safeError(t, locale, caught));
@@ -939,8 +942,9 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { clie
     return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={!canManageProjects || busy || revision === undefined} label={label} onClick={() => void toggle()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t) ?? label} type="button"><Icon asset={starIcon} /></IconButton>;
 }
 
-function DirectorySelectionDialog({ client, label, onChanged, onClose, onConfirm, open, origin, title }: {
+function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, onClose, onConfirm, open, origin, title }: {
     client: GuiRpcClient;
+    defaultDirectory?: keyof SettingsGetResult["directories"];
     label: string;
     onChanged(): void;
     onClose(): void;
@@ -986,7 +990,12 @@ function DirectorySelectionDialog({ client, label, onChanged, onClose, onConfirm
         <Button disabled={busy || choosing || path.trim() === ""} onClick={() => void confirm()} type="button">{t("Confirm")}</Button>
     </>}>
         {open ? <>
-            <FilePicker client={client} kind="directory" choosePath={() => client.selectDirectory()} disabled={busy}
+            <FilePicker client={client} kind="directory" choosePath={async () => {
+                // A start-location hint must not prevent manual selection when settings are unavailable.
+                const currentPath = path || (defaultDirectory === undefined ? undefined : await client.settingsGet().then((value) => value.directories[defaultDirectory], () => undefined));
+                if (!current()) return undefined;
+                return client.selectDirectory(currentPath);
+            }} disabled={busy}
                 label={label} value={path} onChoosingChange={setChoosing}
                 onPathChange={(next) => { setPath(next); setError(undefined); }} />
             {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}

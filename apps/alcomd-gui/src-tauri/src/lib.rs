@@ -8,6 +8,7 @@ use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 mod events;
+mod picker_location;
 mod repository_links;
 mod rpc_clients;
 mod unity_windows;
@@ -255,28 +256,43 @@ async fn gui_unity_hub_open(
 }
 
 /// Native selection only. Core validates and persists the returned path.
+fn picker_at_current_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    current_path: Option<&str>,
+    kind: picker_location::SelectionKind,
+) -> tauri_plugin_dialog::FileDialogBuilder<R> {
+    let home = app.path().home_dir().ok();
+    let location = picker_location::resolve_location(current_path, home.as_deref(), kind);
+    let mut picker = app.dialog().file();
+    if let Some(directory) = location.directory {
+        picker =
+            picker.set_directory(alcomd_platform::external_filesystem_path(&directory).as_ref());
+    }
+    if let Some(file_name) = location.file_name {
+        picker = picker.set_file_name(file_name);
+    }
+    picker
+}
+
 #[tauri::command]
 async fn gui_select_unity_hub(
     app: tauri::AppHandle,
     current_path: Option<String>,
 ) -> Result<Option<String>, RpcError> {
-    let mut picker = app.dialog().file();
-    if let Some(path) = current_path {
-        let path = std::path::PathBuf::from(path);
-        #[cfg(target_os = "macos")]
-        let path = if path.ends_with("Contents/MacOS/Unity Hub") {
+    let current_path = current_path.map(std::path::PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let current_path = current_path.map(|path| {
+        if path.ends_with("Contents/MacOS/Unity Hub") {
             path.ancestors().nth(3).unwrap_or(&path).to_path_buf()
         } else {
             path
-        };
-        if let Some(parent) = path.parent() {
-            picker =
-                picker.set_directory(alcomd_platform::external_filesystem_path(parent).as_ref());
         }
-        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-            picker = picker.set_file_name(name);
-        }
-    }
+    });
+    let mut picker = picker_at_current_path(
+        &app,
+        current_path.as_deref().and_then(std::path::Path::to_str),
+        picker_location::SelectionKind::File,
+    );
     #[cfg(windows)]
     {
         picker = picker.add_filter("Executable", &["exe"]);
@@ -298,8 +314,16 @@ async fn gui_select_unity_hub(
 }
 
 #[tauri::command]
-async fn gui_select_file(app: tauri::AppHandle, kind: String) -> Result<Option<String>, RpcError> {
-    let picker = app.dialog().file();
+async fn gui_select_file(
+    app: tauri::AppHandle,
+    kind: String,
+    current_path: Option<String>,
+) -> Result<Option<String>, RpcError> {
+    let picker = picker_at_current_path(
+        &app,
+        current_path.as_deref(),
+        picker_location::SelectionKind::File,
+    );
     let picker = match kind.as_str() {
         "repositoryManifest" => picker.add_filter("JSON manifest", &["json"]),
         "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdext"]),
@@ -319,8 +343,16 @@ async fn gui_select_file(app: tauri::AppHandle, kind: String) -> Result<Option<S
 }
 
 #[tauri::command]
-async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, RpcError> {
-    let selected = app.dialog().file().blocking_pick_folder();
+async fn gui_select_directory(
+    app: tauri::AppHandle,
+    current_path: Option<String>,
+) -> Result<Option<String>, RpcError> {
+    let selected = picker_at_current_path(
+        &app,
+        current_path.as_deref(),
+        picker_location::SelectionKind::Directory,
+    )
+    .blocking_pick_folder();
     selected
         .map(|path| {
             let path = path
@@ -348,11 +380,13 @@ async fn gui_select_repository_list_file(
     app: tauri::AppHandle,
     mode: String,
     file_name: Option<String>,
+    current_path: Option<String>,
 ) -> Result<Option<String>, RpcError> {
     select_local_file(
         app,
         &mode,
         file_name.as_deref(),
+        current_path.as_deref(),
         "Repository list (*.txt)",
         "txt",
     )
@@ -363,11 +397,13 @@ async fn gui_select_project_template_file(
     app: tauri::AppHandle,
     mode: String,
     file_name: Option<String>,
+    current_path: Option<String>,
 ) -> Result<Option<String>, RpcError> {
     select_local_file(
         app,
         &mode,
         file_name.as_deref(),
+        current_path.as_deref(),
         "ALCOMD template (*.alcomdtemplate)",
         "alcomdtemplate",
     )
@@ -377,18 +413,22 @@ fn select_local_file(
     app: tauri::AppHandle,
     mode: &str,
     file_name: Option<&str>,
+    current_path: Option<&str>,
     filter: &str,
     extension: &str,
 ) -> Result<Option<String>, RpcError> {
     // The existing save dialog cannot suppress its overwrite promise. Pick a parent
     // folder instead; the GUI supplies the reviewed new name and Core creates the file.
     let selected = match mode {
-        "open" => app
-            .dialog()
-            .file()
+        "open" => picker_at_current_path(&app, current_path, picker_location::SelectionKind::File)
             .add_filter(filter, &[extension])
             .blocking_pick_file(),
-        "save" => app.dialog().file().blocking_pick_folder(),
+        "save" => picker_at_current_path(
+            &app,
+            current_path,
+            picker_location::SelectionKind::Directory,
+        )
+        .blocking_pick_folder(),
         _ => return Err(RpcError::invalid_request()),
     };
     selected

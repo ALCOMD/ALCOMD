@@ -30,10 +30,10 @@ export interface GuiRpcClient {
     projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
-    selectDirectory(): Promise<string | undefined>;
-    selectFile(kind: NativeFileKind): Promise<string | undefined>;
+    selectDirectory(currentPath?: string): Promise<string | undefined>;
+    selectFile(kind: NativeFileKind, currentPath?: string): Promise<string | undefined>;
     subscribeFileDrag?(receive: (event: FileDrag) => void): Promise<() => void>;
-    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
+    selectProjectTemplateFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
     unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
@@ -46,7 +46,7 @@ export interface GuiRpcClient {
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
     repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
-    selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
+    selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
     repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult>;
     repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult>;
@@ -116,8 +116,8 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
-    selectFile(kind: NativeFileKind): Promise<string | undefined> {
-        return invokeTyped<string | null>("gui_select_file", { kind }).then((path) => path ?? undefined);
+    selectFile(kind: NativeFileKind, currentPath?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_file", { kind, currentPath: currentPath ?? null }).then((path) => path ?? undefined);
     }
 
     subscribeFileDrag(receive: (event: FileDrag) => void): Promise<() => void> {
@@ -147,12 +147,12 @@ class TauriGuiRpcClient implements GuiRpcClient {
             close: () => invokeTyped("gui_events_cancel", { consumerId: request.consumerId, generation: request.generation })
         };
     }
-    selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
-        return invokeTyped<string | null>("gui_select_repository_list_file", { mode, fileName }).then((path) => path ?? undefined);
+    selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_repository_list_file", { mode, fileName, currentPath: currentPath ?? null }).then((path) => path ?? undefined);
     }
 
-    selectProjectTemplateFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
-        return invokeTyped<string | null>("gui_select_project_template_file", { mode, fileName }).then((path) => path ?? undefined);
+    selectProjectTemplateFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_project_template_file", { mode, fileName, currentPath: currentPath ?? null }).then((path) => path ?? undefined);
     }
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection> {
         return invokeTyped("gui_repository_list_inspect_file", { path });
@@ -223,8 +223,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_open_project_directory", { projectId });
     }
 
-    selectDirectory(): Promise<string | undefined> {
-        return invokeTyped<string | null>("gui_select_directory", {}).then((path) => path ?? undefined);
+    selectDirectory(currentPath?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_directory", { currentPath: currentPath ?? null }).then((path) => path ?? undefined);
     }
 
     selectUnityHub(currentPath: string | null): Promise<string | undefined> {

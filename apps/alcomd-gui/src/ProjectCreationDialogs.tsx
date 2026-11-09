@@ -155,7 +155,9 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         onClose();
     };
     const chooseParent = () => run(async (ownsDraft) => {
-        const directory = await client.selectDirectory();
+        const currentPath = targetParent || await client.settingsGet().then((value) => value.directories.projectDirectory, () => undefined);
+        if (!ownsDraft()) return;
+        const directory = await client.selectDirectory(currentPath);
         if (ownsDraft() && directory !== undefined) setTargetParent(directory);
     });
     const retrying = operationRequestOutcomeUnknown(error) && attempt.current?.client === client;
@@ -337,7 +339,9 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
         setBusy(true);
         setError(undefined);
         try {
-            const selected = await client.selectDirectory();
+            const currentPath = targetParent || await client.settingsGet().then((value) => value.directories.projectDirectory, () => undefined);
+            if (!isCurrent()) return;
+            const selected = await client.selectDirectory(currentPath);
             if (isCurrent() && selected !== undefined) setTargetParent(selected);
         } catch (caught: unknown) {
             if (isCurrent()) setError(safeError(caught));
