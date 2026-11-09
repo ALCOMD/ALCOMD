@@ -127,7 +127,10 @@ pub(super) fn snapshot(
                     source_revision: u64::try_from(row.get::<_, i64>(3)?)
                         .map_err(|_| rusqlite::Error::InvalidQuery)?,
                     priority: 0,
-                    yanked: false,
+                    yanked: manifest
+                        .as_object()
+                        .and_then(alcomd_application::package_yanked)
+                        .ok_or(rusqlite::Error::InvalidQuery)?,
                     unity: metadata.unity,
                     unity_release: metadata.unity_release,
                     metadata_ready: true,

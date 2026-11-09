@@ -840,6 +840,151 @@ async fn single_and_bulk_upgrade_clean_only_unused_old_dependencies() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn retained_orphan_dependencies_survive_single_and_bulk_changes() {
+    for batch in [false, true] {
+        for remove in [false, true] {
+            let graph = json!({"dependencies":{A:{"version":"1.0.0"}},"locked":{
+                A:{"version":"1.0.0","dependencies":{B:"1.0.0"}},
+                B:{"version":"1.0.0","dependencies":{D:"1.0.0"},"custom":"shared"},
+                C:{"version":"1.0.0","dependencies":{B:"1.0.0"},"custom":"retained orphan"},
+                D:{"version":"1.0.0","dependencies":{},"custom":"transitive"}
+            }});
+            let f = fixture(
+                "retained-orphan-dependencies",
+                graph.clone(),
+                vec![package(A, "2.0.0", json!({}))],
+                None,
+            )
+            .await;
+            let action = if remove {
+                PlanAction::Remove
+            } else {
+                PlanAction::Upgrade
+            };
+            let mut r = request(&f, action, Some(A));
+            if !remove {
+                r.version_range = Some("=2.0.0".into());
+            }
+            if batch {
+                r = bulk(
+                    &f,
+                    vec![if remove {
+                        PackageBulkIntent::Remove {
+                            package_id: A.into(),
+                        }
+                    } else {
+                        PackageBulkIntent::Upgrade {
+                            package_id: A.into(),
+                            version_range: Some("=2.0.0".into()),
+                            source: None,
+                            include_prerelease: false,
+                        }
+                    }],
+                );
+            }
+            let plan = f
+                .packages
+                .plan(&AccessContext::local_owner(), r)
+                .await
+                .expect("shared dependencies must not block the selected change");
+            assert_eq!(plan.change_set.mutations.len(), 1);
+            assert_eq!(plan.change_set.mutations[0].package_id, A);
+            assert!(plan.change_set.removal_conflicts.is_empty());
+            assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
+            for id in [B, C, D] {
+                assert_eq!(f.manifest()["locked"][id], graph["locked"][id]);
+                assert_eq!(
+                    fs::read(f.root.join("Packages").join(id).join("sentinel.txt"))
+                        .expect("retained dependency content"),
+                    b"owned audit fixture"
+                );
+            }
+            assert_eq!(f.root.join("Packages").join(A).exists(), !remove);
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn user_withdrawal_is_independent_of_optional_presentation_fields() {
+    for (withdrawn, fields) in [
+        (true, json!({"vrc-get":{"yanked":true,"aliases":false}})),
+        (
+            true,
+            json!({"vrc-get":{"yanked":"withdrawn","aliases":false}}),
+        ),
+        (true, json!({"yanked":true,"keywords":false})),
+        (false, json!({"vrc-get":{"yanked":false,"aliases":false}})),
+        (false, json!({"yanked":false,"keywords":false})),
+    ] {
+        let f = fixture("local-withdrawal-display", empty(), vec![], None).await;
+        let mut manifest = package(A, "1.0.0", json!({}));
+        manifest
+            .as_object_mut()
+            .expect("fixture manifest")
+            .extend(fields.as_object().expect("fixture fields").clone());
+        enroll_local(&f, manifest).await;
+        let CandidatePageItems::Summary { items } = f.summary().await.page else {
+            panic!("expected summary");
+        };
+        assert_eq!(items.len(), usize::from(!withdrawn));
+        for item in items {
+            assert!(matches!(item.latest, CandidateChoice::Candidate { .. }));
+            assert!(matches!(
+                item.project_latest,
+                CandidateChoice::Candidate { .. }
+            ));
+        }
+        let versions = ProjectCandidateApplication::new(
+            f.store.clone(),
+            ProjectCandidateEngine,
+            f.reader.clone(),
+            f.config.clone(),
+        )
+        .query(
+            &AccessContext::local_owner(),
+            ProjectCandidateRequest {
+                project_id: f.project.project_id.to_string(),
+                expected_revision: f.project.revision.get(),
+                view: CandidateView::Versions {
+                    package_id: A.into(),
+                    source: None,
+                },
+                limit: None,
+                expected_snapshot: None,
+                cursor: None,
+            },
+        )
+        .await
+        .expect("read version candidates");
+        let CandidatePageItems::Versions { items, .. } = versions.page else {
+            panic!("expected versions");
+        };
+        assert_eq!(items.len(), usize::from(!withdrawn));
+        let result = f
+            .packages
+            .plan(&AccessContext::local_owner(), install(&f, A, "1.0.0"))
+            .await;
+        if withdrawn {
+            assert_eq!(
+                result
+                    .expect_err("withdrawn version must be rejected")
+                    .code(),
+                M4ErrorCode::PackageVersionYanked
+            );
+        } else {
+            assert_eq!(
+                result
+                    .expect("optional display fields must not block installation")
+                    .change_set
+                    .mutations
+                    .len(),
+                1
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reinstall_freezes_actual_directory_presence_and_restores_without_rewriting_the_manifest() {
     for batch in [false, true] {
         for missing in [false, true] {

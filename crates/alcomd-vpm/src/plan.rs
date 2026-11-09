@@ -739,6 +739,7 @@ fn build_resolution_plan_with_ranges(
             &BTreeSet::new(),
         );
         let graph = graph_from_edges(&edges);
+        // Packages outside the cleanup closure remain installed and protect their dependencies.
         let used = dependency_closure(
             direct
                 .keys()
@@ -749,7 +750,8 @@ fn build_resolution_plan_with_ranges(
                         .packages
                         .iter()
                         .map(|package| package.package_id.clone()),
-                ),
+                )
+                .chain(locked.keys().filter(|id| !affected.contains(*id)).cloned()),
             &graph,
             removed,
         );
@@ -867,7 +869,11 @@ pub(crate) fn build_removal_plan(
     // Only the selected packages' old dependency closure is eligible for cleanup.
     let removable = dependency_closure(removed.iter().cloned(), &graph, &BTreeSet::new());
     let retained = dependency_closure(
-        direct.keys().chain(snapshot.unlocked.keys()).cloned(),
+        direct
+            .keys()
+            .chain(snapshot.unlocked.keys())
+            .chain(locked.keys().filter(|id| !removable.contains(*id)))
+            .cloned(),
         &graph,
         removed,
     );
