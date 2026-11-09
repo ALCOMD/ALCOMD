@@ -245,7 +245,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     };
     return <div className="repository-row-actions">
         <IconButton disabled={!canEdit || !available || !ready || feedback.busy} label={t("Manage repository")} onClick={openManagement} title={t("Manage repository")} type="button"><Icon asset={editIcon} /></IconButton>
-        <IconButton disabled={!canRemove || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
+        <IconButton className="material-button--danger" disabled={!canRemove || !available || !ready || feedback.busy} label={t("Remove")} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={cancelIcon} /></IconButton>
         <MaterialDialog open={managing} title={t("Manage repository")} dismissible={!savingSettings} onClose={closeManagement}>
             {nameDraft === undefined ? null : <form onSubmit={(event) => { event.preventDefault(); void saveName(); }}>
                 <TextField disabled={feedback.busy} label={t("Display name")}
@@ -271,7 +271,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repositoryDisplayName(t, repository, t("this repository"))}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
-            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={feedback.busy || !available} onClick={() => void remove()} type="button">{t("Remove repository")}</Button></div>
+            <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Cancel")}</DialogCloseButton><Button className="material-button--danger" disabled={feedback.busy || !available} onClick={() => void remove()} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
     </div>;
 }
@@ -370,12 +370,13 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     };
     const legacyRemovals = plan?.changeSet.legacyRemovals ?? [];
     const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0 || legacyRemovals.length > 0;
+    const removalOnly = plan !== undefined && plan.changeSet.mutations.length > 0 && plan.changeSet.mutations.every((mutation) => mutation.kind === "remove");
     const changeGroups = (["install", "replace", "remove"] as const)
         .map((kind) => ({ kind, items: (plan?.changeSet.mutations ?? []).filter((item) => item.kind === kind).sort((a, b) => a.packageId.localeCompare(b.packageId)) }))
         .filter((group) => group.items.length > 0);
     const reviewActions = plan === undefined ? undefined : <>
         <DialogCloseButton disabled={feedback.busy} variant="text">{t(hasChanges && feedback.error === undefined ? "Cancel" : "Close")}</DialogCloseButton>
-        {hasChanges ? <Button disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
+        {hasChanges ? <Button className={removalOnly ? "material-button--danger" : undefined} disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
     </>;
     return (
         <>

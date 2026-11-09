@@ -1177,7 +1177,7 @@ function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, on
     const { t } = useTranslation();
     const origin = useRef<HTMLElement>(null);
     const installChoice = evidence?.projectLatest;
-    if (row.installedVersion !== undefined) return <IconButton className="package-primary-action package-remove-action" disabled={!canPlanV1} label={t("Remove")} onClick={() => onRemove(origin)} ref={origin} title={t("Remove {value0}", { value0: row.displayName })} type="button"><Icon asset={cancelIcon} /></IconButton>;
+    if (row.installedVersion !== undefined) return <IconButton className="package-primary-action material-button--danger" disabled={!canPlanV1} label={t("Remove")} onClick={() => onRemove(origin)} ref={origin} title={t("Remove {value0}", { value0: row.displayName })} type="button"><Icon asset={cancelIcon} /></IconButton>;
     return <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") onSelect(installChoice.candidate, origin); }} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={addCircleIcon} /></IconButton>;
 }
 
@@ -1718,7 +1718,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <Button disabled={bulkDisabled(selectedLatest?.intents)} onClick={(event) => submitBulk(selectedLatest?.intents, { current: event.currentTarget })} type="button" variant="tonal">{t("Install / Update selected")}</Button>
                                 {selectedStable ? <Button disabled={bulkDisabled(selectedStable.intents)} onClick={(event) => submitBulk(selectedStable.intents, { current: event.currentTarget })} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
                                 <Button disabled={bulkDisabled(selectedBulk?.reinstall)} onClick={(event) => submitBulk(selectedBulk?.reinstall, { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
-                                <Button disabled={bulkDisabled(selectedBulk?.remove)} onClick={(event) => submitBulk(selectedBulk?.remove, { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
+                                <Button className="material-button--danger" disabled={bulkDisabled(selectedBulk?.remove)} onClick={(event) => submitBulk(selectedBulk?.remove, { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
                         )}

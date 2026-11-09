@@ -664,7 +664,6 @@ md-linear-progress {
 }
 .package-row-actions > * { flex: 0 0 auto; }
 .package-primary-action { grid-column: 1; color: var(--md-sys-color-primary); }
-.package-remove-action { color: var(--md-sys-color-error); }
 .package-compatibility-warning { color: var(--md-sys-color-error); }
 .package-latest-update { --md-outlined-button-label-text-color: var(--md-sys-color-tertiary); --md-outlined-button-outline-color: var(--md-sys-color-tertiary); }
 .package-row-actions > .package-more-actions { grid-column: 2; }
@@ -1215,6 +1214,12 @@ md-linear-progress {
 }
 
 .material-button--danger {
+    --md-icon-button-icon-color: var(--md-sys-color-error);
+    --md-icon-button-hover-icon-color: var(--md-sys-color-error);
+    --md-icon-button-focus-icon-color: var(--md-sys-color-error);
+    --md-icon-button-pressed-icon-color: var(--md-sys-color-error);
+    --md-icon-button-hover-state-layer-color: var(--md-sys-color-error);
+    --md-icon-button-pressed-state-layer-color: var(--md-sys-color-error);
     --md-text-button-label-text-color: var(--md-sys-color-error);
     --md-text-button-hover-label-text-color: var(--md-sys-color-error);
     --md-text-button-focus-label-text-color: var(--md-sys-color-error);
@@ -1222,6 +1227,13 @@ md-linear-progress {
     --md-text-button-hover-state-layer-color: var(--md-sys-color-error);
     --md-text-button-focus-state-layer-color: var(--md-sys-color-error);
     --md-text-button-pressed-state-layer-color: var(--md-sys-color-error);
+    --md-filled-button-container-color: var(--md-sys-color-error);
+    --md-filled-button-label-text-color: var(--md-sys-color-on-error);
+    --md-filled-button-hover-label-text-color: var(--md-sys-color-on-error);
+    --md-filled-button-focus-label-text-color: var(--md-sys-color-on-error);
+    --md-filled-button-pressed-label-text-color: var(--md-sys-color-on-error);
+    --md-filled-button-hover-state-layer-color: var(--md-sys-color-on-error);
+    --md-filled-button-pressed-state-layer-color: var(--md-sys-color-on-error);
 }
 
 .dialog-actions {

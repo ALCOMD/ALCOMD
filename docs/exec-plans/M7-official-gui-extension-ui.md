@@ -248,7 +248,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 - 新增 `projectTemplates.v1` 及 `projectTemplates.list`、`projectTemplates.save`、`projectTemplates.remove`，初期限已认证本机所有者。`list` 按 ID 稳定分页，沿用现有有界列表参数和游标约定。记录返回 `{declaration, revision, locked}`。`save` 接收 `{declaration, expectedRevision?}`，省略修订表示创建，提供修订表示更新。创建同 ID 同内容返回已有记录，同 ID 异内容报告冲突。更新及 `{id, expectedRevision}` 删除均先验证当前修订与锁定状态。相同内容不产生新修订或变化事件。
 - 声明为 `{id, name, unity, dependencies, constraints}`。ID 必填，点分隔的非空小写 ASCII 段，每段以字母或数字开头及结尾，允许内部连字符，最多 128 字节。名称可重名。Unity 条件由允许的 major/minor 系列和精确版本预设取并集，两者为空时接受合法完整版本。依赖为 `{packageId, versionRange}`，条件约束为 `{unityVersion, packageId, versionRange}`，只限制已被求解器纳入的包，不追加直接依赖。声明统一校验并生成确定性 UTF-8 JSON，内部记录 UUID、修订、锁定标记和时间戳在 JSON 之外。
 - State23 新增模板目录和目录修订分配状态。记录保存 owner、公开模板 ID、内部 UUID、规范声明 JSON、正整数修订和锁定标记，按 owner 和公开 ID 唯一。修订在同一事务分配，跨删除和重建不重用。预置 Avatars 和 Worlds 使用与用户声明完全相同的结构和校验，分别使用 `com.vrclearn.alcomd.templates.vrchat.avatars` 和 `com.vrclearn.alcomd.templates.vrchat.worlds`。预设依次为 `2022.3.22f1`、`2022.3.6f1`、`2019.4.31f1`，2019 对应 SDK 与 Base 上限 `3.4.2` 由条件约束表达。内置锁仅影响编辑及删除。普通表单可生成与内置逐字节一致的声明，同名不同 ID 可分别保存。
-- `projects.create` 请求增加可选 `template: {id, revision}`。Core 接受任务时在事务内校验修订并冻结声明，旧修订或已删除记录提示重新选择。使用模板依赖的创建还检查现有 `packages.read`、`repositories.read` 和 `packages.manage` 权限，通过同一求解器锁定来源、版本和内容后再发布。GUI 默认不使用模板，无独立 Blank。模板创建、更新和删除同事务写入 `project-template.changed`，沿用当前事件入口，事件 aggregate ID 用内部 UUID，GUI 按模板目录失效处理。
+- `projects.create` 请求增加可选 `template: {id, revision}`。Core 接受任务时在事务内校验修订并冻结声明，旧修订或已删除记录提示重新选择。使用模板依赖的创建还检查现有 `packages.read`、`repositories.read` 和 `packages.manage` 权限，通过同一求解器锁定来源、版本和内容后再发布。GUI 默认选择内置 Blank，恢复规则见[空白与基础模板追加合同](M7-template-bases.md)。模板创建、更新和删除同事务写入 `project-template.changed`，沿用当前事件入口，事件 aggregate ID 用内部 UUID，GUI 按模板目录失效处理。
 
 #### 单文件 VCC 模板与两种创建方式（所有者已批准）
 
@@ -256,7 +256,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 
 - `projectTemplates.v2` 取代声明合同。本机所有者可用 `projectTemplates.list`、`save`、`export` 和 `remove`。列表记录为 `{id,name,editorVersion?,revision,locked}`。保存接收 `{source,expectedRevision?,idempotencyKey}`，来源是 `file{sourceFile}`、`project{projectId,expectedProjectRevision,id,name,includeAssets?,lockPackageVersions?}` 或 `manual{id,name,unityVersion,dependencies}`。导出接收 `{id,revision,destinationFile,idempotencyKey}`。保存和导出返回 `{operationId,replayed}`，终态成功分别返回 `{template}` 和 `{id,revision}`。同 ID 同内容复用记录，替换须提供当前修订。删除和建项目的模板引用沿用 ID 及修订。
 - 从项目创建检查 `projects.read` 及项目修订，按明确来源读取 Unity 版本、工程设置、软件包清单和可移植嵌入包。默认关闭 `includeAssets` 和 `lockPackageVersions`。勾选资产才读取 `Assets/` 及其中的 `.meta`。默认将直接 VPM 依赖写为 `*`，勾选锁定才保留实际版本与传递锁。手动填写创建填写模板 ID、显示名、Unity 版本和依赖范围。
-- 每个模板必须指定一个完整 Unity 版本。导入的归档必须在 `ProjectSettings/ProjectVersion.txt` 中声明版本，从模板创建项目必须精确匹配该版本。此前登记但缺少版本的模板需要补全后替换才能创建项目。
+- 除内置 Blank 外，每个模板必须指定一个完整 Unity 版本。普通导入归档必须在 `ProjectSettings/ProjectVersion.txt` 中声明版本，从模板创建项目必须精确匹配该版本。此前登记但缺少版本的模板需要补全后替换才能创建项目。
 - Core 在数据根的 `templates/` 保存验证后的 ZIP，按摘要绑定目录记录和未终结任务。删除模板后清理无引用的内部归档，仍有任务使用则在最后一个引用释放后清理。导入原件和导出副本均独立于内部归档。从模板创建冻结归档及修订，校验路径、归档上限和完整性，在现有暂存中展开工程、补齐目录、更新项目名及版本、解析或恢复 VPM 依赖，再独占发布。导出也使用独占发布。
 - 内置 Avatars 和 Worlds 各提供 2022 和 2019 两个条目，名称与 ID 均包含年份，固定版本分别为 `2022.3.22f1` 和 `2019.4.31f1`。Core 启动时按当前内置声明同步锁定记录，移除已退役的内置 ID，保留用户模板和已接受任务冻结的归档。列表显示名称、ID、来源和操作，完整 Unity 版本在详情中查看。
 - 按所有者要求，四个内置条目使用冻结 v3 对应版本的 MIT 工程数据，保留工程设置、UPM 清单、VPM `3.x` 依赖范围及完整 Unity 编辑器修订。2019 仍锁定 SDK 和 Base `3.4.2`。v4 独立生成归档元数据，创建时写入项目名和唯一 GUID，分发时保留模板许可。来源与许可见 `specs/templates/builtin-scaffolds/README.md`。
@@ -2012,3 +2012,9 @@ H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端
 最终 `c273c76` 已获批推送且同 SHA 三平台 CI/CodeQL 全绿；当前停止点只等待 H7 最终人工确认及剩余事项处理，详见本计划“当前 H7 授权与收束”。不进入 M8/M9/M11，不擅自推送或宣布 M7 完成。
 候选读取、exact Unity、Hub 和 State16 的既有合同保持；Config3 已由获批 Config4 迁移替代，删除 density、保留其他偏好及 revision。
 完整 GUI/Rust/三平台技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
+
+## 2026-11-10 移除按钮错误色
+
+所有者要求软件包移除和存储库移除使用 MD 红色以区别安装。复用现有 material-button--danger，补齐 Material 图标按钮和实心按钮的 error/on-error 状态令牌；接入包行移除、批量移除、纯移除确认、仓库行移除及仓库移除确认。移除无效的 package-remove-action 宿主 color 规则。禁用颜色及权限、确认/执行行为保持；安装/更新及混合计划的确认保留原色。
+
+前端检查和生产构建通过（target/m7-removal-color-check.log、m7-removal-color-build.log）。用 Playwright CLI 在合成预览核对浅/深色图标与确认按钮：浅色 error #ba1a1a、深色 error #ffb4ab，实心按钮分别配 on-error #ffffff/#690005；内置仓库禁用图标仍为 on-surface、0.38 不透明度。截图位于 target/m7-removal-colors/output/playwright，未执行确认或访问真实项目。仅颜色修改，未新增测试用例或重跑不受影响 Rust/先前浏览器套件；保留前项验证的历史范围。原生运行实例未替换，未提交/推送，不扩大 H7 签收。
