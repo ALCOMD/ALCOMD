@@ -72,7 +72,7 @@ import { useProjectDirectory } from "./use-project-directory";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, PageLoadingState, useDelayedPending } from "./LoadingState";
-import { LocalPageReadContext, PageReadContext, primePageRead, useInitialPageRead, usePageReadPromise, type createPageRead, type PageReadResult } from "./PageRead";
+import { LocalPageReadContext, PageReadContext, primePageRead, useInitialPageRead, useInitialPageRequest, usePageReadPromise, type createPageRead, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -291,13 +291,18 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [sort, setSort] = useViewState<ProjectListSort>("projects", "sort", "modified");
     const [descending, setDescending] = useViewState("projects", "descending", true);
     const load = useCallback(() => loadProjectRows(client, coreEvents, { search, sort, descending }), [client, coreEvents, search, sort, descending]);
-    const initial = usePageReadPromise("primary", load);
+    const { promise: initialPromise, settled } = useInitialPageRequest(load);
+    const initial = useRef(settled).current;
     const [state, setState] = useState<{
         error?: RpcError;
         loaded: boolean;
         loading: boolean;
         projects: ProjectSnapshot[];
-    }>({ loaded: false, loading: true, projects: [] });
+    }>(() => ({
+        loaded: initial?.kind === "ready", loading: initial === undefined,
+        projects: initial?.kind === "ready" ? initial.value : [],
+        ...(initial?.kind === "error" ? { error: normalizeRequestError(initial.error) } : {})
+    }));
     const [view, setView] = useState<"list" | "grid">(() => {
         try {
             return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
@@ -318,18 +323,24 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const lastViewLoad = useRef(load);
     const initialLoad = useRef(load).current;
     loadRef.current = load;
-    // The toolbar does not depend on project rows. Share the visit's first read,
-    // but allow it to settle after the route commits; newer filters/reads win.
+    // A settled prefetch belongs to the first render, as in other workspaces.
+    // Pending reads still leave the toolbar available; newer filters/reads win.
     useEffect(() => {
+        if (initial !== undefined) return;
         let active = true;
         const generation = listReadGeneration.current;
-        void initial.then((result) => {
+        const request = initialPromise
+            ? initialPromise.then((result) => { if (result.kind === "error") throw result.error; return result.value; })
+            : Promise.resolve().then(load);
+        void request.then((projects) => {
             if (!active || listReadGeneration.current !== generation || loadRef.current !== initialLoad) return;
-            setState(result.kind === "ready" ? { loaded: true, loading: false, projects: result.value }
-                : { loaded: false, loading: false, projects: [], error: normalizeRequestError(result.error) });
+            setState({ loaded: true, loading: false, projects });
+        }).catch((caught: unknown) => {
+            if (!active || listReadGeneration.current !== generation || loadRef.current !== initialLoad) return;
+            setState({ loaded: false, loading: false, projects: [], error: normalizeRequestError(caught) });
         });
         return () => { active = false; };
-    }, [initial, initialLoad]);
+    }, [initial, initialPromise, initialLoad]);
     useEffect(() => () => {
         listReadGeneration.current += 1;
         queuedList.current = false;

@@ -6,6 +6,7 @@ declare global {
     interface Window {
         pageAnimationCalls: number;
         pageFrames: { populated: boolean; opaque: boolean; settings: boolean; unityRows: number }[];
+        preparedProjectFrames: { pending: boolean; records: number; empty: boolean; placeholder: boolean }[];
     }
 }
 
@@ -320,6 +321,45 @@ test("Whole-page loading honors reduced motion while retaining its progress sema
 });
 
 for (const view of ["list", "grid"] as const) {
+    for (const state of ["ready", "empty"] as const) {
+        test(`Prepared Projects ${view} ${state} commits its real content after a ten-second hover`, async ({ page }, testInfo) => {
+            await page.addInitScript((mode) => window.localStorage.setItem("alcomd.gui.projects.view", mode), view);
+            await page.goto(`/browser-harness.html?route=/repositories&state=${state}&${state === "ready" ? "projectGrid=1" : ""}`);
+            await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeVisible();
+            await page.clock.install();
+            await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+            const target = navigation(page, "Projects");
+            const reads = await page.evaluate(() => window.projectListReads);
+            await target.dispatchEvent("pointerover", { pointerType: "mouse", isPrimary: true });
+            await page.clock.runFor(10_050);
+            expect(await page.evaluate(() => window.projectListReads)).toBe(reads + 1);
+            await page.evaluate(() => {
+                window.preparedProjectFrames = [];
+                const record = () => {
+                    const content = document.querySelector(".projects-content");
+                    if (!content) return;
+                    const sample = { pending: content.getAttribute("aria-busy") === "true",
+                        records: content.querySelectorAll("tbody tr[data-row-key], .project-card").length,
+                        empty: content.querySelector(".projects-empty") !== null,
+                        placeholder: content.querySelector(".desktop-list-empty, .loading-state") !== null };
+                    const previous = window.preparedProjectFrames.at(-1);
+                    if (JSON.stringify(sample) !== JSON.stringify(previous)) window.preparedProjectFrames.push(sample);
+                };
+                new MutationObserver(record).observe(document.querySelector(".route-content")!, {
+                    subtree: true, childList: true, attributes: true, attributeFilter: ["aria-busy"]
+                });
+            });
+            await target.dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+            await target.dispatchEvent("click");
+            await page.clock.runFor(100);
+            await expect(page.locator(".projects-content")).toHaveAttribute("aria-busy", "false");
+            const samples = await page.evaluate(() => window.preparedProjectFrames);
+            await testInfo.attach("prepared-project-first-render", { body: JSON.stringify(samples, null, 2), contentType: "application/json" });
+            expect(samples).toEqual([{ pending: false, records: state === "ready" ? 7 : 0,
+                empty: state === "empty", placeholder: false }]);
+            expect(await page.evaluate(() => window.projectListReads)).toBe(reads + 1);
+        });
+    }
     test(`Projects ${view} shows its toolbar while the initial rows are still loading`, async ({ page }) => {
         await page.addInitScript((mode) => window.localStorage.setItem("alcomd.gui.projects.view", mode), view);
         await page.goto("/browser-harness.html?route=%2Frepositories&state=ready&holdProjectsList=1");
