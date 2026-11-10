@@ -420,7 +420,8 @@ md-linear-progress {
 }
 .desktop-list-sort-icon[data-active="true"] { visibility: visible; }
 .desktop-list tbody tr:hover { --desktop-list-row-background: var(--md-sys-color-surface-container); }
-.projects-list tbody tr { height: 64px; }
+.projects-list tbody tr[data-row-key] { height: 64px; }
+.projects-list .desktop-list-empty { background: transparent; }
 .projects-column-project { width: 100%; min-width: 180px; }
 .projects-column-type,
 .projects-column-unity,

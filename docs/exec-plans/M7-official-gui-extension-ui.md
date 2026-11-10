@@ -2018,3 +2018,11 @@ H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端
 所有者要求软件包移除和存储库移除使用 MD 红色以区别安装。复用现有 material-button--danger，补齐 Material 图标按钮和实心按钮的 error/on-error 状态令牌；接入包行移除、批量移除、纯移除确认、仓库行移除及仓库移除确认。移除无效的 package-remove-action 宿主 color 规则。禁用颜色及权限、确认/执行行为保持；安装/更新及混合计划的确认保留原色。
 
 前端检查和生产构建通过（target/m7-removal-color-check.log、m7-removal-color-build.log）。用 Playwright CLI 在合成预览核对浅/深色图标与确认按钮：浅色 error #ba1a1a、深色 error #ffb4ab，实心按钮分别配 on-error #ffffff/#690005；内置仓库禁用图标仍为 on-surface、0.38 不透明度。截图位于 target/m7-removal-colors/output/playwright，未执行确认或访问真实项目。仅颜色修改，未新增测试用例或重跑不受影响 Rust/先前浏览器套件；保留前项验证的历史范围。原生运行实例未替换，未提交/推送，不扩大 H7 签收。
+
+## 2026-11-10 项目首行加载圆角
+
+所有者指出切换项目页时第一条项目记录上圆角抖动。逐帧复现项目专有的 64px 行高也套用到加载占位行，形成 0px 圆角的整行色块，再切换为真实记录的 8px 圆角。最终只修改项目列表：64px 行高限定到 data-row-key 数据行，占位单元格透明，沿用原 4px 加载条；其他加载区域与共享滚动初始化保持。
+
+新增浅/深色、1280/640px 的加载到记录及快速返回回归，验证加载行 4px/透明、首条记录初始 12 帧均为 8px、表头高度/位置保持。首轮窄屏测试误点隐藏导航文字，改为点击 Material 导航宿主；最终与原项目/包加载和表格几何回归共 12 项通过。全工作区前端检查及最终 GUI 生产构建通过，记录为 target/m7-project-corners-check.log、m7-project-corners-scoped-build.log、m7-project-corners-scoped-final.log；截图和摘要在 target/m7-project-corners-evidence/。未操作真实项目或更新运行程序、提交、推送，M7/H7 保持。
+
+所有者随后要求“更新”：输入摘要与上述验证一致，重新构建生产前端和嵌入式 GUI，通过后备份旧窗口程序与 321 份 WebView 配置并逐文件校验。仅替换 GUI，打开为 PID32464；Core PID33968、启动身份和程序摘要保持。切换前及打开后的 3 项目、5 模板、完整设置及 revision5 完全一致；30 仓库配置和其余字段保持，仅 6 条 refreshedAtMs 在 Core 后台刷新中正常推进，差异单独记录。持久设置字节保持，沿用原 profile，v3/Unity 保持，0 活动任务。证据及旧程序在 target/m7-project-corners-update-20261110/。GUI 摘要 C7E85FCA75BC0B4138988FD0E08135FE6FD53DB4FA5A9A6B19C52453F728BEA7，窗口响应正常；未进行原生页面点击或视觉验收，未写真实项目，未提交/推送。上段未更新描述为修正完成当时状态。
