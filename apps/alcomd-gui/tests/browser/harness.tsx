@@ -1079,6 +1079,9 @@ class DeterministicGuiClient implements GuiRpcClient {
                 if (item.version === "1.1.0") { item.unity = "incompatible"; item.eligibility = "blocked"; item.reasons = ["unity_incompatible"]; item.manualUnityOverrideAllowed = true; }
                 if (item.version === "legacy") { item.version = "1.0.0"; item.classification = "stable"; item.unity = "unknown"; item.reasons = ["project_unity_unknown"]; }
             }
+            if (query.has("versionAmbiguous")) for (const item of items) {
+                if (item.version === "1.1.0") { item.eligibility = "blocked"; item.reasons = ["source_ambiguous"]; }
+            }
             const offset = params.cursor?.offset ?? 0;
             const count = query.get("paged") ? 3 : items.length;
             return this.value({ ...base, nextCursor: offset + count < items.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "versions", packageId: params.view.packageId, items: items.slice(offset, offset + count) });

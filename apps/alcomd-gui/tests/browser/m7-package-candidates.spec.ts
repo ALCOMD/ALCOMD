@@ -3,6 +3,45 @@ import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
+test("Duplicate repository versions remain selectable and automatic source choice stays in Core", async ({ page }) => {
+    await open(page, "versions=1&paged=1");
+    const trigger = page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true });
+    await trigger.click();
+    const version = page.getByRole("option", { name: "1.1.0", exact: true });
+    await expect(version).toHaveCount(1);
+    await expect(version).toBeEnabled();
+    await version.click();
+    const review = page.locator("md-dialog[open]").filter({ hasText: "Apply package changes?" });
+    await expect(review).toBeVisible();
+    const automatic = await page.evaluate(() => window.packageRequests[0]);
+    expect(automatic).toMatchObject({ method: "downgrade", params: { version: "1.1.0" } });
+    expect(automatic?.params).not.toHaveProperty("source");
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
+    await trigger.click();
+    await page.getByRole("option", { name: "1.1.0", exact: true }).click();
+    await expect(review).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests[1])).toMatchObject({ method: "downgrade", params: { source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } });
+});
+
+test("Core-blocked versions stay disabled even when multiple repositories contain them", async ({ page }) => {
+    await open(page, "versions=1&versionAmbiguous=1");
+    await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true }).click();
+    await expect(page.locator("md-select-option").filter({ hasText: "1.1.0" })).toHaveJSProperty("disabled", true);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
+test("Dependency conflicts are reported by Plan after choosing a listed version", async ({ page }) => {
+    await open(page, "versions=1&planError=package_dependency_conflict");
+    await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true }).click();
+    const version = page.getByRole("option", { name: "1.1.0", exact: true });
+    await expect(version).toBeEnabled();
+    await version.click();
+    const error = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
+    await expect(error.getByRole("alert")).toContainText("package_dependency_conflict");
+    expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["downgrade"]);
+});
+
 test("Repeated version selection closes once and creates one reviewed package intent", async ({ page }) => {
     await open(page, "versions=1");
     await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
@@ -330,7 +369,7 @@ test("Summary pages share the first fingerprint while versions are prepared only
     await expect.poll(() => page.evaluate(() => window.candidateRequests.filter((request) => request.view.kind === "versions").map((request) => request.cursor?.offset ?? 0))).toEqual([0, 3, 6]);
     const options = page.locator(".package-version-picker").first().locator("md-select-option");
     await expect(options).toHaveText(["1.10.0", "1.2.3", "1.1.0"]);
-    await expect(options.filter({ hasText: "1.1.0" })).toHaveJSProperty("disabled", true);
+    await expect(options.filter({ hasText: "1.1.0" })).toHaveJSProperty("disabled", false);
     await page.keyboard.press("Escape");
     await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();

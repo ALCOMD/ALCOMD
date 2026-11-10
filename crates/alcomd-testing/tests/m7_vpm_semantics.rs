@@ -251,6 +251,70 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
 }
 
 #[tokio::test]
+async fn automatic_ndmf_downgrade_uses_repository_priority_and_checks_dependents() {
+    const MA: &str = "nadena.dev.modular-avatar";
+    const NDMF: &str = "nadena.dev.ndmf";
+    for conflict in [false, true] {
+        let deps = json!({NDMF: ">=1.14.7 <2.0.0-a"});
+        let f = fixture("ndmf-automatic-source",
+            json!({"dependencies":{MA:{"version":"1.18.7"},NDMF:{"version":"1.14.8"}},
+                "locked":{MA:{"version":"1.18.7","dependencies":deps},NDMF:{"version":"1.14.8","dependencies":{}}}}),
+            vec![package(MA,"1.18.7",deps),package(NDMF,"1.14.7",json!({})),package(NDMF,"1.14.6",json!({}))],None).await;
+        let mut mirror: Value =
+            serde_json::from_slice(&fs::read(f.directory.join("index.json")).expect("index"))
+                .expect("index JSON");
+        mirror["id"] = json!("owned.ndmf.mirror");
+        let mirror_path = f.directory.join("mirror.json");
+        fs::write(
+            &mirror_path,
+            serde_json::to_vec(&mirror).expect("mirror JSON"),
+        )
+        .expect("mirror index");
+        let registry = M3Application::new(f.store.clone(), f.reader.clone());
+        let repository = registry
+            .register_repository(
+                &AccessContext::local_owner(),
+                RepositorySource::Local {
+                    path: mirror_path.to_string_lossy().into_owned(),
+                },
+                key("register-mirror"),
+            )
+            .await
+            .expect("register mirror")
+            .value;
+        registry
+            .refresh_repository(
+                &AccessContext::local_owner(),
+                repository.repository_id,
+                repository.revision,
+                key("refresh-mirror"),
+            )
+            .await
+            .expect("refresh mirror");
+        let mut intent = request(&f, PlanAction::Downgrade, Some(NDMF));
+        intent.version_range = Some(format!("={}", if conflict { "1.14.6" } else { "1.14.7" }));
+        let planned = f.packages.plan(&AccessContext::local_owner(), intent).await;
+        if conflict {
+            assert_eq!(
+                planned
+                    .expect_err("MA requires the higher NDMF version")
+                    .code(),
+                M4ErrorCode::PackageDependencyConflict
+            );
+            assert_eq!(f.manifest()["locked"][NDMF]["version"], "1.14.8");
+        } else {
+            let plan = planned.expect("Core chooses a source for the exact version");
+            assert_eq!(plan.change_set.mutations.len(), 1);
+            assert!(plan.source_set.iter().any(|source| matches!(source,PackageSourcePin::Repository(pin) if pin.package_id==NDMF && pin.repository_id==f.repository.to_string())));
+            let operation = apply(&f, plan).await;
+            assert_eq!(operation.state, OperationState::Succeeded, "{operation:?}");
+            assert_eq!(f.manifest()["locked"][NDMF]["version"], "1.14.7");
+            assert_eq!(f.manifest()["locked"][MA]["version"], "1.18.7");
+        }
+    }
+}
+
+#[tokio::test]
 async fn downgrade_accepts_normalized_dependency_ranges_from_the_archive() {
     const MA: &str = "nadena.dev.modular-avatar";
     const NDMF: &str = "nadena.dev.ndmf";

@@ -1081,7 +1081,7 @@ interface PackageWorkspaceRow {
     sourceOptions: Array<{ key: string; label: string; selector: PackageSourceSelector }>;
 }
 
-function PackageVersionPicker({ client, project, snapshot, source, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; source?: PackageSourceSelector; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
+function PackageVersionPicker({ client, project, snapshot, source, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; source?: PackageSourceSelector; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin, automaticSource?: boolean): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
     const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
     const [error, setError] = useState<string>();
@@ -1141,6 +1141,10 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
         entries.push(item);
         versions.set(item.version, entries);
     }
+    // A version intent can use Core's existing automatic source selection. This
+    // representative supplies display/eligibility only; it must not pin a source.
+    const versionChoice = (entries: PackageCandidateEvidence[]) => entries.find((item) => actionableVersion(item))
+        ?? entries.find((item) => item.manualUnityOverrideAllowed === true) ?? entries[0]!;
     return <Select
         className={`package-version-picker alcomd-select--constrained${installedYanked ? " package-version-picker--yanked" : ""}`}
         label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: displayedVersion })}
@@ -1161,27 +1165,28 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
         onSelect={(value, origin) => {
             if (value === row.installedVersion) return;
             const matches = versions.get(value);
-            const option = matches?.length === 1 ? matches[0] : undefined;
-            if (!disabled && canPlan && !busy && option && (actionableVersion(option) || option.manualUnityOverrideAllowed === true)) {
+            if (!matches?.length) return;
+            const option = versionChoice(matches);
+            if (!disabled && canPlan && !busy && (actionableVersion(option) || option.manualUnityOverrideAllowed === true)) {
                 anchorRef.current = origin.current;
-                onSelect(option, anchorRef);
+                onSelect(option, anchorRef, source === undefined && matches.length > 1);
             }
         }}
         options={[
             ...(["compatible", "unknown", "incompatible"] as const).flatMap((group) => {
-                const grouped = [...versions].filter(([, entries]) => (entries[0]!.unity === "not_required" ? "compatible" : entries[0]!.unity) === group);
+                const grouped = [...versions].filter(([, entries]) => { const choice = versionChoice(entries); return (choice.unity === "not_required" ? "compatible" : choice.unity) === group; });
                 if (grouped.length === 0) return [];
                 return [
                     ...(group === "compatible" ? [] : [
                         { kind: "separator" as const, value: `separator:${group}`, label: "", disabled: true },
                         { kind: "heading" as const, value: `unity-group:${group}`, label: t(group === "incompatible" ? "Incompatible versions" : "Compatibility unknown"), disabled: true }
                     ]),
-                    ...grouped.map(([version, entries]) => ({
+                    ...grouped.map(([version, entries]) => { const choice = versionChoice(entries); return {
                         value: version,
                         label: version,
-                        title: entries.length > 1 ? t("Select a source to choose this version") : entries[0]!.reasons.map((reason) => reasonText(reason, t)).join(t(", ")),
-                        disabled: disabled || busy || (version !== row.installedVersion && (!canPlan || entries.length !== 1 || !(actionableVersion(entries[0]!) || entries[0]!.manualUnityOverrideAllowed === true)))
-                    }))
+                        title: choice.reasons.map((reason) => reasonText(reason, t)).join(t(", ")),
+                        disabled: disabled || busy || (version !== row.installedVersion && (!canPlan || !(actionableVersion(choice) || choice.manualUnityOverrideAllowed === true)))
+                    }; })
                 ];
             }),
             // Material opens before onOpen can commit React's pending state.
@@ -1681,10 +1686,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const evidenceError = readError ?? bulkError;
             const evidenceFailure = evidenceError ? t(requestErrorMessage(evidenceError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
             const repositoryRefreshFailure = repositoryRefreshError === undefined ? undefined : t("Refresh failed: ") + t(requestErrorMessage(repositoryRefreshError.code));
-            const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
+            const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin, automaticSource = false) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !(actionableVersion(option) || option.manualUnityOverrideAllowed === true)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
-                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", ...(option.manualUnityOverrideAllowed ? { allowUnityIncompatible: true } : {}), candidateSnapshot: candidates.snapshot.fingerprint });
+                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, ...(automaticSource ? {} : { source: candidateSource(option.source) }), includePrerelease: option.classification === "prerelease", ...(option.manualUnityOverrideAllowed ? { allowUnityIncompatible: true } : {}), candidateSnapshot: candidates.snapshot.fingerprint });
             };
             const bulkReady = (intents: CandidateBulkIntent[] | undefined) => intents?.length && intents.every((intent) => intent.kind === "remove") ? currentEvidence && !candidatesPending && !packageMutationBusy : catalogReady;
             const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !bulkReady(intents) || !intents?.length;
@@ -1771,7 +1776,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                     return { key: row.packageId, className: row.installedVersion === undefined ? "package-row--available" : "package-row--installed", cells: [
                                         <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={selectRow} />,
                                         <><strong title={evidence?.description}>{row.displayName}</strong><small>{row.packageId}</small></>,
-                                        <PackageVersionPicker client={client} project={project} source={selectedSource(row)} snapshot={candidates?.snapshot.fingerprint} disabled={!canQueryCandidates || !currentEvidence} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
+                                        <PackageVersionPicker client={client} project={project} source={selectedSource(row)} snapshot={candidates?.snapshot.fingerprint} disabled={!canQueryCandidates || !currentEvidence} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin, automaticSource) => chooseCandidate(row, option, origin, automaticSource)} row={row} />,
                                         <PackageLatestInfo canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
                                         row.sourceOptions.length === 0 ? <span>{evidence === undefined ? "—" : t("Unknown source")}</span> : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
                                         <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onRemove={(origin) => selectAction("remove", origin, row)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
