@@ -251,6 +251,47 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
 }
 
 #[tokio::test]
+async fn downgrade_accepts_normalized_dependency_ranges_from_the_archive() {
+    const MA: &str = "nadena.dev.modular-avatar";
+    const NDMF: &str = "nadena.dev.ndmf";
+    let deps = json!({NDMF: ">=1.14.7 <2.0.0-a"});
+    let mut older = package(MA, "1.18.6", deps.clone());
+    older["unity"] = json!("2022.3");
+    let f = fixture(
+        "ma-downgrade-range-order",
+        json!({"dependencies":{MA:{"version":"1.18.7"}},
+            "locked":{MA:{"version":"1.18.7","dependencies":deps},
+                NDMF:{"version":"1.14.8","dependencies":{}}}}),
+        vec![older, package(NDMF, "1.14.8", json!({}))],
+        None,
+    )
+    .await;
+    let ndmf = f.root.join("Packages").join(NDMF).join("package.json");
+    let ndmf_before = fs::read(&ndmf).expect("installed NDMF metadata");
+    let mut intent = request(&f, PlanAction::Downgrade, Some(MA));
+    intent.version_range = Some("=1.18.6".to_owned());
+    let plan = f
+        .packages
+        .plan(&AccessContext::local_owner(), intent)
+        .await
+        .expect("MA downgrade plan");
+    assert_eq!(plan.change_set.mutations.len(), 1);
+    assert_eq!(
+        plan.change_set.mutations[0].from_version.as_deref(),
+        Some("1.18.7")
+    );
+    assert_eq!(
+        plan.change_set.mutations[0].to_version.as_deref(),
+        Some("1.18.6")
+    );
+    let operation = apply(&f, plan).await;
+    assert_eq!(operation.state, OperationState::Succeeded, "{operation:?}");
+    assert_eq!(f.manifest()["locked"][MA]["version"], "1.18.6");
+    assert_eq!(f.manifest()["locked"][NDMF]["version"], "1.14.8");
+    assert_eq!(fs::read(ndmf).expect("retained NDMF metadata"), ndmf_before);
+}
+
+#[tokio::test]
 async fn package_actions_use_current_files_without_refreshing_registered_observations() {
     for action in [
         PlanAction::Install,

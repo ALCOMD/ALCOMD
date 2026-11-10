@@ -1722,10 +1722,17 @@ fn verify_archive_plan_metadata(
                 serde_json::from_str(&row.dependencies_json).map_err(|cause| {
                     M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause)
                 })?;
-            let actual_dependencies = object
-                .get("vpmDependencies")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({}));
+            let (expected_dependencies, _) =
+                crate::package::parse_dependencies(Some(&expected_dependencies)).map_err(
+                    |cause| M4Error::new(M4ErrorCode::PackageManifestInvalid).with_source(cause),
+                )?;
+            let (actual_dependencies, _) = crate::package::parse_dependencies(
+                object.get("vpmDependencies"),
+            )
+            .map_err(|cause| {
+                M4Error::with_subreason(M4ErrorCode::PlanStale, "manifest_fingerprint_changed")
+                    .with_source(cause)
+            })?;
             if actual_dependencies != expected_dependencies
                 || object.get("unity").and_then(serde_json::Value::as_str) != row.unity.as_deref()
                 || object
