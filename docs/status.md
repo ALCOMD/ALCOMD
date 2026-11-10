@@ -6,6 +6,26 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-10 按本次“分次提交更改并更新”要求，将后续项目圆角/首帧、当前包输入、MA 降级、多来源版本、默认目录、完整仓库配置、扩展包完整后缀及 Unity 安装入口分别完成 9 项本地功能提交。分组后累计源码与原验证摘要对应，原 83 个工作文件字节保持；最终 fmt/xtask、前端检查/生产构建及独立 Core/GUI 构建通过。离线逐文件备份旧程序、29 份数据和 327 份界面配置后，更新打开 Core PID54660 / GUI PID46468，ready/State31/Config13、0 活动任务。完整设置/revision7、3 项目/30 仓库/5 模板/1 Unity 登记/0 扩展及 9 份项目清单保持，原 profile 与 v3/Unity 保持。详见[交付记录](testing/pending-delivery-20261110.md)。未推送或操作真实项目包，不扩大 M7/H7 签收；下方未提交/未更新均为历史轮次状态。
+
+- 2026-11-10 按所有者要求调整设置页已安装 Unity 区域：直接提供“查找并刷新”和“手动选择”，版本列表逐行警告色移除，确认仅取消登记并保留 Editor；沿用 Core 身份/修订/引用保护及分页、重连、路径规则。126 项界面回归、前端检查/生产构建及嵌入式 GUI 独立构建通过，宽窄截图已核对，见[计划](exec-plans/M7-unity-installation-controls.md)和[记录](testing/unity-installation-controls-20261110.md)。本轮 Core 未改动，配对复用上一轮已验证产物；未操作真实安装、替换运行实例、提交或推送，M7/H7 保持。
+
+- 2026-11-10 按所有者要求将扩展包后缀统一为 `.alcomdextension`：同步产品元数据、系统选择器、当前规范/架构、Git 二进制规则和测试夹具，沿用原包内容、验签及安装运行合同。6 项包验证、1 项隔离真实 Core/host 生命周期、32 项界面回归、受影响严格 Clippy、前端检查/构建、fmt/xtask 及 Core/GUI 独立构建通过，见[计划](exec-plans/M7-extension-package-full-name.md)及[记录](testing/extension-package-full-name-20261110.md)。历史证据保留当时名称；未重命名用户文件、操作真实扩展、替换运行实例、提交或推送，M7/H7 保持。
+
+- 2026-11-10 按所有者要求完成[完整存储库配置文件](exec-plans/M7-repository-configuration-files.md)：默认 `.alcomdrepositories` 包含全部内置/本地/远程来源、自定义显示名、顺序、仓库/包开关及已有认证，保留旧 TXT 兼容导出/导入。导入可选覆盖已有配置且默认开启，取消后仅新增并保留原配置，文件外来源保持；无关索引刷新不阻止配置恢复，同配置重复导入不产生多余修订。公开配套同步，无 SQL 迁移、新权限名或依赖。188 项不同 Rust、53 项不同浏览器、受影响严格 Clippy、前端检查/构建及门禁通过，见[验证记录](testing/repository-configuration-files-20261110.md)。独立构建产物已准备，未替换运行实例、操作真实仓库/项目、提交或推送；M7/H7 保持。
+
+- 2026-11-10 按所有者要求将默认项目及备份位置改为用户主目录/ALCOMD/Projects、Backups：Windows 查询 Profile，Unix 使用 HOME，移除 Documents/XDG 文档目录解析；显式路径、旧资源与已接受任务目的地保持。40 项目录/设置/存储回归、平台严格 Clippy、fmt/xtask 和 Core/GUI 构建通过；额外旧元数据脚本有既有 Config12/13 断言不一致，详见[验证记录](testing/home-storage-defaults-20261110.md)。备份后更新打开 Core PID43844/GUI PID2416，实际默认值已核对，原设置/revision5、3 项目/30 仓库/5 模板、profile、v3/Unity 及真实项目清单保持，0 活动任务。未迁移资源、提交或推送；Unix 未实跑，M7/H7 保持。
+
+- 2026-11-10 修复 NDMF 等多来源同版本全部置灰：GUI 去掉“条数必须为 1”的额外限制，默认多来源提交版本意图，由已有 Core Plan 按优先级确定并冻结来源；显式选源、Core 已知阻止条件、快照和真实依赖冲突校验保持。84 项浏览器、23 项核心回归、严格 Clippy、前端/原生构建及门禁通过；隔离验证重复仓库自动选源成功及 MA 约束拒绝过低 NDMF。备份后更新打开 GUI PID23972，Core PID31256 和原 3 项目/30 仓库/5 模板、设置/revision5、profile、v3/Unity 及真实项目清单保持，0 活动任务。未操作真实包、提交或推送，见[计划补充](exec-plans/M7-package-v3-parity-audit.md)及[验证记录](testing/version-source-availability-20261110.md)，M7/H7 保持。
+
+- 2026-11-10 修复 MA 1.18.7→1.18.6 降级的清单误判：归档依赖与仓库记录统一复用现有 VPM 解析器规范化后比较，避免复合条件顺序差异被误报 manifest_fingerprint_changed；真实依赖/Unity/旧资源差异、无效条件和结构仍在写项目前拒绝。修复前隔离复现、修复后完整降级成功且 NDMF 保持；236 项不同 Rust、严格 Clippy、fmt/xtask 和独立 Core 构建通过。备份后更新打开 Core PID31256/GUI PID27580，GUI 二进制与此前 81 项浏览器验证输入保持；3 项目/30 仓库/5 模板、设置/revision5、profile、v3/Unity 和 9 份真实项目清单保持，12 仓库正常刷新时间推进，MA 仍为 1.18.7。未代替用户真实降级、提交或推送，见[验证记录](testing/ma-downgrade-range-validation-20261110.md)及[计划补充](exec-plans/M7-package-current-project-inputs.md)，M7/H7 保持。
+
+- 2026-11-10 修复软件包版本切换/卸载点击无反馈：Core 的普通 Plan/Apply 复验改为直接读取当前项目文件，保留注册身份/修订但不与过期登记依赖比较，不回填登记观察；确认后变化仍拒绝，元数据指纹 v8 补入 Unity 版本/修订，旧未执行计划需重建。修正归档检查错误访问未替换包暂存清单，准备失败在确认窗口显示原因并可关闭重试。241 项不同 Rust、81 项浏览器回归、严格 Clippy、前端检查/构建及门禁通过。备份后更新打开 Core PID34112/GUI PID36256，原 3 项目/30 仓库/5 模板、完整设置/revision5、profile、v3/Unity 及 9 份真实项目清单保持，0 活动任务；未执行真实包 Apply、提交或推送。见[计划](exec-plans/M7-package-current-project-inputs.md)和[验证记录](testing/package-current-project-inputs-20261110.md)，M7/H7 保持。
+
+- 2026-11-10 项目页接回其他工作区已有的已就绪首读路径：预加载完成时直接初始化真实列表/网格或空状态，未完成才显示加载态，消除 effect 回填导致的额外空表结构；共享请求、慢读工具栏、筛选、重试和迟到隔离保持。四项十秒悬停首次 DOM 提交回归及既有相关套件共 57 项通过，前端检查/构建通过。接续本项目页修复的更新要求，备份后更新打开 GUI PID29816，Core PID33968、3 项目/30 仓库/5 模板、设置/revision5、原 profile 与 v3/Unity 保持，0 活动任务。见[计划](exec-plans/M7-progressive-loading-preload.md)及[验证记录](testing/project-prefetch-first-render-20261110.md)。未提交/推送，不扩大 H7 签收。
+
+- 2026-11-10 修正项目列表第一条记录上圆角切换：项目专有的 64px 行高仅作用于真实数据行，加载占位透明并保持 4px，消除方角整行色块切换成圆角记录的观感。仅两处项目列表样式变化，其他加载区域保持；12 项定向浏览器回归、前端检查/构建通过，浅深色宽窄截图已核对，见[GUI 计划](exec-plans/M7-official-gui-extension-ui.md)。随后按所有者要求备份并更新打开 GUI PID32464，Core PID33968 保持；3 项目、30 仓库、5 模板、完整设置/revision5、原 profile 及 v3/Unity 保持，0 活动任务。未操作真实项目、提交或推送。
+
 - 2026-11-10 所有者要求“都分次提交并更新”：预取、基础模板、确认后下载、移除配色、选择器路径、任务窗口分别完成 6 次本地功能提交，并保存独立交付记录。共享文件按功能拆分后与各阶段验证摘要匹配，原工作文件字节保持。最终前端/独立 Core/嵌入式 GUI 构建、fmt 与仓库门禁通过；离线备份后更新打开为 Core PID33968、GUI PID39112，ready/State31/Config13、0 活动任务。切换前后及 GUI 打开后的 3 项目、30 存储库、5 模板、完整设置与 revision5 保持，沿用原 profile，v3/Unity 保持。详见[交付记录](testing/batch-delivery-20261110.md)。未推送或操作真实项目，不扩大 H7/M11 签收；下方未提交/未更新均为各轮历史状态。
 
 - 2026-11-10 按所有者要求完成[任务执行窗口](exec-plans/M7-task-progress-window.md)：确认任务后连续显示进度和结果，可最小化并在任务中心跟踪；后台完成不弹回、不自动导航。覆盖包操作、项目创建/复制/还原/删除、迁移、备份、模板和扩展；模板失败编辑、读取重试、取消及未知写入保护保留。补齐阶段翻译，终态不再显示进行中的阶段。195 项不同浏览器用例分轮最终通过，全工作区前端检查/构建、仓库及差异检查通过；轮次、截图与限制见[记录](testing/task-progress-window-20261110.md)。无 Core 合同/权限/依赖变更，未更新运行实例、操作真实项目、提交或推送。
