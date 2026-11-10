@@ -1335,7 +1335,7 @@ fn resolver_index_fixture() -> RepositoryObservation {
     let valid = &mut observation.packages[0];
     valid.resolver = Some(ResolverPackageMetadata {
         semantic_version: valid.version.clone(),
-        author_name: "Fixture".into(),
+        author_name: Some("Fixture".into()),
         author_email: None,
         artifact_url: "https://example.invalid/package.zip".into(),
         zip_sha256: None,

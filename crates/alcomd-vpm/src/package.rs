@@ -36,7 +36,7 @@ pub struct ResolverReadyPackage {
     pub candidate: PackageCandidate,
     pub display_name: String,
     pub description: Option<String>,
-    pub author_name: String,
+    pub author_name: Option<String>,
     pub author_email: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
@@ -185,8 +185,13 @@ pub(crate) fn parse_manifest(
     validate_package_id(name)?;
     let version = Version::parse(version_text)
         .map_err(|_| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
-    let display_name = required_string(manifest, "displayName", DISPLAY_NAME_LIMIT)?.to_owned();
-    let description = optional_string(manifest, "description", DESCRIPTION_LIMIT)?;
+    let display_name = optional_string(manifest, "displayName", DISPLAY_NAME_LIMIT)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| name.to_owned());
+    let description = optional_string(manifest, "description", DESCRIPTION_LIMIT)
+        .ok()
+        .flatten();
     let artifact_url = parse_artifact_url(required_string(manifest, "url", ARTIFACT_URL_LIMIT)?)?;
     let download_headers_present = if manifest.contains_key("headers") {
         let artifact = reqwest::Url::parse(&artifact_url)
@@ -201,12 +206,23 @@ pub(crate) fn parse_manifest(
     let archive_sha256 = declared_digest
         .and_then(Value::as_str)
         .and_then(parse_sha256);
-    let author = manifest
-        .get("author")
-        .and_then(Value::as_object)
-        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
-    let author_name = required_string(author, "name", AUTHOR_FIELD_LIMIT)?.to_owned();
-    let author_email = optional_string(author, "email", AUTHOR_FIELD_LIMIT)?;
+    // Presentation metadata is not resolver authority. Keep missing values absent,
+    // including the Unity-supported string form of author.
+    let author = manifest.get("author");
+    let author_name = match author {
+        Some(Value::Object(author)) => optional_string(author, "name", AUTHOR_FIELD_LIMIT)
+            .ok()
+            .flatten(),
+        Some(Value::String(value)) if !value.is_empty() && value.len() <= AUTHOR_FIELD_LIMIT => {
+            Some(value.clone())
+        }
+        _ => None,
+    };
+    let author_email = author.and_then(Value::as_object).and_then(|author| {
+        optional_string(author, "email", AUTHOR_FIELD_LIMIT)
+            .ok()
+            .flatten()
+    });
     let unity = optional_string(manifest, "unity", UNITY_LIMIT)?;
     let unity_release = optional_string(manifest, "unityRelease", UNITY_RELEASE_LIMIT)?;
     let unity_minimum = package_minimum(unity.as_deref(), unity_release.as_deref())
@@ -409,14 +425,17 @@ impl LegacyMetadata {
             entries
                 .iter()
                 .map(|(path, guid)| {
-                    let guid = guid
-                        .as_str()
-                        .filter(|guid| {
-                            guid.is_empty()
+                    let guid = match guid {
+                        Value::Null => "",
+                        Value::String(guid)
+                            if guid.is_empty()
                                 || guid.len() == 32
-                                    && guid.bytes().all(|byte| byte.is_ascii_hexdigit())
-                        })
-                        .ok_or_else(|| manifest_error(PackageManifestErrorCode::ManifestInvalid))?;
+                                    && guid.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+                        {
+                            guid
+                        }
+                        _ => return Err(manifest_error(PackageManifestErrorCode::ManifestInvalid)),
+                    };
                     if path.is_empty()
                         || path.len() > LEGACY_ENTRY_LIMIT
                         || path.chars().any(char::is_control)
@@ -522,6 +541,27 @@ mod tests {
     }
 
     #[test]
+    fn legacy_null_guids_are_path_only_declarations() {
+        let null = serde_json::json!({"legacyFolders":{"Assets/Old":null},"legacyFiles":{"Assets/Old.cs":null}});
+        let empty = serde_json::json!({"legacyFolders":{"Assets/Old":""},"legacyFiles":{"Assets/Old.cs":""}});
+        assert_eq!(
+            LegacyMetadata::parse(null.as_object().expect("object"))
+                .expect("VPM path-only declarations"),
+            LegacyMetadata::parse(empty.as_object().expect("object"))
+                .expect("existing empty GUID form")
+        );
+        for invalid in [
+            serde_json::json!(42),
+            serde_json::json!(false),
+            serde_json::json!("invalid"),
+            serde_json::json!([]),
+        ] {
+            let declaration = serde_json::json!({"legacyFiles":{"Assets/Old.cs":invalid}});
+            assert!(LegacyMetadata::parse(declaration.as_object().expect("object")).is_err());
+        }
+    }
+
+    #[test]
     fn public_fixture_becomes_resolver_ready_without_hidden_defaults() {
         let parsed = parse_resolver_ready_repository(READY, &context()).expect("ready fixture");
         assert_eq!(parsed.len(), 2);
@@ -571,6 +611,77 @@ mod tests {
             assert!(validate_package_id(package_id).is_err(), "{package_id}");
         }
         validate_package_id("com.example-valid_package-1").expect("valid package ID");
+    }
+
+    #[test]
+    fn presentation_fields_do_not_determine_install_eligibility() {
+        for value in [
+            Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(""),
+            serde_json::json!("x".repeat(AUTHOR_FIELD_LIMIT + 1)),
+        ] {
+            let mut document: Value = serde_json::from_slice(READY).expect("fixture");
+            let manifest = &mut document["packages"]["com.example.base"]["versions"]["1.2.3"];
+            for field in ["author", "displayName", "description"] {
+                manifest[field] = value.clone();
+            }
+            let packages = parse_resolver_ready_repository(
+                &serde_json::to_vec(&document).expect("document"),
+                &context(),
+            )
+            .expect("presentation is not install authority");
+            assert_eq!(packages[0].candidate.package_id, "com.example.base");
+        }
+        let mut document: Value = serde_json::from_slice(READY).expect("fixture");
+        let manifest = document["packages"]["com.example.base"]["versions"]["1.2.3"]
+            .as_object_mut()
+            .expect("manifest");
+        for field in ["author", "displayName", "description"] {
+            manifest.remove(field);
+        }
+        parse_resolver_ready_repository(
+            &serde_json::to_vec(&document).expect("document"),
+            &context(),
+        )
+        .expect("minimal installable manifest");
+    }
+
+    #[test]
+    fn authors_are_optional_bounded_presentation_in_both_unity_forms() {
+        for (author, name, email) in [
+            (Value::Null, None, None),
+            (
+                serde_json::json!("Package Author <dev@example.invalid>"),
+                Some("Package Author <dev@example.invalid>"),
+                None,
+            ),
+            (
+                serde_json::json!({"name":"Package Author", "email":"dev@example.invalid"}),
+                Some("Package Author"),
+                Some("dev@example.invalid"),
+            ),
+            (
+                serde_json::json!({"name":"Package Author", "email":false}),
+                Some("Package Author"),
+                None,
+            ),
+            (
+                serde_json::json!({"email":"dev@example.invalid"}),
+                None,
+                Some("dev@example.invalid"),
+            ),
+        ] {
+            let mut document: Value = serde_json::from_slice(READY).expect("fixture");
+            document["packages"]["com.example.base"]["versions"]["1.2.3"]["author"] = author;
+            let packages = parse_resolver_ready_repository(
+                &serde_json::to_vec(&document).expect("document"),
+                &context(),
+            )
+            .expect("optional author");
+            assert_eq!(packages[0].author_name.as_deref(), name);
+            assert_eq!(packages[0].author_email.as_deref(), email);
+        }
     }
 
     #[test]

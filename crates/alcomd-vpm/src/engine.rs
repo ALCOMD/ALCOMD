@@ -3406,7 +3406,7 @@ mod tests {
                     version: (*version).to_owned(),
                     yanked: false,
                     unity: None,
-                    author_name: "Fixture".to_owned(),
+                    author_name: Some("Fixture".to_owned()),
                     author_email: Some("fixture@example.invalid".to_owned()),
                     unity_release: None,
                     dependencies_json: "{}".to_owned(),

@@ -222,7 +222,7 @@ pub(super) fn resolver_catalog(
                         .and_then(alcomd_application::package_yanked)
                         .ok_or_else(invalid_query)?,
                     unity: metadata.unity,
-                    author_name: String::new(),
+                    author_name: None,
                     author_email: None,
                     unity_release: metadata.unity_release,
                     dependencies_json,

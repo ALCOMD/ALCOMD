@@ -146,7 +146,19 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
     publish_cache_object(&data, &archive, &digest);
     let repository = fixture.path().join("repository.json");
-    fs::write(&repository, repository_document(&hex(&digest))).expect("write repository");
+    let mut document: serde_json::Value =
+        serde_json::from_str(&repository_document(&hex(&digest))).expect("fixture repository");
+    let manifest = document["packages"]["com.example.fixture"]["versions"]["1.0.0"]
+        .as_object_mut()
+        .expect("manifest");
+    for field in ["author", "displayName", "description"] {
+        manifest.remove(field);
+    }
+    fs::write(
+        &repository,
+        serde_json::to_vec(&document).expect("minimal repository"),
+    )
+    .expect("write repository");
 
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));

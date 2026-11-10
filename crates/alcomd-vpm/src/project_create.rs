@@ -1543,7 +1543,7 @@ mod tests {
                     yanked: false,
                     unity: unity.map(str::to_owned),
                     unity_release: release.map(str::to_owned),
-                    author_name: String::new(),
+                    author_name: None,
                     author_email: None,
                     dependencies_json: dependencies.to_string(),
                     legacy_metadata_present: false,

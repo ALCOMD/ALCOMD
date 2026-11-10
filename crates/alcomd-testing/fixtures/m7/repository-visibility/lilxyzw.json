@@ -1,0 +1,199 @@
+{
+    "name": "lilxyzw",
+    "id": "io.github.lilxyzw.vpm",
+    "author": "lilxyzw",
+    "url": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+    "packages": {
+        "jp.lilxyzw.liltoon": {
+            "versions": {
+                "2.4.1": {
+                    "name": "jp.lilxyzw.liltoon",
+                    "version": "2.4.1",
+                    "displayName": "lilToon",
+                    "description": "Feature-rich toon shader.",
+                    "unity": "2022.3",
+                    "documentationUrl": "https://lilxyzw.github.io/lilToon/",
+                    "changelogUrl": "https://lilxyzw.github.io/lilToon/#/en-us/other/changelog",
+                    "licensesUrl": "https://github.com/lilxyzw/lilToon/blob/master/Assets/lilToon/LICENSE",
+                    "license": "MIT",
+                    "keywords": [
+                        "Toon",
+                        "Shader",
+                        "Material"
+                    ],
+                    "url": "https://github.com/lilxyzw/lilToon/releases/download/2.4.1/jp.lilxyzw.liltoon-2.4.1.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "legacyFolders": {
+                        "Assets\\lilToon": "05d1d116436047941ad97d1b9064ee05"
+                    },
+                    "zipSHA256": "90f8bed7cdd7435f4904bca3d885a81a1811bd25036d712f21942c531d940247"
+                }
+            }
+        },
+        "jp.lilxyzw.avatar-utils": {
+            "versions": {
+                "2.1.2": {
+                    "name": "jp.lilxyzw.avatar-utils",
+                    "version": "2.1.2",
+                    "displayName": "lilAvatarUtils",
+                    "description": "Utilities for avatar modification.",
+                    "unity": "2022.3",
+                    "license": "MIT",
+                    "url": "https://github.com/lilxyzw/lilAvatarUtils/releases/download/2.1.2/jp.lilxyzw.avatar-utils-2.1.2.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "zipSHA256": "9bbe86140489e033733b8b1027fe114898cf9385b2f771e9bdc4f4fea6471b87"
+                }
+            }
+        },
+        "jp.lilxyzw.lilycalinventory": {
+            "versions": {
+                "1.5.2": {
+                    "name": "jp.lilxyzw.lilycalinventory",
+                    "version": "1.5.2",
+                    "displayName": "lilycalInventory",
+                    "description": "Modify avatar at build time.",
+                    "unity": "2022.3",
+                    "license": "MIT",
+                    "url": "https://github.com/lilxyzw/lilycalInventory/releases/download/1.5.2/jp.lilxyzw.lilycalinventory-1.5.2.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "zipSHA256": "54874aee498ab83250deca2443bacc9a0cf36929c282a5153ade37d4cbb93602"
+                }
+            }
+        },
+        "jp.lilxyzw.editortoolbox": {
+            "versions": {
+                "2.0.2": {
+                    "name": "jp.lilxyzw.editortoolbox",
+                    "version": "2.0.2",
+                    "displayName": "lilEditorToolbox",
+                    "description": "Extensions for Unity Editor.",
+                    "unity": "2022.3",
+                    "license": "MIT",
+                    "url": "https://github.com/lilxyzw/lilEditorToolbox/releases/download/2.0.2/jp.lilxyzw.editortoolbox-2.0.2.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "zipSHA256": "526ac94e66a1b489eb88925b3e3bb3694918fa5a1f040c4c5d8c0b7ce81dda6f"
+                }
+            }
+        },
+        "jp.lilxyzw.outlinesmoother": {
+            "versions": {
+                "1.1.0": {
+                    "name": "jp.lilxyzw.outlinesmoother",
+                    "version": "1.1.0",
+                    "displayName": "lilOutlineSmoother",
+                    "description": "Smooth outline normals.",
+                    "unity": "2022.3",
+                    "url": "https://github.com/lilxyzw/lilOutlineSmoother/releases/download/1.1.0/jp.lilxyzw.outlinesmoother-1.1.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "vpmDependencies": {
+                        "nadena.dev.ndmf": "^1.5.0"
+                    },
+                    "zipSHA256": "e01b56996db1bf6d7cf17bc2adf40b9f39b8860cb0030a0dd37f5cd01ccc9de8"
+                }
+            }
+        },
+        "jp.lilxyzw.anythingreplacer": {
+            "versions": {
+                "1.1.0": {
+                    "name": "jp.lilxyzw.anythingreplacer",
+                    "version": "1.1.0",
+                    "displayName": "lilAnythingReplacer",
+                    "description": "Replace references at build time.",
+                    "unity": "2022.3",
+                    "url": "https://github.com/lilxyzw/lilAnythingReplacer/releases/download/1.1.0/jp.lilxyzw.anythingreplacer-1.1.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "vpmDependencies": {
+                        "nadena.dev.ndmf": "^1.5.0"
+                    },
+                    "zipSHA256": "b8079f97be33cb6c83514de5a4b15d98bc6a463f7b89c7dc38859a3527b9a580"
+                }
+            }
+        },
+        "jp.lilxyzw.lilemo": {
+            "versions": {
+                "1.2.0": {
+                    "name": "jp.lilxyzw.lilemo",
+                    "version": "1.2.0",
+                    "displayName": "lilEmo",
+                    "description": "A non-destructive plugin for creating avatar facial expressions.",
+                    "unity": "2022.3",
+                    "url": "https://github.com/lilxyzw/lilEmo/releases/download/1.2.0/jp.lilxyzw.lilemo-1.2.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "vpmDependencies": {
+                        "nadena.dev.modular-avatar": "^1.14"
+                    },
+                    "zipSHA256": "cec1baf596a7f15013e030061fa411bf94c4276d73614884dfcfc9822990f6c3"
+                }
+            }
+        },
+        "jp.lilxyzw.lilpbr": {
+            "versions": {
+                "1.0.0": {
+                    "name": "jp.lilxyzw.lilpbr",
+                    "version": "1.0.0",
+                    "displayName": "lilPBR",
+                    "description": "PBR Shaders",
+                    "unity": "2022.3",
+                    "hideInEditor": false,
+                    "url": "https://github.com/lilxyzw/lilPBR/releases/download/1.0.0/jp.lilxyzw.lilpbr-1.0.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "zipSHA256": "8210a2fca0f55e3a3980258ad99068efa280233e980f967a9f6263d894bdfc6b"
+                }
+            }
+        },
+        "jp.lilxyzw.ndmfmeshsimplifier": {
+            "versions": {
+                "0.3.0": {
+                    "name": "jp.lilxyzw.ndmfmeshsimplifier",
+                    "version": "0.3.0",
+                    "displayName": "lilNDMFMeshSimplifier",
+                    "description": "Simplify meshes at build time.",
+                    "unity": "2022.3",
+                    "license": "MIT",
+                    "url": "https://github.com/lilxyzw/lilNDMFMeshSimplifier/releases/download/0.3.0/jp.lilxyzw.ndmfmeshsimplifier-0.3.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "vpmDependencies": {
+                        "nadena.dev.ndmf": "^1.5.0"
+                    },
+                    "zipSHA256": "2f5aded764d4f856adc9fe3ab95e1359e3d7c77a64957a7b77acf4ccf0f0106a"
+                }
+            }
+        },
+        "jp.lilxyzw.nontoon": {
+            "versions": {
+                "0.3.0": {
+                    "name": "jp.lilxyzw.nontoon",
+                    "version": "0.3.0",
+                    "displayName": "NonToon",
+                    "description": "",
+                    "unity": "2022.3",
+                    "hideInEditor": false,
+                    "url": "https://github.com/lilxyzw/NonToon/releases/download/0.3.0/jp.lilxyzw.nontoon-0.3.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "vpmDependencies": {
+                        "jp.lilxyzw.shadercore": "^0.3.0"
+                    },
+                    "zipSHA256": "ad119f2d48c6f7bc7da7c20ea0b0838b1263d606c30f2c768c13568a87f118aa"
+                }
+            }
+        },
+        "jp.lilxyzw.shadercore": {
+            "versions": {
+                "0.3.0": {
+                    "name": "jp.lilxyzw.shadercore",
+                    "version": "0.3.0",
+                    "displayName": "Shader Core",
+                    "description": "",
+                    "unity": "2022.3",
+                    "hideInEditor": false,
+                    "url": "https://github.com/lilxyzw/Shader-Core/releases/download/0.3.0/jp.lilxyzw.shadercore-0.3.0.zip?",
+                    "repo": "https://lilxyzw.github.io/vpm-repos/vpm.json",
+                    "dependencies": {
+                        "com.unity.nuget.newtonsoft-json": "3.0.0"
+                    },
+                    "zipSHA256": "5fb149379441031e172128933a23a8e5acb066c76e9d942aa91ed13ad93c70b5"
+                }
+            }
+        }
+    }
+}

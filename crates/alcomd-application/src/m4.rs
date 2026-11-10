@@ -427,7 +427,7 @@ pub struct ResolverCatalogEntry {
     pub version: String,
     pub yanked: bool,
     pub unity: Option<String>,
-    pub author_name: String,
+    pub author_name: Option<String>,
     pub author_email: Option<String>,
     pub unity_release: Option<String>,
     pub dependencies_json: String,

@@ -47,6 +47,7 @@ const MIGRATION_V29: &str = include_str!("../migrations/0029_repository_display_
 const MIGRATION_V30: &str = include_str!("../migrations/0030_package_presentations.sql");
 
 const MIGRATION_V31: &str = include_str!("../migrations/0031_remove_project_presentations.sql");
+const MIGRATION_V32: &str = include_str!("../migrations/0032_optional_package_presentation.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -241,6 +242,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 30 {
         connection
             .execute_batch(MIGRATION_V31)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 31 {
+        connection
+            .execute_batch(MIGRATION_V32)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -622,6 +628,93 @@ fn state26_keeps_package_rows_and_requests_a_full_refresh_for_pre_marker_indexes
             )
             .is_err()
     );
+}
+
+#[cfg(test)]
+#[test]
+fn state32_preserves_rows_pins_and_healthy_indexes_and_allows_absent_presentation() {
+    let mut connection = state21_fixture(Path::new(":memory:"));
+    migrate_remove_templates(&mut connection).expect("State22");
+    for migration in [
+        MIGRATION_V23,
+        MIGRATION_V24,
+        MIGRATION_V25,
+        MIGRATION_V26,
+        MIGRATION_V27,
+    ] {
+        connection
+            .execute_batch(migration)
+            .expect("historical schema");
+    }
+    migrate_template_archives(&mut connection).expect("State28");
+    for migration in [MIGRATION_V29, MIGRATION_V30, MIGRATION_V31] {
+        connection.execute_batch(migration).expect("State31");
+    }
+    for (id, issues) in [
+        (
+            "11111111-1111-4111-8111-111111111111",
+            r#"[{"code":"resolver_metadata_invalid","component":"version","item":"com.example.package@1.0.0"}]"#,
+        ),
+        ("22222222-2222-4222-8222-222222222222", "[]"),
+    ] {
+        connection.execute(
+            "INSERT INTO repositories(repository_id,owner_principal_id,source_kind,source_locator,source_identity_key,issues_json,revision,registered_at_ms,refreshed_at_ms,updated_at_ms,priority,resolver_indexed,etag,last_modified,display_name)
+             VALUES (?1,'builtin:local-owner','remote','https://fixture.invalid/index.json',CAST(?1 AS BLOB),?2,9,1,2,3,7,1,'old-etag','old-last-modified','Custom display')",
+            rusqlite::params![id, issues],
+        ).expect("existing repository");
+        connection.execute(
+            "INSERT INTO repository_package_versions(repository_id,package_id,version_text,semantic_version,display_name,author_name,artifact_url,manifest_fingerprint,resolver_ready,local_zip_sha256)
+             VALUES (?1,'com.example.package','1.0.0','1.0.0','Existing','Author','https://fixture.invalid/package.zip',zeroblob(32),1,zeroblob(32))", [id],
+        ).expect("existing pinned package");
+    }
+    let before: String = connection.query_row("SELECT json_group_array(json_array(repository_id,package_id,version_text,display_name,author_name,hex(local_zip_sha256),hex(manifest_fingerprint))) FROM repository_package_versions", [], |row| row.get(0)).expect("before rows");
+    connection
+        .execute_batch(MIGRATION_V32)
+        .expect("State32 proposal");
+    let after: String = connection.query_row("SELECT json_group_array(json_array(repository_id,package_id,version_text,display_name,author_name,hex(local_zip_sha256),hex(manifest_fingerprint))) FROM repository_package_versions", [], |row| row.get(0)).expect("after rows");
+    assert_eq!(before, after);
+    for (id, indexed, etag) in [
+        ("11111111-1111-4111-8111-111111111111", false, None),
+        (
+            "22222222-2222-4222-8222-222222222222",
+            true,
+            Some("old-etag".to_owned()),
+        ),
+    ] {
+        let record: (bool, Option<String>, i64, i64, String) = connection.query_row("SELECT resolver_indexed,etag,revision,priority,display_name FROM repositories WHERE repository_id=?1", [id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).expect("retained repository");
+        assert_eq!(record, (indexed, etag, 9, 7, "Custom display".into()));
+    }
+    assert_eq!(
+        connection
+            .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
+            .expect("schema"),
+        32
+    );
+    connection
+        .execute(
+            "UPDATE repository_package_versions SET author_name=NULL,display_name=NULL",
+            [],
+        )
+        .expect("UPDATE permits absent presentation");
+    connection.execute("INSERT INTO repository_package_versions(repository_id,package_id,version_text,semantic_version,artifact_url,manifest_fingerprint,resolver_ready) VALUES ('22222222-2222-4222-8222-222222222222','com.example.minimal','1.0.0','1.0.0','https://fixture.invalid/minimal.zip',zeroblob(32),1)", []).expect("INSERT permits absent presentation");
+    connection.execute("UPDATE repository_package_versions SET artifact_url='http://fixture.invalid/package.zip'", []).expect("State27 HTTP archives remain supported");
+    for update in [
+        "semantic_version=NULL",
+        "artifact_url=NULL",
+        "manifest_fingerprint=NULL",
+        "author_name=''",
+        "author_name=printf('%04097d',1)",
+    ] {
+        assert!(
+            connection
+                .execute(
+                    &format!("UPDATE repository_package_versions SET {update}"),
+                    []
+                )
+                .is_err(),
+            "{update}"
+        );
+    }
 }
 
 pub(super) fn create_state_check(

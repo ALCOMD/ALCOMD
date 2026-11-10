@@ -1039,7 +1039,7 @@ fn insert_packages(
                 i64::from(package.yanked),
                 package.unity,
                 resolver.map(|value| value.semantic_version.as_str()),
-                resolver.map(|value| value.author_name.as_str()),
+                resolver.and_then(|value| value.author_name.as_deref()),
                 resolver.and_then(|value| value.author_email.as_deref()),
                 resolver.map(|value| value.artifact_url.as_str()),
                 resolver.and_then(|value| value.zip_sha256.as_deref()),

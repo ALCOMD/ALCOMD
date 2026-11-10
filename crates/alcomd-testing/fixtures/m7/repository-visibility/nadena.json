@@ -1,0 +1,96 @@
+{
+    "name": "bd_",
+    "author": "bd_",
+    "id": "dev.nadena.vpm",
+    "url": "https://vpm.nadena.dev/vpm.json",
+    "packages": {
+        "nadena.dev.misc-vrc-tools": {
+            "versions": {
+                "0.0.8": {
+                    "name": "nadena.dev.misc-vrc-tools",
+                    "displayName": "bd_'s misc tools",
+                    "version": "0.0.8",
+                    "unity": "2022.3",
+                    "description": "bd_'s random tools for VRChat",
+                    "vrchatVersion": "2022.1.1",
+                    "author": {
+                        "name": "bd_",
+                        "email": "bd_@nadena.dev",
+                        "url": "https://github.com/bdunderscore/modular-avatar"
+                    },
+                    "url": "https://packages.vpm.nadena.dev/repositories/nadena.dev/packages/nadena.dev.misc-vrc-tools/0.0.8/4bdeb9fea330d23324ecdb0c5329bf221409f2808f7391bfab935b967bbceaeb.zip",
+                    "repo": "https://vpm.nadena.dev/vpm.json",
+                    "zipSHA256": "4bdeb9fea330d23324ecdb0c5329bf221409f2808f7391bfab935b967bbceaeb",
+                    "changelogUrl": "https://github.com/bdunderscore/misc-vrc-tools/releases/tag/0.0.8"
+                }
+            }
+        },
+        "nadena.dev.modular-avatar": {
+            "versions": {
+                "0.8.0": {
+                    "name": "nadena.dev.modular-avatar",
+                    "displayName": "Modular Avatar",
+                    "version": "0.8.0",
+                    "unity": "2019.4",
+                    "description": "",
+                    "author": {
+                        "name": "bd_",
+                        "email": "bd_@nadena.dev",
+                        "url": "https://github.com/bdunderscore/modular-avatar"
+                    },
+                    "url": "https://packages.vpm.nadena.dev/repositories/nadena.dev/packages/nadena.dev.modular-avatar/0.8.0/557a4135e928cca2d0b4ef1d59d7cd48122a5e8e495b913ef9c7f4e25412c165.zip",
+                    "repo": "https://vpm.nadena.dev/vpm.json",
+                    "dependencies": {},
+                    "vpmDependencies": {
+                        "com.vrchat.base": "3.1.9",
+                        "com.vrchat.avatars": "3.1.9"
+                    },
+                    "zipSHA256": "557a4135e928cca2d0b4ef1d59d7cd48122a5e8e495b913ef9c7f4e25412c165",
+                    "documentationUrl": "https://modular-avatar.nadena.dev/?lang=auto",
+                    "changelogUrl": "https://github.com/bdunderscore/modular-avatar/releases/tag/0.8.0"
+                }
+            }
+        },
+        "nadena.dev.modular-avatar.resonite": {
+            "versions": {
+                "0.0.11": {
+                    "name": "nadena.dev.modular-avatar.resonite",
+                    "displayName": "Modular Avatar - Resonite support",
+                    "version": "0.0.11",
+                    "unity": "2022.3",
+                    "description": "",
+                    "dependencies": {},
+                    "vpmDependencies": {
+                        "nadena.dev.ndmf": ">=1.8.0-alpha.4 <2.0.0-a"
+                    },
+                    "url": "https://packages.vpm.nadena.dev/repositories/nadena.dev/packages/nadena.dev.modular-avatar.resonite/0.0.11/cc316df6c1888c2b5c3d1da37afb08f258ee0ea83a063b63ea8f32a3c3bd2cb7.zip",
+                    "repo": "https://vpm.nadena.dev/vpm.json",
+                    "zipSHA256": "cc316df6c1888c2b5c3d1da37afb08f258ee0ea83a063b63ea8f32a3c3bd2cb7",
+                    "changelogUrl": "https://github.com/bdunderscore/modular-avatar-resonite/releases/tag/0.0.11"
+                }
+            }
+        },
+        "nadena.dev.ndmf": {
+            "versions": {
+                "0.1.0": {
+                    "name": "nadena.dev.ndmf",
+                    "displayName": "Non-Destructive Modular Framework - なでもふ",
+                    "version": "0.1.0",
+                    "unity": "2019.4",
+                    "description": "A framework for building non-destructive plugins for VRChat Avatar 3.0",
+                    "vrchatVersion": "2022.1.1",
+                    "author": {
+                        "name": "bd_",
+                        "email": "bd_@nadena.dev",
+                        "url": "https://github.com/bdunderscore/ndmf"
+                    },
+                    "url": "https://packages.vpm.nadena.dev/repositories/nadena.dev/packages/nadena.dev.ndmf/0.1.0/de2c1f13d4978c8e3e00d1033f01fa8ec5fb61507542d07030809029f5831ca8.zip",
+                    "repo": "https://vpm.nadena.dev/vpm.json",
+                    "zipSHA256": "de2c1f13d4978c8e3e00d1033f01fa8ec5fb61507542d07030809029f5831ca8",
+                    "documentationUrl": "https://ndmf.nadena.dev",
+                    "changelogUrl": "https://github.com/bdunderscore/ndmf/releases/tag/0.1.0"
+                }
+            }
+        }
+    }
+}

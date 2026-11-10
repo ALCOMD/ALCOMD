@@ -1212,6 +1212,8 @@ mod tests {
         let mut document: Value = serde_json::from_slice(bytes).expect("fixture");
         document["packages"]["com.example.feature"]["versions"]["2.0.0"]["description"] =
             serde_json::json!(["invalid"]);
+        document["packages"]["com.example.feature"]["versions"]["2.0.0"]["vpmDependencies"] =
+            serde_json::json!(["invalid"]);
         let parsed = parse_repository(
             &serde_json::to_vec(&document).expect("JSON"),
             RepositorySource::Remote {

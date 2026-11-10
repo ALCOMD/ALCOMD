@@ -281,7 +281,7 @@ pub struct RepositoryPackageLinks {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ResolverPackageMetadata {
     pub semantic_version: String,
-    pub author_name: String,
+    pub author_name: Option<String>,
     pub author_email: Option<String>,
     pub artifact_url: String,
     pub zip_sha256: Option<String>,
@@ -2297,9 +2297,13 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 self.reader
                     .inspect_repository_authenticated(
                         current.observation.source,
-                        current
-                            .resolver_indexed
-                            .then_some(current.observation.validators),
+                        (current.resolver_indexed
+                            && !current
+                                .observation
+                                .issues
+                                .iter()
+                                .any(|issue| issue.code == "resolver_metadata_invalid"))
+                        .then_some(current.observation.validators),
                         credentials,
                     )
                     .await

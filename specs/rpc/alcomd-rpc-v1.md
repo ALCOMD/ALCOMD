@@ -642,7 +642,7 @@ revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phas
 仓库声明 `zipSHA256` 时接受 64-lower-hex SHA-256 并严格比对，畸形值返回 `package_hash_required`。
 字段缺省时在确认后的首次下载中本地固定摘要；Plan 中的仓库 `archiveSha256` 可省略。
 Apply 使用计划中已有的摘要，或执行时绑定到同一来源的实际摘要核对归档。
-`author.email` 可省略。Yanked 版本不参与新选择。
+作者（对象或字符串）、显示名和描述是展示信息，缺省或无法归一化时不排除安装候选；缺少作者保存为空，显示名缺省使用包 ID。`legacyFolders`/`legacyFiles` 的 null GUID 表示按路径声明，实际清理仍受既有范围与证据校验约束。2026-11-10 所有者批准配套 State32，不改 RPC 形状或权限。Yanked 版本不参与新选择。
 
 所有者于2026-11-08批准手动Unity兼容性窄例外：`packages.planInstall`、
 `packages.planUpgrade`、`packages.planDowngrade` 增加可选布尔值
@@ -1026,7 +1026,7 @@ permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence
 
 项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
-`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准候选 v2，随后明确撤除项目展示数据库副本。当前配套 State31，沿用读权限，Core/SDK/GUI 一起更新。
+`packages.candidates.v2`；RPC major 仍为 1，复用原读权限。所有者于 2026-11-08 批准候选 v2，随后明确撤除项目展示数据库副本。当前配套 State32（此前 State31 移除项目展示副本），沿用读权限，Core/SDK/GUI 一起更新。
 
 候选 summary 新增 `description?`、`installedYanked?` 和必需的 `presentationState`（complete/partial/unobserved）；缺失撤回信息表示未知。provider 新增 `displayName?`、`name?`、`builtin?`、`sourceKind` 和 `displayOrder`，只返回可见来源。所有候选页必需返回 `presentationComplete`。summary 的可选 `requestedRange` 与 installed 均来自本次正常读取的项目清单。关键词/别名仅由 Core 搜索，不下发；完整仓库清单只供管理/筛选。Core 在普通首读直接读取项目文件，分页/筛选使用有界内存快照；没有项目展示数据库副本或 projects.refresh 补采前置步骤。登记 revision 与候选文件指纹分离，Plan/Apply 的既有冻结授权和过期检测保持。规范形状见候选 Schema，移除旧开发缓存表见 State31。
 所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`

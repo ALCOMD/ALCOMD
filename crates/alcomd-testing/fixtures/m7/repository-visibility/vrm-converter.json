@@ -1,0 +1,52 @@
+{
+    "name": "VRM Converter for VRChat Packages",
+    "author": "100の人",
+    "url": "https://esperecyan.github.io/VRMConverterForVRChat/registry.json",
+    "id": "jp.pokemori.vrm-converter-for-vrchat.registry",
+    "packages": {
+        "com.vrmc.gltf": {
+            "versions": {
+                "0.128.1": {
+                    "name": "com.vrmc.gltf",
+                    "version": "0.128.1",
+                    "displayName": "UniGLTF",
+                    "description": "GLTF importer and exporter",
+                    "unity": "2021.3",
+                    "keywords": [
+                        "gltf"
+                    ],
+                    "author": {
+                        "name": "VRM Consortium"
+                    },
+                    "dependencies": {
+                        "com.unity.modules.animation": "1.0.0"
+                    },
+                    "samples": [
+                        {
+                            "displayName": "GltfViewer",
+                            "description": "UniGLTF runtime loader sample",
+                            "path": "Samples~/GltfViewer"
+                        }
+                    ],
+                    "publishConfig": {
+                        "registry": "https://package.openupm.com"
+                    },
+                    "vpmDependencies": {},
+                    "legacyFolders": {
+                        "Assets/UniGLTF": "49e44e391b2db4e41bd32306cf7c7af5",
+                        "Assets/MeshUtility": "f11c20c3f50e40b4f8f6259f8e0886e0",
+                        "Assets/VRMShaders": "503ae90aee4d0224db69e4e74762223b"
+                    },
+                    "legacyFiles": {
+                        "CombineMeshesAndSubMeshes.cs": null
+                    },
+                    "legacyPackages": [
+                        "com.vrmc.vrmshaders"
+                    ],
+                    "url": "https://esperecyan.github.io/VRMConverterForVRChat/packages/com.vrmc.gltf-0.128.1.zip",
+                    "zipSHA256": "7a06fb8ce534c792b851969fd337d2f85091313ad0371cf3966bf2650e910b61"
+                }
+            }
+        }
+    }
+}
