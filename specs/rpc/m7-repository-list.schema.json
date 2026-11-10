@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-repository-list.json",
     "title": "ALCOMD RPC v1 repository list file exchange",
-    "description": "Explicit export writes user remote repositories in VCC list format, including saved request headers for authenticated entries. Built-in repositories are omitted and credentials are not returned in RPC results.",
+    "description": "Owner-selected versioned repository configuration exchange with legacy VCC text export. Native files retain repository names, source order, enable states and package switches, including built-ins and local sources. Credentials remain file-only.",
     "$defs": {
         "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
@@ -18,17 +18,43 @@
             "properties": {
                 "path": {"$ref": "#/$defs/absolutePath"},
                 "expectedFingerprint": {"$ref": "#/$defs/fingerprint"},
-                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"},
+                "overwriteExisting": {"type": "boolean", "default": true}
             }
         },
         "importListFileResult": {
-            "type": "object", "additionalProperties": false, "required": ["items"],
-            "properties": {"items": {"type": "array", "maxItems": 4096, "items": {
-                "oneOf": [
-                    {"type": "object", "additionalProperties": false, "required": ["line", "status"], "properties": {"line": {"$ref": "#/$defs/line"}, "status": {"enum": ["added", "existing", "unprocessed"]}}},
-                    {"type": "object", "additionalProperties": false, "required": ["line", "status", "code"], "properties": {"line": {"$ref": "#/$defs/line"}, "status": {"enum": ["failed", "unknown"]}, "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128}}}
-                ]
-            }}}
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["items"],
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "oneOf": [
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["line", "status"],
+                                "properties": {
+                                    "line": {"$ref": "#/$defs/line"},
+                                    "status": {"enum": ["added", "existing", "unprocessed", "updated"]}
+                                }
+                            },
+                            {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": ["line", "status", "code"],
+                                "properties": {
+                                    "line": {"$ref": "#/$defs/line"},
+                                    "status": {"enum": ["failed", "unknown"]},
+                                    "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128}
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
         },
         "cancelListRegistrationParams": {
             "type": "object", "additionalProperties": false, "required": ["idempotencyKey"],
@@ -43,28 +69,37 @@
             "properties": {"kind": {"const": "remote"}, "url": {"type": "string", "minLength": 1, "maxLength": 2048}}
         },
         "entry": {
-            "type": "object", "additionalProperties": false, "required": ["line", "status"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["line", "status"],
             "properties": {
                 "line": {"$ref": "#/$defs/line"},
                 "status": {"enum": ["candidate", "duplicate", "invalid", "unsupported"]},
-                "source": {"$ref": "#/$defs/remoteSource"},
+                "source": {"oneOf": [{"$ref": "#/$defs/remoteSource"}, {"$ref": "#/$defs/localSource"}]},
                 "credentialsConfigured": {"type": "boolean"},
-                "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128}
+                "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128},
+                "configuration": {"$ref": "#/$defs/configuration"}
             },
             "allOf": [
                 {"if": {"properties": {"status": {"enum": ["candidate", "duplicate"]}}}, "then": {"required": ["source"]}},
-                {"if": {"properties": {"status": {"enum": ["invalid", "unsupported"]}}}, "then": {"required": ["reason"], "not": {"required": ["source"]}}}
+                {
+                    "if": {"properties": {"status": {"enum": ["invalid", "unsupported"]}}},
+                    "then": {"required": ["reason"], "not": {"required": ["source"]}}
+                }
             ]
         },
         "inspectListFileResult": {
-            "type": "object", "additionalProperties": false, "required": ["entries", "ignoredLines", "fingerprint"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["entries", "ignoredLines", "fingerprint"],
             "properties": {
                 "entries": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/entry"}},
                 "ignoredLines": {"type": "integer", "minimum": 0, "maximum": 1048576},
-                "fingerprint": {"$ref": "#/$defs/fingerprint"}
+                "fingerprint": {"$ref": "#/$defs/fingerprint"},
+                "format": {"$ref": "#/$defs/format"}
             }
         },
-        "previewListExportParams": {"type": "object", "additionalProperties": false},
+        "previewListExportParams": {"type": "object", "additionalProperties": false, "properties": {"format": {"$ref": "#/$defs/format"}}},
         "exclusion": {
             "type": "object", "additionalProperties": false, "required": ["repositoryId", "reason"],
             "properties": {
@@ -83,10 +118,13 @@
             }
         },
         "exportListFileParams": {
-            "type": "object", "additionalProperties": false, "required": ["targetPath", "expectedFingerprint"],
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["targetPath", "expectedFingerprint"],
             "properties": {
                 "targetPath": {"$ref": "#/$defs/absolutePath"},
-                "expectedFingerprint": {"$ref": "#/$defs/fingerprint"}
+                "expectedFingerprint": {"$ref": "#/$defs/fingerprint"},
+                "format": {"$ref": "#/$defs/format"}
             }
         },
         "exportListFileResult": {
@@ -96,6 +134,29 @@
                 "byteCount": {"type": "integer", "minimum": 0, "maximum": 1048576},
                 "sha256": {"$ref": "#/$defs/fingerprint"}
             }
+        },
+        "format": {"type": "string", "enum": ["native", "legacy"], "default": "legacy"},
+        "configuration": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["displayName", "priority", "enabled", "disabledPackageIds"],
+            "properties": {
+                "displayName": {"type": ["string", "null"], "maxLength": 128},
+                "priority": {"type": "integer", "minimum": 1},
+                "enabled": {"type": "boolean"},
+                "disabledPackageIds": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "uniqueItems": true,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                }
+            }
+        },
+        "localSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path"],
+            "properties": {"kind": {"const": "local"}, "path": {"$ref": "#/$defs/absolutePath"}}
         }
     },
     "type": "object",

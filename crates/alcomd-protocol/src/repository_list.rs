@@ -10,12 +10,39 @@ pub const METHOD_REPOSITORIES_CANCEL_LIST_REGISTRATION: &str =
     "repositories.cancelListRegistration";
 pub const CAPABILITY_REPOSITORIES_LIST_IMPORT_V1: &str = "repositories.list-import.v1";
 
+pub const REPOSITORY_CONFIGURATION_EXTENSION: &str = "alcomdrepositories";
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepositoryListFormat {
+    Native,
+    #[default]
+    Legacy,
+}
+
+impl RepositoryListFormat {
+    fn is_legacy(&self) -> bool {
+        *self == Self::Legacy
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryConfiguration {
+    pub display_name: Option<String>,
+    pub priority: u64,
+    pub enabled: bool,
+    pub disabled_package_ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListImportParams {
     pub path: String,
     pub expected_fingerprint: String,
     pub idempotency_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overwrite_existing: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -23,6 +50,7 @@ pub struct RepositoryListImportParams {
 pub enum RepositoryListImportItem {
     Added { line: u32 },
     Existing { line: u32 },
+    Updated { line: u32 },
     Failed { line: u32, code: String },
     Unknown { line: u32, code: String },
     Unprocessed { line: u32 },
@@ -54,11 +82,16 @@ pub struct RepositoryListInspectParams {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct RepositoryListPreviewParams {}
+pub struct RepositoryListPreviewParams {
+    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
+    pub format: RepositoryListFormat,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListExportParams {
+    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
+    pub format: RepositoryListFormat,
     pub target_path: String,
     pub expected_fingerprint: String,
 }
@@ -76,11 +109,14 @@ pub enum RepositoryListEntryStatus {
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum RepositoryListSource {
     Remote { url: String },
+    Local { path: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListEntry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<RepositoryConfiguration>,
     pub line: u32,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub credentials_configured: bool,
@@ -94,6 +130,8 @@ pub struct RepositoryListEntry {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListInspection {
+    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
+    pub format: RepositoryListFormat,
     pub entries: Vec<RepositoryListEntry>,
     pub ignored_lines: u32,
     pub fingerprint: String,

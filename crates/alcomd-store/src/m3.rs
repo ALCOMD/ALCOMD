@@ -51,7 +51,7 @@ pub(super) fn repository_list_snapshot(
     let transaction = connection.transaction().map_err(sql_failure)?;
     let mut statement = transaction
         .prepare(
-            "SELECT repository_id, revision, source_kind, source_locator, credential_reference FROM repositories
+            "SELECT repository_id, revision, source_kind, source_locator, credential_reference, display_name, priority FROM repositories
          WHERE owner_principal_id=?1 ORDER BY repository_id",
         )
         .map_err(sql_failure)?;
@@ -63,12 +63,15 @@ pub(super) fn repository_list_snapshot(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, i64>(6)?,
             ))
         })
         .map_err(sql_failure)?;
     let mut repositories = Vec::new();
     for row in rows {
-        let (repository_id, rev, kind, locator, credential_reference) = row.map_err(sql_failure)?;
+        let (repository_id, rev, kind, locator, credential_reference, display_name, priority) =
+            row.map_err(sql_failure)?;
         let source = match kind.as_str() {
             "local" => RepositorySource::Local { path: locator },
             "remote" => RepositorySource::Remote { url: locator },
@@ -79,6 +82,12 @@ pub(super) fn repository_list_snapshot(
             revision: revision(rev)?.get(),
             source,
             credential_reference,
+            configuration: alcomd_application::RepositoryConfiguration {
+                display_name,
+                priority: u64::try_from(priority).map_err(|_| internal())?,
+                enabled: true,
+                disabled_package_ids: Vec::new(),
+            },
         });
         // One overflow item lets the application reject instead of silently truncating.
         if repositories.len() > alcomd_application::REPOSITORY_LIST_MAX_ENTRIES {
@@ -1997,4 +2006,39 @@ pub(super) fn unregister_repository(
     )?;
     transaction.commit().map_err(sql_failure)?;
     Ok(response)
+}
+
+pub(super) fn apply_repository_list_metadata(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    changes: Vec<alcomd_application::RepositoryListMetadata>,
+    now_ms: u64,
+) -> Result<(), M3Error> {
+    let transaction = begin(connection)?;
+    for change in changes {
+        let id = RepositoryId::parse(&change.repository_id).map_err(|_| internal())?;
+        let current = load_repository_summary(&transaction, owner, id)?;
+        let priority=transaction.query_row("SELECT priority FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",params![owner.as_str(),id.to_string()],|row|row.get::<_,i64>(0)).map_err(sql_failure)?;
+        let priority = u64::try_from(priority).map_err(|_| internal())?;
+        if current.display_name == change.display_name && priority == change.priority {
+            continue;
+        }
+        if current.display_name != change.expected_display_name
+            || priority != change.expected_priority
+        {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+        }
+        let next = current.revision.checked_next().ok_or_else(internal)?;
+        transaction.execute("UPDATE repositories SET display_name=?1, priority=?2, revision=?3, updated_at_ms=?4 WHERE owner_principal_id=?5 AND repository_id=?6",params![change.display_name,integer(change.priority)?,integer(next.get())?,integer(now_ms)?,owner.as_str(),id.to_string()]).map_err(sql_failure)?;
+        insert_event(
+            &transaction,
+            owner,
+            "repository",
+            &id.to_string(),
+            next,
+            "repository.configuration-imported",
+            now_ms,
+        )?;
+    }
+    transaction.commit().map_err(sql_failure)
 }

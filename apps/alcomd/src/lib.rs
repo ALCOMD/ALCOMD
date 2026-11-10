@@ -354,7 +354,8 @@ async fn initialize_daemon_with_directories(
         repository_lists: RepositoryListApplication::new(
             store.clone(),
             alcomd_vpm::RepositoryListFileAdapter::new(data_root.clone()),
-        ),
+        )
+        .with_settings(official_gui.clone()),
         m4,
         m5: unity,
         project_create,

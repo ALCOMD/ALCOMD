@@ -290,6 +290,17 @@ impl alcomd_application::RepositoryListStore for StateStoreHandle {
         self.request_m3(move |connection| m3::repository_list_snapshot(connection, &owner))
             .await
     }
+    async fn apply_repository_list_metadata(
+        &self,
+        owner: PrincipalId,
+        changes: Vec<alcomd_application::RepositoryListMetadata>,
+        now_ms: u64,
+    ) -> Result<(), M3Error> {
+        self.request_m3(move |connection| {
+            m3::apply_repository_list_metadata(connection, &owner, changes, now_ms)
+        })
+        .await
+    }
 }
 
 impl M3RegistryStore for StateStoreHandle {

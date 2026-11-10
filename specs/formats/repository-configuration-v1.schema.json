@@ -1,0 +1,82 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/formats/repository-configuration-v1.json",
+    "title": "ALCOMD repository configuration file v1",
+    "description": "UTF-8 .alcomdrepositories file. Maximum 1 MiB. Credentials are intentionally file-only plaintext. At most 256 disabled repositories, 256 nonempty package groups and 4096 disabled package IDs in total, matching Config13.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["format", "version", "repositories"],
+    "properties": {
+        "format": { "const": "alcomd-repositories" },
+        "version": { "const": 1 },
+        "repositories": {
+            "type": "array",
+            "maxItems": 4096,
+            "items": { "$ref": "#/$defs/entry" }
+        }
+    },
+    "$defs": {
+        "entry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "configuration"],
+            "properties": {
+                "source": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["kind", "url"],
+                            "properties": {
+                                "kind": { "const": "remote" },
+                                "url": { "type": "string", "pattern": "^https?://" }
+                            }
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["kind", "path"],
+                            "properties": {
+                                "kind": { "const": "local" },
+                                "path": { "type": "string", "minLength": 1, "maxLength": 32768 }
+                            }
+                        }
+                    ]
+                },
+                "configuration": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["priority", "enabled", "disabledPackageIds"],
+                    "properties": {
+                        "displayName": { "type": ["string", "null"], "maxLength": 128 },
+                        "priority": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
+                        "enabled": { "type": "boolean" },
+                        "disabledPackageIds": {
+                            "type": "array",
+                            "maxItems": 4096,
+                            "uniqueItems": true,
+                            "items": { "type": "string", "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" }
+                        }
+                    }
+                },
+                "credentials": {
+                    "oneOf": [
+                        { "type": "null" },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["headers"],
+                            "properties": {
+                                "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+                            }
+                        }
+                    ]
+                }
+            },
+            "allOf": [{
+                "if": { "properties": { "source": { "properties": { "kind": { "const": "local" } } } } },
+                "then": { "properties": { "credentials": { "type": "null" } } }
+            }]
+        }
+    }
+}

@@ -303,7 +303,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         window.nativePickerRequests.push({ kind: "repositoryList", mode, fileName, currentPath });
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         if (query.has("hold-file-selection")) await new Promise<void>((resolve) => window.addEventListener("test-file-selection-ready", () => resolve(), { once: true }));
-        return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
+        return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? `C:/fixture/repositories.${query.has("native-list") ? "alcomdrepositories" : "txt"}` : `C:/fixture/${fileName}`);
     }
     private listImportStopped = false;
     private listFixtureCount(): number {
@@ -312,6 +312,10 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
         window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
+        if (query.has("native-list")) return this.value({ format:"native", ignoredLines:0, fingerprint:HASH, entries:[
+            {line:1,status:"duplicate",source:{kind:"remote",url:"https://list.example/existing.json"},configuration:{displayName:"My repository",priority:1,enabled:false,disabledPackageIds:["com.example.disabled"]}},
+            {line:2,status:"candidate",source:{kind:"local",path:"C:/local/repository.json"},configuration:{displayName:null,priority:2,enabled:true,disabledPackageIds:[]}}
+        ] });
         const count = this.listFixtureCount();
         return this.value({ ignoredLines: 2, fingerprint: HASH, entries: [
             ...Array.from({ length: count }, (_, index) => ({ line: index + 1, status: "candidate" as const, source: { kind: "remote" as const, url: "https://list.example/" + (index + 1) + ".json?z=2&a=1" } })),
@@ -320,8 +324,9 @@ class DeterministicGuiClient implements GuiRpcClient {
             { line: count + 3, status: "unsupported", reason: "authentication_not_supported" }
         ] });
     }
-    async repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): ReturnType<GuiRpcClient["repositoryListImportFile"]> {
-        window.resourceRequests.push({ method: "repositories.importListFile", params: { path, expectedFingerprint, idempotencyKey } });
+    async repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string, overwriteExisting?: boolean): ReturnType<GuiRpcClient["repositoryListImportFile"]> {
+        window.resourceRequests.push({ method: "repositories.importListFile", params: { path, expectedFingerprint, idempotencyKey, ...(overwriteExisting === undefined ? {} : {overwriteExisting}) } });
+        if (query.has("native-list")) return this.value({items:[{line:1,status:overwriteExisting === false ? "existing" : "updated"},{line:2,status:"added"}]});
         const mode = query.get("list-import");
         if (mode === "hold") await new Promise<void>((resolve) => window.addEventListener("test-list-register-ready", () => resolve(), { once: true }));
         if (mode === "transport") throw { code: "daemon_unavailable" };
@@ -340,16 +345,16 @@ class DeterministicGuiClient implements GuiRpcClient {
         this.listImportStopped = true;
         return this.value({ stopped: true });
     }
-    repositoryListPreviewExport(): ReturnType<GuiRpcClient["repositoryListPreviewExport"]> {
-        window.resourceRequests.push({ method: "repositories.previewListExport", params: {} });
+    repositoryListPreviewExport(format: import("@alcomd/sdk").RepositoryListFormat = "native"): ReturnType<GuiRpcClient["repositoryListPreviewExport"]> {
+        window.resourceRequests.push({ method: "repositories.previewListExport", params: {format} });
         this.listPreviewReads += 1;
-        return this.value({ exportableCount: 230, excluded: [{ repositoryId: LOCAL_REPOSITORY_ID, reason: "local_source" }], byteCount: 12000, fingerprint: String(this.listPreviewReads).repeat(64) });
+        return this.value({ exportableCount: format === "native" ? 231 : 230, excluded: format === "native" ? [] : [{ repositoryId: LOCAL_REPOSITORY_ID, reason: "local_source" }], byteCount: format === "native" ? 30000 : 12000, fingerprint: String(this.listPreviewReads).repeat(64) });
     }
-    repositoryListExportFile(targetPath: string, expectedFingerprint: string): ReturnType<GuiRpcClient["repositoryListExportFile"]> {
-        window.resourceRequests.push({ method: "repositories.exportListFile", params: { targetPath, expectedFingerprint } });
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string, format: import("@alcomd/sdk").RepositoryListFormat = "native"): ReturnType<GuiRpcClient["repositoryListExportFile"]> {
+        window.resourceRequests.push({ method: "repositories.exportListFile", params: { targetPath, expectedFingerprint,format } });
         this.listExportAttempts += 1;
         if (this.listExportAttempts === 1 && query.get("list-export-error")) return Promise.reject({ code: query.get("list-export-error") });
-        return this.value({ exportedCount: 230, byteCount: 12000, sha256: HASH });
+        return this.value({ exportedCount: format === "native" ? 231 : 230, byteCount: format === "native" ? 30000 : 12000, sha256: HASH });
     }
     private candidateSourceWasDelayed = false;
     private repositoryDetailFailed = false;

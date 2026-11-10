@@ -28,6 +28,7 @@ updater = "alcomd-updater"
 migration_v3 = "alcomd-migrate-v3"
 
 [formats]
+repository_list_extension = "alcomdrepositories"
 template_extension = "alcomdtemplate"
 extension_extension = "alcomdext"
 export_extension = "alcomdexport"

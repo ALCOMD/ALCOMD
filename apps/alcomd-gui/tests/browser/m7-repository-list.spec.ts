@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { requestErrorMessage } from "../../src/request-errors";
 import { expectRequestError } from "./request-error-assertions";
 
-async function openList(page: Page, action: "Import list" | "Export list") {
+async function openList(page: Page, action: "Import list" | "Export list" | "Compatibility export (.txt)") {
     await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
     await page.getByRole("menuitem", { name: action, exact: true }).click();
     await expect(page.getByRole("dialog", { name: action, exact: true })).toBeVisible();
@@ -469,21 +469,21 @@ test("export validates a new name near its field and binds it to folder selectio
     expect(await requests(page, "repositories.exportListFile")).toEqual([]);
     await host.getByLabel("New list file name", { exact: true }).fill("owner-review.txt");
     await host.getByRole("button", { name: "Save new list file", exact: true }).click();
-    await expect(host.getByText("Saved 230 repositories (12000 bytes).", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.exportListFile")).toEqual([{ method: "repositories.exportListFile", params: { targetPath: "C:/fixture/owner-review.txt", expectedFingerprint: "1".repeat(64) } }]);
+    await expect(host.getByText("Saved 231 repositories (30000 bytes).", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.exportListFile")).toEqual([{ method: "repositories.exportListFile", params: { targetPath: "C:/fixture/owner-review.txt", expectedFingerprint: "1".repeat(64), format:"native" } }]);
 });
 
 test("export reviews full Core scope and exclusions and requires address-risk confirmation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
     const host = await openList(page, "Export list");
-    await expect(host.getByText("230 repositories can be exported · 1 excluded · 12000 bytes", { exact: true })).toBeVisible();
-    await expect(host.getByText("Local source cannot be represented by this URL list.", { exact: true })).toBeVisible();
+    await expect(host.getByText("231 repositories can be exported · 0 excluded · 30000 bytes", { exact: true })).toBeVisible();
+    await expect(host.getByText("Includes repository sources, display names, order, enabled states and package switches.", {exact:true})).toBeVisible();
     await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeDisabled();
     expect(await requests(page, "repositories.exportListFile")).toEqual([]);
     await host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true }).check();
     await host.getByRole("button", { name: "Save new list file", exact: true }).click();
-    await expect(host.getByText("Saved 230 repositories (12000 bytes).", { exact: true })).toBeVisible();
-    expect(await requests(page, "repositories.exportListFile")).toEqual([{ method: "repositories.exportListFile", params: { targetPath: "C:/fixture/repositories.txt", expectedFingerprint: "1".repeat(64) } }]);
+    await expect(host.getByText("Saved 231 repositories (30000 bytes).", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.exportListFile")).toEqual([{ method: "repositories.exportListFile", params: { targetPath: "C:/fixture/repositories.alcomdrepositories", expectedFingerprint: "1".repeat(64), format:"native" } }]);
 });
 
 for (const code of ["repository_list_target_exists", "repository_list_changed", "repository_list_io_error"]) {
@@ -502,9 +502,48 @@ for (const code of ["repository_list_target_exists", "repository_list_changed", 
             await consent.check();
         }
         await host.getByRole("button", { name: "Save new list file", exact: true }).click();
-        await expect(host.getByText("Saved 230 repositories (12000 bytes).", { exact: true })).toBeVisible();
+        await expect(host.getByText("Saved 231 repositories (30000 bytes).", { exact: true })).toBeVisible();
         const calls = await requests(page, "repositories.exportListFile");
         expect(calls).toHaveLength(2);
-        if (code === "repository_list_changed") expect(calls[1]?.params).toEqual({ targetPath: "C:/fixture/repositories.txt", expectedFingerprint: "2".repeat(64) });
+        if (code === "repository_list_changed") expect(calls[1]?.params).toEqual({ targetPath: "C:/fixture/repositories.alcomdrepositories", expectedFingerprint: "2".repeat(64), format:"native" });
     });
 }
+
+
+test("compatibility export keeps the old text format and its exclusions", async ({page}) => {
+    await page.goto("/browser-harness.html?route=/repositories");
+    const host=await openList(page,"Compatibility export (.txt)");
+    await expect(host.getByText("230 repositories can be exported · 1 excluded · 12000 bytes",{exact:true})).toBeVisible();
+    await expect(host.getByText("Local source cannot be represented by this URL list.",{exact:true})).toBeVisible();
+    await expect(host.getByLabel("New list file name",{exact:true})).toHaveJSProperty("value","repositories.txt");
+    await host.getByRole("checkbox",{name:"I have reviewed the export scope and understand the file can contain credentials.",exact:true}).check();
+    await host.getByRole("button",{name:"Save new list file",exact:true}).click();
+    expect(await requests(page,"repositories.exportListFile")).toEqual([{method:"repositories.exportListFile",params:{targetPath:"C:/fixture/repositories.txt",expectedFingerprint:"1".repeat(64),format:"legacy"}}]);
+});
+
+test("native configuration import reviews existing settings, local sources and package switches", async ({page}) => {
+    await page.goto("/browser-harness.html?route=/repositories&native-list=1");
+    const host=await openList(page,"Import list");
+    await host.getByRole("button",{name:"Select",exact:true}).click();
+    await host.getByRole("button",{name:"Confirm",exact:true}).click();
+    await expect(host.getByText("Update configuration",{exact:true})).toBeVisible();
+    await expect(host.getByText("My repository · Disabled · 1 packages disabled",{exact:true})).toBeVisible();
+    await expect(host.getByText("C:/local/repository.json",{exact:true})).toBeVisible();
+    await expect(host.getByRole("checkbox",{name:"Overwrite existing repository configuration",exact:true})).toBeChecked();
+    await host.getByRole("button",{name:"Apply 2 repository configurations",exact:true}).click();
+    await expect(host.getByText("Added: 1 · Updated: 1 · Failed: 0 · Unknown: 0 · Not processed: 0",{exact:true})).toBeVisible();
+    expect(await requests(page,"repositories.importListFile")).toEqual([{method:"repositories.importListFile",params:{path:"C:/fixture/repositories.alcomdrepositories",expectedFingerprint:"a".repeat(64),idempotencyKey:expect.any(String),overwriteExisting:true}}]);
+});
+
+test("native import can keep existing configuration and add only new sources",async ({page})=>{
+    await page.goto("/browser-harness.html?route=/repositories&native-list=1");
+    const host=await openList(page,"Import list");
+    await host.getByRole("button",{name:"Select",exact:true}).click();
+    await host.getByRole("button",{name:"Confirm",exact:true}).click();
+    await host.getByRole("checkbox",{name:"Overwrite existing repository configuration",exact:true}).uncheck();
+    await expect(host.getByText("1 new repositories will be added. Existing repository configuration is kept.",{exact:true})).toBeVisible();
+    await expect(host.getByText("Update configuration",{exact:true})).toHaveCount(0);
+    await host.getByRole("button",{name:"Apply 1 repository configurations",exact:true}).click();
+    await expect(host.getByText("Added: 1 · Updated: 0 · Failed: 0 · Unknown: 0 · Not processed: 0",{exact:true})).toBeVisible();
+    expect(await requests(page,"repositories.importListFile")).toEqual([{method:"repositories.importListFile",params:{path:"C:/fixture/repositories.alcomdrepositories",expectedFingerprint:"a".repeat(64),idempotencyKey:expect.any(String),overwriteExisting:false}}]);
+});

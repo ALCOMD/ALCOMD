@@ -126,6 +126,9 @@ export function requestErrorMessage(code: string): string {
             return "The repository metadata needs refreshing. Refresh it before reviewing package changes.";
         case "repository_list_invalid":
             return "The repository list is invalid. Use UTF-8 and stay within 1 MiB and 4,096 entries.";
+        case "repository_list_configuration_failed":
+        case "repository_list_import_incomplete":
+            return "Some repository configuration could not be applied. Completed changes are kept. Review the repository list before importing again.";
         case "repository_list_changed":
             return "The repository list changed after preview. Preview it again before exporting.";
         case "repository_list_target_exists":

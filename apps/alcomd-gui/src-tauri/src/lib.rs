@@ -387,8 +387,8 @@ async fn gui_select_repository_list_file(
         &mode,
         file_name.as_deref(),
         current_path.as_deref(),
-        "Repository list (*.txt)",
-        "txt",
+        "ALCOMD repositories (*.alcomdrepositories, *.txt)",
+        &[alcomd_protocol::REPOSITORY_CONFIGURATION_EXTENSION, "txt"],
     )
 }
 
@@ -405,7 +405,7 @@ async fn gui_select_project_template_file(
         file_name.as_deref(),
         current_path.as_deref(),
         "ALCOMD template (*.alcomdtemplate)",
-        "alcomdtemplate",
+        &["alcomdtemplate"],
     )
 }
 
@@ -415,13 +415,13 @@ fn select_local_file(
     file_name: Option<&str>,
     current_path: Option<&str>,
     filter: &str,
-    extension: &str,
+    extensions: &[&str],
 ) -> Result<Option<String>, RpcError> {
     // The existing save dialog cannot suppress its overwrite promise. Pick a parent
     // folder instead; the GUI supplies the reviewed new name and Core creates the file.
     let selected = match mode {
         "open" => picker_at_current_path(&app, current_path, picker_location::SelectionKind::File)
-            .add_filter(filter, &[extension])
+            .add_filter(filter, extensions)
             .blocking_pick_file(),
         "save" => picker_at_current_path(
             &app,
@@ -499,11 +499,16 @@ async fn gui_repository_list_cancel_registration(
 #[tauri::command]
 async fn gui_repository_list_preview_export(
     state: State<'_, GuiClientState>,
+    format: Option<alcomd_protocol::RepositoryListFormat>,
 ) -> Result<alcomd_protocol::RepositoryListPreview, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.repository_list_preview_export().await,
+        Some(client) => {
+            client
+                .repository_configuration_preview_export(format.unwrap_or_default())
+                .await
+        }
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -514,13 +519,18 @@ async fn gui_repository_list_export_file(
     state: State<'_, GuiClientState>,
     target_path: String,
     expected_fingerprint: String,
+    format: Option<alcomd_protocol::RepositoryListFormat>,
 ) -> Result<alcomd_protocol::RepositoryListExportResult, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => {
             client
-                .repository_list_export_file(target_path, expected_fingerprint)
+                .repository_configuration_export_file(
+                    target_path,
+                    expected_fingerprint,
+                    format.unwrap_or_default(),
+                )
                 .await
         }
         None => return Err(daemon_unavailable()),

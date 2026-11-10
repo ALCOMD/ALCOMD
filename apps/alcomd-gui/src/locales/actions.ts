@@ -2,6 +2,18 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Overwrite existing repository configuration": {"zh-CN":"覆盖已有存储库配置", "ja-JP":"既存のリポジトリ設定を上書き"},
+    "{count} new repositories will be added. Existing repository configuration is kept.": {"zh-CN":"将添加 {count} 个新存储库，已有存储库配置会保留。", "ja-JP":"新しいリポジトリを {count} 件追加します。既存の設定は保持します。"},
+    "Entry {line}": {"zh-CN":"条目 {line}", "ja-JP":"項目 {line}"},
+    "Update configuration": {"zh-CN":"更新配置", "ja-JP":"設定を更新"},
+    "Compatibility export (.txt)": {"zh-CN": "兼容导出 (.txt)", "ja-JP": "互換形式でエクスポート (.txt)"},
+    "Import an ALCOMD repository configuration file or a legacy text list. Configuration files also restore names, ordering and package switches. Other repositories are kept.": {"zh-CN": "导入 ALCOMD 存储库配置文件或旧版文本列表。配置文件也会恢复名称、顺序和软件包开关，其他存储库会保留。", "ja-JP": "ALCOMD のリポジトリ設定ファイルまたは従来のテキスト一覧をインポートします。設定ファイルでは名前、順序、パッケージの有効状態も復元し、ほかのリポジトリは保持します。"},
+    "Apply {count} repository configurations": {"zh-CN": "应用 {count} 个存储库配置", "ja-JP": "{count} 件のリポジトリ設定を適用"},
+    "{count} repository configurations will be applied. Repositories absent from the file are kept.": {"zh-CN": "将应用 {count} 个存储库配置，文件中未包含的存储库会保留。", "ja-JP": "{count} 件のリポジトリ設定を適用します。ファイルにないリポジトリは保持します。"},
+    "Added: {added} · Updated: {updated} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}": {"zh-CN": "已添加：{added} · 已更新：{updated} · 失败：{failed} · 未知：{unknown} · 未处理：{pending}", "ja-JP": "追加：{added} · 更新：{updated} · 失敗：{failed} · 不明：{unknown} · 未処理：{pending}"},
+    "{count} packages disabled": {"zh-CN": "{count} 个软件包已关闭", "ja-JP": "{count} 個のパッケージを無効化"},
+    "Includes repository sources, display names, order, enabled states and package switches.": {"zh-CN": "包含存储库来源、显示名、顺序、启用状态和软件包开关。", "ja-JP": "リポジトリの参照元、表示名、順序、有効状態、パッケージの切り替え設定を含みます。"},
+    "Compatible text export includes repository addresses and authentication. Names and switches are not included.": {"zh-CN": "兼容文本导出包含存储库地址和认证信息，不包含名称和开关设置。", "ja-JP": "互換テキストにはリポジトリのアドレスと認証情報を含みます。名前や有効状態は含まれません。"},
     "Could not prepare package changes": {"zh-CN": "无法准备软件包变更", "ja-JP": "パッケージの変更を準備できませんでした"},
     "accepted": {"zh-CN": "任务已创建", "ja-JP": "タスクを作成しました"},
     "preflight complete": {"zh-CN": "执行前检查完成", "ja-JP": "実行前の確認が完了しました"},

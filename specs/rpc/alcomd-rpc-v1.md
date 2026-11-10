@@ -1084,7 +1084,7 @@ P6 snake_case wire 的直接替换，不接受旧字段或混合格式，不增�
 | repositories.previewListExport | previewListExportParams / previewListExportResult | repositories.read |
 | repositories.exportListFile | exportListFileParams / exportListFileResult | 已认证 local-owner + repositories.read |
 
-输入为最多 1 MiB、4096 个非空条目的 UTF-8 文本，接受可选 BOM、LF/CRLF、trim 与 `#` 行内注释。
+旧兼容输入为最多 1 MiB、4096 个非空条目的 UTF-8 文本，接受可选 BOM、LF/CRLF、trim 与 `#` 行内注释。
 普通 HTTP(S) URL 与 `vcc://vpm/addRepo?url=...` 可以成为 candidate。添加链接可通过 `headers[]`
 为内层 HTTP(S) 仓库携带请求头，预览只显示是否配置认证。重复来源标为 duplicate，无效或不支持条目
 保留行号和稳定原因。含 userinfo 或无法完整表达的认证项不降级为匿名 URL。不返回或记录原始无效行和认证秘密。
@@ -1098,7 +1098,7 @@ Core 跳过已登记项，在共享的 64 路下载额度内滚动下载和解�
 `cancelListRegistration` 按本次幂等键请求停止接纳新条目。`stopped: true` 表示 Core 已记录停止，
 包括停止请求先于导入请求到达的情况。已开始项按原流程完成，原导入请求返回逐项结果。
 
-导出预览基于 Core 一致的用户仓库快照，范围独立于 GUI 当前页，排除 VRChat 官方及精选内置仓库。
+旧兼容导出预览基于 Core 一致的用户仓库快照，范围独立于 GUI 当前页，排除 VRChat 官方及精选内置仓库。
 fingerprint 绑定输出字节数、范围、修订、内部凭据引用及排除项。执行时变化在创建文件前返回
 repository_list_changed，要求重新预览。
 无凭据的仓库直接写入完整 URL，保留查询参数及顺序。认证仓库由 Core 从凭据存储读取请求头，
@@ -1109,6 +1109,20 @@ repository_list_changed，要求重新预览。
 已登记项目内目标拒绝。写入失败只清理本次创建且身份匹配的半成品，不删除其他文件；保存选择
 取消不调用写 RPC。稳定错误另包括 repository_list_invalid、repository_list_target_invalid、
 repository_list_io_error；普通错误与日志均不包含原始秘密。
+
+2026-11-10 所有者要求默认完整配置导出，接受不兼容旧 ALCOM 并保留旧兼容入口。
+`previewListExport` / `exportListFile` 增加可选 `format: native|legacy`，省略保持 legacy；
+GUI 默认显式发送 native，兼容按钮发送 legacy。native 预览/导出额外要求 local-owner 和
+`settings.read`；native 导入在原有权限外要求 `settings.read`、`settings.manage`。
+格式见 [存储库配置文件 v1](../formats/repository-configuration-v1.md)：包含全部内置/本地/远程来源、
+自定义显示名、优先级、仓库开关、包开关及文件内认证。
+`inspectListFile` 按内容识别，native 结果带 `format: native`，每项可带 `configuration`，
+source 另支持 `{kind: local, path}`；认证仍仅预览 `credentialsConfigured`，不返回值。
+native 导入按来源映射本机 ID 并恢复已有项，保留文件未包含的仓库，逐项结果新增 `updated`。
+`importListFile` 可选 `overwriteExisting` 默认 true；false 时只新增并将新来源追加，已有配置和认证保持。
+原有 TXT 请求和响应省略新增字段，追加、指纹及逐项状态语义保持；native 指纹只绑定实际输出配置，
+不绑定无关索引刷新修订。配置保存不宣称跨 SQLite/设置文件原子性，未完整保存返回
+`repository_list_configuration_failed`，已生效项保留并要求核对后重新预览。
 
 ## M7 实现依据整改：创建版本与兼容语义（2026-11-05已批准）
 

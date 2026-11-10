@@ -17,6 +17,7 @@ pub const DOWNLOAD_CONCURRENCY: usize = 64;
 pub enum RepositoryBatchItem {
     Added,
     Existing,
+    Updated,
     Failed(M3ErrorCode),
     Unknown(M3ErrorCode),
     Unprocessed,
@@ -33,12 +34,39 @@ impl std::fmt::Display for RepositoryListError {
 
 impl std::error::Error for RepositoryListError {}
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RepositoryListFormat {
+    Native,
+    #[default]
+    Legacy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryConfiguration {
+    pub display_name: Option<String>,
+    pub priority: u64,
+    pub enabled: bool,
+    pub disabled_package_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RepositoryListMetadata {
+    pub repository_id: String,
+    pub expected_display_name: Option<String>,
+    pub expected_priority: u64,
+    pub display_name: Option<String>,
+    pub priority: u64,
+}
+
 #[derive(Clone, Debug)]
 pub struct RepositoryListRecord {
     pub repository_id: String,
     pub revision: u64,
     pub source: RepositorySource,
     pub credential_reference: Option<String>,
+    pub configuration: RepositoryConfiguration,
 }
 
 /// One consistent database read, independent of presentation pagination.
@@ -64,10 +92,12 @@ pub struct RepositoryListEntry {
     pub reason: Option<&'static str>,
     pub credentials_configured: bool,
     pub credentials: Option<crate::RepositoryCredentials>,
+    pub configuration: Option<RepositoryConfiguration>,
 }
 
 #[derive(Clone, Debug)]
 pub struct RepositoryListInspection {
+    pub format: RepositoryListFormat,
     pub entries: Vec<RepositoryListEntry>,
     pub ignored_lines: u32,
     pub fingerprint: String,
@@ -105,6 +135,12 @@ pub trait RepositoryListStore: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
     ) -> impl Future<Output = Result<RepositoryListSnapshot, M3Error>> + Send;
+    fn apply_repository_list_metadata(
+        &self,
+        owner: PrincipalId,
+        changes: Vec<RepositoryListMetadata>,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(), M3Error>> + Send;
 }
 
 /// Bounded file exchange port, separate from the read-only source inspection adapter.
@@ -115,6 +151,10 @@ pub trait RepositoryListFiles: Clone + Send + Sync + 'static {
         snapshot: RepositoryListSnapshot,
     ) -> impl Future<Output = Result<RepositoryListInspection, RepositoryListError>> + Send;
     fn prepare(
+        &self,
+        records: Vec<RepositoryListRecord>,
+    ) -> impl Future<Output = Result<PreparedRepositoryList, RepositoryListError>> + Send;
+    fn prepare_configuration(
         &self,
         records: Vec<RepositoryListRecord>,
     ) -> impl Future<Output = Result<PreparedRepositoryList, RepositoryListError>> + Send;
@@ -131,6 +171,7 @@ pub struct RepositoryListApplication<S, F> {
     store: S,
     files: F,
     imports: Arc<Mutex<ImportControls>>,
+    settings: Option<crate::M7OfficialApplication>,
 }
 
 impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S, F> {
@@ -139,7 +180,13 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             store,
             files,
             imports: Arc::new(Mutex::new(ImportControls::default())),
+            settings: None,
         }
+    }
+
+    pub fn with_settings(mut self, settings: crate::M7OfficialApplication) -> Self {
+        self.settings = Some(settings);
+        self
     }
 
     pub async fn inspect(
@@ -167,6 +214,22 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
     where
         S: M3RegistryStore,
     {
+        self.import_with_options(access, registry, path, expected_fingerprint, key, true)
+            .await
+    }
+
+    pub async fn import_with_options<R: M3ReadAdapter>(
+        &self,
+        access: &AccessContext,
+        registry: &M3Application<S, R>,
+        path: String,
+        expected_fingerprint: String,
+        key: IdempotencyKey,
+        overwrite_existing: bool,
+    ) -> Result<Vec<(u32, RepositoryBatchItem)>, RepositoryListError>
+    where
+        S: M3RegistryStore,
+    {
         require(access, true)?;
         require_import_manage(access)?;
         let (_control, stop) = ImportGuard::start(&self.imports, key.as_str())?;
@@ -178,6 +241,11 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
             .await?;
         if inspection.fingerprint != expected_fingerprint {
             return Err(RepositoryListError("repository_list_changed"));
+        }
+        if inspection.format == RepositoryListFormat::Native {
+            return self
+                .import_configuration(access, registry, inspection, key, stop, overwrite_existing)
+                .await;
         }
         let (lines, urls): (Vec<_>, Vec<_>) = inspection
             .entries
@@ -382,3 +450,6 @@ fn require(access: &AccessContext, owner_only: bool) -> Result<(), RepositoryLis
     }
     Ok(())
 }
+
+#[path = "repository_list_config.rs"]
+mod configuration;

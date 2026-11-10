@@ -2154,6 +2154,7 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
     );
     assert_eq!(
         serde_json::to_value(RepositoryListImportParams {
+            overwrite_existing: None,
             path: "C:/list.txt".to_owned(),
             expected_fingerprint: "a".repeat(64),
             idempotency_key: "import-key".to_owned(),
@@ -2204,6 +2205,7 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
         .is_err()
     );
     let entry = RepositoryListEntry {
+        configuration: None,
         line: 1,
         credentials_configured: false,
         status: RepositoryListEntryStatus::Candidate,
@@ -2216,6 +2218,50 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
         serde_json::to_value(entry).expect("repository list entry wire"),
         json!({"line":1,"status":"candidate","source":{"kind":"remote","url":"https://example.test/repo?z=2&a=1&a=3"}})
     );
+}
+
+#[test]
+fn repository_configuration_wire_extends_native_files_and_preserves_legacy_calls() {
+    use alcomd_protocol::*;
+    let legacy: RepositoryListPreviewParams =
+        serde_json::from_value(json!({})).expect("legacy request");
+    assert_eq!(legacy.format, RepositoryListFormat::Legacy);
+    assert_eq!(
+        serde_json::to_value(legacy).expect("legacy wire"),
+        json!({})
+    );
+    assert_eq!(
+        serde_json::to_value(RepositoryListPreviewParams {
+            format: RepositoryListFormat::Native
+        })
+        .expect("native wire"),
+        json!({"format":"native"})
+    );
+    assert_eq!(
+        serde_json::to_value(RepositoryListImportItem::Updated { line: 1 }).expect("updated wire"),
+        json!({"line":1,"status":"updated"})
+    );
+    let entry = RepositoryListEntry {
+        configuration: Some(RepositoryConfiguration {
+            display_name: Some("Local source".into()),
+            priority: 2,
+            enabled: false,
+            disabled_package_ids: vec!["com.example.package".into()],
+        }),
+        line: 1,
+        credentials_configured: false,
+        status: RepositoryListEntryStatus::Duplicate,
+        source: Some(RepositoryListSource::Local {
+            path: "C:/owned/index.json".into(),
+        }),
+        reason: None,
+    };
+    let wire = serde_json::to_value(entry).expect("native configuration preview");
+    assert_eq!(
+        wire,
+        json!({"line":1,"status":"duplicate","source":{"kind":"local","path":"C:/owned/index.json"},"configuration":{"displayName":"Local source","priority":2,"enabled":false,"disabledPackageIds":["com.example.package"]}})
+    );
+    assert!(serde_json::from_value::<RepositoryListEntry>(json!({"line":1,"status":"candidate","credentials":{"headers":{"Authorization":"fixture"}}})).is_err(),"credentials have no preview wire field");
 }
 
 #[test]

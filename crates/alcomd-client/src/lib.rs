@@ -913,7 +913,35 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::RepositoryListPreview, ClientError> {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT,
-            alcomd_protocol::RepositoryListPreviewParams {},
+            alcomd_protocol::RepositoryListPreviewParams::default(),
+        )
+        .await
+    }
+
+    pub async fn repository_configuration_preview_export(
+        &mut self,
+        format: alcomd_protocol::RepositoryListFormat,
+    ) -> Result<alcomd_protocol::RepositoryListPreview, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT,
+            alcomd_protocol::RepositoryListPreviewParams { format },
+        )
+        .await
+    }
+
+    pub async fn repository_configuration_export_file(
+        &mut self,
+        target_path: String,
+        expected_fingerprint: String,
+        format: alcomd_protocol::RepositoryListFormat,
+    ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
+            alcomd_protocol::RepositoryListExportParams {
+                target_path,
+                expected_fingerprint,
+                format,
+            },
         )
         .await
     }
@@ -948,6 +976,7 @@ impl AlcomdClient {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
             alcomd_protocol::RepositoryListExportParams {
+                format: alcomd_protocol::RepositoryListFormat::Legacy,
                 target_path,
                 expected_fingerprint,
             },

@@ -1,6 +1,7 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const errorMessages: TranslationTable = {
+    "Some repository configuration could not be applied. Completed changes are kept. Review the repository list before importing again.": {"zh-CN":"部分存储库配置未能应用，已完成的更改会保留。请检查存储库列表后再导入。", "ja-JP":"一部のリポジトリ設定を適用できませんでした。完了した変更は保持されます。再度インポートする前に一覧を確認してください。"},
     "The Core started.": { "zh-CN": "Core 已启动。", "ja-JP": "Coreが起動しました。" },
     "Task completed.": { "zh-CN": "任务已完成。", "ja-JP": "タスクが完了しました。" },
     "Task cancelled.": { "zh-CN": "任务已取消。", "ja-JP": "タスクがキャンセルされました。" },

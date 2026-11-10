@@ -251,6 +251,517 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
 }
 
 #[tokio::test]
+async fn repository_configuration_round_trip_restores_names_switches_and_remaps_sources() {
+    let source = fixture("repository-configuration-source", empty(), Vec::new(), None).await;
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(source.store.clone(), source.reader.clone());
+    let record = registry
+        .get_repository(&access, source.repository)
+        .await
+        .expect("source repository");
+    registry
+        .set_repository_display_name(
+            &access,
+            source.repository,
+            record.revision,
+            Some("Renamed configuration source".into()),
+            key("rename-export-source"),
+        )
+        .await
+        .expect("rename source");
+    source
+        .settings(|settings| {
+            settings.hidden_repository_ids = vec![source.repository.to_string()];
+            settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+                repository_id: source.repository.to_string(),
+                package_ids: vec!["com.example.future".into()],
+            }];
+        })
+        .await;
+    let data = source.directory.join("configuration-data");
+    fs::create_dir(&data).expect("isolated Core data");
+    let lists = RepositoryListApplication::new(
+        source.store.clone(),
+        alcomd_vpm::RepositoryListFileAdapter::new(data),
+    )
+    .with_settings(source.config.clone());
+    let preview = lists
+        .preview_format(&access, RepositoryListFormat::Native)
+        .await
+        .expect("native preview");
+    assert_eq!(preview.exportable_count, 1, "local sources are included");
+    assert!(preview.excluded.is_empty());
+    let output = source.directory.join("repositories.alcomdrepositories");
+    lists
+        .export_format(
+            &access,
+            output.to_string_lossy().into_owned(),
+            preview.fingerprint,
+            RepositoryListFormat::Native,
+        )
+        .await
+        .expect("native export");
+    let inspection = lists
+        .inspect(&access, output.to_string_lossy().into_owned())
+        .await
+        .expect("inspect configuration");
+    assert_eq!(inspection.format, RepositoryListFormat::Native);
+    assert!(
+        inspection
+            .entries
+            .iter()
+            .all(|entry| entry.credentials.is_none()),
+        "RPC inspection never carries credentials"
+    );
+    let target = fixture("repository-configuration-target", empty(), Vec::new(), None).await;
+    target
+        .settings(|settings| {
+            settings.hidden_repository_packages = vec![ConfigRepositoryPackages {
+                repository_id: target.repository.to_string(),
+                package_ids: vec!["com.example.keep".into()],
+            }]
+        })
+        .await;
+    let target_data = target.directory.join("configuration-data");
+    fs::create_dir(&target_data).expect("target Core data");
+    let target_lists = RepositoryListApplication::new(
+        target.store.clone(),
+        alcomd_vpm::RepositoryListFileAdapter::new(target_data),
+    )
+    .with_settings(target.config.clone());
+    let target_registry = M3Application::new(target.store.clone(), target.reader.clone());
+    let path = output.to_string_lossy().into_owned();
+    let outcomes = target_lists
+        .import(
+            &access,
+            &target_registry,
+            path.clone(),
+            inspection.fingerprint,
+            key("import-configuration"),
+        )
+        .await
+        .expect("apply configuration");
+    assert_eq!(outcomes, vec![(1, RepositoryBatchItem::Added)]);
+    let snapshot = target
+        .store
+        .repository_list_snapshot(PrincipalId::local_owner())
+        .await
+        .expect("target sources");
+    let imported = snapshot
+        .repositories
+        .iter()
+        .find(|record| record.repository_id != target.repository.to_string())
+        .expect("new source identity");
+    assert_ne!(imported.repository_id, source.repository.to_string());
+    assert_eq!(
+        imported.configuration.display_name.as_deref(),
+        Some("Renamed configuration source")
+    );
+    assert!(
+        imported.configuration.priority
+            < snapshot
+                .repositories
+                .iter()
+                .find(|record| record.repository_id == target.repository.to_string())
+                .expect("retained source")
+                .configuration
+                .priority
+    );
+    let settings = target
+        .config
+        .candidate_settings()
+        .await
+        .expect("restored switches");
+    assert!(
+        settings
+            .settings
+            .packages
+            .hidden_repository_ids
+            .contains(&imported.repository_id)
+    );
+    assert!(
+        settings
+            .settings
+            .packages
+            .hidden_repository_packages
+            .iter()
+            .any(|group| group.repository_id == imported.repository_id
+                && group.package_ids == ["com.example.future"])
+    );
+    assert!(
+        settings
+            .settings
+            .packages
+            .hidden_repository_packages
+            .iter()
+            .any(|group| group.repository_id == target.repository.to_string()
+                && group.package_ids == ["com.example.keep"])
+    );
+    let target_id = RepositoryId::parse(&imported.repository_id).expect("new repository ID");
+    let current = target_registry
+        .get_repository(&access, target_id)
+        .await
+        .expect("current source");
+    target_registry
+        .set_repository_display_name(
+            &access,
+            target_id,
+            current.revision,
+            None,
+            key("clear-imported-name"),
+        )
+        .await
+        .expect("clear override");
+    target
+        .settings(|settings| {
+            settings.hidden_repository_ids.clear();
+            settings
+                .hidden_repository_packages
+                .retain(|group| group.repository_id != imported.repository_id);
+        })
+        .await;
+    let inspected = target_lists
+        .inspect(&access, path.clone())
+        .await
+        .expect("preview existing configuration");
+    let kept_revision = target_registry
+        .get_repository(&access, target_id)
+        .await
+        .expect("before add-only")
+        .revision;
+    let kept_settings = target
+        .config
+        .candidate_settings()
+        .await
+        .expect("before add-only settings");
+    let skipped = target_lists
+        .import_with_options(
+            &access,
+            &target_registry,
+            path.clone(),
+            inspected.fingerprint.clone(),
+            key("keep-existing-configuration"),
+            false,
+        )
+        .await
+        .expect("add-only skips existing source");
+    assert_eq!(skipped, vec![(1, RepositoryBatchItem::Existing)]);
+    assert_eq!(
+        target_registry
+            .get_repository(&access, target_id)
+            .await
+            .expect("kept source")
+            .revision,
+        kept_revision
+    );
+    assert_eq!(
+        target
+            .config
+            .candidate_settings()
+            .await
+            .expect("kept settings"),
+        kept_settings
+    );
+    let results = target_lists
+        .import(
+            &access,
+            &target_registry,
+            path.clone(),
+            inspected.fingerprint,
+            key("restore-existing-configuration"),
+        )
+        .await
+        .expect("restore existing configuration");
+    assert_eq!(results, vec![(1, RepositoryBatchItem::Updated)]);
+    let before = target_registry
+        .get_repository(&access, target_id)
+        .await
+        .expect("restored source");
+    let settings_before = target.config.candidate_settings().await.expect("settings");
+    let inspected = target_lists
+        .inspect(&access, path.clone())
+        .await
+        .expect("repeat preview");
+    target_lists
+        .import(
+            &access,
+            &target_registry,
+            path,
+            inspected.fingerprint,
+            key("repeat-configuration"),
+        )
+        .await
+        .expect("same configuration is harmless");
+    assert_eq!(
+        target_registry
+            .get_repository(&access, target_id)
+            .await
+            .expect("unchanged source")
+            .revision,
+        before.revision
+    );
+    assert_eq!(
+        target
+            .config
+            .candidate_settings()
+            .await
+            .expect("unchanged settings"),
+        settings_before
+    );
+    let add_only = fixture(
+        "repository-configuration-add-only",
+        empty(),
+        Vec::new(),
+        None,
+    )
+    .await;
+    let original = add_only
+        .store
+        .repository_list_snapshot(PrincipalId::local_owner())
+        .await
+        .expect("existing metadata")
+        .repositories
+        .remove(0);
+    let data = add_only.directory.join("configuration-data");
+    fs::create_dir(&data).expect("add-only data");
+    let lists = RepositoryListApplication::new(
+        add_only.store.clone(),
+        alcomd_vpm::RepositoryListFileAdapter::new(data),
+    )
+    .with_settings(add_only.config.clone());
+    let registry = M3Application::new(add_only.store.clone(), add_only.reader.clone());
+    let path = output.to_string_lossy().into_owned();
+    let inspected = lists
+        .inspect(&access, path.clone())
+        .await
+        .expect("add-only preview");
+    assert_eq!(
+        lists
+            .import_with_options(
+                &access,
+                &registry,
+                path,
+                inspected.fingerprint,
+                key("add-only-new-source"),
+                false
+            )
+            .await
+            .expect("add-only import"),
+        vec![(1, RepositoryBatchItem::Added)]
+    );
+    let after = add_only
+        .store
+        .repository_list_snapshot(PrincipalId::local_owner())
+        .await
+        .expect("add-only result");
+    let retained = after
+        .repositories
+        .iter()
+        .find(|record| record.repository_id == original.repository_id)
+        .expect("retained");
+    assert_eq!(retained.revision, original.revision);
+    assert_eq!(retained.configuration, original.configuration);
+    let added = after
+        .repositories
+        .iter()
+        .find(|record| record.repository_id != original.repository_id)
+        .expect("added");
+    assert!(
+        added.configuration.priority > retained.configuration.priority,
+        "new sources append when overwrite is disabled"
+    );
+    assert_eq!(
+        added.configuration.display_name.as_deref(),
+        Some("Renamed configuration source")
+    );
+}
+
+#[tokio::test]
+async fn repository_configuration_permissions_early_stop_and_preview_changes_do_not_write() {
+    let fixture = fixture("repository-configuration-guards", empty(), Vec::new(), None).await;
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(fixture.store.clone(), fixture.reader.clone());
+    let data = fixture.directory.join("configuration-data");
+    fs::create_dir(&data).expect("isolated Core data");
+    let lists = RepositoryListApplication::new(
+        fixture.store.clone(),
+        alcomd_vpm::RepositoryListFileAdapter::new(data),
+    )
+    .with_settings(fixture.config.clone());
+    let output = fixture.directory.join("repositories.alcomdrepositories");
+    let path = output.to_string_lossy().into_owned();
+    let preview = lists
+        .preview_format(&access, RepositoryListFormat::Native)
+        .await
+        .expect("preview");
+    lists
+        .export_format(
+            &access,
+            path.clone(),
+            preview.fingerprint.clone(),
+            RepositoryListFormat::Native,
+        )
+        .await
+        .expect("export");
+    let bytes = fs::read(&output).expect("exported bytes");
+    assert_eq!(
+        lists
+            .export_format(
+                &access,
+                path.clone(),
+                preview.fingerprint,
+                RepositoryListFormat::Native
+            )
+            .await
+            .err(),
+        Some(RepositoryListError("repository_list_target_exists"))
+    );
+    assert_eq!(fs::read(&output).expect("original export"), bytes);
+    let inspected = lists.inspect(&access, path.clone()).await.expect("inspect");
+    let settings_before = fixture.config.candidate_settings().await.expect("settings");
+    let repository_before = registry
+        .get_repository(&access, fixture.repository)
+        .await
+        .expect("source");
+    let limited = AccessContext::new(
+        PrincipalId::local_owner(),
+        [
+            Permission::RepositoriesRead,
+            Permission::RepositoriesManage,
+            Permission::SettingsRead,
+        ],
+    );
+    assert_eq!(
+        lists
+            .import(
+                &limited,
+                &registry,
+                path.clone(),
+                inspected.fingerprint.clone(),
+                key("denied-configuration")
+            )
+            .await
+            .err(),
+        Some(RepositoryListError("permission_denied"))
+    );
+    let stopped = key("stopped-configuration");
+    lists
+        .cancel_registration(&access, &stopped)
+        .expect("early stop");
+    assert_eq!(
+        lists
+            .import(
+                &access,
+                &registry,
+                path.clone(),
+                inspected.fingerprint.clone(),
+                stopped
+            )
+            .await
+            .expect("stopped"),
+        vec![(1, RepositoryBatchItem::Unprocessed)]
+    );
+    let mut changed: Value = serde_json::from_slice(&bytes).expect("export JSON");
+    changed["repositories"][0]["configuration"]["displayName"] = json!("Changed after preview");
+    fs::write(
+        &output,
+        serde_json::to_vec(&changed).expect("changed document"),
+    )
+    .expect("changed fixture");
+    assert_eq!(
+        lists
+            .import(
+                &access,
+                &registry,
+                path,
+                inspected.fingerprint,
+                key("changed-configuration")
+            )
+            .await
+            .err(),
+        Some(RepositoryListError("repository_list_changed"))
+    );
+    let stale_output = fixture.directory.join("stale.alcomdrepositories");
+    let preview = lists
+        .preview_format(&access, RepositoryListFormat::Native)
+        .await
+        .expect("before settings change");
+    fixture
+        .settings(|settings| settings.hidden_repository_ids = vec![fixture.repository.to_string()])
+        .await;
+    assert_eq!(
+        lists
+            .export_format(
+                &access,
+                stale_output.to_string_lossy().into_owned(),
+                preview.fingerprint,
+                RepositoryListFormat::Native
+            )
+            .await
+            .err(),
+        Some(RepositoryListError("repository_list_changed"))
+    );
+    assert!(!stale_output.exists());
+    assert_eq!(
+        registry
+            .get_repository(&access, fixture.repository)
+            .await
+            .expect("unchanged source")
+            .revision,
+        repository_before.revision
+    );
+    let current = fixture
+        .config
+        .candidate_settings()
+        .await
+        .expect("current settings");
+    assert_eq!(
+        current.revision,
+        settings_before.revision + 1,
+        "only the deliberate fixture change was saved"
+    );
+    let metadata = fixture
+        .store
+        .repository_list_snapshot(PrincipalId::local_owner())
+        .await
+        .expect("metadata before refresh")
+        .repositories
+        .remove(0);
+    registry
+        .refresh_repository(
+            &access,
+            fixture.repository,
+            repository_before.revision,
+            key("refresh-before-config-metadata"),
+        )
+        .await
+        .expect("ordinary index refresh");
+    let change = RepositoryListMetadata {
+        repository_id: metadata.repository_id,
+        expected_display_name: metadata.configuration.display_name,
+        expected_priority: metadata.configuration.priority,
+        display_name: Some("Configuration after index refresh".into()),
+        priority: metadata.configuration.priority,
+    };
+    fixture
+        .store
+        .apply_repository_list_metadata(PrincipalId::local_owner(), vec![change.clone()], 1)
+        .await
+        .expect("index revision is irrelevant to configuration");
+    let mut conflict = change;
+    conflict.display_name = Some("Conflicting configuration".into());
+    assert_eq!(
+        fixture
+            .store
+            .apply_repository_list_metadata(PrincipalId::local_owner(), vec![conflict], 2)
+            .await
+            .expect_err("actual name change conflicts")
+            .code(),
+        M3ErrorCode::RevisionConflict
+    );
+}
+
+#[tokio::test]
 async fn automatic_ndmf_downgrade_uses_repository_priority_and_checks_dependents() {
     const MA: &str = "nadena.dev.modular-avatar";
     const NDMF: &str = "nadena.dev.ndmf";

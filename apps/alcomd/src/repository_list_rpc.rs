@@ -33,12 +33,21 @@ pub(super) async fn dispatch(
                 Ok(result) => success_action(
                     request.id,
                     rpc::RepositoryListInspection {
+                        format: convert_format(result.format),
                         fingerprint: result.fingerprint,
                         ignored_lines: result.ignored_lines,
                         entries: result
                             .entries
                             .into_iter()
                             .map(|entry| rpc::RepositoryListEntry {
+                                configuration: entry.configuration.map(|config| {
+                                    rpc::RepositoryConfiguration {
+                                        display_name: config.display_name,
+                                        priority: config.priority,
+                                        enabled: config.enabled,
+                                        disabled_package_ids: config.disabled_package_ids,
+                                    }
+                                }),
                                 line: entry.line,
                                 credentials_configured: entry.credentials_configured,
                                 status: match entry.status {
@@ -58,6 +67,9 @@ pub(super) async fn dispatch(
                                 source: match entry.source {
                                     Some(app::RepositorySource::Remote { url }) => {
                                         Some(rpc::RepositoryListSource::Remote { url })
+                                    }
+                                    Some(app::RepositorySource::Local { path }) => {
+                                        Some(rpc::RepositoryListSource::Local { path })
                                     }
                                     _ => None,
                                 },
@@ -83,12 +95,13 @@ pub(super) async fn dispatch(
                 return invalid(request.id);
             };
             match application
-                .import(
+                .import_with_options(
                     access,
                     registry,
                     params.path,
                     params.expected_fingerprint,
                     key,
+                    params.overwrite_existing.unwrap_or(true),
                 )
                 .await
             {
@@ -101,6 +114,9 @@ pub(super) async fn dispatch(
                             }
                             app::RepositoryBatchItem::Existing => {
                                 rpc::RepositoryListImportItem::Existing { line }
+                            }
+                            app::RepositoryBatchItem::Updated => {
+                                rpc::RepositoryListImportItem::Updated { line }
                             }
                             app::RepositoryBatchItem::Failed(code) => {
                                 rpc::RepositoryListImportItem::Failed {
@@ -143,10 +159,12 @@ pub(super) async fn dispatch(
             }
         }
         rpc::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT => {
-            if serde_json::from_value::<rpc::RepositoryListPreviewParams>(request.params).is_err() {
+            let Ok(params) =
+                serde_json::from_value::<rpc::RepositoryListPreviewParams>(request.params)
+            else {
                 return invalid(request.id);
-            }
-            match application.preview(access).await {
+            };
+            match application.preview_format(access, application_format(params.format)).await {
                 Ok(result) => success_action(request.id, rpc::RepositoryListPreview {
                     exportable_count: result.exportable_count, byte_count: result.byte_count, fingerprint: result.fingerprint,
                     excluded: result.excluded.into_iter().map(|entry| rpc::RepositoryListExclusion {
@@ -171,7 +189,12 @@ pub(super) async fn dispatch(
                 return invalid(request.id);
             }
             match application
-                .export(access, params.target_path, params.expected_fingerprint)
+                .export_format(
+                    access,
+                    params.target_path,
+                    params.expected_fingerprint,
+                    application_format(params.format),
+                )
                 .await
             {
                 Ok(result) => success_action(
@@ -214,4 +237,17 @@ fn failure(id: String, error: app::RepositoryListError) -> DispatchAction {
         },
         false,
     )
+}
+
+fn application_format(format: rpc::RepositoryListFormat) -> app::RepositoryListFormat {
+    match format {
+        rpc::RepositoryListFormat::Native => app::RepositoryListFormat::Native,
+        rpc::RepositoryListFormat::Legacy => app::RepositoryListFormat::Legacy,
+    }
+}
+fn convert_format(format: app::RepositoryListFormat) -> rpc::RepositoryListFormat {
+    match format {
+        app::RepositoryListFormat::Native => rpc::RepositoryListFormat::Native,
+        app::RepositoryListFormat::Legacy => rpc::RepositoryListFormat::Legacy,
+    }
 }

@@ -48,10 +48,10 @@ export interface GuiRpcClient {
     repositoriesInspect(source: RepositorySource, credentials?: RepositoryCredentials): Promise<RepositoryResult>;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
     repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
-    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult>;
+    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string, overwriteExisting?: boolean): Promise<RepositoryListImportResult>;
     repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult>;
-    repositoryListPreviewExport(): Promise<RepositoryListPreview>;
-    repositoryListExportFile(targetPath: string, expectedFingerprint: string): Promise<RepositoryListExportResult>;
+    repositoryListPreviewExport(format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListPreview>;
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string, format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListExportResult>;
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
@@ -158,19 +158,19 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repository_list_inspect_file", { path });
     }
 
-    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string): Promise<RepositoryListImportResult> {
-        const params: RepositoryListImportParams = { path, expectedFingerprint, idempotencyKey };
+    repositoryListImportFile(path: string, expectedFingerprint: string, idempotencyKey: string, overwriteExisting?: boolean): Promise<RepositoryListImportResult> {
+        const params: RepositoryListImportParams = { path, expectedFingerprint, idempotencyKey, ...(overwriteExisting === undefined ? {} : { overwriteExisting }) };
         return invokeTyped("gui_repository_list_import_file", { params });
     }
     repositoryListCancelRegistration(idempotencyKey: string): Promise<RepositoryListCancelResult> {
         const params: RepositoryListCancelParams = { idempotencyKey };
         return invokeTyped("gui_repository_list_cancel_registration", { params });
     }
-    repositoryListPreviewExport(): Promise<RepositoryListPreview> {
-        return invokeTyped("gui_repository_list_preview_export", {});
+    repositoryListPreviewExport(format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListPreview> {
+        return invokeTyped("gui_repository_list_preview_export", { format: format ?? "native" });
     }
-    repositoryListExportFile(targetPath: string, expectedFingerprint: string): Promise<RepositoryListExportResult> {
-        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint });
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string, format?: import("@alcomd/sdk").RepositoryListFormat): Promise<RepositoryListExportResult> {
+        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint, format: format ?? "native" });
     }
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage> {
         return invokeTyped("gui_package_query_project_candidates", { params });

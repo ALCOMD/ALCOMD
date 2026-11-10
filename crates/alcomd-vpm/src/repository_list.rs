@@ -9,8 +9,9 @@ use alcomd_application::{
     PreparedRepositoryList, REPOSITORY_LIST_MAX_BYTES, REPOSITORY_LIST_MAX_ENTRIES,
     RepositoryCredentials, RepositoryListEntry, RepositoryListEntryStatus as Status,
     RepositoryListError as Error, RepositoryListExclusion, RepositoryListFiles,
-    RepositoryListInspection, RepositoryListPreview, RepositoryListRecord, RepositoryListSnapshot,
-    RepositorySource, VRCHAT_CURATED_REPOSITORY_ID, VRCHAT_OFFICIAL_REPOSITORY_ID,
+    RepositoryListFormat, RepositoryListInspection, RepositoryListPreview, RepositoryListRecord,
+    RepositoryListSnapshot, RepositorySource, VRCHAT_CURATED_REPOSITORY_ID,
+    VRCHAT_OFFICIAL_REPOSITORY_ID,
 };
 use alcomd_platform::file_identity_key;
 use reqwest::Url;
@@ -76,6 +77,17 @@ impl RepositoryListFiles for RepositoryListFileAdapter {
         .map_err(|_| Error("repository_list_io_error"))?
     }
 
+    async fn prepare_configuration(
+        &self,
+        records: Vec<RepositoryListRecord>,
+    ) -> Result<PreparedRepositoryList, Error> {
+        tokio::task::spawn_blocking(move || {
+            configuration::prepare(records, crate::repository_auth::load_from_vault)
+        })
+        .await
+        .map_err(|_| Error("repository_list_io_error"))?
+    }
+
     async fn create_new(
         &self,
         path: String,
@@ -91,6 +103,9 @@ impl RepositoryListFiles for RepositoryListFileAdapter {
     }
 }
 
+#[path = "repository_configuration.rs"]
+mod configuration;
+
 fn parse_list(
     bytes: &[u8],
     snapshot: &RepositoryListSnapshot,
@@ -100,6 +115,9 @@ fn parse_list(
     }
     let text = std::str::from_utf8(bytes).map_err(|_| Error("repository_list_invalid"))?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    if text.trim_start().starts_with('{') {
+        return configuration::parse(bytes, text, snapshot);
+    }
     let mut seen: HashSet<String> = snapshot
         .repositories
         .iter()
@@ -126,6 +144,7 @@ fn parse_list(
             reason: None,
             credentials_configured: false,
             credentials: None,
+            configuration: None,
         };
         match parse_source(line) {
             Ok((url, credentials)) => {
@@ -149,6 +168,7 @@ fn parse_list(
         entries.push(entry);
     }
     Ok(RepositoryListInspection {
+        format: RepositoryListFormat::Legacy,
         fingerprint: hex(&Sha256::digest(bytes)),
         entries,
         ignored_lines,
@@ -467,12 +487,152 @@ fn create_new_list_with(
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_configuration_round_trip_includes_builtin_local_flags_names_and_credentials() {
+        let mut configured = remote("user", "https://repository.test/index.json");
+        configured.configuration = alcomd_application::RepositoryConfiguration {
+            display_name: Some("My renamed repository".into()),
+            priority: 7,
+            enabled: false,
+            disabled_package_ids: vec!["com.example.future".into(), "com.example.old".into()],
+        };
+        configured.credential_reference = Some("owned-fixture-reference".into());
+        let mut local = remote("local", "https://unused.test/index.json");
+        local.source = RepositorySource::Local {
+            path: "C:/owned/repository.json".into(),
+        };
+        let records = vec![
+            configured.clone(),
+            local,
+            remote(
+                VRCHAT_OFFICIAL_REPOSITORY_ID,
+                "https://official.test/index.json",
+            ),
+        ];
+        let prepared = configuration::prepare(records.clone(), |_| {
+            Ok(RepositoryCredentials {
+                headers: std::collections::BTreeMap::from([(
+                    "Authorization".into(),
+                    "Bearer owned-fixture-secret".into(),
+                )]),
+            })
+        })
+        .expect("configuration export");
+        assert_eq!(prepared.preview.exportable_count, 3);
+        assert!(prepared.preview.excluded.is_empty());
+        let inspection = parse_list(&prepared.bytes, &RepositoryListSnapshot::default())
+            .expect("configuration import");
+        assert_eq!(inspection.format, RepositoryListFormat::Native);
+        let entry = inspection
+            .entries
+            .iter()
+            .find(|entry| {
+                entry
+                    .configuration
+                    .as_ref()
+                    .is_some_and(|config| config.display_name.is_some())
+            })
+            .expect("renamed source");
+        assert_eq!(
+            entry.configuration.as_ref(),
+            Some(&configured.configuration)
+        );
+        assert_eq!(
+            entry.credentials.as_ref().expect("credentials").headers["Authorization"],
+            "Bearer owned-fixture-secret"
+        );
+        assert!(!format!("{inspection:?}").contains("owned-fixture-secret"));
+        let mut unrelated_revision = records.clone();
+        unrelated_revision[0].revision += 1;
+        let original = configuration::prepare(records, |_| {
+            Ok(RepositoryCredentials {
+                headers: std::collections::BTreeMap::from([(
+                    "Authorization".into(),
+                    "Bearer owned-fixture-secret".into(),
+                )]),
+            })
+        })
+        .expect("original");
+        let unchanged = configuration::prepare(unrelated_revision, |_| {
+            Ok(RepositoryCredentials {
+                headers: std::collections::BTreeMap::from([(
+                    "Authorization".into(),
+                    "Bearer owned-fixture-secret".into(),
+                )]),
+            })
+        })
+        .expect("refreshed index");
+        assert_eq!(
+            original.preview.fingerprint, unchanged.preview.fingerprint,
+            "index revision does not change configuration"
+        );
+    }
+
+    #[test]
+    fn native_configuration_rejects_invalid_version_fields_and_duplicate_switches() {
+        let prepared = configuration::prepare(
+            vec![remote("one", "https://repository.test/index.json")],
+            |_| panic!("no credentials"),
+        )
+        .expect("configuration");
+        let value: serde_json::Value = serde_json::from_slice(&prepared.bytes).expect("JSON");
+        for variant in [
+            "version",
+            "unknown",
+            "switch",
+            "duplicate-source",
+            "duplicate-switch",
+            "wrapped-source",
+            "unknown-source-field",
+        ] {
+            let mut modified = value.clone();
+            match variant {
+                "version" => modified["version"] = serde_json::json!(999),
+                "unknown" => modified["extra"] = serde_json::json!(true),
+                "switch" => {
+                    modified["repositories"][0]["configuration"]["disabledPackageIds"] =
+                        serde_json::json!(["invalid package"])
+                }
+                "duplicate-switch" => {
+                    modified["repositories"][0]["configuration"]["disabledPackageIds"] =
+                        serde_json::json!(["com.example.one", "com.example.one"])
+                }
+                "wrapped-source" => {
+                    modified["repositories"][0]["source"]["url"] = serde_json::json!(
+                        "vcc://vpm/addRepo?url=https%3A%2F%2Frepository.test%2Findex.json"
+                    )
+                }
+                "unknown-source-field" => {
+                    modified["repositories"][0]["source"]["extra"] = serde_json::json!(true)
+                }
+                _ => {
+                    let entry = modified["repositories"][0].clone();
+                    modified["repositories"]
+                        .as_array_mut()
+                        .expect("entries")
+                        .push(entry);
+                }
+            }
+            let bytes = serde_json::to_vec(&modified).expect("JSON");
+            assert!(
+                parse_list(&bytes, &RepositoryListSnapshot::default()).is_err(),
+                "{variant}"
+            );
+        }
+    }
+
     fn remote(id: &str, url: &str) -> RepositoryListRecord {
         RepositoryListRecord {
             repository_id: id.into(),
             revision: 1,
             source: RepositorySource::Remote { url: url.into() },
             credential_reference: None,
+            configuration: alcomd_application::RepositoryConfiguration {
+                display_name: None,
+                priority: 1,
+                enabled: true,
+                disabled_package_ids: Vec::new(),
+            },
         }
     }
 
@@ -587,6 +747,12 @@ mod tests {
                 path: "/local".into(),
             },
             credential_reference: None,
+            configuration: alcomd_application::RepositoryConfiguration {
+                display_name: None,
+                priority: 1,
+                enabled: true,
+                disabled_package_ids: Vec::new(),
+            },
         });
         snapshot.repositories.extend([
             remote(
@@ -714,6 +880,14 @@ mod tests {
             _: alcomd_application::PrincipalId,
         ) -> Result<RepositoryListSnapshot, alcomd_application::M3Error> {
             Ok(self.0.lock().expect("repository list fixture").clone())
+        }
+        async fn apply_repository_list_metadata(
+            &self,
+            _: alcomd_application::PrincipalId,
+            _: Vec<alcomd_application::RepositoryListMetadata>,
+            _: u64,
+        ) -> Result<(), alcomd_application::M3Error> {
+            panic!("export fixture does not import configuration")
         }
     }
 

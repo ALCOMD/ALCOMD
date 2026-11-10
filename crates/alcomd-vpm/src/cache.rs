@@ -896,6 +896,12 @@ mod tests {
                 revision: 1,
                 source: source("index"),
                 credential_reference: Some(reference.0.clone()),
+                configuration: alcomd_application::RepositoryConfiguration {
+                    display_name: None,
+                    priority: 1,
+                    enabled: true,
+                    disabled_package_ids: Vec::new(),
+                },
             }])
             .await
             .expect("read isolated vault for export");

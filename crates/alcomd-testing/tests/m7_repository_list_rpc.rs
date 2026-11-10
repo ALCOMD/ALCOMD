@@ -208,6 +208,68 @@ async fn repository_list_rpc_reads_previews_and_creates_without_overwrite_or_hid
             .to_string_lossy()
             .ends_with(".partial")
     }));
+    let native = alcomd_protocol::RepositoryListFormat::Native;
+    let preview = client
+        .repository_configuration_preview_export(native)
+        .await
+        .expect("native RPC preview");
+    assert_eq!(preview.exportable_count, 2, "native includes local sources");
+    assert!(preview.excluded.is_empty());
+    let native_path = fixture.0.join("repositories.alcomdrepositories");
+    let path = native_path.to_string_lossy().into_owned();
+    client
+        .repository_configuration_export_file(path.clone(), preview.fingerprint, native)
+        .await
+        .expect("native RPC export");
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&fs::read(&native_path).expect("native file")).expect("native JSON");
+    document["repositories"][0]["configuration"]["displayName"] =
+        serde_json::json!("Restored by native RPC");
+    document["repositories"][0]["configuration"]["enabled"] = serde_json::json!(false);
+    document["repositories"][0]["configuration"]["disabledPackageIds"] =
+        serde_json::json!(["com.example.future"]);
+    fs::write(
+        &native_path,
+        serde_json::to_vec(&document).expect("document"),
+    )
+    .expect("owned edited file");
+    let inspection = client
+        .repository_list_inspect_file(path.clone())
+        .await
+        .expect("native inspection");
+    assert_eq!(inspection.format, native);
+    assert_eq!(
+        inspection.entries[0]
+            .configuration
+            .as_ref()
+            .expect("configuration")
+            .display_name
+            .as_deref(),
+        Some("Restored by native RPC")
+    );
+    let imported = client
+        .repository_list_import_file(alcomd_protocol::RepositoryListImportParams {
+            path,
+            expected_fingerprint: inspection.fingerprint,
+            idempotency_key: "native-rpc-apply".into(),
+            overwrite_existing: None,
+        })
+        .await
+        .expect("default native overwrite");
+    assert!(
+        imported
+            .items
+            .contains(&alcomd_protocol::RepositoryListImportItem::Updated { line: 1 })
+    );
+    let settings = client
+        .settings_get()
+        .await
+        .expect("restored settings over RPC");
+    assert_eq!(settings.settings.packages.hidden_repository_ids.len(), 1);
+    assert_eq!(
+        settings.settings.packages.hidden_repository_packages[0].package_ids,
+        ["com.example.future"]
+    );
     drop(client);
     stop.send(()).expect("stop");
     daemon.await.expect("join").expect("daemon result");

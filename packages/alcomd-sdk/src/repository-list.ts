@@ -1,9 +1,12 @@
-/** Approved bounded text-list exchange; registration uses the existing repository authority. */
+export type RepositoryListFormat = "native" | "legacy";
+export interface RepositoryConfiguration { displayName: string | null; priority: number; enabled: boolean; disabledPackageIds: string[] }
+/** Bounded repository configuration and legacy text-list exchange. */
 export interface RepositoryListEntry {
     credentialsConfigured?: boolean;
+    configuration?: RepositoryConfiguration;
     line: number;
     status: "candidate" | "duplicate" | "invalid" | "unsupported";
-    source?: { kind: "remote"; url: string };
+    source?: { kind: "remote"; url: string } | { kind: "local"; path: string };
     reason?: string;
 }
 
@@ -17,10 +20,10 @@ export interface RepositorySetDisplayNameParams {
     idempotencyKey: string;
     displayName: string | null;
 }
-export interface RepositoryListInspection { entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
-export interface RepositoryListImportParams { path: string; expectedFingerprint: string; idempotencyKey: string }
+export interface RepositoryListInspection { format?: RepositoryListFormat; entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
+export interface RepositoryListImportParams { path: string; expectedFingerprint: string; idempotencyKey: string; overwriteExisting?: boolean }
 export type RepositoryListImportItem =
-    | { line: number; status: "added" | "existing" | "unprocessed" }
+    | { line: number; status: "added" | "existing" | "updated" | "unprocessed" }
     | { line: number; status: "failed" | "unknown"; code: string };
 export interface RepositoryListImportResult { items: RepositoryListImportItem[] }
 export interface RepositoryListCancelParams { idempotencyKey: string }
