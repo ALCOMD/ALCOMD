@@ -2096,11 +2096,19 @@ impl M7DeleteStore for StateStoreHandle {
         operation_id: OperationId,
         code: String,
         diagnostic_id: String,
+        source_unmoved: bool,
         now_ms: u64,
     ) -> Result<(), M7DeleteError> {
         self.request_worker(
             move |connection| {
-                m7_delete::fail(connection, operation_id, &code, &diagnostic_id, now_ms)
+                m7_delete::fail(
+                    connection,
+                    operation_id,
+                    &code,
+                    &diagnostic_id,
+                    source_unmoved,
+                    now_ms,
+                )
             },
             m7_delete::unavailable,
         )

@@ -8,8 +8,9 @@ use std::time::{Duration, Instant};
 
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3RegistryStore, M5BackupError, M5BackupWriterGate,
-    M7DeleteApplication, ManifestState, OperationState, PrincipalId, ProjectId, ProjectObservation,
-    ProjectType, ResourceLockCoordinator, StateStore, UnityWriterState, UnityWriterStateKind,
+    M7DeleteAdapter, M7DeleteApplication, M7DeleteStore, ManifestState, OperationState,
+    PrincipalId, ProjectDeletePhase, ProjectId, ProjectObservation, ProjectType,
+    ResourceLockCoordinator, StateStore, UnityWriterState, UnityWriterStateKind,
 };
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
@@ -144,6 +145,366 @@ async fn project_delete_plan_apply_removes_registry_and_exact_directory_once() {
                 .file_name()
                 .to_string_lossy()
                 .starts_with(".alcomd-delete-"))
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn project_delete_sharing_violation_fails_without_moving_or_retrying_the_source() {
+    sharing_violation_case(false, false).await;
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn project_delete_old_unmoved_recovery_becomes_failed_without_retrying_after_unlock() {
+    sharing_violation_case(true, false).await;
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn project_delete_unmoved_failure_does_not_wait_for_empty_preparation_cleanup() {
+    sharing_violation_case(true, true).await;
+}
+
+#[cfg(windows)]
+async fn sharing_violation_case(legacy_recovery: bool, preparation_locked: bool) {
+    use std::os::windows::fs::OpenOptionsExt;
+    let fixture = TestDirectory::new();
+    let root = fixture.path().join("LockedProject");
+    create_project(&root);
+    fs::write(root.join("sentinel.txt"), b"keep project").expect("sentinel");
+    let held = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .custom_flags(0x0200_0000)
+        .open(&root)
+        .expect("hold a directory without sharing DELETE");
+    let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("store");
+    let access = AccessContext::local_owner();
+    let record = store
+        .register_project(
+            PrincipalId::local_owner(),
+            observation(&root),
+            key("locked-register"),
+            1,
+        )
+        .await
+        .expect("register")
+        .value;
+    let app = M7DeleteApplication::with_locks(
+        store.clone(),
+        ProjectDeleteEngine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+        Arc::new(ResourceLockCoordinator::default()),
+    );
+    let plan = app
+        .plan_delete(
+            &access,
+            record.project_id,
+            record.revision,
+            key("locked-plan"),
+        )
+        .await
+        .expect("plan");
+    let mut held_preparation = None;
+    let accepted = if legacy_recovery {
+        let now = plan.plan.draft.created_at_ms + 1;
+        let accepted = alcomd_application::with_log_caller(
+            store.clone(),
+            &access,
+            store.accept_project_delete(
+                access.principal().clone(),
+                plan.plan.draft.plan_id,
+                record.revision,
+                key("legacy-accept"),
+                now,
+            ),
+        )
+        .await
+        .expect("legacy accepted task");
+        store
+            .begin_project_delete(accepted.operation_id, now + 1)
+            .await
+            .expect("legacy begin");
+        let evidence = ProjectDeleteEngine
+            .preflight(accepted.operation_id, plan.plan.clone())
+            .await
+            .expect("owned preparation");
+        if preparation_locked {
+            held_preparation = Some(
+                fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(3)
+                    .custom_flags(0x0200_0000)
+                    .open(&evidence.quarantine_locator)
+                    .expect("hold empty preparation"),
+            );
+        }
+        store
+            .record_project_delete_checkpoint(
+                accepted.operation_id,
+                ProjectDeletePhase::PreflightComplete,
+                evidence.clone(),
+                now + 2,
+            )
+            .await
+            .expect("preflight");
+        store
+            .record_project_delete_checkpoint(
+                accepted.operation_id,
+                ProjectDeletePhase::QuarantineIntent,
+                evidence,
+                now + 3,
+            )
+            .await
+            .expect("intent");
+        alcomd_application::with_operation_log_failure(
+            accepted.operation_id,
+            "old sharing failure (os error 32)".into(),
+            store.fail_project_delete(
+                accepted.operation_id,
+                "project_delete_recovery_required".into(),
+                alcomd_application::OperationId::new().to_string(),
+                false,
+                now + 4,
+            ),
+        )
+        .await
+        .expect("previous software leaves recovery pending");
+        app.recover().await.expect("recover existing stuck task");
+        accepted
+    } else {
+        alcomd_application::with_log_caller(
+            store.clone(),
+            &access,
+            app.apply_delete(
+                &access,
+                plan.plan.draft.plan_id,
+                record.revision,
+                key("locked-apply"),
+            ),
+        )
+        .await
+        .expect("accepted task")
+    };
+    let operation = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let operation = store
+                .get_operation(access.principal().clone(), accepted.operation_id)
+                .await
+                .expect("operation");
+            if operation.state.is_terminal() {
+                break operation;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("sharing failure must end rather than wait for recovery");
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(
+        operation.error_code.as_deref(),
+        Some("project_delete_source_unsafe")
+    );
+    assert!(operation.completed_at_ms.is_some());
+    assert_eq!(
+        store
+            .get_project(PrincipalId::local_owner(), record.project_id)
+            .await
+            .expect("registration survives")
+            .revision,
+        record.revision
+    );
+    assert_eq!(
+        fs::read(root.join("sentinel.txt")).expect("original contents"),
+        b"keep project"
+    );
+    let wrapper = fixture.path().join(format!(
+        ".alcomd-delete-{}.quarantine",
+        accepted.operation_id
+    ));
+    if preparation_locked {
+        assert!(
+            wrapper.exists(),
+            "an occupied empty preparation may remain without keeping deletion active"
+        );
+        assert!(!wrapper.join("payload").exists());
+    } else {
+        assert!(
+            !wrapper.exists(),
+            "only the empty owned preparation directory is discarded"
+        );
+    }
+    drop(held_preparation);
+    drop(held);
+    app.recover().await.expect("startup recovery");
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert!(
+        root.exists(),
+        "a failed delete is never retried after the lock is released"
+    );
+    let logs = alcomd_application::OperationLogStore::read_operation_logs(
+        &store,
+        access.principal().clone(),
+        alcomd_application::OperationLogQuery {
+            limit: 100,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("logs");
+    assert!(logs.entries.iter().any(|entry| {
+        entry.operation_id.as_deref() == Some(&accepted.operation_id.to_string())
+            && entry.outcome == alcomd_application::LogOutcome::Failed
+            && entry
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("os error 32"))
+    }));
+    if preparation_locked {
+        assert!(logs.entries.iter().any(|entry| {
+            entry
+                .details
+                .as_deref()
+                .is_some_and(|details| details.contains("preparation cleanup failed"))
+        }));
+    }
+}
+
+#[tokio::test]
+async fn project_delete_already_quarantined_failure_stays_recoverable_and_preserves_recreated_root()
+{
+    let fixture = TestDirectory::new();
+    let root = fixture.path().join("Project");
+    create_project(&root);
+    let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("store");
+    let access = AccessContext::local_owner();
+    let record = store
+        .register_project(
+            access.principal().clone(),
+            observation(&root),
+            key("boundary-register"),
+            1,
+        )
+        .await
+        .expect("register")
+        .value;
+    let app = M7DeleteApplication::with_locks(
+        store.clone(),
+        ProjectDeleteEngine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+        Arc::new(ResourceLockCoordinator::default()),
+    );
+    let plan = app
+        .plan_delete(
+            &access,
+            record.project_id,
+            record.revision,
+            key("boundary-plan"),
+        )
+        .await
+        .expect("plan");
+    let now = plan.plan.draft.created_at_ms + 1;
+    let accepted = alcomd_application::with_log_caller(
+        store.clone(),
+        &access,
+        store.accept_project_delete(
+            access.principal().clone(),
+            plan.plan.draft.plan_id,
+            record.revision,
+            key("boundary-accept"),
+            now,
+        ),
+    )
+    .await
+    .expect("accept without dispatch");
+    store
+        .begin_project_delete(accepted.operation_id, now + 1)
+        .await
+        .expect("begin");
+    let evidence = ProjectDeleteEngine
+        .preflight(accepted.operation_id, plan.plan.clone())
+        .await
+        .expect("preflight");
+    store
+        .record_project_delete_checkpoint(
+            accepted.operation_id,
+            ProjectDeletePhase::PreflightComplete,
+            evidence.clone(),
+            now + 2,
+        )
+        .await
+        .expect("preflight checkpoint");
+    store
+        .record_project_delete_checkpoint(
+            accepted.operation_id,
+            ProjectDeletePhase::QuarantineIntent,
+            evidence.clone(),
+            now + 3,
+        )
+        .await
+        .expect("intent");
+    let evidence = ProjectDeleteEngine
+        .quarantine(accepted.operation_id, plan.plan, evidence)
+        .await
+        .expect("real move");
+    store
+        .record_project_delete_checkpoint(
+            accepted.operation_id,
+            ProjectDeletePhase::RootQuarantined,
+            evidence,
+            now + 4,
+        )
+        .await
+        .expect("quarantine checkpoint");
+    create_project(&root);
+    fs::write(root.join("replacement.txt"), b"keep replacement").expect("new original-path object");
+    alcomd_application::with_operation_log_failure(
+        accepted.operation_id,
+        "fixture cleanup interruption".into(),
+        store.fail_project_delete(
+            accepted.operation_id,
+            "project_delete_source_unsafe".into(),
+            alcomd_application::OperationId::new().to_string(),
+            true,
+            now + 5,
+        ),
+    )
+    .await
+    .expect("Store refuses terminal failure after a recorded move");
+    let operation = store
+        .get_operation(access.principal().clone(), accepted.operation_id)
+        .await
+        .expect("operation");
+    assert_eq!(operation.state, OperationState::Recovering);
+    assert!(operation.completed_at_ms.is_none());
+    let logs = alcomd_application::OperationLogStore::read_operation_logs(
+        &store,
+        access.principal().clone(),
+        alcomd_application::OperationLogQuery {
+            limit: 100,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("logs");
+    assert!(
+        logs.entries
+            .iter()
+            .any(
+                |entry| entry.operation_id.as_deref() == Some(&accepted.operation_id.to_string())
+                    && entry.outcome == alcomd_application::LogOutcome::Waiting
+                    && entry.details.as_deref() == Some("fixture cleanup interruption")
+            )
+    );
+    app.recover().await.expect("forward recovery");
+    assert_eq!(
+        wait_terminal(&store, accepted.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert_eq!(
+        fs::read(root.join("replacement.txt")).expect("replacement survives"),
+        b"keep replacement"
     );
 }
 

@@ -6,6 +6,12 @@
     "planExpiryMs": 900000,
     "cancelBefore": "quarantine_intent",
     "afterBoundary": "forward-recovery-only",
+    "unmovedFailure": {
+        "proof": ["rename-returned-error", "original-root-and-parent-identity-kept", "no-payload", "no-prior-quarantine-identity"],
+        "outcome": "failed-source-kept",
+        "retry": "explicit-new-delete-only",
+        "preparationCleanupFailure": "diagnostics-only-source-deletion-stays-failed"
+    },
     "progress": "phase-only",
     "writerPolicy": {
         "running_confirmed": "reject:unity_project_running",

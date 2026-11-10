@@ -186,7 +186,7 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         if payload.exists() || !root.exists() {
             return Err(recovery());
         }
-        fs::rename(&root, &payload).map_err(|cause| recovery().with_source(cause))?;
+        rename_into_quarantine(operation_id, &plan, &evidence)?;
         alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
             .map_err(|cause| recovery().with_source(cause))?;
         alcomd_platform::sync_directory(&wrapper).map_err(|cause| recovery().with_source(cause))?;
@@ -209,13 +209,16 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         let payload = wrapper.join("payload");
         let root = PathBuf::from(&plan.draft.project.observation.root_path);
         if !payload.exists() {
+            if evidence.quarantine_identity.is_some() {
+                return Err(recovery());
+            }
             if !root.exists() {
                 return Err(recovery());
             }
             if identity(&root, recovery())? != plan.draft.root_identity {
                 return Err(recovery());
             }
-            fs::rename(&root, &payload).map_err(|cause| recovery().with_source(cause))?;
+            rename_into_quarantine(operation_id, &plan, &evidence)?;
             alcomd_platform::sync_directory(Path::new(&plan.draft.canonical_parent_path))
                 .map_err(|cause| recovery().with_source(cause))?;
             alcomd_platform::sync_directory(&wrapper)
@@ -275,22 +278,61 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
         plan: ProjectDeletePlanRecord,
         evidence: ProjectDeleteFilesystemEvidence,
     ) -> Result<(), M7DeleteError> {
-        let wrapper = verified_locator(operation_id, &plan, &evidence)?;
-        if wrapper.join("payload").exists() {
-            return Err(recovery());
-        }
-        let owner = wrapper.join("owner.json");
-        fs::remove_file(owner).map_err(|cause| recovery().with_source(cause))?;
-        if fs::read_dir(&wrapper)
-            .map_err(|cause| recovery().with_source(cause))?
-            .next()
-            .is_some()
-        {
-            return Err(recovery());
-        }
-        fs::remove_dir(wrapper).map_err(|cause| recovery().with_source(cause))?;
-        Ok(())
+        discard_prepared_quarantine(operation_id, &plan, &evidence)
     }
+}
+
+fn rename_into_quarantine(
+    operation_id: OperationId,
+    plan: &ProjectDeletePlanRecord,
+    evidence: &ProjectDeleteFilesystemEvidence,
+) -> Result<(), M7DeleteError> {
+    let root = Path::new(&plan.draft.project.observation.root_path);
+    let payload = Path::new(&evidence.quarantine_locator).join("payload");
+    if let Err(cause) = fs::rename(root, &payload) {
+        let failure = source_unsafe()
+            .with_source(cause)
+            .with_path(root.display().to_string());
+        let payload_absent = matches!(fs::symlink_metadata(&payload), Err(error) if error.kind() == std::io::ErrorKind::NotFound);
+        if evidence.quarantine_identity.is_none()
+            && payload_absent
+            && identity(root, recovery())? == plan.draft.root_identity
+            && identity(Path::new(&plan.draft.canonical_parent_path), recovery())?
+                == plan.draft.parent_identity
+        {
+            let failure = match discard_prepared_quarantine(operation_id, plan, evidence) {
+                Ok(()) => failure,
+                Err(cleanup) => failure.with_reason(format!(
+                    "source was not moved; preparation cleanup failed: {}",
+                    alcomd_application::technical_error_chain(&cleanup)
+                )),
+            };
+            return Err(failure.with_unmoved_source());
+        }
+        return Err(recovery().with_source(failure));
+    }
+    Ok(())
+}
+
+fn discard_prepared_quarantine(
+    operation_id: OperationId,
+    plan: &ProjectDeletePlanRecord,
+    evidence: &ProjectDeleteFilesystemEvidence,
+) -> Result<(), M7DeleteError> {
+    let wrapper = verified_locator(operation_id, plan, evidence)?;
+    if wrapper.join("payload").exists() {
+        return Err(recovery());
+    }
+    fs::remove_file(wrapper.join("owner.json")).map_err(|cause| recovery().with_source(cause))?;
+    if fs::read_dir(&wrapper)
+        .map_err(|cause| recovery().with_source(cause))?
+        .next()
+        .is_some()
+    {
+        return Err(recovery());
+    }
+    fs::remove_dir(wrapper).map_err(|cause| recovery().with_source(cause))?;
+    Ok(())
 }
 
 fn exact_root(project: &alcomd_application::ProjectRecord) -> Result<PathBuf, M7DeleteError> {

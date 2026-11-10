@@ -986,7 +986,7 @@ revalidate，并返回 `projects.delete-directory` Operation。
 
 Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent`、`root_quarantined`、
 `registry_commit_intent`、`state_committed`、`deleting`、`cleanup_complete` 与 `recovery_required`。
-`quarantine_intent` 是最后取消边界；进入后只允许 forward recovery。root 只可 rename 到同一 parent 下
+`quarantine_intent` 是最后取消边界。所有者于2026-11-10明确要求占用导致删除失败时直接 failed，而不是等待：rename 明确失败后，可信 adapter 复验 original root identity、parent identity、无 payload 且未观测到 quarantine identity，可终结 failed；空准备目录尽力清理，清理失败仅补充诊断。此失败沿用 `project_delete_source_unsafe`，真实 OS 原因保留于日志，终态后不会在解锁或重启时自动再删，须显式重新发起删除。已移动或实际状态不明仍只允许 forward recovery，不允许取消或猜测回滚。root 只可 rename 到同一 parent 下
 `.alcomd-delete-<operation-id>.quarantine/payload/`，成功只写一个 `project.directory_deleted` Event，不同时写
 `project.unregistered`。quarantine 后重建的 original path 永远不得被 recovery 触碰。
 

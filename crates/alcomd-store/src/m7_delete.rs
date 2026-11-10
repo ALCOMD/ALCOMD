@@ -451,6 +451,7 @@ pub(super) fn fail(
     operation_id: OperationId,
     code: &str,
     diagnostic_id: &str,
+    source_unmoved: bool,
     now_ms: u64,
 ) -> Result<(), M7DeleteError> {
     let transaction = begin(connection)?;
@@ -465,7 +466,14 @@ pub(super) fn fail(
     }
     let (phase, evidence) = latest_evidence(&transaction, operation_id)?;
     let next = operation_revision.checked_add(1).ok_or_else(internal)?;
-    if phase_at_or_after_intent(phase) {
+    let recovery_required = phase_at_or_after_intent(phase)
+        && !(source_unmoved
+            && evidence.quarantine_identity.is_none()
+            && matches!(
+                phase,
+                ProjectDeletePhase::QuarantineIntent | ProjectDeletePhase::RecoveryRequired
+            ));
+    if recovery_required {
         let plan = load_plan(&transaction, &owner, plan_id)?;
         insert_journal(
             &transaction,
@@ -510,7 +518,7 @@ pub(super) fn fail(
         &owner,
         operation_id,
         revision(next)?,
-        if phase_at_or_after_intent(phase) {
+        if recovery_required {
             "operation.recovering"
         } else {
             "operation.failed"

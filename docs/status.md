@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-10 修复删除任务因目录占用长期挂在恢复中的问题：rename 明确失败且证明源目录未移动时，Core 记录 failed/completedAt，保留项目和登记；释放占用或重启后不自动再删，空准备目录清理失败仅补充诊断。已移动/不明状态的恢复、取消边界及重建原路径保护保持，恢复停止日志保留 Waiting 和真实原因。10 项删除回归（含新/旧任务真实 Windows 占用）、2 项 P7 契约、受影响库、严格 Clippy、fmt/xtask/diff 和独立 Core 构建通过，无新增 RPC 形状/错误码、Schema、权限或依赖。所有者选择先修代码，未关闭 Hub/Editor、更新运行程序或执行真实删除；最后一次实机只读复核因自动审批服务额度错误未执行，详见[计划](exec-plans/M7-project-delete-unmoved-failure.md)和[验证记录](testing/project-delete-unmoved-failure-20261110.md)。前一项 State32 修复保持；所有者随后授权两项修复分别提交并推送，实际远程范围与 refs 另行核对；M7/H7 保持。
+
 - 2026-11-10 修复公开仓库软件包缺失：Core 将作者/显示名/描述归为有界展示信息，支持无作者及字符串作者；null GUID 旧文件声明按 VPM 的路径语义读取。所有者已批准 State32，移除作者/显示名必填触发器并让原错误索引完整重读，保留真实资格/来源/依赖/清理及冻结事务校验和健康缓存。30 个当前公开仓库的 4,630 条版本全部通过读取→Store→resolver/candidate 审计，覆盖 28 个缺作者软件包；定向回归、最小包真实 RPC 安装/卸载、迁移保全、严格 Clippy/fmt/xtask 及独立 Core 构建通过。额外界面契约有 1 项已证实的既有静态签名断言失败，详见[计划](exec-plans/M7-repository-manifest-visibility.md)及[验证记录](testing/repository-manifest-visibility-20261110.md)。当前运行 Core/GUI 与真实数据保持，未更新程序或操作真实包；所有者随后授权本项与删除失败修复分别提交并推送，实际远程范围与 refs 另行核对；M7/H7 保持。
 
 - 2026-11-10 按本次“分次提交更改并更新”要求，将后续项目圆角/首帧、当前包输入、MA 降级、多来源版本、默认目录、完整仓库配置、扩展包完整后缀及 Unity 安装入口分别完成 9 项本地功能提交。分组后累计源码与原验证摘要对应，原 83 个工作文件字节保持；最终 fmt/xtask、前端检查/生产构建及独立 Core/GUI 构建通过。离线逐文件备份旧程序、29 份数据和 327 份界面配置后，更新打开 Core PID54660 / GUI PID46468，ready/State31/Config13、0 活动任务。完整设置/revision7、3 项目/30 仓库/5 模板/1 Unity 登记/0 扩展及 9 份项目清单保持，原 profile 与 v3/Unity 保持。详见[交付记录](testing/pending-delivery-20261110.md)。未推送或操作真实项目包，不扩大 M7/H7 签收；下方未提交/未更新均为历史轮次状态。

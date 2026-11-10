@@ -29,7 +29,9 @@ cleanup_complete
 recovery_required
 ```
 
-`quarantine_intent` 是 forward-only 边界。物理 project row 只在 quarantine identity 复验后删除；同一
+`quarantine_intent` 保持最后取消边界及已移动目录的 forward-only 恢复。2026-11-10 所有者明确要求占用失败直接结束：rename 明确失败且可信 adapter 证明原目录/父目录 identity 保持、payload 不存在且无此前 quarantine identity 时，Store 可在该 intent 或原 recovery_required 阶段写 failed/completedAt；空准备目录清理失败仅记录技术诊断。项目登记/内容和 append-only journal 保持，不写伪造 cleanup_complete，不在解锁/重启后重试失败任务。实际已移动或状态不明继续恢复；Store 拒绝将这一未移动证明用于后续已有隔离身份的阶段。这是原公开终态的语义修正，不新增 Schema、journal phase 或 RPC 字段。
+
+物理 project row 只在 quarantine identity 复验后删除；同一
 transaction 只写一个 `project.directory_deleted` Event，并保留 Plan、Operation、journal 与 apply idempotency
 authority。Operation 只有在 `cleanup_complete` durable evidence 已提交后才可进入 `succeeded`。
 

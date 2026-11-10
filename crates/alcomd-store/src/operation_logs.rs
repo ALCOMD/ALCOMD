@@ -119,7 +119,9 @@ pub(super) fn committed(
     let details = context
         .operation_failure
         .and_then(|(id, details)| {
-            (Some(id) == fact.operation_id && fact.outcome == LogOutcome::Failed).then_some(details)
+            (Some(id) == fact.operation_id
+                && matches!(fact.outcome, LogOutcome::Failed | LogOutcome::Waiting))
+            .then_some(details)
         })
         .or(fact.details);
     append(
@@ -249,6 +251,7 @@ pub(super) fn operation_edge(
             "succeeded" => ("completed", LogOutcome::Succeeded),
             "failed" => ("failed", LogOutcome::Failed),
             "cancelled" => ("cancelled", LogOutcome::Cancelled),
+            "recovering" if error.is_some() => ("recovery_required", LogOutcome::Waiting),
             "recovering" => ("recover", LogOutcome::Started),
             "interrupted" => ("interrupted", LogOutcome::Waiting),
             "waiting_for_input" => ("waiting_for_input", LogOutcome::Waiting),
@@ -281,7 +284,7 @@ pub(super) fn operation_edge(
                 .execution_id
                 .or_else(|| (edge == "operation.created").then(|| id.to_string())),
             operation_id: Some(id),
-            details: if outcome == LogOutcome::Failed {
+            details: if matches!(outcome, LogOutcome::Failed | LogOutcome::Waiting) {
                 error
             } else {
                 None

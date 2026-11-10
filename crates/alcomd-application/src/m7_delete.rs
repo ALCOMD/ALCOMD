@@ -129,6 +129,7 @@ pub struct M7DeleteError {
     code: M7DeleteErrorCode,
     context: crate::TechnicalErrorContext,
     diagnostic_id: Option<String>,
+    source_unmoved: bool,
 }
 
 impl M7DeleteError {
@@ -138,6 +139,7 @@ impl M7DeleteError {
             code,
             context: crate::TechnicalErrorContext::default(),
             diagnostic_id: None,
+            source_unmoved: false,
         }
     }
     #[must_use]
@@ -172,6 +174,14 @@ impl M7DeleteError {
     pub fn diagnostic_id(&self) -> Option<&str> {
         self.diagnostic_id.as_deref()
     }
+    /// Only a trusted adapter may set this after verifying that the failed rename
+    /// left the original root in place and no quarantine payload exists.
+    #[must_use]
+    pub fn with_unmoved_source(mut self) -> Self {
+        self.source_unmoved = true;
+        self
+    }
+
     fn ensure_diagnostic_id(mut self) -> (Self, String) {
         let id = self
             .diagnostic_id
@@ -250,6 +260,7 @@ pub trait M7DeleteStore: Clone + Send + Sync + 'static {
         operation_id: OperationId,
         code: String,
         diagnostic_id: String,
+        source_unmoved: bool,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), M7DeleteError>> + Send;
     fn recover_project_delete_operations(
@@ -471,6 +482,7 @@ where
                     operation_id,
                     project_delete_error_name(source.code()).to_owned(),
                     diagnostic_id.clone(),
+                    source.source_unmoved,
                     now_ms()?,
                 ),
             )
