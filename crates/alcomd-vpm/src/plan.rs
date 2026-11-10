@@ -288,11 +288,23 @@ fn inspect_package_inputs(
     hash_field(
         &mut hasher,
         match scope {
-            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v7",
+            PackageSnapshotScope::Metadata => b"alcomd-project-package-metadata-v8",
             PackageSnapshotScope::Contents => b"alcomd-project-package-snapshot-v1",
         },
     );
     hash_field(&mut hasher, &identity);
+    if matches!(scope, PackageSnapshotScope::Metadata) {
+        hash_field(&mut hasher, project.observation.unity_version.as_bytes());
+        hash_field(
+            &mut hasher,
+            project
+                .observation
+                .unity_revision
+                .as_deref()
+                .unwrap_or_default()
+                .as_bytes(),
+        );
+    }
     hash_field(&mut hasher, &vpm_bytes);
     hash_field(&mut hasher, &upm_bytes);
     let mut absent_packages = BTreeSet::new();

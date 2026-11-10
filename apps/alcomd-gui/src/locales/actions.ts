@@ -2,6 +2,7 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Could not prepare package changes": {"zh-CN": "无法准备软件包变更", "ja-JP": "パッケージの変更を準備できませんでした"},
     "accepted": {"zh-CN": "任务已创建", "ja-JP": "タスクを作成しました"},
     "preflight complete": {"zh-CN": "执行前检查完成", "ja-JP": "実行前の確認が完了しました"},
     "quarantine intent": {"zh-CN": "正在准备移除目录", "ja-JP": "ディレクトリの削除を準備中"},

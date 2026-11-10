@@ -374,7 +374,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     const changeGroups = (["install", "replace", "remove"] as const)
         .map((kind) => ({ kind, items: (plan?.changeSet.mutations ?? []).filter((item) => item.kind === kind).sort((a, b) => a.packageId.localeCompare(b.packageId)) }))
         .filter((group) => group.items.length > 0);
-    const reviewActions = plan === undefined ? undefined : <>
+    const reviewActions = <>
         <DialogCloseButton disabled={feedback.busy} variant="text">{t(hasChanges && feedback.error === undefined ? "Cancel" : "Close")}</DialogCloseButton>
         {hasChanges ? <Button className={removalOnly ? "material-button--danger" : undefined} disabled={!canApply || feedback.busy || feedback.error !== undefined} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply, t)} type="button">{t("Apply changes")}</Button> : null}
     </>;
@@ -386,7 +386,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                     if (selection) void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.includePrerelease, true);
                 }}>{t("Continue with this version")}</DialogCloseButton></div>
             </MaterialDialog>
-            <MaterialDialog actions={reviewActions} dismissible={!feedback.busy} onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
+            <MaterialDialog actions={reviewActions} dismissible={!feedback.busy} onClose={closeChanges} open={plan !== undefined || feedback.error !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={plan === undefined && feedback.error !== undefined ? t("Could not prepare package changes") : hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>{t("Review the changes ALCOMD will make to this project.")}</p>
@@ -407,7 +407,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 ) : (
                     <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p></div>
                 )}
-                {plan === undefined || feedback.error === undefined ? null : <div role="alert"><p>{t(packageErrorMessage(feedback.error))}</p><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
+                {feedback.error === undefined ? null : <div role="alert"><p>{t(packageErrorMessage(feedback.error))}</p><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </MaterialDialog>
             {feedback.operationId === undefined ? null : <OperationFollow background client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} />}
         </>

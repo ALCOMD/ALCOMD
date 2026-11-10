@@ -249,6 +249,149 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
         bulk_intents: vec![],
     }
 }
+
+#[tokio::test]
+async fn package_actions_use_current_files_without_refreshing_registered_observations() {
+    for action in [
+        PlanAction::Install,
+        PlanAction::Upgrade,
+        PlanAction::Downgrade,
+        PlanAction::Remove,
+        PlanAction::Resolve,
+        PlanAction::Reinstall,
+        PlanAction::Bulk,
+    ] {
+        let f = fixture("external-package-edit",
+            json!({"dependencies":{A:{"version":"1.0.0"}},"locked":{A:{"version":"1.0.0","dependencies":{}}}}),
+            vec![package(A,"1.0.0",json!({})),package(A,"2.0.0",json!({})),
+                package(A,"3.0.0",json!({})),package(B,"1.0.0",json!({})),package(D,"1.0.0",json!({}))], None).await;
+        let graph = json!({"dependencies":{A:{"version":"2.0.0"},B:{"version":"1.0.0"}},
+            "locked":{A:{"version":"2.0.0","dependencies":{}},B:{"version":"1.0.0","dependencies":{}}}});
+        fs::write(
+            f.root.join("Packages/vpm-manifest.json"),
+            serde_json::to_vec(&graph).expect("owned current-file regression fixture"),
+        )
+        .expect("owned current-file regression fixture");
+        seed(&f.root, &package(A, "2.0.0", json!({})));
+        seed(&f.root, &package(B, "1.0.0", json!({})));
+        if action == PlanAction::Resolve {
+            fs::remove_dir_all(f.root.join("Packages").join(A))
+                .expect("owned missing-package fixture");
+        }
+        let target = if action == PlanAction::Install { D } else { A };
+        let mut intent = request(&f, action, Some(target));
+        match action {
+            PlanAction::Downgrade => intent.version_range = Some("=1.0.0".to_owned()),
+            PlanAction::Upgrade => intent.version_range = Some("=3.0.0".to_owned()),
+            PlanAction::Reinstall => {
+                intent.reinstall_selection = Some(ReinstallSelection::Packages(vec![A.to_owned()]))
+            }
+            PlanAction::Resolve => intent.package_id = None,
+            PlanAction::Bulk => {
+                intent.package_id = None;
+                intent.bulk_intents = vec![PackageBulkIntent::Upgrade {
+                    package_id: A.to_owned(),
+                    version_range: Some("=3.0.0".to_owned()),
+                    source: None,
+                    include_prerelease: false,
+                }];
+            }
+            _ => {}
+        }
+        let plan = f
+            .packages
+            .plan(&AccessContext::local_owner(), intent)
+            .await
+            .expect("plan current files");
+        let registered = f
+            .store
+            .get_project(PrincipalId::local_owner(), f.project.project_id)
+            .await
+            .expect("owned current-file regression fixture");
+        assert_eq!(
+            registered, f.project,
+            "Plan must not refresh registry observations"
+        );
+        if action != PlanAction::Install && action != PlanAction::Resolve {
+            assert_eq!(
+                plan.change_set
+                    .mutations
+                    .iter()
+                    .find(|m| m.package_id == A)
+                    .expect("owned current-file regression fixture")
+                    .from_version
+                    .as_deref(),
+                Some("2.0.0")
+            );
+        }
+        assert!(!plan.change_set.mutations.iter().any(|m| m.package_id == B));
+        let operation = apply(&f, plan).await;
+        assert_eq!(
+            operation.state,
+            OperationState::Succeeded,
+            "{action:?}: {operation:?}"
+        );
+        assert!(
+            f.root
+                .join("Packages")
+                .join(B)
+                .join("package.json")
+                .exists()
+        );
+    }
+}
+
+#[tokio::test]
+async fn current_file_plans_still_reject_changes_after_review() {
+    for change in ["vpm", "package", "unity"] {
+        let f = fixture("after-review-change",
+            json!({"dependencies":{A:{"version":"1.0.0"}},"locked":{A:{"version":"1.0.0","dependencies":{}}}}),
+            vec![package(A,"1.0.0",json!({}))], None).await;
+        let plan = f
+            .packages
+            .plan(
+                &AccessContext::local_owner(),
+                request(&f, PlanAction::Remove, Some(A)),
+            )
+            .await
+            .expect("owned current-file regression fixture");
+        match change {
+            "vpm" => fs::write(
+                f.root.join("Packages/vpm-manifest.json"),
+                b"{\"dependencies\":{},\"locked\":{}}",
+            ),
+            "package" => fs::write(
+                f.root.join("Packages").join(A).join("package.json"),
+                serde_json::to_vec(&package(A, "2.0.0", json!({})))
+                    .expect("owned current-file regression fixture"),
+            ),
+            _ => fs::write(
+                f.root.join("ProjectSettings/ProjectVersion.txt"),
+                b"m_EditorVersion: 2022.3.23f1\n",
+            ),
+        }
+        .expect("owned current-file regression fixture");
+        let error = f
+            .packages
+            .apply_plan(
+                &AccessContext::local_owner(),
+                plan.plan_id,
+                f.project.revision,
+                key("stale-review"),
+            )
+            .await
+            .expect_err("changed review is rejected");
+        assert_eq!(error.code(), M4ErrorCode::PlanStale);
+        assert_eq!(error.subreason(), Some("project_snapshot_changed"));
+        assert!(
+            f.root
+                .join("Packages")
+                .join(A)
+                .join("sentinel.txt")
+                .exists()
+        );
+    }
+}
 async fn apply(f: &Fixture, plan: PackagePlanRecord) -> OperationRecord {
     let operation = f
         .packages

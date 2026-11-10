@@ -78,12 +78,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         } else {
             None
         };
-        let snapshot = tokio::task::spawn_blocking({
-            let project = project.clone();
-            move || inspect_package_project(&project)
-        })
-        .await
-        .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
+        let (project, snapshot) = inspect_current_package_project(&self.reader, project).await?;
         let draft = if request.action == PlanAction::Reinstall {
             prepare_reinstall(&self.cache, &snapshot, &project, &catalog, &request).await?
         } else if request.action == PlanAction::Bulk {
@@ -188,7 +183,9 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             &self.reader.package_settings().await?,
             &plan.source_set,
         )?;
-        revalidate(&project, &catalog, &plan).await.map(|_| ())
+        revalidate(&self.reader, &project, &catalog, &plan)
+            .await
+            .map(|_| ())
     }
 
     async fn execute_plan(
@@ -662,7 +659,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             &self.reader.package_settings().await?,
             &plan.source_set,
         )?;
-        let snapshot = revalidate(&project, &catalog, &plan).await?;
+        let snapshot = revalidate(&self.reader, &project, &catalog, &plan).await?;
         let installed_legacy = snapshot
             .installed_legacy(&plan.source_set, &plan.change_set.legacy_reinstall_packages)?;
         if self
@@ -1014,7 +1011,41 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
     }
 }
 
+// Registration owns project identity and revision. Package inputs come from the
+// current files, just as they do for candidate reads, without refreshing the registry.
+async fn inspect_current_package_project(
+    reader: &VpmReader,
+    mut project: ProjectRecord,
+) -> Result<(ProjectRecord, crate::ProjectPackageSnapshot), M4Error> {
+    let observation = reader
+        .inspect_project(
+            project.observation.root_path.clone(),
+            ProjectDiscoveryMode::ExactRoot,
+        )
+        .await
+        .map_err(|cause| {
+            let code = if cause.code() == crate::M3ErrorCode::ProjectManifestInvalid {
+                M4ErrorCode::PackageManifestInvalid
+            } else {
+                M4ErrorCode::ProjectChangedDuringApply
+            };
+            M4Error::new(code).with_source(cause)
+        })?;
+    if observation.path_identity_key != project.observation.path_identity_key {
+        return stale("project_identity_changed");
+    }
+    project.observation = observation;
+    let snapshot = tokio::task::spawn_blocking({
+        let project = project.clone();
+        move || inspect_package_project(&project)
+    })
+    .await
+    .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
+    Ok((project, snapshot))
+}
+
 async fn revalidate(
+    reader: &VpmReader,
     project: &ProjectRecord,
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
@@ -1029,12 +1060,7 @@ async fn revalidate(
             "project_revision_changed",
         ));
     }
-    let snapshot = tokio::task::spawn_blocking({
-        let project = project.clone();
-        move || inspect_package_project(&project)
-    })
-    .await
-    .map_err(|cause| M4Error::new(M4ErrorCode::Internal).with_source(cause))??;
+    let (_, snapshot) = inspect_current_package_project(reader, project.clone()).await?;
     if snapshot.fingerprint != plan.project_snapshot_fingerprint {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
@@ -1668,7 +1694,12 @@ fn verify_archive_plan_metadata(
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
 ) -> Result<(), M4Error> {
-    for source in &plan.source_set {
+    for source in plan
+        .change_set
+        .mutations
+        .iter()
+        .filter_map(|mutation| mutation.source.as_ref())
+    {
         let id = source.package_id();
         let bytes = read_regular_file(
             &payload_root.join(id).join("package.json"),
@@ -2513,6 +2544,7 @@ mod tests {
         old.state = PlanState::Unapplied;
         let project = project_with_locked_version("1.0.0");
         let error = revalidate(
+            &VpmReader::new().expect("reader"),
             &project,
             &ResolverCatalog {
                 entries: Vec::new(),

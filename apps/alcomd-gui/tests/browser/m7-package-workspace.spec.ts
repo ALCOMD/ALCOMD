@@ -490,7 +490,7 @@ test("Inline version selection pins the chosen source and preserves installed st
     expect(await page.evaluate(() => window.packageRequests[1]?.params)).toMatchObject({ versionRange: "=1.10.0" });
 });
 
-test("Inline prerelease selection uses daemon classification without inserting a plan-failure notice", async ({ page }) => {
+test("Inline prerelease selection uses daemon classification and shows planning failures in a dialog", async ({ page }) => {
     await openHarness(page, "ready&versions=1&planError=1");
     await page.getByRole("button", { name: "Filter packages" }).click();
     await page.getByRole("checkbox", { name: "Show prerelease versions" }).click();
@@ -503,14 +503,16 @@ test("Inline prerelease selection uses daemon classification without inserting a
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("option", { name: "2.0.0-beta.1", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    const failure = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
+    await expect(failure.getByRole("alert")).toContainText("package_source_ambiguous");
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
-    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await expect(page.locator(".mutation-feedback")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await failure.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(failure).toBeHidden();
     await expect(page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
 });
 
-test("a missing package during planning leaves the page unchanged and the original action remains available", async ({ page }) => {
+test("a missing package during planning shows a dismissible error and preserves the original action", async ({ page }) => {
     await openHarness(page, "ready&planError=package_not_found");
     const packages = page.getByRole("table", { name: "Packages", exact: true });
     const install = packages.getByRole("button", { name: "Install", exact: true });
@@ -519,14 +521,36 @@ test("a missing package during planning leaves the page unchanged and the origin
     const before = await packages.boundingBox();
     await install.click();
     await expect.poll(() => page.evaluate(() => window.packageRequests.length)).toBe(1);
+    const failure = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
+    await expect(failure.getByRole("alert")).toContainText("package_not_found");
+    await expect(failure.getByRole("button", { name: "Apply changes", exact: true })).toHaveCount(0);
+    await failure.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(failure).toBeHidden();
     await expect(install).toBeEnabled();
     await expect(page.getByRole("main")).toHaveText(content, { useInnerText: true });
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
-    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     expect(await packages.boundingBox()).toEqual(before);
     await install.click();
     await expect.poll(() => page.evaluate(() => window.packageRequests.length)).toBe(2);
     expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["install", "install"]);
+});
+
+test("a removal preparation failure shows its reason and can be dismissed before retry", async ({ page }) => {
+    await openHarness(page, "package-multiple&planError=plan_stale");
+    const row = page.getByRole("table", { name: "Packages", exact: true }).getByRole("row").filter({ hasText: "Avatar tools" });
+    const remove = row.getByRole("button", { name: "Remove", exact: true });
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        await remove.click();
+        const failure = page.locator("md-dialog[open]").filter({ hasText: "Could not prepare package changes" });
+        await expect(failure.getByRole("alert")).toContainText("plan_stale");
+        await expect(failure).toContainText("Refresh the package list and try again.");
+        await expect(failure.getByRole("button", { name: "Apply changes", exact: true })).toHaveCount(0);
+        await failure.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(failure).toBeHidden();
+        await expect(remove).toBeEnabled();
+        expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(Array(attempt).fill("remove"));
+    }
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
 });
 
 test("an Apply failure stays in its existing review and closing it leaves no page feedback", async ({ page }) => {

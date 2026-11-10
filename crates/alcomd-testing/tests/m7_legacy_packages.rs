@@ -2371,6 +2371,8 @@ async fn package_plans_never_download_and_apply_checks_archive_metadata_before_p
         "bulk",
         "observed",
         "dependencies",
+        "dependency-range-invalid",
+        "dependency-shape-invalid",
         "unity",
         "legacy",
     ] {
@@ -2380,6 +2382,12 @@ async fn package_plans_never_download_and_apply_checks_archive_metadata_before_p
         let mut archive_manifest = json!({"name": package, "version": "1.0.0"});
         if scenario == "dependencies" {
             archive_manifest["vpmDependencies"] = json!({KEEP: "9.0.0"});
+        }
+        if scenario == "dependency-range-invalid" {
+            archive_manifest["vpmDependencies"] = json!({KEEP: ">=invalid"});
+        }
+        if scenario == "dependency-shape-invalid" {
+            archive_manifest["vpmDependencies"] = json!(null);
         }
         if scenario == "unity" {
             archive_manifest["unity"] = json!("2023.1");
@@ -2522,7 +2530,14 @@ async fn package_plans_never_download_and_apply_checks_archive_metadata_before_p
             .expect("immutable plan");
         assert_eq!(saved.source_set, plan.source_set);
         assert_eq!(saved.change_set_fingerprint, plan.change_set_fingerprint);
-        if matches!(scenario, "dependencies" | "unity" | "legacy") {
+        if matches!(
+            scenario,
+            "dependencies"
+                | "dependency-range-invalid"
+                | "dependency-shape-invalid"
+                | "unity"
+                | "legacy"
+        ) {
             assert_eq!(
                 operation.state,
                 OperationState::Failed,

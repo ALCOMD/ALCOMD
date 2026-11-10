@@ -1221,6 +1221,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     packagePlanRemove(params: Parameters<GuiRpcClient["packagePlanRemove"]>[0]): ReturnType<GuiRpcClient["packagePlanRemove"]> {
         window.packageRequests.push({ method: "remove", params });
+        if (query.has("planError")) return Promise.reject({ code: query.get("planError") });
         const plan = query.has("removal-sdk") ? sdkRemovalPlan("remove", [params.packageId]) : packagePlan("remove");
         plan.changeSet.mutations[0]!.packageId = params.packageId;
         return this.value(plan);
@@ -1235,6 +1236,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     packagePlanDowngrade(params: Parameters<GuiRpcClient["packagePlanDowngrade"]>[0]): ReturnType<GuiRpcClient["packagePlanDowngrade"]> {
         window.packageRequests.push({ method: "downgrade", params });
+        if (query.has("planError")) return Promise.reject({ code: query.get("planError") });
         const plan = packagePlan("downgrade");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.version }];
         if (params.allowUnityIncompatible) {
