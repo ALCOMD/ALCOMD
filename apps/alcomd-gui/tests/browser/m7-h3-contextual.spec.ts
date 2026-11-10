@@ -164,23 +164,18 @@ test("an unknown backup creation does not start a second task or label closing a
 test("Settings Unity errors stay with the action and a corrected registration succeeds without a popup", async ({ page }) => {
     await open(page, "/settings", "h3-unity-register-error=1");
     await selectSettingsSection(page, "unity");
-    await page.getByRole("button", { name: "Manage installations", exact: true }).click();
-    const dialog = page.locator("md-dialog[open]");
-    await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/invalid-editor.exe");
-    await dialog.getByRole("button", { name: "Register", exact: true }).click();
-    await expectRequestError(dialog.getByRole("alert"), "unity_installation_invalid");
-    await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/Editors/Unity.exe");
-    await expect(dialog.getByRole("alert")).toHaveCount(0);
-    // Removing the error resizes the dialog. Measure after its real animation,
-    // using actionability's stable-position check rather than a fixed delay.
-    await dialog.getByRole("button", { name: "Register", exact: true }).click({ trial: true });
-    const before = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
-    await dialog.getByRole("button", { name: "Register", exact: true }).click();
-    await expect.poll(() => page.evaluate(() => window.h3Requests.some((r) => r.method === "unity.installations.register"))).toBe(true);
-    await expect.poll(() => dialog.locator(".reminder").count()).toBe(0);
+    const host = page.getByRole("region", {name:"Unity installations",exact:true});
+    const choose = host.getByRole("button", {name:"Manually select",exact:true});
+    await choose.click();
+    await expectRequestError(host.getByRole("alert"), "unity_installation_invalid");
+    const before = await choose.boundingBox();
+    await choose.click();
+    await expect(host.getByRole("alert")).toHaveCount(0);
+    await expect(choose).toBeEnabled();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    await expect.poll(() => host.locator(".reminder").count()).toBe(0);
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click({ trial: true });
-    const after = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
+    const after = await choose.boundingBox();
     expect(after!.y).toBeCloseTo(before!.y, 0);
     expect(await requests(page, "unity.installations.register")).toHaveLength(2);
 });

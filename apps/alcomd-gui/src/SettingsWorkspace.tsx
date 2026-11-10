@@ -7,11 +7,10 @@ import type { NetworkProxy, OfficialSettings, SettingsGetResult, SettingsLocale,
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
-import { UnityRegistryActions } from "./CoreActions";
-import { capabilities, useCapability } from "./capabilities";
+import { MutationFeedback, useActionScope } from "./CoreActions";
+import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { DesktopList, TableLoading } from "./DesktopList";
-import { Button, Checkbox, PathField, SegmentedButtons, Select, TextField } from "./Material";
-import { UtilityActionDialog } from "./UtilityActionDialog";
+import { Button, Checkbox, Dialog, DialogCloseButton, PathField, Progress, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
@@ -191,11 +190,11 @@ function VccLinkRegistration({ hidden, enabled, disabled, onChange }: {
     </SettingsSection>;
 }
 
-function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden }: {
-    title: string; children: ReactNode; actions?: ReactNode; sectionRef?: Ref<HTMLElement>; onBlur?: FocusEventHandler<HTMLElement>; hidden?: boolean;
+function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden, className }: {
+    title: string; children: ReactNode; actions?: ReactNode; sectionRef?: Ref<HTMLElement>; onBlur?: FocusEventHandler<HTMLElement>; hidden?: boolean; className?: string;
 }) {
     return (
-        <section className="settings-section" aria-label={title} ref={sectionRef} onBlur={onBlur} hidden={hidden}>
+        <section className={className === undefined ? "settings-section" : `settings-section ${className}`} aria-label={title} ref={sectionRef} onBlur={onBlur} hidden={hidden}>
             <header className="settings-section-heading"><h2 tabIndex={-1}>{title}</h2>{actions}</header>
             <div className="settings-section-content">{children}</div>
         </section>
@@ -500,8 +499,13 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [cursor, setCursor] = useState<string | undefined>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRequestError(initial.error) : undefined);
-    const [open, setOpen] = useState(false);
-    const [generation, setGeneration] = useState(0);
+    const [mutation, setMutation] = useState<"refresh" | "select" | "register" | "remove">();
+    const [actionError, setActionError] = useState<RpcError>();
+    const [removing, setRemoving] = useState<UnityInstallation>();
+    const actionPending = useRef(false);
+    const selectedPath = useRef("");
+    const sectionRef = useRef<HTMLElement>(null);
+    const isCurrent = useActionScope(client);
     const requestRef = useRef(0);
     const busyRef = useRef(false);
     const readAgain = useRef(false);
@@ -533,29 +537,75 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const retryRead = useCoreInvalidation("settings:unity", ["unity"], async () => { await read(); if (readFailure.current !== undefined) throw readFailure.current; });
 
     useEffect(() => {
-        if (available && (generation > 0 || externalGeneration > 0)) void read();
+        if (available && externalGeneration > 0) void read();
         return () => { requestRef.current += 1; busyRef.current = false; };
-    }, [available, read, generation, externalGeneration]);
+    }, [available, read, externalGeneration]);
+
+    const mutate = async (action: "refresh" | "select" | "remove") => {
+        if (!manage || actionPending.current || (action === "remove" && removing === undefined)) return;
+        actionPending.current = true;
+        setMutation(action);
+        setActionError(undefined);
+        try {
+            if (action === "select") {
+                const path = await client.selectFile("unityEditor", selectedPath.current || items[0]?.executablePath || "");
+                if (!isCurrent() || path === undefined) return;
+                selectedPath.current = path;
+                setMutation("register");
+                await client.unityInstallationRegister(path);
+            } else if (action === "refresh") {
+                await client.unityInstallationsRefresh();
+            } else {
+                await client.unityInstallationRemove(removing!.installationId, removing!.revision);
+            }
+            if (!isCurrent()) return;
+            if (action === "remove") setRemoving(undefined);
+            await read();
+            if (!isCurrent()) return;
+            if (readFailure.current !== undefined) setActionError(normalizeRequestError(readFailure.current));
+            if (action === "remove") requestAnimationFrame(() => { if (isCurrent()) sectionRef.current?.querySelector("h2")?.focus(); });
+        } catch (caught: unknown) {
+            if (isCurrent()) setActionError(normalizeRequestError(caught));
+        } finally {
+            actionPending.current = false;
+            if (isCurrent()) setMutation(undefined);
+        }
+    };
+    const errorTitle = actionError?.code === "unity_version_unverified" ? t("Unity Editor version could not be verified.")
+        : actionError?.code === "unity_installation_invalid" ? t("Unity installation could not be validated.") : undefined;
+    const feedback = <MutationFeedback client={client} errorTitle={errorTitle} feedback={{ busy: mutation !== undefined, error: actionError }} />;
+    const manageTitle = capabilityUnavailableTitle(manage, capabilities.unityManage, t);
+    const controlsBusy = mutation !== undefined || busy;
 
     return (
-        <SettingsSection title={t("Unity installations")} actions={
+        <SettingsSection className="settings-unity-installations" sectionRef={sectionRef} title={t("Unity installations")} actions={
             <div className="action-row">
-                <Button disabled={!manage} onClick={() => setOpen(true)} type="button">{t("Manage installations")}</Button>
+                <Button disabled={!manage || controlsBusy} title={manageTitle} onClick={() => void mutate("refresh")} type="button">{t("Discover and refresh")}</Button>
+                <Button disabled={!manage || controlsBusy} title={manageTitle} onClick={() => void mutate("select")} type="button" variant="tonal">{t("Manually select")}</Button>
             </div>
         }>
+            {mutation === undefined || mutation === "remove" ? null : <div className="action-row" role="status"><Progress label={t("Unity installations")} /><span>{t(mutation === "refresh" ? "Searching for Unity installations…" : mutation === "select" ? "Selecting Unity Editor…" : "Registering Unity installation…")}</span></div>}
+            {removing === undefined ? feedback : null}
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
                     {error === undefined || loaded ? null : <div role="alert"><strong>{t("Unity installations could not be loaded.")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </div>}
-                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
+                    <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }, { key: "actions", header: t("Actions"), width: 96 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " "), <Button className="material-button--danger" disabled={!manage || controlsBusy} title={manageTitle} onClick={() => { setActionError(undefined); setRemoving(item); }} type="button" variant="text">{t("Remove")}</Button>] }))} />
                     {items.length === 0 ? loaded ? <p role="status">{t("No Unity installations registered")}</p> : busy ? <LoadingState title={t("Loading Unity installations…")} /> : null : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}
                 </>
             )}
-            {open ? <UtilityActionDialog title={t("Manage Unity installations")} onClose={() => setOpen(false)}>
-                <UnityRegistryActions client={client} installations={items} onChanged={() => setGeneration((current) => current + 1)} />
-            </UtilityActionDialog> : null}
+            {removing === undefined ? null : <Dialog open dismissible={mutation === undefined} title={t("Remove Unity installation")} onClose={() => { setRemoving(undefined); setActionError(undefined); }} actions={<>
+                <DialogCloseButton disabled={mutation !== undefined} variant="text">{t("Cancel")}</DialogCloseButton>
+                <Button className="material-button--danger" disabled={!manage || mutation !== undefined} onClick={() => void mutate("remove")} type="button">{t("Remove installation")}</Button>
+            </>}>
+                <p>{t("Remove {name} from the list?", { name: `Unity ${removing.unityVersion}` })}</p>
+                <p className="settings-path" title={displayPath(removing.executablePath)}>{displayPath(removing.executablePath)}</p>
+                <p>{t("Only the ALCOMD registry entry is removed. The editor remains installed.")}</p>
+                {feedback}
+                {mutation === "remove" ? <Progress label={t("Remove installation")} /> : null}
+            </Dialog>}
         </SettingsSection>
     );
 }

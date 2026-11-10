@@ -141,7 +141,8 @@ test("Settings retry reconnects shared capabilities before restoring utility and
     await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await selectSettingsSection(page, "unity");
-    await expect(page.getByRole("button", { name: "Manage installations", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Discover and refresh", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Manually select", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
     await expect(page.getByText("Unity installations are unavailable on this connection.", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);

@@ -2,6 +2,10 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Manually select": { "zh-CN": "手动选择", "ja-JP": "手動で選択" },
+    "Searching for Unity installations…": { "zh-CN": "正在查找 Unity 安装…", "ja-JP": "Unity のインストールを検索中…" },
+    "Selecting Unity Editor…": { "zh-CN": "正在选择 Unity Editor…", "ja-JP": "Unity Editor を選択中…" },
+    "Registering Unity installation…": { "zh-CN": "正在登记 Unity 安装…", "ja-JP": "Unity のインストールを登録中…" },
     "Overwrite existing repository configuration": {"zh-CN":"覆盖已有存储库配置", "ja-JP":"既存のリポジトリ設定を上書き"},
     "{count} new repositories will be added. Existing repository configuration is kept.": {"zh-CN":"将添加 {count} 个新存储库，已有存储库配置会保留。", "ja-JP":"新しいリポジトリを {count} 件追加します。既存の設定は保持します。"},
     "Entry {line}": {"zh-CN":"条目 {line}", "ja-JP":"項目 {line}"},

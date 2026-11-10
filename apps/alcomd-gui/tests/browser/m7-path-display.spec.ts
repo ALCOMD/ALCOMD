@@ -65,11 +65,9 @@ test("Unity installation rows and full-path tooltips show drive and network labe
     await expect(table.getByTitle(editorPath, { exact: true })).toHaveText(editorPath);
     await expect(table.getByTitle(networkEditor, { exact: true })).toHaveText(networkEditor);
     await expect(table).not.toContainText("\\\\?\\");
-    await page.getByRole("button", { name: "Manage installations", exact: true }).click();
-    const dialog = page.locator("md-dialog[open]");
-    await dialog.getByRole("button", { name: "Discover and refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Discover and refresh", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unityInstallationsRefresh").length)).toBe(1);
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     await expect(table.getByTitle(editorPath, { exact: true })).toBeVisible();
     await expect(table.getByTitle(networkEditor, { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

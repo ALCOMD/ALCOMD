@@ -290,8 +290,13 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationSequence = 0;
     private listExportAttempts = 0;
     private listPreviewReads = 0;
-    selectFile(kind: NativeFileKind, currentPath?: string): ReturnType<GuiRpcClient["selectFile"]> {
+    async selectFile(kind: NativeFileKind, currentPath?: string): ReturnType<GuiRpcClient["selectFile"]> {
         window.nativePickerRequests.push({ kind, currentPath });
+        if (kind === "unityEditor") {
+            if (query.get("unity-picker") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-unity-picker-ready", () => resolve(), { once: true }));
+            if (query.get("unity-picker") === "cancel") return undefined;
+            if (query.has("unity-picker-path")) return this.value(query.get("unity-picker-path")!);
+        }
         return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdextension" }[kind]);
     }
     async subscribeFileDrag(receive: (event: FileDrag) => void) {
@@ -375,6 +380,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private argumentsReadFailurePending = false;
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
+    private manuallyRegisteredUnity?: ReturnType<typeof installation>;
+    private removedUnityInstallations = new Set<string>();
     private settings: SettingsGetResult = {
         configSchema: 13,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
@@ -1304,13 +1311,16 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     private registeredUnityInstallations() {
-        return (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
+        const installations = (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
                 ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: query.has("windows-paths") ? "\\\\?\\UNC\\builds\\Editors\\Unity.exe" : "<private-editor-two>" }]
                 : this.mode === "unity-migration"
                     ? [installation(), migrationInstallation()]
                 : [installation()];
+        const registered = this.manuallyRegisteredUnity === undefined ? installations
+            : [...installations.filter((item) => item.installationId !== this.manuallyRegisteredUnity!.installationId), this.manuallyRegisteredUnity];
+        return registered.filter((item) => !this.removedUnityInstallations.has(item.installationId));
     }
     async unityInstallationsList(_cursor?: string, includeVersionOptions?: boolean): ReturnType<GuiRpcClient["unityInstallationsList"]> {
         if (this.unityReadFailurePending) { this.unityReadFailurePending = false; throw { code: "internal_error" }; }
@@ -1328,14 +1338,24 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityInstallationRegister(executablePath: string): ReturnType<GuiRpcClient["unityInstallationRegister"]> {
         window.h3Requests.push({ method: "unity.installations.register", params: { executablePath } });
         if (query.has("h3-unity-register-error") && window.h3Requests.filter((request) => request.method === "unity.installations.register").length === 1) return Promise.reject({ code: "unity_installation_invalid" });
-        return this.value({ installation: installation(), replayed: false });
+        this.manuallyRegisteredUnity = { ...installation(), executablePath };
+        this.removedUnityInstallations.delete(INSTALLATION_ID);
+        return this.value({ installation: this.manuallyRegisteredUnity, replayed: false });
     }
-    unityInstallationRemove(): ReturnType<GuiRpcClient["unityInstallationRemove"]> { return this.value({ installationId: INSTALLATION_ID, removed: true, replayed: false }); }
-    unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> {
+    async unityInstallationRemove(installationId: string, expectedRevision: number): ReturnType<GuiRpcClient["unityInstallationRemove"]> {
+        window.h3Requests.push({method:"unity.installations.remove",params:{installationId,expectedRevision}});
+        if (query.get("unity-remove") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-unity-remove-ready", () => resolve(), {once:true}));
+        if (query.get("unity-remove") === "error" && window.h3Requests.filter((request)=>request.method==="unity.installations.remove").length===1) throw {code:"revision_conflict"};
+        this.removedUnityInstallations.add(installationId);
+        return this.value({ installationId, removed: true, replayed: false });
+    }
+    async unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> {
         window.unityRequests.push({ method: "unityInstallationsRefresh", params: {} });
+        if (query.has("unity-discovery-hold")) await new Promise<void>((resolve) => window.addEventListener("test-unity-discovery-ready", () => resolve(), {once:true}));
         if (query.has("h3-unity-discovery-error") && window.unityRequests.filter((request) => request.method === "unityInstallationsRefresh").length === 1) return Promise.reject({ code: "unity_version_unverified" });
         if (query.get("hub-refresh") === "error") return Promise.reject({ code: "internal_error" });
         this.unityDiscoveryComplete = true;
+        this.removedUnityInstallations.clear();
         return this.value({ installations: [installation()], replayed: false });
     }
     unityProjectLaunchConfigGet(): ReturnType<GuiRpcClient["unityProjectLaunchConfigGet"]> {

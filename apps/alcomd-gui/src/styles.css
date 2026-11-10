@@ -792,6 +792,7 @@ md-linear-progress {
 .settings-section { padding: 16px 20px; border-radius: var(--alcomd-shape-container); background: var(--md-sys-color-surface-container-low); }
 .settings-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .settings-section-heading h2 { margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; }
+.settings-unity-installations > .settings-section-heading { flex-wrap: wrap; }
 .settings-section-content { display: flex; flex-direction: column; gap: 8px; }
 .settings-section :is(.desktop-list-viewport, .desktop-list thead) { background: var(--md-sys-color-surface-container-low); }
 .settings-section .desktop-list tr { --desktop-list-row-background: var(--md-sys-color-surface-container-high); }

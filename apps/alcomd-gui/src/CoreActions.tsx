@@ -1003,7 +1003,7 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
     return <MaterialDialog dismissible={dismissible} onClose={onClose} open={open} title={title}>{children}</MaterialDialog>;
 }
 
-function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
+export function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
     const { t } = useTranslation();
     if (feedback.error !== undefined) return <div role="alert"><strong>{errorTitle}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
