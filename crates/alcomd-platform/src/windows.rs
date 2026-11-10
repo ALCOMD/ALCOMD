@@ -145,8 +145,8 @@ pub fn local_app_data_directory() -> io::Result<std::path::PathBuf> {
     known_folder::local_app_data_directory()
 }
 
-pub(crate) fn documents_directory() -> io::Result<std::path::PathBuf> {
-    known_folder::documents_directory()
+pub(crate) fn user_profile_directory() -> io::Result<std::path::PathBuf> {
+    known_folder::user_profile_directory()
 }
 
 /// Creates the product data directory and returns its state database path.

@@ -56,8 +56,8 @@
                 "configuredPathStatus": "unset"
             },
             "directories": {
-                "projectDirectory": "/fixture/Documents/ALCOMD/Projects",
-                "backupDirectory": "/fixture/Documents/ALCOMD/Backups"
+                "projectDirectory": "/fixture/ALCOMD/Projects",
+                "backupDirectory": "/fixture/ALCOMD/Backups"
             }
         }
     },

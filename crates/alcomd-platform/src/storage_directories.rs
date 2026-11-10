@@ -1,17 +1,15 @@
-//! System Documents discovery and the narrow filesystem operations for storage roots.
+//! User home discovery and the narrow filesystem operations for storage roots.
 
 use std::io;
-#[cfg(target_os = "linux")]
-use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
 const MAX_PATH_BYTES: usize = 4096;
 
 /// Resolves platform defaults without creating directories or inspecting project data.
 pub fn default_storage_directories() -> io::Result<(PathBuf, PathBuf)> {
-    let documents = documents_directory()?;
-    validate_path_text(&documents)?;
-    let root = documents.join(env!("ALCOMD_PRODUCT_DIRECTORY"));
+    let home = home_directory()?;
+    validate_path_text(&home)?;
+    let root = home.join(env!("ALCOMD_PRODUCT_DIRECTORY"));
     let projects = root.join("Projects");
     let backups = root.join("Backups");
     validate_path_text(&projects)?;
@@ -20,97 +18,15 @@ pub fn default_storage_directories() -> io::Result<(PathBuf, PathBuf)> {
 }
 
 #[cfg(windows)]
-fn documents_directory() -> io::Result<PathBuf> {
-    crate::windows::documents_directory()
+fn home_directory() -> io::Result<PathBuf> {
+    crate::windows::user_profile_directory()
 }
 
 #[cfg(unix)]
-fn documents_directory() -> io::Result<PathBuf> {
-    let home = std::env::var_os("HOME")
+fn home_directory() -> io::Result<PathBuf> {
+    std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or_else(|| invalid("HOME is unavailable"))?;
-    validate_path_text(&home)?;
-    #[cfg(target_os = "linux")]
-    {
-        let config = std::env::var_os("XDG_CONFIG_HOME")
-            .filter(|value| !value.is_empty())
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join(".config"));
-        validate_path_text(&config)?;
-        match std::fs::File::open(config.join("user-dirs.dirs")) {
-            Ok(file) => {
-                let mut text = String::new();
-                file.take(16 * 1024 + 1).read_to_string(&mut text)?;
-                if text.len() > 16 * 1024 {
-                    return Err(invalid("user directory configuration is too large"));
-                }
-                return documents_from_user_dirs(&home, &text);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(home.join("Documents"))
-}
-
-#[cfg(any(target_os = "linux", test))]
-fn documents_from_user_dirs(home: &Path, text: &str) -> io::Result<PathBuf> {
-    let mut documents = None;
-    for line in text.lines().map(str::trim) {
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
-        if key.trim() != "XDG_DOCUMENTS_DIR" {
-            continue;
-        }
-        if documents.is_some() {
-            return Err(invalid("duplicate Documents directory"));
-        }
-        let mut quoted = value
-            .trim()
-            .strip_prefix('"')
-            .ok_or_else(|| invalid("Documents directory is not quoted"))?
-            .chars();
-        let mut decoded = String::new();
-        let mut closed = false;
-        while let Some(character) = quoted.next() {
-            match character {
-                '"' => {
-                    closed = true;
-                    break;
-                }
-                '\\' => match quoted.next() {
-                    Some(character @ ('\\' | '"')) => decoded.push(character),
-                    _ => return Err(invalid("unsupported Documents directory escape")),
-                },
-                '`' => return Err(invalid("Documents directory contains command expansion")),
-                character => decoded.push(character),
-            }
-        }
-        let suffix = quoted.as_str().trim();
-        if !closed || (!suffix.is_empty() && !suffix.starts_with('#')) {
-            return Err(invalid("invalid Documents directory"));
-        }
-        let path = if decoded == "$HOME" || decoded == "${HOME}" {
-            home.to_path_buf()
-        } else if let Some(relative) = decoded
-            .strip_prefix("$HOME/")
-            .or_else(|| decoded.strip_prefix("${HOME}/"))
-        {
-            if relative.contains('$') {
-                return Err(invalid("unsupported Documents directory expansion"));
-            }
-            home.join(relative)
-        } else {
-            if decoded.contains('$') {
-                return Err(invalid("unsupported Documents directory expansion"));
-            }
-            PathBuf::from(decoded)
-        };
-        validate_path_text(&path)?;
-        documents = Some(path);
-    }
-    Ok(documents.unwrap_or_else(|| home.join("Documents")))
+        .ok_or_else(|| invalid("HOME is unavailable"))
 }
 
 fn validate_path_text(path: &Path) -> io::Result<()> {
@@ -283,32 +199,13 @@ mod tests {
     }
 
     #[test]
-    fn linux_documents_configuration_is_data_and_never_shell_code() {
-        let root = fixture();
-        let home = root.as_path();
-        assert_eq!(
-            documents_from_user_dirs(home, "XDG_DOCUMENTS_DIR=\"$HOME/文档\"\n")
-                .expect("documents"),
-            home.join("文档")
-        );
-        assert_eq!(
-            documents_from_user_dirs(
-                home,
-                &format!(
-                    "XDG_DOCUMENTS_DIR=\"{}\" # location\n",
-                    root.join("user docs")
-                        .to_str()
-                        .expect("path")
-                        .replace('\\', "\\\\")
-                )
-            )
-            .expect("documents"),
-            root.join("user docs")
-        );
-        assert!(documents_from_user_dirs(home, "XDG_DOCUMENTS_DIR=\"$(echo /tmp)\"").is_err());
-        assert!(
-            documents_from_user_dirs(home, "XDG_DOCUMENTS_DIR=\"$HOME/../elsewhere\"").is_err()
-        );
-        assert!(documents_from_user_dirs(home, "XDG_DOCUMENTS_DIR=\"relative\"").is_err());
+    fn default_roots_are_under_user_home() {
+        let home = home_directory().expect("user home");
+        let (projects, backups) = default_storage_directories().expect("default roots");
+        let product = home.join(env!("ALCOMD_PRODUCT_DIRECTORY"));
+        assert_eq!(projects.parent(), Some(product.as_path()));
+        assert_eq!(backups.parent(), Some(product.as_path()));
+        assert_eq!(projects.file_name(), Some(std::ffi::OsStr::new("Projects")));
+        assert_eq!(backups.file_name(), Some(std::ffi::OsStr::new("Backups")));
     }
 }

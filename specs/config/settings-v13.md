@@ -36,3 +36,9 @@ Config13 TOML的 `[packages]` 增加 `hidden_repository_packages` 分组，保�
 实施和回归边界见[ExecPlan](../../docs/exec-plans/M7-repository-package-switches.md)。
 
 [Schema](settings-v13.schema.json) · [契约向量](settings-v13.contract-vectors.json)
+
+## 默认保存目录（2026-11-10 所有者调整）
+
+`settings.paths.projectDirectory` / `backupDirectory` 为 null 时，使用用户主目录下由产品身份派生的 `ALCOMD/Projects`、`ALCOMD/Backups`。Windows 查询 User Profile Known Folder；macOS/Linux 使用 HOME，不再使用 Documents 或 XDG 文档目录。此规则取代历史 Config5–7 说明中的 Documents 基准；旧版本仅为迁移输入。
+
+显式路径继续优先，`directories` 仍只投影当前有效值，不回写默认路径；保留设置修订、既有资源及已接受任务的固定目的地，不自动搬迁。内部状态/配置目录不受影响，Config13 形状及版本不变。验证见[默认存储根记录](../../docs/testing/home-storage-defaults-20261110.md)。

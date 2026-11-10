@@ -779,7 +779,7 @@ fn config5_directory_updates_are_closed_nullable_and_snapshot_complete() {
     assert_eq!(current.settings.paths.project_directory, None);
     assert_eq!(
         current.directories.backup_directory,
-        "/fixture/Documents/ALCOMD/Backups"
+        "/fixture/ALCOMD/Backups"
     );
 }
 

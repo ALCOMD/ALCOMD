@@ -1098,13 +1098,13 @@ GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或�
 既有 `backup-v1:<id>` 定位和任务恢复也依赖该根。因此只加 GUI 输入框不能补齐实际行为。
 
 所有者已于本轮明确批准以下核心功能补齐范围：在设置中增加默认项目目录、默认备份目录，经既有 `settings.get/update`、
-`settings.read/manage` 和串行 CAS 保存，扩展为 Config5；默认值遵循架构中的用户 Documents/ALCOMD/Projects、Backups。
+`settings.read/manage` 和串行 CAS 保存，扩展为 Config5；默认值遵循架构中的用户主目录/ALCOMD/Projects、Backups（2026-11-10 所有者调整，取代原 Documents 基准）。
 项目目录用于新建、复制、恢复表单的初始目标，保留当次覆盖；备份目录实际控制后续新备份的保存位置。
 每个已接受备份任务须固定其目的地，历史备份继续可读取/恢复；不自动搬迁旧项目、旧备份或重定向已有任务。
 现有备份定位缺少独立目录，必须同步补足持久定位与恢复证据；真实既有数据需要的旧定位读取支持有保留价值，成本为两类定位的验证及回归。
 不新增业务权限、生产依赖或第二套设置存储；若实施需要额外数据库结构或其他合同变更，先说明具体差异。
 本次发布前扩展会增加严格 settings 消费者必读的 paths/directories，须同步协议、Schema、当前消费者与快照；RPC v1、权限、State16不变。
-平台通过既有 Known Folder 查询 Documents，产品目录由 `alcomd.product.toml` 派生；不覆盖发布使用 Windows MoveFileExW(flags=0) 与 Unix 既有 rustix NOREPLACE。
+平台通过既有 Known Folder 查询 Windows Profile，Unix 使用 HOME，产品目录由 `alcomd.product.toml` 派生；不覆盖发布使用 Windows MoveFileExW(flags=0) 与 Unix 既有 rustix NOREPLACE。
 Windows 的窄 FFI 保留说明与安全注释，不增加生产依赖；定向回归验证目标冲突不覆盖与旧/新目录恢复。
 本地实现、相关定向检查及一次匹配 Core/CLI/GUI 构建已完成；该批原数据目录/profile 已实际恢复为 Core130768/GUI132996。
 Config4→5 只改变 schema，revision166 和其余设置不变；四组业务状态完全一致。独立结果与原失败见
@@ -2026,3 +2026,9 @@ H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端
 新增浅/深色、1280/640px 的加载到记录及快速返回回归，验证加载行 4px/透明、首条记录初始 12 帧均为 8px、表头高度/位置保持。首轮窄屏测试误点隐藏导航文字，改为点击 Material 导航宿主；最终与原项目/包加载和表格几何回归共 12 项通过。全工作区前端检查及最终 GUI 生产构建通过，记录为 target/m7-project-corners-check.log、m7-project-corners-scoped-build.log、m7-project-corners-scoped-final.log；截图和摘要在 target/m7-project-corners-evidence/。未操作真实项目或更新运行程序、提交、推送，M7/H7 保持。
 
 所有者随后要求“更新”：输入摘要与上述验证一致，重新构建生产前端和嵌入式 GUI，通过后备份旧窗口程序与 321 份 WebView 配置并逐文件校验。仅替换 GUI，打开为 PID32464；Core PID33968、启动身份和程序摘要保持。切换前及打开后的 3 项目、5 模板、完整设置及 revision5 完全一致；30 仓库配置和其余字段保持，仅 6 条 refreshedAtMs 在 Core 后台刷新中正常推进，差异单独记录。持久设置字节保持，沿用原 profile，v3/Unity 保持，0 活动任务。证据及旧程序在 target/m7-project-corners-update-20261110/。GUI 摘要 C7E85FCA75BC0B4138988FD0E08135FE6FD53DB4FA5A9A6B19C52453F728BEA7，窗口响应正常；未进行原生页面点击或视觉验收，未写真实项目，未提交/推送。上段未更新描述为修正完成当时状态。
+
+## 2026-11-10 默认存储根改为用户主目录
+
+所有者要求默认项目和备份不再放在 Documents 下，直接位于用户主目录。将平台默认根改为 Windows FOLDERID_Profile、macOS/Linux HOME 下的产品目录 Projects/Backups；移除不再使用的 Documents/XDG user-dirs 解析。产品目录仍从产品清单派生，目录发现不写文件，目录准备继续由原 Core 操作执行。用户已保存的显式路径、旧项目与备份、已接受任务的冻结目的地保持，不自动移动资源或改写设置。当前运行设置两项路径均为 null，更新后其派生默认值改变，原设置值和 revision 保持。无公共 RPC、Schema、权限、生产依赖变化。
+
+验证平台默认根与目录操作、应用设置解析以及存储集成；构建后备份更新当前 Core/GUI，核对持久设置和全部资源保持，派生默认路径按新要求变化。范围及结果见[验证记录](../testing/home-storage-defaults-20261110.md)。

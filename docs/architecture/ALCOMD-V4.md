@@ -509,14 +509,14 @@ Windows 仅将 `ALCOMD\bin` 写入对应 scope 的 PATH。不得把完整安装�
 核心、GUI、MCP、扩展宿主、bootstrap 或 updater 暴露为普通终端命令。更新不得重复添加 PATH；
 scope 转换和卸载只移除安装器创建的精确条目。
 
-默认用户目录：
+默认项目与备份目录（Windows 使用用户 Profile，macOS/Linux 使用用户主目录）：
 
 ```text
-Documents\ALCOMD\Projects
-Documents\ALCOMD\Backups
+<用户主目录>\ALCOMD\Projects
+<用户主目录>\ALCOMD\Backups
 ```
 
-macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目录名仍为 `ALCOMD` /
+内部状态与配置目录在 macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目录名仍为 `ALCOMD` /
 `alcomd`。macOS DMG 中的 `ALCOMD.app` 包含完整产品，CLI 集成只能由用户在 GUI 中主动安装，
 不得在拖入 Applications 时修改 shell 配置。Linux DEB 把公开 CLI 安装到
 `/usr/bin/alcomd-cli`，其他程序进入包管理器目录；AppImage 的可选 CLI 集成可创建

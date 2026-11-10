@@ -2071,7 +2071,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn persisted_explicit_directories_bypass_unavailable_documents_and_clear_fails_before_commit()
+    async fn persisted_explicit_directories_bypass_unavailable_defaults_and_clear_fails_before_commit()
      {
         let config = Arc::new(MemoryConfig::default());
         {
@@ -2090,7 +2090,7 @@ mod tests {
         );
         app.initialize_settings()
             .await
-            .expect("explicit paths initialize without Documents");
+            .expect("explicit paths initialize without default discovery");
         let initial = app
             .get_settings(&AccessContext::local_owner())
             .await
@@ -2111,7 +2111,7 @@ mod tests {
                 locale_update(ConfigLocale::JaJp),
             )
             .await
-            .expect("unrelated update without Documents");
+            .expect("unrelated update without default discovery");
         assert_eq!(saved.settings.paths, initial.settings.paths);
         assert_eq!(
             app.effective_directories()

@@ -1,4 +1,4 @@
-//! Private Windows Known Folder FFI for Local AppData and user Documents.
+//! Private Windows Known Folder FFI for Local AppData and user profile.
 
 #![allow(unsafe_code)]
 
@@ -16,7 +16,7 @@ use windows_sys::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
 };
 use windows_sys::Win32::UI::Shell::{
-    FOLDERID_Documents, FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+    FOLDERID_LocalAppData, FOLDERID_Profile, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
 };
 use windows_sys::core::{GUID, HRESULT, PWSTR};
 
@@ -102,10 +102,10 @@ pub(super) fn local_app_data_directory() -> io::Result<PathBuf> {
     known_folder_path(&FOLDERID_LocalAppData, 0)
 }
 
-pub(super) fn documents_directory() -> io::Result<PathBuf> {
-    // Discover the configured location even when Documents is absent or offline.
+pub(super) fn user_profile_directory() -> io::Result<PathBuf> {
+    // Resolve the user profile directly, independently of redirected Documents.
     // Existence and write access are checked at the Core operation boundary.
-    known_folder_path(&FOLDERID_Documents, KF_FLAG_DONT_VERIFY as u32)
+    known_folder_path(&FOLDERID_Profile, KF_FLAG_DONT_VERIFY as u32)
 }
 
 fn known_folder_path(folder: &GUID, flags: u32) -> io::Result<PathBuf> {
@@ -136,6 +136,9 @@ mod tests {
         let directory = local_app_data_directory().expect("Local AppData Known Folder");
         assert!(directory.is_absolute());
         assert!(directory.is_dir());
+        let profile = user_profile_directory().expect("User Profile Known Folder");
+        assert!(profile.is_absolute());
+        assert!(profile.is_dir());
     }
 
     #[test]
@@ -147,6 +150,11 @@ mod tests {
         assert!(matches!(result, S_OK | S_FALSE));
         let directory = local_app_data_directory().expect("query from existing STA");
         assert!(directory.is_absolute());
+        assert!(
+            user_profile_directory()
+                .expect("profile from existing STA")
+                .is_absolute()
+        );
         // SAFETY: the successful explicit CoInitializeEx above is balanced once
         // on this same thread. The nested query saw RPC_E_CHANGED_MODE and did
         // not call CoUninitialize for the existing apartment.
