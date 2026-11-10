@@ -292,7 +292,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private listPreviewReads = 0;
     selectFile(kind: NativeFileKind, currentPath?: string): ReturnType<GuiRpcClient["selectFile"]> {
         window.nativePickerRequests.push({ kind, currentPath });
-        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdext" }[kind]);
+        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdextension" }[kind]);
     }
     async subscribeFileDrag(receive: (event: FileDrag) => void) {
         const listener = (event: Event) => receive((event as CustomEvent<FileDrag>).detail);

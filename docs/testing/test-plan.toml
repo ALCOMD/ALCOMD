@@ -615,7 +615,7 @@ stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 .alcomdext/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
+description = "冻结并验证 .alcomdextension/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
 evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/m6_runtime.rs"]
 
 [[test]]

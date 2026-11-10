@@ -2554,7 +2554,7 @@ fn schema_v8_extension_plan_authority_is_explicit_bounded_and_immutable() {
         plan_fingerprint, created_at_ms
     ) VALUES (?1, 'builtin:local-owner', 'install', 'unapplied',
               'dev.example.fixture', '1.2.3-beta.1+build.7', ?2, ?3,
-              'local_owner_selected', 'C:/fixture.alcomdext', x'01', zeroblob(32),
+              'local_owner_selected', 'C:/fixture.alcomdextension', x'01', zeroblob(32),
               zeroblob(32), zeroblob(32), ?4, 'user_approved_for_extension',
               '{\"required\":[\"background.run\"],\"optional\":[]}',
               '{\"required\":[],\"optional\":[]}', 'not_applicable', zeroblob(32), 1)";

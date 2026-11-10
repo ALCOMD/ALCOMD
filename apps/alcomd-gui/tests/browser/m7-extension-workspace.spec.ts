@@ -27,14 +27,14 @@ test("Extension install input and real Plan review share one modal and can be di
     // The native shadow dialog owns the accessible name, while form controls
     // are slotted light-DOM children of md-dialog, not DOM descendants of it.
     const dialog = page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Install extension", exact: true }) });
-    await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\extension.alcomdext");
+    await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\extension.alcomdextension");
     await expect(dialog.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
     await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(1);
     await expect(dialog.getByRole("heading", { name: "Review extension install", exact: true })).toBeVisible();
     await expect(dialog.getByText("Publisher", { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Discard plan", exact: true }).click();
-    await expect(dialog.getByLabel("Extension package", { exact: true })).toHaveValue("C:\\Fixture\\extension.alcomdext");
+    await expect(dialog.getByLabel("Extension package", { exact: true })).toHaveValue("C:\\Fixture\\extension.alcomdextension");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
 });

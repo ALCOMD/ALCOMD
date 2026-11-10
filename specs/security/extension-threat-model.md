@@ -6,7 +6,7 @@
 
 - authority：ExtensionId/Principal/grant/scope/revision、official publisher policy、Operation/Plan authority；
 - confidentiality：project/private path、extension-owned data、credential、argv/environment、Host internal channel；
-- integrity：`.alcomdext` content、Manifest/WIT/component、state.db、Project files、registry、journal；
+- integrity：`.alcomdextension` content、Manifest/WIT/component、state.db、Project files、registry、journal；
 - availability：daemon unique writer、其他 Extension Host、bounded CPU/memory/storage/call capacity。
 
 Boundaries：untrusted ZIP/publisher、untrusted Component、isolated UI origin、per-ExtensionId Host OS process、private

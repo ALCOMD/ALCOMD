@@ -24,7 +24,7 @@ fn database_path(name: &str) -> PathBuf {
 fn evidence() -> ExtensionPackageEvidence {
     ExtensionPackageEvidence {
         source_kind: ExtensionSourceKind::LocalOwnerSelected,
-        source_locator: "C:/fixture/extension.alcomdext".to_owned(),
+        source_locator: "C:/fixture/extension.alcomdextension".to_owned(),
         source_identity: vec![7; 24],
         extension_id: "dev.example.fixture".to_owned(),
         version: "1.2.3-alpha.1+fixture".to_owned(),
@@ -1424,7 +1424,7 @@ async fn policy_capability_outcome(
     let mut package = evidence();
     package.source_kind = source_kind;
     package.extension_id = format!("dev.example.{name}");
-    package.source_locator = format!("C:/fixture/{name}.alcomdext");
+    package.source_locator = format!("C:/fixture/{name}.alcomdextension");
     let plan = store
         .create_install_plan(
             owner.clone(),

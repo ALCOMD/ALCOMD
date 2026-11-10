@@ -326,7 +326,7 @@ async fn gui_select_file(
     );
     let picker = match kind.as_str() {
         "repositoryManifest" => picker.add_filter("JSON manifest", &["json"]),
-        "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdext"]),
+        "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdextension"]),
         "unityEditor" if cfg!(windows) => picker.add_filter("Executable", &["exe"]),
         "unityEditor" => picker,
         _ => return Err(RpcError::invalid_request()),

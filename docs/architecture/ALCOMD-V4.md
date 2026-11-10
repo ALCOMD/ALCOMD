@@ -368,7 +368,7 @@ stdout 只输出结果，stderr 输出日志和进度。非 TTY 环境不得突�
 
 第一方和第三方扩展必须使用同一套：
 
-- `.alcomdext`
+- `.alcomdextension`
 - Extension Manifest
 - Extension API
 - Portable Extension UI contract
@@ -391,7 +391,7 @@ ADR 0024 接受基础 Extension UI 的 GUI-neutral Portable UI Surface 方向。
 action，不携带 HTML、CSS、JavaScript 或 GUI framework code。GUI Host 通过自己的原生组件渲染：
 
 ```text
-.alcomdext
+.alcomdextension
     -> Extension Host
     -> Portable UI Surface
     -> alcomd application

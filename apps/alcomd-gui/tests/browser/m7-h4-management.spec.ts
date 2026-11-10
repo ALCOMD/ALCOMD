@@ -6,7 +6,7 @@ import { H4_ADDED, H4_ALPHA, H4_BETA, H4_GAMMA } from "./h4-management-client";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
-const packagePath = "\\\\?\\C:\\Fixture\\長い拡張機能\\extension.alcomdext";
+const packagePath = "\\\\?\\C:\\Fixture\\長い拡張機能\\extension.alcomdextension";
 
 async function open(page: Page, detail = false, extra = "") {
     const route = detail ? `/extensions/${H4_ALPHA}` : "/extensions";

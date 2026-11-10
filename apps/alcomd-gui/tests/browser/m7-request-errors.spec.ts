@@ -8,7 +8,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         await page.goto(`/browser-harness.html?route=/extensions&h4-management=1&locale=${locale}`);
         await page.getByRole("button", { name: t("Install extension"), exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
-        await dialog.getByLabel(t("Extension package"), { exact: true }).fill("C:\\Fixture\\sample.alcomdext");
+        await dialog.getByLabel(t("Extension package"), { exact: true }).fill("C:\\Fixture\\sample.alcomdextension");
         await dialog.getByRole("button", { name: t("Create install plan"), exact: true }).click();
         const alert = dialog.getByRole("alert");
         await expect(alert).toContainText(t(requestErrorMessage("extension_publisher_confirmation_required")));
@@ -33,7 +33,7 @@ test("publisher confirmation feedback explains the checkbox without approving or
     await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1");
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\sample.alcomdext");
+    await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\sample.alcomdextension");
     await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText(requestErrorMessage("extension_publisher_confirmation_required"));
     const approval = dialog.getByLabel("Approve this publisher for this extension", { exact: true });

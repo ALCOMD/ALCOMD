@@ -312,7 +312,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
     const cases = [
         ["/repositories", "Add repository", "Repository URL", "https://example.invalid/preserved.json"],
         ["/templates", "Create template", "Template ID", "com.example.preserved"],
-        ["/extensions", "Install extension", "Extension package", "C:\\Fixture\\preserved.alcomdext"],
+        ["/extensions", "Install extension", "Extension package", "C:\\Fixture\\preserved.alcomdextension"],
         ["/unity", "Manage installations", "Unity executable", "C:\\Fixture\\Unity.exe"]
     ] as const;
     for (const [route, title, field, value] of cases) {

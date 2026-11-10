@@ -1,4 +1,4 @@
-# `.alcomdext` v1 content identity, publisher and signature
+# `.alcomdextension` v1 content identity, publisher and signature
 
 状态：M6 contract-first Stop A candidate；生产签名验证尚未实现。
 

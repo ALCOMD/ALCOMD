@@ -58,7 +58,7 @@ pub(super) async fn installed_extension_for(
         ExtensionInstallPlanDraft {
             evidence: ExtensionPackageEvidence {
                 source_kind: ExtensionSourceKind::LocalOwnerSelected,
-                source_locator: "<FIXTURE>/extension.alcomdext".to_owned(),
+                source_locator: "<FIXTURE>/extension.alcomdextension".to_owned(),
                 source_identity: vec![7; 24],
                 extension_id: "dev.example.live".to_owned(),
                 version: "1.0.0".to_owned(),

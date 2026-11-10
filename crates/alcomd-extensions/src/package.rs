@@ -872,7 +872,7 @@ mod tests {
             "publisherFingerprint": fingerprint,
             "signature": hex(&signature),
         });
-        let path = temporary_path("package.alcomdext");
+        let path = temporary_path("package.alcomdextension");
         let file = File::create(&path).expect("create package");
         let mut writer = zip::ZipWriter::new(file);
         for (name, content) in content_entries {
@@ -1057,7 +1057,7 @@ mod tests {
         );
         std::fs::remove_file(collision).expect("remove collision package");
 
-        let link = temporary_path("link.alcomdext");
+        let link = temporary_path("link.alcomdextension");
         let file = File::create(&link).expect("create link package");
         let mut writer = zip::ZipWriter::new(file);
         for (name, content) in [

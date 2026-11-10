@@ -2,7 +2,7 @@
 
 状态：M7 active Manifest v1；由 pre-release direct replacement 实现，不保留旧 Web UI shape。
 
-扩展包后缀是 `.alcomdext`，根 Manifest 固定为 UTF-8、无 BOM 的 `alcomd-extension.toml`。解析后的
+扩展包后缀是 `.alcomdextension`，根 Manifest 固定为 UTF-8、无 BOM 的 `alcomd-extension.toml`。解析后的
 对象必须满足 `manifest-v1.schema.json`；未知字段 fail closed。
 
 ## 最小示例

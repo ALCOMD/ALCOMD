@@ -570,7 +570,7 @@ mod tests {
     fn permissions_evidence() -> app::ExtensionPackageEvidence {
         app::ExtensionPackageEvidence {
             source_kind: app::ExtensionSourceKind::LocalOwnerSelected,
-            source_locator: "C:/fixture/permissions.alcomdext".to_owned(),
+            source_locator: "C:/fixture/permissions.alcomdextension".to_owned(),
             source_identity: vec![1; 16],
             extension_id: "dev.example.permissions".to_owned(),
             version: "1.0.0".to_owned(),

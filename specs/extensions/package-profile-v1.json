@@ -1,6 +1,6 @@
 {
     "format": "alcomd-extension-package-v1",
-    "suffix": ".alcomdext",
+    "suffix": ".alcomdextension",
     "container": "zip",
     "zip64": false,
     "compressionMethods": ["stored", "deflate"],

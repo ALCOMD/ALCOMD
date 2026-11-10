@@ -30,7 +30,7 @@ migration_v3 = "alcomd-migrate-v3"
 [formats]
 repository_list_extension = "alcomdrepositories"
 template_extension = "alcomdtemplate"
-extension_extension = "alcomdext"
+extension_extension = "alcomdextension"
 export_extension = "alcomdexport"
 
 [protocols]

@@ -77,7 +77,7 @@ test("Unity Hub uses an inline path field and select button", async ({ page }) =
 
 for (const entry of [
     { route: "/unity", action: "Manage installations", label: "Unity executable", path: "C:/Editors/Unity.exe" },
-    { route: "/extensions", action: "Install extension", label: "Extension package", path: "C:/fixture/test.alcomdext" },
+    { route: "/extensions", action: "Install extension", label: "Extension package", path: "C:/fixture/test.alcomdextension" },
     { route: "/repositories", action: "Add repository", label: "Local manifest path", path: "C:/fixture/repository.json" }
 ]) {
     test(`${entry.label} uses only inline controls with a working native chooser`, async ({ page }) => {

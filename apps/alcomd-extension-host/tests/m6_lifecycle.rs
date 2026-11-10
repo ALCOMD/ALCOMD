@@ -35,7 +35,7 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
     let data = fixture.path().join("data");
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
-    let package = fixture.path().join("fixture.alcomdext");
+    let package = fixture.path().join("fixture.alcomdextension");
     create_signed_background_ui_package(&package);
 
     let (ipc, config) = isolated_ipc(runtime);
@@ -221,7 +221,7 @@ async fn portable_ui_runs_through_real_rpc_daemon_and_host() {
     let data = fixture.path().join("data");
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
-    let package = fixture.path().join("portable-ui.alcomdext");
+    let package = fixture.path().join("portable-ui.alcomdextension");
     create_signed_ui_package(&package);
 
     let (ipc, config) = isolated_ipc(runtime);
@@ -438,7 +438,7 @@ async fn malformed_portable_ui_document_terminates_and_quarantines_the_guest() {
     let data = fixture.path().join("data");
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
-    let package = fixture.path().join("malformed-portable-ui.alcomdext");
+    let package = fixture.path().join("malformed-portable-ui.alcomdextension");
     create_signed_malformed_ui_package(&package);
 
     let (ipc, config) = isolated_ipc(runtime);
@@ -545,7 +545,7 @@ async fn repeated_real_host_crashes_quarantine_only_that_enabled_extension() {
     let data = fixture.path().join("data");
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
-    let package = fixture.path().join("crashing.alcomdext");
+    let package = fixture.path().join("crashing.alcomdextension");
     create_signed_package_with_component(
         &package,
         include_bytes!("../../../crates/alcomd-testing/fixtures/m6/trap-extension-v1.wasm"),
@@ -657,7 +657,7 @@ async fn subprocess_extension_apply_until_killed() {
         PathBuf::from(std::env::var_os(CRASH_METADATA_ENV).expect("crash metadata path"));
     let runtime = root.join("runtime");
     let data = root.join("data");
-    let package = root.join("fixture.alcomdext");
+    let package = root.join("fixture.alcomdextension");
     create_signed_package(&package);
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
