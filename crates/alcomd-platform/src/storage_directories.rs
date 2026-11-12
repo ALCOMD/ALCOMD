@@ -127,15 +127,15 @@ fn invalid(message: &'static str) -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
     fn fixture() -> PathBuf {
         std::env::temp_dir().join(format!(
             "alcomd-storage-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("clock")
-                .as_nanos()
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
         ))
     }
 
