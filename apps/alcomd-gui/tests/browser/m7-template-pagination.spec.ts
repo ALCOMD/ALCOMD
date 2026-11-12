@@ -36,6 +36,10 @@ test("Projects can select template 101 and create the project returned by Core",
     expect(await page.evaluate(() => window.templateRequests.filter((request) => request.method === "projects.create"))).toEqual([
         { method: "projects.create", params: { template: { id: lastTemplateId, revision: 111 }, targetParent: "C:\\Fixture\\Avatar", name: "From page two", unityVersion: "2022.3.22f1", idempotencyKey: expect.any(String) } }
     ]);
+    const completion = page.locator("md-dialog[open]").filter({ has: page.locator(".operation-follow") });
+    await expect(completion.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await completion.getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "From page two" })).toBeVisible();

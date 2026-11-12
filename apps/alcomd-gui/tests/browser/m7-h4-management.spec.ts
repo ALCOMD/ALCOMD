@@ -102,7 +102,7 @@ test("H4 install preserves its raw path, reviews expected absence, and follows o
     const operationId = await page.evaluate(() => window.h4Management.lastOperationId!);
     await page.evaluate(() => window.h4Management.complete("succeeded"));
     await expect(modal(page).locator(".operation-follow")).toContainText(/succeeded/i);
-    await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+    await modal(page).filter({ has: page.locator(".operation-follow") }).getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("article", { name: H4_ADDED, exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Install extension", exact: true })).toBeEnabled();
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
@@ -267,7 +267,7 @@ test("H4 permission read failure stays visible until an explicit refresh and nev
     await expect(modal(page).getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0);
     await expect(modal(page).getByRole("button", { name: "Grant", exact: true })).toHaveCount(0);
     expect(await requests(page, "extensions.revokeGrant")).toHaveLength(1);
-    await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
+    await modal(page).getByRole("alert").getByRole("button", { name: "Refresh", exact: true }).click();
     // This fixture refused before writing; the authoritative permission remains granted.
     await expect(allowed(page)).toContainText("Run in background");
     await expect(allowed(page).locator("li")).toHaveCount(1);
