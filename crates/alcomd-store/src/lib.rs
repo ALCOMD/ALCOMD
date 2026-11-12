@@ -2098,7 +2098,7 @@ impl M7DeleteStore for StateStoreHandle {
         operation_id: OperationId,
         code: String,
         diagnostic_id: String,
-        source_unmoved: bool,
+        disposition: alcomd_application::ProjectDeleteFailureDisposition,
         now_ms: u64,
     ) -> Result<(), M7DeleteError> {
         self.request_worker(
@@ -2108,7 +2108,7 @@ impl M7DeleteStore for StateStoreHandle {
                     operation_id,
                     &code,
                     &diagnostic_id,
-                    source_unmoved,
+                    disposition,
                     now_ms,
                 )
             },

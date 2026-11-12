@@ -129,7 +129,15 @@ pub struct M7DeleteError {
     code: M7DeleteErrorCode,
     context: crate::TechnicalErrorContext,
     diagnostic_id: Option<String>,
-    source_unmoved: bool,
+    disposition: ProjectDeleteFailureDisposition,
+}
+
+/// Trusted adapter evidence about a failure before a confirmed quarantine move.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectDeleteFailureDisposition {
+    Uncertain,
+    SourceUnmoved,
+    SourceAndPayloadMissing,
 }
 
 impl M7DeleteError {
@@ -139,7 +147,7 @@ impl M7DeleteError {
             code,
             context: crate::TechnicalErrorContext::default(),
             diagnostic_id: None,
-            source_unmoved: false,
+            disposition: ProjectDeleteFailureDisposition::Uncertain,
         }
     }
     #[must_use]
@@ -178,7 +186,15 @@ impl M7DeleteError {
     /// left the original root in place and no quarantine payload exists.
     #[must_use]
     pub fn with_unmoved_source(mut self) -> Self {
-        self.source_unmoved = true;
+        self.disposition = ProjectDeleteFailureDisposition::SourceUnmoved;
+        self
+    }
+
+    /// Only a trusted adapter may set this after checking the owned wrapper and
+    /// observing NotFound for both source and payload, with no prior move identity.
+    #[must_use]
+    pub fn with_missing_source_and_payload(mut self) -> Self {
+        self.disposition = ProjectDeleteFailureDisposition::SourceAndPayloadMissing;
         self
     }
 
@@ -260,7 +276,7 @@ pub trait M7DeleteStore: Clone + Send + Sync + 'static {
         operation_id: OperationId,
         code: String,
         diagnostic_id: String,
-        source_unmoved: bool,
+        disposition: ProjectDeleteFailureDisposition,
         now_ms: u64,
     ) -> impl Future<Output = Result<(), M7DeleteError>> + Send;
     fn recover_project_delete_operations(
@@ -482,7 +498,7 @@ where
                     operation_id,
                     project_delete_error_name(source.code()).to_owned(),
                     diagnostic_id.clone(),
-                    source.source_unmoved,
+                    source.disposition,
                     now_ms()?,
                 ),
             )

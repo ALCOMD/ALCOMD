@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3RegistryStore, M5BackupError, M5BackupWriterGate,
     M7DeleteAdapter, M7DeleteApplication, M7DeleteStore, ManifestState, OperationState,
-    PrincipalId, ProjectDeletePhase, ProjectId, ProjectObservation, ProjectType,
-    ResourceLockCoordinator, StateStore, UnityWriterState, UnityWriterStateKind,
+    PrincipalId, ProjectDeleteFailureDisposition, ProjectDeletePhase, ProjectId,
+    ProjectObservation, ProjectType, ResourceLockCoordinator, StateStore, UnityWriterState,
+    UnityWriterStateKind,
 };
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
@@ -27,6 +28,259 @@ const PAUSE_GATE_ENV: &str = "ALCOMD_TEST_PROJECT_DELETE_PAUSE_GATE";
 const PAUSE_SIGNAL_ENV: &str = "ALCOMD_TEST_PROJECT_DELETE_PAUSE_SIGNAL";
 const PAUSE_RELEASE_ENV: &str = "ALCOMD_TEST_PROJECT_DELETE_PAUSE_RELEASE";
 const CHECKPOINT_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Clone, Copy, PartialEq)]
+enum MissingTargetCase {
+    Fresh,
+    Legacy,
+    MovedWithoutCheckpoint,
+    MovedAndLost,
+}
+
+#[tokio::test]
+async fn project_delete_missing_fresh_target_ends_failed_and_never_retries_a_recreated_root() {
+    missing_target_case(MissingTargetCase::Fresh).await;
+}
+
+#[tokio::test]
+async fn project_delete_missing_legacy_target_ends_failed_instead_of_waiting_forever() {
+    missing_target_case(MissingTargetCase::Legacy).await;
+}
+
+#[tokio::test]
+async fn project_delete_missing_source_with_unrecorded_payload_still_recovers_forward() {
+    missing_target_case(MissingTargetCase::MovedWithoutCheckpoint).await;
+}
+
+#[tokio::test]
+async fn project_delete_missing_previously_observed_payload_remains_recoverable() {
+    missing_target_case(MissingTargetCase::MovedAndLost).await;
+}
+
+async fn missing_target_case(case: MissingTargetCase) {
+    let fixture = TestDirectory::new();
+    let root = fixture.path().join("MissingProject");
+    create_project(&root);
+    let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("isolated store");
+    let access = AccessContext::local_owner();
+    let record = store
+        .register_project(
+            access.principal().clone(),
+            observation(&root),
+            key("missing-register"),
+            1,
+        )
+        .await
+        .expect("register")
+        .value;
+    let app = M7DeleteApplication::with_locks(
+        store.clone(),
+        ProjectDeleteEngine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+        Arc::new(ResourceLockCoordinator::default()),
+    );
+    let plan = app
+        .plan_delete(
+            &access,
+            record.project_id,
+            record.revision,
+            key("missing-plan"),
+        )
+        .await
+        .expect("plan");
+    let now = plan.plan.draft.created_at_ms + 1;
+    let accepted = alcomd_application::with_log_caller(
+        store.clone(),
+        &access,
+        store.accept_project_delete(
+            access.principal().clone(),
+            plan.plan.draft.plan_id,
+            record.revision,
+            key("missing-apply"),
+            now,
+        ),
+    )
+    .await
+    .expect("accept without dispatch");
+    store
+        .begin_project_delete(accepted.operation_id, now + 1)
+        .await
+        .expect("begin");
+    let evidence = ProjectDeleteEngine
+        .preflight(accepted.operation_id, plan.plan.clone())
+        .await
+        .expect("owned preparation");
+    for (phase, offset) in [
+        (ProjectDeletePhase::PreflightComplete, 2),
+        (ProjectDeletePhase::QuarantineIntent, 3),
+    ] {
+        store
+            .record_project_delete_checkpoint(
+                accepted.operation_id,
+                phase,
+                evidence.clone(),
+                now + offset,
+            )
+            .await
+            .expect("checkpoint");
+    }
+    if matches!(
+        case,
+        MissingTargetCase::MovedWithoutCheckpoint | MissingTargetCase::MovedAndLost
+    ) {
+        let moved = ProjectDeleteEngine
+            .quarantine(accepted.operation_id, plan.plan.clone(), evidence.clone())
+            .await
+            .expect("real move");
+        if case == MissingTargetCase::MovedAndLost {
+            store
+                .record_project_delete_checkpoint(
+                    accepted.operation_id,
+                    ProjectDeletePhase::RootQuarantined,
+                    moved,
+                    now + 4,
+                )
+                .await
+                .expect("observed move");
+            let payload = Path::new(&evidence.quarantine_locator).join("payload");
+            let resolved_payload = payload
+                .canonicalize()
+                .expect("resolve existing fixture payload");
+            let fixture_root = fixture.path().canonicalize().expect("resolve fixture root");
+            assert!(resolved_payload.is_absolute() && resolved_payload.starts_with(fixture_root));
+            fs::remove_dir_all(resolved_payload)
+                .expect("simulate external loss of fixture payload");
+        }
+    } else {
+        assert!(root.is_absolute() && root.starts_with(fixture.path()));
+        fs::remove_dir_all(&root).expect("simulate external removal of the fixture source");
+    }
+    let old_diagnostic = alcomd_application::OperationId::new().to_string();
+    if case != MissingTargetCase::Fresh {
+        alcomd_application::with_operation_log_failure(
+            accepted.operation_id,
+            "old recovery error".into(),
+            store.fail_project_delete(
+                accepted.operation_id,
+                "project_delete_recovery_required".into(),
+                old_diagnostic.clone(),
+                if case == MissingTargetCase::MovedAndLost {
+                    ProjectDeleteFailureDisposition::SourceAndPayloadMissing
+                } else {
+                    ProjectDeleteFailureDisposition::Uncertain
+                },
+                now + 5,
+            ),
+        )
+        .await
+        .expect("persist old recovery state without overriding an observed move");
+    }
+    app.recover().await.expect("recover durable work");
+    if case == MissingTargetCase::MovedAndLost {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let operation = store
+                .get_operation(access.principal().clone(), accepted.operation_id)
+                .await
+                .expect("operation");
+            if operation.state == OperationState::Recovering
+                && operation
+                    .diagnostic_id
+                    .as_deref()
+                    .is_some_and(|id| id != old_diagnostic)
+            {
+                assert!(operation.completed_at_ms.is_none());
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "recovery classification completed"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            store
+                .get_project(access.principal().clone(), record.project_id)
+                .await
+                .is_ok()
+        );
+        return;
+    }
+    let operation = wait_terminal(&store, accepted.operation_id).await;
+    if case == MissingTargetCase::MovedWithoutCheckpoint {
+        assert_eq!(operation.state, OperationState::Succeeded);
+        assert!(
+            store
+                .get_project(access.principal().clone(), record.project_id)
+                .await
+                .is_err()
+        );
+        return;
+    }
+    assert_eq!(operation.state, OperationState::Failed);
+    assert_eq!(
+        operation.error_code.as_deref(),
+        Some("project_delete_source_missing")
+    );
+    assert!(operation.completed_at_ms.is_some());
+    assert!(
+        !store
+            .has_unfinished_operations()
+            .await
+            .expect("global lifecycle query")
+    );
+    assert_eq!(
+        store
+            .get_project(access.principal().clone(), record.project_id)
+            .await
+            .expect("registration preserved")
+            .revision,
+        record.revision
+    );
+    let events = store
+        .list_events(access.principal().clone(), 0, 100)
+        .await
+        .expect("events");
+    assert!(
+        !events
+            .events
+            .iter()
+            .any(|event| event.kind == "project.directory_deleted")
+    );
+    let logs = alcomd_application::OperationLogStore::read_operation_logs(
+        &store,
+        access.principal().clone(),
+        alcomd_application::OperationLogQuery {
+            limit: 100,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("logs");
+    assert!(
+        logs.entries
+            .iter()
+            .any(
+                |entry| entry.operation_id.as_deref() == Some(&accepted.operation_id.to_string())
+                    && entry.outcome == alcomd_application::LogOutcome::Failed
+            )
+    );
+    create_project(&root);
+    fs::write(root.join("replacement.txt"), b"keep replacement").expect("replacement marker");
+    app.recover().await.expect("restart after terminal failure");
+    assert_eq!(
+        fs::read(root.join("replacement.txt")).expect("replacement survives"),
+        b"keep replacement"
+    );
+    assert_eq!(
+        store
+            .get_operation(access.principal().clone(), accepted.operation_id)
+            .await
+            .expect("failed task unchanged")
+            .state,
+        OperationState::Failed
+    );
+}
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -265,7 +519,7 @@ async fn sharing_violation_case(legacy_recovery: bool, preparation_locked: bool)
                 accepted.operation_id,
                 "project_delete_recovery_required".into(),
                 alcomd_application::OperationId::new().to_string(),
-                false,
+                ProjectDeleteFailureDisposition::Uncertain,
                 now + 4,
             ),
         )
@@ -466,7 +720,7 @@ async fn project_delete_already_quarantined_failure_stays_recoverable_and_preser
             accepted.operation_id,
             "project_delete_source_unsafe".into(),
             alcomd_application::OperationId::new().to_string(),
-            true,
+            ProjectDeleteFailureDisposition::SourceUnmoved,
             now + 5,
         ),
     )

@@ -992,6 +992,8 @@ Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent
 `.alcomd-delete-<operation-id>.quarantine/payload/`，成功只写一个 `project.directory_deleted` Event，不同时写
 `project.unregistered`。quarantine 后重建的 original path 永远不得被 recovery 触碰。
 
+2026-11-12补充不可继续的缺失目标处理：可信adapter验证owned wrapper，尚无quarantine identity且source与payload均明确NotFound时，以既有`project_delete_source_missing`结束为failed，保留项目登记，不宣称删除成功；空准备目录清理故障仅补充诊断。恢复状态因此不永久占用活动任务，也不在同路径重建后自动再删。已有移动证据、payload存在、重解析对象或访问错误不适用此分支，继续原恢复与取消边界。
+
 新增的 delete 专用稳定错误只有 `project_delete_plan_not_found`、`project_delete_plan_stale`、
 `project_delete_source_missing`、`project_delete_source_unsafe`、`project_delete_source_changed` 与
 `project_delete_recovery_required`；既有通用 `project_not_registered`、`revision_conflict`、

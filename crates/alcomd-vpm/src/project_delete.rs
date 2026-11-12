@@ -212,6 +212,9 @@ impl M7DeleteAdapter for ProjectDeleteEngine {
             if evidence.quarantine_identity.is_some() {
                 return Err(recovery());
             }
+            if let Some(failure) = missing_source_failure(operation_id, &plan, &evidence) {
+                return Err(failure);
+            }
             if !root.exists() {
                 return Err(recovery());
             }
@@ -290,6 +293,9 @@ fn rename_into_quarantine(
     let root = Path::new(&plan.draft.project.observation.root_path);
     let payload = Path::new(&evidence.quarantine_locator).join("payload");
     if let Err(cause) = fs::rename(root, &payload) {
+        if let Some(failure) = missing_source_failure(operation_id, plan, evidence) {
+            return Err(failure.with_source(cause));
+        }
         let failure = source_unsafe()
             .with_source(cause)
             .with_path(root.display().to_string());
@@ -312,6 +318,30 @@ fn rename_into_quarantine(
         return Err(recovery().with_source(failure));
     }
     Ok(())
+}
+
+fn missing_source_failure(
+    operation_id: OperationId,
+    plan: &ProjectDeletePlanRecord,
+    evidence: &ProjectDeleteFilesystemEvidence,
+) -> Option<M7DeleteError> {
+    let root = Path::new(&plan.draft.project.observation.root_path);
+    let payload = Path::new(&evidence.quarantine_locator).join("payload");
+    let absent = |path: &Path| matches!(fs::symlink_metadata(path), Err(cause) if cause.kind() == std::io::ErrorKind::NotFound);
+    if evidence.quarantine_identity.is_some() || !absent(root) || !absent(&payload) {
+        return None;
+    }
+    let failure = error(M7DeleteErrorCode::ProjectDeleteSourceMissing)
+        .with_path(root.display().to_string())
+        .with_reason("source and owned quarantine payload are both absent");
+    let failure = match discard_prepared_quarantine(operation_id, plan, evidence) {
+        Ok(()) => failure,
+        Err(cleanup) => failure.with_reason(format!(
+            "source and owned payload are absent; preparation cleanup failed: {}",
+            alcomd_application::technical_error_chain(&cleanup)
+        )),
+    };
+    Some(failure.with_missing_source_and_payload())
 }
 
 fn discard_prepared_quarantine(

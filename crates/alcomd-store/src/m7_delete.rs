@@ -1,8 +1,8 @@
 use alcomd_application::{
     IdempotencyKey, M7DeleteError, M7DeleteErrorCode, OperationId, PlanId, PrincipalId,
-    ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord,
-    ProjectDeletePhase, ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord,
-    Revision,
+    ProjectDeleteApplyOutcome, ProjectDeleteFailureDisposition, ProjectDeleteFilesystemEvidence,
+    ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
+    ProjectDeletePlanOutcome, ProjectDeletePlanRecord, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
@@ -451,7 +451,7 @@ pub(super) fn fail(
     operation_id: OperationId,
     code: &str,
     diagnostic_id: &str,
-    source_unmoved: bool,
+    disposition: ProjectDeleteFailureDisposition,
     now_ms: u64,
 ) -> Result<(), M7DeleteError> {
     let transaction = begin(connection)?;
@@ -467,8 +467,11 @@ pub(super) fn fail(
     let (phase, evidence) = latest_evidence(&transaction, operation_id)?;
     let next = operation_revision.checked_add(1).ok_or_else(internal)?;
     let recovery_required = phase_at_or_after_intent(phase)
-        && !(source_unmoved
-            && evidence.quarantine_identity.is_none()
+        && !(matches!(
+            disposition,
+            ProjectDeleteFailureDisposition::SourceUnmoved
+                | ProjectDeleteFailureDisposition::SourceAndPayloadMissing
+        ) && evidence.quarantine_identity.is_none()
             && matches!(
                 phase,
                 ProjectDeletePhase::QuarantineIntent | ProjectDeletePhase::RecoveryRequired
