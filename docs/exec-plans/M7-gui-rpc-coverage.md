@@ -1,6 +1,6 @@
 # M7 Official GUI RPC coverage matrix
 
-状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
+状态：2026-11-13 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、仓库认证、单页业务日志、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
 本矩阵记录方法归属。含仓库认证写入的现行清单共 85 项。当前阶段见 `../status.md`。H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
 
@@ -12,7 +12,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 
 | RPC method | capability | page / route | user action | R/W | confirmation | Operation | state handling | test owner |
 |---|---|---|---|---|---|---|---|---|
-| `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config5 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
+| `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema and current Config Schema | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About, shell | read Core version/status; local GUI build version remains independent | R | no | no | data/error/reconnect | `gui.m7-core-surfaces` |
 | `logs.read` | `logs.read.v1` | `/logs` | read business steps and retained history as one continuous list | R | no | no | data/error/reconnect, owner scope, bounded frame | `gui.m7-operation-logs` |
 | `state.check` | `state.check.v1` + `operations.v1` for GUI progress | N/A (CLI/API only) | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
@@ -104,7 +104,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 - New methods, public capabilities and breaking DTO changes require owner approval. The methods above include the later approved Project/Package, exact Unity, candidate evidence and Hub contracts; the original four M7 utility additions are not the full current set.
 - `packages.plan.v2` also supports the original package Plan methods; `planReinstall` and `planBulk` require v2. GUI candidate/source filters use complete Core evidence; optional display metadata does not determine business state.
 - A method is complete only when typed Rust and TypeScript adapters, real page/action behavior, common states and its test owner all exist.
-- 日志与活动接口、专属capability/权限/GUI入口全部撤销；`events.list/subscribe`仅承担业务变化与恢复，不重新投影日志或活动历史。
+- 旧 Activity/Diagnostics 接口及其专属 capability、权限和 GUI 入口已撤销。现行单页业务日志正文仅由 `logs.read` 读取，沿用 `operations.read` 与 local-owner 边界；`events.list/subscribe` 承担业务变化、失效与恢复，不投影或补写日志正文。
 - Direct registry/lifecycle writes that do not have a Core Plan method receive explicit confirmation but must not invent a GUI Plan.
 - Any Apply returning an Operation follows the same Operation detail model and survives route/window close and reconnect.
 - List import reuses `repositories.inspect/register` sequentially after selection and confirmation; it appends without clearing existing sources, has no atomic-transaction claim, and keeps cancellation, partial and unknown results distinct. Export preserves validated query text and requires a new file. Tests: `m7-repository-list.spec.ts`, repository-list Core/RPC cases.

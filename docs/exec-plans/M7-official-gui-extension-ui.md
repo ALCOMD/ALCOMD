@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-**M7已完成，2026-11-13。** 最终功能候选`c46f7544`已通过全部适用本地、三平台Hosted CI和四语言CodeQL，并完成原实例保全更新。所有者整体认可、实际门禁、复用范围与未覆盖边界见[M7完成记录](../testing/m7-completion-20261113.md)。Progress log与原停止点保存当时状态，现行阶段结论以完成记录和项目状态为准；未开始M8。
+**M7已正式验收完成，2026-11-13。** 最终功能候选`c46f7544`已通过全部适用本地、三平台Hosted CI和四语言CodeQL，并完成原实例保全更新。所有者整体认可、独立验收、实际门禁、复用范围与未覆盖边界见[M7完成记录](../testing/m7-completion-20261113.md)。Progress log与原停止点保存当时状态；M8后续授权与当前阶段以[项目状态](../status.md)为准。
 
 当前阶段、部署记录和下一停止点见 [项目状态](../status.md)。按改动查对应合同：
 
@@ -563,7 +563,7 @@ M7 完成需要：
    security/fault evidence；
 2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
 3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
-4. 实现获批的 Config3、settings/activity/diagnostics、候选读取与 Unity Hub 窄合同，并保持各自权限和版本边界；
+4. 实现现行 Config13 设置、Core 单页业务日志（`logs.read`）、候选读取与 Unity Hub 窄合同，并保持各自权限和版本边界；旧 Activity/Diagnostics 接口不再作为现行能力；
 5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 user-model continuity、Material component
    behavior、分阶段截图和一次真实交互桌面的视觉/流程/键盘焦点签收完成；
 6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
