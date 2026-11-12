@@ -694,7 +694,11 @@ async function chooseVersionSource(page: Page, row: Locator, source: string) {
         await expect(row.locator(".package-source-summary")).toHaveText(source);
         return;
     }
+    const lifecycle = await packageMenuLifecycle(row, ".package-source-picker");
     await row.locator(".package-source-picker").getByRole("combobox").click();
+    await lifecycle.evaluate((events) => events.opened);
     await page.getByRole("option", { name: source, exact: true }).click();
+    await lifecycle.evaluate((events) => events.closed);
+    await lifecycle.dispose();
     await expect(row.locator(".package-version-picker")).toHaveJSProperty("disabled", false);
 }

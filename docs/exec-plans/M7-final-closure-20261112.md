@@ -59,3 +59,13 @@
 随后所有者接受“项目名＋时间”并选择默认等级5，按[备份修正计划](M7-backup-names-default-compression.md)实施。通过既有settings.update将当前实例压缩默认值由fast保存为level5，revision7→8，其他设置完整保持；真实旧备份不改名或重写。此后最终候选须包含该增量，前述只读状态为讨论当时记录。
 
 f2689f42 的四语言CodeQL成功，macOS在第二次运行workspace tests（Test repository contracts）时发现另一个独立失败：storage_directories::tests::publishing_a_directory_never_replaces_an_empty_destination 创建目标时报NotFound；同SHA前一轮Check中的该测试已通过。夹具根使用PID+SystemTime纳秒显示值，不能保证并行调用不同，其他测试可能清理同一根。仅将测试夹具后缀改为进程内AtomicU64计数，与既有平台测试模式一致，不依赖系统时钟精度；生产发布函数及全部原断言保持。日志见 target/m7-signoff-budget-20261112/macos.log。该测试修正独立提交，最终Hosted macOS仍须验证，不以本机通过替代。
+
+## 目录缺失增量与本轮候选门禁
+
+所有者批准[目录状态与明确复制错误](M7-missing-project-directory.md)后，9f47336b 完成本机全部原生门禁：workspace严格Clippy、901项Rust通过/14项原有忽略、GUI检查、Discord检查/测试、前端check/build、元数据及12项反例探针、基线冻结、CLI构建/自动启动、release bins和Tauri no-bundle均通过。992份输入最终逐项一致。证据位于target/m7-signoff-missing-directory-20261112；该轮未运行完整本地浏览器，不能计为完整最终签收。
+
+更新恢复时，已完成的离线原data/profile哈希核对通过，但生成目录target/debug已不存在，首次Copy-Item失败；未归因该目录消失的来源。仅重建原生成目录，沿原data/profile恢复已验证发布程序，并按产品清单补回CLI、扩展宿主等辅助程序，各项hash一致。Core79012/GUI134976连接、响应、ready，原4项目/30仓库/5模板/1Unity登记、完整设置revision8、备份记录、12个项目标志检查位及当时3个Unity/Hub进程保持；原删除仍failed/source_missing/revision9。Core实际报告2个available、2个missing，未恢复或回写用户已缺失的项目内容。此为程序/公开状态核对，不替代新增原生交互截图。
+
+9f47336b四语言CodeQL成功，三平台Check及Ubuntu/macOS构建、平台目标检查通过；Ubuntu完整浏览器699/1在来源选项点击被下方表格拦截处失败，macOS699/1在菜单Escape后仍展开、焦点未返回处失败。原始日志为ubuntu-browser-failed.log与macos-browser-failed.log。两个旧用例在展开动画结束前即可继续点击或发送Escape，现复用Material公开opened/closed事件同步原有流程；所有真实点击、Escape、焦点、样式、选项资格、Core自动/显式来源及无业务派发断言保留，无force、数值等待、增加重试/超时或新专项用例。产品代码与所有者已接受的Material快速重开行为保持。
+
+本机原来源用例6/6通过，未复现跨平台失败，不能写为修复前本机失败；调整后47项相关回归及两项原失败场景各3轮共6项通过，前端check通过。初次隔离重现因标题锚定筛选未匹配测试而未执行，已记录；有效重复轮次另存。证据位于target/m7-source-picker-repro-20261112。后续仅测试/文档变更，逐文件核对未变的生产、Rust测试、锁文件与构建输入后复用9f47336b原生结果；重新执行受影响前端检查、完整700项浏览器和新SHA三平台CI/CodeQL。最终全部通过前，M7仍在收尾。

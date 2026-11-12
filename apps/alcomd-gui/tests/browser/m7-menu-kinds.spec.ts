@@ -3,7 +3,20 @@ import { expect, test, type Locator } from "@playwright/test";
 const projectId = "00000000-0000-4000-8000-000000000101";
 test.use({ viewport: { width: 1440, height: 900 } });
 
-async function actionMenu(menu: Locator) {
+async function actionMenu(trigger: Locator, menu: Locator) {
+    const lifecycle = await trigger.page().locator("body").evaluateHandle((element) => {
+        const once = (type: string) => new Promise<void>((resolve) => {
+            const listener = (event: Event) => {
+                if (!(event.target instanceof Element) || !event.target.matches('md-menu[data-menu-kind="actions"]')) return;
+                element.removeEventListener(type, listener, true);
+                resolve();
+            };
+            element.addEventListener(type, listener, true);
+        });
+        return { opened: once("opened"), closed: once("closed") };
+    });
+    await trigger.click();
+    await lifecycle.evaluate((events) => events.opened);
     await expect(menu).toHaveAttribute("data-menu-kind", "actions");
     await expect(menu.locator(".menu")).toBeVisible();
     await expect(menu.locator(".menu")).toHaveCSS("border-radius", "12px");
@@ -15,38 +28,43 @@ async function actionMenu(menu: Locator) {
         expect(height).toBeLessThanOrEqual(41); // A destructive group may add its divider.
         await expect(item.locator('[slot="headline"]')).toHaveCSS("font-size", "14px");
     }
+    return lifecycle;
 }
 
 test("project and template action menus use one compact style including every entry", async ({ page }) => {
     await page.goto(`/browser-harness.html?route=/projects/${projectId}`);
     const projectTrigger = page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ });
-    await projectTrigger.click();
-    await actionMenu(page.locator('md-menu[data-menu-kind="actions"][open]'));
+    const projectLifecycle = await actionMenu(projectTrigger, page.locator('md-menu[data-menu-kind="actions"][open]'));
     await page.keyboard.press("Escape");
+    await projectLifecycle.evaluate((events) => events.closed);
     await expect(projectTrigger).toBeFocused();
+    await projectLifecycle.dispose();
 
     await page.goto("/browser-harness.html?route=/templates");
     const templateTrigger = page.getByRole("row").filter({ has: page.getByRole("cell", { name: "com.vrclearn.alcomd.templates.vrchat.avatars.2022", exact: true }) }).getByRole("button", { name: "More actions for VRChat Avatars 2022", exact: true });
-    await templateTrigger.click();
-    await actionMenu(page.locator('md-menu[data-menu-kind="actions"][open]'));
+    const templateLifecycle = await actionMenu(templateTrigger, page.locator('md-menu[data-menu-kind="actions"][open]'));
     await expect(page.locator('md-menu[open] > md-menu-item').filter({ hasText: "Remove template" })).toHaveJSProperty("disabled", true);
     await expect(page.getByRole("menuitem", { name: "View template", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await templateLifecycle.evaluate((events) => events.closed);
     await expect(templateTrigger).toBeFocused();
+    await templateLifecycle.dispose();
 });
 
 test("package maintenance and row actions share compact menus without dispatching on Escape", async ({ page }) => {
     await page.goto(`/browser-harness.html?route=/projects/${projectId}&state=package-multiple`);
     const maintenance = page.getByRole("button", { name: "More package actions", exact: true });
-    await maintenance.click();
-    await actionMenu(page.locator('md-menu[data-menu-kind="actions"][open]'));
+    const maintenanceLifecycle = await actionMenu(maintenance, page.locator('md-menu[data-menu-kind="actions"][open]'));
     await page.keyboard.press("Escape");
+    await maintenanceLifecycle.evaluate((events) => events.closed);
     await expect(maintenance).toBeFocused();
+    await maintenanceLifecycle.dispose();
     const row = page.getByRole("table", { name: "Packages", exact: true }).getByRole("row").filter({ hasText: "Avatar tools" });
-    await row.getByRole("button", { name: "More actions for Avatar tools", exact: true }).click();
-    await actionMenu(row.locator(".package-actions-menu"));
+    const rowLifecycle = await actionMenu(row.getByRole("button", { name: "More actions for Avatar tools", exact: true }), row.locator(".package-actions-menu"));
     await page.keyboard.press("Escape");
+    await rowLifecycle.evaluate((events) => events.closed);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await rowLifecycle.dispose();
 });
 
 test("source and version use the shared standard Select with selection spacing and capsule fields", async ({ page }) => {

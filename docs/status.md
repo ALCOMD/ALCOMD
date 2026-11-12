@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 最终技术收尾中。** 所有者认可当前使用体验，并授权临时关闭/恢复应用完成本地收尾；正式阶段完成仍待最终候选门禁。M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。当前范围见[M7收尾计划](exec-plans/M7-final-closure-20261112.md)。
 
+- 2026-11-12 9f47336b已通过全部本地原生门禁：workspace901项通过/14项原有忽略、严格Clippy、前端检查/构建、CLI自动启动、release bins及Tauri no-bundle等；原数据/profile备份核对后更新Core79012/GUI134976，ready/0活动任务，设置revision8、原4项目/30仓库/5模板/1Unity登记、备份记录及12个项目标志检查位保持，Core报告2个目录存在、2个缺失。生成目录消失的恢复异常及辅助程序补全已记录，未回写缺失项目。该SHA四语言CodeQL通过，Ubuntu/macOS浏览器各699/1暴露旧用例未等待Material生命周期；已仅修正测试同步，47项相关回归及两例各3轮、前端check通过。生产输入不变，按逐文件摘要复用原生结果，完整700项浏览器及新SHA三平台结果仍待执行；不提前宣布M7完成。详见[当前候选记录](exec-plans/M7-final-closure-20261112.md#目录缺失增量与本轮候选门禁)。
+
 - 2026-11-12 所有者明确批准[缺失项目目录合同增量](exec-plans/M7-missing-project-directory.md)：ProjectSnapshot.directoryState为available/missing/unavailable，Core仅观测根目录；缺失复制源明确返回project_copy_source_missing。列表/卡片灰显、说明及按钮前错误已实现，不写登记或改变revision，无数据库Schema/权限变更。13项Core/协议及5项新增浏览器回归和前端check通过，实际IPC及最终统一门禁待执行。6fef3613三平台CI均因遗漏的旧Fast默认断言失败，已独立同步为所有者选择的Level5；该SHA四语言CodeQL通过。前轮完整本地检查受资源不足中断，记录为未完成，不能用于最终签收；原程序/窗口已恢复，未恢复或回写用户已不存在的项目内容。新候选继续M7，尚不宣布完成。
 
 - 2026-11-12 备份反馈核对后，所有者选择默认等级5并接受“项目名＋时间”命名，按[修正计划](exec-plans/M7-backup-names-default-compression.md)继续本阶段。新默认、设置页恢复默认及友好文件名已实现；显式旧偏好和旧UUID归档保持，名称随内部归档证据冻结、碰撞不覆盖。当前实例经settings.update仅将压缩默认保存为level5，revision7→8。29项定向浏览器、10项归档/恢复、9项目录/合同、应用/配置库、fmt/xtask及配置合同检查通过；真实RPC仅已编译，严格Clippy与最终统一门禁仍待执行，不宣布M7完成，运行中的程序尚不含新命名。前一候选0270967b的Ubuntu/Windows及CodeQL通过，macOS总时限不足已单独修正；后续macOS并行夹具撞名风险亦已独立修正，新的同SHA远端结果另记。
