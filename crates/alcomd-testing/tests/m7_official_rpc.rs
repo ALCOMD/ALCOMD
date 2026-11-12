@@ -45,7 +45,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     assert!(defaults.settings.projects.auto_discover);
     assert_eq!(
         defaults.settings.backups.compression_mode,
-        alcomd_protocol::BackupCompression::Fast
+        alcomd_protocol::BackupCompression::Level5
     );
     assert!(defaults.settings.backups.include_vpm_packages);
     assert!(!defaults.settings.backups.include_library);
