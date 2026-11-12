@@ -36,3 +36,5 @@
 按所有者授权完成收藏/通知分次提交和正常推送后，a1f88a9e的Ubuntu任务131059573696在Check阶段明确报gui_select_unity_hub第291行unused_mut。直接读取已结束job日志取得证据；此前旧远端日志403不能作为本次根因。该变量仅Windows/macOS过滤器分支会赋值，Linux不赋值；现改为不可变builder和各平台条件重绑定，保留当前路径解析、可执行文件/app过滤和blocking_pick_file行为，不放宽-D warnings。此修正属于当前M7交付必需的门禁修复，单独提交/推送后重新构建GUI并沿原数据入口更新。无RPC、Schema、权限、依赖或迁移变化；验证和交付结果另记。
 
 本机cargo fmt检查、alcomd-gui all-targets严格Clippy及5项picker_location单元回归通过。Linux实际编译验证待修正提交的Hosted CI，未以Windows通过代替Linux结果。日志见target/m7-notifications-delivery-20261112/picker-{fmt,clippy,tests}.log。
+
+收藏/通知及Linux检查修正已按授权分次提交和正常推送，本机运行1f48e668候选已备份、更新及保全验证，见[交付记录](../testing/notifications-runtime-update-20261112.md)。当前新候选三平台CI/CodeQL仍运行；未重新执行新统一候选完整本地门禁，不将此前1d1e5db或本轮分项结果拼接为M7最终签收。
