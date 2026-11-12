@@ -21,6 +21,7 @@ import {
     moreVertIcon,
     packagesIcon,
     publicIcon,
+    starFilledIcon,
     starIcon,
     upgradeIcon,
     viewGridIcon,
@@ -952,7 +953,7 @@ function ProjectFavoriteButton({ client, onChanged, onRefresh, project }: { clie
         }
     };
     const label = busy ? t("Updating favorite") : favorite ? t("Remove from favorites") : t("Add to favorites");
-    return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={!canManageProjects || busy || revision === undefined} label={label} onClick={() => void toggle()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t) ?? label} type="button"><Icon asset={starIcon} /></IconButton>;
+    return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={!canManageProjects || busy || revision === undefined} label={label} onClick={() => void toggle()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t) ?? label} type="button"><Icon asset={favorite ? starFilledIcon : starIcon} /></IconButton>;
 }
 
 function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, onClose, onConfirm, open, origin, title }: {

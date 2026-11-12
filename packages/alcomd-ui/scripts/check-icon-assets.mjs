@@ -23,6 +23,7 @@ assertContains(manifest, "fill = 0");
 const entries = manifest.split("[[asset]]").slice(1).map((block) => ({
     name: readString(block, "name"),
     opticalSize: readNumber(block, "optical_size"),
+    fill: /^\s*fill\s*=/m.test(block) ? readNumber(block, "fill") : 0,
     path: readString(block, "path"),
     upstreamPath: readString(block, "upstream_path"),
     sha256: readString(block, "sha256")
@@ -34,9 +35,11 @@ for (const entry of entries) {
     if (entry.opticalSize !== 20 && entry.opticalSize !== 24) {
         fail(`${entry.name}: unsupported optical size ${entry.opticalSize}`);
     }
-    const expectedPath = `${entry.opticalSize}/${entry.name}.svg`;
+    if (entry.fill !== 0 && entry.fill !== 1) fail(`${entry.name}: unsupported fill axis ${entry.fill}`);
+    const fillSuffix = entry.fill === 1 ? "_fill1" : "";
+    const expectedPath = `${entry.opticalSize}/${entry.name}${fillSuffix}.svg`;
     if (entry.path !== expectedPath) fail(`${entry.name}: path must be ${expectedPath}`);
-    const expectedUpstream = `symbols/web/${entry.name}/materialsymbolsrounded/${entry.name}_${entry.opticalSize}px.svg`;
+    const expectedUpstream = `symbols/web/${entry.name}/materialsymbolsrounded/${entry.name}${fillSuffix}_${entry.opticalSize}px.svg`;
     if (entry.upstreamPath !== expectedUpstream) fail(`${entry.name}: upstream path mismatch`);
     if (expectedFiles.has(entry.path)) fail(`${entry.name}: duplicate asset path`);
     expectedFiles.add(entry.path);

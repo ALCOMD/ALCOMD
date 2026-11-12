@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 最终技术收尾中。** 所有者认可当前使用体验，并授权临时关闭/恢复应用完成本地收尾；正式阶段完成仍待最终候选门禁。M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。当前范围见[M7收尾计划](exec-plans/M7-final-closure-20261112.md)。
 
+- 2026-11-12 收藏按钮选中态补充：已收藏使用实心Material星形，未收藏/取消后使用空心；列表与卡片共享Core权威状态。前端check/build、36份固定图标资产校验及36项定向浏览器回归通过，见[M7收尾计划](exec-plans/M7-final-closure-20261112.md#收藏按钮选中态补充)。所有者随后授权本项分次提交、正常推送和更新本机程序；实际交付另记，1d1e5db仍仅为增量前全门禁基线。
+
 - 2026-11-12 原删除卡住的纠正交付完成：87edbfbe修正已构建并仅更新Core，原真实任务由正常恢复明确failed/source_missing，revision9/completedAt存在、活动数0，不再自动重试。实测正常关闭GUI后Core在1314ms内自动结束，重开后终态不变；Core PID126408 / GUI PID114740，ready/State32/Config13。原4项目/30仓库/5模板/1Unity登记/0扩展、完整设置/revision7、12个项目标志检查位、原profile及Unity/Hub进程保持；GUI文件未变。备份、22项回归、构建和运行限制见[记录](testing/project-delete-missing-target-20261112.md)。未手工改库、推送或发布，M7/H7保持；此前原任务仍恢复中为旧版观察。
 
 - 2026-11-12 所有者反馈原删除仍卡住，完成[源目录/载荷均缺失的终态修正](exec-plans/M7-project-delete-missing-target.md)：owned wrapper验证、尚无移动身份且两处明确NotFound时，Core以既有source_missing失败结束、保留登记，不永久恢复或重删后来重建的目录；已有移动/尚存payload/不明错误仍走原恢复边界。22项Rust回归（含4项新增）、受影响严格Clippy及fmt/xtask/diff通过；已备份原运行实例，接续本次更新作纠正交付，见[记录](testing/project-delete-missing-target-20261112.md)。无RPC数据/Schema/权限/依赖变化，不推送，M7/H7保持。

@@ -188,6 +188,7 @@ test("Favorite loads every page and remains globally first after secondary sorti
     await openHarness(page, "/projects", "favorite-pages");
     const rows = page.getByRole("row");
     await expect(rows.nth(1)).toContainText("Zulu Favorite");
+    await expect(rows.nth(1).locator('md-icon[data-icon-name="star"]')).toHaveAttribute("data-filled", "true");
     await expect(rows.nth(2)).toContainText("Alpha");
 
     await page.getByRole("button", { name: "Project", exact: true }).click();
@@ -199,15 +200,28 @@ test("Favorite loads every page and remains globally first after secondary sorti
 test("Favorite mutation updates list and grid and exposes retryable errors", async ({ page }) => {
     await openHarness(page, "/projects");
     const toggle = page.getByRole("button", { name: "Add to favorites", exact: true });
+    const icon = page.locator('.project-favorite-action md-icon[data-icon-name="star"]');
+    await expect(icon).toHaveAttribute("data-filled", "false");
+    const outlinePath = await icon.locator("svg path").getAttribute("d");
+    expect(outlinePath).toBeTruthy();
     await toggle.click();
     await expect(page.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+    await expect(icon).toHaveAttribute("data-filled", "true");
+    await expect(icon.locator("svg path")).not.toHaveAttribute("d", outlinePath!);
 
     await page.getByRole("button", { name: "List view" }).click();
     await expect(page.locator(".project-card").getByRole("button", { name: "Remove from favorites" })).toBeVisible();
+    await expect(icon).toHaveAttribute("data-filled", "true");
+    await page.locator(".project-card").getByRole("button", { name: "Remove from favorites", exact: true }).click();
+    await expect(icon).toHaveAttribute("data-filled", "false");
+    await expect(icon.locator("svg path")).toHaveAttribute("d", outlinePath!);
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await expect(icon).toHaveAttribute("data-filled", "false");
 
     await openHarness(page, "/projects", "favorite-error");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+    await expect(icon).toHaveAttribute("data-filled", "false");
 
     await openHarness(page, "/projects", "favorite-conflict");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
