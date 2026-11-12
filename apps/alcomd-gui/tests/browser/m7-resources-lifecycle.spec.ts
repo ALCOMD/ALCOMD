@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
 
 const userPackageId = "00000000-0000-4000-8000-000000000113";
@@ -14,8 +15,7 @@ for (const entry of [
     test(`${entry.action} uses the shared picker and blocks closure while native selection is pending`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=${entry.route}&resource-lifecycle=1&hold-file-selection=1`);
         if (entry.menu !== undefined) {
-            await page.getByRole("button", { name: entry.menu, exact: true }).click();
-            await page.getByRole("menuitem", { name: entry.action, exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: entry.menu, exact: true }), page.getByRole("menuitem", { name: entry.action, exact: true }));
         } else await page.getByRole("button", { name: entry.action, exact: true }).click();
         const host = page.locator("md-dialog[open]");
         const input = host.getByRole("textbox", { name: entry.label, exact: true });

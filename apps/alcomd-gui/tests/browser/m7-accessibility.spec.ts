@@ -1,4 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
@@ -52,8 +53,7 @@ test("H1 shell exposes the approved user areas without promoting internal routes
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
     await openHarness(page, "/projects");
     const invoke = page.getByRole("button", { name: "More project creation options" });
-    await invoke.click();
-    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
+    await selectActionMenuItem(invoke, page.getByRole("menuitem", { name: "Add existing project", exact: true }));
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
     const drop = page.getByRole("button", { name: "Drop a folder here or click to select", exact: true });
@@ -414,8 +414,7 @@ test("a changed project is explained without exposing stale Plan internals", asy
 
 test("direct writes and the remaining high-impact workflows retain confirmation and Operation boundaries", async ({ page }) => {
     await openHarness(page, "/projects");
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Add existing project", exact: true }));
     await page.getByRole("button", { name: "Select", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Project location", exact: true })).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Confirm" }).click();
@@ -545,8 +544,7 @@ test("narrow navigation, dialogs, reduced motion, and light/dark contrast remain
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
     await navigationItem(page, "Projects").click();
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Add existing project", exact: true }));
     await expect(page.getByRole("dialog", { name: "Register this project?" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
     expect(await hasHorizontalOverflow(page)).toBe(false);

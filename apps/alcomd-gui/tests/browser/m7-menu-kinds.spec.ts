@@ -1,20 +1,11 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { observeActionMenuLifecycle } from "./material-menu-actions";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
 test.use({ viewport: { width: 1440, height: 900 } });
 
 async function actionMenu(trigger: Locator, menu: Locator) {
-    const lifecycle = await trigger.page().locator("body").evaluateHandle((element) => {
-        const once = (type: string) => new Promise<void>((resolve) => {
-            const listener = (event: Event) => {
-                if (!(event.target instanceof Element) || !event.target.matches('md-menu[data-menu-kind="actions"]')) return;
-                element.removeEventListener(type, listener, true);
-                resolve();
-            };
-            element.addEventListener(type, listener, true);
-        });
-        return { opened: once("opened"), closed: once("closed") };
-    });
+    const lifecycle = await observeActionMenuLifecycle(trigger);
     await trigger.click();
     await lifecycle.evaluate((events) => events.opened);
     await expect(menu).toHaveAttribute("data-menu-kind", "actions");

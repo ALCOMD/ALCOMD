@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
 
 const avatarId = "com.vrclearn.alcomd.templates.vrchat.avatars.2022";
@@ -103,8 +104,7 @@ test("template file picker keeps one editable path for typing and targeted drops
 
 test("user template replacement binds the selected revision and supports removal", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-existing=1&template-file-replace=1");
-    await row(page, userId).getByRole("button", { name: "More actions for Existing fixture", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Replace template", exact: true }).click();
+    await selectActionMenuItem(row(page, userId).getByRole("button", { name: "More actions for Existing fixture", exact: true }), page.getByRole("menuitem", { name: "Replace template", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog).toContainText(userId);
     await dialog.getByRole("button", { name: "Select", exact: true }).click();
@@ -114,16 +114,14 @@ test("user template replacement binds the selected revision and supports removal
     expect(await request(page, "projectTemplates.save")).toEqual({
         source: { kind: "file", sourceFile: "C:\\Fixture\\input.alcomdtemplate" }, expectedRevision: 8, idempotencyKey: expect.any(String)
     });
-    await row(page, userId).getByRole("button", { name: "More actions for Imported replacement", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Remove template", exact: true }).click();
+    await selectActionMenuItem(row(page, userId).getByRole("button", { name: "More actions for Imported replacement", exact: true }), page.getByRole("menuitem", { name: "Remove template", exact: true }));
     await dialog.getByRole("button", { name: "Remove template", exact: true }).click();
     await expect(row(page, userId)).toHaveCount(0);
 });
 
 test("built-in export submits the chosen new file path and shows task completion", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
-    await row(page, avatarId).getByRole("button", { name: /More actions/ }).click();
-    await page.getByRole("menuitem", { name: "Export template", exact: true }).click();
+    await selectActionMenuItem(row(page, avatarId).getByRole("button", { name: /More actions/ }), page.getByRole("menuitem", { name: "Export template", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByLabel("File name", { exact: true }).fill("avatars.alcomdtemplate");
     await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
@@ -183,8 +181,7 @@ async function create(page: Page, id: string, name: string) {
 }
 
 async function openSource(page: Page, name: string) {
-    await page.getByRole("button", { name: "More template creation options", exact: true }).click();
-    await page.getByRole("menuitem", { name, exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More template creation options", exact: true }), page.getByRole("menuitem", { name, exact: true }));
 }
 
 function request(page: Page, method: string) {

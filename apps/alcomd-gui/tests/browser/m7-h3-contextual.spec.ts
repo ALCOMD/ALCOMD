@@ -1,4 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
@@ -133,8 +134,7 @@ test("an unknown restore write remains unknown and cannot be submitted again", a
 
 test("restore can retry a failed list read and select a backup beyond its first page", async ({ page }) => {
     await open(page, "/projects", "h3-list-error=1&h3-pages=1");
-    await page.getByRole("button", { name: "More project creation options", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
     await expect(dialog.getByText("No managed backups available")).toHaveCount(0);

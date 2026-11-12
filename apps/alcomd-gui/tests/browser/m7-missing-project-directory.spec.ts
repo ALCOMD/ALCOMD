@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 
 test("a missing project is grey in the list and becomes normal after a fresh Core read without changing row height", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?route=/projects&h3=1&windows-paths=1&project-directory-state=missing");
@@ -44,8 +45,7 @@ for (const scenario of [
 ]) {
     test(`${scenario.locale} copy reports a missing source before its action buttons`, async ({ page }, testInfo) => {
         await page.goto(`/browser-harness.html?route=/projects&h3=1&windows-paths=1&project-directory-state=missing&copy-source-missing=1&theme-mode=dark&locale=${scenario.locale}`);
-        await page.getByRole("button", { name: scenario.more, exact: true }).click();
-        await page.getByRole("menuitem", { name: scenario.copy, exact: true }).click();
+        await selectActionMenuItem(page.getByRole("button", { name: scenario.more, exact: true }), page.getByRole("menuitem", { name: scenario.copy, exact: true }));
         const dialog = page.locator("md-dialog[open]");
         await dialog.getByRole("button", { name: scenario.review, exact: true }).click();
         const alert = dialog.getByRole("alert");

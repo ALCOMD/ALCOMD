@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
@@ -95,8 +96,7 @@ test("Package toolbar uses the shared search preset and keeps maintenance in ove
     await expect(toolbar.getByRole("combobox")).toHaveCount(0);
     await expect(toolbar.getByRole("button", { name: "Resolve", exact: true })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("package-workspace.png"), fullPage: false, animations: "disabled" });
-    await toolbar.getByRole("button", { name: "More package actions" }).click();
-    await page.getByRole("menuitem", { name: "Resolve Dependencies…" }).click();
+    await selectActionMenuItem(toolbar.getByRole("button", { name: "More package actions" }), page.getByRole("menuitem", { name: "Resolve Dependencies…" }));
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
 });
 
@@ -305,8 +305,7 @@ test("User Packages are a visible source choice and reinstall uses one plan revi
     await source.click();
     await page.getByRole("option", { name: "Local avatar tools", exact: true }).click();
     await expect(page.locator(".package-source-picker").filter({ has: source })).toHaveJSProperty("displayText", "Local avatar tools");
-    await page.getByRole("button", { name: "More actions for Avatar tools" }).click();
-    await page.getByRole("menuitem", { name: "Reinstall", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More actions for Avatar tools" }), page.getByRole("menuitem", { name: "Reinstall", exact: true }));
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
 
@@ -382,8 +381,7 @@ test("Project workspace keeps high-frequency actions in context and complete pro
 
 test("Project workspace keeps permanent deletion behind its destructive review", async ({ page }) => {
     await openHarness(page, "ready");
-    await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }).click();
-    await page.getByRole("menuitem", { name: "Delete Project Directory…" }).click();
+    await selectActionMenuItem(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }), page.getByRole("menuitem", { name: "Delete Project Directory…" }));
 
     const review = page.locator("md-dialog").filter({ hasText: "Permanently delete project directory?" });
     await expect(review).toBeVisible();

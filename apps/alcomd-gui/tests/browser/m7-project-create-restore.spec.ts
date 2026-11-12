@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
 
 test("Projects Create submits without a template and opens the registered project", async ({ page }) => {
@@ -83,8 +84,7 @@ test("creation prefills one compatible Editor but requires a choice for multiple
 test("Projects Restore uses a managed Backup Plan Apply Operation and opens the registered result", async ({ page }) => {
     await openHarness(page, "/projects");
 
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     const dialog = page.getByRole("dialog", { name: "Restore project" });
     await expect(dialog).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Project backup", exact: true })).toContainText("11/14/2023");
@@ -111,8 +111,7 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await expect(page.getByRole("dialog", { name: "Create project" })).toHaveCount(0);
 
     await openHarness(page, "/projects", "empty");
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     await expect(page.getByText("No managed backups available")).toBeVisible();
     const restoreDialogBox = await page.getByRole("dialog", { name: "Restore project" }).boundingBox();
     const closeBox = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
@@ -128,8 +127,7 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await expectRequestError(page.getByRole("alert"), "project_create_target_exists");
 
     await openHarness(page, "/projects", "restore-error");
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     await page.getByRole("button", { name: "Choose directory" }).click();
     await page.getByLabel("Restore project name").fill("Conflict");
     await page.getByRole("button", { name: "Review restore" }).click();

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 
 for (const flow of ["create", "restore"] as const) {
     test(`${flow} fast initial reads never expose loading or a false empty state`, async ({ page }) => {
@@ -22,8 +23,7 @@ for (const flow of ["create", "restore"] as const) {
         });
         if (flow === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
         else {
-            await page.getByRole("button", { name: "More project creation options", exact: true }).click();
-            await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
         }
         const label = flow === "create" ? "Create project" : "Restore project";
         await expect(page.getByRole("dialog", { name: label, exact: true })).toBeVisible();
@@ -39,8 +39,7 @@ for (const flow of ["create", "restore"] as const) {
         await page.goto(`/browser-harness.html?route=/projects&${flow === "create" ? "holdTemplates" : "holdBackups"}=1`);
         if (flow === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
         else {
-            await page.getByRole("button", { name: "More project creation options", exact: true }).click();
-            await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
         }
         const label = flow === "create" ? "Create project" : "Restore project";
         await expect(page.getByRole("dialog", { name: label, exact: true })).toBeVisible();

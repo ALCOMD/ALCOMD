@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 
 test("shared Material foundation renders real controls with React 19 interaction semantics", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?material=1");
@@ -108,8 +109,7 @@ for (const kind of ["controlled", "conditional"] as const) {
             await page.getByRole("button", { name: "Open dialog", exact: true }).click();
         } else {
             await page.goto("/browser-harness.html?route=/repositories");
-            await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
-            await page.getByRole("menuitem", { name: "Import list", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "Repository list actions", exact: true }), page.getByRole("menuitem", { name: "Import list", exact: true }));
         }
         const host = page.locator("md-dialog[open]");
         await expect(host).toHaveJSProperty("quick", false);
@@ -282,8 +282,7 @@ test("Projects creation split button groups add and restore with distinct action
     await menuClosed.dispose();
     await expect(toggle).toBeFocused();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await toggle.click();
-    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await selectActionMenuItem(toggle, page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
     await expect(page.getByRole("dialog", { name: "Restore project", exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(toggle).toBeFocused();
@@ -604,8 +603,7 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
     const main = page.getByRole("main");
     const projectActions = main.getByRole("navigation", { name: "Project actions" });
-    await projectActions.getByRole("button", { name: /More actions for/ }).click();
-    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
+    await selectActionMenuItem(projectActions.getByRole("button", { name: /More actions for/ }), projectActions.getByRole("menuitem", { name: "Copy Project" }));
     const dialog = page.getByRole("dialog", { name: "Copy project" });
     const dialogHost = page.locator("md-dialog[open]");
     await expect(dialog).toBeVisible();
@@ -620,8 +618,7 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
 test("Project Copy opens the in-app form with the configured location and copy name as defaults", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000110");
     const projectActions = page.getByRole("main").getByRole("navigation", { name: "Project actions" });
-    await projectActions.getByRole("button", { name: /More actions for/ }).click();
-    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
+    await selectActionMenuItem(projectActions.getByRole("button", { name: /More actions for/ }), projectActions.getByRole("menuitem", { name: "Copy Project" }));
 
     const dialog = page.getByRole("dialog", { name: "Copy project" });
     const dialogHost = page.locator("md-dialog[open]");
@@ -653,8 +650,7 @@ test("Project Copy dialog contains long paths and actions without clipping", asy
     await page.setViewportSize({ width: 640, height: 720 });
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000110");
     const projectActions = page.getByRole("main").getByRole("navigation", { name: "Project actions" });
-    await projectActions.getByRole("button", { name: /More actions for/ }).click();
-    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
+    await selectActionMenuItem(projectActions.getByRole("button", { name: /More actions for/ }), projectActions.getByRole("menuitem", { name: "Copy Project" }));
 
     const dialogHost = page.locator("md-dialog[open]");
     const nameField = dialogHost.locator("md-outlined-text-field").nth(0);
@@ -683,8 +679,7 @@ test("Project directory deletion requires exact leaf confirmation and follows th
     await openHarness(page, "/");
     const main = page.getByRole("main");
     const actions = main.locator(".project-row-actions");
-    await actions.getByRole("button", { name: "More actions for <private-project>" }).click();
-    await actions.getByRole("menuitem", { name: "Remove Project" }).click();
+    await selectActionMenuItem(actions.getByRole("button", { name: "More actions for <private-project>" }), actions.getByRole("menuitem", { name: "Remove Project" }));
     const removeDialog = page.getByRole("dialog", { name: "Remove this project?" });
     await page.getByRole("button", { name: "Delete Project Directory…" }).click();
     const dialog = page.getByRole("dialog", { name: "Permanently delete project directory?" });

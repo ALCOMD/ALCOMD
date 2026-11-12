@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { selectSettingsSection } from "./settings-sections";
 
 const nativePath = "C:/fixture/native.txt";
@@ -11,8 +12,7 @@ test("the import picker retains the approved compact appearance", async ({ page 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/browser-harness.html?route=/repositories");
-    await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Import list", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "Repository list actions", exact: true }), page.getByRole("menuitem", { name: "Import list", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     const picker = dialog.locator(".file-picker");
     const drop = picker.locator(".file-picker__drop");
@@ -97,8 +97,7 @@ for (const entry of [
 
 test("replacing an existing template uses only inline selection controls", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-existing=1&template-file-replace=1");
-    await page.getByRole("button", { name: "More actions for Existing fixture", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Replace template", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More actions for Existing fixture", exact: true }), page.getByRole("menuitem", { name: "Replace template", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog.locator(".file-picker")).toHaveCount(0);
     await dialog.getByRole("button", { name: "Select", exact: true }).click();

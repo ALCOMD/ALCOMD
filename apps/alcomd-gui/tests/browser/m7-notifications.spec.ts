@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { selectSettingsSection } from "./settings-sections";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
@@ -133,8 +134,7 @@ test("reconnect terminal snapshots and foreign client tasks never produce retros
 for (const failure of [false, true]) {
     test(`repository export ${failure ? "error" : "success"} remains in its dialog without a deferred duplicate`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/repositories${failure ? "&list-export-error=permission_denied" : ""}`);
-        await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
-        await page.getByRole("menuitem", { name: "Export list", exact: true }).click();
+        await selectActionMenuItem(page.getByRole("button", { name: "Repository list actions", exact: true }), page.getByRole("menuitem", { name: "Export list", exact: true }));
         const host = page.locator("md-dialog[open]");
         await host.getByRole("checkbox", { name: "I have reviewed the export scope and understand the file can contain credentials.", exact: true }).check();
         await host.getByRole("button", { name: "Save new list file", exact: true }).click();
@@ -272,8 +272,7 @@ test("manual permission refresh waits for its reads and then reports completion 
 test("a picker failure already shown in the form is not repeated after the form closes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
     await page.evaluate(() => { window.fixtureCore.selectProjectTemplateFile = async () => { throw { code: "file_selection_failed", message: "private picker exception" }; }; });
-    await page.getByRole("button", { name: "More template creation options", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Import template", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More template creation options", exact: true }), page.getByRole("menuitem", { name: "Import template", exact: true }));
     const host = page.locator("md-dialog[open]");
     await host.getByRole("button", { name: "Select", exact: true }).click();
     await expect(host.getByRole("alert")).toContainText("Could not select the file.");

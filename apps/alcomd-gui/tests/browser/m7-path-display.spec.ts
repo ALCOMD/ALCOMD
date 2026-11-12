@@ -1,4 +1,5 @@
 import { selectSettingsSection } from "./settings-sections";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expect, test } from "@playwright/test";
 import { displayChildPath, displayPath } from "../../src/display-path";
 
@@ -89,8 +90,7 @@ test("Unity launch choices display friendly paths and submit only the selected i
 test("project paths and copy review use display labels while the plan request keeps the raw parent", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&windows-paths=1");
     await expect(page.getByTitle("C:\\Projects\\Sample", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "More actions for Sample", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Copy Project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More actions for Sample", exact: true }), page.getByRole("menuitem", { name: "Copy Project", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog.getByRole("textbox", { name: "Copy project location", exact: true })).toHaveValue("C:\\Projects");
     await dialog.getByRole("button", { name: "Review copy", exact: true }).click();

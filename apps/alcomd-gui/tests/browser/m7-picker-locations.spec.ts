@@ -1,12 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { selectSettingsSection } from "./settings-sections";
 
 const requests = (page: Page) => page.evaluate(() => window.nativePickerRequests);
 
 test("adding a project starts at the configured directory and later uses the untouched current input", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&cancel-directory=1&project-directory=C%3A%5CConfigured%5CProjects");
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Add existing project", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     const field = dialog.getByRole("textbox", { name: "Project location", exact: true });
     await dialog.getByRole("button", { name: "Select", exact: true }).click();
@@ -21,8 +21,7 @@ test("adding a project starts at the configured directory and later uses the unt
 
 test("an unavailable configured directory does not prevent adding a project by manual selection", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&settings-read-error=1");
-    await page.getByRole("button", { name: "More project creation options" }).click();
-    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Add existing project", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByRole("button", { name: "Select", exact: true }).click();
     await expect(dialog.getByRole("textbox", { name: "Project location", exact: true })).toHaveValue("C:\\Fixture\\Avatar");
@@ -34,8 +33,7 @@ for (const mode of ["create", "restore"] as const) {
         await page.goto("/browser-harness.html?route=/projects&cancel-directory=1");
         if (mode === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
         else {
-            await page.getByRole("button", { name: "More project creation options" }).click();
-            await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
         }
         const dialog = page.locator("md-dialog[open]");
         const field = dialog.getByLabel(mode === "create" ? "Create target parent" : "Restore target parent", { exact: true });
@@ -61,8 +59,7 @@ test("User Package directory selection uses its current path and cancellation do
 
 test("repository list selection receives the current filename and cancellation keeps it", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-picker=cancel");
-    await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Import list", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "Repository list actions", exact: true }), page.getByRole("menuitem", { name: "Import list", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     const field = dialog.getByRole("textbox", { name: "Repository list file", exact: true });
     await field.fill("D:\\Lists\\custom.txt");
@@ -73,8 +70,7 @@ test("repository list selection receives the current filename and cancellation k
 
 test("template file import forwards an edited path without consuming it on cancellation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-file-cancel=1");
-    await page.getByRole("button", { name: "More template creation options", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Import template", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "More template creation options", exact: true }), page.getByRole("menuitem", { name: "Import template", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     const field = dialog.getByRole("textbox", { name: "Template file", exact: true });
     await field.fill("D:\\Templates\\current.alcomdtemplate");
@@ -86,8 +82,7 @@ test("template file import forwards an edited path without consuming it on cance
 test("template export keeps the chosen directory when the new filename changes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
     const row = page.getByRole("row").filter({ hasText: "com.vrclearn.alcomd.templates.vrchat.avatars.2022" });
-    await row.getByRole("button", { name: /More actions/ }).click();
-    await page.getByRole("menuitem", { name: "Export template", exact: true }).click();
+    await selectActionMenuItem(row.getByRole("button", { name: /More actions/ }), page.getByRole("menuitem", { name: "Export template", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByLabel("File name", { exact: true }).fill("first.alcomdtemplate");
     await dialog.getByRole("button", { name: "Choose directory", exact: true }).click();
@@ -113,8 +108,7 @@ test("settings directory pickers start at their effective project and backup dir
 
 test("copying a project starts at its displayed target and reuses a newly selected directory", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects&state=ready");
-    await page.getByRole("button", { name: /More actions for/ }).first().click();
-    await page.getByRole("menuitem", { name: "Copy Project", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: /More actions for/ }).first(), page.getByRole("menuitem", { name: "Copy Project", exact: true }));
     const dialog = page.locator("md-dialog[open]");
     const field = dialog.getByRole("textbox", { name: "Copy project location", exact: true });
     await expect(field).toHaveValue("C:\\Fixture");

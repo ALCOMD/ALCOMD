@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 
 const chosenDirectory = "D:\\项目保存位置\\Projects";
 const projectLocation = (page: Page) => page.getByRole("region", { name: "Projects", exact: true });
@@ -106,11 +107,9 @@ for (const kind of ["create", "restore", "copy"] as const) {
         await page.goto(`/browser-harness.html?route=/projects&project-directory=${encodeURIComponent(chosenDirectory)}`);
         if (kind === "create") await page.getByRole("button", { name: "Create project", exact: true }).click();
         else if (kind === "restore") {
-            await page.getByRole("button", { name: "More project creation options", exact: true }).click();
-            await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "More project creation options", exact: true }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
         } else {
-            await page.getByRole("button", { name: "More actions for <private-project>", exact: true }).click();
-            await page.getByRole("menuitem", { name: "Copy Project", exact: true }).click();
+            await selectActionMenuItem(page.getByRole("button", { name: "More actions for <private-project>", exact: true }), page.getByRole("menuitem", { name: "Copy Project", exact: true }));
         }
         const label = kind === "create" ? "Create target parent" : kind === "restore" ? "Restore target parent"
             : "Copy project location";

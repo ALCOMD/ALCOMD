@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
@@ -95,11 +96,9 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
         await lifecycle.dispose();
     }
     await expect(more).toBeFocused();
-    await more.click();
-    await card.getByRole("menuitem", { name: "Open Project Directory", exact: true }).click();
+    await selectActionMenuItem(more, card.getByRole("menuitem", { name: "Open Project Directory", exact: true }));
     await expect.poll(() => page.evaluate(() => window.resourceRequests.filter((request) => request.method === "openProjectDirectory").length)).toBe(1);
-    await more.click();
-    await card.getByRole("menuitem", { name: "Copy Project", exact: true }).click();
+    await selectActionMenuItem(more, card.getByRole("menuitem", { name: "Copy Project", exact: true }));
     const copy = page.locator("md-dialog[open]");
     await expect(page.getByRole("dialog", { name: "Copy project", exact: true })).toBeVisible();
     await copy.getByRole("button", { name: "Review copy", exact: true }).click();
@@ -107,8 +106,7 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
     await copy.getByRole("button", { name: "Back", exact: true }).click();
     await copy.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await more.click();
-    await card.getByRole("menuitem", { name: "Remove Project", exact: true }).click();
+    await selectActionMenuItem(more, card.getByRole("menuitem", { name: "Remove Project", exact: true }));
     const removal = page.getByRole("dialog", { name: "Remove this project?", exact: true });
     await expect(removal).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Remove from list", exact: true })).toBeEnabled();
@@ -409,19 +407,16 @@ test("Project workspace launch split menu retains launch arguments, backup navig
     await page.getByLabel("Argument 1", { exact: true }).fill("-discard-this-draft");
     await page.keyboard.press("Escape");
     await expect(arrow).toBeFocused();
-    await arrow.click();
-    await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();
+    await selectActionMenuItem(arrow, page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }));
     await expect(page.getByLabel("Argument 1", { exact: true })).toHaveValue("-logFile");
     await page.getByLabel("Argument 1", { exact: true }).fill("-saved-from-workspace");
     await page.getByRole("button", { name: "Save launch arguments", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.projectLaunchConfig.set").length)).toBe(1);
     await expect(arrow).toBeFocused();
-    await arrow.click();
-    await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();
+    await selectActionMenuItem(arrow, page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }));
     await expect(page.getByLabel("Argument 1", { exact: true })).toHaveValue("-saved-from-workspace");
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    await arrow.click();
-    await page.getByRole("menuitem", { name: "Backups", exact: true }).click();
+    await selectActionMenuItem(arrow, page.getByRole("menuitem", { name: "Backups", exact: true }));
     await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/backups$`));
 });
 

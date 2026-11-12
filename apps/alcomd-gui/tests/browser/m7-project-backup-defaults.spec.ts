@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { selectSettingsSection } from "./settings-sections";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
@@ -73,8 +74,7 @@ test("new backups inherit saved defaults and a one-time override does not rewrit
     await saved(page, 3);
     await navigation(page, "Projects").click();
     await page.getByRole("button", { name: "Manage", exact: true }).click();
-    await page.getByRole("navigation", { name: "Project actions", exact: true }).getByRole("button", { name: /More actions for/ }).click();
-    await page.getByRole("menuitem", { name: "Backups", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("navigation", { name: "Project actions", exact: true }).getByRole("button", { name: /More actions for/ }), page.getByRole("menuitem", { name: "Backups", exact: true }));
     await page.getByRole("button", { name: "Create backup", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog.locator("#backup-compression")).toHaveJSProperty("value", "level5");

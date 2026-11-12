@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { expectRequestError } from "./request-error-assertions";
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -147,8 +148,7 @@ test("favorite failure leaves the row intact and the original action retries it"
 test("package link failure adds no prompt to its row or the next page", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects/00000000-0000-4000-8000-000000000101&state=package-multiple&package-link-error=1");
     const row = page.getByRole("table", { name: "Packages", exact: true }).getByRole("row").filter({ hasText: "Avatar tools" });
-    await row.getByRole("button", { name: "More actions for Avatar tools", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Documentation", exact: true }).click();
+    await selectActionMenuItem(row.getByRole("button", { name: "More actions for Avatar tools", exact: true }), page.getByRole("menuitem", { name: "Documentation", exact: true }));
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
     await page.getByRole("button", { name: "Back", exact: true }).click();
@@ -199,8 +199,7 @@ test("a user package removal error cannot reuse an earlier refresh failure notif
 for (const state of ["failed", "cancelled"]) {
     test(`an immediately ${state} project deletion keeps its real result in the task window`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=/projects/00000000-0000-4000-8000-000000000101&state=${state}`);
-        await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }).click();
-        await page.getByRole("menuitem", { name: "Delete Project Directory…", exact: true }).click();
+        await selectActionMenuItem(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }), page.getByRole("menuitem", { name: "Delete Project Directory…", exact: true }));
         const review = page.locator("md-dialog[open]");
         await review.getByRole("textbox", { name: "Confirm project directory name", exact: true }).fill("Sample");
         await expect(review).toContainText("does not use the Recycle Bin or Trash");
@@ -215,8 +214,7 @@ for (const state of ["failed", "cancelled"]) {
 
 test("a completed project deletion closes its review and reloads the project list", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/projects/00000000-0000-4000-8000-000000000101");
-    await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }).click();
-    await page.getByRole("menuitem", { name: "Delete Project Directory…", exact: true }).click();
+    await selectActionMenuItem(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: /More actions for/ }), page.getByRole("menuitem", { name: "Delete Project Directory…", exact: true }));
     const review = page.locator("md-dialog[open]");
     await review.getByRole("textbox", { name: "Confirm project directory name", exact: true }).fill("Sample");
     await review.getByRole("button", { name: "Permanently delete", exact: true }).click();

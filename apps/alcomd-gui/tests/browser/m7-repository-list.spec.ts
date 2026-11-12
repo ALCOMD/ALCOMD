@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectActionMenuItem } from "./material-menu-actions";
 import { requestErrorMessage } from "../../src/request-errors";
 import { expectRequestError } from "./request-error-assertions";
 
 async function openList(page: Page, action: "Import list" | "Export list" | "Compatibility export (.txt)") {
-    await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: action, exact: true }).click();
+    await selectActionMenuItem(page.getByRole("button", { name: "Repository list actions", exact: true }), page.getByRole("menuitem", { name: action, exact: true }));
     await expect(page.getByRole("dialog", { name: action, exact: true })).toBeVisible();
     return page.locator("md-dialog[open]");
 }
