@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-12 原删除卡住的纠正交付完成：87edbfbe修正已构建并仅更新Core，原真实任务由正常恢复明确failed/source_missing，revision9/completedAt存在、活动数0，不再自动重试。实测正常关闭GUI后Core在1314ms内自动结束，重开后终态不变；Core PID126408 / GUI PID114740，ready/State32/Config13。原4项目/30仓库/5模板/1Unity登记/0扩展、完整设置/revision7、12个项目标志检查位、原profile及Unity/Hub进程保持；GUI文件未变。备份、22项回归、构建和运行限制见[记录](testing/project-delete-missing-target-20261112.md)。未手工改库、推送或发布，M7/H7保持；此前原任务仍恢复中为旧版观察。
+
 - 2026-11-12 所有者反馈原删除仍卡住，完成[源目录/载荷均缺失的终态修正](exec-plans/M7-project-delete-missing-target.md)：owned wrapper验证、尚无移动身份且两处明确NotFound时，Core以既有source_missing失败结束、保留登记，不永久恢复或重删后来重建的目录；已有移动/尚存payload/不明错误仍走原恢复边界。22项Rust回归（含4项新增）、受影响严格Clippy及fmt/xtask/diff通过；已备份原运行实例，接续本次更新作纠正交付，见[记录](testing/project-delete-missing-target-20261112.md)。无RPC数据/Schema/权限/依赖变化，不推送，M7/H7保持。
 
 - 2026-11-12 按所有者“提交并更新”要求，将Core自动退出提交为98e6b95并构建/更新Core及嵌入式GUI（含已提交刷新反馈）。离线备份旧程序、34份数据和329份profile后，打开Core PID126816 / GUI PID113392，ready/State32/Config13；原4项目/30仓库/5模板/1Unity登记/0扩展、完整设置/revision7及12个项目标志检查位保持，原Unity/Hub进程保持。State32为此前已批准的迁移。原删除任务因源目录/载荷缺失仍在恢复中，活动数1，本轮未伪造完成；因此当前Core继续运行。交付、重开入口、摘要及限制见[记录](testing/core-idle-runtime-update-20261112.md)。未推送或发布，M7/H7保持；下文未更新为各轮历史状态。

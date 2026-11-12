@@ -11,3 +11,5 @@
 - 补旧恢复任务与新任务缺失路径、已移动证据、无checkpoint的真实移动回归，保留已有删除/占用/取消/kill-restart门禁。修正后备份并更新Core，通过原恢复流程结束真实任务，保留GUI和数据配置；不推送。
 
 源码与22项定向Rust回归、受影响严格Clippy、fmt/xtask/diff已通过，含4项新增。验证、失败轮次及纠正交付范围见[记录](../testing/project-delete-missing-target-20261112.md)。旧实例已离线备份，运行交付另记，M7/H7保持。
+
+随后提交87edbfbe并更新Core，原真实任务由Core恢复入口结束为failed/source_missing，completedAt存在、活动数0；项目登记及原数据配置保持。实测关闭GUI后Core自动退出，并重新打开确认终态不再重试；沿用原GUI和profile。交付见同一验证记录，未推送，M7/H7保持。
