@@ -73,5 +73,8 @@ test("a held creation request keeps the action label and dialog bounds stable", 
     const after = (await dialog.boundingBox())!;
     for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(after[key] - before[key])).toBeLessThanOrEqual(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-create-request-ready")));
+    await expect(dialog.getByText("Task completed.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await dialog.getByRole("button", { name: "Open project", exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/);
 });

@@ -39,13 +39,14 @@ test("group labels are not selectable rows and technical explanations do not ent
     await page.screenshot({ path: info.outputPath("incompatible-version-section.png") });
 });
 
-test("source collisions render one version and require explicit provenance before creating a plan", async ({ page }) => {
+test("source collisions render one selectable version and explicit provenance pins the plan", async ({ page }) => {
     await open(page, "package-multiple", "versions=1");
     const installed = row(page, "Avatar tools");
     const picker = installed.locator(".package-version-picker");
     await picker.getByRole("combobox").click();
     await expect(picker.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.1.0", exact: true }) })).toHaveCount(1);
-    await expect(picker.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.1.0", exact: true }) })).toHaveJSProperty("disabled", true);
+    await expect(picker.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.1.0", exact: true }) })).toHaveJSProperty("disabled", false);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await page.keyboard.press("Escape");
     await installed.locator(".package-source-picker").getByRole("combobox").click();
     await page.getByRole("option", { name: "Local packages", exact: true }).click();

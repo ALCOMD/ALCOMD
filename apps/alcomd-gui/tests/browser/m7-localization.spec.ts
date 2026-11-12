@@ -57,7 +57,8 @@ for (const language of locales) {
         await expect(page.getByRole("dialog", { name: language.review, exact: true })).toBeVisible();
         const review = page.locator("md-dialog[open]");
         await expect(review).toBeVisible();
-        await expect(review).toContainText("com.example.avatar");
+        await expect(review).toContainText("Avatar tools");
+        await expect(review).toContainText("1.2.3");
         expect(await page.evaluate(() => window.packageRequests.some((request) => request.method === "apply"))).toBe(false);
         await page.screenshot({ path: testInfo.outputPath(`package-review-${language.locale}.png`), animations: "disabled" });
         await review.getByRole("button", { name: language.cancel, exact: true }).click();
