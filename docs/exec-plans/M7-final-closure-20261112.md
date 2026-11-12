@@ -38,3 +38,7 @@
 本机cargo fmt检查、alcomd-gui all-targets严格Clippy及5项picker_location单元回归通过。Linux实际编译验证待修正提交的Hosted CI，未以Windows通过代替Linux结果。日志见target/m7-notifications-delivery-20261112/picker-{fmt,clippy,tests}.log。
 
 收藏/通知及Linux检查修正已按授权分次提交和正常推送，本机运行1f48e668候选已备份、更新及保全验证，见[交付记录](../testing/notifications-runtime-update-20261112.md)。当前新候选三平台CI/CodeQL仍运行；未重新执行新统一候选完整本地门禁，不将此前1d1e5db或本轮分项结果拼接为M7最终签收。
+
+## 继续跟进CI与最终签收
+
+所有者明确要求持续跟进CI，全部通过后完成M7收尾；该授权包含当前M7必要修正的正常提交/推送以及最终完成记录。当前候选d5eab483的CodeQL已成功，但macOS job 131066931193在repository auto-refresh真实IPC回归初始化处失败：系统临时目录前缀加长夹具名导致Unix socket超出既有103字节可移植上限。修正仅缩短该测试的目录组成（保留完整UUID、系统temp_dir及隔离IPC；复用夹具根作为runtime，避免macOS系统路径别名规范化后再次超长），不硬编码平台路径、不改变生产传输限制、隔离或断言。随后以新的统一候选执行完整本地门禁并等待同SHA三平台Hosted CI/CodeQL；继续沿既有授权临时正常关闭/备份/恢复原Core/GUI，不关闭Unity/Hub。候选、失败与最终结果另记，不以先前候选的分轮结果代替最终签收。

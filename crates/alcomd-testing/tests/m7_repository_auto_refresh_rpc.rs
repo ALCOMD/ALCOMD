@@ -14,7 +14,9 @@ use tokio::sync::{Notify, Semaphore};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn reads_hint_background_refresh_without_waiting_and_existing_events_publish_new_index() {
-    let root = std::env::temp_dir().join(format!("alcomd-auto-rpc-{}", uuid::Uuid::new_v4()));
+    // macOS canonicalizes its already long per-user temp prefix. Use the
+    // full UUID as the fixture root and reuse that root for isolated IPC.
+    let root = std::env::temp_dir().join(uuid::Uuid::new_v4().simple().to_string());
     let data = root.join("data");
     std::fs::create_dir_all(&data).expect("data");
     let manifest = |version: &str| {
@@ -82,10 +84,10 @@ async fn reads_hint_background_refresh_without_waiting_and_existing_events_publi
     }});
     #[cfg(unix)]
     let (ipc, client_config) = (
-        IpcConfig::isolated(root.join("runtime")),
+        IpcConfig::isolated(root.clone()),
         ClientConfig::default()
             .without_daemon_start()
-            .with_runtime_directory(root.join("runtime")),
+            .with_runtime_directory(root.clone()),
     );
     #[cfg(windows)]
     let (ipc, client_config) = (
