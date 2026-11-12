@@ -167,11 +167,13 @@ fn archive_from_locator(
         .strip_prefix("backup-file-v1:")
         .ok_or_else(integrity)?;
     let path = Path::new(value);
-    let expected_name = format!("{backup_id}.zip");
-    if value.len() > 4_160
+    if value.len() > 4_096 + 1 + 255
         || value.chars().any(char::is_control)
         || !path.is_absolute()
-        || path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str())
+        || !path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(valid_archive_file_name)
     {
         return Err(integrity());
     }
@@ -183,6 +185,51 @@ fn archive_from_locator(
     }
     validate_archive_file(path)?;
     Ok(path.to_owned())
+}
+
+fn valid_archive_file_name(name: &str) -> bool {
+    name.len() <= 255
+        && name.ends_with(".zip")
+        && name.len() > 4
+        && !name.chars().any(|character| {
+            character.is_control()
+                || matches!(
+                    character,
+                    '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                )
+        })
+}
+
+fn archive_file_name(project: &ProjectRecord, created_at_ms: u64) -> Result<String, M5BackupError> {
+    let project_name = alcomd_application::project_display_name(&project.observation.root_path)
+        .ok_or_else(unsafe_source)?;
+    let mut name = String::new();
+    for character in project_name.chars() {
+        let character = if character.is_control()
+            || matches!(
+                character,
+                '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+            ) {
+            '_'
+        } else {
+            character
+        };
+        if name.len() + character.len_utf8() > 160 {
+            break;
+        }
+        name.push(character);
+    }
+    let name = name.trim_end_matches([' ', '.']);
+    let name = if name.is_empty() { "Project" } else { name };
+    let timestamp = i64::try_from(created_at_ms)
+        .ok()
+        .and_then(chrono::DateTime::from_timestamp_millis)
+        .ok_or_else(internal)?
+        .with_timezone(&chrono::Local);
+    Ok(format!(
+        "{name}-{}.zip",
+        timestamp.format("%Y-%m-%dT%H-%M-%S%.3f")
+    ))
 }
 
 fn validate_archive_file(path: &Path) -> Result<(), M5BackupError> {
@@ -279,8 +326,19 @@ impl M5BackupAdapter for BackupEngine {
         let engine = self.clone();
         let limits = self.limits;
         tokio::task::spawn_blocking(move || {
-            let (partial, final_path, objects) = backup_paths(&engine, operation_id, &request)?;
+            let (partial, mut final_path, objects) = backup_paths(&engine, operation_id, &request)?;
+            if let Some(name) = &evidence.archive_file_name {
+                if request.destination.is_none() || !valid_archive_file_name(name) {
+                    return Err(integrity());
+                }
+                final_path = objects.join(name);
+            }
             if final_path.exists() {
+                // A friendly name can collide with another backup. Our atomic publish
+                // removes the partial, so both paths existing is not a completed rename.
+                if evidence.archive_file_name.is_some() && partial.exists() {
+                    return Err(integrity());
+                }
                 verify_archive(&final_path, &evidence, limits)?;
                 discard_backup_partial(&partial)?;
                 alcomd_platform::sync_directory(&objects)
@@ -291,6 +349,9 @@ impl M5BackupAdapter for BackupEngine {
             match alcomd_platform::publish_path_no_replace(&partial, &final_path) {
                 Ok(()) => {}
                 Err(_) if final_path.exists() => {
+                    if evidence.archive_file_name.is_some() {
+                        return Err(integrity());
+                    }
                     verify_archive(&final_path, &evidence, limits)?;
                     std::fs::remove_file(&partial)
                         .map_err(|cause| internal().with_source(cause))?;
@@ -1457,6 +1518,11 @@ fn write_archive(
         archive_sha256: hash_file(path)?,
         archive_bytes: metadata.len(),
         source_project_fingerprint: inventory.fingerprint,
+        archive_file_name: request
+            .destination
+            .as_ref()
+            .map(|_| archive_file_name(&inventory.project, request.created_at_ms))
+            .transpose()?,
     })
 }
 
@@ -2326,6 +2392,7 @@ mod tests {
         let (accepted_operation, accepted_evidence) =
             archive_request(&engine, &project, &accepted).await;
         let mut later = create_request(&project);
+        later.created_at_ms = 2;
         later.destination = Some(
             engine
                 .prepare_destination(path_text(&second).expect("path"))
@@ -2352,8 +2419,12 @@ mod tests {
         )
         .await;
         assert_eq!(accepted_record, replayed);
-        assert!(first.join(format!("{}.zip", accepted.backup_id)).is_file());
-        assert!(!second.join(format!("{}.zip", accepted.backup_id)).exists());
+        let accepted_name = accepted_evidence
+            .archive_file_name
+            .as_ref()
+            .expect("friendly name");
+        assert!(first.join(accepted_name).is_file());
+        assert!(!second.join(accepted_name).exists());
         assert!(
             !first
                 .join(format!(".alcomd-{accepted_operation}.zip.part"))
@@ -2366,13 +2437,15 @@ mod tests {
                 legacy_record,
                 engine.objects.join(format!("{}.zip", legacy.backup_id)),
             ),
-            (
-                accepted_record,
-                first.join(format!("{}.zip", accepted.backup_id)),
-            ),
+            (accepted_record, first.join(accepted_name)),
             (
                 later_record,
-                second.join(format!("{}.zip", later.backup_id)),
+                second.join(
+                    later_evidence
+                        .archive_file_name
+                        .as_ref()
+                        .expect("friendly name"),
+                ),
             ),
         ]
         .into_iter()
@@ -2397,6 +2470,110 @@ mod tests {
             );
         }
         std::fs::remove_dir_all(source).expect("source cleanup");
+        std::fs::remove_dir_all(base).expect("backup cleanup");
+    }
+
+    #[test]
+    fn friendly_names_preserve_unicode_bound_length_and_reject_path_components() {
+        let (source, mut project) = fixture();
+        project.observation.root_path = format!("/projects/{}:测试?", "中文".repeat(100));
+        let name = archive_file_name(&project, 1_794_478_791_408).expect("friendly name");
+        assert!(name.starts_with("中文中文"));
+        assert!(name.ends_with(".zip"));
+        assert!(name.len() < 255);
+        assert!(valid_archive_file_name(&name));
+        project.observation.root_path = "/projects/中文:测试?".to_owned();
+        assert!(
+            archive_file_name(&project, 0)
+                .expect("epoch")
+                .starts_with("中文_测试_-")
+        );
+        for unsafe_name in [
+            "../escape.zip",
+            "nested/backup.zip",
+            "nested\\backup.zip",
+            "C:backup.zip",
+            ".zip",
+            "a\n.zip",
+        ] {
+            assert!(!valid_archive_file_name(unsafe_name), "{unsafe_name:?}");
+        }
+        std::fs::remove_dir_all(source).expect("source cleanup");
+    }
+
+    #[tokio::test]
+    async fn friendly_name_is_frozen_and_retained_uuid_checkpoint_remains_restorable() {
+        let (source, project) = fixture();
+        let base = source.with_extension("names");
+        let directory = base.join("archives");
+        let restored = base.join("restored");
+        std::fs::create_dir_all(&directory).expect("archives");
+        std::fs::create_dir(&restored).expect("restore parent");
+        let engine = BackupEngine::new(base.join("data/backups")).expect("engine");
+        let mut request = create_request(&project);
+        request.destination = Some(
+            engine
+                .prepare_destination(path_text(&directory).expect("path"))
+                .await
+                .expect("destination"),
+        );
+        let (operation, evidence) = archive_request(&engine, &project, &request).await;
+        let name = evidence.archive_file_name.clone().expect("frozen name");
+        assert!(name.starts_with(&format!(
+            "{}-",
+            source.file_name().expect("leaf").to_str().expect("UTF-8")
+        )));
+        assert!(!name.contains(&request.backup_id.to_string()));
+
+        let mut legacy_request = create_request(&project);
+        legacy_request.destination = request.destination.clone();
+        let (legacy_operation, legacy_evidence) =
+            archive_request(&engine, &project, &legacy_request).await;
+        let mut legacy_json = serde_json::to_value(legacy_evidence).expect("checkpoint");
+        legacy_json
+            .as_object_mut()
+            .expect("object")
+            .remove("archiveFileName");
+        let legacy_evidence: BackupArchiveEvidence =
+            serde_json::from_value(legacy_json.clone()).expect("retained checkpoint");
+        assert_eq!(
+            serde_json::to_value(&legacy_evidence).expect("unchanged old shape"),
+            legacy_json
+        );
+
+        // Publishing/recovering an already archived backup no longer needs the source name.
+        let moved = source.with_extension("moved");
+        std::fs::rename(&source, &moved).expect("move source after archiving");
+        let record = publish_request(&engine, operation, &request, &evidence).await;
+        assert!(directory.join(&name).is_file());
+        assert_eq!(
+            publish_request(&engine, operation, &request, &evidence).await,
+            record
+        );
+        let legacy =
+            publish_request(&engine, legacy_operation, &legacy_request, &legacy_evidence).await;
+        assert!(
+            directory
+                .join(format!("{}.zip", legacy_request.backup_id))
+                .is_file()
+        );
+        for (index, backup) in [record, legacy].into_iter().enumerate() {
+            engine
+                .plan_restore(backup, restored.clone(), format!("restore-{index}"))
+                .await
+                .expect("restore old and new names");
+        }
+        let mut invalid_evidence = evidence;
+        invalid_evidence.archive_file_name = Some("../escape.zip".to_owned());
+        assert_eq!(
+            engine
+                .publish_or_recover(operation, request, invalid_evidence)
+                .await
+                .expect_err("no path traversal")
+                .code(),
+            M5BackupErrorCode::BackupIntegrityMismatch
+        );
+        std::fs::remove_dir_all(moved).expect("source cleanup");
         std::fs::remove_dir_all(base).expect("backup cleanup");
     }
 
@@ -2429,7 +2606,7 @@ mod tests {
                 .expect("destination"),
         );
         let (operation_id, evidence) = archive_request(&engine, &project, &request).await;
-        let conflict = directory.join(format!("{}.zip", request.backup_id));
+        let conflict = directory.join(evidence.archive_file_name.as_ref().expect("friendly name"));
         std::fs::write(&conflict, b"user-owned archive").expect("conflict");
         assert!(
             engine
@@ -2441,6 +2618,21 @@ mod tests {
             std::fs::read(&conflict).expect("preserved"),
             b"user-owned archive"
         );
+        let partial = directory.join(format!(".alcomd-{operation_id}.zip.part"));
+        std::fs::copy(&partial, &conflict).expect("identical foreign archive");
+        let conflict_identity = evidence_for(&conflict).expect("foreign identity");
+        assert!(
+            engine
+                .publish_or_recover(operation_id, request.clone(), evidence.clone())
+                .await
+                .is_err(),
+            "matching bytes do not make a colliding friendly name our published file"
+        );
+        assert_eq!(
+            evidence_for(&conflict).expect("identity retained"),
+            conflict_identity
+        );
+        assert!(partial.is_file());
         engine
             .discard_partial(operation_id, request.clone())
             .await
@@ -2518,7 +2710,7 @@ mod tests {
         let record = publish_request(&engine, operation_id, &request, &evidence).await;
         let copied = copied_directory.join(format!("{}.zip", request.backup_id));
         std::fs::copy(
-            directory.join(format!("{}.zip", request.backup_id)),
+            directory.join(evidence.archive_file_name.as_ref().expect("friendly name")),
             &copied,
         )
         .expect("copy identical bytes");

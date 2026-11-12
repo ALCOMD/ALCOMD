@@ -9,8 +9,28 @@ use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     BackupApplyRestoreParams, BackupCompression, BackupCreateParams, BackupPlanRestoreParams,
-    BackupsListParams, OperationState,
+    BackupRecord, BackupsListParams, OperationState,
 };
+use sha2::{Digest, Sha256};
+
+fn archive_for_record(directory: &Path, record: &BackupRecord) -> PathBuf {
+    let matches = fs::read_dir(directory)
+        .expect("backup directory")
+        .map(|entry| entry.expect("entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "zip"))
+        .filter(|path| {
+            let bytes = fs::read(path).expect("archive bytes");
+            bytes.len() as u64 == record.archive_bytes
+                && Sha256::digest(&bytes)
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+                    == record.archive_sha256
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(matches.len(), 1, "one archive matches Core metadata");
+    matches.into_iter().next().expect("archive path")
+}
 
 const CRASH_ROOT_ENV: &str = "ALCOMD_M5_BACKUP_CRASH_ROOT";
 const KILL_GATE_ENV: &str = "ALCOMD_TEST_BACKUP_KILL_GATE";
@@ -29,7 +49,7 @@ static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
-    let project = fixture.path().join("Project");
+    let project = fixture.path().join("Project 中文");
     create_project(&project);
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
@@ -106,7 +126,13 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
             .directories
             .backup_directory,
     );
-    let archive = directory.join(format!("{}.zip", record.backup_id));
+    let archive = archive_for_record(&directory, &record);
+    let name = archive
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("UTF-8 name");
+    assert!(name.starts_with("Project 中文-"));
+    assert!(!name.contains(&record.backup_id));
     assert_archive_profile(&archive, false);
     assert_eq!(
         fs::read_dir(&directory).expect("backup directory").count(),
@@ -246,8 +272,7 @@ async fn backup_rpc_defaults_explicit_overrides_and_replay_preserve_frozen_conte
         assert_eq!(metadata.compression_mode, compression);
         assert_eq!(metadata.exclude_vpm_packages, exclude);
         let mut zip = zip::ZipArchive::new(
-            fs::File::open(directory.join(format!("{}.zip", accepted.backup_id)))
-                .expect("archive file"),
+            fs::File::open(archive_for_record(&directory, &metadata)).expect("archive file"),
         )
         .expect("archive");
         assert_eq!(
@@ -543,15 +568,19 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
             })
             .await
             .expect("artifact plan");
-        let archive = PathBuf::from(
+        let directory = PathBuf::from(
             client
                 .settings_get()
                 .await
                 .expect("backup location")
                 .directories
                 .backup_directory,
-        )
-        .join(format!("{}.zip", artifact.backup_id));
+        );
+        let record = client
+            .backup_get(artifact.backup_id.clone())
+            .await
+            .expect("archive metadata");
+        let archive = archive_for_record(&directory, &record);
         let original = fs::read(&archive).expect("read original archive");
         match mutation {
             "replace" => {
@@ -1280,7 +1309,11 @@ async fn run_kill_restart_case(checkpoint: &str) {
         1,
         "{checkpoint}"
     );
-    assert_archive_profile(&objects.join(format!("{}.zip", accepted.backup_id)), true);
+    let record = client
+        .backup_get(accepted.backup_id.clone())
+        .await
+        .expect("recovered archive metadata");
+    assert_archive_profile(&archive_for_record(&objects, &record), true);
     assert_eq!(
         fs::read_dir(fixture.path().join("data/backups/partial"))
             .expect("partials")

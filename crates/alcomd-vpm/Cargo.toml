@@ -14,6 +14,7 @@ test-kill-gates = []
 [dependencies]
 alcomd-application.workspace = true
 alcomd-platform.workspace = true
+chrono.workspace = true
 reqwest = { workspace = true, features = ["system-proxy"] }
 semver.workspace = true
 serde.workspace = true

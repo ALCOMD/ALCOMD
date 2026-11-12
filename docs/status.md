@@ -6,7 +6,7 @@
 
 **M7 官方 GUI 与 Portable Extension UI 最终技术收尾中。** 所有者认可当前使用体验，并授权临时关闭/恢复应用完成本地收尾；正式阶段完成仍待最终候选门禁。M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。当前范围见[M7收尾计划](exec-plans/M7-final-closure-20261112.md)。
 
-- 2026-11-12 备份反馈核对后，所有者选择默认等级5并接受“项目名＋时间”命名，按[修正计划](exec-plans/M7-backup-names-default-compression.md)继续本阶段。新默认及设置页恢复默认已实现；显式旧偏好保持，当前实例经settings.update仅将压缩默认保存为level5，revision7→8。29项定向浏览器回归、应用/配置库及配置合同检查通过；友好命名、旧证据/归档恢复与最终统一门禁仍在验证，不宣布M7完成。前一候选0270967b的Ubuntu/Windows及CodeQL通过，macOS总时限不足已单独修正；后续macOS并行夹具撞名风险亦已独立修正，新的同SHA远端结果另记。
+- 2026-11-12 备份反馈核对后，所有者选择默认等级5并接受“项目名＋时间”命名，按[修正计划](exec-plans/M7-backup-names-default-compression.md)继续本阶段。新默认、设置页恢复默认及友好文件名已实现；显式旧偏好和旧UUID归档保持，名称随内部归档证据冻结、碰撞不覆盖。当前实例经settings.update仅将压缩默认保存为level5，revision7→8。29项定向浏览器、10项归档/恢复、9项目录/合同、应用/配置库、fmt/xtask及配置合同检查通过；真实RPC仅已编译，严格Clippy与最终统一门禁仍待执行，不宣布M7完成，运行中的程序尚不含新命名。前一候选0270967b的Ubuntu/Windows及CodeQL通过，macOS总时限不足已单独修正；后续macOS并行夹具撞名风险亦已独立修正，新的同SHA远端结果另记。
 
 - 2026-11-12 按所有者“分次提交推送并更新”完成实际交付：收藏`7d353b34`、通知`a1f88a9e`分别提交并正常推送（含9个前置提交）；远端Ubuntu检查发现的选择器unused_mut独立修复并推送为`1f48e668`。发布构建及本机更新完成，Core PID101844 / GUI PID131692，ready、GUI连接响应、State32/Config13、0活动任务；原数据/完整设置revision7、12个项目标志检查位、原profile和10个Unity/Hub进程保持。旧程序及34数据/336profile文件已备份核对；实际证据及CI仍运行的限制见[交付记录](testing/notifications-runtime-update-20261112.md)。无新Schema/RPC/权限/依赖变更，不发布/强推，M7/H7仍为技术收尾。
 

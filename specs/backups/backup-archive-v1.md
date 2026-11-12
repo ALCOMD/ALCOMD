@@ -4,7 +4,9 @@
 
 M7六档压缩合同：store/fast/level3/level5/level7/maximum分别对应ZIP Stored及Deflate 1/3/5/7/9，界面显示0/1/3/5/7/9。旧fast和maximum保持原1/9含义，新增等级进入manifest、备份记录及幂等指纹；其他归档格式与内容选择规则不变。既有归档继续可读，旧程序不承诺读取新增等级归档。
 
-原生归档文件名为 `<BackupId>.zip`，ZIP 根恰好由 `backup.json` 和 `project/` 构成。ZIP64 可用，entry
+用户备份目录的新归档文件名为 `<项目目录名>-YYYY-MM-DDTHH-MM-SS.sss.zip`，时间为创建时间的本地表示；保留中文，文件系统非法字符替换、过长项目名截短。最终名称冻结在内部归档证据中，重启恢复不重新计算，已有文件不覆盖。已有 `<BackupId>.zip` 归档及缺少新命名证据的旧任务继续按原定位读取；内部 `backup-v1` 对象定位保持UUID命名，不搬迁旧文件。归档身份仍由既有定位、文件身份和摘要确定。
+
+ZIP 根恰好由 `backup.json` 和 `project/` 构成。ZIP64 可用，entry
 只允许 Stored 或 Deflate；写入必须按规范化相对路径稳定排序并流式执行。不得使用一次性 convenience
 extract/write 绕过 path、link、collision、quota 或 streaming 检查。
 

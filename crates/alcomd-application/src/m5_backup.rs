@@ -180,6 +180,9 @@ pub struct BackupArchiveEvidence {
     pub archive_sha256: [u8; 32],
     pub archive_bytes: u64,
     pub source_project_fingerprint: [u8; 32],
+    /// Frozen user-facing name; retained checkpoints without it use the original UUID name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive_file_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

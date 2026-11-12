@@ -317,20 +317,19 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
     assert_eq!(config.load().expect("persisted settings"), changed);
     drop(source_lock);
     succeeded(&store, accepted.operation_id).await;
-    assert!(
-        fixture
-            .0
-            .join("Backups")
-            .join(format!("{}.zip", accepted.backup_id))
-            .is_file()
+    let accepted_record = store
+        .get_backup(PrincipalId::local_owner(), accepted.backup_id)
+        .await
+        .expect("accepted backup");
+    let accepted_path = PathBuf::from(
+        accepted_record
+            .archive_locator
+            .strip_prefix("backup-file-v1:")
+            .expect("configured locator"),
     );
-    assert!(
-        !fixture
-            .0
-            .join("OtherBackups")
-            .join(format!("{}.zip", accepted.backup_id))
-            .exists()
-    );
+    let accepted_name = accepted_path.file_name().expect("archive name");
+    assert!(fixture.0.join("Backups").join(accepted_name).is_file());
+    assert!(!fixture.0.join("OtherBackups").join(accepted_name).exists());
 
     let later = service
         .create(
@@ -343,11 +342,21 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         .await
         .expect("second create");
     succeeded(&store, later.operation_id).await;
+    let later_record = store
+        .get_backup(PrincipalId::local_owner(), later.backup_id)
+        .await
+        .expect("later backup");
+    let later_path = PathBuf::from(
+        later_record
+            .archive_locator
+            .strip_prefix("backup-file-v1:")
+            .expect("configured locator"),
+    );
     assert!(
         fixture
             .0
             .join("OtherBackups")
-            .join(format!("{}.zip", later.backup_id))
+            .join(later_path.file_name().expect("archive name"))
             .is_file()
     );
     provider.unavailable.store(true, Ordering::SeqCst);
