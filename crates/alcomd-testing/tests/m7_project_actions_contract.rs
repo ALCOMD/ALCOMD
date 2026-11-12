@@ -549,9 +549,27 @@ fn official_gui_local_project_affordances_remain_closed() {
     assert!(GUI_RUST_ADAPTER.contains("external_filesystem_path(&root)"));
     assert!(GUI_RUST_ADAPTER.contains("open::that(path.as_os_str())"));
     assert!(!GUI_RUST_ADAPTER.contains("open::with"));
-    assert!(GUI_RUST_ADAPTER.contains("async fn gui_select_directory(app: tauri::AppHandle)"));
+    let directory_command = GUI_RUST_ADAPTER
+        .split("async fn gui_select_directory(")
+        .nth(1)
+        .expect("native directory command")
+        .split("#[tauri::command]")
+        .next()
+        .expect("native directory command body");
+    for required in [
+        "app: tauri::AppHandle",
+        "current_path: Option<String>",
+        "picker_at_current_path(",
+        "current_path.as_deref()",
+        "picker_location::SelectionKind::Directory",
+        ".blocking_pick_folder()",
+    ] {
+        assert!(directory_command.contains(required), "missing {required}");
+    }
     assert!(GUI_RPC_ADAPTER.contains("gui_open_project_directory"));
-    assert!(GUI_RPC_ADAPTER.contains("gui_select_directory"));
+    assert!(GUI_RPC_ADAPTER.contains(
+        "invokeTyped<string | null>(\"gui_select_directory\", { currentPath: currentPath ?? null })"
+    ));
     assert!(!GUI_CAPABILITY.contains("dialog:"));
     assert!(!GUI_CAPABILITY.contains("opener:"));
 }
