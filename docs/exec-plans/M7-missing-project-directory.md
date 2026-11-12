@@ -35,3 +35,5 @@ Core覆盖登记后删除/恢复源目录、分页/详情新状态、只读不�
 所有者继续反馈删除与复制一样没有明确指出目录不存在。只读logs.read确认最近两次删除预检均已返回ProjectDeleteSourceMissing；GUI却把既有project_delete_source_missing与project_inaccessible合并成“项目目录不可用”。将删除缺失错误独立呈现为“项目文件夹不存在，请检查项目路径后再删除。”，同步英文与日文。沿用原按钮前的局部反馈；目录不可访问仍使用原文案。无Core、RPC、Schema、权限或依赖变化，不发起真实删除或删除计划。
 
 补充列表删除入口的三语言缺失反馈回归，确认错误码/明确原因、按钮前位置、取消可用、没有删除确认输入且登记保留；原复制、任务终态与其他局部错误流程保持。28项定向浏览器、前端check/build及metadata/xtask通过，GUI原生构建与运行更新结果另记。新增3项用例后总套件为703项，本次不声称已执行完整703项或新三平台门禁；c46f7544的M7最终验收记录保持原候选绑定。证据位于target/m7-delete-feedback-20261113。
+
+本补充源码独立提交044d0559，原生Tauri no-bundle构建通过。正常关闭原GUI后Core在1034ms内自动退出，离线逐文件备份核对36份data和343份profile后更新GUI，恢复Core137312/GUI142392，ready/State32/Config13、0活动任务。完整设置revision8、原4项目/30仓库/5模板/1Unity登记/0扩展、旧备份记录、12个项目标志检查位及原3个Unity/Hub进程保持；原删除failed/source_missing的revision和完成时间保持。Core及六个辅助程序字节未变，八个运行组件均匹配已验证release；GUI SHA-256为8B8BDBE1F53D8E5DCAD3978E74E038E70B67A3556897D6EF5CDC20672BCBE448。独立隐藏启动器与更新执行器均实际0退出，原WebView profile已核对在用，未执行真实删除/计划。备份与复验见target/m7-delete-feedback-runtime-update-20261113；本补充的远端CI结果另行绑定，不更改M7已验收候选的历史结论。
