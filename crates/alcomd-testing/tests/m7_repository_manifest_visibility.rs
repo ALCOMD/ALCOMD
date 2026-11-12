@@ -237,6 +237,13 @@ struct ValidatorReader {
     seen: Arc<Mutex<Vec<Option<RepositoryValidators>>>>,
 }
 impl M3ReadAdapter for ValidatorReader {
+    async fn project_directory_state(
+        &self,
+        path: String,
+    ) -> alcomd_application::ProjectDirectoryState {
+        alcomd_vpm::read_project_directory_state(path).await
+    }
+
     fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error> {
         Ok(url.to_owned())
     }

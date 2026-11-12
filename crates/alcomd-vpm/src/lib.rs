@@ -448,7 +448,30 @@ impl alcomd_application::CandidateProjectReader for VpmReader {
     }
 }
 
+/// Observes only the registered root directory; no project contents are read.
+pub async fn read_project_directory_state(
+    path: String,
+) -> alcomd_application::ProjectDirectoryState {
+    use alcomd_application::ProjectDirectoryState;
+    tokio::task::spawn_blocking(move || match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => ProjectDirectoryState::Available,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            ProjectDirectoryState::Missing
+        }
+        _ => ProjectDirectoryState::Unavailable,
+    })
+    .await
+    .unwrap_or(ProjectDirectoryState::Unavailable)
+}
+
 impl M3ReadAdapter for VpmReader {
+    async fn project_directory_state(
+        &self,
+        path: String,
+    ) -> alcomd_application::ProjectDirectoryState {
+        read_project_directory_state(path).await
+    }
+
     async fn inspect_repository_authenticated(
         &self,
         source: RepositorySource,

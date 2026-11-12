@@ -111,7 +111,7 @@
         "project_copy_plan_stale",
         "project_copy_target_exists",
         "project_copy_target_unsafe",
-        "project_copy_source_unsafe",
+        "project_copy_source_unsafe", "project_copy_source_missing",
         "project_copy_source_changed",
         "project_copy_limit_exceeded",
         "project_copy_recovery_required"

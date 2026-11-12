@@ -861,9 +861,15 @@ fn canonical_directory(path: &Path, kind: M7CopyError) -> Result<PathBuf, M7Copy
         return Err(kind);
     }
     let value = fs::canonicalize(path).map_err(|cause| {
-        kind.clone()
+        let error = if kind.code() == M7CopyErrorCode::ProjectCopySourceUnsafe
+            && cause.kind() == std::io::ErrorKind::NotFound
+        {
+            error(M7CopyErrorCode::ProjectCopySourceMissing)
+        } else {
+            kind.clone()
+        };
+        error
             .with_source(cause)
-            .with_path(path.display().to_string())
             .with_path(path.display().to_string())
     })?;
     if value.to_str().is_none() || !value.is_dir() {
@@ -1141,6 +1147,21 @@ mod tests {
         let failure = normalize_relative(Path::new(&"a".repeat(MAX_RELATIVE_PATH_BYTES + 1)))
             .expect_err("oversized normalized path");
         assert_eq!(failure.code(), M7CopyErrorCode::ProjectCopyLimitExceeded);
+    }
+
+    #[test]
+    fn missing_copy_source_is_distinct_from_an_unsafe_target() {
+        let root = TestDirectory::new();
+        let missing = root.0.join("missing-source");
+        let error = canonical_directory(&missing, source_error()).expect_err("missing source");
+        assert_eq!(error.code(), M7CopyErrorCode::ProjectCopySourceMissing);
+        assert_eq!(error.path(), missing.to_str());
+        assert_eq!(
+            canonical_directory(&missing, target_error())
+                .expect_err("missing target retains its own classification")
+                .code(),
+            M7CopyErrorCode::ProjectCopyTargetUnsafe
+        );
     }
 
     #[cfg(unix)]

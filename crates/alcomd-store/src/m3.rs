@@ -450,6 +450,7 @@ pub(super) fn list_projects(
     Ok(ProjectPage {
         projects,
         next_cursor,
+        directory_states: Default::default(),
     })
 }
 
@@ -589,6 +590,7 @@ pub(super) fn list_project_view(
         page: ProjectPage {
             projects,
             next_cursor,
+            directory_states: Default::default(),
         },
         sequence,
     })

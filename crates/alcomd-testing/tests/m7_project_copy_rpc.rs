@@ -416,7 +416,7 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     assert!(copied.project.last_modified_at_ms.is_some());
     assert_eq!(
         client
-            .project_get(source_id)
+            .project_get(source_id.clone())
             .await
             .expect("source after copy")
             .project
@@ -443,6 +443,46 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
             .last_modified_at_ms,
         copied.project.last_modified_at_ms,
         "copy replay preserves target initialization time"
+    );
+
+    fs::remove_dir_all(&source).expect("remove only the isolated source fixture");
+    let missing = await_rpc(
+        trace,
+        "project-copy-missing-source-rpc",
+        client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            source_project_id: source_id.clone(),
+            expected_revision: 1,
+            target_parent_path: destination.to_string_lossy().into_owned(),
+            target_leaf: "MissingSourceCopy".to_owned(),
+            idempotency_key: "m7-copy-missing-source".to_owned(),
+        }),
+    )
+    .await
+    .expect_err("missing source has an explicit RPC result");
+    assert!(
+        matches!(missing, ClientError::Remote(error) if error.code == "project_copy_source_missing")
+    );
+    assert!(!destination.join("MissingSourceCopy").exists());
+    let missing_detail = client
+        .project_get(source_id.clone())
+        .await
+        .expect("missing source remains registered");
+    assert_eq!(
+        missing_detail.project.directory_state,
+        Some(alcomd_protocol::ProjectDirectoryState::Missing)
+    );
+    assert_eq!(missing_detail.project.revision, Some(1));
+    let page = client
+        .projects_list(None, Some(100))
+        .await
+        .expect("fresh directory projection");
+    assert_eq!(
+        page.projects
+            .iter()
+            .find(|project| project.project_id.as_deref() == Some(source_id.as_str()))
+            .expect("registered source")
+            .directory_state,
+        Some(alcomd_protocol::ProjectDirectoryState::Missing)
     );
 
     daemon.shutdown().await;

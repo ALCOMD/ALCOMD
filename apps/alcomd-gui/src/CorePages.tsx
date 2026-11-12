@@ -365,7 +365,16 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         const read = loadRef.current;
         try {
             const projects = await read();
-            if (request === listReadGeneration.current && read === loadRef.current) setState({ loaded: true, loading: false, projects });
+            if (request === listReadGeneration.current && read === loadRef.current) setState((current) => {
+                const previous = new Map(current.projects.map((project) => [project.projectId ?? project.rootPath, project]));
+                const observed = projects.map((project) => {
+                    const prior = previous.get(project.projectId ?? project.rootPath);
+                    return project.directoryState === undefined && prior?.rootPath === project.rootPath && prior.directoryState !== undefined
+                        ? { ...project, directoryState: prior.directoryState }
+                        : project;
+                });
+                return { loaded: true, loading: false, projects: observed };
+            });
         } catch (caught: unknown) {
             if (request === listReadGeneration.current && read === loadRef.current) {
                 listError.current = caught;
@@ -535,8 +544,9 @@ function ProjectsTable({
     ];
     return <DesktopList className="projects-list" columns={columns} emptyMessage={loading ? <LoadingState title={t("Loading projects")} variant="bar" /> : undefined} label={t("Projects")} minWidth={720} rows={projects.map((project) => {
         const id = project.projectId;
-        return { key: id ?? project.rootPath, cells: [
-            <><strong>{projectName(t, locale, project)}</strong><small title={displayPath(project.rootPath)}>{displayPath(project.rootPath)}</small></>,
+        const notice = projectDirectoryNotice(t, project);
+        return { key: id ?? project.rootPath, className: project.directoryState === "missing" ? "project-row--missing" : undefined, cells: [
+            <><strong title={notice}>{projectName(t, locale, project)}</strong><small title={[displayPath(project.rootPath), notice].filter(Boolean).join("\n")}>{displayPath(project.rootPath)}</small>{notice === undefined ? null : <span className="visually-hidden">{notice}</span>}</>,
             <span className="project-type project-type--table"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(t, locale, project.projectType)}</span></span>,
             project.unityVersion || t("Unknown"),
             formatRegistered(t, locale, project.registeredAtMs),
@@ -845,6 +855,10 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
         }
     };
 
+    const feedback = <>
+        {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
+        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(t("Copy failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+    </>;
     const terminal = operation !== undefined && ["succeeded", "failed", "cancelled"].includes(operation.state);
     return (
         <Dialog onClose={onClose} open={open} title={t("Copy project")}>
@@ -857,6 +871,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                             <TextField aria-label={t("Copy project location")} label={t("Project location")} readOnly value={displayPath(targetParent)} />
                             <Button disabled={busy} onClick={() => void chooseTargetParent()} type="button" variant="tonal">{t("Choose…")}</Button>
                         </div>
+                        {feedback}
                         <div className="dialog-actions">
                             <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                             <Button disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{t("Review copy")}</Button>
@@ -868,6 +883,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         <p><strong>{t("Destination:")}</strong> {displayChildPath(plan.targetParentCanonicalPath, plan.normalizedTargetLeaf)}</p>
                         <p><strong>{t("Unity writer:")}</strong> {humanize(t, plan.writerEvidence.state)}</p>
                         <p><strong>{t("Copy profile:")}</strong> {t("v{version}; excludes Logs, Obj, Temp and .git.", { version: plan.profile.version })}</p>
+                        {feedback}
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">{t("Back")}</Button>
                             <Button disabled={busy} onClick={() => void apply()} type="button">{t("Start copy")}</Button>
@@ -879,14 +895,13 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                             if (next.state === "succeeded") onClose();
                         }}>{() => null}</OperationFollow>
                         <p role="status">{operation.progress?.phase === undefined ? t("Copy {state}.", { state: humanize(t, operation.state) }) : t("Copy {state}: {phase}.", { state: humanize(t, operation.state), phase: humanize(t, operation.progress.phase) })}</p>
+                        {feedback}
                         <div className="dialog-actions">
                             {!terminal ? <Button disabled={busy} onClick={() => void cancel()} type="button" variant="text">{t("Cancel copy")}</Button> : null}
                             <DialogCloseButton disabled={!terminal}>{t("Close")}</DialogCloseButton>
                         </div>
                     </>
                 )}
-                {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
-                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(t("Copy failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             </div>
         </Dialog>
     );
@@ -909,12 +924,14 @@ function ProjectCard({ client, onChanged, onRefresh, project, navigate }: { clie
     const type = projectTypeLabel(t, locale, project.projectType);
     const unity = t("Unity {value0}", { value0: project.unityVersion || "unknown" });
     const dates = t("Added {value0} / Last modified {value1}", { value0: formatRegistered(t, locale, project.registeredAtMs), value1: formatModified(t, locale, project.lastModifiedAtMs) });
+    const notice = projectDirectoryNotice(t, project);
     return (
-        <article aria-label={name} className="project-card">
+        <article aria-label={name} className={project.directoryState === "missing" ? "project-card project-card--missing" : "project-card"}>
             <header className="project-card-heading">
                 <div className="project-card-identity">
-                    <h2 title={name}>{name}</h2>
-                    <p className="project-path" title={path}>{path}</p>
+                    <h2 title={notice ?? name}>{name}</h2>
+                    <p className="project-path" title={[path, notice].filter(Boolean).join("\n")}>{path}</p>
+                    {notice === undefined ? null : <span className="visually-hidden">{notice}</span>}
                 </div>
             </header>
             <div className="project-card-properties">
@@ -1019,6 +1036,12 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
 
 function projectName(t: Translate, _locale: SupportedLocale, project: ProjectSnapshot): string {
     return project.displayName ?? t("Unity project");
+}
+
+function projectDirectoryNotice(t: Translate, project: ProjectSnapshot): string | undefined {
+    if (project.directoryState === "missing") return t("Project folder is missing.");
+    if (project.directoryState === "unavailable") return t("The project folder is unavailable.");
+    return undefined;
 }
 
 function formatModified(t: Translate, locale: SupportedLocale, value: number | undefined): string {

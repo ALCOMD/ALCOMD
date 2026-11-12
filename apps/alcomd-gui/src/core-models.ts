@@ -114,6 +114,7 @@ export interface ProjectSnapshot {
     registeredAtMs?: number;
     favorite?: boolean;
     rootPath: string;
+    directoryState?: "available" | "missing" | "unavailable";
     projectType: string;
     unityVersion: string;
     unityRevision?: string;

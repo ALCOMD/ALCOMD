@@ -343,6 +343,22 @@ pub struct PackageCursor {
 pub struct ProjectPage {
     pub projects: Vec<ProjectRecord>,
     pub next_cursor: Option<RegistryCursor<ProjectId>>,
+    /// Read-time filesystem projection; never persisted with registered projects.
+    #[serde(skip)]
+    pub directory_states: HashMap<ProjectId, ProjectDirectoryState>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectDirectoryState {
+    Available,
+    Missing,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectDirectoryView {
+    pub project: ProjectRecord,
+    pub directory_state: ProjectDirectoryState,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -475,6 +491,11 @@ impl std::error::Error for M3Error {
 /// External read adapter. Implementations perform bounded I/O but never mutate sources.
 pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
     fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error>;
+
+    fn project_directory_state(
+        &self,
+        path: String,
+    ) -> impl Future<Output = ProjectDirectoryState> + Send;
 
     fn inspect_project(
         &self,
@@ -1527,9 +1548,12 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<ProjectPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
         validate_m3_limit(limit)?;
-        self.store
+        let mut page = self
+            .store
             .list_projects(access.principal().clone(), cursor, limit)
-            .await
+            .await?;
+        self.observe_project_directories(&mut page).await;
+        Ok(page)
     }
 
     pub async fn list_project_view(
@@ -1550,7 +1574,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         {
             return Err(M3Error::new(M3ErrorCode::InvalidInput));
         }
-        self.store
+        let mut view_page = self
+            .store
             .list_project_view(
                 access.principal().clone(),
                 cursor,
@@ -1558,16 +1583,44 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 view,
                 expected_sequence,
             )
-            .await
+            .await?;
+        self.observe_project_directories(&mut view_page.page).await;
+        Ok(view_page)
+    }
+
+    async fn observe_project_directories(&self, page: &mut ProjectPage) {
+        for project in &page.projects {
+            let state = self
+                .reader
+                .project_directory_state(project.observation.root_path.clone())
+                .await;
+            page.directory_states.insert(project.project_id, state);
+        }
     }
 
     pub async fn get_project(
         &self,
         access: &AccessContext,
         id: ProjectId,
-    ) -> Result<ProjectRecord, M3Error> {
+    ) -> Result<ProjectDirectoryView, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        self.store.get_project(access.principal().clone(), id).await
+        let project = self
+            .store
+            .get_project(access.principal().clone(), id)
+            .await?;
+        Ok(self.project_directory_view(project).await)
+    }
+
+    /// Enriches a record returned by an authorized owner-scoped lookup or write.
+    pub async fn project_directory_view(&self, project: ProjectRecord) -> ProjectDirectoryView {
+        let directory_state = self
+            .reader
+            .project_directory_state(project.observation.root_path.clone())
+            .await;
+        ProjectDirectoryView {
+            project,
+            directory_state,
+        }
     }
 
     pub async fn register_project(

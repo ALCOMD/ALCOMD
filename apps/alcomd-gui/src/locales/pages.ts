@@ -2,6 +2,8 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const pageMessages: TranslationTable = {
+    "Project folder is missing.": { "zh-CN": "项目文件夹不存在。", "ja-JP": "プロジェクトフォルダーが存在しません。" },
+    "The project folder is unavailable.": { "zh-CN": "项目文件夹无法访问。", "ja-JP": "プロジェクトフォルダーにアクセスできません。" },
     "Use incompatible version?": { "zh-CN": "使用不兼容版本？", "ja-JP": "互換性のないバージョンを使用しますか？" },
     "Continue with this version": { "zh-CN": "继续使用此版本", "ja-JP": "このバージョンで続行" },
     "{package} {version} does not support this project's Unity version. Continuing may prevent the project from working correctly.": { "zh-CN": "{package} {version} 不支持此项目的 Unity 版本。继续可能导致项目无法正常使用。", "ja-JP": "{package} {version} はこのプロジェクトの Unity バージョンをサポートしていません。続行するとプロジェクトが正常に動作しない可能性があります。" },

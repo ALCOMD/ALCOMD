@@ -10,6 +10,104 @@ use alcomd_protocol::{ProjectSetFavoriteParams, ProjectType, RepositorySource};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test]
+async fn directory_state_is_a_fresh_root_only_projection_without_registry_mutation() {
+    use alcomd_application::{
+        AccessContext, IdempotencyKey, M3Application, M3RegistryStore, PrincipalId,
+        ProjectDirectoryState,
+    };
+
+    let fixture = TestDirectory::new();
+    let source = fixture.path().join("中文项目");
+    create_project(&source);
+    let store = alcomd_store::StateStoreHandle::open(fixture.path().join("directory-state.db"))
+        .expect("store");
+    let registry = M3Application::new(store.clone(), alcomd_vpm::VpmReader::new().expect("reader"));
+    let access = AccessContext::local_owner();
+    let registered = registry
+        .register_project(
+            &access,
+            source.to_string_lossy().into_owned(),
+            IdempotencyKey::parse("directory-state-source").expect("key"),
+        )
+        .await
+        .expect("register")
+        .value;
+    let id = registered.project_id;
+    let read_state = |page: alcomd_application::ProjectPage| page.directory_states[&id];
+    assert_eq!(
+        read_state(
+            registry
+                .list_projects(&access, None, 100)
+                .await
+                .expect("available list")
+        ),
+        ProjectDirectoryState::Available
+    );
+
+    // Directory observation must not parse or hash the contents again.
+    fs::remove_file(source.join("ProjectSettings/ProjectVersion.txt"))
+        .expect("remove version fixture");
+    assert_eq!(
+        registry
+            .get_project(&access, id)
+            .await
+            .expect("root still exists")
+            .directory_state,
+        ProjectDirectoryState::Available
+    );
+    fs::remove_dir_all(&source).expect("remove source fixture");
+    assert_eq!(
+        read_state(
+            registry
+                .list_projects(&access, None, 100)
+                .await
+                .expect("missing list")
+        ),
+        ProjectDirectoryState::Missing
+    );
+    let missing = registry
+        .get_project(&access, id)
+        .await
+        .expect("missing detail");
+    assert_eq!(missing.directory_state, ProjectDirectoryState::Missing);
+    assert_eq!(missing.project, registered);
+    assert_eq!(
+        store
+            .get_project(PrincipalId::local_owner(), id)
+            .await
+            .expect("stored record"),
+        registered
+    );
+
+    create_project(&source);
+    assert_eq!(
+        registry
+            .get_project(&access, id)
+            .await
+            .expect("restored folder")
+            .directory_state,
+        ProjectDirectoryState::Available
+    );
+    fs::remove_dir_all(&source).expect("remove fixture directory");
+    fs::write(&source, b"not a directory").expect("file at registered path");
+    assert_eq!(
+        registry
+            .get_project(&access, id)
+            .await
+            .expect("non-directory path")
+            .directory_state,
+        ProjectDirectoryState::Unavailable
+    );
+    assert_eq!(
+        store
+            .get_project(PrincipalId::local_owner(), id)
+            .await
+            .expect("unchanged record"),
+        registered
+    );
+}
+
+#[tokio::test]
 async fn operation_log_records_real_filesystem_checks_and_preserves_the_background_actor() {
     use alcomd_application::{
         AccessContext, Application, IdempotencyKey, LogOutcome, M3Application, OperationLogQuery,

@@ -88,7 +88,18 @@ pub(super) async fn dispatch(
                 Ok((page, view_sequence)) => success_action(
                     request.id,
                     rpc::ProjectsListResult {
-                        projects: page.projects.into_iter().map(project_record).collect(),
+                        projects: page
+                            .projects
+                            .into_iter()
+                            .map(|project| {
+                                let directory_state =
+                                    page.directory_states.get(&project.project_id).copied();
+                                let mut snapshot = project_record(project);
+                                snapshot.directory_state =
+                                    directory_state.map(project_directory_state);
+                                snapshot
+                            })
+                            .collect(),
                         next_cursor: page.next_cursor.map(registry_cursor),
                         view_sequence,
                     },
@@ -108,7 +119,12 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::ProjectResult {
-                        project: project_record(value),
+                        project: {
+                            let mut snapshot = project_record(value.project);
+                            snapshot.directory_state =
+                                Some(project_directory_state(value.directory_state));
+                            snapshot
+                        },
                     },
                     None,
                 ),
@@ -120,14 +136,17 @@ pub(super) async fn dispatch(
             let params: rpc::ProjectRegisterParams = parse!(request);
             let key = key!(request, params.idempotency_key);
             match application.register_project(access, params.path, key).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ProjectWriteResult {
-                        project: project_record(value.value),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
+                Ok(value) => {
+                    let project = application.project_directory_view(value.value).await;
+                    success_action(
+                        request.id,
+                        rpc::ProjectWriteResult {
+                            project: project_directory_record(project),
+                            replayed: value.replayed,
+                        },
+                        None,
+                    )
+                }
                 Err(error) => m3_error(request.id, error),
             }
         }
@@ -139,14 +158,17 @@ pub(super) async fn dispatch(
                 Err(()) => return invalid(request.id),
             };
             match application.refresh_project(access, id, expected, key).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ProjectWriteResult {
-                        project: project_record(value.value),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
+                Ok(value) => {
+                    let project = application.project_directory_view(value.value).await;
+                    success_action(
+                        request.id,
+                        rpc::ProjectWriteResult {
+                            project: project_directory_record(project),
+                            replayed: value.replayed,
+                        },
+                        None,
+                    )
+                }
                 Err(error) => m3_error(request.id, error),
             }
         }
@@ -164,14 +186,17 @@ pub(super) async fn dispatch(
                 .set_project_favorite(access, id, params.favorite, expected, key)
                 .await
             {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ProjectWriteResult {
-                        project: project_record(value.value),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
+                Ok(value) => {
+                    let project = application.project_directory_view(value.value).await;
+                    success_action(
+                        request.id,
+                        rpc::ProjectWriteResult {
+                            project: project_directory_record(project),
+                            replayed: value.replayed,
+                        },
+                        None,
+                    )
+                }
                 Err(error) => m3_error(request.id, error),
             }
         }
@@ -520,7 +545,23 @@ fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryC
 }
 
 fn project_observation(value: app::ProjectObservation) -> rpc::ProjectSnapshot {
-    project_snapshot(None, None, None, value, None, None)
+    let mut snapshot = project_snapshot(None, None, None, value, None, None);
+    snapshot.directory_state = Some(rpc::ProjectDirectoryState::Available);
+    snapshot
+}
+
+fn project_directory_state(value: app::ProjectDirectoryState) -> rpc::ProjectDirectoryState {
+    match value {
+        app::ProjectDirectoryState::Available => rpc::ProjectDirectoryState::Available,
+        app::ProjectDirectoryState::Missing => rpc::ProjectDirectoryState::Missing,
+        app::ProjectDirectoryState::Unavailable => rpc::ProjectDirectoryState::Unavailable,
+    }
+}
+
+fn project_directory_record(value: app::ProjectDirectoryView) -> rpc::ProjectSnapshot {
+    let mut snapshot = project_record(value.project);
+    snapshot.directory_state = Some(project_directory_state(value.directory_state));
+    snapshot
 }
 
 fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
@@ -548,6 +589,7 @@ fn project_snapshot(
         last_modified_at_ms,
         display_name: app::project_display_name(&value.root_path).map(str::to_owned),
         root_path: value.root_path,
+        directory_state: None,
         project_type: project_type(value.project_type),
         unity_version: value.unity_version,
         unity_revision: value.unity_revision,

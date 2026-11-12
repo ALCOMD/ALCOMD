@@ -218,6 +218,8 @@ export function requestErrorMessage(code: string): string {
         case "project_delete_source_unsafe":
         case "backup_source_unsafe":
             return "The selected location did not pass safety checks. Review it or choose another valid location.";
+        case "project_copy_source_missing":
+            return "The source project folder does not exist. Check the source project's path before copying.";
         case "backup_not_found":
         case "backup_unavailable":
             return "This backup is unavailable. Refresh the backup list and check that its archive is accessible.";

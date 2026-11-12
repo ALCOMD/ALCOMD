@@ -48,6 +48,7 @@
                 "displayName": {"type": "string", "minLength": 1, "maxLength": 32768},
                 "favorite": {"type": "boolean"},
                 "rootPath": {"$ref": "#/$defs/absolutePath"},
+                "directoryState": {"enum": ["available", "missing", "unavailable"]},
                 "projectType": {
                     "enum": [
                         "avatars", "worlds", "vpm-starter", "upm-avatars", "upm-worlds",

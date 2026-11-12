@@ -312,6 +312,7 @@ pub mod error_code {
     pub const PROJECT_COPY_TARGET_EXISTS: &str = "project_copy_target_exists";
     pub const PROJECT_COPY_TARGET_UNSAFE: &str = "project_copy_target_unsafe";
     pub const PROJECT_COPY_SOURCE_UNSAFE: &str = "project_copy_source_unsafe";
+    pub const PROJECT_COPY_SOURCE_MISSING: &str = "project_copy_source_missing";
     pub const PROJECT_COPY_SOURCE_CHANGED: &str = "project_copy_source_changed";
     pub const PROJECT_COPY_LIMIT_EXCEEDED: &str = "project_copy_limit_exceeded";
     pub const PROJECT_COPY_RECOVERY_REQUIRED: &str = "project_copy_recovery_required";
@@ -1137,6 +1138,15 @@ pub struct ReadIssue {
     pub column: Option<u64>,
 }
 
+/// Current availability of a registered project's root directory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectDirectoryState {
+    Available,
+    Missing,
+    Unavailable,
+}
+
 /// Public normalized project snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1150,6 +1160,13 @@ pub struct ProjectSnapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     pub root_path: String,
+    /// Fresh on list/get; absent in snapshots without a directory observation.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub directory_state: Option<ProjectDirectoryState>,
     pub project_type: ProjectType,
     pub unity_version: String,
     pub unity_revision: Option<String>,

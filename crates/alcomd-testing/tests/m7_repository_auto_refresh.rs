@@ -43,6 +43,13 @@ struct CountingReader {
     entered: Arc<Notify>,
 }
 impl M3ReadAdapter for CountingReader {
+    async fn project_directory_state(
+        &self,
+        path: String,
+    ) -> alcomd_application::ProjectDirectoryState {
+        alcomd_vpm::read_project_directory_state(path).await
+    }
+
     fn normalize_remote_repository_url(&self, url: &str) -> Result<String, M3Error> {
         self.reader.normalize_remote_repository_url(url)
     }

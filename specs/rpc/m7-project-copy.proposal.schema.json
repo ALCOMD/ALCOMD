@@ -185,7 +185,7 @@
         "errorCode": {
             "enum": [
                 "project_copy_plan_not_found", "project_copy_plan_stale", "project_copy_target_exists",
-                "project_copy_target_unsafe", "project_copy_source_unsafe", "project_copy_source_changed",
+                "project_copy_target_unsafe", "project_copy_source_unsafe", "project_copy_source_missing", "project_copy_source_changed",
                 "project_copy_limit_exceeded", "project_copy_recovery_required", "project_not_registered",
                 "revision_conflict", "unity_project_running", "idempotency_conflict", "permission_denied",
                 "internal_error"

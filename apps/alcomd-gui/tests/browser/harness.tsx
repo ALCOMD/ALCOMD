@@ -57,6 +57,8 @@ declare global {
         projectSnapshots: ProjectSnapshot[][];
         autoDiscoveryProjects: ProjectSnapshot[];
         projectListReads: number;
+        projectDirectoryState?: ProjectSnapshot["directoryState"];
+        omitProjectDirectoryState?: boolean;
         repositoryListReads: number;
         resumeRepositoryPackages?: () => void;
         resumeRepositoryDetail?: () => void;
@@ -810,6 +812,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectUnregister(): ReturnType<GuiRpcClient["projectUnregister"]> { return this.value({ projectId: PROJECT_ID, revision: 3, unregistered: true, replayed: false }); }
     projectPlanCopy(_sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): ReturnType<GuiRpcClient["projectPlanCopy"]> {
+        if (query.has("copy-source-missing")) return Promise.reject({ code: "project_copy_source_missing", message: "" });
         if (query.has("windows-paths")) window.h3Requests.push({ method: "projects.planCopy", params: { sourceProjectId: _sourceProjectId, expectedRevision, targetParentPath, targetLeaf } });
         return this.value({
             plan: {
@@ -1672,9 +1675,11 @@ function projectListPage(projects: ProjectSnapshot[], cursor: RegistryCursor | u
 }
 
 function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
+    const observed = window.projectDirectoryState ?? query.get("project-directory-state");
+    const directoryState: ProjectSnapshot["directoryState"] = window.omitProjectDirectoryState ? undefined : observed === "available" || observed === "missing" || observed === "unavailable" ? observed : undefined;
     const rootPath = query.has("windows-paths") ? `\\\\?\\C:\\Projects\\${name}` : projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
     const displayName = rootPath === "<private-project>" ? rootPath : name;
-    return { projectId, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
+    return { projectId, directoryState, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, displayName, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, actions: { canRemove: true, canEditAuthentication: true }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, actions: { canRemove: true, canEditAuthentication: false }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
