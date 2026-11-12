@@ -74,6 +74,7 @@ zip = { version = "=9.1.3", default-features = false, features = ["deflate-flate
 ed25519-dalek = { version = "=3.0.0", default-features = false }
 wasmtime = { version = "=48.0.8", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
 open = { version = "=5.4.2", default-features = false }
+rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-io"] }
 tauri-plugin-dialog = { version = "=2.7.2", default-features = false, features = ["gtk3"] }
 
 alcomd-domain = { path = "crates/alcomd-domain" }

@@ -20,19 +20,20 @@ enum Command {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
 
     match arguments.command.unwrap_or(Command::Stdio) {
         Command::Stdio => {
-            eprintln!(
-                "alcomd-mcp scaffold: MCP 2026-07-28 transport is planned for M8; no protocol data was written"
-            );
+            let (input, output) = rmcp::transport::stdio_pipes();
+            alcomd_mcp::serve_stdio(input, output).await?;
         }
         Command::Serve { port } => {
-            eprintln!(
-                "alcomd-mcp scaffold: HTTP transport is not implemented; requested port {port}"
+            anyhow::bail!(
+                "MCP HTTP transport is unavailable until Core client authentication is implemented; no listener was started (requested port {port})"
             );
         }
     }
+    Ok(())
 }
