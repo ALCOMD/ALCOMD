@@ -259,14 +259,15 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
     useEffect(() => {
         let active = true;
         setNegotiatedCapabilities(undefined);
-        // Capabilities belong to the connection; navigation must not discard them and unmount the page.
-        void client.systemStatus().then((status) => {
+        // Bootstrap the connection independently of the retiring session's read queue.
+        // Navigation keeps these capabilities until an explicit reconnect.
+        void sourceClient.systemStatus().then((status) => {
             if (active) setNegotiatedCapabilities({ kind: "ready", values: new Set(status.capabilities) });
         }).catch(() => {
             if (active) setNegotiatedCapabilities({ kind: "status-unavailable" });
         });
         return () => { active = false; };
-    }, [client, connectionGeneration]);
+    }, [sourceClient, connectionGeneration]);
 
     useEffect(() => {
         const onPopState = () => {
