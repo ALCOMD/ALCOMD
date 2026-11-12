@@ -223,6 +223,7 @@ test("A project Manage press prepares its package workspace before navigation", 
 
 test("A resource segment press prepares the destination before switching sections", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fuser-packages&state=ready&holdRepositories=1");
+    await expect(page.getByRole("heading", { name: "No User Packages enrolled", exact: true })).toBeVisible();
     const target = page.getByRole("navigation", { name: "Resources", exact: true }).getByRole("button", { name: "Repositories", exact: true });
     await expect(target).toBeVisible();
     const before = await page.evaluate(() => window.repositoryListReads);
