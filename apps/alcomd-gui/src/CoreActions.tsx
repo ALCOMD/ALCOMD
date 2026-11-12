@@ -23,7 +23,7 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { DialogCloseButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, Select, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, Select, TextField, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
@@ -470,7 +470,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
                     <PathField disabled={feedback.busy} id="unity-executable" label={t("Unity executable")} maxLength={1024} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                     <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
                 </div>
-                <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="submit">{t("Register")}</Button><Button disabled={!available || feedback.busy} onClick={() => void mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="tonal">{t("Discover and refresh")}</Button></div>
+                <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="submit">{t("Register")}</Button><LoadingButton disabled={!available || feedback.busy} onClick={() => mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="tonal">{t("Discover and refresh")}</LoadingButton></div>
             </form>
             {installations.length === 0 ? null : <Select aria-label={t("Installation to remove")} disabled={feedback.busy} label={t("Remove installation")} onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: t("Select an installation"), value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button className="material-button--danger" disabled={!available || remove === undefined || feedback.busy} onClick={() => { setConfirmRemove(true); setFeedback(INITIAL_FEEDBACK); }} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="text">{t("Review removal")}</Button></div>

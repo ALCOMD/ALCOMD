@@ -10,7 +10,7 @@ import { useTranslation } from "./i18n";
 import { MutationFeedback, useActionScope } from "./CoreActions";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { DesktopList, TableLoading } from "./DesktopList";
-import { Button, Checkbox, Dialog, DialogCloseButton, PathField, Progress, SegmentedButtons, Select, TextField } from "./Material";
+import { Button, LoadingButton, Checkbox, Dialog, DialogCloseButton, PathField, Progress, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
@@ -580,7 +580,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     return (
         <SettingsSection className="settings-unity-installations" sectionRef={sectionRef} title={t("Unity installations")} actions={
             <div className="action-row">
-                <Button disabled={!manage || controlsBusy} title={manageTitle} onClick={() => void mutate("refresh")} type="button">{t("Discover and refresh")}</Button>
+                <LoadingButton disabled={!manage || controlsBusy} title={manageTitle} onClick={() => mutate("refresh")} type="button">{t("Discover and refresh")}</LoadingButton>
                 <Button disabled={!manage || controlsBusy} title={manageTitle} onClick={() => void mutate("select")} type="button" variant="tonal">{t("Manually select")}</Button>
             </div>
         }>

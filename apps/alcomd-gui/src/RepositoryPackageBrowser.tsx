@@ -38,7 +38,7 @@ export function RepositoryRefresh({ client, repository, onChanged }: { client: G
         }
     };
     return <RefreshButton disabled={!available || repository.repositoryId === undefined || repository.revision === undefined || busy}
-        label={t("Refresh repository")} refreshingLabel={t("Refreshing repository")} refreshing={busy} onClick={() => void refresh()} />;
+        label={t("Refresh repository")} refreshingLabel={t("Refreshing repository")} refreshing={busy} onClick={() => refresh()} />;
 }
 
 interface PackageVisibility {

@@ -12,7 +12,7 @@ import {
     type UiTreeNode
 } from "./portable-ui";
 import { useTranslation, type Translate } from "./i18n";
-import { Button, Progress, Select, Switch, TextField } from "./Material";
+import { Button, LoadingButton, Progress, Select, Switch, TextField } from "./Material";
 
 interface PortableUiRendererProps {
     snapshot: UiSnapshot;
@@ -162,17 +162,17 @@ export function PortableUiRenderer({
                 return <hr className="portable-divider" key={key} />;
             case "button":
                 return (
-                    <Button
+                    <LoadingButton
                         disabled={inheritedDisabled || node.payload.disabled || busy}
                         key={key}
-                        onClick={() => void onAction({
+                        onClick={() => onAction({
                             kind: "activate",
                             actionId: node.payload.actionId
                         })}
                         variant="tonal"
                     >
                         {node.payload.label}
-                    </Button>
+                    </LoadingButton>
                 );
             case "switch":
                 return renderSwitch(node, entry.formId, drafts, inheritedDisabled || busy, changeField);

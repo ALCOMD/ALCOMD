@@ -78,6 +78,7 @@ samp {
 }
 
 .alcomd-button-progress {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
 }
@@ -86,6 +87,33 @@ samp {
     flex: none;
     --md-circular-progress-size: 24px;
     --md-circular-progress-active-indicator-color: currentColor;
+}
+
+.alcomd-loading-button-content {
+    display: inline-flex;
+    position: relative;
+}
+
+.alcomd-loading-button-content > .alcomd-button-progress {
+    position: absolute;
+    inset: 0;
+}
+
+/* Busy controls remain disabled, but their progress must stay legible. */
+.alcomd-refresh-button--busy {
+    --md-icon-button-disabled-icon-opacity: 1;
+    --md-icon-button-disabled-icon-color: var(--md-sys-color-primary);
+}
+
+.alcomd-loading-button--busy {
+    --md-filled-button-disabled-label-text-opacity: 1;
+    --md-filled-tonal-button-disabled-label-text-opacity: 1;
+    --md-outlined-button-disabled-label-text-opacity: 1;
+    --md-text-button-disabled-label-text-opacity: 1;
+}
+
+.alcomd-loading-button--busy .alcomd-button-progress {
+    color: var(--md-sys-color-primary);
 }
 
 .alcomd-split-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--alcomd-list-row-gap); }

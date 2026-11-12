@@ -192,13 +192,71 @@ export const IconButton = forwardRef(function IconButton(
     } as MaterialProps, children);
 });
 
-export function RefreshButton({ label, refreshing = false, refreshingLabel, disabled, title, type = "button", ...props }: Omit<IconButtonProps, "children" | "label"> & {
+const ACTION_FEEDBACK_MIN_MS = 300;
+
+type FeedbackClick = (event: ReactMouseEvent<HTMLButtonElement>) => void | Promise<unknown>;
+
+export function useActionFeedback(loading: boolean) {
+    const [active, setActive] = useState(false);
+    const pending = useRef(false);
+    const mounted = useRef(true);
+    const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            if (timer.current !== undefined) clearTimeout(timer.current);
+        };
+    }, []);
+    const run = (action: () => void | Promise<unknown>) => {
+        if (loading || pending.current) return;
+        pending.current = true;
+        setActive(true);
+        const started = performance.now();
+        const finish = () => {
+            if (!mounted.current) return;
+            timer.current = setTimeout(() => {
+                pending.current = false;
+                setActive(false);
+            }, Math.max(0, ACTION_FEEDBACK_MIN_MS - (performance.now() - started)));
+        };
+        try {
+            return Promise.resolve(action()).finally(finish);
+        } catch (error) {
+            finish();
+            throw error;
+        }
+    };
+    return { busy: loading || active, run };
+}
+
+/** Await an explicit action while keeping fast completion perceptible and the label width fixed. */
+export function LoadingButton({ children, className, disabled, loading = false, onClick, softDisabled, ...props }: Omit<ButtonProps, "onClick"> & {
+    loading?: boolean;
+    onClick?: FeedbackClick;
+}) {
+    const feedback = useActionFeedback(loading);
+    return <Button {...props} className={[className, feedback.busy && "alcomd-loading-button--busy"].filter(Boolean).join(" ")} aria-busy={feedback.busy ? "true" : "false"} disabled={disabled || feedback.busy} softDisabled={softDisabled} onClick={(event) => {
+        if (!disabled && !softDisabled && !feedback.busy && onClick !== undefined) return feedback.run(() => onClick(event));
+    }}>
+        <span className="alcomd-loading-button-content">
+            <span style={{ opacity: feedback.busy ? 0 : 1 }}>{children}</span>
+            {feedback.busy ? <ButtonProgress /> : null}
+        </span>
+    </Button>;
+}
+
+export function RefreshButton({ className, label, refreshing = false, refreshingLabel, disabled, title, type = "button", onClick, ...props }: Omit<IconButtonProps, "children" | "label" | "onClick"> & {
     label?: string;
     refreshing?: boolean;
     refreshingLabel?: string;
+    onClick?: FeedbackClick;
 }) {
     const { t } = useTranslation();
-    return <IconButton {...props} aria-busy={refreshing} disabled={disabled || refreshing} label={refreshing ? refreshingLabel ?? t("Refreshing…") : label ?? t("Refresh")} title={title ?? label ?? t("Refresh")} type={type}><Icon asset={refreshIcon} /></IconButton>;
+    const feedback = useActionFeedback(refreshing);
+    return <IconButton {...props} className={[className, feedback.busy && "alcomd-refresh-button--busy"].filter(Boolean).join(" ")} aria-busy={feedback.busy ? "true" : "false"} disabled={disabled || feedback.busy} label={feedback.busy ? refreshingLabel ?? t("Refreshing…") : label ?? t("Refresh")} title={title ?? label ?? t("Refresh")} type={type} onClick={(event) => {
+        if (!disabled && !feedback.busy && onClick !== undefined) return feedback.run(() => onClick(event));
+    }}>{feedback.busy ? <ButtonProgress /> : <Icon asset={refreshIcon} />}</IconButton>;
 }
 
 export function NavigationList({ children, ...props }: HTMLAttributes<HTMLElement>) {
@@ -1021,7 +1079,7 @@ export function Progress({ label, max = 1, value }: { label: string; max?: numbe
     } as MaterialProps);
 }
 
-export function ButtonProgress({ slot }: { slot: "icon" }) {
+export function ButtonProgress({ slot }: { slot?: "icon" }) {
     return <span aria-hidden="true" className="alcomd-button-progress" slot={slot}>
         {createElement(materialElements.circularProgress, { indeterminate: true })}
     </span>;

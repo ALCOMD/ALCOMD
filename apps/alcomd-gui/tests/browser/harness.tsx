@@ -34,6 +34,7 @@ import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindo
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 import { FilePickerEvidence } from "./FilePickerEvidence";
+import { RefreshFeedbackEvidence } from "./RefreshFeedbackEvidence";
 import { OperationLogEvidence } from "./OperationLogEvidence";
 import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
@@ -200,8 +201,9 @@ const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
 const mode = (query.get("state") ?? "ready") as HarnessMode;
 const materialEvidence = query.get("material") === "1";
+const refreshFeedbackEvidence = query.has("refresh-feedback");
 const operationLogEvidence = query.get("operation-log-preview") === "1";
-if (!materialEvidence && !operationLogEvidence) window.history.replaceState(null, "", initialRoute);
+if (!materialEvidence && !operationLogEvidence && !refreshFeedbackEvidence) window.history.replaceState(null, "", initialRoute);
 
 class BrowserUnityWindows implements GuiUnityWindows {
     readonly focused: UnityWindowTarget[] = [];
@@ -436,8 +438,10 @@ class DeterministicGuiClient implements GuiRpcClient {
     private creationRequests = new Map<string, { fingerprint: string; projectId: string; operationId: string }>();
 
     private connectionRestored = false;
+    private permissionReadFailing = query.has("permission-refresh-error");
 
     constructor(private readonly mode: HarnessMode) {
+        window.addEventListener("test-permission-read-ready", () => { this.permissionReadFailing = false; }, { once: true });
         if (query.has("armSettingsHold")) window.addEventListener("test-settings-hold", () => { this.settingsHoldArmed = true; }, { once: true });
         this.userPackageEnrolled = mode === "package-user-source";
         if (mode === "empty") this.projectTemplates = [];
@@ -1571,7 +1575,10 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
     }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
-    extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> { return this.value({ extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] }); }
+    extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> {
+        if (this.permissionReadFailing) return Promise.reject({ code: "store_unavailable" });
+        return this.value({ extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
+    }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
     extensionPlanInstall(): ReturnType<GuiRpcClient["extensionPlanInstall"]> { return this.value({ plan: extensionPlan("install") }); }
     extensionApplyInstall(): ReturnType<GuiRpcClient["extensionApplyInstall"]> { return this.value({ operationId: this.beginOperation("extensions.install"), replayed: false }); }
@@ -1744,7 +1751,7 @@ const repositoryLinks = pendingRepositoryLinks ? {
 } : undefined;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        {query.has("file-picker-evidence") ? <FilePickerEvidence /> : materialEvidence
+        {refreshFeedbackEvidence ? <RefreshFeedbackEvidence /> : query.has("file-picker-evidence") ? <FilePickerEvidence /> : materialEvidence
             ? <MaterialFoundationEvidence />
             : operationLogEvidence ? <OperationLogEvidence />
             : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}
