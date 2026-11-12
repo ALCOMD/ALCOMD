@@ -1395,6 +1395,14 @@ fn map_operation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRecor
     })
 }
 
+pub(super) fn has_unfinished_operations(connection: &Connection) -> Result<bool, StoreError> {
+    connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM operations WHERE state NOT IN ('succeeded','failed','cancelled'))",
+        [],
+        |row| row.get(0),
+    ).map_err(store_failure)
+}
+
 pub(super) fn list_operations(
     connection: &Connection,
     owner: &PrincipalId,

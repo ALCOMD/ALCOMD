@@ -230,7 +230,9 @@ M1 结果：
 - `alcomd-cli system status` 在 endpoint not found 或 connection refused 时默认启动 sibling
   `alcomd`，总等待和重试上限为 5 秒。
 - permission denied、协议版本或其他错误不得触发自动启动来掩盖问题。
-- 并发 CLI 可以竞争启动，但最终只有一个 daemon 获得权威实例；daemon 生命周期不依赖 CLI。
+- 并发 CLI 可以竞争启动，但最终只有一个 daemon 获得权威实例；daemon 与某个 CLI 进程独立，关闭单个客户端不直接停止 daemon。
+- 所有 IPC 连接（包括事件订阅）关闭后，经1秒交接缓冲并确认全局没有非终态 Operation 时，daemon 正常退出；新连接取消旧空闲判断。启动后尚无连接时留5秒首次连接窗口。状态读取失败不视为空闲，等待输入、interrupted 和 recovering 均为未完成；只有 succeeded、failed、cancelled 为完成。不新增退出 RPC，也不自动取消任务。
+- 未来 MCP/API 适配器须在服务客户端期间保持实际 IPC 连接，上游客户端全部关闭后释放相应连接；后台扩展租约本身不保持 daemon 常驻，随 daemon 正常停止。在途启动同步、发现及仓库刷新完成后再退出。
 - `--no-start-daemon` 禁止自动启动，供脚本、诊断和测试使用。
 - M1 不建立 daemon supervisor、system service、插件式 launcher 或正式安装布局；M12 再验证
   完整产品中的启动与生命周期。

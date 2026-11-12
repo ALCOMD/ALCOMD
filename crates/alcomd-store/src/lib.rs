@@ -45,6 +45,8 @@ mod events_sources_tests;
 #[cfg(test)]
 mod events_tests;
 #[cfg(test)]
+mod idle_shutdown_tests;
+#[cfg(test)]
 mod remove_activity_tests;
 
 mod config;
@@ -2319,6 +2321,11 @@ impl M7UnityMigrationStore for StateStoreHandle {
 }
 
 impl StateStore for StateStoreHandle {
+    async fn has_unfinished_operations(&self) -> Result<bool, StoreError> {
+        self.request(|reply| Command::HasUnfinishedOperations { reply })
+            .await
+    }
+
     fn event_commits(&self) -> watch::Receiver<EventCommitWatermark> {
         self.inner.event_commits.clone()
     }
@@ -2488,6 +2495,9 @@ impl StateStore for StateStoreHandle {
 }
 
 enum Command {
+    HasUnfinishedOperations {
+        reply: oneshot::Sender<Result<bool, StoreError>>,
+    },
     WithLogContext(alcomd_application::LogWriteContext, Box<Command>),
     M3(Box<dyn FnOnce(&mut rusqlite::Connection) -> bool + Send>),
     CreateStateCheck {
@@ -2623,6 +2633,9 @@ fn run_worker(
         let was_autocommit = connection.is_autocommit();
         let mut extensions_changed = false;
         match command {
+            Command::HasUnfinishedOperations { reply } => {
+                let _ = reply.send(sqlite::has_unfinished_operations(&connection));
+            }
             Command::WithLogContext(..) => {
                 unreachable!("log context is unwrapped once at the worker boundary")
             }

@@ -909,6 +909,9 @@ impl std::error::Error for StoreError {
 
 /// Narrow asynchronous persistence port required by the M2 vertical slice.
 pub trait StateStore: Clone + Send + Sync + 'static {
+    /// Whether any Principal owns a durable nonterminal Operation.
+    fn has_unfinished_operations(&self) -> impl Future<Output = Result<bool, StoreError>> + Send;
+
     /// Subscribes to actual committed event watermarks.
     fn event_commits(&self) -> tokio::sync::watch::Receiver<EventCommitWatermark>;
 
@@ -1273,6 +1276,14 @@ impl<S: StateStore> Clone for Application<S> {
 }
 
 impl<S: StateStore> Application<S> {
+    /// Core lifecycle query across all Principals, independent of client visibility.
+    pub async fn has_unfinished_operations(&self) -> Result<bool, ApplicationError> {
+        self.store
+            .has_unfinished_operations()
+            .await
+            .map_err(Into::into)
+    }
+
     /// Creates the M2 use-case service over one persistence port.
     #[must_use]
     pub fn new(store: S) -> Self {

@@ -6,6 +6,8 @@
 
 **M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
 
+- 2026-11-12 按所有者要求完成[Core 空闲自动退出](exec-plans/M7-core-idle-shutdown.md)：所有普通 RPC/事件连接关闭且全局无未完成任务时，经1秒交接缓冲正常退出；首次连接留5秒，新连接取消旧判断。所有 Principal 的非终态任务及查询失败均保持运行，在途同步/发现/刷新先收尾，后台扩展随 Core 正常停止。107项不同 Rust 回归通过，含8项新增真实 IPC/任务查询回归；受影响严格 Clippy、fmt/xtask/diff通过，见[记录](testing/core-idle-shutdown-20261112.md)。无RPC数据形状/Schema/权限/依赖变化，未实现MCP/API；所有者随后授权本项提交并更新程序，实际交付另记，未推送，M7/H7保持。
+
 - 2026-11-10 按所有者要求统一[刷新按钮圆圈反馈](exec-plans/M7-refresh-button-feedback.md)：点击立即显示 Material 圆圈，快请求至少300ms，慢请求持续到完成；结果/错误即时呈现，保留禁用与重复触发保护。覆盖包管理、仓库、用户包、两处 Unity 查找、扩展权限及 Portable UI 普通 action。分轮116项不同浏览器用例通过，最终59项回归、前端检查/构建及fmt/xtask/diff通过，浅深色截图已核对；失败和复用范围见[记录](testing/refresh-button-feedback-20261110.md)。无Core/公共合同/Schema/权限/依赖变化；2026-11-12所有者随后授权本项本地提交，未推送或更新运行实例，M7/H7保持。
 
 - 2026-11-10 修复删除任务因目录占用长期挂在恢复中的问题：rename 明确失败且证明源目录未移动时，Core 记录 failed/completedAt，保留项目和登记；释放占用或重启后不自动再删，空准备目录清理失败仅补充诊断。已移动/不明状态的恢复、取消边界及重建原路径保护保持，恢复停止日志保留 Waiting 和真实原因。10 项删除回归（含新/旧任务真实 Windows 占用）、2 项 P7 契约、受影响库、严格 Clippy、fmt/xtask/diff 和独立 Core 构建通过，无新增 RPC 形状/错误码、Schema、权限或依赖。所有者选择先修代码，未关闭 Hub/Editor、更新运行程序或执行真实删除；最后一次实机只读复核因自动审批服务额度错误未执行，详见[计划](exec-plans/M7-project-delete-unmoved-failure.md)和[验证记录](testing/project-delete-unmoved-failure-20261110.md)。前一项 State32 修复保持；所有者随后授权两项修复分别提交并推送，实际远程范围与 refs 另行核对；M7/H7 保持。

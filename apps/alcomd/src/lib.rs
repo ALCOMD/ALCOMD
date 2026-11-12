@@ -32,6 +32,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 mod builtin_repositories;
 mod events_rpc;
 mod hub_platform;
+mod idle_shutdown;
 mod legacy_template_cleanup;
 mod logs_rpc;
 mod m3_rpc;
@@ -153,7 +154,13 @@ where
         })?;
     let mut initial_repository_sync =
         builtin_repositories::start(&applications.store, &applications.m3).await?;
-    let result = run_listener(&mut listener, applications, shutdown).await;
+    let result = run_listener(
+        &mut listener,
+        applications,
+        shutdown,
+        &mut initial_repository_sync,
+    )
+    .await;
     initial_repository_sync.shutdown().await;
     result.map_err(BindError::Io)
 }
@@ -385,6 +392,7 @@ async fn run_listener<F>(
     listener: &mut IpcListener,
     applications: Arc<Applications>,
     shutdown: F,
+    initial_repository_sync: &mut tokio::task::JoinSet<()>,
 ) -> io::Result<()>
 where
     F: Future<Output = ()>,
@@ -404,9 +412,13 @@ where
     > = tokio::task::JoinSet::new();
     let mut discovery_requested = false;
     let mut repository_refresh_tasks = tokio::task::JoinSet::new();
+    let idle = idle_shutdown::wait(&applications.m2, idle_shutdown::STARTUP_GRACE);
+    tokio::pin!(idle);
     tokio::pin!(shutdown);
     loop {
         tokio::select! {
+            biased;
+            () = &mut shutdown => break,
             result = listener.accept() => {
                 let stream = result?;
                 let applications = Arc::clone(&applications);
@@ -416,7 +428,17 @@ where
             }
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
+                if connections.is_empty() {
+                    idle.set(idle_shutdown::wait(&applications.m2, idle_shutdown::DISCONNECTED_GRACE));
+                }
             }
+            () = &mut idle, if connections.is_empty() => {
+                if discovery_tasks.is_empty() && repository_refresh_tasks.is_empty() && initial_repository_sync.is_empty() {
+                    break;
+                }
+                idle.set(idle_shutdown::wait(&applications.m2, idle_shutdown::DISCONNECTED_GRACE));
+            }
+            _ = initial_repository_sync.join_next(), if !initial_repository_sync.is_empty() => {}
             _ = discovery_tick.tick() => discovery_requested = true,
             () = applications.repository_refresh_requested.notified(), if repository_refresh_tasks.is_empty() => {
                 let maintenance = applications.repository_auto_refresh.clone();
@@ -447,7 +469,6 @@ where
                     .map_err(|_| io::Error::other("Extension runtime maintenance failed"))?;
                 applications.m7.maintain(current_time_ms().map_err(bind_as_io)?).await;
             }
-            () = &mut shutdown => break,
         }
         if discovery_requested && discovery_tasks.is_empty() {
             discovery_requested = false;

@@ -21,6 +21,8 @@ static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub struct TestDaemon {
     task: JoinHandle<Result<(), BindError>>,
     _listener: Arc<Mutex<IpcListener>>,
+    #[cfg(test)]
+    applications: Arc<super::Applications>,
 }
 
 impl TestDaemon {
@@ -95,11 +97,18 @@ where
     .await?;
     let listener = Arc::new(Mutex::new(listener));
     let task_listener = Arc::clone(&listener);
+    #[cfg(test)]
+    let test_applications = Arc::clone(&applications);
     let task = tokio::spawn(async move {
         let mut listener = task_listener.lock().await;
-        let result = super::run_listener(&mut listener, applications, shutdown)
-            .await
-            .map_err(BindError::Io);
+        let result = super::run_listener(
+            &mut listener,
+            applications,
+            shutdown,
+            &mut tokio::task::JoinSet::new(),
+        )
+        .await
+        .map_err(BindError::Io);
         drop(listener);
         drop(temporary_data);
         result
@@ -107,6 +116,8 @@ where
     Ok(TestDaemon {
         task,
         _listener: listener,
+        #[cfg(test)]
+        applications: test_applications,
     })
 }
 
@@ -174,6 +185,220 @@ mod tests {
     use super::*;
 
     static IPC_TEST_LOCK: Mutex<()> = Mutex::const_new(());
+
+    async fn connect_lifecycle_client(ipc: &IpcConfig) -> alcomd_platform::IpcStream {
+        let mut stream = alcomd_platform::connect(ipc)
+            .await
+            .expect("connect real IPC");
+        crate::write_json_frame(
+            &mut stream,
+            &json!({
+                "id": "lifecycle-hello", "method": METHOD_SYSTEM_HELLO,
+                "params": { "rpcVersion": RPC_VERSION, "client": {
+                    "name": "lifecycle-test", "version": "1.0.0", "instanceId": "lifecycle-test"
+                }, "capabilities": [alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1] }
+            }),
+        )
+        .await
+        .expect("hello");
+        let _: SuccessResponse<HelloResult> = read_response(&mut stream).await;
+        stream
+    }
+
+    async fn start_lifecycle_daemon(fixture: &Fixture) -> TestDaemon {
+        start_with_data_until(
+            fixture.ipc.clone(),
+            DataConfig::isolated(fixture.directory.0.join("data")),
+            std::future::pending(),
+        )
+        .await
+        .expect("start isolated lifecycle daemon")
+    }
+
+    async fn assert_idle_stopped(daemon: &mut TestDaemon) {
+        tokio::time::timeout(Duration::from_secs(8), daemon)
+            .await
+            .expect("automatic exit deadline")
+            .expect("join daemon")
+            .expect("graceful automatic exit");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_waits_for_first_client_and_every_connection_to_close() {
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let mut daemon = start_lifecycle_daemon(&fixture).await;
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(
+            !daemon.is_finished(),
+            "startup must allow the spawning client to connect"
+        );
+        let first = connect_lifecycle_client(&fixture.ipc).await;
+        let mut second = connect_lifecycle_client(&fixture.ipc).await;
+        drop(first);
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(!daemon.is_finished(), "one open client keeps Core running");
+        crate::write_json_frame(
+            &mut second,
+            &json!({"id":"still-ready", "method":METHOD_SYSTEM_STATUS,"params":{}}),
+        )
+        .await
+        .expect("write status after another client closes");
+        let status: SuccessResponse<SystemStatusResult> = read_response(&mut second).await;
+        assert_eq!(status.result.state, "ready");
+        drop(second);
+        assert_idle_stopped(&mut daemon).await;
+        drop(daemon);
+        // Ownership is released and the same persisted profile can start again.
+        let mut restarted = start_lifecycle_daemon(&fixture).await;
+        let client = connect_lifecycle_client(&fixture.ipc).await;
+        drop(client);
+        assert_idle_stopped(&mut restarted).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_is_cancelled_when_a_client_reconnects_during_handoff() {
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let mut daemon = start_lifecycle_daemon(&fixture).await;
+        drop(connect_lifecycle_client(&fixture.ipc).await);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let replacement = connect_lifecycle_client(&fixture.ipc).await;
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(
+            !daemon.is_finished(),
+            "the old idle deadline cannot close a new connection"
+        );
+        drop(replacement);
+        assert_idle_stopped(&mut daemon).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_counts_an_event_subscription_without_ordinary_rpc_clients() {
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let mut daemon = start_lifecycle_daemon(&fixture).await;
+        let ordinary = connect_lifecycle_client(&fixture.ipc).await;
+        let mut events = connect_lifecycle_client(&fixture.ipc).await;
+        crate::write_json_frame(&mut events, &json!({"id":"subscribe","method":alcomd_protocol::METHOD_EVENTS_SUBSCRIBE,"params":{}})).await.expect("subscribe on the dedicated event stream");
+        let _: SuccessResponse<alcomd_protocol::EventsSubscribeResult> =
+            read_response(&mut events).await;
+        drop(ordinary);
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(
+            !daemon.is_finished(),
+            "the event stream is a live client connection"
+        );
+        drop(events);
+        assert_idle_stopped(&mut daemon).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_waits_for_another_principals_durable_task_to_finish() {
+        use alcomd_application::{IdempotencyKey, PrincipalId, StateStore};
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let mut daemon = start_lifecycle_daemon(&fixture).await;
+        let client = connect_lifecycle_client(&fixture.ipc).await;
+        let owner = PrincipalId::parse("extension:idle-task").expect("other task owner");
+        let task = daemon
+            .applications
+            .store
+            .create_state_check(
+                owner.clone(),
+                IdempotencyKey::parse("idle-task").expect("durable task key"),
+                1,
+            )
+            .await
+            .expect("accepted unscheduled durable work");
+        drop(client);
+        tokio::time::sleep(Duration::from_millis(2300)).await;
+        assert!(
+            !daemon.is_finished(),
+            "durable nonterminal work survives all client exits"
+        );
+        assert!(
+            daemon
+                .applications
+                .m2
+                .has_unfinished_operations()
+                .await
+                .expect("global task query with no clients")
+        );
+        daemon
+            .applications
+            .m2
+            .recover()
+            .await
+            .expect("schedule durable work with no clients");
+        assert_idle_stopped(&mut daemon).await;
+        assert_eq!(
+            daemon
+                .applications
+                .store
+                .get_operation(owner, task.operation_id)
+                .await
+                .expect("load task after automatic exit")
+                .state,
+            alcomd_application::OperationState::Succeeded
+        );
+        assert!(
+            !daemon
+                .applications
+                .m2
+                .has_unfinished_operations()
+                .await
+                .expect("no unfinished task after completion")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_also_stops_an_unclaimed_startup() {
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let mut daemon = start_lifecycle_daemon(&fixture).await;
+        assert_idle_stopped(&mut daemon).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn idle_shutdown_finishes_startup_sync_and_releases_the_real_endpoint() {
+        let _serial = IPC_TEST_LOCK.lock().await;
+        let fixture = Fixture::new();
+        let (mut listener, applications) = crate::initialize_daemon_with_directories(
+            fixture.ipc.clone(),
+            DataConfig::isolated(fixture.directory.0.join("data")),
+            Arc::new(TestStorageDirectories(fixture.directory.0.join("user"))),
+        )
+        .await
+        .expect("initialize isolated Core");
+        let (finish, completion) = oneshot::channel();
+        let daemon = tokio::spawn(async move {
+            let mut sync = tokio::task::JoinSet::new();
+            sync.spawn(async move {
+                completion.await.expect("complete startup work");
+            });
+            crate::run_listener(
+                &mut listener,
+                applications,
+                std::future::pending(),
+                &mut sync,
+            )
+            .await
+        });
+        drop(connect_lifecycle_client(&fixture.ipc).await);
+        tokio::time::sleep(Duration::from_millis(1300)).await;
+        assert!(
+            !daemon.is_finished(),
+            "in-flight startup work must not be cut off"
+        );
+        finish.send(()).expect("release startup synchronization");
+        tokio::time::timeout(Duration::from_secs(8), daemon)
+            .await
+            .expect("automatic exit deadline")
+            .expect("join production listener loop")
+            .expect("graceful exit");
+        drop(DaemonInstance::acquire(&fixture.ipc).expect("automatic exit released the endpoint"));
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn occupied_endpoint_fails_before_initializing_test_data() {
