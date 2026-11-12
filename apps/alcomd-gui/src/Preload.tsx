@@ -29,7 +29,7 @@ export function usePreloadIntent<T>({ key, load, discard = () => {}, enabled = t
         cache.forget(key, owner);
         signals.current = { pointer: false, focus: false, opened: false };
     }, [cache, key]);
-    useEffect(() => { if (!enabled) { window.clearTimeout(timer.current); cache.drop(key); } }, [cache, enabled, key]);
+    useEffect(() => { if (!enabled) { window.clearTimeout(timer.current); cache.forget(key, owner); } }, [cache, enabled, key, owner]);
     useEffect(() => { local.current?.activate(); return () => local.current?.dispose(); }, []);
     return {
         onPointerEnter: () => { signals.current.pointer = true; sync(false); },

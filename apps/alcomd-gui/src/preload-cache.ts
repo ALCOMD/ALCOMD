@@ -34,12 +34,18 @@ const aborted = () => new DOMException("Preload discarded", "AbortError");
 /** Disposable view data only. Running discarded reads keep their concurrency slot. */
 export class PreloadCache {
     private entries = new Map<string, Entry>();
+    private handoffs = new Map<string, Map<string, Entry>>();
     private running = 0;
     private disposed = false;
     constructor(private readonly idleMs = PRELOAD_IDLE_MS) {}
     activate() { this.disposed = false; this.pump(); }
 
     retain<T>(key: string, owner: string, run: (signal: AbortSignal) => Promise<T | ReturnType<typeof withPreloadWork<T>>>, discard: () => void = () => {}, weight?: () => number, valid?: () => boolean): Promise<T> {
+        const handedOff = this.handoffs.get(key)?.get(owner);
+        if (handedOff) {
+            if (!handedOff.valid || handedOff.valid()) return handedOff.promise as Promise<T>;
+            this.releaseHandoff(key, owner);
+        }
         let entry = this.entries.get(key);
         if (entry?.valid && !entry.valid()) { this.drop(key); entry = undefined; }
         if (!entry) {
@@ -59,6 +65,7 @@ export class PreloadCache {
     }
 
     release(key: string, owner: string) {
+        this.releaseHandoff(key, owner);
         const entry = this.entries.get(key);
         if (!entry) return;
         entry.owners.delete(owner);
@@ -72,6 +79,7 @@ export class PreloadCache {
     }
 
     forget(key: string, owner: string) {
+        this.releaseHandoff(key, owner);
         const entry = this.entries.get(key);
         if (!entry) return;
         entry.owners.delete(owner);
@@ -87,6 +95,13 @@ export class PreloadCache {
         globalThis.clearTimeout(entry.timer);
         entry.claimed = true;
         claimedSignals.add(entry.controller.signal);
+        // The outgoing trigger can still receive focus/pointer events before it unmounts.
+        // Only those same interaction owners reuse the handoff; a new visit reads afresh.
+        if (entry.owners.size > 0) {
+            const owners = this.handoffs.get(key) ?? new Map<string, Entry>();
+            for (const owner of entry.owners) owners.set(owner, entry);
+            this.handoffs.set(key, owners);
+        }
         entry.discard = () => {};
         if (!entry.started) this.start(entry);
         return entry.promise as Promise<T>;
@@ -95,7 +110,7 @@ export class PreloadCache {
     foreground<T>(key: string, owner: string, run: (signal: AbortSignal) => Promise<T | ReturnType<typeof withPreloadWork<T>>>, discard: () => void, weight?: () => number, valid?: () => boolean): Promise<T> {
         const result = this.retain(key, owner, run, discard, weight, valid);
         const entry = this.entries.get(key);
-        if (entry && !entry.started) this.start(entry);
+        if (entry && entry.promise === result && !entry.started) this.start(entry);
         return result;
     }
 
@@ -112,11 +127,18 @@ export class PreloadCache {
 
     dispose() {
         this.disposed = true;
+        this.handoffs.clear();
         for (const key of this.entries.keys()) this.drop(key, false);
     }
 
     dropInvalid() {
         for (const entry of this.entries.values()) if (entry.valid && !entry.valid()) this.drop(entry.key);
+    }
+
+    private releaseHandoff(key: string, owner: string) {
+        const owners = this.handoffs.get(key);
+        owners?.delete(owner);
+        if (owners?.size === 0) this.handoffs.delete(key);
     }
 
     private trim() {
