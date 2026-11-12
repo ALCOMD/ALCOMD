@@ -1,6 +1,7 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const errorMessages: TranslationTable = {
+    "The project folder does not exist. Check the project's path before deleting.": { "zh-CN": "项目文件夹不存在，请检查项目路径后再删除。", "ja-JP": "プロジェクトフォルダーが存在しません。削除するプロジェクトのパスを確認してください。" },
     "The source project folder does not exist. Check the source project's path before copying.": { "zh-CN": "源项目文件夹不存在，请检查源项目路径后再复制。", "ja-JP": "コピー元のプロジェクトフォルダーが存在しません。コピー元のパスを確認してください。" },
     "Some repository configuration could not be applied. Completed changes are kept. Review the repository list before importing again.": {"zh-CN":"部分存储库配置未能应用，已完成的更改会保留。请检查存储库列表后再导入。", "ja-JP":"一部のリポジトリ設定を適用できませんでした。完了した変更は保持されます。再度インポートする前に一覧を確認してください。"},
     "The Core started.": { "zh-CN": "Core 已启动。", "ja-JP": "Coreが起動しました。" },

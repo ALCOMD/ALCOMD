@@ -838,6 +838,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: this.beginOperation("projects.copy", "00000000-0000-4000-8000-000000000062"), targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
     projectPlanDeleteDirectory(_projectId: string, expectedRevision: number): ReturnType<GuiRpcClient["projectPlanDeleteDirectory"]> {
+        if (query.has("delete-source-missing")) return Promise.reject({ code: "project_delete_source_missing" });
         return this.value({
             plan: {
                 planId: "00000000-0000-4000-8000-000000000063",

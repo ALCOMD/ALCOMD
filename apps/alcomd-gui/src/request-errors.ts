@@ -194,8 +194,9 @@ export function requestErrorMessage(code: string): string {
         case "project_already_registered":
             return "This project is already registered. Use its existing entry.";
         case "project_inaccessible":
-        case "project_delete_source_missing":
             return "The project folder is unavailable. Check its location and access permissions.";
+        case "project_delete_source_missing":
+            return "The project folder does not exist. Check the project's path before deleting.";
         case "project_version_missing":
         case "project_version_invalid":
             return "The project's Unity version cannot be read. Check its version file before choosing an Editor.";

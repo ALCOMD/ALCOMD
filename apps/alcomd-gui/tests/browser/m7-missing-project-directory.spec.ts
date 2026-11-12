@@ -58,3 +58,28 @@ for (const scenario of [
         await page.screenshot({ path: testInfo.outputPath(`missing-copy-${scenario.locale}.png`), animations: "disabled" });
     });
 }
+
+for (const scenario of [
+    { locale: "en-US", more: "More actions for Sample", remove: "Remove Project", delete: "Delete Project Directory…", cancel: "Cancel", message: "The project folder does not exist. Check the project's path before deleting." },
+    { locale: "zh-CN", more: "Sample 的更多操作", remove: "删除项目", delete: "删除项目目录…", cancel: "取消", message: "项目文件夹不存在，请检查项目路径后再删除。" },
+    { locale: "ja-JP", more: "Sample のその他の操作", remove: "プロジェクトを削除", delete: "プロジェクトフォルダーを削除…", cancel: "キャンセル", message: "プロジェクトフォルダーが存在しません。削除するプロジェクトのパスを確認してください。" }
+]) {
+    test(`${scenario.locale} deletion identifies a missing directory before its action buttons`, async ({ page }) => {
+        await page.goto(`/browser-harness.html?route=/projects&h3=1&windows-paths=1&project-directory-state=missing&delete-source-missing=1&locale=${scenario.locale}`);
+        await selectActionMenuItem(page.getByRole("button", { name: scenario.more, exact: true }), page.getByRole("menuitem", { name: scenario.remove, exact: true }));
+        const dialog = page.locator("md-dialog[open]");
+        await dialog.getByRole("button", { name: scenario.delete, exact: true }).click();
+        const alert = dialog.getByRole("alert");
+        await expect(alert).toContainText(scenario.message);
+        await expect(alert).toContainText("project_delete_source_missing");
+        const positions = await dialog.evaluate((element) => {
+            const feedback = element.querySelector<HTMLElement>("[role=alert]")!.getBoundingClientRect();
+            const actions = element.querySelector<HTMLElement>(".dialog-actions")!.getBoundingClientRect();
+            return { feedbackBottom: feedback.bottom, actionsTop: actions.top };
+        });
+        expect(positions.feedbackBottom).toBeLessThanOrEqual(positions.actionsTop);
+        await expect(dialog.getByRole("button", { name: scenario.cancel, exact: true })).toBeEnabled();
+        await expect(dialog.getByRole("textbox")).toHaveCount(0);
+        await expect(page.locator(".projects-list tbody tr")).toHaveCount(1);
+    });
+}
