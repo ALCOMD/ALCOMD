@@ -31,19 +31,19 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生 Core/GUI 保持运行�
 
 当前独立实现只提供真实协议发现，不宣称 MCP 业务或管理扩展完成。不广告未实现的 tools/resources/subscriptions，不接受旧 initialize/ping 或 Tasks。HTTP 在身份合同批准实现前明确失败退出，不监听无认证端口。
 
-## 待批准的公共合同缺口
+## 公共合同与接线状态
 
-下列部分仅审计，尚未新增公共 RPC、State Schema、Host API 或权限名：
+客户端身份与 State33 最小合同已批准，正在同步 Schema、DTO 和隔离迁移；下列其余部分仍按实际接线推进：
 
 - 外部客户端身份与 Core 权威 Principal/权限/作用范围绑定；HTTP 每请求 Bearer 与受控 STDIO 启动身份不能取自 clientInfo。
 - MCP 管理扩展的客户端、请求、连接、订阅读取和授权管理；沿用既定权限分类及扩展所有权/范围规则。
 - 按现行 Core RPC 冻结工具输入/输出 Schema；旧 Draft 未提供正式 ABI。现有 Operation 仅 get/list/cancel，不能伪造尚无公开合同的 input/approve/reject/resume。
 
-提交最小具体差异后由所有者审批；等待期间继续不依赖这些合同的协议和测试工作。
+本批身份合同不再等待审批。其余真正新增的公共合同仍先提交具体差异，不暂停独立实现。
 
-### 下一批最小身份合同（待批准，尚未实施）
+### 下一批最小身份合同（2026-11-13 已批准，实施中）
 
-当前 `apps/alcomd/src/lib.rs::dispatch_payload` 把所有本机连接固定为 local-owner；`HelloParams` 没有认证字段。仅凭 adapter 内部记录 clientInfo/Bearer 不能改变 Core 权威身份。推荐先批准以下一批，而非在适配器中代持所有者权限：
+当前 `apps/alcomd/src/lib.rs::dispatch_payload` 把所有本机连接固定为 local-owner；`HelloParams` 没有认证字段。仅凭 adapter 内部记录 clientInfo/Bearer 不能改变 Core 权威身份。所有者已批准以下一批，直接实施；不得在适配器中代持所有者权限：
 
 1. `system.hello` 增加可选 `authentication: { kind: "mcp-client", credential: string }`，capability `mcp.clients.v1`。Core 验证凭据并绑定其签发的 `mcp:<ClientId>` Principal；无效凭据使用已有 authorization_required/permission_denied 并关闭连接，不回退为 owner。现有 GUI/CLI 的受保护 OS IPC 本机模式保持。MCP adapter 业务连接必须带凭据，clientInfo 仍只作展示。
 2. 新增 `mcp.clients.list/create/setGrants/issueCredential/revoke`：create 输入名称（1–128字符）和显式 grants，默认零授权；setGrants 用 expectedRevision 完整替换本客户端 grants；revoke 使客户端及其凭据失效，保留审计和既有 Operation。list 用已有 cursor/limit 模式、绑定集合 revision，不返回凭据或散列。写入沿用幂等键，最多64个客户端、每客户端64种权限/4096条作用范围。
@@ -67,3 +67,13 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生 Core/GUI 保持运行�
 - 输入：父提交 `b6de51de` 加本轮 MCP 增量；MCP、协议依赖、Cargo manifests/lock、工具链与本地构建配置共20份文件，聚合 SHA-256 `19b5810c127f6052ea9cff506bd370eb9b66c349ca83fd3dc4d4b59cc93d03b9`。逐文件清单与原始分轮输出位于 `target/m8-entry-audit-20261113/`，最终测试为 `mcp-tests-verified.log`，严格 Clippy 为 `mcp-clippy-serial.log`。该结果只代表此协议基础，不是完整 M8 或同 SHA 远端门禁。
 - 只读确认原 Core PID137312 / GUI PID142392，程序 SHA-256 分别仍为 `D06CC2959B181F22F364854188B86B15A15BCC902EA1316DEBBDC5B1353E9069`、`8B8BDBE1F53D8E5DCAD3978E74E038E70B67A3556897D6EF5CDC20672BCBE448`；没有替换程序、暂停原环境或恢复桌面控制。
 - 本批仅本地提交，不推送。HTTP OAuth、正式工具 Schema、业务工具、管理扩展/Host 接线与真实界面验收均未执行，继续留在 M8。
+
+### 已批准身份合同：Schema / 迁移首批
+
+2026-11-13 所有者明确回复“批准这批最小合同”，无需再次审批本批。已新增 `specs/rpc/m8-mcp-clients-v1.{md,schema.json}`、管理DTO、State33合同及三表迁移，接入原初始化链。现有本机模式兼容增加，Config13不变；不会恢复旧MCP协议或共享万能身份。
+
+实际结果：新增迁移5/0（包括全旧表行/结构保全、失败回滚、限额/外键、摘要长度与轮换事务、真实初始化后重开），DTO2/0（默认零授权、身份注入拒绝、Debug凭据脱敏），既有Store Schema42/0、StoreHandle12/0。初始迁移四例4/0保留，补初始化链后最终单轮5/0，不拼接。受影响protocol/store两个包的all-targets严格Clippy、包级fmt、metadata及diff通过；格式检查初次指出新DTO排版，修正后通过。没有完整Workspace、浏览器、release或远端工作流。
+
+证据父提交`ec5df3ae`，9份本批代码/Schema/合同输入聚合SHA-256 `5990ed5f3ab17a0161bef7da19e9b6836ae1b3028df305d652d49cf574e51d57`；逐文件摘要`target/m8-entry-audit-20261113/state33-inputs.json`。原始结果为`state33-tests.log`（初始四例）、`state33-tests-final.log`、`mcp-identity-dto-tests.log`、`state33-compatibility.log`、`state33-clippy.log`。
+
+这是一批实现检查点，**身份合同尚未全部实现**：没有接入hello认证或发布capability，原HelloParams仍拒绝额外认证字段，避免忽略凭据后以owner执行。application/Store客户端命令、随机凭据签发/摘要认证、管理RPC、逐请求撤销与范围复查、客户端隔离和秘密不落日志的真实Core用例继续按已批准合同实施；不得用DTO/SQLite约束测试冒充这些验证。没有启动新Core、升级原环境或恢复Computer Use；新增代码没有对应远端验证，不自动推送。

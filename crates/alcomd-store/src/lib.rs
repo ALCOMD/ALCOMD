@@ -73,7 +73,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 32;
+pub const CURRENT_DATA_SCHEMA: u32 = 33;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]

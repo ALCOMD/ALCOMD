@@ -6,7 +6,9 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：已补独立 STDIO 协议发现、逐请求元数据校验和有界错误分帧，12 项真实子进程定向测试、包级严格 Clippy/fmt、metadata/diff 检查通过。HTTP、业务工具和 MCP 管理扩展仍未完成；Core 客户端身份绑定与最小持久合同等待所有者审批，不能借 local-owner 提前开放。新增代码尚无对应 Hosted CI/CodeQL；未重跑 M7 全量验证，原 Core/GUI 进程及程序摘要保持。
+M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：已补独立 STDIO 协议发现、逐请求元数据校验和有界错误分帧，12 项真实子进程定向测试、包级严格 Clippy/fmt、metadata/diff 检查通过。HTTP、业务工具和 MCP 管理扩展仍未完成；Core 客户端身份绑定与最小持久合同已获所有者批准，正在实施，不能借 local-owner 提前开放。新增代码尚无对应 Hosted CI/CodeQL；未重跑 M7 全量验证，原 Core/GUI 进程及程序摘要保持。
+
+身份合同实施首批：已同步 RPC Schema/管理 DTO、State33 三表迁移及初始化链；5项新增迁移、2项DTO、现有Schema42项/StoreHandle12项分别通过，两个受影响包严格Clippy/fmt及metadata/diff通过。仅隔离数据库升级，原环境仍为State32。认证、凭据签发、管理RPC、逐请求撤销/范围复查尚未接通，未发布`mcp.clients.v1`，这些功能不计为可用；本批签发与权限安全的真实Core验证仍未执行。
 
 M0–M7阶段正式验收完成。M7最终功能候选`c46f7544`本地完整700项、三平台Hosted CI各700项及四语言CodeQL全部通过；未变Rust输入对应901项通过/14项原有忽略。独立验收在`e9879837`补跑最新增量28项及GUI/metadata/diff检查通过，994份输入未变，未把旧结果冒充完整703项。两处过时文档已同步到现行Config13和`logs.read`。详见[M7完成记录](testing/m7-completion-20261113.md)。
 

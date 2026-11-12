@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config13 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config13 设置和 Unity Hub 打开。M7 已签收；M8 最小客户端身份合同已批准，具体实施状态见 `docs/status.md` 与 [客户端合同](m8-mcp-clients-v1.md)。
 
 ## 1. M1 合同范围
 
