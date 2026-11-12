@@ -6,7 +6,7 @@ const reset = (region: Locator) => region.locator(".settings-section-heading").g
 const dialog = (page: Page) => page.locator("md-dialog[open]");
 
 test("six cards have title-row resets disabled at defaults and the two Unity exceptions retain their actions", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/settings&h3=1");
+    await page.goto("/browser-harness.html?route=/settings&h3=1&backup-compression=level5");
     for (const [category, names] of [["general", ["Projects", "Backups"]], ["unity", ["Default Unity launch arguments"]], ["appearance", ["Appearance", "Window", "Theme"]]] as const) {
         await selectSettingsSection(page, category);
         for (const name of names) {
@@ -46,16 +46,16 @@ test("a reset can be cancelled and a confirmed backup reset leaves project prefe
     await reset(card(page, "Backups")).click();
     await dialog(page).getByRole("button", { name: "Restore defaults", exact: true }).dblclick();
     await expect(dialog(page)).toHaveCount(0);
-    await expect(page.locator("#settings-backup-compression")).toHaveJSProperty("value", "fast");
+    await expect(page.locator("#settings-backup-compression")).toHaveJSProperty("value", "level5");
     await expect(page.getByRole("textbox", { name: "Default project location", exact: true })).toHaveValue("D:\\Projects");
-    expect(await page.evaluate(() => window.settingsRequests.at(-1)?.update)).toEqual({ backups: { compressionMode: "fast", includeLibrary: false } });
+    expect(await page.evaluate(() => window.settingsRequests.at(-1)?.update)).toEqual({ backups: { compressionMode: "level5", includeLibrary: false } });
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(3);
     await expect(reset(card(page, "Backups"))).toBeDisabled();
     await expect(card(page, "Backups").getByRole("heading")).toBeFocused();
 });
 
 test("default directory cards allow discarding a draft without writing the default again", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=/settings&h3=1");
+    await page.goto("/browser-harness.html?route=/settings&h3=1&backup-compression=level5");
     for (const [name, label, defaultPath] of [["Projects", "Default project location", "C:\\Fixture"], ["Backups", "Default backup location", "C:\\Fixture\\Backups"]]) {
         const region = card(page, name!);
         const path = region.getByRole("textbox", { name: label, exact: true });
@@ -77,6 +77,22 @@ test("default directory cards allow discarding a draft without writing the defau
         await expect(region.getByRole("heading")).toBeFocused();
     }
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+});
+
+test("a saved fast backup preference stays unchanged until restoring the new level5 default", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/settings&h3=1");
+    const compression = page.locator("#settings-backup-compression");
+    await expect(compression).toHaveJSProperty("value", "fast");
+    await expect(reset(card(page, "Backups"))).toBeEnabled();
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+    await reset(card(page, "Backups")).click();
+    await dialog(page).getByRole("button", { name: "Restore defaults", exact: true }).click();
+    await expect(dialog(page)).toHaveCount(0);
+    await expect(compression).toHaveJSProperty("value", "level5");
+    await expect(reset(card(page, "Backups"))).toBeDisabled();
+    expect(await page.evaluate(() => window.settingsRequests.map(request => request.update))).toEqual([
+        { backups: { compressionMode: "level5" } }
+    ]);
 });
 
 test("theme autosave enables reset and a confirmed restore disables it again", async ({ page }) => {

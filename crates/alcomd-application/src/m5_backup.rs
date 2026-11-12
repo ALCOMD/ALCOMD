@@ -124,7 +124,7 @@ impl Default for BackupDefaults {
     fn default() -> Self {
         Self {
             directory: None,
-            compression_mode: BackupCompression::Fast,
+            compression_mode: BackupCompression::Level5,
             include_vpm_packages: true,
             include_library: false,
         }

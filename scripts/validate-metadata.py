@@ -86,6 +86,8 @@ def validate_current_settings_contract() -> None:
                     expected["properties"]["hiddenRepositoryPackages"] = {"$ref": "#/$defs/hiddenRepositoryPackages"}
                     if name == "packages":
                         expected["required"].append("hiddenRepositoryPackages")
+                if version == 13 and name in {"backupSettings", "partialBackupsUpdate"}:
+                    expected["properties"]["compressionMode"]["default"] = "level5"
                 require(active_definitions[name] == expected,
                         f"Config{version} changed the retained {name} contract")
         if version == 13:

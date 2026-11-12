@@ -391,7 +391,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         revision: 7,
         settings: {
             projects: { autoDiscover: true },
-            backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false },
+            backups: { compressionMode: query.get("backup-compression") === "level5" ? "level5" : "fast", includeVpmPackages: true, includeLibrary: false },
             paths: { projectDirectory: query.get("project-directory"), backupDirectory: null },
             unity: { hubPath: null, defaultLaunchArguments: query.has("default-arguments") ? JSON.parse(query.get("default-arguments")!) as string[] : null },
             window: { rememberState: false, fullscreen: query.has("window-fullscreen") },

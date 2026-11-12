@@ -56,4 +56,6 @@
 
 所有者同时提出默认备份体积和文件名问题，仍处于只读核对与讨论。最新两份真实归档的11,940个项目文件路径、未压缩大小和CRC一致；v3约935 MB、v4约1,180 MB。锁定依赖确认 v3 Fast 实际走默认等级6，v4 fast 为真实等级1；当前 vrc-get/ALCOM 上游也有相同选项映射。v4 UUID 文件名来自现行归档命名合同，并非中文编码损坏。证据见 target/m7-backup-audit-20261112/archive-comparison.json；尚未修改备份实现、默认值、命名合同或用户归档，不能在这些反馈处理完毕前宣布M7完成。
 
+随后所有者接受“项目名＋时间”并选择默认等级5，按[备份修正计划](M7-backup-names-default-compression.md)实施。通过既有settings.update将当前实例压缩默认值由fast保存为level5，revision7→8，其他设置完整保持；真实旧备份不改名或重写。此后最终候选须包含该增量，前述只读状态为讨论当时记录。
+
 f2689f42 的四语言CodeQL成功，macOS在第二次运行workspace tests（Test repository contracts）时发现另一个独立失败：storage_directories::tests::publishing_a_directory_never_replaces_an_empty_destination 创建目标时报NotFound；同SHA前一轮Check中的该测试已通过。夹具根使用PID+SystemTime纳秒显示值，不能保证并行调用不同，其他测试可能清理同一根。仅将测试夹具后缀改为进程内AtomicU64计数，与既有平台测试模式一致，不依赖系统时钟精度；生产发布函数及全部原断言保持。日志见 target/m7-signoff-budget-20261112/macos.log。该测试修正独立提交，最终Hosted macOS仍须验证，不以本机通过替代。

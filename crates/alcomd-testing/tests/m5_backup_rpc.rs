@@ -235,7 +235,7 @@ async fn backup_rpc_defaults_explicit_overrides_and_replay_preserve_frozen_conte
     );
     let directory = PathBuf::from(settings.directories.backup_directory);
     for (accepted, compression, exclude, library) in [
-        (&first, BackupCompression::Fast, false, false),
+        (&first, BackupCompression::Level5, false, false),
         (&second, BackupCompression::Level5, true, true),
         (&overridden, BackupCompression::Store, false, false),
     ] {

@@ -171,7 +171,7 @@ pub struct ConfigBackupSettings {
 impl Default for ConfigBackupSettings {
     fn default() -> Self {
         Self {
-            compression_mode: crate::BackupCompression::Fast,
+            compression_mode: crate::BackupCompression::Level5,
             include_vpm_packages: true,
             include_library: false,
         }

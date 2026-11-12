@@ -74,8 +74,8 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
                         <Checkbox checked={settings.projects.autoDiscover} disabled={!canManageProjects} label={t("Automatically add projects from the default location")}
                             onChange={(autoDiscover) => settingsWriter.change({ projects: { autoDiscover } })} />
                     </SettingsSection>
-                    <SettingsSection title={t("Backups")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Backups")} disabled={saving.saving || saving.failed || (!backupDirty && settings.paths.backupDirectory === null && settings.backups.compressionMode === "fast" && settings.backups.includeVpmPackages && !settings.backups.includeLibrary)} onRestore={async () => {
-                        await settingsWriter.restoreDefaults({ paths: { backupDirectory: null }, backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false } },
+                    <SettingsSection title={t("Backups")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Backups")} disabled={saving.saving || saving.failed || (!backupDirty && settings.paths.backupDirectory === null && settings.backups.compressionMode === "level5" && settings.backups.includeVpmPackages && !settings.backups.includeLibrary)} onRestore={async () => {
+                        await settingsWriter.restoreDefaults({ paths: { backupDirectory: null }, backups: { compressionMode: "level5", includeVpmPackages: true, includeLibrary: false } },
                             { paths: { backupDirectory: accepted.settings.paths.backupDirectory }, backups: { ...accepted.settings.backups } });
                         setBackupReset((value) => value + 1);
                     }} />}>

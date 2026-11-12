@@ -379,6 +379,8 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             record.record.compression_mode,
             if index == 2 {
                 BackupCompression::Maximum
+            } else if index == 1 {
+                BackupCompression::Level5
             } else {
                 BackupCompression::Fast
             }

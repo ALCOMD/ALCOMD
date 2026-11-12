@@ -839,7 +839,7 @@ mod tests {
         }
     }
 
-    const CONFIG8_DEFAULTS_TOML: &str = "\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n";
+    const CONFIG8_DEFAULTS_TOML: &str = "\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"level5\"\ninclude_vpm_packages = true\ninclude_library = false\n";
 
     fn default_snapshot() -> ConfigSnapshot {
         ConfigSnapshot::default()

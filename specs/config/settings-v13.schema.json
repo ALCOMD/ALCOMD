@@ -485,7 +485,7 @@
                         "level7",
                         "maximum"
                     ],
-                    "default": "fast"
+                    "default": "level5"
                 },
                 "includeVpmPackages": {
                     "type": "boolean",
@@ -524,7 +524,7 @@
                         "level7",
                         "maximum"
                     ],
-                    "default": "fast"
+                    "default": "level5"
                 },
                 "includeVpmPackages": {
                     "type": "boolean",
