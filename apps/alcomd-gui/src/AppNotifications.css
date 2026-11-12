@@ -1,0 +1,29 @@
+.app-notifications {
+    position: fixed;
+    inset: auto 24px 24px auto;
+    margin: 0;
+    box-sizing: border-box;
+    width: min(440px, calc(100vw - 48px));
+    max-height: calc(100dvh - 48px);
+    overflow: auto;
+    padding: 16px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--md-sys-color-inverse-surface);
+    color: var(--md-sys-color-inverse-on-surface);
+    box-shadow: var(--md-sys-elevation-level3, 0 4px 12px rgb(0 0 0 / 24%));
+    z-index: 100;
+    --md-text-button-label-text-color: var(--md-sys-color-inverse-primary);
+    --md-icon-button-icon-color: var(--md-sys-color-inverse-on-surface);
+}
+.app-notifications:popover-open { display: grid; gap: 8px; }
+.app-notifications[data-fallback="true"]:not([hidden]) { display: grid; gap: 8px; }
+.app-notifications-content { min-width: 0; overflow-wrap: anywhere; }
+.app-notifications-content strong { font-weight: 500; }
+.app-notifications-content p { margin: 8px 0 0; }
+.app-notifications-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.app-notifications[data-outcome="error"] { border-inline-start: 4px solid var(--md-sys-color-error); }
+.app-notifications-announcer { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 480px) {
+    .app-notifications { inset: auto 12px 12px auto; width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+}

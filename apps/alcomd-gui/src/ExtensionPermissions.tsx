@@ -1,3 +1,4 @@
+import { withActionNotification } from "./app-notifications";
 import { requestErrorMessage } from "./request-errors";
 import { useEffect, useRef, useState } from "react";
 import type { ExtensionPermissionGrant, ExtensionPermissionsListResult, RpcError } from "@alcomd/sdk";
@@ -67,7 +68,18 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const current = () => scope.active && owner.current === scope;
     const reload = () => { scope.active = false; setGeneration((version) => version + 1); };
     const refreshFeedback = useActionFeedback(loading || projectsLoading);
-    const manualReload = () => refreshFeedback.run(reload);
+    const manualReload = () => refreshFeedback.run(async () => {
+        setValue(undefined); setProjects([]); setError(undefined); setProjectsError(undefined);
+        setLoading(canRead); setProjectsLoading(canReadProjects);
+        try {
+            await withActionNotification(client, "Refresh", async () => {
+                const results = await Promise.allSettled([readPermissions(), readProjects()]);
+                const failure = results.find((result) => result.status === "rejected");
+                if (failure?.status === "rejected") throw failure.reason;
+            });
+            if (current()) setWriteUnknown(false);
+        } catch { /* The read functions retain their local, actionable errors. */ }
+    });
     const readPermissions = async () => {
         if (!canRead || !current()) return;
         const version = ++readVersion.current;
@@ -169,7 +181,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const selected = requested.includes(permission) ? permission : requested[0];
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
         {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : loading ? <LoadingState title={t("Loading…")} /> : null}
-        {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
         {value === undefined ? null : <>
             <ExtensionPermissionRequests required={value.requiredPermissions} optional={value.optionalPermissions} />
             <section aria-label={t("Allowed permissions")}>
@@ -185,7 +197,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 {selected !== "projects.read" ? <p>{t("This extension")}</p> : <>
                     <Select disabled={!canReadProjects || projectsLoading || writing || moreLoading} label={t("Project")} value={projectId} onChange={(next) => { setProjectId(next); setError(undefined); }} options={[{ value: "", label: t("Select project") }, ...projects.flatMap((project) => project.projectId === undefined ? [] : [{ value: project.projectId, label: displayPath(project.rootPath) }])]} />
                     {projectsLoading ? <LoadingState title={t("Loading…")} /> : null}
-                    {projectsError === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((projectsError).code))}</p><code>{(projectsError).code}</code>{projectsError.diagnosticId === undefined ? null : <p><code>{projectsError.diagnosticId}</code></p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+                    {projectsError === undefined ? null : <div role="alert" data-notification-error={projectsError.code}><p>{t(requestErrorMessage((projectsError).code))}</p><code>{(projectsError).code}</code>{projectsError.diagnosticId === undefined ? null : <p><code>{projectsError.diagnosticId}</code></p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
                 </>}
                 <div className="dialog-actions"><Button disabled={!canWrite || writing || moreLoading || (selected === "projects.read" && !projects.some((project) => project.projectId === projectId))} onClick={() => void write({ permission: selected, resourceKind: selected === "background.run" ? "Extension" : "Project", resourceId: selected === "background.run" ? extensionId : projectId }, false)} type="button">{t("Grant")}</Button></div>
             </>}

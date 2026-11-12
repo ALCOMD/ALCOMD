@@ -1,3 +1,4 @@
+import { withActionNotification } from "./app-notifications";
 import { requestErrorMessage } from "./request-errors";
 import { useTranslation } from "./i18n";
 import type { RpcError } from "@alcomd/sdk";
@@ -128,7 +129,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
         if (document.activeElement instanceof HTMLElement) trigger.current = document.activeElement;
         void run(async (current) => {
             if (projectId === undefined || revision === undefined) return;
-            const snapshot = await client.unityLaunchOptions(projectId, revision);
+            const snapshot = await withActionNotification(client, "Open Unity", () => client.unityLaunchOptions(projectId, revision), false);
             if (current !== generation.current) return;
             setOptions(snapshot); setInstallationId("");
             if (snapshot.exactMatchingInstallations.length === 1) {
@@ -168,7 +169,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             </Dialog>
             <Dialog dismissible={!busy} onClose={() => closed("choose")} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
                 <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${displayPath(item.executablePath)}`, value: item.installationId }))]} value={installationId} />
-                {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
                     <DialogCloseButton disabled={busy} variant="tonal">{t("Cancel")}</DialogCloseButton>
                     <Button disabled={!canLaunch || installationId.length === 0 || busy || desktop.windowIsActive} onClick={confirm} type="button">{t("Open Unity")}</Button>

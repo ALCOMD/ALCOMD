@@ -20,7 +20,7 @@ const READS = new Set(["operationsList", "logsRead", "operationGet", "projectsLi
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
     "unityWriterState", "unityLaunchOptions", "projectTemplatesList", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
-const TASK_TITLES = {
+export const TASK_TITLES = {
     stateCheck: "Check state",
     packageApplyPlan: "Package changes",
     projectsCreate: "Create project",
@@ -32,7 +32,7 @@ const TASK_TITLES = {
     extensionApplyInstall: "Install extension",
     extensionApplyUninstall: "Uninstall extension"
 } satisfies Partial<Record<keyof GuiRpcClient, string>>;
-export interface AcceptedGuiTask { operationId: string; title: string; resultPath?: string; resultLabel?: string }
+export interface AcceptedGuiTask { operationId: string; title: string; resultPath?: string; resultLabel?: string; replayed?: boolean }
 
 /** One disposable notification/read coordinator per GUI connection. It owns no business state. */
 export class CoreEvents {
@@ -93,7 +93,7 @@ export class CoreEvents {
         this.client = new Proxy(source, { get: (target, key, receiver) => {
             const value: unknown = Reflect.get(target, key, receiver);
             if (typeof value !== "function") return value;
-            const taskTitle = TASK_TITLES[key as keyof typeof TASK_TITLES];
+            const taskTitle = Object.hasOwn(TASK_TITLES, key) ? TASK_TITLES[key as keyof typeof TASK_TITLES] : undefined;
             if (!methods.has(key)) methods.set(key, READS.has(String(key))
                 ? (...args: unknown[]) => !this.active && (key === "systemStatus" || key === "settingsGet")
                     ? Reflect.apply(value, target, args) : this.read(String(key), args, () => Reflect.apply(value, target, args))
@@ -104,6 +104,7 @@ export class CoreEvents {
                             : ["projectsCreate", "backupApplyRestore"].includes(String(key)) && "projectId" in result ? result.projectId : undefined;
                         const backupId = key === "backupCreate" && "backupId" in result ? result.backupId : undefined;
                         this.acceptedTaskListeners.forEach((listener) => listener({ operationId: result.operationId as string, title: taskTitle,
+                            ...("replayed" in result && result.replayed === true ? { replayed: true } : {}),
                             ...(uuid(projectId) ? { resultPath: `/projects/${projectId}`, resultLabel: "Open project" } : {}),
                             ...(uuid(backupId) ? { resultPath: `/backups/${backupId}`, resultLabel: "View backup" } : {}),
                             ...(key === "projectApplyDeleteDirectory" ? { resultPath: "/projects", resultLabel: "Projects" } : {}),

@@ -198,7 +198,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`}>
             <h2>{disconnected ? t("ALCOMD core disconnected") : t("Request failed")}</h2>
-            <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>
+            <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>
             <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">{t("Reconnect and retry")}</Button>
         </section>
     );
@@ -716,7 +716,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}  projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? t("Preparing permanent deletion…") : workspace ? t("Remove this project from the list?") : t("Remove this project?") : t("Permanently delete project directory?")}>
                 {removalFailure === undefined ? null : removalFailure.error === undefined ? <p role="alert">{removalFailure.message}</p>
-                    : <div role="alert"><p>{t((removalFailure.message) ?? requestErrorMessage((removalFailure.error).code))}</p><code>{(removalFailure.error).code}</code>{removalFailure.error.diagnosticId === undefined ? null : <p><code>{removalFailure.error.diagnosticId}</code></p>}</div>}
+                    : <div role="alert" data-notification-error={removalFailure.error.code}><p>{t((removalFailure.message) ?? requestErrorMessage((removalFailure.error).code))}</p><code>{(removalFailure.error).code}</code>{removalFailure.error.diagnosticId === undefined ? null : <p><code>{removalFailure.error.diagnosticId}</code></p>}</div>}
                 {deletePlan === undefined && removalIntent === "unregister" ? <>
                     <p>{workspace ? t("Remove the ALCOMD registration for this project?") : t("Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.")}</p>
                     <p>{t("Removing from the list does not delete files.")}</p>
@@ -886,7 +886,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                     </>
                 )}
                 {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
-                {error === undefined ? null : <div role="alert"><p>{t(t("Copy failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(t("Copy failed: ") + t(requestErrorMessage(error.code)))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             </div>
         </Dialog>
     );
@@ -1012,7 +1012,7 @@ function DirectorySelectionDialog({ client, defaultDirectory, label, onChanged, 
             }} disabled={busy}
                 label={label} value={path} onChoosingChange={setChoosing}
                 onPathChange={(next) => { setPath(next); setError(undefined); }} />
-            {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+            {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         </> : null}
     </Dialog>;
 }
@@ -2034,7 +2034,7 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
         </Dialog>
         {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
-        {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
         <div className="dialog-actions"><DialogCloseButton disabled={busy !== undefined} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
     </Dialog>}</section>;
 }

@@ -363,7 +363,7 @@ for (const view of ["list", "grid"] as const) {
     });
 }
 
-test("Open Unity reports a failure only within an existing installation chooser", async ({ page }) => {
+test("Open Unity keeps chooser failures in place and preflight failures in the shared outlet", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fprojects&state=unity-multiple&unityLaunchError=1");
     await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
     const chooser = page.locator("md-dialog[open]");
@@ -382,6 +382,7 @@ test("Open Unity reports a failure only within an existing installation chooser"
     await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
+    await expect(page.getByRole("region", { name: "Notifications", exact: true })).toContainText("Could not complete: Open Unity");
     await expect(page).toHaveURL(/\/projects$/);
 });
 

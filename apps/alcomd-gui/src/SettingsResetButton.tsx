@@ -60,7 +60,7 @@ export function SettingsResetButton({ title, disabled, onRestore }: {
             onClose={() => { setOpen(false); setError(undefined); if (scope) scope.current = false; }}>
             <p>{t("Restore the default settings for {name}?", { name: title })}</p>
             <p>{t("Only this card's settings will be reset.")}</p>
-            {error === undefined ? null : <div role="alert"><strong>{t(error.code === "internal_error" || error.code === "daemon_unavailable" ? "Restore result is unknown" : "Defaults could not be restored.")}</strong><p>{t((error.code === "internal_error" || error.code === "daemon_unavailable" ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+            {error === undefined ? null : <div role="alert" data-notification-error={error.code}><strong>{t(error.code === "internal_error" || error.code === "daemon_unavailable" ? "Restore result is unknown" : "Defaults could not be restored.")}</strong><p>{t((error.code === "internal_error" || error.code === "daemon_unavailable" ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
                 <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button disabled={busy || disabled} onClick={() => void restore()} type="button">{t("Restore defaults")}</Button>

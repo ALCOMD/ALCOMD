@@ -309,7 +309,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
 
 function TemplateFailure({ error }: { error: RpcError }) {
     const { t } = useTranslation();
-    return <div role="alert">
+    return <div role="alert" data-notification-error={error.code}>
         <p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>
         {error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
     </div>;

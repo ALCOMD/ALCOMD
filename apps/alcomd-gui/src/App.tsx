@@ -32,6 +32,8 @@ import { guiVersion } from "./build-info";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { CoreEvents } from "./core-events";
 import { TaskProgressDialog } from "./TaskProgressDialog";
+import { AppNotifications } from "./app-notifications";
+import { AppNotificationOutlet } from "./AppNotifications";
 import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
 import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
@@ -95,7 +97,8 @@ interface AppProps {
 export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nativeRepositoryLinks }: AppProps) {
     const [connectionGeneration, setConnectionGeneration] = useState(0);
     const events = useMemo(() => new CoreEvents(sourceClient), [sourceClient]);
-    const client = events.client;
+    const notifications = useMemo(() => new AppNotifications(events), [events]);
+    const client = notifications.client;
     const preloads = useMemo(() => new PreloadCache(), [client, connectionGeneration]);
     useEffect(() => { preloads.activate(); return () => preloads.dispose(); }, [preloads]);
     useEffect(() => events.subscribePreloadInvalidation(() => preloads.dropInvalid()), [events, preloads]);
@@ -210,6 +213,11 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
         settingsWriterRef.current = settingsWriter;
     }
     const settingsSave = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
+    useEffect(() => {
+        if (settingsSave.saving) return;
+        if (settingsSave.failed && settingsSave.error) notifications.failure("Save settings", settingsSave.error);
+        else notifications.clear("Save settings");
+    }, [notifications, settingsSave.error, settingsSave.failed, settingsSave.saving]);
 
     useEffect(() => {
         const fullscreen = (event: KeyboardEvent) => {
@@ -350,6 +358,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                 </MaterialDialog>
                 {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
                 <TaskProgressDialog events={events} navigate={navigate} />
+                <AppNotificationOutlet notifications={notifications} navigate={navigate} />
             </div>
             </RoutePreloadContext.Provider></PreloadContext.Provider>
             </CoreEventsProvider>

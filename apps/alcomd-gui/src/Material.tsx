@@ -985,6 +985,7 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
         };
         const opening = (event: Event) => {
             if (event.target !== element) return;
+            delete element.dataset.dialogClosing;
             // Material opens the native dialog immediately after dispatching this event.
             queueMicrotask(observe);
         };
@@ -1002,12 +1003,14 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
             if (event.target !== element) return;
             if (closing.current) { event.preventDefault(); return; }
             closing.current = true;
+            element.dataset.dialogClosing = "true";
             resize?.startClosing();
             setClosingView(lastOpenView.current);
         };
         const closed = (event: Event) => {
             if (event.target !== element) return;
             cleanup();
+            delete element.dataset.dialogClosing;
             finishClose();
         };
         const cancel = (event: Event) => {

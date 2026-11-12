@@ -1,5 +1,6 @@
 import { arrowDownwardIcon } from "@alcomd/ui/icons";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { Button, Icon, PathField } from "./Material";
 import type { FileDrag, GuiRpcClient } from "./rpc";
@@ -27,6 +28,7 @@ export function FilePicker({ client, kind, choosePath, onPathChange, onChoosingC
     const latest = useRef({ onPathChange, onChoosingChange });
     const [choosing, setChoosing] = useState(false);
     const [dragging, setDragging] = useState(false);
+    const selectionError = useRef<string | undefined>(undefined);
     const [failure, setFailure] = useState<"multiple" | "selection">();
     const unavailable = Boolean(disabled || readOnly);
     const labels = messages[kind];
@@ -74,8 +76,11 @@ export function FilePicker({ client, kind, choosePath, onPathChange, onChoosingC
         try {
             const path = await choosePath();
             if (mounted.current && request === generation.current && path !== undefined) latest.current.onPathChange(path);
-        } catch {
-            if (mounted.current && request === generation.current) setFailure("selection");
+        } catch (caught) {
+            if (mounted.current && request === generation.current) {
+                selectionError.current = normalizeRequestError(caught).code;
+                setFailure("selection");
+            }
         } finally {
             pending.current = false;
             if (mounted.current) {
@@ -96,6 +101,6 @@ export function FilePicker({ client, kind, choosePath, onPathChange, onChoosingC
                 onInput={(path) => { setFailure(undefined); onPathChange(path); }} />
             <Button disabled={disabled} softDisabled={choosing || readOnly} onClick={() => void select()} type="button" variant="tonal">{t("Select")}</Button>
         </div>
-        {failure === undefined ? null : <p className="file-picker__error" role="alert">{t(labels[failure])}</p>}
+        {failure === undefined ? null : <p className="file-picker__error" role="alert" data-notification-error={failure === "selection" ? selectionError.current : undefined}>{t(labels[failure])}</p>}
     </div>;
 }

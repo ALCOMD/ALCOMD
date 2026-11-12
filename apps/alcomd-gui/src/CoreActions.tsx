@@ -147,9 +147,9 @@ export function RegisterRepositoryPanel({ client, onChanged, initial }: ActionPr
         finally { pending.current = false; }
     };
     const fieldError = preview === undefined && feedback.error !== undefined && ["repository_source_invalid", "repository_document_invalid", "invalid_params"].includes(feedback.error.code) ? feedback.error : undefined;
-    const error = feedback.error === undefined || fieldError !== undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
+    const error = feedback.error === undefined || fieldError !== undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     return <ActionSection title={t("Add repository")}>
-        {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
+        {preview === undefined ? <form data-notification-error={fieldError?.code} onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setAuthentication(EMPTY_REPOSITORY_AUTH); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
             {kind === "remote" ? <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={t("Repository URL")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type="url" value={value} />
                 : <div className="project-target-picker">
@@ -407,7 +407,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 ) : (
                     <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p></div>
                 )}
-                {feedback.error === undefined ? null : <div role="alert"><p>{t(packageErrorMessage(feedback.error))}</p><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
+                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(packageErrorMessage(feedback.error))}</p><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </MaterialDialog>
             {feedback.operationId === undefined ? null : <OperationFollow background client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} />}
         </>
@@ -655,7 +655,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, launch
             <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button" variant="tonal">{t("Review migration")}</Button>
             <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
+                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             </PlanDialog>
             {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} onTerminal={migrationFinished} background />}
         </ActionSection>
@@ -752,7 +752,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
             {unityLaunch.dialogs}
             <ModalDialog dismissible={!feedback.busy} onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationChooserOpen} title={t("Choose Unity {version} installation", { version: migrationVersion ?? "" })}>
                 <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${migrationVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
-                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
+                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
                 <div className="dialog-actions">
                     <DialogCloseButton variant="tonal">{t("Cancel")}</DialogCloseButton>
                     <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">{t("Review migration")}</Button>
@@ -760,7 +760,7 @@ export function ProjectUnityWorkspaceActions({ client, launchOptions, navigate, 
             </ModalDialog>
             <PlanDialog applyDisabled={submitted || migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(undefined); setFeedback(INITIAL_FEEDBACK); }} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
-                {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+                {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </PlanDialog>
 
         </>
@@ -826,7 +826,7 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         </div>
         {feedback.error === undefined ? null : options === undefined ? <div role="alert"><strong>{t("Backup defaults could not be loaded.")}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}
             <Button onClick={() => setReadGeneration((value) => value + 1)} type="button" variant="text">{t("Retry")}</Button>
-        </div> : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+        </div> : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
     </ActionSection>;
 }
 
@@ -853,7 +853,7 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
         <Button className="material-button--danger" disabled={!available || terminal || operation.state === "cancelling" || feedback.busy} onClick={() => { setFeedback(INITIAL_FEEDBACK); setConfirm(true); }} title={capabilityUnavailableTitle(available, capabilities.operations, t)} type="button" variant="text">{t("Cancel operation")}</Button>
         <MaterialDialog dismissible={!feedback.busy} onClose={() => { setConfirm(false); setFeedback(INITIAL_FEEDBACK); }} open={confirm} title={t("Request cancellation?")}>
             <p>{t("Cancellation is cooperative. The operation remains authoritative until the daemon reports a terminal state.")}</p>
-            {feedback.error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
+            {feedback.error === undefined ? null : <div role="alert" data-notification-error={feedback.error.code}><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy} variant="text">{t("Back")}</DialogCloseButton><Button className="material-button--danger" disabled={!available || feedback.busy || terminal || operation.state === "cancelling"} onClick={() => void cancel()} type="button">{t("Confirm")}</Button></div>
         </MaterialDialog>
     </ActionSection>;
@@ -926,7 +926,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}
-        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 
@@ -985,7 +985,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
                 <div className="dialog-actions"><DialogCloseButton disabled={feedback.busy || submitted} variant="text">{t("Discard plan")}</DialogCloseButton><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
             </>}
-            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert"><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+            {mode === "none" ? null : submitted && operationRequestOutcomeUnknown(feedback.error) ? <><div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div><div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div></> : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
         </MaterialDialog>
     </ActionSection>;
 }
@@ -1005,7 +1005,7 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
 
 export function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
     const { t } = useTranslation();
-    if (feedback.error !== undefined) return <div role="alert"><strong>{errorTitle}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
+    if (feedback.error !== undefined) return <div role="alert" data-notification-error={feedback.error.code}><strong>{errorTitle}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}</div>;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
     return null;
 }
@@ -1161,7 +1161,7 @@ export function OperationFollow({ background = false, children, client, initialO
 export function OperationProgress({ error, operation, title = "Operation" }: { error?: RpcError; operation?: Operation; title?: string }) {
     const { t } = useTranslation();
     return <>
-        <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{isTerminal(operation.state) || operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
+        <section className="operation-follow" data-notification-task={operation?.operationId} aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{isTerminal(operation.state) || operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
         {operation?.state !== "failed" ? null : <div role="alert"><strong>{t("Operation failed")}</strong><p>{t(requestErrorMessage(({ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }).code))}</p><code>{operation.errorCode ?? "internal_error"}</code>{operation.diagnosticId === undefined ? null : <p><code>{operation.diagnosticId}</code></p>}</div>}
     </>;
 }

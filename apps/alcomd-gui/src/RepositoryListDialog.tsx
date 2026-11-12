@@ -150,11 +150,11 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
                 label={t("Repository list file")} value={path} onChoosingChange={setChoosing}
                 onPathChange={(next) => { setPath(next); setError(undefined); }} />
         </>}
-        {error ? <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
+        {error ? <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {inspection ? <>
             {native && !finished ? <Checkbox checked={overwriteExisting} disabled={busy} label={t("Overwrite existing repository configuration")} onChange={setOverwriteExisting} /> : null}
             <p>{native ? t(overwriteExisting ? "{count} repository configurations will be applied. Repositories absent from the file are kept." : "{count} new repositories will be added. Existing repository configuration is kept.", {count: candidateCount}) : t("{count} entries · {ignored} blank or comment lines", { count: entries.length, ignored: inspection.ignoredLines })}</p>
-            {results === undefined ? null : <div aria-live="polite">
+            {results === undefined ? null : <div aria-live="polite" data-notification-result="repositoryListImportFile repositoryRegister">
                 <p>{t(native ? "Added: {added} · Updated: {updated} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}" : "Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: counts.added, updated: counts.updated, failed: counts.failed, unknown: counts.unknown, pending: counts.unprocessed })}</p>
             </div>}
             {finished && (counts.unknown > 0 || results === undefined) ? <p>{t("Completed additions are kept. Check the repository list before importing again.")}</p> : null}
@@ -208,7 +208,7 @@ function ExportRepositoryList({ client, format, onClose }: { client: GuiRpcClien
     };
     const reasonText = { local_source: "Local source cannot be represented by this URL list.", authentication_not_supported: "Authentication settings cannot be represented by this URL list.", unsupported_source: "This source cannot be represented by this URL list." };
     return <Dialog wide open dismissible={!busy} title={t(format === "native" ? "Export list" : "Compatibility export (.txt)")} onClose={onClose} actions={<><DialogCloseButton disabled={busy} variant="text">{t("Close")}</DialogCloseButton><Button disabled={busy} onClick={() => void load()} type="button" variant="text">{t("Preview again")}</Button>{saved ? null : <Button disabled={busy || !confirmed || !preview || preview.exportableCount === 0 || !nameValid} onClick={() => void save()} type="button">{t("Save new list file")}</Button>}</>}>
-        {error ? <div role="alert"><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
+        {error ? <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div> : null}
         {preview ? <>
             <p>{t(format === "native" ? "Includes repository sources, display names, order, enabled states and package switches." : "Compatible text export includes repository addresses and authentication. Names and switches are not included.")}</p>
             <p>{t("{count} repositories can be exported · {excluded} excluded · {bytes} bytes", { count: preview.exportableCount, excluded: preview.excluded.length, bytes: preview.byteCount })}</p>
@@ -216,7 +216,7 @@ function ExportRepositoryList({ client, format, onClose }: { client: GuiRpcClien
             {preview.excluded.length ? <ScrollArea className="repository-list-entries"><ul>{preview.excluded.map((entry) => <li key={entry.repositoryId}><code>{entry.repositoryId}</code><span>{t(reasonText[entry.reason])}</span></li>)}</ul></ScrollArea> : null}
             <p>{t("Only a new file can be created. Existing files are preserved; choose a different name if the destination exists.")}</p>
             {!saved ? <><TextField disabled={busy} error={!nameValid} errorText={!nameValid ? t("Enter a file name without path separators or reserved characters.") : undefined} id="repository-list-file-name" label={t("New list file name")} maxLength={255} onInput={(value) => { setFileName(value); setError(undefined); }} value={fileName} /><p>{t("Choose the destination folder. A new file with this name will be created there.")}</p></> : null}
-            {!saved ? <Checkbox checked={confirmed} disabled={busy} label={t("I have reviewed the export scope and understand the file can contain credentials.")} onChange={setConfirmed} /> : <div><p>{t("Saved {count} repositories ({bytes} bytes).", { count: saved.exportedCount, bytes: saved.byteCount })}</p><code>{saved.sha256}</code></div>}
+            {!saved ? <Checkbox checked={confirmed} disabled={busy} label={t("I have reviewed the export scope and understand the file can contain credentials.")} onChange={setConfirmed} /> : <div data-notification-result="repositoryListExportFile"><p>{t("Saved {count} repositories ({bytes} bytes).", { count: saved.exportedCount, bytes: saved.byteCount })}</p><code>{saved.sha256}</code></div>}
         </> : null}
         {busy ? <Progress label={t("Repository list progress")} /> : null}
     </Dialog>;

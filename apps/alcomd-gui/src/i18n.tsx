@@ -8,11 +8,12 @@ import { formMessages } from "./locales/forms";
 import { errorMessages } from "./locales/errors";
 import { utilityMessages } from "./locales/utilities";
 import { settingsH5Messages } from "./locales/settings-h5";
+import { notificationMessages } from "./locales/notifications";
 
 export type { SupportedLocale, Translate } from "./i18n-types";
 
 // English messages are the source keys. External package/project/extension text never enters this catalog.
-export const messages: TranslationTable = { ...shellMessages, ...pageMessages, ...actionMessages, ...formMessages, ...errorMessages, ...utilityMessages, ...settingsH5Messages };
+export const messages: TranslationTable = { ...shellMessages, ...pageMessages, ...actionMessages, ...formMessages, ...errorMessages, ...utilityMessages, ...settingsH5Messages, ...notificationMessages };
 const LocaleContext = createContext<SupportedLocale>("en-US");
 
 export function preferredLocale(value: string): SupportedLocale {

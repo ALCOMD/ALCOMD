@@ -255,7 +255,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                     </div>
                 </>}
                 {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage(directoryError.code))}</p><code>{directoryError.code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
-                {error === undefined ? null : <div role="alert"><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{operationId === undefined && operationRequestOutcomeUnknown(error) ? <p>{t("Retry with the same details to recover the original creation request.")}</p> : null}</div>}
+                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{operationId === undefined && operationRequestOutcomeUnknown(error) ? <p>{t("Retry with the same details to recover the original creation request.")}</p> : null}</div>}
             </div>
         </Dialog>
         {operations.follow()}
@@ -449,7 +449,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                     </>
                 )}
                 {directoryError === undefined ? null : <div role="alert"><strong>{t("Default project location could not be loaded.")}</strong><p>{t(requestErrorMessage((directoryError).code))}</p><code>{(directoryError).code}</code>{directoryError.diagnosticId === undefined ? null : <p><code>{directoryError.diagnosticId}</code></p>}</div>}
-                {error === undefined ? null : <div role="alert"><strong>{t("Restore project")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
+                {error === undefined ? null : <div role="alert" data-notification-error={error.code}><strong>{t("Restore project")}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{submitted && operationRequestOutcomeUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</div>}
             </div>
         </Dialog>
     );

@@ -70,7 +70,7 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
         <form onSubmit={(event) => { event.preventDefault(); void save(draft); }}>
             <UnityArgumentsEditor id="default-unity-argument" value={draft ?? []} onChange={(next) => { setDraft(next); setError(undefined); }} disabled={busy || !canManage || conflict} />
             {conflict ? <div>{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</div> : error === undefined ? null
-                : <div role="alert"><strong>{unknown ? t("Launch argument save result is unknown") : t("Launch arguments could not be saved.")}</strong><p>{t((unknown ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
+                : <div role="alert" data-notification-error={error.code}><strong>{unknown ? t("Launch argument save result is unknown") : t("Launch arguments could not be saved.")}</strong><p>{t((unknown ? "Retry checks the current settings before writing again." : undefined) ?? requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}</div>}
             <div className="dialog-actions">
                 <DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton>
                 <Button disabled={busy || !canManage || conflict || JSON.stringify(draft) === JSON.stringify(baseline)} type="submit">{t(error === undefined ? "Save launch arguments" : "Retry")}</Button>

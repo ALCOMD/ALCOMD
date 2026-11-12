@@ -20,7 +20,7 @@ import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
-import { useCoreInvalidation } from "./core-events-ui";
+import { useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 interface SettingsWorkspaceProps {
@@ -309,6 +309,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult; onInstallationsChanged(): void;
 }) {
     const { t } = useTranslation();
+    const events = useCoreEvents();
     const resetting = useSettingsResetPending();
     const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const accepted = state.accepted ?? snapshot;
@@ -380,7 +381,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             setInvalid(false);
             if (manageUnity && (intent.path !== null || intent.previousPath !== null)) {
                 try {
-                    await client.unityInstallationsRefresh();
+                    await (events?.client ?? client).unityInstallationsRefresh();
                     if (request === generation.current) onInstallationsChanged();
                 } catch {}
             }
