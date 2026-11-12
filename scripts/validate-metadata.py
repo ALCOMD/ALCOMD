@@ -5,13 +5,14 @@ import json
 import re
 import sys
 import tomllib
+from copy import deepcopy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_LICENSE = "AGPL-3.0-only"
 PROJECT_REPOSITORY = "https://github.com/ALCOMD/ALCOMD"
 RUST_VERSION = "1.97.1"
-CURRENT_CONFIG_SCHEMA = 12
+CURRENT_CONFIG_SCHEMA = 13
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SHA256_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -60,7 +61,10 @@ def validate_current_settings_contract() -> None:
             require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
     require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
-            "Settings RPC must report Config12")
+            f"Settings RPC must report Config{CURRENT_CONFIG_SCHEMA}")
+    protocol = (ROOT / "crates/alcomd-protocol/src/lib.rs").read_text(encoding="utf-8")
+    require(re.search(rf"pub const CONFIG_SCHEMA_VERSION: u32 = {CURRENT_CONFIG_SCHEMA};", protocol) is not None,
+            "Protocol constant must match the approved current Config Schema")
     base = f"https://alcomd.vrclearn.com/schema/config/settings-v{CURRENT_CONFIG_SCHEMA}.json#/$defs/"
     require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
             "Settings RPC must use the current settings model")
@@ -68,17 +72,39 @@ def validate_current_settings_contract() -> None:
             "Settings RPC updates must use the current model")
     hello = load_json("specs/rpc/system-hello.response.schema.json")
     require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
-            "Hello must report Config12")
-    for version in (11, CURRENT_CONFIG_SCHEMA):
+            f"Hello must report Config{CURRENT_CONFIG_SCHEMA}")
+    for version in (11, 12, CURRENT_CONFIG_SCHEMA):
         schema = load_json(f"specs/config/settings-v{version}.schema.json")
         active_definitions = schema["$defs"]
         require(schema["properties"]["schema"]["const"] == version and schema["additionalProperties"] is False,
                 f"Config{version} must keep its exact version and closed root")
-        additions = {"integrations"} | ({"network"} if version == 12 else set())
+        additions = {"integrations"} | ({"network"} if version >= 12 else set())
         for name, definition in definitions.items():
             if name not in {"settings", "partialUpdate"}:
-                require(active_definitions[name] == definition,
+                expected = deepcopy(definition)
+                if version == 13 and name in {"packages", "partialPackagesUpdate"}:
+                    expected["properties"]["hiddenRepositoryPackages"] = {"$ref": "#/$defs/hiddenRepositoryPackages"}
+                    if name == "packages":
+                        expected["required"].append("hiddenRepositoryPackages")
+                require(active_definitions[name] == expected,
                         f"Config{version} changed the retained {name} contract")
+        if version == 13:
+            require(active_definitions["hiddenRepositoryPackages"] == {
+                "type": "array", "maxItems": 256, "default": [],
+                "x-alcomd-maxTotalPackageIds": 4096,
+                "x-alcomd-uniqueRepositoryIds": True,
+                "x-alcomd-canonicalOrder": "repositoryId and packageIds sorted by ASCII bytes; persisted input must be canonical",
+                "items": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["repositoryId", "packageIds"],
+                    "properties": {
+                        "repositoryId": {"$ref": "#/$defs/uuid"},
+                        "packageIds": {"type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": True,
+                                       "items": {"type": "string", "minLength": 1, "maxLength": 128,
+                                                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}}
+                    }
+                }
+            }, "Config13 must keep the approved scoped package preference limits and canonicalization")
         for name in ("settings", "partialUpdate"):
             active = active_definitions[name]
             require(set(active["properties"]) == set(definitions[name]["properties"]) | additions and
@@ -98,9 +124,13 @@ def validate_current_settings_contract() -> None:
                 f"Config{version} vectors must retain revision and complete settings")
         require(result["settings"]["integrations"] == {"handleVccLinks": True},
                 f"Config{version} must preserve the approved VCC link default")
-        if version == 12:
+        if version >= 12:
             require(result["settings"]["network"] == {"proxy": {"mode": "system"}},
-                    "Config12 must use the approved system proxy default")
+                    f"Config{version} must use the approved system proxy default")
+        if version == 13:
+            require(result["settings"]["packages"]["hiddenRepositoryPackages"] == [] and
+                    source["packages"]["hidden_repository_packages"] == [],
+                    "Config13 vectors must preserve the empty scoped package preference default")
     theme = load_json("specs/config/theme-controls.proposal.contract.json")
     require(theme["configMigration"]["to"] == 5 and "appearance.density" not in theme["ordinarySettings"]["fields"],
             "Historical theme migration remains Config5 without a density preference")

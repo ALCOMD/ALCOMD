@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M7 官方 GUI 与 Portable Extension UI 进行中，H7 等待项目所有者最终人工确认。** M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。
+**M7 官方 GUI 与 Portable Extension UI 最终技术收尾中。** 所有者认可当前使用体验，并授权临时关闭/恢复应用完成本地收尾；正式阶段完成仍待最终候选门禁。M0–M6 已验收。H2-A 和 Visual Gate 2 已签收，H2-B、H3–H6 已阶段性签收并保留各自的后续事项。当前范围见[M7收尾计划](exec-plans/M7-final-closure-20261112.md)。
 
 - 2026-11-12 原删除卡住的纠正交付完成：87edbfbe修正已构建并仅更新Core，原真实任务由正常恢复明确failed/source_missing，revision9/completedAt存在、活动数0，不再自动重试。实测正常关闭GUI后Core在1314ms内自动结束，重开后终态不变；Core PID126408 / GUI PID114740，ready/State32/Config13。原4项目/30仓库/5模板/1Unity登记/0扩展、完整设置/revision7、12个项目标志检查位、原profile及Unity/Hub进程保持；GUI文件未变。备份、22项回归、构建和运行限制见[记录](testing/project-delete-missing-target-20261112.md)。未手工改库、推送或发布，M7/H7保持；此前原任务仍恢复中为旧版观察。
 

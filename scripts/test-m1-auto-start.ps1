@@ -13,7 +13,24 @@ if ($existing.Count -ne 0) {
 }
 
 $token = [Guid]::NewGuid().ToString("N")
-$dataDirectory = Join-Path $env:TEMP "alcomd-m2-data-$token"
+$temporaryRoot = [IO.Path]::TrimEndingDirectorySeparator([IO.Path]::GetFullPath($env:TEMP))
+$dataDirectory = [IO.Path]::GetFullPath((Join-Path $temporaryRoot "alcomd-m2-data-$token"))
+function Assert-TestDataDirectory {
+    if (![string]::Equals([IO.Path]::GetDirectoryName($dataDirectory), $temporaryRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($dataDirectory) -ne "alcomd-m2-data-$token") {
+        throw "CLI fixture data directory is outside its verified temporary root."
+    }
+    if ((Test-Path -LiteralPath $dataDirectory) -and
+        ((Get-Item -LiteralPath $dataDirectory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "CLI fixture data directory must not be a reparse point."
+    }
+}
+function Get-TestDaemons {
+    Get-CimInstance Win32_Process -Filter "Name='alcomd.exe'" |
+        Where-Object { $_.ExecutablePath -eq $daemonPath -and $_.CommandLine -match [regex]::Escape($dataDirectory) } |
+        ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+}
+Assert-TestDataDirectory
 $outputs = @(
     (Join-Path $env:TEMP "alcomd-m1-$token-1.out"),
     (Join-Path $env:TEMP "alcomd-m1-$token-1.err"),
@@ -40,10 +57,7 @@ try {
         throw "Concurrent CLI startup failed: $($first.ExitCode), $($second.ExitCode)."
     }
 
-    $daemons = @(
-        Get-Process -Name "alcomd" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -eq $daemonPath }
-    )
+    $daemons = @(Get-TestDaemons)
     if ($daemons.Count -ne 1) {
         throw "Expected one authoritative daemon; found $($daemons.Count)."
     }
@@ -62,10 +76,7 @@ try {
     Write-Host "M1 concurrent daemon auto-start passed; authoritative daemon count: 1."
 }
 finally {
-    $ownedDaemons = @(
-        Get-Process -Name "alcomd" -ErrorAction SilentlyContinue |
-            Where-Object { $_.Path -eq $daemonPath }
-    )
+    $ownedDaemons = @(Get-TestDaemons)
     $ownedDaemons | Stop-Process -Force -ErrorAction SilentlyContinue
     foreach ($process in $ownedDaemons) {
         $process.WaitForExit(5000) | Out-Null
@@ -89,6 +100,7 @@ finally {
         }
     }
     if (Test-Path -LiteralPath $dataDirectory -PathType Container) {
+        Assert-TestDataDirectory
         Remove-Item -LiteralPath $dataDirectory -Recurse -Force
     }
 }
