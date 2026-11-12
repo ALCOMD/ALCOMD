@@ -288,19 +288,15 @@ async fn gui_select_unity_hub(
             path
         }
     });
-    let mut picker = picker_at_current_path(
+    let picker = picker_at_current_path(
         &app,
         current_path.as_deref().and_then(std::path::Path::to_str),
         picker_location::SelectionKind::File,
     );
     #[cfg(windows)]
-    {
-        picker = picker.add_filter("Executable", &["exe"]);
-    }
+    let picker = picker.add_filter("Executable", &["exe"]);
     #[cfg(target_os = "macos")]
-    {
-        picker = picker.add_filter("Application", &["app"]);
-    }
+    let picker = picker.add_filter("Application", &["app"]);
     picker
         .blocking_pick_file()
         .map(|selected| {

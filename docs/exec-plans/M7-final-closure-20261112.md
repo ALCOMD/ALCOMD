@@ -30,3 +30,9 @@
 ## 应用内通知补充
 
 所有者随后明确要求恢复应用内通知，并批准[实施方案](M7-in-app-notifications.md)。该授权取代此前视觉通知的删除约束；旧活动系统、业务日志补记及系统通知不恢复。本增量完成GUI会话内的结果提示、后台任务观察及模态/关闭动画的呈现去重，保留收藏实心修正。分轮192项不同浏览器回归及前端检查/构建通过，实际范围和中间失败纠正见[记录](../testing/in-app-notifications-20261112.md)。实现验证时未提交/推送/更新运行实例，所有者随后授权分次提交、正常推送和本机更新；1d1e5db仅为这些增量前的完整本地门禁基线，正式收尾仍需新的统一候选及适用远端门禁。
+
+## 本轮推送的Linux检查修正
+
+按所有者授权完成收藏/通知分次提交和正常推送后，a1f88a9e的Ubuntu任务131059573696在Check阶段明确报gui_select_unity_hub第291行unused_mut。直接读取已结束job日志取得证据；此前旧远端日志403不能作为本次根因。该变量仅Windows/macOS过滤器分支会赋值，Linux不赋值；现改为不可变builder和各平台条件重绑定，保留当前路径解析、可执行文件/app过滤和blocking_pick_file行为，不放宽-D warnings。此修正属于当前M7交付必需的门禁修复，单独提交/推送后重新构建GUI并沿原数据入口更新。无RPC、Schema、权限、依赖或迁移变化；验证和交付结果另记。
+
+本机cargo fmt检查、alcomd-gui all-targets严格Clippy及5项picker_location单元回归通过。Linux实际编译验证待修正提交的Hosted CI，未以Windows通过代替Linux结果。日志见target/m7-notifications-delivery-20261112/picker-{fmt,clippy,tests}.log。
