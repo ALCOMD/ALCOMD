@@ -47,3 +47,11 @@
 统一候选074fadeb的scripts/check.ps1已完整通过，但浏览器回归在设置页重连处发现真实竞态：能力查询走仍活动的旧CoreEvents读取队列，随后旧会话停止取消该查询，使设置已读而能力保持不可用。原用例隔离复现3/3失败，改为通过原始typed client执行连接引导的systemStatus查询后3/3通过；普通页面/业务读取仍使用既有协调器，旧响应active/generation隔离保持。不放宽能力资格或测试断言。完整浏览器旧轮次因已确证失败而显式停止，失败附件/中断位置保留；后续新候选须完整重跑。
 
 旧本地流程在aggregate通过后因元数据探针import产生未跟踪__pycache__被干净工作区保护停止，finally已按hash恢复原程序/数据/profile及窗口。该缓存已移至target证据目录，探针禁用字节码输出。后续通过逐文件输入摘要核对复用未变的Rust门禁，重新执行受影响前端全部门禁及未执行的CLI/发布构建；不把旧候选分项冒充最终完整通过。
+
+## macOS 完整作业时间预算修正
+
+0270967b 的 Ubuntu Hosted CI 和四语言 CodeQL 已通过；macOS job 131088329792 在完整浏览器阶段被平台取消。GitHub annotation 明确为「The job has exceeded the maximum execution time of 1h0m0s」：09:25:01 UTC 开始，前序检查、契约、发布构建、Tauri 和目标平台检查通过，10:12:21 才开始浏览器步骤，10:25:13 达到总时限。已取得的浏览器日志未报告测试失败，但完整套件未完成，因此不能算通过。原始日志保留于 target/m7-signoff-final-20261112/macos-027.log。
+
+仅将 macOS job 总时限从60分钟调为90分钟，与既有 Windows 预算一致；所有步骤、浏览器单项超时、worker、重试数、断言和安全检查保持。不取消当前 Windows 作业，不以重试旧60分钟配置替代修正。修正后的同SHA三平台 Hosted CI/CodeQL 仍须全部通过，才满足远端门禁。
+
+所有者同时提出默认备份体积和文件名问题，仍处于只读核对与讨论。最新两份真实归档的11,940个项目文件路径、未压缩大小和CRC一致；v3约935 MB、v4约1,180 MB。锁定依赖确认 v3 Fast 实际走默认等级6，v4 fast 为真实等级1；当前 vrc-get/ALCOM 上游也有相同选项映射。v4 UUID 文件名来自现行归档命名合同，并非中文编码损坏。证据见 target/m7-backup-audit-20261112/archive-comparison.json；尚未修改备份实现、默认值、命名合同或用户归档，不能在这些反馈处理完毕前宣布M7完成。

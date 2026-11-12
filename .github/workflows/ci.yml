@@ -135,7 +135,8 @@ jobs:
   macos-hosted:
     name: macOS 15 arm64 hosted
     runs-on: macos-15
-    timeout-minutes: 60
+    # Cold native builds leave too little of an hour for the full browser suite.
+    timeout-minutes: 90
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
     steps:
