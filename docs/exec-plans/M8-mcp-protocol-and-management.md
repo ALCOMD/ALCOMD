@@ -212,6 +212,38 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 
 测试依赖增量仅现有rmcp客户端/子进程特性引入`process-wrap 10.0.1`（MIT OR Apache-2.0）及`tokio-stream 0.1.19`（MIT），未升级其他包，不增加生产HTTP或运行时框架。Schema独立校验器`jsonschema 4.25.1`及其依赖仅安装于本轮target目录，不写全局Python或生产依赖；无新通用测试框架。
 
-**未覆盖/后续归属**：本次STDIO关闭验证已接受任务不被隐式取消，不等于覆盖在途`notifications/cancelled`/写响应丢失的所有竞态；未知写映射有定向单测，未制造真实IPC半写故障。Core重启验证的是已完成任务及授权持久，不宣称做了所有文件系统阶段崩溃恢复；既有恢复测试复用，新增委托绑定有Store撤销回归。尚无本批macOS/Linux真实SDK工具闭环、完整Workspace、release或新Hosted CI/CodeQL。HTTP认证、正式管理扩展/Host桥以及安装/搜索/重装的来源委托均未实施，继续属于M8具体后续合同，不能默认获批；不扩大到M9–M12。
+**当时未覆盖/后续归属**：上述STDIO关闭证据不能代替在途`notifications/cancelled`/真实IPC半写故障；这两项已按所有者后续要求在下一节补齐，不宣称覆盖所有竞态。Core重启验证的是已完成任务及授权持久，不宣称做了所有文件系统阶段崩溃恢复；既有恢复测试复用，新增委托绑定有Store撤销回归。尚无本批macOS/Linux真实SDK工具闭环、完整Workspace、release或新Hosted CI/CodeQL。HTTP认证、正式管理扩展/Host桥以及安装/搜索/重装的来源委托均未实施，继续属于M8具体后续合同，不能默认获批；不扩大到M9–M12。
 
 本批按“本地业务闭环验证通过、远端待验证”交付。`d98038f`、`88cb0ad`及收尾文档仅本地提交；后续推送尚无授权，未触发新workflow，M8继续进行中。
+
+### 推送前两项传输风险与完整提交链核对（2026-11-13）
+
+按所有者要求只补两个明确缺口，不重审六工具或身份合同，不进入HTTP/管理扩展。代码提交`99d07c4fdec100218cf1ad7f12eac5b04f21a804`，新增一个真实SDK定向用例`frozen_sdk_inflight_cancel_and_lost_write_response`同时覆盖两种故障；原卸载闭环未重跑。两个占用同一真实端点的业务用例在测试二进制内串行，避免CI并发撞管道。Core故障门控、计数和控制方法全部受既有`test-kill-gates`编译条件约束；无生产参数、环境开关、公共RPC、认证或数据库旁路。普通Core构建检查通过。
+
+| 风险 | 实际故障与结果 |
+| --- | --- |
+| 在途MCP请求取消 | Core已通过真实权限/Plan校验并提交接受事务，测试暂停真实IPC响应；冻结SDK发出该Apply请求的`notifications/cancelled`，SDK响应为Cancelled。取消之后、Core响应仍未释放前，后续工具可及时返回`core_unavailable`，证明handler已释放且中断IPC不可复用。显式重连、原Plan/revision/key恢复相同Operation、replayed=true；最终succeeded，Core权威`cancel_requested=0`，不是业务取消 |
+| 真实写响应丢失 | 另一真实Apply提交接受事务后，发送实际长度前缀及一半实际响应，再关闭IPC；不伪造工具或Core结果。MCP返回`core_write_outcome_unknown`、outcome=unknown、retryable=false；旧连接后续明确不可用。Core入站Apply计数证明无自动重试；显式用原身份/原Plan/revision/key恢复同一个Operation，replayed=true，最终succeeded |
+
+两次初始Apply＋两次显式恢复共**4次**Core请求、**2个**Operation；每个项目revision仅增加1，包目录确实移除，每个Operation的accepted/completed journal恰为1，最终均succeeded且无业务取消标志。12份真实工具结果全部通过既有正式Schema校验（`risk-schema-validation.log`），未把结果未知报为业务回滚或成功。
+
+有效修复前轮**0/1**（7.12秒）暴露SDK只发出取消token、适配器未监听，handler继续持有连接锁；日志在`target/m8-risk-20261113/native-preservation/before-fix-20261113T0603550380067Z/risk-test.log`。仅让工具handler监听既有context取消信号，中止协议future及等待连接锁；typed client既有规则保留不可复用标记，不调用operations.cancel、不自动重连或重试。修复后相同用例**1/0**（4.38秒，原卸载用例1项过滤），两个风险分支均执行。没有放宽超时或断言。最初误用尚未编译完的旧测试程序得到**0项执行**，明确不作为通过证据；该轮原环境也已恢复，记录保留于`reproduction-20261113T0602101376607Z`。启动脚本已增加指定用例存在、执行前再次核对二进制摘要和恰好执行1项的检查。
+
+最终风险证据：`target/m8-business-tests/8f7c81b4-f2ee-48b8-97c0-1f1f2a923014/risk-tool-trace.json`及`risk-coverage.json`；原环境保全及最终日志在`target/m8-risk-20261113/native-preservation/final-20261113T0607306176597Z/`。465份实际输入聚合SHA-256 `a7d196d77c9ae345ea71ec807f723706a9931bacdb1515c900fd77130eb6492a`（`source-inputs-final.json`），提交前逐文件再次核对，源码与`99d07c4`一致。测试二进制SHA-256 `577D8F085A403F73F79E8629A0CEEA4AD4F6EE55BD264DDF2B86AE1917BA32AD`，实际STDIO程序`97EA77CC413195A4455A2C0E5500829470FDDF867EBA3AFC7D47DB9F4B8A7EAC`。新增测试夹具的首次编译类型错误日志亦保留，不冒充执行结果。
+
+相关检查：Core/MCP all-targets严格Clippy通过；本轮MCP库2/0、STDIO12/0；普通Core无test feature的`cargo check -p alcomd --locked -j1`通过；fmt、xtask、metadata、diff通过。先前Store210/0等证据仍对应未变输入，不重跑完整Rust、Chromium、release构建或CI。
+
+`d98038f`精确核对：只新增10行，三张表必须存在且各为空，缺失或非空都失败；移除这10行后，**整个文件**与其父提交逐字一致（只统一Git输出换行用于比较），证明原State16完整行快照相等、Event sqlite_sequence、外键、空override重开、失败迁移保留State16/原DDL/无临时表等断言均未削弱。`state16-diff-audit.txt`保留核对结果。生产迁移和Config相对远端49d0687均无变更，0033原迁移不改。
+
+原环境每轮均按已批准流程正常关闭/自行退出、离线备份/核对并恢复。最终Core PID151604 / GUI PID164732，GUI响应且连接；State32/Config13、0活动、完整设置revision8、五组内容一致（2项目/30仓库/5模板/1Unity/0扩展）。原程序、离线data/profile摘要不变；本轮暂停前7个Unity/Hub进程身份保持，未触碰Unity、真实项目或桌面控制。
+
+推送基线已通过`git ls-remote origin refs/heads/main`核实仍为`49d0687f8af00aee0672d43c6457fcdca22fe561`，该提交是本地HEAD祖先，可普通快进。此前CI43365902105三平台失败和CodeQL43365902090四语言成功继续保留，均不代表本地新业务候选通过远端。提交链按祖先到后继完整包括：
+
+1. `4fb1d94c820c3d09ce0b6e2ea881f154a7164faa`：身份候选远端结果及当时待审六工具合同文档；保留这笔提交，后续记录明确已获批。
+2. `d98038fdccc1fd7aab6f1c71659466c5fb39aeea`：旧State16夹具三张空表断言。
+3. `88cb0adaa8ce9a8492815f948f343fad5ab83c1e`：获批六工具、Core精确委托写、正式Schema及真实闭环测试。
+4. `a8390d6f01d1454e36a93ecf481e0098f816262b`：实际远端失败、本地闭环与原环境恢复记录。
+5. `99d07c4fdec100218cf1ad7f12eac5b04f21a804`：本节取消窄修、测试专用响应门控及两项真实故障回归。
+6. 推送前风险验证及提交链记录提交：仅本节及status文档，最终提交SHA见交付清单。
+
+整条候选链仅上述M8业务、已批准合同、旧夹具修复和对应记录；无GUI/真实程序更新、HTTP/管理扩展实现、额外依赖升级或无关迁移。以真实Windows用户在main提交，不改写历史、不创建标签/发布。当前不推送、不触发workflow；交付完整候选SHA、清单及干净工作树后，等待所有者推送确认。
