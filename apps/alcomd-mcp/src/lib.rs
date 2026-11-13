@@ -111,11 +111,22 @@ impl Service<RoleServer> for ProtocolService {
             if !self.bound {
                 return Err(unsupported_method());
             }
-            let mut guard = self.core.lock().await;
-            let core = guard.as_mut().ok_or_else(unsupported_method)?;
-            return tools::execute(core, request.params)
-                .await
-                .map(ServerResult::CallToolResult);
+            // SDK cancellation signals the context; it does not drop this
+            // handler automatically. Drop only the protocol exchange. The
+            // typed client quarantines an interrupted IPC stream, while Core
+            // retains and executes any Operation it has already accepted.
+            let invoke = async {
+                let mut guard = self.core.lock().await;
+                let core = guard.as_mut().ok_or_else(unsupported_method)?;
+                tools::execute(core, request.params)
+                    .await
+                    .map(ServerResult::CallToolResult)
+            };
+            return tokio::select! {
+                biased;
+                () = context.ct.cancelled() => Err(ErrorData::internal_error("MCP request cancelled", None)),
+                result = invoke => result,
+            };
         }
         // Bound connections are revalidated by Core on every discovery too;
         // rotation/revocation never becomes a stale successful protocol response.

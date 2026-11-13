@@ -112,6 +112,10 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
+    #[cfg(feature = "test-kill-gates")]
+    mcp_apply_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpApplyResponseGate>>>,
+    #[cfg(feature = "test-kill-gates")]
+    mcp_apply_request_count: std::sync::atomic::AtomicU64,
     store: StateStoreHandle,
     m2: M2Application,
     m3: M3ReadApplication,
@@ -347,6 +351,10 @@ async fn initialize_daemon_with_directories(
     let repository_auto_refresh =
         alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
     let applications = Arc::new(Applications {
+        #[cfg(feature = "test-kill-gates")]
+        mcp_apply_response_gate: tokio::sync::Mutex::new(None),
+        #[cfg(feature = "test-kill-gates")]
+        mcp_apply_request_count: std::sync::atomic::AtomicU64::new(0),
         store: store.clone(),
         m2,
         m3,
@@ -533,7 +541,26 @@ async fn serve_connection(
                 Some(payload) => payload,
                 None => return Ok(()),
             };
+            #[cfg(feature = "test-kill-gates")]
+            let is_mcp_apply = state.mcp_hash.is_some()
+                && serde_json::from_slice::<Value>(&payload)
+                    .is_ok_and(|v| v["method"] == alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN);
+            #[cfg(feature = "test-kill-gates")]
+            if is_mcp_apply {
+                applications
+                    .mcp_apply_request_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
             let action = Box::pin(dispatch_payload(&payload, &state, &applications)).await;
+            #[cfg(feature = "test-kill-gates")]
+            if is_mcp_apply && action.response["result"]["operationId"].is_string() {
+                let gate = applications.mcp_apply_response_gate.lock().await.take();
+                if let Some(gate) = gate
+                    && gate.intercept(&mut stream, &action.response).await?
+                {
+                    return Ok(());
+                }
+            }
             if action.event_subscription.is_some() {
                 tokio::time::timeout(
                     std::time::Duration::from_secs(5),

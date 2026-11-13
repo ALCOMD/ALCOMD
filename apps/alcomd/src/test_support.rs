@@ -21,11 +21,34 @@ static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub struct TestDaemon {
     task: JoinHandle<Result<(), BindError>>,
     _listener: Arc<Mutex<IpcListener>>,
-    #[cfg(test)]
     applications: Arc<super::Applications>,
 }
 
 impl TestDaemon {
+    pub fn mcp_apply_request_count(&self) -> u64 {
+        self.applications
+            .mcp_apply_request_count
+            .load(Ordering::Relaxed)
+    }
+
+    /// Holds one successful, authenticated MCP Apply response after its real
+    /// acceptance transaction. Only the existing test-only feature exposes this.
+    pub async fn hold_next_mcp_apply_response(
+        &self,
+        truncate_on_release: bool,
+    ) -> Arc<McpApplyResponseGate> {
+        let gate = Arc::new(McpApplyResponseGate {
+            accepted: Mutex::new(None),
+            ready: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+            truncate_on_release,
+        });
+        let mut slot = self.applications.mcp_apply_response_gate.lock().await;
+        assert!(slot.is_none(), "only one response fault may be armed");
+        *slot = Some(Arc::clone(&gate));
+        gate
+    }
+
     /// Requests cancellation of the serving task without releasing ownership.
     pub fn abort(&self) {
         self.task.abort();
@@ -97,7 +120,6 @@ where
     .await?;
     let listener = Arc::new(Mutex::new(listener));
     let task_listener = Arc::clone(&listener);
-    #[cfg(test)]
     let test_applications = Arc::clone(&applications);
     let task = tokio::spawn(async move {
         let mut listener = task_listener.lock().await;
@@ -116,9 +138,55 @@ where
     Ok(TestDaemon {
         task,
         _listener: listener,
-        #[cfg(test)]
         applications: test_applications,
     })
+}
+
+/// Test-only transport fault; never changes a request, its identity or its result.
+pub struct McpApplyResponseGate {
+    accepted: Mutex<Option<alcomd_protocol::PackageApplyPlanResult>>,
+    ready: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+    truncate_on_release: bool,
+}
+
+impl McpApplyResponseGate {
+    pub async fn accepted(&self) -> alcomd_protocol::PackageApplyPlanResult {
+        loop {
+            let ready = self.ready.notified();
+            if let Some(accepted) = self.accepted.lock().await.as_ref() {
+                return accepted.clone();
+            }
+            ready.await;
+        }
+    }
+
+    pub fn release(&self) {
+        self.release.notify_one();
+    }
+
+    pub(crate) async fn intercept(
+        &self,
+        stream: &mut alcomd_platform::IpcStream,
+        response: &serde_json::Value,
+    ) -> std::io::Result<bool> {
+        use tokio::io::AsyncWriteExt;
+        let accepted =
+            serde_json::from_value(response["result"].clone()).map_err(std::io::Error::other)?;
+        *self.accepted.lock().await = Some(accepted);
+        self.ready.notify_one();
+        self.release.notified().await;
+        if self.truncate_on_release {
+            let payload = serde_json::to_vec(response).map_err(std::io::Error::other)?;
+            let frame = alcomd_protocol::encode_frame(&payload).map_err(std::io::Error::other)?;
+            // Send the real length prefix and only half of the real response,
+            // then close this connection. No fabricated business response.
+            stream.write_all(&frame[..4 + payload.len() / 2]).await?;
+            stream.flush().await?;
+            return Ok(true);
+        }
+        Ok(false)
+    }
 }
 
 struct TemporaryDataDirectory(PathBuf);

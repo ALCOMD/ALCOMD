@@ -11,6 +11,7 @@ use rmcp::{
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 type Sdk = RunningService<RoleClient, ()>;
+static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn sdk(secret: &str) -> Sdk {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"));
@@ -169,6 +170,7 @@ async fn terminal(client: &Sdk, trace: &mut Vec<Value>, id: &str) -> Value {
 /// authorized preservation runner must release the original Core first.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn frozen_sdk_package_removal_real_core_flow() {
+    let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/m8-business-tests")
         .join(uuid::Uuid::new_v4().to_string());
@@ -573,6 +575,253 @@ async fn frozen_sdk_package_removal_real_core_flow() {
     std::fs::write(root.join("coverage.json"),json!({"cancelTerminal":cancel_terminal["state"],"realSdk":"rmcp 3.10.0 Discover","business":"removed actual VPM package","revoked":true,"resourceOwnerPreserved":true}).to_string()).expect("coverage");
     println!(
         "Frozen SDK business closure verified; isolated evidence: {}",
+        root.display()
+    );
+}
+
+/// A real Apply is durably accepted before either transport fault is released.
+/// No mocked result, owner substitution, automatic retry or business cancel.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_sdk_inflight_cancel_and_lost_write_response() {
+    use rmcp::model::{ClientRequest, Request};
+    use rmcp::service::PeerRequestOptions;
+
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-business-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("owned risk evidence");
+    let root = root.canonicalize().expect("risk root");
+    let data_root = root.join("data");
+    std::fs::create_dir(&data_root).expect("isolated data");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(data_root.clone()),
+        std::future::pending(),
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .expect("isolated native owner");
+    let mut projects = Vec::new();
+    for name in ["RequestCancellation", "LostWriteResponse"] {
+        let directory = root.join(name);
+        project(&directory, false);
+        let snapshot = owner
+            .project_register(directory.to_string_lossy().into_owned(), name.into())
+            .await
+            .expect("isolated registration")
+            .project;
+        projects.push((directory, snapshot));
+    }
+    let client = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Transport risk client".into(),
+            grants: {
+                let mut scope = grants(projects[0].1.project_id.as_deref().expect("id"), true);
+                let id = projects[1].1.project_id.as_deref().expect("id");
+                scope.push(grant("projects.read", "project", id));
+                scope.push(grant("packages.manage", "project", id));
+                scope
+            },
+            idempotency_key: "risk-client".into(),
+        })
+        .await
+        .expect("scoped client");
+    let token = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: client.client_id.clone(),
+            expected_revision: client.revision,
+            idempotency_key: "risk-credential".into(),
+        })
+        .await
+        .expect("real credential");
+    let mut trace = Vec::new();
+    let mut expected_requests = 0;
+    let mut operations = Vec::new();
+    for (index, (directory, snapshot)) in projects.iter().enumerate() {
+        let id = snapshot.project_id.as_deref().expect("project ID");
+        let sdk_session = sdk(&token.credential).await;
+        let plan = data(call(&sdk_session, &mut trace, "plan_package_uninstall", json!({
+            "project_id":id,"expected_revision":snapshot.revision,"package_id":"com.example.fixture"
+        })).await.expect("real frozen removal plan"));
+        let args = json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],
+            "idempotency_key":format!("risk-apply-{index}"),"confirm":true});
+        let gate = daemon.hold_next_mcp_apply_response(index == 1).await;
+        let request = sdk_session
+            .send_cancellable_request(
+                ClientRequest::CallToolRequest(Request::new(
+                    CallToolRequestParams::new("alcomd_apply_package_changes")
+                        .with_arguments(args.as_object().expect("args").clone()),
+                )),
+                PeerRequestOptions::no_options(),
+            )
+            .await
+            .expect("actual SDK Apply request");
+        let accepted = tokio::time::timeout(Duration::from_secs(10), gate.accepted())
+            .await
+            .expect("real acceptance before response fault");
+        assert!(!accepted.replayed);
+        expected_requests += 1;
+        assert_eq!(daemon.mcp_apply_request_count(), expected_requests);
+        if index == 0 {
+            // Observe the SDK's cancelled response separately from sending its
+            // real notifications/cancelled message for this in-flight request.
+            let mut request = request;
+            let (_unused, replacement) = tokio::sync::oneshot::channel();
+            let response = std::mem::replace(&mut request.rx, replacement);
+            request
+                .cancel(Some("isolated request cancellation".into()))
+                .await
+                .expect("cancel notification");
+            assert!(matches!(
+                response.await.expect("SDK cancellation response"),
+                Err(ServiceError::Cancelled { .. })
+            ));
+            // Before the held Core response is released, cancellation must free
+            // the adapter's handler and quarantine its interrupted IPC stream.
+            let followup = tokio::time::timeout(
+                Duration::from_secs(5),
+                call(
+                    &sdk_session,
+                    &mut trace,
+                    "get_project",
+                    json!({"project_id":id}),
+                ),
+            )
+            .await
+            .expect("cancelled handler releases its interrupted connection")
+            .expect("bounded tool failure");
+            error(followup, "core_unavailable");
+            gate.release();
+        } else {
+            // Send a genuine length-prefixed Core response, truncate its body
+            // and close IPC after the durable acceptance transaction.
+            gate.release();
+            let response = tokio::time::timeout(Duration::from_secs(10), request.await_response())
+                .await
+                .expect("truncated write response deadline")
+                .expect("MCP business error response");
+            let rmcp::model::ServerResult::CallToolResult(result) = response else {
+                panic!("tool result")
+            };
+            assert_eq!(
+                result
+                    .structured_content
+                    .as_ref()
+                    .expect("unknown response")["error"]["outcome"],
+                "unknown"
+            );
+            assert_eq!(
+                result
+                    .structured_content
+                    .as_ref()
+                    .expect("unknown response")["error"]["retryable"],
+                false
+            );
+            trace.push(
+                json!({"name":"alcomd_apply_package_changes","arguments":args,"result":result}),
+            );
+            error(
+                serde_json::from_value(trace.last().expect("trace")["result"].clone())
+                    .expect("result"),
+                "core_write_outcome_unknown",
+            );
+            error(
+                call(
+                    &sdk_session,
+                    &mut trace,
+                    "get_project",
+                    json!({"project_id":id}),
+                )
+                .await
+                .expect("unusable connection"),
+                "core_unavailable",
+            );
+        }
+        assert_eq!(
+            daemon.mcp_apply_request_count(),
+            expected_requests,
+            "no automatic Apply retry"
+        );
+        stop(sdk_session).await;
+        // Explicit operator recovery: same identity, original Plan/revision/key.
+        let recovered = sdk(&token.credential).await;
+        let replay = data(
+            call(
+                &recovered,
+                &mut trace,
+                "apply_package_changes",
+                args.clone(),
+            )
+            .await
+            .expect("explicit idempotent recovery"),
+        );
+        expected_requests += 1;
+        assert_eq!(daemon.mcp_apply_request_count(), expected_requests);
+        assert_eq!(replay["operation_id"], accepted.operation_id);
+        assert_eq!(replay["replayed"], true);
+        let completed = terminal(&recovered, &mut trace, &accepted.operation_id).await;
+        assert_eq!(
+            completed["state"], "succeeded",
+            "protocol fault never cancels accepted business"
+        );
+        let current = data(
+            call(
+                &recovered,
+                &mut trace,
+                "get_project",
+                json!({"project_id":id}),
+            )
+            .await
+            .expect("post-removal project"),
+        );
+        assert_eq!(
+            current["revision"],
+            snapshot.revision.expect("revision") + 1,
+            "project commits once"
+        );
+        assert!(!directory.join("Packages/com.example.fixture").exists());
+        stop(recovered).await;
+        operations.push(accepted.operation_id);
+    }
+    drop(owner);
+    daemon.abort();
+    let _ = daemon.await;
+    let db = rusqlite::Connection::open_with_flags(
+        data_root.join("state.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("read-only isolated authority evidence");
+    for operation in &operations {
+        let (state, cancel, owner): (String,i64,String) = db.query_row(
+            "SELECT state,cancel_requested,owner_principal_id FROM operations WHERE operation_id=?1", [operation],
+            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+        ).expect("authoritative operation");
+        assert_eq!(state, "succeeded");
+        assert_eq!(cancel, 0);
+        assert_eq!(owner, client.principal_id);
+        let accepted: i64 = db.query_row("SELECT count(*) FROM package_filesystem_journal WHERE operation_id=?1 AND phase='accepted' AND state='completed'", [operation], |r|r.get(0)).expect("acceptance journal");
+        assert_eq!(accepted, 1);
+    }
+    let count: i64 = db
+        .query_row(
+            "SELECT count(*) FROM operations WHERE kind='packages.apply'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("operation count");
+    assert_eq!(
+        count, 2,
+        "one Operation per original Plan, no duplicate execution"
+    );
+    let visible = serde_json::to_string_pretty(&trace).expect("public trace");
+    assert!(!visible.contains(&token.credential));
+    std::fs::write(root.join("risk-tool-trace.json"), visible).expect("risk trace");
+    std::fs::write(root.join("risk-coverage.json"),json!({"protocol":"2026-07-28","cancelledRequestPreservedOperation":true,"truncatedCoreWriteResponse":true,"automaticApplyRetries":0,"explicitRecoveryRequests":2,"applyRequests":expected_requests,"operations":operations,"businessCancelRequested":false,"terminal":"succeeded"}).to_string()).expect("coverage");
+    println!(
+        "Frozen SDK transport risks verified; isolated evidence: {}",
         root.display()
     );
 }
