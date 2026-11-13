@@ -8,7 +8,7 @@
 
 M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：所有者再次确认后，静态合同修复`5bfbc90`与记录已普通快进推送至`3ccc3f428ddadd6b113777b77cce7fe6fa78506d`。同SHA CI `43383251231`三平台完整成功，分别完成严格检查、Rust/合同验证、release/Tauri构建及Chromium单轮703/0（零重试）；CodeQL `43383250817`四语言成功。本批冻结STDIO、客户端身份及六工具卸载切片已取得本地与同SHA远端技术通过证据；真实身份、实际包卸载、在途取消和截断写响应风险用例在三平台均通过。历史失败与本地复现结果继续保留，未拼接为完整通过；本次不重复本地全量验证或推送纯状态记录。HTTP、安装/搜索/重装的来源委托、管理扩展/Host桥仍未实施，M8保持IN_PROGRESS，不重开M7，不宣布整个M8完成；原Core/GUI及原数据未替换或迁移。
 
-所有者已确认上述首个真实业务切片远端验收通过，现进入[HTTP现状审计与最小合同提案](exec-plans/M8-mcp-protocol-and-management.md#http现状审计与最小合同提案2026-11-13待审批未实现)。仅完成冻结规范、SDK/入口/身份复用和必要依赖审计：推荐严格回环预配Bearer，明确不是完整OAuth profile，需批准这一范围选择及HTTP安全/生命周期合同；SDK HTTP特性及必要依赖尚未启用，未修改State/Config/权限或正式HTTP Schema，未监听端口或验证HTTP功能。管理扩展Host/WIT及界面合同待HTTP合同确定后再整理，不同时实施，不自动推送。
+所有者已批准[HTTP回环预配Bearer合同及base64依赖增量](exec-plans/M8-mcp-protocol-and-management.md#http现状审计与最小合同提案2026-11-13已批准实施中)。接线已实现，复用冻结SDK/六工具和每请求独立typed Core身份；本地准入/单元/STDIO同轮19/0，实际HTTP SDK业务及五类故障先前整轮2/0。最终审查补齐重复版本头拒绝后，正在形成准确源码候选并集中复核；不将前一轮或3ccc3f4的旧远端结果冒充该候选通过。base640.23.1的MIT OR Apache-2.0、MSRV1.71及默认simd-unsafe影响已记录，锁文件只新增获批三包，无ALCOMD直接base64依赖或既有包升级。State/Config/权限不变。原Core/GUI及旧程序在验证时已关闭/不存在，保持其真实状态；原data/profile与Unity进程保全通过。HTTP尚无Hosted CI/CodeQL，未推送；完整OAuth及管理扩展Host/WIT仍留后续，M8保持IN_PROGRESS。
 
 历史候选`fa1e7fc`的CI `43377645951`三平台旧静态合同模块6/3失败、CodeQL `43377644992`四语言成功均保留。失败为三处当前State32预期未随获批State34更新；本机原样复现6/3，仅同步严格相等预期后同模块9/0，修复现已随3ccc3f4推送，未删除其他合同断言，不将历史失败改写成通过。
 

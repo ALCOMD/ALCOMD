@@ -2,7 +2,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
 
@@ -343,23 +343,63 @@ async fn eof_before_any_request_exits_cleanly_without_protocol_or_log_output() {
 }
 
 #[tokio::test]
-async fn unavailable_http_exits_with_error_and_never_reports_a_listener() {
-    let output = timeout(
-        DEADLINE,
-        Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"))
-            .env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL")
-            .args(["serve", "--port", "0"])
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .expect("bounded HTTP exit")
-    .expect("start adapter");
-    assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
-    assert!(
-        String::from_utf8(output.stderr)
-            .expect("stderr UTF-8")
-            .contains("no listener was started")
-    );
+async fn http_reports_loopback_listener_but_never_inherits_stdio_credentials() {
+    let secret = "a".repeat(64);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"));
+    command
+        .env("ALCOMD_MCP_CLIENT_CREDENTIAL", &secret)
+        .args(["serve", "--port", "0"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
+    let mut child = command.spawn().expect("owned HTTP adapter");
+    let mut stderr = BufReader::new(child.stderr.take().expect("stderr"));
+    let mut line = String::new();
+    timeout(DEADLINE, stderr.read_line(&mut line))
+        .await
+        .expect("listener deadline")
+        .expect("listener URL");
+    let address: std::net::SocketAddr = line
+        .trim()
+        .strip_prefix("http://")
+        .and_then(|v| v.strip_suffix("/mcp"))
+        .expect("plain loopback URL")
+        .parse()
+        .expect("bound address");
+    assert_eq!(address.ip(), std::net::Ipv4Addr::LOCALHOST);
+    let mut stream = tokio::net::TcpStream::connect(address)
+        .await
+        .expect("own listener");
+    stream.write_all(format!("POST /mcp HTTP/1.1\r\nHost: {address}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await.expect("unauthenticated request");
+    let mut response = String::new();
+    timeout(DEADLINE, stream.read_to_string(&mut response))
+        .await
+        .expect("HTTP deadline")
+        .expect("response");
+    assert!(response.starts_with("HTTP/1.1 401"));
+    assert!(!response.contains(&secret));
+    child.kill().await.expect("stop only owned adapter process");
+    timeout(DEADLINE, child.wait())
+        .await
+        .expect("adapter exit deadline")
+        .expect("adapter exit");
+    let mut rest = String::new();
+    stderr
+        .read_to_string(&mut rest)
+        .await
+        .expect("remaining stderr");
+    assert!(rest.is_empty());
+    assert!(!line.contains(&secret));
+    let mut stdout = Vec::new();
+    child
+        .stdout
+        .take()
+        .expect("stdout")
+        .read_to_end(&mut stdout)
+        .await
+        .expect("stdout EOF");
+    assert!(stdout.is_empty());
 }

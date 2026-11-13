@@ -31,7 +31,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP尚未实现，明确失败退出，不监听无认证端口；不宣称管理扩展或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer合同已批准，源码接线与定向测试准备中，编译及真实运行验证尚未完成，见末节；不宣称管理扩展或整个M8完成。
 
 ## 公共合同与接线状态
 
@@ -280,9 +280,13 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 
 本轮仍只覆盖冻结STDIO协议、客户端身份和六工具卸载切片。安装/搜索/重装的来源委托、HTTP授权、正式管理扩展/Host桥未实施，未获本批实现授权，不因门禁进展自动开放；全部文件系统崩溃阶段和取消/丢响应竞态也未宣称穷尽。M8继续IN_PROGRESS，不重开M7或宣布整个M8完成。
 
-### HTTP现状审计与最小合同提案（2026-11-13，待审批，未实现）
+### HTTP现状审计与最小合同提案（2026-11-13，已批准，实施中）
 
-所有者已确认3ccc3f4首个真实业务切片远端验收通过，本轮只审计和提出HTTP合同；不重审六工具/身份，不实现HTTP或管理扩展，不启动原Core/GUI或真实项目。远端基线及本地记录f5042f3保持，正式HTTP Schema、Cargo及锁文件均未修改。
+所有者已明确批准推荐的回环预配Bearer合同及必要依赖，直接实施本节范围，不重复审批身份或六工具。正式承载见`specs/mcp/http-loopback-v1.md`；本节保留批准前审计事实，实际实现/定向证据另记。无新增Core RPC、State、Config或权限。
+
+实际锁解析补充：此前静态审计漏掉SDK `server-side-http`同时启用`base64`且要求`^0.23`，现有0.21.7/0.22.1不能满足。需要额外的SDK传递依赖`base64 0.23.1`（MIT OR Apache-2.0，官方未yank，2026-08-04发布，checksum `ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5`），用于冻结HTTP头的Base64编码/核对，不是新认证机制；保留原两个版本及其消费者，不改SDK源码或以不兼容旧版本强凑。闭包首次解析选中sse-stream0.2.6，现已恢复获批精确0.2.4。草稿锁文件只新增base64/httpdate/sse-stream三包，无既有包升级；base64增量已按所有者本轮明确授权批准，恢复HTTP构建，未把原两包审批扩成任意新包。首次cargo check中断记录在`target/m8-http-audit-20261113/implementation-check-1.log`，不能计为通过；源码及测试准备继续，现有生产程序/数据不变。
+
+下列审计和提案保留批准前事实。当时只审计HTTP，正式HTTP合同、Cargo和锁文件尚未修改，远端基线及本地记录f5042f3保持；批准后的接线与验证状态见本节首尾，不把旧STDIO/身份远端结果计为HTTP通过。
 
 **冻结依据**：继续使用规范commit `4df2d6b6e3588efb46e7542d98498e5c630a0a86`，通过官方GitHub blob API读取并核对Git blob及SHA-256，非浮动main：
 
@@ -298,9 +302,9 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 | `rmcp=3.10.0` | 本地源码已有stateless、请求Parts扩展、Host/Origin、流式body上限及断线取消；HTTP feature尚未启用。默认legacy session=true、metadata强制=false、空Origin列表不校验，均须明确覆盖；SDK默认未知通知202也不能当本片通知支持 |
 | HTTP宿主与错误边界 | 尚无TCP监听、资源上限、Bearer→请求私有Core连接接线；SDK部分500 helper直接格式化Display错误且tracing可打印原消息，须在HTTP出口收敛静态有界错误并移除秘密上下文。不增加管理数据库、通用脱敏系统或观测RPC来完成本片 |
 
-**推荐首片：严格回环、预配Bearer profile。** `Authorization: Bearer`承载现有Core签发MCP凭据，只支持已配置Bearer的原生客户端；不把其冒称OAuth access token，不声称支持OAuth自动登录。它是同一MCP客户端的预配凭据，可用于本机STDIO/该HTTP入口，只沿用既有轮换/撤销，没有新增过期时间或HTTP resource/audience声明；不接受第三方token。这是对HTTP认证SHOULD采用OAuth的明确、有边界的偏离，需所有者批准；不能把OAuth profile内的MUST降为可选。本片不提供假PRM/authorize/token/refresh/动态注册端点或scope字符串映射。完整OAuth仍是M8待处理项，不因此宣称M8认证全部完成。若本片必须覆盖OAuth-only客户端，应改选完整OAuth并先冻结真实授权服务器、resource/audience及既有Principal绑定差异，不能在本片暗建第二套身份。
+**推荐首片：严格回环、预配Bearer profile。** `Authorization: Bearer`承载现有Core签发MCP凭据，只支持已配置Bearer的原生客户端；不把其冒称OAuth access token，不声称支持OAuth自动登录。它是同一MCP客户端的预配凭据，可用于本机STDIO/该HTTP入口，只沿用既有轮换/撤销，没有新增过期时间或HTTP resource/audience声明；不接受第三方token。这是对HTTP认证SHOULD采用OAuth的明确、有边界的偏离，所有者已批准此首片范围；不能把OAuth profile内的MUST降为可选。本片不提供假PRM/authorize/token/refresh/动态注册端点或scope字符串映射。完整OAuth仍是M8待处理项，不因此宣称M8认证全部完成。若本片必须覆盖OAuth-only客户端，应改选完整OAuth并先冻结真实授权服务器、resource/audience及既有Principal绑定差异，不能在本片暗建第二套身份。
 
-| 合同面 | 推荐的具体边界 |
+| 合同面 | 已批准的具体边界 |
 | --- | --- |
 | 监听/CLI | 复用`serve --port <0..65535>`，默认`127.0.0.1:0`，成功后stderr报告无凭据实际`http://127.0.0.1:<port>/mcp`，stdout空。无持久配置、新host参数、IPv6补绑定、自动公网暴露或代理模式；非回环及TLS部署另审，不信任Forwarded/X-Forwarded-* |
 | HTTP路由 | 仅`POST /mcp`，不接受query/fragment式凭据或路径别名、不重定向；其他路径404，/mcp的GET/DELETE/HEAD/OPTIONS为405且Allow: POST。仅HTTP/1.1首片，HTTP/2/TLS及浏览器客户端不在此片 |
@@ -318,9 +322,9 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 
 错误层次固定：格式合法但不允许的Host/Origin 403，HTTP语法/重复Host/冲突authority 400，头超限431；缺/失效凭据401（有界WWW-Authenticate: Bearer challenge，不伪造resource_metadata），畸形认证400；HTTP method 405、媒体类型415、Accept 406、body超限413、读头/body超时408。TCP配额满直接拒绝连接，活跃HTTP请求配额满429（Retry-After: 1），Core在接受业务前不可用503，均不能报业务已回滚。SDK按冻结规则处理HeaderMismatch -32020、缺必需能力 -32021、版本不支持 -32022及缺metadata为400，方法不支持404/-32601；普通工具参数-32602和业务失败沿SDK JSON-RPC/HTTP200语义，不擅自改工具合同。合法请求的在途Core写超时以HTTP200完整tool error交付unknown；已开SSE后只能发准确终态并结束，不能假称已改HTTP状态。所有限制在Core业务调用前尽量拒绝，SDK原始Display/解析错误不直接外透，保留稳定code及有界静态文案，意外内部错误给opaque diagnostic_id而非反射请求。
 
-**必要内部与依赖差异（仍待批准）**：不新增Core RPC、State、Config、权限名或身份存储；只新增HTTP公开入口/安全与生命周期合同。复用SDK HTTP解析/协商/头核对/SSE，不用Tokio手写HTTP或另造协议引擎。提升现有锁版本`hyper 1.11.0`（server/http1）、`hyper-util 0.1.20`（tokio）、`http-body-util 0.1.5`为最少直接边，基础HTTP类型复用Hyper导出；不加axum/tower-http/oauth2/JWT/TLS框架。启用现有rmcp的`transport-streamable-http-server`会新增`sse-stream 0.2.4`，Hyper server会新增`httpdate 1.0.3`；两者均MIT OR Apache-2.0、官方未yank，前者当前0.3.0不满足SDK的0.2系列边界，不为用新版本升级已冻结SDK。替代方案手写SSE/HTTP会增加协议风险；其余依赖已锁，批准后才核对实际lock闭包并同步xtask边界，遇额外必要包先说明，不夹带升级。测试可启用同SDK的HTTP client/reqwest特性，复用既有锁定reqwest，不建立通用测试框架。
+**必要内部与依赖差异（原两包及直接边已批准，base64增量已批准）**：不新增Core RPC、State、Config、权限名或身份存储；只新增HTTP公开入口/安全与生命周期合同。复用SDK HTTP解析/协商/头核对/SSE，不用Tokio手写HTTP或另造协议引擎。提升现有锁版本`hyper 1.11.0`（server/http1）、`hyper-util 0.1.20`（tokio）、`http-body-util 0.1.5`为最少直接边，基础HTTP类型复用Hyper导出；不加axum/tower-http/oauth2/JWT/TLS框架。启用现有rmcp的`transport-streamable-http-server`会新增`sse-stream 0.2.4`，Hyper server会新增`httpdate 1.0.3`；两者均MIT OR Apache-2.0、官方未yank，前者当前0.3.0不满足SDK的0.2系列边界，不为用新版本升级已冻结SDK。替代方案手写SSE/HTTP会增加协议风险；其余依赖已锁，批准后才核对实际lock闭包并同步xtask边界，遇额外必要包先说明，不夹带升级。测试可启用同SDK的HTTP client/reqwest特性，复用既有锁定reqwest，不建立通用测试框架。
 
-**批准后必须补的定向证据**（本轮未执行，不能记HTTP通过）：
+**本片必须补的定向证据**（本轮未执行，不能记HTTP通过）：
 
 1. 冻结SDK Discover经真实loopback HTTP和隔离Core，双Bearer零授权/显式授权/范围外/同TCP交替身份/并发同请求ID隔离；同一六工具实际卸载及Plan/Operation/幂等归属保持。
 2. 连接存续期间授权减少、轮换、撤销；hello到Apply接受间变更仍拒绝；无凭据、错误Bearer、STDIO环境凭据均不能降级owner。复用既有身份/Store证据，只补HTTP引入边界。
@@ -329,4 +333,32 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 5. Content-Length与chunked边界、4MiB超限、压缩拒绝、慢头/慢body、32/16配额及释放、超时/停机、无GUI/管理扩展时独立工作；SSE断线不泄漏任务、连接或permit。
 6. 复用本轮Core响应门控，真实Apply接受后关闭HTTP/SSE及截断写响应，证明无自动POST重试、无业务cancel、原键恢复同Operation且项目只提交一次；不能只用mock错误或借STDIO通过替代HTTP证据。
 
-本次只完成源码/冻结来源/依赖静态审计和提案，未开启HTTP监听、占用Core端点、修改运行程序/数据或执行新的完整测试。官方资料、SDK/锁文件摘要及必要包元数据在`target/m8-http-audit-20261113/`。唯一产品取舍是本片预配Bearer profile与完整OAuth的范围选择；以上HTTP合同和必要依赖须一并审批后实施。管理扩展Host/WIT与界面合同在HTTP合同确定后再整理，不与本片同时实施，不通过私有数据库或宿主特权访问客户端数据。
+批准前本轮只完成源码/冻结来源/依赖静态审计和提案，未开启HTTP监听、占用Core端点、修改运行程序/数据或执行新的完整测试。官方资料、SDK/锁文件摘要及必要包元数据在`target/m8-http-audit-20261113/`。预配Bearer profile及原两包和直接依赖边现已批准，额外base64依赖现已批准。管理扩展Host/WIT与界面合同随后单独整理，不与本片同时实施，不通过私有数据库或宿主特权访问客户端数据。
+
+#### 审批等待期间的实施准备（历史状态）
+
+- 已准备回环`serve`入口、严格Host/Origin/媒体准入、逐请求Bearer→独立typed Core连接、SDK无session适配、请求/输出限额和正常停止。共享六工具及Core身份/权威未重做；STDIO原调用入口保持，连接失败提示改为适用于两种传输的文字。
+- 静态核对修正SSE处理/输出截止的区别；输出超限/截止必须产生传输错误，不能把截断当作正常EOF。此处仍为源码，不能代替实际测试结果。
+- 测试源码复用既有真实Core卸载及故障注入流程，增加HTTP SDK入口、同TCP切换Bearer/复用请求ID、metadata/header差异、旧协议拒绝、16请求饱和/断开释放与chunked body限额，以及无Core的Host/Origin/凭据环境变量隔离检查。旧STDIO测试仍保留其独立断言。上述HTTP用例及受影响STDIO回归均**未执行**。
+- `cargo xtask check`、锁定离线metadata、最终fmt及diff检查已通过；metadata确认MCP正常本地依赖仍精确为client/protocol。首次HTTP `cargo check`在新增依赖闭包暴露后主动中断，**未完成**。没有执行完整Workspace、Chromium、release或新的CI/CodeQL；HTTP代码仍未提交/推送，尚无稳定候选SHA或Hosted证据。原Core/GUI及数据未暂停、替换或迁移，未恢复桌面控制。
+
+base64增量获批后继续编译、严格MCP Clippy、定向测试及获批的真实隔离验证；到时核对实际结果、恢复原环境并记录输入，再形成本地候选，不以本段的源码准备宣布HTTP或M8完成。
+
+#### base64 0.23.1 最终依赖核对
+
+所有者明确批准本轮SDK传递依赖。首先执行要求的`cargo tree --locked -e features -i base64@0.23.1`，并另以`-p alcomd-mcp -e normal,features`排除dev边核实生产路径：`alcomd-mcp → rmcp/transport-streamable-http-server → server-side-http → base64/default → std/alloc + simd-unsafe`。dev HTTP SDK client也复用同一版本；ALCOMD任何manifest不新增直接base64依赖，也不直接调用其API。
+
+精确锁版本0.23.1，MIT OR Apache-2.0，MSRV 1.71.0，checksum沿上文。用途是冻结2026-07-28 HTTP头Base64 sentinel编码/解码核对。默认`simd-unsafe`确实开启，包含第三方`src/engine/simd.rs`中的AVX2/NEON intrinsic、指针读写及unsafe块，第三方提供按平台/运行时指令集检测的SIMD引擎，不能描述为没有unsafe影响或整个第三方依赖无unsafe。维护边界：不修改SDK或第三方源码、不假称关闭该feature、不以新增直接依赖强行覆盖feature；沿用审批的版本/头及body限额，补实际长Base64头正反例覆盖。上游安全保证仍依赖第三方实现，本轮不宣称完成对其SIMD unsafe的形式证明或跨平台专项验证。
+
+完整/仅生产feature tree分别保存于`target/m8-http-audit-20261113/base64-feature-tree.txt`、`base64-production-features.txt`。其中SDK的server-session支持代码是该既定HTTP feature的传递边，运行时仍显式legacy=false/NeverSessionManager，不启用协议session。首次offline tree因未缓存精确sse-stream0.2.4失败，随后仅下载锁定包重查成功；无包升级，不改HTTP/身份合同，最终lock/feature清单随候选复核。
+#### HTTP本地候选集中验证（最终候选复核中）
+
+已完成获批回环HTTP接线，不增加Core RPC/State/Config/权限或身份框架。每请求独立认证typed连接、严格Host/Origin、无session/owner回退；SDK负责冻结协议和SSE，GUI/原Core不参与HTTP宿主。`serve --port 0`报告无凭据URL，stdout空。ALCOMD生产源码没有直接base64 API或新增unsafe。
+
+最终审查补齐SDK只读取首值的重复MCP版本头拒绝；其Method/Name重复核对继续由SDK处理。准入/单元/STDIO集中命令最新一轮分别5/0、2/0、12/0，合计19/0，日志`no-core-tests-candidate.log`，不拼接旧失败轮次。实际HTTP SDK两项流程先前完整2/0（`native-preservation/final-20261113T1534098413501Z/risk-test.log`），覆盖37条业务工具记录和31条风险工具记录；5类故障产生5个独立Operation，10次Apply=5次原请求+5次原键显式恢复，零自动重试、零业务cancel、均成功且各提交一次。新增版本头准入后将再对准确源码候选集中复核这两项，不提前将前一轮标为最终候选通过。
+
+历史真实结果保留：首轮HTTP check因依赖审批中断；随后SDK optional DTO两次编译错误，修正后all-targets check通过。资源测试首轮HTTP 1/1揭示Hyper读头超时直接EOF而非约定408；窄补固定408后关联轮次1/1揭示失去原写半关闭语义的Windows reset，恢复正常shutdown后2/0，最后19项同轮通过。各轮原始日志保留，没有改超时或降低断言。严格MCP Clippy和xtask已通过，最终候选还将核对fmt/metadata/diff/lock与feature清单；不执行完整Workspace、Chromium、release或三平台CI。
+
+真实环境事实与旧流程前提不同：原Core/GUI进程和旧`target/debug`两份程序在本轮开始验证时已经不存在；首次快照连接超时、旧程序hash前置缺失，均未开始测试或关闭任何程序。随后按真实关闭/缺失状态保全，保持关闭，不为测试重启或重建原程序。最终已执行轮次原36份data、346份profile逐文件SHA-256不变，7个Unity/Hub进程PID/路径/启动时间保持，测试后无Core/GUI/MCP残留；原数据未迁移。没有声称对关闭环境进行实时五组RPC核对或“恢复运行成功”。相应backup-manifest/result及468份输入在`target/m8-http-audit-20261113/`。
+
+base64 feature tree/锁审计确认只新增0.23.1、httpdate1.0.3、sse-stream0.2.4，无既有包升级/删除，22份工作区manifest均无直接base64。SDK当前头实现调用BASE64_STANDARD/GeneralPurpose的scalar路径；默认SIMD unsafe模块仍编译进入依赖，不能据此说整个依赖没有unsafe，更没有宣称验证第三方SIMD跨平台正确性。

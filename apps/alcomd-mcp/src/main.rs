@@ -38,10 +38,24 @@ async fn main() -> anyhow::Result<()> {
             alcomd_mcp::serve_stdio_with_client(input, output, core).await?;
         }
         Command::Serve { port } => {
-            anyhow::bail!(
-                "MCP HTTP transport is not implemented; no listener was started (requested port {port})"
-            );
+            let server =
+                alcomd_mcp::HttpServer::bind(port, alcomd_client::ClientConfig::default()).await?;
+            eprintln!("http://{}/mcp", server.local_addr()?);
+            server.run_until(shutdown()).await?;
         }
     }
     Ok(())
+}
+
+async fn shutdown() {
+    #[cfg(unix)]
+    {
+        if let Ok(mut terminate) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            return;
+        }
+    }
+    let _ = tokio::signal::ctrl_c().await;
 }

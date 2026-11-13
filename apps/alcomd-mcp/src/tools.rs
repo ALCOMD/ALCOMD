@@ -390,7 +390,7 @@ fn failure(cause: Failure) -> CallToolResult {
         ),
         Failure::Remote(_, false) => error(
             "core_unavailable",
-            "The Core connection is unavailable. Restart this controlled STDIO client to reconnect with the same identity.",
+            "The Core connection is unavailable. Reconnect with the same client identity.",
             true,
             None,
             false,
@@ -412,6 +412,13 @@ fn failure(cause: Failure) -> CallToolResult {
     }
 }
 
+pub(crate) fn interrupted(writing: bool) -> CallToolResult {
+    failure(Failure::Remote(
+        ClientError::Transport(std::io::Error::from(std::io::ErrorKind::TimedOut)),
+        writing,
+    ))
+}
+
 pub async fn execute(
     client: &mut AlcomdClient,
     params: CallToolRequestParams,
@@ -420,7 +427,7 @@ pub async fn execute(
     if !client.is_usable() {
         return Ok(error(
             "core_unavailable",
-            "The interrupted Core connection cannot be reused. Restart this controlled STDIO client.",
+            "The interrupted Core connection cannot be reused. Establish a new connection with the same client identity.",
             true,
             None,
             false,

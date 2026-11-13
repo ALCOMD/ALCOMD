@@ -12,8 +12,10 @@ use rmcp::{
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
+mod http;
 mod stdio_transport;
 mod tools;
+pub use http::HttpServer;
 
 /// The sole frozen MCP revision. No legacy handshake or session is supported.
 pub const MCP_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2026_07_28;
@@ -78,6 +80,28 @@ struct ProtocolService {
     bound: bool,
 }
 
+impl ProtocolService {
+    async fn ensure_current(&self) -> Result<(), ErrorData> {
+        if let Some(core) = self.core.lock().await.as_mut() {
+            core.system_status().await.map_err(|error| {
+                let message = match error {
+                    alcomd_client::ClientError::Remote(ref error)
+                        if matches!(
+                            error.code.as_str(),
+                            "permission_denied" | "authorization_required"
+                        ) =>
+                    {
+                        "Core client authorization is no longer valid"
+                    }
+                    _ => "Core connection is unavailable",
+                };
+                ErrorData::internal_error(message, None)
+            })?;
+        }
+        Ok(())
+    }
+}
+
 impl Service<RoleServer> for ProtocolService {
     async fn handle_request(
         &self,
@@ -130,22 +154,7 @@ impl Service<RoleServer> for ProtocolService {
         }
         // Bound connections are revalidated by Core on every discovery too;
         // rotation/revocation never becomes a stale successful protocol response.
-        if let Some(core) = self.core.lock().await.as_mut() {
-            core.system_status().await.map_err(|error| {
-                let message = match error {
-                    alcomd_client::ClientError::Remote(ref error)
-                        if matches!(
-                            error.code.as_str(),
-                            "permission_denied" | "authorization_required"
-                        ) =>
-                    {
-                        "Core client authorization is no longer valid"
-                    }
-                    _ => "Core connection is unavailable",
-                };
-                ErrorData::internal_error(message, None)
-            })?;
-        }
+        self.ensure_current().await?;
         match request {
             ClientRequest::DiscoverRequest(_) => Ok(ServerResult::DiscoverResult(
                 DiscoverResult::from_server_info(vec![MCP_PROTOCOL_VERSION], self.get_info()),

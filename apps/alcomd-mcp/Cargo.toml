@@ -12,7 +12,10 @@ publish.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true
-rmcp.workspace = true
+rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
 alcomd-protocol.workspace = true
 alcomd-client.workspace = true
 serde_json.workspace = true
@@ -27,7 +30,8 @@ alcomd-store.workspace = true
 rusqlite.workspace = true
 uuid.workspace = true
 tokio = { workspace = true, features = ["process"] }
-rmcp = { workspace = true, features = ["client", "transport-child-process"] }
+rmcp = { workspace = true, features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest"] }
+reqwest = { workspace = true, features = ["stream"] }
 
 [lints]
 workspace = true
