@@ -246,4 +246,19 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 5. `99d07c4fdec100218cf1ad7f12eac5b04f21a804`：本节取消窄修、测试专用响应门控及两项真实故障回归。
 6. 推送前风险验证及提交链记录提交：仅本节及status文档，最终提交SHA见交付清单。
 
-整条候选链仅上述M8业务、已批准合同、旧夹具修复和对应记录；无GUI/真实程序更新、HTTP/管理扩展实现、额外依赖升级或无关迁移。以真实Windows用户在main提交，不改写历史、不创建标签/发布。当前不推送、不触发workflow；交付完整候选SHA、清单及干净工作树后，等待所有者推送确认。
+整条候选链仅上述M8业务、已批准合同、旧夹具修复和对应记录；无GUI/真实程序更新、HTTP/管理扩展实现、额外依赖升级或无关迁移。以真实Windows用户在main提交，不改写历史、不创建标签/发布。收尾当时不推送，交付完整候选SHA、清单及干净工作树后等待确认；随后所有者批准的实际推送见下一节。
+
+### fa1e7fc获准推送及本轮远端结果（2026-11-13）
+
+所有者确认后，再次核对真实Windows用户`cqmhv-dt\m2922`、标准目录/main、干净工作树、origin地址、完整六笔提交及远端49d0687。已普通快进推送至`fa1e7fc3cd9ad01a58a36d9d195bee3ba50a0918`，包含此前待审合同记录`4fb1d94c`，远端SHA实读一致。无强推、标签、发布或手动workflow；同SHA自动运行结果为：
+
+| 检查 | 实际状态 |
+| --- | --- |
+| [CI 43377645951](https://github.com/ALCOMD/ALCOMD/actions/runs/43377645951) | completed/failure，Windows、macOS、Ubuntu均在`m7_project_actions_contract`模块6通过/3失败 |
+| [CodeQL 43377644992](https://github.com/ALCOMD/ALCOMD/actions/runs/43377644992) | completed/success，actions/Rust/JS-TS/Python四语言完成 |
+
+三平台失败均为三项旧静态合同仍写`assert_eq!(CURRENT_DATA_SCHEMA,32)`，实际已是获批State34：项目复制、目录删除和历史编辑器偏好合同分别在`m7_project_actions_contract.rs:102/465/626`失败。并非本轮业务用例失败，亦不重开M7。三平台日志均明确通过原State19、State16保全用例，真实身份闭环及两个SDK业务/传输风险用例也均通过；这些只计为该SHA各自步骤证据，不拼成完整Workspace通过。后续repository-contract、release/Tauri、Chromium尚未执行。此前49d0687/db37593/ca196c47失败原样保留。
+
+本机先原样复现同模块**6/3**（`current-schema-reproduction.log`），然后仅将三处严格相等预期从32同步到34，其余文件内容逐字不变，未改成范围断言或删除校验。修复后同模块单轮**9/0**（`current-schema-fixed.log`），定向严格Clippy、fmt/xtask/diff通过；独立本地提交`5bfbc90c425e250882cb6492614ec414b765518c`仅3行替换，文件SHA-256 `DE3C750D877291DC50BEE524DD3BC5A2A84D63332AD461AC7C5593F457847EAB`。同类当前Schema常量审计未见其他旧32相等断言；历史迁移版本保留。生产代码/Schema/权限/0033与0034迁移、Config和已有业务证据输入未变，不重复完整Rust/浏览器/release验证，也不盲目重跑workflow。
+
+运行JSON、job日志、本机复现与修复、严格检查及逐字差异审计位于`target/m8-hosted-fa1e7fc-20261113/`。本次只执行推送和本地静态合同修复，未暂停、替换原Core/GUI、迁移原数据或操作真实项目。额外修复及本节记录仅本地提交，未获新推送授权；修复候选没有新远端结果，不将fa1e7fc的CodeQL通过冒充修复后通过。M8继续进行中，本批远端验收完成前不进入HTTP或管理扩展。
