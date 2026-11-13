@@ -23,7 +23,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 遵循 `docs/baselines/mcp.md` 和 `docs/baselines/source-lock.toml` 中锁定的 `2026-07-28` Schema：逐请求版本/能力元数据、`server/discover`、无 initialize/session、Core Operation 与请求取消分离、不支持 MCP Tasks。精确上游 Schema 的 SHA-256 已核对为 `742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd`。
 
-新增官方 Rust SDK `rmcp = =3.10.0`（Apache-2.0，MSRV 1.88，低于项目 1.97.1），关闭默认特性，只开启 `server`、`transport-io`。用途是复用 JSON-RPC 类型/响应编解码、请求调度及取消；现阶段不启用宏、客户端、Tasks 或 HTTP 服务特性。已有 serde/serde_json、Tokio 和 Core 协议依赖复用。lockfile 仅新增 5 个包，无既有包升级；新增包为 rmcp、pastey、const-oid、schemars_derive 1.2.2、serde_derive_internals 0.30.0。
+首批新增官方 Rust SDK `rmcp = =3.10.0`（Apache-2.0，MSRV 1.88，低于项目 1.97.1），关闭默认特性，生产仅开启`server`、`transport-io`。用途是复用JSON-RPC类型/响应编解码、请求调度及取消；生产不启用宏、客户端、Tasks或HTTP服务特性，后续真实SDK测试的dev特性见末节。已有serde/serde_json、Tokio和Core协议依赖复用。首批lockfile仅新增5个包，无既有包升级；新增包为rmcp、pastey、const-oid、schemars_derive 1.2.2、serde_derive_internals 0.30.0。
 
 替代方案：自行编写 JSON-RPC/HTTP/SSE 栈会重复协议及安全边界；旧版 SDK 不满足冻结协议。维护风险：SDK 同时支持旧生命周期，必须用无握手服务入口、显式逐请求校验及定向测试阻止兼容行为；精确锁版本、审查 lockfile 增量，更新时重验冻结 Schema。HTTP 后续复用 SDK 的无状态传输，不自行实现 HTTP 解析。
 
@@ -31,7 +31,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前 MCP 只提供真实协议发现，受控STDIO可使用获批身份连接Core，不宣称 MCP 业务或管理扩展完成。不广告未实现的 tools/resources/subscriptions，不接受旧 initialize/ping 或 Tasks。HTTP尚未实现，明确失败退出，不监听无认证端口。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP尚未实现，明确失败退出，不监听无认证端口；不宣称管理扩展或整个M8完成。
 
 ## 公共合同与接线状态
 
@@ -39,7 +39,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 - HTTP授权与每请求Bearer绑定；不能取自clientInfo，也不能回退owner。
 - MCP 管理扩展的客户端、请求、连接、订阅读取和授权管理；沿用既定权限分类及扩展所有权/范围规则。
-- 按现行 Core RPC 冻结工具输入/输出 Schema；旧 Draft 未提供正式 ABI。现有 Operation 仅 get/list/cancel，不能伪造尚无公开合同的 input/approve/reject/resume。
+- 本次六工具之外的业务映射及来源委托；正式Schema已覆盖获批卸载切片，旧Draft未提供已部署ABI。现有Operation仅get/list/cancel，不能伪造尚无公开合同的input/approve/reject/resume。
 
 本批身份合同不再等待审批。其余真正新增的公共合同仍先提交具体差异，不暂停独立实现。
 
@@ -59,7 +59,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 ## 验证与交付边界
 
-日常仅检查 MCP 包及关联合同；使用独立的 `target/m8-check`，避免覆盖当前原环境程序。覆盖逐请求元数据、协议版本、发现结果、旧生命周期拒绝、错误帧恢复、有界输入、STDIO EOF 和 stdout 纯协议。新增代码尚无 Hosted CI/CodeQL；不复用旧 M7 结果替代。
+日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；已推送身份候选的实际远端失败/CodeQL通过见后文，本次工具及追加夹具修复尚无对应Hosted CI/CodeQL，不复用旧M7结果替代。
 
 稳定业务候选形成后再集中执行适用门禁，真实包/权限和管理界面另据实际实现验收。未实现、未执行与失败保持分列。
 
@@ -136,7 +136,7 @@ State34 增量迁移现已获所有者明确批准（“批准 State34 增量迁
 
 三平台日志均已通过精确依赖检查，严格Clippy及本批真实IPC双身份闭环用例也已通过；这只是对应步骤证据，不是整个Workspace通过。CI在上述测试处停止，后续repository-contract阶段、release/Tauri构建及Chromium均未执行。未手动重跑，macOS/Linux真实身份用例的新增证据绑定该SHA及各自Hosted环境，不冒充本机运行。完整JSON及三平台job日志保存于`target/m8-stage-push-20261113/`。
 
-根因是旧State19保全用例仍期待旧表集合，而获批State33/34必然新增三张空MCP表，不是旧业务数据改变。本机先单例复现0通过/1失败（`state19-reproduction.log`），随后只新增`mcp_clients/mcp_client_grants/mcp_client_credentials`必须各为空的明确断言；原`after == before`、历史删除边界和Event高水位断言逐字保留。没有过滤忽略新增表或改生产迁移/Schema/运行时代码。修复提交`49d0687f8af00aee0672d43c6457fcdca22fe561`，修改仅测试9行；同模块4/0、Store all-targets严格Clippy、fmt/xtask/diff通过，原失败记录保留，不拼成105/1失败轮通过。该文件SHA-256 `8ef2b82748aae742b7b39c15767a06c8ca72fb24238d7a28acb39aa01b524a09`，结果`state19-targeted-fixed.log`和`state19-clippy.log`。修复额外推送授权已单独申请，未自动推送；以下业务合同也尚待集中审批。原运行Core/GUI、原数据和Unity未改，未恢复桌面控制。
+根因是旧State19保全用例仍期待旧表集合，而获批State33/34必然新增三张空MCP表，不是旧业务数据改变。本机先单例复现0通过/1失败（`state19-reproduction.log`），随后只新增`mcp_clients/mcp_client_grants/mcp_client_credentials`必须各为空的明确断言；原`after == before`、历史删除边界和Event高水位断言逐字保留。没有过滤忽略新增表或改生产迁移/Schema/运行时代码。修复提交`49d0687f8af00aee0672d43c6457fcdca22fe561`，修改仅测试9行；同模块4/0、Store all-targets严格Clippy、fmt/xtask/diff通过，原失败记录保留，不拼成105/1失败轮通过。该文件SHA-256 `8ef2b82748aae742b7b39c15767a06c8ca72fb24238d7a28acb39aa01b524a09`，结果`state19-targeted-fixed.log`和`state19-clippy.log`。所有者其后单独批准收齐结果后推送该修复、并批准以下六工具及Core窄差异；实际交付和验证见末节，不再标记为待审批。
 
 ### 首个真实业务工具合同：项目包卸载闭环（2026-11-13已批准，实施中）
 
@@ -175,3 +175,43 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 **后续缺口不在本次切片偷偷开放**：`packages.queryProjectCandidates`当前还需要settings.read且按caller owner读取项目/来源；安装Plan的resolver_catalog、归档pin及来源读取也按caller owner隔离。安装/搜索/重装须另行明确来源委托及安全输出，不能把空catalog当可用、改资源owner或代持local-owner。HTTP授权、管理扩展Host/WIT及M9–M12仍不实施。
 
 批准后按先读后写实施。同一组用冻结`rmcp=3.10.0`真实client的`ClientLifecycleMode::Discover`驱动STDIO子进程（禁用Initialize/Auto回退；仅测试启用client/child-process特性，不新加生产SDK），经过受控启动凭据和实际Core完成隔离项目卸载。只补工具引入的关联验证：零授权/错误范围/撤销、风险字段和失败准确性、显式确认前零项目写入、原Plan无重规划、旧revision拒绝、同键/跨client隔离、任务终态与合作取消、请求取消不取消已接受任务、owner/项目文件实际结果及重启恢复。复用已通过身份测试，不为这条切片先建管理GUI或重跑完整全套；原运行Core/GUI及真实项目保持。
+
+### 获批修复推送、六工具实现及真实闭环（2026-11-13）
+
+所有者集中批准后，核对origin/main、main提交链和工作树，只将`49d0687f8af00aee0672d43c6457fcdca22fe561`普通快进推送至origin/main；当时本地`4fb1d94c`待审工具记录未夹带推送。无强推、标签、发布或手动workflow。该轮已全部终结：
+
+| 49d0687检查 | 实际终态 |
+| --- | --- |
+| [CI 43365902105](https://github.com/ALCOMD/ALCOMD/actions/runs/43365902105) | 三平台failure；旧State19保全用例已通过，另一旧`empty_unity_override`模块各2通过/1失败，失败为`state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reopen` |
+| [CodeQL 43365902090](https://github.com/ALCOMD/ALCOMD/actions/runs/43365902090) | success，四语言完成 |
+
+新失败仍是旧保全夹具未显式列入三张获批新增的空MCP表。先本机复现0/1，再只补三表为空的断言，旧完整相等、Event序列、外键及reopen检查保留；修复后同模块3/0，本地独立提交`d98038f`。没有改生产迁移、0033或放宽检查。远端停在cargo test，后续repository-contract/release/Tauri/Chromium未执行，不拼成完整通过。完整run JSON和三平台日志在`target/m8-business-20261113/ci49-final.json`、`codeql49-final.json`、`ci49-job-*.log`；旧db37593、ca196c47失败和各自CodeQL结果仍保留。
+
+**实际完成**：本地代码候选`88cb0adaa8ce9a8492815f948f343fad5ab83c1e`接通六工具，复用typed alcomd-client和现有RPC；不在适配器访问数据库/项目。Core仅开放已认证MCP的原remove Plan和精确项目写元组，接受事务重新校验当前授权，即使幂等重放也不能绕过撤销；内部执行/完成依据已接受Operation→原Plan→不可变journal及项目路径身份。项目owner保持，Plan/任务/幂等属于实际调用者，项目变更事件送资源owner。安装/重装等非remove Plan明确拒绝。正式Schema是获批工具增量；旧Draft未形成已部署ABI，无新增Core RPC形状、权限名称、State/Config或持久查询机制。
+
+工具返回真实Plan全部变更/风险和独立Operation，接受不报成卸载成功；未知写结果不报回滚，也不自动重试。收尾特别修正Plan创建本身会持久化：其响应丢失同样返回`core_write_outcome_unknown`；Plan无幂等键，须重新查看项目后显式创建另一Plan，Apply/Cancel才以原参数/原键查回。已断开的typed client不能复用，不回退owner。协议取消与业务取消仍分开。
+
+**实际验证及输入**（各轮独立，不能相加成完整Workspace）：
+
+| 验证 | 实际结果 / 证据 |
+| --- | --- |
+| 真实冻结SDK→STDIO子进程→隔离Core→实际项目包事务 | 最终单例1/0，4.07秒；`rmcp 3.10.0` Discover，明确只接受2026-07-28，不走Initialize/Auto；实际包目录、VPM direct/locked项移除，UPM字节保持 |
+| 六工具正式JSON Schema | JSON Schema2020-12校验通过；最终实际39次请求/结果全部匹配、含成功和业务拒绝；tools/list六项、complete/ttl0/private，无结果截断或未知RPC透传 |
+| Store组件集中回归 | 单轮210/0（含105项库测试及105项集成测试），`store-component-final.log`；包含两项旧迁移夹具和新委托写回归，不改写旧失败轮 |
+| 应用授权映射 | m8模块5/0，`scoped-write-unit-tests.log`，含读不隐含写、精确项目写、全局包写拒绝 |
+| MCP工具与协议 | 最终工具库2/0，`mcp-unit-final.log`；未变STDIO回归单轮12/0，`mcp-protocol-final.log`，其中先前库2/0不与最终轮拼成4项 |
+| 严格检查 | application/Store/Core/MCP all-targets Clippy通过（`business-clippy-3.log`）；末次仅MCP错误映射变化后MCP all-targets Clippy通过（`mcp-clippy-final.log`）；fmt/xtask/metadata/diff通过 |
+
+最终输入：候选`88cb0ad`，465份文件，聚合SHA-256 `44a6925883047993d63a78b1ca3a880b959b78659d7bf9cd17a8b52adae93c7b`；逐文件在`target/m8-business-20261113/source-inputs-final.json`。真实测试程序SHA-256 `503467E35319222450D1250899567403BD0D25A8342D7EF834756BDC77DECCB1`，STDIO程序`13B15A5E4238895DDF712BF7B4F41982E91B82C9CEA119205FF83309B921E102`。早轮真实1/0、37次Schema校验和聚合`f919021912a71d88ebcbc34e5656321bfd97ea896926c6687a81190213b89a85`保留；末次仅`tools.rs`的未知Plan响应分类/文案及关联断言变化，Store/application/Core输入未变，复用其精确模块证据。没有重跑完整Rust/浏览器/release/三平台CI。
+
+最终业务证据目录`target/m8-business-tests/d3d7307b-b908-417c-a8bf-4f73c0fc23a8/`保存`tools-list.json`、`tool-trace.json`和`coverage.json`；`actual-contract-validation-final.log`记录六Schema及39次实测校验。两个客户端均由owner明确创建/签发，默认零授权被拒；授权后只读获准项目，范围外拒绝，读权限不能Apply；缺确认在协议输入层拒绝、项目不写。真实不存在包失败准确返回，依赖风险完整展示，外部改动后原Plan过期拒绝、不重规划；另一客户端不能使用Plan或读取任务。同键重放同Operation，撤掉写权限后同键也拒绝；实际取消终态为cancelled；SDK/STDIO关闭不自动取消已接受的另一任务，重连查询成功。Core重启后凭据、作用范围和原任务/幂等结果持久；撤销后已连接请求及tools/list拒绝，另一客户端仍可用。原资源owner不变。Store真实事务测试还证明撤销前已接受任务可依原绑定完成、不可借撤销重放，journal不可修改且变更项目身份会拒绝内部目标解析。
+
+实现期间的SDK类型/调用签名编译诊断及Clippy分轮输出保留在本轮target证据目录。新增Store用例首次0/1是测试试图修改append-only journal，Core拒绝符合原保护；改为明确断言此修改失败，再以项目身份变化验证目标解析拒绝，定向1/0（`delegated-store-test-2.log`），最终另有上述组件单轮210/0。未删除journal保护、放宽断言或把失败轮次拼成通过。
+
+**原环境已恢复并实际核对**：两轮均先确认0活动任务、原程序路径/数据与五组公开快照，正常关闭GUI并等待Core自行结束，离线备份36份data、345份profile和原程序。最终恢复Core PID163652 / GUI PID155308，GUI响应且连接，State32/Config13、0活动、完整设置revision8；前后均2项目/30仓库/5模板/1Unity/0扩展，内容一致。两程序、离线data/profile摘要未变，本轮暂停前存在的9个Unity/Hub进程PID/启动时间保持，未强杀、替换程序、升级原数据、操作真实项目或恢复桌面控制。历史身份轮12个进程不是本轮计数，未强行恢复已由用户结束的进程。备份、源输入、before/after、重开及`result.json`在`target/m8-business-20261113/native-preservation/final-20261113T0522383781023Z/`。
+
+测试依赖增量仅现有rmcp客户端/子进程特性引入`process-wrap 10.0.1`（MIT OR Apache-2.0）及`tokio-stream 0.1.19`（MIT），未升级其他包，不增加生产HTTP或运行时框架。Schema独立校验器`jsonschema 4.25.1`及其依赖仅安装于本轮target目录，不写全局Python或生产依赖；无新通用测试框架。
+
+**未覆盖/后续归属**：本次STDIO关闭验证已接受任务不被隐式取消，不等于覆盖在途`notifications/cancelled`/写响应丢失的所有竞态；未知写映射有定向单测，未制造真实IPC半写故障。Core重启验证的是已完成任务及授权持久，不宣称做了所有文件系统阶段崩溃恢复；既有恢复测试复用，新增委托绑定有Store撤销回归。尚无本批macOS/Linux真实SDK工具闭环、完整Workspace、release或新Hosted CI/CodeQL。HTTP认证、正式管理扩展/Host桥以及安装/搜索/重装的来源委托均未实施，继续属于M8具体后续合同，不能默认获批；不扩大到M9–M12。
+
+本批按“本地业务闭环验证通过、远端待验证”交付。`d98038f`、`88cb0ad`及收尾文档仅本地提交；后续推送尚无授权，未触发新workflow，M8继续进行中。

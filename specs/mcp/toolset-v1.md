@@ -1,6 +1,6 @@
 # ALCOMD MCP Toolset v1
 
-状态：2026-11-13 已批准首个六工具切片，实施中；其余工具仍为方向基线，未开放。
+状态：2026-11-13 已批准首个六工具切片，本地真实闭环验证通过、远端待验证；其余工具未开放。
 冻结 MCP 规范基线：`2026-07-28`
 
 正式输入输出、错误枚举及annotations见[包卸载工具Schema](package-removal-v1.schema.json)，完整授权与执行边界见[M8 ExecPlan](../../docs/exec-plans/M8-mcp-protocol-and-management.md#首个真实业务工具合同项目包卸载闭环2026-11-13已批准实施中)。没有v3别名、通用RPC透传或无凭据业务调用。
