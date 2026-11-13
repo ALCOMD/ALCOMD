@@ -123,4 +123,53 @@ State34 增量迁移现已获所有者明确批准（“批准 State34 增量迁
 
 原环境已实际恢复：最终Core PID150048、GUI PID145568，GUI响应并已连接；State32/Config13、0活动任务、完整设置revision8和五组公开内容与暂停前即时快照一致（2项目/30仓库/5模板/1Unity/0扩展）。最初只读快照曾有4项目，第一次暂停前已为2；本次两轮各自前后均为2，不将历史4条回写或冒充当前计数。每轮正常关闭GUI、等待Core自行退出，离线备份并核对数据/profile；最终36份data、345份profile和两程序离线摘要未变，原12个Unity/Hub进程身份保持，没有强杀、替换原程序、迁移原数据或恢复桌面控制。最终`candidate.json`、`source-inputs.json`、`before.json`、`after.json`、`backup-manifest.json`、`reopened/open-result.json`及`result.json`在上述final证据目录。测试二进制SHA-256 `938E4920DB2BE403DB0555279968DB0CB899ED75F9208EEFD2B5C6EA927C7037`，STDIO程序`822B528631409EC00BFF02DB1E75823F7C2F54397A0096EBC88D41693896287F`。
 
-远端仍明确分列：`ca196c47`的CI `43328525847` completed/failure（三平台精确依赖名单失败），CodeQL `43328524955` completed/success（四语言）；保存为`remote-ci-43328525847.json`和`remote-codeql-43328524955.json`。当前新增代码只取得本地证据，未推送、无新Hosted CI/CodeQL，未运行完整Workspace、浏览器全套或release构建。macOS/Linux本批真实身份运行尚未验证；业务工具/正式Schema、HTTP授权及管理扩展Host/WIT桥继续留在M8后续具体合同，不计为完成，不启动M9。
+本地收尾当时远端仍为：`ca196c47`的CI `43328525847` completed/failure（三平台精确依赖名单失败），CodeQL `43328524955` completed/success（四语言）；保存为`remote-ci-43328525847.json`和`remote-codeql-43328524955.json`。当时新增代码只取得本地证据、未推送，无新Hosted CI/CodeQL，未运行完整Workspace、浏览器全套或release构建，macOS/Linux本批真实身份运行也尚未验证。后续获准推送的实际结果见下一节。业务工具/正式Schema、HTTP授权及管理扩展Host/WIT桥继续留在M8后续具体合同，不计为完成，不启动M9。
+
+### 阶段候选推送与远端结果（2026-11-13）
+
+按所有者要求，本批保持“**本地验证通过、远端待验证**”；已启动轮已实际失败，修复候选未取得远端结果，不能把该标签理解为CI仍运行或已通过。已核对真实Windows用户、main干净工作树、最新origin/main及完整提交链，仅将`80dec2a`和`db37593`从`ca196c47`普通快进推送到`origin/main`。0033未改，无强推、标签、发布或手动workflow。
+
+| `db37593d9ba0a41d9e95cb70a684dc840b93a6c5`检查 | 实际终态 |
+| --- | --- |
+| [CI 43359695787](https://github.com/ALCOMD/ALCOMD/actions/runs/43359695787) Windows / macOS / Ubuntu | 三平台全部failure；各自Store模块105通过/1失败，均为`state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence` |
+| [CodeQL 43359695853](https://github.com/ALCOMD/ALCOMD/actions/runs/43359695853) | success，actions/Rust/JS-TS/Python四语言全部完成 |
+
+三平台日志均已通过精确依赖检查，严格Clippy及本批真实IPC双身份闭环用例也已通过；这只是对应步骤证据，不是整个Workspace通过。CI在上述测试处停止，后续repository-contract阶段、release/Tauri构建及Chromium均未执行。未手动重跑，macOS/Linux真实身份用例的新增证据绑定该SHA及各自Hosted环境，不冒充本机运行。完整JSON及三平台job日志保存于`target/m8-stage-push-20261113/`。
+
+根因是旧State19保全用例仍期待旧表集合，而获批State33/34必然新增三张空MCP表，不是旧业务数据改变。本机先单例复现0通过/1失败（`state19-reproduction.log`），随后只新增`mcp_clients/mcp_client_grants/mcp_client_credentials`必须各为空的明确断言；原`after == before`、历史删除边界和Event高水位断言逐字保留。没有过滤忽略新增表或改生产迁移/Schema/运行时代码。修复提交`49d0687f8af00aee0672d43c6457fcdca22fe561`，修改仅测试9行；同模块4/0、Store all-targets严格Clippy、fmt/xtask/diff通过，原失败记录保留，不拼成105/1失败轮通过。该文件SHA-256 `8ef2b82748aae742b7b39c15767a06c8ca72fb24238d7a28acb39aa01b524a09`，结果`state19-targeted-fixed.log`和`state19-clippy.log`。修复额外推送授权已单独申请，未自动推送；以下业务合同也尚待集中审批。原运行Core/GUI、原数据和Unity未改，未恢复桌面控制。
+
+### 首个真实业务工具合同：项目包卸载闭环（待审批）
+
+所有者要求集中审阅首个完整业务流程，本节是具体差异提案，**尚未批准或实施**，不改变已批准身份合同。推荐先完成“读取获准项目及已装包→生成卸载Plan→明确确认后Apply原Plan→查询/取消任务”。这是完整包管理写流程，不以发现或模拟响应代替；安装/搜索/重装的来源委托另列后续缺口，不把全部工具塞入首切片。
+
+依据为冻结[2026-07-28 Schema](https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、`mcp-tool-contract.md`中仍有效的命名方向，以及`80dec2a`实际RPC/application/Store。旧草案的Tasks、activity/diagnostics及Operation输入接口不继承。Core卸载分支明确使用空且完整的catalog，不扫描或下载仓库，适合作为首个有真实写结果的最小流程。
+
+**一次审批的工具映射**（工具字段snake_case，通过typed client显式转换现有RPC的camelCase；无任意method/params透传）：
+
+| 工具 | 输入 | `structuredContent.data`成功结果 | 对应RPC / 最小权限和范围 |
+| --- | --- | --- | --- |
+| `alcomd_list_projects` | `cursor? {registered_at_ms,project_id}`, `limit?` | `projects[{project_id,display_name?,revision,project_type,unity_version,directory_state}]`, `next_cursor?` | `projects.list` / `projects.read/project/<id>`；仅当前获准项目 |
+| `alcomd_get_project` | `project_id` | 上述项目字段＋`vpm_manifest,upm_manifest,direct_dependencies,locked_dependencies,issues`；依赖项为`{package_id,value}`，问题仅code/component等有界字段 | `projects.get` / 目标项目的`projects.read`；这里是登记的包快照，不宣称文件系统实时扫描；Plan会重新读取当前项目并复核，不冒充全局包搜索 |
+| `alcomd_plan_package_uninstall` | `project_id,expected_revision,package_id` | `plan_id,action,state,project_id,project_revision,change_set_fingerprint,change_set`，change_set保留当前RPC的全部变更、依赖、removal_conflicts、legacy_removals等字段和值；文本摘要明确版本移除及受影响依赖 | `packages.planRemove` / `projects.read/project/<id>`＋既有`repositories.read/global/*`、`packages.read/global/*`；不写项目，但创建真实持久Plan |
+| `alcomd_apply_package_changes` | `plan_id,expected_revision,idempotency_key,confirm:true` | `operation_id,replayed`，仅表示接受，终态通过get_operation读取 | `packages.applyPlan` / 上述权限＋**新增支持的组合**`packages.manage/project/<id>`＋`operations.read/global/*`；只接受本Principal的remove Plan且项目一致 |
+| `alcomd_get_operation` | `operation_id` | `operation_id,kind,state,revision,created_at_ms,updated_at_ms,started_at_ms?,completed_at_ms?,progress?,result?,error_code?,diagnostic_id?`；包操作result仅含`plan_id,change_set_fingerprint` | `operations.get` / `operations.read/global/*`＋实际Operation owner；首切片仅支持packages.apply，其他kind明确报invalid_request、不透出未知result |
+| `alcomd_cancel_operation` | `operation_id,expected_revision,idempotency_key` | `operation`（同上）, `replayed`；cancelling不宣称cancelled | 先`operations.get`核对packages.apply，再`operations.cancel` / `operations.read/global/*`＋`operations.cancel/global/*`及实际owner；沿用Core合作式取消及不可取消错误 |
+
+工具输入根对象均`additionalProperties:false`；UUID为规范小写36字符，revision为1..2^53−1安全整数；limit默认100、1..1000，cursor时间为非负安全整数；package_id沿用Core的1..128字符校验，幂等键沿用既有1..128字节有界合同。列表沿用Core的登记时间/ID稳定排序，**不新增跨页快照保证**；每页重新检查授权。Core若返回不可安全表达的整数、未知结果类型或超过预算的完整Plan，明确报错，不截断成可确认成功。响应沿用4MiB帧预算，工具data限定3MiB、文本摘要至多4KiB；Plan超过工具预算返回既有`plan_too_large`，项目文件未写入。
+
+**发现、结果及确认**：仅带受控凭据并成功绑定Core的STDIO开放标准`tools`能力和这六个静态定义；零授权可见定义不代表有权调用，Core仍逐请求拒绝。无凭据仅协议发现、不连接Core；撤销后tools/list也不得返回缓存成功。tools/list为`resultType:complete,ttlMs:0,cacheScope:private`，不广告listChanged/订阅或Tasks；逐请求版本/能力保持冻结规范。每个工具同时提供完整inputSchema/outputSchema和短文本：成功`{data:...}`，业务失败`{error:{code,message,retryable,details?,operation_id?,diagnostic_id?,outcome?}}`并`isError:true`；结果都是complete，不伪装MRTR。读工具readOnlyHint=true；Plan会持久化所以readOnlyHint=false、destructiveHint=false；Apply/Cancel为写操作，Apply destructiveHint=true。Plan不承诺幂等；Apply/Cancel同Principal同参数同幂等键幂等，工具hint不代替校验。
+
+Apply调用方必须先展示完整Plan及风险并取得操作者确认，再提交`confirm:true`；它只表达调用方明确确认意图，不是假造的人工签名或权限凭据。false/缺失在适配器校验阶段拒绝。Core只接收原`plan_id/expected_revision/idempotency_key`，不可变Plan ID已经绑定原计划；不新增MCP预览缓存、确认token或Core RPC字段，不接受工具端重写change_set、allow_conflicts或隐式重新计划。依赖移除风险沿用Core现有formatVersion 1..4及确认后的行为，不能照抄旧草案伪造尚不存在的waiting/input/approve流程。来源、revision、文件身份及运行中项目等检查继续由Core承担；失败需要用户重新计划时明确返回原错误，不替用户换Plan。
+
+**错误与取消**：输入/工具Schema错误`-32602`，未知工具或未开放tools能力`-32601`；已进入业务用例的`permission_denied/plan_not_found/plan_stale/revision_conflict/idempotency_conflict/package_not_found/package_not_installed/operation_not_found/operation_not_cancellable/store_unavailable`等保留当前Core稳定code、脱敏message和允许的details，internal_error必须有diagnostic_id。RPC没有retryable字段，适配器显式映射：读取的store_unavailable及下述core_unavailable可以显式重试，其余默认false，不解析message猜原因。新增仅MCP层的`core_unavailable`（未提交或读连接不可用）、`core_write_outcome_unknown`（写入发出后响应丢失，outcome=unknown）；不把后者报成失败已回滚或自动换键重试，提示以原键/原参数显式查回同一结果。读取failed任务时工具读取成功，但data.state/error_code必须保留失败事实；Apply接受也不是卸载成功。`notifications/cancelled`/EOF只结束协议请求，不能默认取消已接受Operation；中断在途RPC的连接按typed client既有usable规则丢弃，不复用残留响应或回退owner。业务取消只能显式调用cancel_operation，可能因阶段不能取消或最终成功，均如实返回。
+
+**需要一并批准的Core差异，限这条流程**：
+
+1. 不新增权限名、身份RPC、凭据模型或State/Config版本；只给既有grant元组开放`packages.manage/project/<id>`组合，且必须同时具有同项目read和上述既有读权限。现有global读授权不被扩大为项目写入。
+2. `m8_mcp_rpc`只新增`packages.applyPlan`入口。`M4Application::apply_plan`当前硬拒绝所有非local-owner；仅对已认证MCP、本Principal remove Plan、当前精确项目写范围开放，并在接受事务内再次查当前授权/客户端状态。不允许安装/升级/reinstall/bulk Plan借此入口执行；原生owner流程保持。
+3. 当前accept/run/complete/recovery按“项目owner=Plan调用者”读取或更新，会让委托写失败。改为Core内部根据已接受Operation→同owner的不可变Plan→project_id/revision/路径身份解析目标，保留所有路径、锁、journal、回滚和资格检查。项目owner保持原值；Plan、Operation、幂等记录仍归调用MCP Principal，不拼造owner AccessContext。项目变化通知按真实资源可见性失效，操作结果事件按调用者隔离，原GUI也应刷新。
+4. 撤销/范围减少必须拒绝后续Apply（包括旧Plan的重放入口，不能借幂等绕过当前授权）；已经接受的任务继续由Core按冻结目标执行和恢复，不因STDIO断开或后来撤销自动取消。内部执行权来自已接受任务绑定，不来自重新冒充owner或任意传入ProjectId。显式业务取消仍走原接口。无须增加持久授权任务表或运行时框架。
+
+**后续缺口不在本次切片偷偷开放**：`packages.queryProjectCandidates`当前还需要settings.read且按caller owner读取项目/来源；安装Plan的resolver_catalog、归档pin及来源读取也按caller owner隔离。安装/搜索/重装须另行明确来源委托及安全输出，不能把空catalog当可用、改资源owner或代持local-owner。HTTP授权、管理扩展Host/WIT及M9–M12仍不实施。
+
+批准后按先读后写实施。同一组用冻结`rmcp=3.10.0`真实client的`ClientLifecycleMode::Discover`驱动STDIO子进程（禁用Initialize/Auto回退；仅测试启用client/child-process特性，不新加生产SDK），经过受控启动凭据和实际Core完成隔离项目卸载。只补工具引入的关联验证：零授权/错误范围/撤销、风险字段和失败准确性、显式确认前零项目写入、原Plan无重规划、旧revision拒绝、同键/跨client隔离、任务终态与合作取消、请求取消不取消已接受任务、owner/项目文件实际结果及重启恢复。复用已通过身份测试，不为这条切片先建管理GUI或重跑完整全套；原运行Core/GUI及真实项目保持。

@@ -6,11 +6,11 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：本地代码候选`80dec2a5dd9f0507c05d2bd1dec575ee97cb2ca2`，冻结STDIO协议基础和已批准客户端身份闭环均已实现并本地验证。hello凭据绑定、五个管理RPC、逐请求权限/范围/撤销复查、typed client及受控STDIO已接通，真实Core验证后开放`mcp.clients.v1`。HTTP、业务工具和MCP管理扩展/Host桥仍未完成，M8保持进行中。新增代码尚无对应Hosted CI/CodeQL；未重跑M7全量验证，原Core/GUI已按授权恢复，程序与原数据版本不变。
+M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：身份闭环按“本地验证通过、远端待验证”管理。运行时代码`80dec2a`及记录`db37593`已获准快进推送；冻结STDIO协议基础、hello凭据绑定、五个管理RPC、逐请求权限/范围/撤销复查、typed client及受控STDIO均已本地验证，真实Core验证后开放`mcp.clients.v1`。本轮远端整体验证失败及本地测试修复另见下文，不能把待验证理解为尚在运行。已整理首个六工具项目包卸载流程的具体合同与Core委托写缺口，尚未批准或实施；HTTP、安装来源委托、管理扩展/Host桥仍在后续。M8保持进行中，M7不重开；本轮原Core/GUI及原数据未替换或迁移。
 
-当前远端 `ca196c4727cdab642b703a37a919a1adbb2b60d5`：CI `43328525847` **失败**，三平台均在 xtask 精确依赖检查报告 MCP expected alcomd-client / found alcomd-protocol，后续测试/构建未执行；CodeQL `43328524955` **通过**。本地已按实际引用同步精确规则并通过 cargo xtask check，当前身份接线增量尚无远端验证，不用 M7 旧结果替代。
+当前远端`db37593d9ba0a41d9e95cb70a684dc840b93a6c5`：CI `43359695787`三平台**失败**，各自Store105/1，均为旧State19保全用例未列入获批新增的三张空MCP表；CodeQL `43359695853`四语言**通过**。精确依赖检查、严格Clippy和本批真实双身份IPC用例已在三平台日志中通过，但后续release/Tauri/Chromium等未执行，不拼成完整通过。本机复现后仅补三表为空的断言，旧业务完整相等/Event序列断言保持；本地修复`49d0687`同模块4/0、严格Clippy/fmt/xtask/diff通过，额外推送尚待授权、无修复后的远端结果。历史`ca196c47`的CI `43328525847`依赖名单失败、CodeQL `43328524955`通过保留，不用旧M7结果替代。
 
-身份合同首批历史证据：State33初始化/迁移5项、DTO2项、当时Schema42项/StoreHandle12项分别通过，当时认证尚未接通、不发布capability。当前获批State34增量保全旧授权并支持永久幂等快照，0033原迁移未改。最终独立轮次：Store身份/迁移10通过、Core认证/管理2通过、hello协商1通过、STDIO12通过、真实IPC双身份闭环1通过；application4项、protocol20项/Schema49项及client秘密边界1项沿用准确未变模块证据，不拼成完整Workspace通过。受影响严格Clippy、xtask/metadata/fmt/diff通过；462份最终输入摘要及原始记录见ExecPlan。原环境实际恢复为Core150048/GUI145568、State32/Config13、0活动，五组内容和完整设置revision8保持（暂停前后均2项目/30仓库/5模板/1Unity/0扩展），原12个Unity/Hub进程保持；不是守候进程等待恢复。当前代码仅本地提交、不推送；本批macOS/Linux真实身份运行和新远端验证未执行。
+身份合同首批历史证据：State33初始化/迁移5项、DTO2项、当时Schema42项/StoreHandle12项分别通过，当时认证尚未接通、不发布capability。当前获批State34增量保全旧授权并支持永久幂等快照，0033原迁移未改。最终独立本地轮次：Store身份/迁移10通过、Core认证/管理2通过、hello协商1通过、STDIO12通过、真实IPC双身份闭环1通过；application4项、protocol20项/Schema49项及client秘密边界1项沿用准确未变模块证据，不拼成完整Workspace通过。受影响严格Clippy、xtask/metadata/fmt/diff通过；462份输入摘要及原始记录见ExecPlan。身份本地收尾时原环境实际恢复为Core150048/GUI145568、State32/Config13、0活动，五组内容和完整设置revision8保持（暂停前后均2项目/30仓库/5模板/1Unity/0扩展），原12个Unity/Hub进程保持；本轮未再暂停、替换原环境或操作真实项目。
 
 M0–M7阶段正式验收完成。M7最终功能候选`c46f7544`本地完整700项、三平台Hosted CI各700项及四语言CodeQL全部通过；未变Rust输入对应901项通过/14项原有忽略。独立验收在`e9879837`补跑最新增量28项及GUI/metadata/diff检查通过，994份输入未变，未把旧结果冒充完整703项。两处过时文档已同步到现行Config13和`logs.read`。详见[M7完成记录](testing/m7-completion-20261113.md)。
 
