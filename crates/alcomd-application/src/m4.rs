@@ -855,6 +855,15 @@ pub trait M4Store: RepositoryArchivePinStore {
         plan_id: PlanId,
     ) -> impl Future<Output = Result<PackagePlanRecord, M4Error>> + Send;
 
+    /// Trusted execution lookup, bound to an already accepted durable Operation.
+    /// No public request may supply a project or substitute its resource owner.
+    fn get_package_operation_project(
+        &self,
+        _operation_id: OperationId,
+    ) -> impl Future<Output = Result<ProjectRecord, M4Error>> + Send {
+        std::future::ready(Err(M4Error::new(M4ErrorCode::PermissionDenied)))
+    }
+
     fn accept_package_plan(
         &self,
         owner: PrincipalId,
@@ -1108,13 +1117,25 @@ where
         require(access, crate::Permission::RepositoriesRead)?;
         require(access, crate::Permission::PackagesRead)?;
         require(access, crate::Permission::PackagesManage)?;
-        if access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+        if !access.is_mcp_client() && access.principal().as_str() != PrincipalId::LOCAL_OWNER {
             return Err(M4Error::new(M4ErrorCode::PermissionDenied));
         }
         let plan = self
             .store
             .get_package_plan(access.principal().clone(), plan_id)
             .await?;
+        if access.is_mcp_client() {
+            require(access, crate::Permission::OperationsRead)?;
+            access
+                .require_project_read_scope(&plan.project_id.to_string())
+                .and_then(|()| {
+                    access.require_project_package_write_scope(&plan.project_id.to_string())
+                })
+                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            if plan.action != PlanAction::Remove || !plan.source_set.is_empty() {
+                return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+            }
+        }
         if plan.state == PlanState::Applied {
             return self
                 .store
@@ -1131,11 +1152,17 @@ where
             .locks
             .acquire(vec![ResourceKey::Project(plan.project_id)])
             .await;
-        let project = self
-            .store
-            .get_project(access.principal().clone(), plan.project_id)
-            .await
-            .map_err(map_m3_error)?;
+        let project = if access.is_mcp_client() {
+            self.store
+                .get_mcp_project(access.principal().clone(), plan.project_id)
+                .await
+                .map_err(map_m3_error)?
+        } else {
+            self.store
+                .get_project(access.principal().clone(), plan.project_id)
+                .await
+                .map_err(map_m3_error)?
+        };
         let catalog = if plan.source_set.is_empty() {
             ResolverCatalog {
                 entries: Vec::new(),
@@ -1206,11 +1233,16 @@ where
             .store
             .begin_package_apply(operation_id, m4_time_ms()?)
             .await?;
-        let project = self
-            .store
-            .get_project(plan.owner.clone(), plan.project_id)
-            .await
-            .map_err(map_m3_error)?;
+        let project = if plan.owner.as_str().starts_with("mcp:") {
+            self.store
+                .get_package_operation_project(operation_id)
+                .await?
+        } else {
+            self.store
+                .get_project(plan.owner.clone(), plan.project_id)
+                .await
+                .map_err(map_m3_error)?
+        };
         match self
             .adapter
             .execute_plan(

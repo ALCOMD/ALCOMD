@@ -151,6 +151,7 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
             | "operations.cancel"
             | "events.list"
             | "packages.planRemove"
+            | "packages.applyPlan"
     )
 }
 

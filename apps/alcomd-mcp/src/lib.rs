@@ -5,14 +5,15 @@ use std::borrow::Cow;
 use rmcp::{
     ErrorData, RoleServer, Service,
     model::{
-        ClientNotification, ClientRequest, DiscoverResult, ErrorCode, Implementation,
-        ProtocolVersion, ServerCapabilities, ServerConfig, ServerResult,
+        CacheScope, ClientNotification, ClientRequest, DiscoverResult, ErrorCode, Implementation,
+        ListToolsResult, ProtocolVersion, ServerCapabilities, ServerConfig, ServerResult,
     },
     service::{NotificationContext, RequestContext, serve_directly},
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 
 mod stdio_transport;
+mod tools;
 
 /// The sole frozen MCP revision. No legacy handshake or session is supported.
 pub const MCP_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2026_07_28;
@@ -55,12 +56,14 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    let bound = client.is_some();
     let transport = stdio_transport::StdioTransport::new(input, output);
     // SDK's handshake entry also accepts legacy pre-init ping. Start its normal
     // dispatcher directly and validate every request here, without session state.
     serve_directly(
         ProtocolService {
             core: tokio::sync::Mutex::new(client),
+            bound,
         },
         transport,
         None,
@@ -72,6 +75,7 @@ where
 
 struct ProtocolService {
     core: tokio::sync::Mutex<Option<alcomd_client::AlcomdClient>>,
+    bound: bool,
 }
 
 impl Service<RoleServer> for ProtocolService {
@@ -103,6 +107,16 @@ impl Service<RoleServer> for ProtocolService {
                 &[MCP_PROTOCOL_VERSION],
             ));
         }
+        if let ClientRequest::CallToolRequest(request) = request {
+            if !self.bound {
+                return Err(unsupported_method());
+            }
+            let mut guard = self.core.lock().await;
+            let core = guard.as_mut().ok_or_else(unsupported_method)?;
+            return tools::execute(core, request.params)
+                .await
+                .map(ServerResult::CallToolResult);
+        }
         // Bound connections are revalidated by Core on every discovery too;
         // rotation/revocation never becomes a stale successful protocol response.
         if let Some(core) = self.core.lock().await.as_mut() {
@@ -125,6 +139,19 @@ impl Service<RoleServer> for ProtocolService {
             ClientRequest::DiscoverRequest(_) => Ok(ServerResult::DiscoverResult(
                 DiscoverResult::from_server_info(vec![MCP_PROTOCOL_VERSION], self.get_info()),
             )),
+            ClientRequest::ListToolsRequest(request) if self.bound => {
+                if request.params.and_then(|p| p.cursor).is_some() {
+                    return Err(ErrorData::invalid_params(
+                        "This tool list has no continuation cursor.",
+                        None,
+                    ));
+                }
+                Ok(ServerResult::ListToolsResult(
+                    ListToolsResult::with_all_items(tools::definitions()?)
+                        .with_ttl_ms(0)
+                        .with_cache_scope(CacheScope::Private),
+                ))
+            }
             // Do not return empty business results or advertise unimplemented
             // capabilities while Core identity/tool contracts remain pending.
             _ => Err(unsupported_method()),
@@ -142,7 +169,12 @@ impl Service<RoleServer> for ProtocolService {
     }
 
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::default())
+        let capabilities = if self.bound {
+            ServerCapabilities::builder().enable_tools().build()
+        } else {
+            ServerCapabilities::default()
+        };
+        ServerConfig::new(capabilities)
             .with_protocol_version(MCP_PROTOCOL_VERSION)
             .with_server_info(Implementation::new(
                 env!("CARGO_PKG_NAME"),

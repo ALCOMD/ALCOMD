@@ -138,9 +138,11 @@ State34 增量迁移现已获所有者明确批准（“批准 State34 增量迁
 
 根因是旧State19保全用例仍期待旧表集合，而获批State33/34必然新增三张空MCP表，不是旧业务数据改变。本机先单例复现0通过/1失败（`state19-reproduction.log`），随后只新增`mcp_clients/mcp_client_grants/mcp_client_credentials`必须各为空的明确断言；原`after == before`、历史删除边界和Event高水位断言逐字保留。没有过滤忽略新增表或改生产迁移/Schema/运行时代码。修复提交`49d0687f8af00aee0672d43c6457fcdca22fe561`，修改仅测试9行；同模块4/0、Store all-targets严格Clippy、fmt/xtask/diff通过，原失败记录保留，不拼成105/1失败轮通过。该文件SHA-256 `8ef2b82748aae742b7b39c15767a06c8ca72fb24238d7a28acb39aa01b524a09`，结果`state19-targeted-fixed.log`和`state19-clippy.log`。修复额外推送授权已单独申请，未自动推送；以下业务合同也尚待集中审批。原运行Core/GUI、原数据和Unity未改，未恢复桌面控制。
 
-### 首个真实业务工具合同：项目包卸载闭环（待审批）
+### 首个真实业务工具合同：项目包卸载闭环（2026-11-13已批准，实施中）
 
-所有者要求集中审阅首个完整业务流程，本节是具体差异提案，**尚未批准或实施**，不改变已批准身份合同。推荐先完成“读取获准项目及已装包→生成卸载Plan→明确确认后Apply原Plan→查询/取消任务”。这是完整包管理写流程，不以发现或模拟响应代替；安装/搜索/重装的来源委托另列后续缺口，不把全部工具塞入首切片。
+所有者已明确批准本节六工具及所列最小Core差异，直接按先读后写实施，不重复审批身份合同。先完成“读取获准项目及已装包→生成卸载Plan→明确确认后Apply原Plan→查询/取消任务”。这是完整包管理写流程，不以发现或模拟响应代替；安装/搜索/重装的来源委托另列后续缺口，不把全部工具塞入首切片。正式Schema见`specs/mcp/package-removal-v1.schema.json`，实现验证前不宣称工具可用。
+
+依赖复用：适配器直接使用已冻结workspace `serde`声明有界输入DTO，不新增包版本（MIT/Apache-2.0，与现有协议/client依赖相同）；替代方案手写任意JSON校验容易漏掉未知字段。测试仅给现有`rmcp=3.10.0`启用client/transport-child-process，不增加生产传输或HTTP依赖；特性增量按lock检查及真实Discover客户端测试验证。
 
 依据为冻结[2026-07-28 Schema](https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、`mcp-tool-contract.md`中仍有效的命名方向，以及`80dec2a`实际RPC/application/Store。旧草案的Tasks、activity/diagnostics及Operation输入接口不继承。Core卸载分支明确使用空且完整的catalog，不扫描或下载仓库，适合作为首个有真实写结果的最小流程。
 

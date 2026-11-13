@@ -1,8 +1,9 @@
 use alcomd_application::{
     ApplyPlanOutcome, FilesystemJournalEntry, IdempotencyKey, M4Error, M4ErrorCode, OperationId,
     PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PackagePlanRecord,
-    PackageSourcePin, PlanAction, PlanId, PlanState, PrincipalId, RepositoryPackageSourcePin,
-    ResolverCatalog, ResolverCatalogEntry, ResolverCatalogSource, Revision, UserPackageId,
+    PackageSourcePin, PlanAction, PlanId, PlanState, PrincipalId, ProjectRecord,
+    RepositoryPackageSourcePin, ResolverCatalog, ResolverCatalogEntry, ResolverCatalogSource,
+    Revision, UserPackageId,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 
@@ -408,6 +409,12 @@ pub(super) fn accept_package_plan(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(store_error)?;
+    let delegated_revision = if owner.as_str().starts_with("mcp:") {
+        let plan = load_plan(&transaction, owner, plan_id)?;
+        Some(require_mcp_removal_write(&transaction, owner, &plan)?)
+    } else {
+        None
+    };
     let existing = transaction
         .query_row(
             "SELECT request_fingerprint, response_json
@@ -437,15 +444,19 @@ pub(super) fn accept_package_plan(
             "plan_already_applied",
         ));
     }
-    let current_revision = transaction
-        .query_row(
-            "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
-            params![plan.project_id.to_string(), owner.as_str()],
-            |row| row.get::<_, i64>(0),
-        )
-        .optional()
-        .map_err(store_error)?
-        .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))?;
+    let current_revision = if let Some(revision) = delegated_revision {
+        revision
+    } else {
+        transaction
+            .query_row(
+                "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+                params![plan.project_id.to_string(), owner.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(store_error)?
+            .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))?
+    };
     if current_revision != sqlite_revision(expected_revision)
         || expected_revision != plan.project_revision
     {
@@ -535,6 +546,57 @@ pub(super) fn accept_package_plan(
         .map_err(store_error)?;
     transaction.commit().map_err(store_error)?;
     Ok(saved)
+}
+
+/// This check executes in the acceptance transaction, before any idempotency replay.
+fn require_mcp_removal_write(
+    db: &Connection,
+    actor: &PrincipalId,
+    plan: &PackagePlanRecord,
+) -> Result<i64, M4Error> {
+    if plan.action != PlanAction::Remove || !plan.source_set.is_empty() {
+        return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+    }
+    db.query_row(
+        "SELECT p.revision FROM projects p JOIN mcp_clients c ON c.principal_id=?1
+         WHERE p.project_id=?2 AND c.revoked_at_ms IS NULL
+            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=?2)
+            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='packages.manage' AND g.resource_kind='project' AND g.resource_id=?2)
+            AND (SELECT count(DISTINCT g.permission) FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.resource_kind='global' AND g.resource_id='*' AND g.permission IN ('repositories.read','packages.read','operations.read'))=3",
+        params![actor.as_str(),plan.project_id.to_string()],|r|r.get(0)
+    ).optional().map_err(store_error)?.ok_or_else(||M4Error::new(M4ErrorCode::PermissionDenied))
+}
+
+/// Authority is the accepted Operation/Plan/journal binding, not current grants.
+/// Revocation blocks new requests; it cannot retarget or implicitly cancel an accepted job.
+fn accepted_resource_owner(
+    db: &Connection,
+    operation_id: OperationId,
+) -> Result<(alcomd_application::ProjectId, PrincipalId), M4Error> {
+    let target:Option<(String,String)>=db.query_row(
+        "SELECT target.project_id,target.owner_principal_id FROM operations o
+         JOIN package_plans plan ON plan.apply_operation_id=o.operation_id AND plan.owner_principal_id=o.owner_principal_id
+         JOIN projects target ON target.project_id=plan.project_id
+         JOIN package_filesystem_journal j ON j.operation_id=o.operation_id AND j.step=1 AND j.plan_id=plan.plan_id AND j.project_id=target.project_id AND j.project_identity_key=target.path_identity_key AND j.phase='accepted' AND j.state='completed'
+         WHERE o.operation_id=?1 AND o.kind='packages.apply' AND plan.state='applied'
+         AND (target.owner_principal_id=o.owner_principal_id OR
+             (plan.action='remove' AND plan.source_set_json='[]' AND EXISTS(SELECT 1 FROM mcp_clients c WHERE c.principal_id=o.owner_principal_id)))",
+        [operation_id.to_string()],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional().map_err(store_error)?;
+    let (id, owner) = target.ok_or_else(|| M4Error::new(M4ErrorCode::PermissionDenied))?;
+    Ok((
+        alcomd_application::ProjectId::parse(&id).map_err(|_| internal())?,
+        PrincipalId::parse(owner).map_err(|_| internal())?,
+    ))
+}
+
+pub(super) fn operation_project(
+    db: &Connection,
+    operation_id: OperationId,
+) -> Result<ProjectRecord, M4Error> {
+    let (id, resource_owner) = accepted_resource_owner(db, operation_id)?;
+    crate::m3::get_project(db, &resource_owner, id)
+        .map_err(|_| M4Error::new(M4ErrorCode::ProjectNotRegistered))
 }
 
 pub(super) fn append_filesystem_journal(
@@ -720,10 +782,19 @@ pub(super) fn complete_package_apply(
         return Err(M4Error::new(M4ErrorCode::Internal));
     }
     let plan = load_plan(&transaction, &context.owner, context.plan_id)?;
+    let resource_owner = if context.owner.as_str().starts_with("mcp:") {
+        let (project_id, owner) = accepted_resource_owner(&transaction, operation_id)?;
+        if project_id != plan.project_id {
+            return Err(internal());
+        }
+        owner
+    } else {
+        context.owner.clone()
+    };
     let project_revision = transaction
         .query_row(
             "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
-            params![plan.project_id.to_string(), context.owner.as_str()],
+            params![plan.project_id.to_string(), resource_owner.as_str()],
             |row| row.get::<_, i64>(0),
         )
         .map_err(store_error)?;
@@ -755,14 +826,14 @@ pub(super) fn complete_package_apply(
                 next_project_revision,
                 completed_at_ms,
                 plan.project_id.to_string(),
-                context.owner.as_str(),
+                resource_owner.as_str(),
             ],
         )
         .map_err(store_error)?;
 
     insert_aggregate_event(
         &transaction,
-        &context.owner,
+        &resource_owner,
         ("project", &plan.project_id.to_string()),
         Revision::new(u64::try_from(next_project_revision).map_err(|_| internal())?)
             .ok_or_else(internal)?,

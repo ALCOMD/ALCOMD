@@ -319,6 +319,187 @@ mod tests {
     use alcomd_application::{IdempotencyKey, ManifestState, ProjectObservation, ProjectType};
 
     #[test]
+    fn accepted_removal_preserves_resource_owner_after_revocation_and_cannot_replay_without_grants()
+    {
+        use alcomd_application::{
+            PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction, Revision,
+        };
+        let mut db = crate::sqlite::mcp_state32_fixture();
+        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
+            .expect("State33");
+        db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
+            .expect("State34");
+        let owner = PrincipalId::local_owner();
+        let observation = ProjectObservation {
+            root_path: "C:/owned-registry-fixture".into(),
+            path_identity_key: vec![7; 24],
+            project_type: ProjectType::Avatars,
+            unity_version: "2022.3.22f1".into(),
+            unity_revision: None,
+            vpm_manifest: ManifestState::Valid,
+            upm_manifest: ManifestState::Valid,
+            direct_dependencies: vec![],
+            locked_dependencies: vec![],
+            issues: vec![],
+        };
+        let project = crate::m3::register_project(
+            &mut db,
+            &owner,
+            observation.clone(),
+            &IdempotencyKey::parse("seed").expect("key"),
+            1,
+        )
+        .expect("register without filesystem access")
+        .value;
+        let mut grants = vec![];
+        for permission in ["projects.read", "packages.manage"] {
+            grants.push(McpGrant {
+                permission: permission.into(),
+                resource_kind: "project".into(),
+                resource_id: project.project_id.to_string(),
+            });
+        }
+        for permission in ["repositories.read", "packages.read", "operations.read"] {
+            grants.push(McpGrant {
+                permission: permission.into(),
+                resource_kind: "global".into(),
+                resource_id: "*".into(),
+            });
+        }
+        let client = write(
+            &mut db,
+            owner.clone(),
+            "create".into(),
+            W::Create {
+                name: "Scoped writer".into(),
+                grants,
+            },
+            2,
+        )
+        .expect("client")
+        .client;
+        let draft = || PackagePlanDraft {
+            project_id: project.project_id,
+            action: PlanAction::Remove,
+            project_revision: project.revision,
+            project_snapshot_fingerprint: [1; 32],
+            change_set_fingerprint: [2; 32],
+            source_set: vec![],
+            change_set: PackageChangeSet {
+                format_version: 1,
+                mutations: vec![],
+                dependency_edges: vec![],
+                removal_conflicts: vec![],
+                absent_removal_packages: vec![],
+                legacy_reinstall_packages: vec![],
+                legacy_removals: vec![],
+                legacy_packages: vec![],
+                vpm_manifest_sha256: [3; 32],
+                unity_compatibility_overrides: vec![],
+            },
+        };
+        let plan = crate::m4::create_package_plan(&mut db, &client.principal_id, draft(), 3)
+            .expect("actual caller plan");
+        let key = IdempotencyKey::parse("apply").expect("key");
+        let accepted = crate::m4::accept_package_plan(
+            &mut db,
+            &client.principal_id,
+            plan.plan_id,
+            project.revision,
+            &key,
+            4,
+        )
+        .expect("authorized acceptance");
+        let replay = crate::m4::accept_package_plan(
+            &mut db,
+            &client.principal_id,
+            plan.plan_id,
+            project.revision,
+            &key,
+            5,
+        )
+        .expect("same grant replay");
+        assert_eq!(accepted.operation_id, replay.operation_id);
+        assert!(replay.replayed);
+        let mut nonremoval = draft();
+        nonremoval.action = PlanAction::Install;
+        let install = crate::m4::create_package_plan(&mut db, &client.principal_id, nonremoval, 5)
+            .expect("frozen other action fixture");
+        assert!(
+            matches!(crate::m4::accept_package_plan(&mut db,&client.principal_id,install.plan_id,project.revision,&IdempotencyKey::parse("no-install").expect("key"),6),Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
+        );
+        write(
+            &mut db,
+            owner.clone(),
+            "revoke".into(),
+            W::Revoke {
+                id: client.client_id,
+                expected: client.revision,
+            },
+            6,
+        )
+        .expect("revoke before task runs");
+        assert!(
+            matches!(crate::m4::accept_package_plan(&mut db,&client.principal_id,plan.plan_id,project.revision,&key,7),Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
+        );
+        assert_eq!(
+            crate::m4::operation_project(&db, accepted.operation_id)
+                .expect("accepted target, independent of revoked grants")
+                .project_id,
+            project.project_id
+        );
+        crate::m4::begin_package_apply(&mut db, accepted.operation_id, 8)
+            .expect("run accepted task");
+        crate::m4::complete_package_apply(
+            &mut db,
+            accepted.operation_id,
+            PackageApplyCompletion {
+                project_observation: observation,
+                result_json: "{}".into(),
+            },
+            9,
+        )
+        .expect("accepted target commits without owner rewrite");
+        let saved = crate::m3::get_project(&db, &owner, project.project_id)
+            .expect("original owner still reads");
+        assert_eq!(
+            saved.revision,
+            Revision::new(project.revision.get() + 1).expect("revision")
+        );
+        let resource_owner: String = db
+            .query_row(
+                "SELECT owner_principal_id FROM projects WHERE project_id=?1",
+                [project.project_id.to_string()],
+                |r| r.get(0),
+            )
+            .expect("owner");
+        assert_eq!(resource_owner, owner.as_str());
+        let task_owner: String = db
+            .query_row(
+                "SELECT owner_principal_id FROM operations WHERE operation_id=?1",
+                [accepted.operation_id.to_string()],
+                |r| r.get(0),
+            )
+            .expect("task owner");
+        assert_eq!(task_owner, client.principal_id.as_str());
+        let event_owner: String = db
+            .query_row(
+                "SELECT principal_id FROM events WHERE kind='project.packages_changed'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("resource event audience");
+        assert_eq!(event_owner, owner.as_str());
+        assert!(db.execute("UPDATE package_filesystem_journal SET project_identity_key=x'ff' WHERE operation_id=?1 AND step=1",[accepted.operation_id.to_string()]).is_err(),"accepted journal evidence remains immutable");
+        db.execute(
+            "UPDATE projects SET path_identity_key=x'ff' WHERE project_id=?1",
+            [project.project_id.to_string()],
+        )
+        .expect("model a changed registered target identity");
+        assert!(crate::m4::operation_project(&db, accepted.operation_id).is_err());
+    }
+
+    #[test]
     fn large_grant_results_replay_exactly_without_reauthorizing_historical_scopes() {
         let mut db = crate::sqlite::mcp_state32_fixture();
         db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))

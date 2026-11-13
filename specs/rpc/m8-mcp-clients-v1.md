@@ -10,6 +10,8 @@ grant 名称、资源种类及 opaque 资源 ID 为有界 ASCII，不能以路�
 
 本批支持 `projects.read/project/<ProjectId>`；`state.check`、`operations.read`、`operations.cancel`、`events.read`、`repositories.read`、`packages.read` 的范围为 `global/*`。项目必须已登记，重复或其他组合拒绝；这不代表 MCP 业务工具已经开放。项目读取连接当前授权快照，不改变资源 owner；Operation、Plan、事件可见性和幂等键按实际调用 Principal 隔离。客户端不能调用未接通范围检查的入口，项目集合的专用视图筛选暂不开放。
 
+2026-11-13获批首条包业务切片增加支持`packages.manage/project/<ProjectId>`组合，不新增权限名称或身份接口。Apply必须同时具有同项目read、既有仓库/包read及operations.read；当前元组在接受事务内复查，不接受global包写授权。仅原remove Plan可由MCP委托执行，项目owner不变，已接受任务的执行/恢复绑定其原Operation/Plan/journal，之后的撤销不得被幂等重放绕过，也不自动取消既有任务。
+
 写入使用既有 `idempotencyKey`，更换授权和撤销要求 `expectedRevision`。普通成功响应按原接受时的非秘密元数据及不可变授权快照精确重放；历史响应不是当前授权证明，当前状态须重新 list。State34 的当前快照指针是唯一有效授权来源，重放旧结果不会恢复权限。
 
 `issueCredential` 仅 local-owner，返回一次明文和非秘密标识/revision。凭据不进入通用命令响应持久化、日志、事件或普通页面；重试不能因无法重放明文而再生成凭据。响应未知时保持“已签发、明文不可恢复”的事实，要求用户显式重新签发并撤销旧凭据，不自动重试写入。请求的 clientInfo、actor、资源 ID 均不能证明身份。

@@ -646,6 +646,16 @@ impl RepositoryArchivePinStore for StateStoreHandle {
 }
 
 impl M4Store for StateStoreHandle {
+    async fn get_package_operation_project(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<ProjectRecord, M4Error> {
+        self.request_worker(
+            move |connection| m4::operation_project(connection, operation_id),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
     async fn resolver_catalog(
         &self,
         owner: PrincipalId,

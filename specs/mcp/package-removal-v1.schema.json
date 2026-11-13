@@ -1,0 +1,1603 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/package-removal-v1.json",
+    "title": "Approved M8 project package removal tools",
+    "x-alcomd-approval": "owner-approved-2026-11-13",
+    "x-alcomd-protocol": "2026-07-28",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_projects",
+            "title": "List authorized projects",
+            "description": "Read registered project summaries. This list is filtered by current Core authorization.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/list_projectsInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/list_projectsOutput"
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "alcomd_get_project",
+            "title": "Read a project package snapshot",
+            "description": "Read the registered project and package snapshot. A removal plan rechecks the current project files.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/get_projectInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/get_projectOutput"
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "alcomd_plan_package_uninstall",
+            "title": "Review a package removal",
+            "description": "Create a real immutable removal plan. Show every change and dependency risk before requesting confirmation. This does not write project files.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/plan_package_uninstallInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/plan_package_uninstallOutput"
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": false,
+                "idempotentHint": false,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "alcomd_apply_package_changes",
+            "title": "Apply a reviewed removal plan",
+            "description": "Only call after the operator has reviewed the complete plan and confirmed its risks. Applies that original removal plan; never replans. An accepted operation is not completed work.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/apply_package_changesInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/apply_package_changesOutput"
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "alcomd_get_operation",
+            "title": "Read a package operation",
+            "description": "Read the authoritative package apply status and result. A failed task remains failed even when this read succeeds.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/get_operationInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/get_operationOutput"
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        },
+        {
+            "name": "alcomd_cancel_operation",
+            "title": "Request package operation cancellation",
+            "description": "Request cooperative cancellation. Cancelling is not cancelled; some phases cannot be cancelled and the operation may complete successfully.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/cancel_operationInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/cancel_operationOutput"
+            },
+            "annotations": {
+                "readOnlyHint": false,
+                "destructiveHint": true,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
+        }
+    ],
+    "$defs": {
+        "methodName": {
+            "enum": [
+                "packages.planInstall",
+                "packages.planRemove",
+                "packages.planUpgrade",
+                "packages.planDowngrade",
+                "packages.planResolve",
+                "packages.applyPlan"
+            ]
+        },
+        "capability": {
+            "enum": [
+                "packages.plan.v1",
+                "packages.apply.v1"
+            ]
+        },
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+        },
+        "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+        },
+        "packageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "versionText": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+        },
+        "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "packageAuthor": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                },
+                "email": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                }
+            }
+        },
+        "packageManifest": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "name",
+                "display_name",
+                "version",
+                "url",
+                "author"
+            ],
+            "properties": {
+                "name": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                },
+                "version": {
+                    "$ref": "#/$defs/versionText"
+                },
+                "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://"
+                },
+                "zip_sha256": {
+                    "description": "Optional publisher digest. Exactly 64 hexadecimal characters, in either case, are verified against the archive. Other values are treated as absent."
+                },
+                "author": {
+                    "$ref": "#/$defs/packageAuthor"
+                },
+                "unity": {
+                    "type": "string",
+                    "pattern": "^[0-9]+\\.[0-9]+$",
+                    "maxLength": 32
+                },
+                "unity_release": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                "yanked": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "vpm_dependencies": {
+                    "type": "object",
+                    "maxProperties": 4096,
+                    "propertyNames": {
+                        "$ref": "#/$defs/packageId"
+                    },
+                    "additionalProperties": {
+                        "$ref": "#/$defs/versionText"
+                    }
+                },
+                "legacy_folders": {
+                    "type": "object",
+                    "maxProperties": 4096,
+                    "propertyNames": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                    },
+                    "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(?:[0-9a-fA-F]{32})?$"
+                    }
+                },
+                "legacy_files": {
+                    "type": "object",
+                    "maxProperties": 4096,
+                    "propertyNames": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                    },
+                    "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^(?:[0-9a-fA-F]{32})?$"
+                    }
+                },
+                "legacy_packages": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                    }
+                }
+            }
+        },
+        "sourcePin": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "repository_id",
+                "repository_revision",
+                "source_identity",
+                "manifest_fingerprint",
+                "package_id",
+                "version",
+                "artifact_url"
+            ],
+            "properties": {
+                "repository_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "repository_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "source_identity": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                },
+                "manifest_fingerprint": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "version": {
+                    "$ref": "#/$defs/versionText"
+                },
+                "artifact_url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
+                },
+                "archive_sha256": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "packageMutation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "kind",
+                "package_id",
+                "from_version",
+                "to_version",
+                "source"
+            ],
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "install",
+                        "remove",
+                        "replace"
+                    ]
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "from_version": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "to_version": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "source": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/sourcePin"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        "dependencyEdge": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "from_package_id",
+                "to_package_id",
+                "range",
+                "direct"
+            ],
+            "properties": {
+                "from_package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "to_package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "range": {
+                    "$ref": "#/$defs/versionText"
+                },
+                "direct": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "changeSet": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "format_version",
+                "mutations",
+                "dependency_edges",
+                "vpm_manifest_sha256"
+            ],
+            "if": {
+                "required": [
+                    "legacy_removals"
+                ]
+            },
+            "then": {
+                "properties": {
+                    "format_version": {
+                        "const": 4
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "required": [
+                            "unity_compatibility_overrides"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "format_version": {
+                                "const": 4
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "required": [
+                            "removal_conflicts"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "format_version": {
+                                "const": 4
+                            },
+                            "mutations": {
+                                "items": {
+                                    "properties": {
+                                        "kind": {
+                                            "const": "remove"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            ],
+            "properties": {
+                "removal_conflicts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1024,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "package_id",
+                            "required_by"
+                        ],
+                        "properties": {
+                            "package_id": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "required_by": {
+                                "type": "array",
+                                "minItems": 1,
+                                "maxItems": 4096,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "package_id",
+                                        "range"
+                                    ],
+                                    "properties": {
+                                        "package_id": {
+                                            "$ref": "#/$defs/packageId"
+                                        },
+                                        "range": {
+                                            "$ref": "#/$defs/versionText"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "unity_compatibility_overrides": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "package_id",
+                            "version"
+                        ],
+                        "properties": {
+                            "package_id": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "version": {
+                                "$ref": "#/$defs/versionText"
+                            }
+                        }
+                    }
+                },
+                "format_version": {
+                    "enum": [
+                        1,
+                        2,
+                        3,
+                        4
+                    ]
+                },
+                "mutations": {
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                        "$ref": "#/$defs/packageMutation"
+                    }
+                },
+                "dependency_edges": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "$ref": "#/$defs/dependencyEdge"
+                    }
+                },
+                "legacy_removals": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "path",
+                            "kind",
+                            "package_id"
+                        ],
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024
+                            },
+                            "kind": {
+                                "enum": [
+                                    "file",
+                                    "directory"
+                                ]
+                            },
+                            "package_id": {
+                                "$ref": "#/$defs/packageId"
+                            }
+                        }
+                    }
+                },
+                "vpm_manifest_sha256": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "plan": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "plan_id",
+                "action",
+                "state",
+                "project_id",
+                "project_revision",
+                "change_set_fingerprint",
+                "change_set"
+            ],
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "action": {
+                    "enum": [
+                        "install",
+                        "remove",
+                        "upgrade",
+                        "downgrade",
+                        "resolve"
+                    ]
+                },
+                "state": {
+                    "enum": [
+                        "unapplied",
+                        "applied"
+                    ]
+                },
+                "project_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "project_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "change_set_fingerprint": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "change_set": {
+                    "$ref": "#/$defs/changeSet"
+                }
+            }
+        },
+        "planBaseParams": {
+            "type": "object",
+            "required": [
+                "project_id",
+                "expected_revision"
+            ],
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                }
+            }
+        },
+        "planInstallParams": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/planBaseParams"
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "project_id",
+                        "expected_revision",
+                        "package_id"
+                    ],
+                    "properties": {
+                        "project_id": {
+                            "$ref": "#/$defs/uuid"
+                        },
+                        "expected_revision": {
+                            "$ref": "#/$defs/revision"
+                        },
+                        "package_id": {
+                            "$ref": "#/$defs/packageId"
+                        },
+                        "version_range": {
+                            "$ref": "#/$defs/versionText"
+                        },
+                        "repository_id": {
+                            "$ref": "#/$defs/uuid"
+                        },
+                        "include_prerelease": {
+                            "type": "boolean",
+                            "default": false
+                        },
+                        "allow_unity_incompatible": {
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                }
+            ]
+        },
+        "planRemoveParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "project_id",
+                "expected_revision",
+                "package_id"
+            ],
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                }
+            }
+        },
+        "planUpgradeParams": {
+            "allOf": [
+                {
+                    "$ref": "#/$defs/planInstallParams"
+                }
+            ]
+        },
+        "planDowngradeParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "project_id",
+                "expected_revision",
+                "package_id",
+                "version"
+            ],
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "version": {
+                    "$ref": "#/$defs/versionText"
+                },
+                "allow_unity_incompatible": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "repository_id": {
+                    "$ref": "#/$defs/uuid"
+                }
+            }
+        },
+        "planResolveParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "project_id",
+                "expected_revision"
+            ],
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "include_prerelease": {
+                    "type": "boolean",
+                    "default": false
+                }
+            }
+        },
+        "applyPlanParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "plan_id",
+                "expected_revision",
+                "idempotency_key"
+            ],
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/idempotencyKey"
+                }
+            }
+        },
+        "applyPlanResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "operation_id",
+                "replayed"
+            ],
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "planStaleReason": {
+            "enum": [
+                "project_revision_changed",
+                "project_identity_changed",
+                "project_snapshot_changed",
+                "repository_revision_changed",
+                "source_identity_changed",
+                "manifest_fingerprint_changed",
+                "artifact_url_changed",
+                "archive_digest_changed",
+                "plan_already_applied",
+                "implementation_basis_changed"
+            ]
+        },
+        "operationProgress": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "phase"
+            ],
+            "properties": {
+                "phase": {
+                    "enum": [
+                        "accepted",
+                        "archive_ready",
+                        "extracted",
+                        "prepared",
+                        "packages_replaced",
+                        "vpm_manifest_committed",
+                        "filesystem_committed",
+                        "state_committed",
+                        "rolling_back",
+                        "rolled_back",
+                        "recovery_required"
+                    ]
+                }
+            }
+        },
+        "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "time": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+        },
+        "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[\\x00-\\x7f]+$"
+        },
+        "cursor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "registered_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "registered_at_ms",
+                "project_id"
+            ]
+        },
+        "projectSummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "project_type": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "unity_version": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "directory_state": {
+                    "enum": [
+                        "available",
+                        "missing",
+                        "unavailable"
+                    ]
+                }
+            },
+            "required": [
+                "project_id",
+                "revision",
+                "project_type",
+                "unity_version",
+                "directory_state"
+            ]
+        },
+        "projectDetail": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "display_name": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "project_type": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "unity_version": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "directory_state": {
+                    "enum": [
+                        "available",
+                        "missing",
+                        "unavailable"
+                    ]
+                },
+                "vpm_manifest": {
+                    "enum": [
+                        "missing",
+                        "valid"
+                    ]
+                },
+                "upm_manifest": {
+                    "enum": [
+                        "missing",
+                        "valid"
+                    ]
+                },
+                "direct_dependencies": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "value": {
+                                "type": "string",
+                                "maxLength": 4096
+                            }
+                        },
+                        "required": [
+                            "package_id",
+                            "value"
+                        ]
+                    }
+                },
+                "locked_dependencies": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "value": {
+                                "type": "string",
+                                "maxLength": 4096
+                            }
+                        },
+                        "required": [
+                            "package_id",
+                            "value"
+                        ]
+                    }
+                },
+                "issues": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "component": {
+                                "type": "string",
+                                "maxLength": 128
+                            },
+                            "line": {
+                                "$ref": "#/$defs/time"
+                            },
+                            "column": {
+                                "$ref": "#/$defs/time"
+                            }
+                        },
+                        "required": [
+                            "code",
+                            "component"
+                        ]
+                    }
+                }
+            },
+            "required": [
+                "project_id",
+                "revision",
+                "project_type",
+                "unity_version",
+                "directory_state",
+                "vpm_manifest",
+                "upm_manifest",
+                "direct_dependencies",
+                "locked_dependencies",
+                "issues"
+            ]
+        },
+        "planView": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "action": {
+                    "const": "remove"
+                },
+                "state": {
+                    "enum": [
+                        "unapplied",
+                        "applied"
+                    ]
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "change_set_fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "change_set": {
+                    "$ref": "#/$defs/changeSet"
+                }
+            },
+            "required": [
+                "plan_id",
+                "action",
+                "state",
+                "project_id",
+                "project_revision",
+                "change_set_fingerprint",
+                "change_set"
+            ]
+        },
+        "operationView": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "kind": {
+                    "const": "packages.apply"
+                },
+                "state": {
+                    "enum": [
+                        "queued",
+                        "waiting_for_input",
+                        "running",
+                        "cancelling",
+                        "succeeded",
+                        "failed",
+                        "cancelled",
+                        "interrupted",
+                        "recovering"
+                    ]
+                },
+                "revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "created_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "updated_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "started_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "completed_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "progress": {
+                    "$ref": "#/$defs/operationProgress"
+                },
+                "result": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "plan_id": {
+                            "$ref": "#/$defs/id"
+                        },
+                        "change_set_fingerprint": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                        }
+                    },
+                    "required": [
+                        "plan_id",
+                        "change_set_fingerprint"
+                    ]
+                },
+                "error_code": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "operation_id",
+                "kind",
+                "state",
+                "revision",
+                "created_at_ms",
+                "updated_at_ms"
+            ]
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "enum": [
+                        "backup_archive_invalid",
+                        "backup_archive_limit_exceeded",
+                        "backup_integrity_mismatch",
+                        "backup_not_found",
+                        "backup_restore_plan_not_found",
+                        "backup_restore_plan_stale",
+                        "backup_restore_recovery_required",
+                        "backup_source_unsafe",
+                        "backup_target_exists",
+                        "backup_target_invalid",
+                        "backup_unavailable",
+                        "capability_required",
+                        "component_upgrade_required",
+                        "confirmation_required",
+                        "core_unavailable",
+                        "core_write_outcome_unknown",
+                        "data_schema_unsupported",
+                        "event_cursor_expired",
+                        "extension_already_installed",
+                        "extension_api_unsupported",
+                        "extension_crashed",
+                        "extension_data_owner_mismatch",
+                        "extension_data_quota_exceeded",
+                        "extension_instance_stale",
+                        "extension_manifest_invalid",
+                        "extension_not_enabled",
+                        "extension_not_installed",
+                        "extension_package_invalid",
+                        "extension_package_untrusted",
+                        "extension_permission_denied",
+                        "extension_plan_stale",
+                        "extension_publisher_confirmation_required",
+                        "extension_quarantined",
+                        "extension_recovery_required",
+                        "extension_resource_limit",
+                        "extension_scope_denied",
+                        "extension_signature_invalid",
+                        "extension_ui_action_invalid",
+                        "extension_ui_document_invalid",
+                        "extension_ui_limit_exceeded",
+                        "extension_ui_not_available",
+                        "extension_ui_protocol_unsupported",
+                        "extension_ui_session_not_found",
+                        "extension_ui_session_stale",
+                        "extension_ui_snapshot_stale",
+                        "handshake_already_completed",
+                        "handshake_required",
+                        "hub_open_busy",
+                        "hub_open_failed",
+                        "hub_path_changed",
+                        "hub_path_invalid",
+                        "hub_unavailable",
+                        "idempotency_conflict",
+                        "internal_error",
+                        "invalid_request",
+                        "method_not_found",
+                        "offline_cache_miss",
+                        "operation_cancelled",
+                        "operation_not_cancellable",
+                        "operation_not_found",
+                        "package_archive_invalid",
+                        "package_archive_limit_exceeded",
+                        "package_archive_unsupported_compression",
+                        "package_cache_corrupt",
+                        "package_cache_quota_exceeded",
+                        "package_dependency_conflict",
+                        "package_dependency_missing",
+                        "package_download_too_large",
+                        "package_hash_required",
+                        "package_integrity_mismatch",
+                        "package_legacy_cleanup_required",
+                        "package_manifest_invalid",
+                        "package_not_found",
+                        "package_path_collision",
+                        "package_path_invalid",
+                        "package_range_invalid",
+                        "package_source_ambiguous",
+                        "package_source_changed",
+                        "package_unity_incompatible",
+                        "package_version_invalid",
+                        "package_version_yanked",
+                        "path_encoding_unsupported",
+                        "permission_denied",
+                        "plan_already_applied",
+                        "plan_not_found",
+                        "plan_stale",
+                        "plan_too_large",
+                        "project_already_registered",
+                        "project_changed_during_apply",
+                        "project_changed_during_backup",
+                        "project_create_destination_changed",
+                        "project_create_target_exists",
+                        "project_inaccessible",
+                        "project_manifest_invalid",
+                        "project_not_found",
+                        "project_not_registered",
+                        "project_transaction_recovery_required",
+                        "project_unity_migration_plan_not_found",
+                        "project_unity_migration_plan_stale",
+                        "project_unity_migration_recovery_required",
+                        "project_unity_migration_source_changed",
+                        "project_unity_migration_unsupported",
+                        "project_version_invalid",
+                        "project_version_missing",
+                        "repository_already_registered",
+                        "repository_credentials_unsupported",
+                        "repository_document_invalid",
+                        "repository_document_too_large",
+                        "repository_inaccessible",
+                        "repository_not_found",
+                        "repository_not_registered",
+                        "repository_refresh_required",
+                        "repository_source_invalid",
+                        "repository_unavailable",
+                        "revision_conflict",
+                        "rpc_version_unsupported",
+                        "store_unavailable",
+                        "template_builtin_immutable",
+                        "template_conflict",
+                        "template_dependency_unsatisfied",
+                        "unity_architecture_unsupported",
+                        "unity_editor_selection_required",
+                        "unity_installation_in_use",
+                        "unity_installation_invalid",
+                        "unity_installation_not_found",
+                        "unity_launch_failed",
+                        "unity_launch_not_found",
+                        "unity_launch_state_uncertain",
+                        "unity_project_running",
+                        "unity_project_selector_forbidden",
+                        "unity_version_mismatch",
+                        "unity_version_unverified"
+                    ]
+                },
+                "message": {
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "outcome": {
+                    "const": "unknown"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128
+                        }
+                    },
+                    "required": []
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "code": {
+                                "const": "internal_error"
+                            }
+                        },
+                        "required": [
+                            "code"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "diagnostic_id"
+                        ]
+                    }
+                }
+            ]
+        },
+        "toolFailure": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "error": {
+                    "$ref": "#/$defs/toolError"
+                }
+            },
+            "required": [
+                "error"
+            ]
+        },
+        "list_projectsInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "$ref": "#/$defs/cursor"
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000,
+                    "default": 100
+                }
+            },
+            "required": []
+        },
+        "list_projectsOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "projects": {
+                                    "type": "array",
+                                    "maxItems": 1000,
+                                    "items": {
+                                        "$ref": "#/$defs/projectSummary"
+                                    }
+                                },
+                                "next_cursor": {
+                                    "$ref": "#/$defs/cursor"
+                                }
+                            },
+                            "required": [
+                                "projects"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "get_projectInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "project_id"
+            ]
+        },
+        "get_projectOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "$ref": "#/$defs/projectDetail"
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "plan_package_uninstallInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                }
+            },
+            "required": [
+                "project_id",
+                "expected_revision",
+                "package_id"
+            ]
+        },
+        "plan_package_uninstallOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "$ref": "#/$defs/planView"
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "apply_package_changesInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "confirm": {
+                    "const": true
+                }
+            },
+            "required": [
+                "plan_id",
+                "expected_revision",
+                "idempotency_key",
+                "confirm"
+            ]
+        },
+        "apply_package_changesOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "operation_id": {
+                                    "$ref": "#/$defs/id"
+                                },
+                                "replayed": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "operation_id",
+                                "replayed"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "get_operationInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "operation_id"
+            ]
+        },
+        "get_operationOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "$ref": "#/$defs/operationView"
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "cancel_operationInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                }
+            },
+            "required": [
+                "operation_id",
+                "expected_revision",
+                "idempotency_key"
+            ]
+        },
+        "cancel_operationOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "operation": {
+                                    "$ref": "#/$defs/operationView"
+                                },
+                                "replayed": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "operation",
+                                "replayed"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        }
+    }
+}

@@ -1056,6 +1056,7 @@ pub struct AccessContext {
     actor: String,
     permissions: HashSet<Permission>,
     project_read_scopes: AccessScopes,
+    project_package_write_scopes: AccessScopes,
     extension_ui_scopes: AccessScopes,
     mcp_identity: bool,
 }
@@ -1077,6 +1078,7 @@ impl AccessContext {
             actor: "Core".to_owned(),
             permissions: permissions.into_iter().collect(),
             project_read_scopes: AccessScopes::None,
+            project_package_write_scopes: AccessScopes::None,
             extension_ui_scopes: AccessScopes::None,
             mcp_identity: false,
         }
@@ -1118,6 +1120,7 @@ impl AccessContext {
             ],
         );
         access.project_read_scopes = AccessScopes::All;
+        access.project_package_write_scopes = AccessScopes::All;
         access.extension_ui_scopes = AccessScopes::All;
         access
     }
@@ -1181,6 +1184,19 @@ impl AccessContext {
     pub fn require_project_read_scope(&self, project_id: &str) -> Result<(), ApplicationError> {
         self.require(Permission::ProjectsRead)?;
         require_scope(&self.project_read_scopes, project_id)
+    }
+
+    pub(crate) fn with_project_package_write_scopes(mut self, ids: Vec<String>) -> Self {
+        self.project_package_write_scopes = AccessScopes::Exact(ids.into_iter().collect());
+        self
+    }
+
+    pub fn require_project_package_write_scope(
+        &self,
+        project_id: &str,
+    ) -> Result<(), ApplicationError> {
+        self.require(Permission::PackagesManage)?;
+        require_scope(&self.project_package_write_scopes, project_id)
     }
 
     /// Revalidates `extensions.ui.use` for one exact ExtensionId resource.

@@ -1,7 +1,9 @@
 # ALCOMD MCP Toolset v1
 
-状态：Draft
-候选 MCP 规范基线：`2026-07-28`
+状态：2026-11-13 已批准首个六工具切片，实施中；其余工具仍为方向基线，未开放。
+冻结 MCP 规范基线：`2026-07-28`
+
+正式输入输出、错误枚举及annotations见[包卸载工具Schema](package-removal-v1.schema.json)，完整授权与执行边界见[M8 ExecPlan](../../docs/exec-plans/M8-mcp-protocol-and-management.md#首个真实业务工具合同项目包卸载闭环2026-11-13已批准实施中)。没有v3别名、通用RPC透传或无凭据业务调用。
 
 ## 架构
 
@@ -36,21 +38,19 @@ alcomd_
 
 不保留 `alcomd3_*` 运行时别名。
 
-候选工具：
+本切片仅六个获批工具：
 
 ```text
 alcomd_list_projects
 alcomd_get_project
-alcomd_search_packages
-alcomd_plan_package_install
+alcomd_plan_package_uninstall
 alcomd_apply_package_changes
-alcomd_create_backup
 alcomd_get_operation
 alcomd_cancel_operation
 ```
 
-M-1 必须根据 v3 工具集和完整用例补齐。
+项目查询只展示当前授权的登记快照，Plan重读当前文件。Apply要求显式confirm=true，只应用本Principal的原remove Plan，接受Operation不代表业务成功。来源委托、安装/重装、备份工具及管理扩展不在本切片。
 
 ## 长任务
 
-核心权威状态为 ALCOMD Operation。是否实现 MCP Tasks 扩展由独立 ADR 决定。无论选择何种 MCP 表现，取消都必须映射到同一个 Operation。
+核心权威状态为 ALCOMD Operation；本切片任务查询/取消只支持packages.apply。4.0.0不采用或广告MCP Tasks。协议请求取消/STDIO EOF只结束当前请求，不能默认取消已经接受的Operation；只有显式cancel_operation请求Core合作式业务取消。
