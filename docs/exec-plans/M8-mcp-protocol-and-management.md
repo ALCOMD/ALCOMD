@@ -31,7 +31,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer合同已批准，源码接线与定向测试准备中，编译及真实运行验证尚未完成，见末节；不宣称管理扩展或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已完成本地候选，定向与真实隔离验证通过，远端未验证，见末节；不宣称管理扩展或整个M8完成。
 
 ## 公共合同与接线状态
 
@@ -324,7 +324,7 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 
 **必要内部与依赖差异（原两包及直接边已批准，base64增量已批准）**：不新增Core RPC、State、Config、权限名或身份存储；只新增HTTP公开入口/安全与生命周期合同。复用SDK HTTP解析/协商/头核对/SSE，不用Tokio手写HTTP或另造协议引擎。提升现有锁版本`hyper 1.11.0`（server/http1）、`hyper-util 0.1.20`（tokio）、`http-body-util 0.1.5`为最少直接边，基础HTTP类型复用Hyper导出；不加axum/tower-http/oauth2/JWT/TLS框架。启用现有rmcp的`transport-streamable-http-server`会新增`sse-stream 0.2.4`，Hyper server会新增`httpdate 1.0.3`；两者均MIT OR Apache-2.0、官方未yank，前者当前0.3.0不满足SDK的0.2系列边界，不为用新版本升级已冻结SDK。替代方案手写SSE/HTTP会增加协议风险；其余依赖已锁，批准后才核对实际lock闭包并同步xtask边界，遇额外必要包先说明，不夹带升级。测试可启用同SDK的HTTP client/reqwest特性，复用既有锁定reqwest，不建立通用测试框架。
 
-**本片必须补的定向证据**（本轮未执行，不能记HTTP通过）：
+**本片获批验证要求**（以下是要求，执行结果见末节）：
 
 1. 冻结SDK Discover经真实loopback HTTP和隔离Core，双Bearer零授权/显式授权/范围外/同TCP交替身份/并发同请求ID隔离；同一六工具实际卸载及Plan/Operation/幂等归属保持。
 2. 连接存续期间授权减少、轮换、撤销；hello到Apply接受间变更仍拒绝；无凭据、错误Bearer、STDIO环境凭据均不能降级owner。复用既有身份/Store证据，只补HTTP引入边界。
@@ -351,7 +351,7 @@ base64增量获批后继续编译、严格MCP Clippy、定向测试及获批的�
 精确锁版本0.23.1，MIT OR Apache-2.0，MSRV 1.71.0，checksum沿上文。用途是冻结2026-07-28 HTTP头Base64 sentinel编码/解码核对。默认`simd-unsafe`确实开启，包含第三方`src/engine/simd.rs`中的AVX2/NEON intrinsic、指针读写及unsafe块，第三方提供按平台/运行时指令集检测的SIMD引擎，不能描述为没有unsafe影响或整个第三方依赖无unsafe。维护边界：不修改SDK或第三方源码、不假称关闭该feature、不以新增直接依赖强行覆盖feature；沿用审批的版本/头及body限额，补实际长Base64头正反例覆盖。上游安全保证仍依赖第三方实现，本轮不宣称完成对其SIMD unsafe的形式证明或跨平台专项验证。
 
 完整/仅生产feature tree分别保存于`target/m8-http-audit-20261113/base64-feature-tree.txt`、`base64-production-features.txt`。其中SDK的server-session支持代码是该既定HTTP feature的传递边，运行时仍显式legacy=false/NeverSessionManager，不启用协议session。首次offline tree因未缓存精确sse-stream0.2.4失败，随后仅下载锁定包重查成功；无包升级，不改HTTP/身份合同，最终lock/feature清单随候选复核。
-#### HTTP本地候选集中验证（最终候选复核中）
+#### HTTP本地候选集中验证（历史候选准备）
 
 已完成获批回环HTTP接线，不增加Core RPC/State/Config/权限或身份框架。每请求独立认证typed连接、严格Host/Origin、无session/owner回退；SDK负责冻结协议和SSE，GUI/原Core不参与HTTP宿主。`serve --port 0`报告无凭据URL，stdout空。ALCOMD生产源码没有直接base64 API或新增unsafe。
 
@@ -362,3 +362,21 @@ base64增量获批后继续编译、严格MCP Clippy、定向测试及获批的�
 真实环境事实与旧流程前提不同：原Core/GUI进程和旧`target/debug`两份程序在本轮开始验证时已经不存在；首次快照连接超时、旧程序hash前置缺失，均未开始测试或关闭任何程序。随后按真实关闭/缺失状态保全，保持关闭，不为测试重启或重建原程序。最终已执行轮次原36份data、346份profile逐文件SHA-256不变，7个Unity/Hub进程PID/路径/启动时间保持，测试后无Core/GUI/MCP残留；原数据未迁移。没有声称对关闭环境进行实时五组RPC核对或“恢复运行成功”。相应backup-manifest/result及468份输入在`target/m8-http-audit-20261113/`。
 
 base64 feature tree/锁审计确认只新增0.23.1、httpdate1.0.3、sse-stream0.2.4，无既有包升级/删除，22份工作区manifest均无直接base64。SDK当前头实现调用BASE64_STANDARD/GeneralPurpose的scalar路径；默认SIMD unsafe模块仍编译进入依赖，不能据此说整个依赖没有unsafe，更没有宣称验证第三方SIMD跨平台正确性。
+#### HTTP本地候选与验证结果（2026-11-13）
+
+**本地技术验证通过，远端待验证；不是HTTP人工签收或M8完成。** 源码候选`8338d3e5480a90ba3ac818f31684312861228eb1`，真实Windows用户`cqmhv-dt\m2922`在标准main本地提交。后续仅整理状态文档，不推送。
+
+| 本轮候选验证 | 实际结果与范围 |
+| --- | --- |
+| 受影响MCP构建 | `cargo test --locked --offline -p alcomd-mcp --lib --test stdio --test http_transport --test business_tools --no-run`通过，日志`candidate-build.log`；没有重建release/GUI |
+| 同候选无Core定向测试 | 已构建测试二进制同轮单元5/0、HTTP准入/资源2/0、STDIO12/0，`candidate-no-core.log`；不是完整Workspace测试 |
+| 真实HTTP SDK→隔离Core | 单轮2/0，80.15秒，`native-preservation/candidate-8338d3e-20261113T1544504023202Z/risk-test.log`；默认拒绝/范围/同TCP交替及并发同ID隔离，授权减少、hello后撤权、轮换/撤销、重启持久及六工具真实卸载均通过 |
+| 五类在途故障 | 请求取消、Core响应截断、真实HTTP响应前缀截断、生产60秒处理截止、HTTP服务正常停止均通过；5个Operation全部succeeded，各提交一次，cancel_requested=0；10次Apply仅含5次原请求和5次原Plan/revision/key显式恢复，自动重试0次。Core截断/处理截止2个完整unknown结果均retryable=false；HTTP连接已丢的情况不伪称收到tool结果 |
+| 冻结工具合同 | `schema-candidate.log`：现有六工具Schema与37条业务、31条风险调用记录的适用输入/结果校验通过；认证401记录单独辨认，不伪造成业务返回或不合法参数 |
+| 一致性 | 同候选严格`cargo clippy --locked --offline -p alcomd-mcp --all-targets -- -D warnings`、fmt、xtask、锁定metadata、diff通过；最终完整/仅生产feature tree再次核对，SDK HTTP feature/default/simd-unsafe路径符合批准。只新增base640.23.1/httpdate1.0.3/sse-stream0.2.4，既有包无升级或删除，无ALCOMD直接base64依赖 |
+
+468份输入摘要`e0204d39fa67110295dbfd4bf47fc073d8ed650136d84d45895dbff468025491`，实际MCP可执行文件`target/m8-check/debug/alcomd-mcp.exe` SHA-256 `f1e22dcbf283034476ab8032312030acf9112c897b6c5ccd82bc11b03aa9b961`。输入、测试二进制摘要及结果索引在`target/m8-http-audit-20261113/candidate-summary.json`、`source-inputs-candidate.json`；本次仅文档收尾后再核对输入未变，不重新制造一轮全量测试。旧失败及前一轮2/0证据仍保留各自输入和原始日志，没有拼为最终套件通过。
+
+原环境维持验证前真实关闭状态；旧target/debug程序缺失状态保持。原36份data/346份profile逐文件摘要、7个Unity/Hub进程身份与启动时间相同，最终无Core/GUI/MCP残留。保全记录为上述candidate目录的`backup-manifest.json`/`result.json`；没有以“守候”代替核对，也没有为了快照重启原环境或迁移其数据。
+
+**未执行/后续边界**：HTTP新代码无Hosted CI/CodeQL，尚未推送；三平台旧3ccc3f4通过只属于旧STDIO/身份/六工具切片。此轮真实运行仅Windows；Unix Ctrl-C/SIGTERM及macOS/Linux HTTP尚未实测，第三方SIMD unsafe未做专项跨平台证明。真实SDK为冻结rmcp3.10.0，未逐个验证其他MCP客户端。已有测试覆盖10秒输出边界的错误/permit释放，但未声称穷尽所有网络背压、操作系统崩溃和并发竞态。完整OAuth profile、非回环/TLS/HTTP2/浏览器跨域、管理扩展/Host/WIT及安装/搜索/重装来源委托均不在本片实现，不开放无认证入口、不代持owner。M8保持IN_PROGRESS，后续公共差异仍按既有计划单独审阅。
