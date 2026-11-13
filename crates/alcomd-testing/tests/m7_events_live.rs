@@ -249,6 +249,7 @@ async fn hello(stream: &mut IpcStream, capabilities: Vec<String>) {
         "hello",
         METHOD_SYSTEM_HELLO,
         serde_json::to_value(HelloParams {
+            authentication: None,
             rpc_version: RPC_VERSION,
             client: ClientInfo {
                 name: "m7-live-isolated-test".into(),

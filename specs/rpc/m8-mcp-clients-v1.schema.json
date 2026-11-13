@@ -43,7 +43,8 @@
                     "type": "string",
                     "minLength": 43,
                     "maxLength": 256,
-                    "writeOnly": true
+                    "writeOnly": true,
+                    "pattern": "^[\\x21-\\x7e]+$"
                 }
             },
             "required": [
@@ -68,10 +69,16 @@
                         "$ref": "#/$defs/grant"
                     },
                     "default": []
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                 }
             },
             "required": [
-                "displayName"
+                "displayName",
+                "idempotencyKey"
             ]
         },
         "mutationParams": {
@@ -86,11 +93,17 @@
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 9223372036854775807
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                 }
             },
             "required": [
                 "clientId",
-                "expectedRevision"
+                "expectedRevision",
+                "idempotencyKey"
             ]
         },
         "setGrantsParams": {
@@ -113,12 +126,18 @@
                     "items": {
                         "$ref": "#/$defs/grant"
                     }
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                 }
             },
             "required": [
                 "clientId",
                 "expectedRevision",
-                "grants"
+                "grants",
+                "idempotencyKey"
             ]
         },
         "listParams": {

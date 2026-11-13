@@ -46,6 +46,7 @@ pub struct McpClientsListResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpClientsCreateParams {
+    pub idempotency_key: String,
     pub display_name: String,
     #[serde(default)]
     pub grants: Vec<McpClientGrant>,
@@ -54,6 +55,7 @@ pub struct McpClientsCreateParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpClientMutationParams {
+    pub idempotency_key: String,
     pub client_id: String,
     pub expected_revision: u64,
 }
@@ -61,6 +63,7 @@ pub struct McpClientMutationParams {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpClientsSetGrantsParams {
+    pub idempotency_key: String,
     pub client_id: String,
     pub expected_revision: u64,
     pub grants: Vec<McpClientGrant>,
@@ -95,10 +98,11 @@ mod tests {
     #[test]
     fn mcp_client_creation_defaults_to_zero_grants_and_rejects_identity_injection() {
         let value: McpClientsCreateParams =
-            serde_json::from_value(json!({"displayName":"Client"})).expect("default");
+            serde_json::from_value(json!({"displayName":"Client","idempotencyKey":"test"}))
+                .expect("default");
         assert!(value.grants.is_empty());
         for extra in ["principalId", "credential", "localOwner"] {
-            let mut input = json!({"displayName":"Client"});
+            let mut input = json!({"displayName":"Client","idempotencyKey":"test"});
             input[extra] = json!("injected");
             assert!(serde_json::from_value::<McpClientsCreateParams>(input).is_err());
         }
@@ -118,4 +122,22 @@ mod tests {
             "one-shot-secret"
         );
     }
+}
+
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct McpAuthentication {
+    pub kind: String,
+    pub credential: String,
+}
+impl std::fmt::Debug for McpAuthentication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("McpAuthentication([REDACTED])")
+    }
+}
+
+pub(crate) fn deserialize_authentication<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<McpAuthentication>, D::Error> {
+    McpAuthentication::deserialize(deserializer).map(Some)
 }

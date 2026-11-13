@@ -179,6 +179,7 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
     let server = tokio::spawn(serve(listener, counters.clone()));
     let access = AccessContext::local_owner();
     let connection = |id: &str| ConnectionState {
+        mcp_hash: None,
         connection_id: id.to_owned(),
         client_instance_id: None,
         actor: "GUI".to_owned(),

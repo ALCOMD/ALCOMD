@@ -120,6 +120,7 @@ mod tests {
             );
             let mut stream = IpcStream::Server(server);
             let mut state = ConnectionState {
+                mcp_hash: None,
                 connection_id: "private-log-test".to_owned(),
                 client_instance_id: None,
                 actor: "Local IPC".to_owned(),
@@ -132,7 +133,9 @@ mod tests {
                 request.validate().expect("valid request");
                 let access = app::AccessContext::local_owner().with_actor(state.actor.clone());
                 let action = match request.method.as_str() {
-                    rpc::METHOD_SYSTEM_HELLO => crate::dispatch_hello(request, &state),
+                    rpc::METHOD_SYSTEM_HELLO => {
+                        crate::dispatch_hello(request, &state, &store).await
+                    }
                     rpc::METHOD_PROJECTS_REGISTER => {
                         app::with_log_caller(
                             store.clone(),
@@ -145,6 +148,10 @@ mod tests {
                     method => panic!("unexpected test method: {method}"),
                 };
                 if let Some(capabilities) = action.complete_handshake {
+                    assert!(
+                        action.mcp_hash.is_none(),
+                        "native-only fixture; MCP tests use the full dispatcher"
+                    );
                     state.handshake_complete = true;
                     state.capabilities = capabilities;
                     state.client_instance_id = action.client_instance_id;

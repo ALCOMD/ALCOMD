@@ -47,7 +47,11 @@ const MEMBERS: &[Member] = &[
         "alcomd-cli",
         &["alcomd-client", "alcomd-protocol"],
     ),
-    ("apps/alcomd-mcp", "alcomd-mcp", &["alcomd-client"]),
+    (
+        "apps/alcomd-mcp",
+        "alcomd-mcp",
+        &["alcomd-client", "alcomd-protocol"],
+    ),
     ("apps/alcomd-api", "alcomd-api", &["alcomd-client"]),
     (
         "apps/alcomd-extension-host",

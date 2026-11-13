@@ -12,6 +12,7 @@ publish.workspace = true
 test-kill-gates = ["alcomd-application/test-kill-gates", "alcomd-extensions/test-kill-gates", "alcomd-vpm/test-kill-gates", "alcomd-store/test-kill-gates"]
 
 [dependencies]
+getrandom.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 tokio.workspace = true

@@ -17,6 +17,7 @@ struct Adapter {
 impl Adapter {
     fn start() -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"))
+            .env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL")
             .arg("stdio")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -328,6 +329,7 @@ async fn eof_before_any_request_exits_cleanly_without_protocol_or_log_output() {
     let output = timeout(
         DEADLINE,
         Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"))
+            .env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL")
             .stdin(Stdio::null())
             .kill_on_drop(true)
             .output(),
@@ -345,6 +347,7 @@ async fn unavailable_http_exits_with_error_and_never_reports_a_listener() {
     let output = timeout(
         DEADLINE,
         Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"))
+            .env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL")
             .args(["serve", "--port", "0"])
             .kill_on_drop(true)
             .output(),

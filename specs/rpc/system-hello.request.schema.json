@@ -67,6 +67,26 @@
                     },
                     "maxItems": 64,
                     "uniqueItems": true
+                },
+                "authentication": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "mcp-client"
+                        },
+                        "credential": {
+                            "type": "string",
+                            "minLength": 43,
+                            "maxLength": 256,
+                            "writeOnly": true,
+                            "pattern": "^[\\x21-\\x7e]+$"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "credential"
+                    ]
                 }
             }
         }

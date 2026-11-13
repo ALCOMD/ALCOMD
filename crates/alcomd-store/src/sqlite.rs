@@ -50,6 +50,7 @@ const MIGRATION_V31: &str = include_str!("../migrations/0031_remove_project_pres
 const MIGRATION_V32: &str = include_str!("../migrations/0032_optional_package_presentation.sql");
 
 const MIGRATION_V33: &str = include_str!("../migrations/0033_mcp_clients.sql");
+const MIGRATION_V34: &str = include_str!("../migrations/0034_mcp_grant_snapshots.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -256,6 +257,11 @@ pub(super) fn initialize_connection_with_report(
             .execute_batch(MIGRATION_V33)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
+    if version <= 33 {
+        connection
+            .execute_batch(MIGRATION_V34)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -428,6 +434,15 @@ mod template_archives_migration_tests;
 #[cfg(test)]
 #[path = "sqlite_mcp_clients_tests.rs"]
 mod mcp_clients_migration_tests;
+
+#[cfg(test)]
+#[path = "sqlite_mcp_snapshots_tests.rs"]
+mod mcp_snapshots_migration_tests;
+
+#[cfg(test)]
+pub(crate) fn mcp_state32_fixture() -> Connection {
+    mcp_clients_migration_tests::fixture()
+}
 
 #[cfg(test)]
 pub(super) fn state21_fixture(path: &Path) -> Connection {

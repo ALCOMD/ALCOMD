@@ -32,6 +32,7 @@ async fn m2_state_check_round_trips_through_real_ipc_and_durable_store() {
             id: "hello-no-capability".to_owned(),
             method: METHOD_SYSTEM_HELLO.to_owned(),
             params: serde_json::to_value(HelloParams {
+                authentication: None,
                 rpc_version: RPC_VERSION,
                 client: alcomd_protocol::ClientInfo {
                     name: "compat-client".to_owned(),
@@ -157,6 +158,7 @@ async fn write_hello(stream: &mut IpcStream, instance_id: &str, capabilities: Ve
             id: format!("hello-{instance_id}"),
             method: METHOD_SYSTEM_HELLO.to_owned(),
             params: serde_json::to_value(HelloParams {
+                authentication: None,
                 rpc_version: RPC_VERSION,
                 client: alcomd_protocol::ClientInfo {
                     name: "m2-raw-client".to_owned(),

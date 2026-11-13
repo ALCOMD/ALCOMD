@@ -7,6 +7,33 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Core-issued external MCP client identifier.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct McpClientId(Uuid);
+impl McpClientId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        let id = Uuid::parse_str(value).map_err(|_| DomainValueError::InvalidPrincipalId)?;
+        if id.to_string() != value {
+            return Err(DomainValueError::InvalidPrincipalId);
+        }
+        Ok(Self(id))
+    }
+}
+impl Default for McpClientId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl fmt::Display for McpClientId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Stable identifier for a registered Unity project.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -550,6 +577,10 @@ pub enum Permission {
     /// Open and interact with one explicitly scoped extension Portable UI.
     #[serde(rename = "extensions.ui.use")]
     ExtensionsUiUse,
+    #[serde(rename = "mcp.clients.read")]
+    McpClientsRead,
+    #[serde(rename = "mcp.clients.manage")]
+    McpClientsManage,
     /// Permit a verified extension Component to run in its Host.
     #[serde(rename = "background.run")]
     BackgroundRun,
@@ -585,6 +616,8 @@ impl Permission {
             Self::ExtensionsManage => "extensions.manage",
             Self::ExtensionsPermissionsManage => "extensions.permissions.manage",
             Self::ExtensionsUiUse => "extensions.ui.use",
+            Self::McpClientsRead => "mcp.clients.read",
+            Self::McpClientsManage => "mcp.clients.manage",
             Self::BackgroundRun => "background.run",
         }
     }

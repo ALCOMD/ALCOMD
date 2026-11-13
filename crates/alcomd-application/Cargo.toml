@@ -13,6 +13,7 @@ test-kill-gates = []
 
 
 [dependencies]
+sha2.workspace = true
 alcomd-domain.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -123,9 +123,11 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         .expect("private pipe");
     let client = ClientOptions::new().open(&pipe).expect("private client");
     server.connect().await.expect("accept private client");
+    let hello_store = store.clone();
     let task = tokio::spawn(async move {
         let mut stream = IpcStream::Server(server);
         let mut state = ConnectionState {
+            mcp_hash: None,
             connection_id: "private-create-test".to_owned(),
             client_instance_id: None,
             actor: "Local IPC".to_owned(),
@@ -143,13 +145,17 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
                 serde_json::from_slice(&bytes).expect("request DTO");
             request.validate().expect("valid envelope");
             let action = if request.method == rpc::METHOD_SYSTEM_HELLO {
-                crate::dispatch_hello(request, &state)
+                crate::dispatch_hello(request, &state, &hello_store).await
             } else if !state.handshake_complete {
                 error_action(Some(request.id), rpc::RpcError::handshake_required(), false)
             } else {
                 dispatch(request, &state, &application, &AccessContext::local_owner()).await
             };
             if let Some(capabilities) = action.complete_handshake {
+                assert!(
+                    action.mcp_hash.is_none(),
+                    "native-only fixture; MCP tests use the full dispatcher"
+                );
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;

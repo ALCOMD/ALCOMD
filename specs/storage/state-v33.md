@@ -1,5 +1,7 @@
 # State33 · MCP 客户端身份
 
+这是已推送的历史迁移合同，0033文件保持原样。当前增量使用[State34授权快照](state-v34.md)承接，初始化须执行到当前版本后才报告ready。
+
 状态：所有者于2026-11-13批准；实施范围见 M8 ExecPlan 的最小身份合同。
 
 State32→33 只增加 `mcp_clients`、`mcp_client_grants`、`mcp_client_credentials`，保留全部旧表、行、索引、任务、计划、幂等记录及 Config13。不新增持久会话或查询缓存表。

@@ -680,6 +680,12 @@ impl RpcError {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HelloParams {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "m8_mcp::deserialize_authentication"
+    )]
+    pub authentication: Option<McpAuthentication>,
     /// RPC major version requested by the client.
     pub rpc_version: u32,
     /// Diagnostic client metadata. This is not a security identity.
@@ -692,6 +698,15 @@ impl HelloParams {
     /// Validates metadata and capability limits.
     pub fn validate(&self) -> Result<(), ContractViolation> {
         self.client.validate()?;
+        if let Some(auth) = &self.authentication {
+            validate_non_empty_utf8("authentication.credential", &auth.credential, 256)?;
+            if auth.kind != "mcp-client"
+                || auth.credential.len() < 43
+                || !auth.credential.bytes().all(|b| b.is_ascii_graphic())
+            {
+                return Err(ContractViolation::InvalidAuthentication);
+            }
+        }
         validate_capabilities(&self.capabilities)
     }
 }
@@ -3179,6 +3194,7 @@ pub enum ContractViolation {
     InvalidMethod,
     /// Params must be a JSON object.
     ParamsMustBeObject,
+    InvalidAuthentication,
     /// Too many capabilities were declared.
     TooManyCapabilities,
     /// A capability is empty, too long, malformed, or duplicated.
@@ -3190,6 +3206,7 @@ impl fmt::Display for ContractViolation {
         match self {
             Self::Empty(field) => write!(formatter, "{field} must not be empty"),
             Self::TooLong(field) => write!(formatter, "{field} exceeds its byte limit"),
+            Self::InvalidAuthentication => formatter.write_str("invalid authentication"),
             Self::InvalidMethod => formatter.write_str("method has an invalid format"),
             Self::ParamsMustBeObject => formatter.write_str("params must be an object"),
             Self::TooManyCapabilities => formatter.write_str("too many capabilities"),
@@ -3529,6 +3546,7 @@ mod tests {
     #[test]
     fn hello_rejects_duplicate_and_unknown_format_capabilities() {
         let mut hello = HelloParams {
+            authentication: None,
             rpc_version: RPC_VERSION,
             client: ClientInfo {
                 name: "alcomd-cli".to_owned(),

@@ -328,7 +328,13 @@ pub(super) fn create_package_plan(
         .map_err(store_error)?;
     let project_revision = transaction
         .query_row(
-            "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+            "SELECT p.revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
+                SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id)
+                WHERE c.principal_id=?2 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision
+                    AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=p.project_id
+                    AND EXISTS (SELECT 1 FROM mcp_client_grants r WHERE r.client_id=c.client_id AND r.grant_revision=c.grant_revision AND r.permission='repositories.read' AND r.resource_kind='global' AND r.resource_id='*')
+                    AND EXISTS (SELECT 1 FROM mcp_client_grants k WHERE k.client_id=c.client_id AND k.grant_revision=c.grant_revision AND k.permission='packages.read' AND k.resource_kind='global' AND k.resource_id='*')
+            ))",
             params![draft.project_id.to_string(), owner.as_str()],
             |row| row.get::<_, i64>(0),
         )

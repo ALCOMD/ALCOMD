@@ -1804,6 +1804,7 @@ fn project_creation_and_template_archives_round_trip() {
     assert!(serde_json::from_value::<ProjectTemplatesSaveParams>(request).is_err());
 
     let hello = HelloParams {
+        authentication: None,
         rpc_version: RPC_VERSION,
         client: ClientInfo {
             name: "contract-test".to_owned(),
@@ -1940,6 +1941,7 @@ fn m1_examples_match_the_frozen_json_shape() {
         id: "hello-1".to_owned(),
         method: METHOD_SYSTEM_HELLO.to_owned(),
         params: serde_json::to_value(HelloParams {
+            authentication: None,
             rpc_version: RPC_VERSION,
             client: ClientInfo {
                 name: "alcomd-cli".to_owned(),

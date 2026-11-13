@@ -38,6 +38,7 @@ dependencies = [
  "alcomd-vpm",
  "anyhow",
  "clap",
+ "getrandom 0.4.3",
  "serde",
  "serde_json",
  "tokio",
@@ -60,6 +61,7 @@ dependencies = [
  "alcomd-domain",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tokio",
  "url",
 ]
@@ -175,12 +177,20 @@ version = "4.0.0-alpha.0"
 name = "alcomd-mcp"
 version = "4.0.0-alpha.0"
 dependencies = [
+ "alcomd",
+ "alcomd-application",
+ "alcomd-client",
+ "alcomd-domain",
+ "alcomd-platform",
  "alcomd-protocol",
+ "alcomd-store",
  "anyhow",
  "clap",
  "rmcp",
+ "rusqlite",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

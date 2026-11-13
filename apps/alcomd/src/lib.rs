@@ -16,14 +16,14 @@ use alcomd_application::{
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
-    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1,
-    ErrorResponse, Event, EventsListParams, EventsListResult, HelloParams, HelloResult,
-    METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET, METHOD_OPERATIONS_LIST,
-    METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS, Operation, OperationAccepted,
-    OperationProgress, OperationState, OperationWriteResult, OperationsCancelParams,
-    OperationsGetParams, OperationsListCursor, OperationsListParams, OperationsListResult,
-    PackageOperationPhase, RPC_VERSION, RequestEnvelope, RpcError, StateCheckParams,
-    SuccessResponse, SystemStatusResult, decode_frame_length, encode_frame,
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_MCP_CLIENTS_V1, CAPABILITY_OPERATIONS_V1,
+    CAPABILITY_STATE_CHECK_V1, ErrorResponse, Event, EventsListParams, EventsListResult,
+    HelloParams, HelloResult, METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET,
+    METHOD_OPERATIONS_LIST, METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS,
+    Operation, OperationAccepted, OperationProgress, OperationState, OperationWriteResult,
+    OperationsCancelParams, OperationsGetParams, OperationsListCursor, OperationsListParams,
+    OperationsListResult, PackageOperationPhase, RPC_VERSION, RequestEnvelope, RpcError,
+    StateCheckParams, SuccessResponse, SystemStatusResult, decode_frame_length, encode_frame,
 };
 use alcomd_store::StateStoreHandle;
 use serde_json::Value;
@@ -49,6 +49,7 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
+mod m8_mcp_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -506,6 +507,7 @@ fn bind_as_io(error: BindError) -> io::Error {
 }
 
 struct ConnectionState {
+    mcp_hash: Option<[u8; 32]>,
     connection_id: String,
     client_instance_id: Option<String>,
     actor: String,
@@ -518,6 +520,7 @@ async fn serve_connection(
     applications: Arc<Applications>,
 ) -> io::Result<()> {
     let mut state = ConnectionState {
+        mcp_hash: None,
         connection_id: OperationId::new().to_string(),
         client_instance_id: None,
         actor: "Local IPC".to_owned(),
@@ -544,6 +547,7 @@ async fn serve_connection(
                 write_json_frame(&mut stream, &action.response).await?;
             }
             if let Some(capabilities) = action.complete_handshake {
+                state.mcp_hash = action.mcp_hash;
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;
@@ -572,6 +576,7 @@ async fn serve_connection(
 }
 
 struct DispatchAction {
+    mcp_hash: Option<[u8; 32]>,
     response: Value,
     complete_handshake: Option<HashSet<String>>,
     client_instance_id: Option<String>,
@@ -603,12 +608,29 @@ async fn dispatch_payload(
     }
 
     if request.method == METHOD_SYSTEM_HELLO {
-        return dispatch_hello(request, state);
+        return dispatch_hello(request, state, &applications.store).await;
     }
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-    let access = AccessContext::local_owner().with_actor(state.actor.clone());
+    let access = if let Some(hash) = state.mcp_hash {
+        match alcomd_application::McpIdentityApplication::new(applications.store.clone())
+            .authenticate(hash)
+            .await
+        {
+            Ok(access) => access.with_actor("MCP".into()),
+            Err(e) => return m8_mcp_rpc::error(request.id, e, true),
+        }
+    } else {
+        AccessContext::local_owner().with_actor(state.actor.clone())
+    };
+    if access.is_mcp_client() && !m8_mcp_rpc::allowed_client_method(&request.method) {
+        return error_action(Some(request.id), RpcError::permission_denied(), false);
+    }
+    if request.method.starts_with("mcp.clients.") {
+        return m8_mcp_rpc::dispatch(request, state, &applications.store, &access).await;
+    }
+
     let repository_read = matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
@@ -639,7 +661,11 @@ async fn dispatch_payload(
     action
 }
 
-fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
+async fn dispatch_hello(
+    request: RequestEnvelope,
+    state: &ConnectionState,
+    store: &StateStoreHandle,
+) -> DispatchAction {
     if state.handshake_complete {
         return error_action(
             Some(request.id),
@@ -647,12 +673,15 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
             false,
         );
     }
+    let supplied_auth = request.params.get("authentication").is_some();
     let hello: HelloParams = match serde_json::from_value(request.params) {
         Ok(hello) => hello,
-        Err(_) => return error_action(Some(request.id), RpcError::invalid_request(), false),
+        Err(_) => {
+            return error_action(Some(request.id), RpcError::invalid_request(), supplied_auth);
+        }
     };
     if hello.validate().is_err() {
-        return error_action(Some(request.id), RpcError::invalid_request(), false);
+        return error_action(Some(request.id), RpcError::invalid_request(), supplied_auth);
     }
     if hello.rpc_version != RPC_VERSION {
         return error_action(
@@ -661,7 +690,19 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
             true,
         );
     }
+    let mcp_hash = hello
+        .authentication
+        .as_ref()
+        .map(|auth| alcomd_application::mcp_credential_hash(&auth.credential));
+    if let Some(hash) = mcp_hash
+        && let Err(e) = alcomd_application::McpIdentityApplication::new(store.clone())
+            .authenticate(hash)
+            .await
+    {
+        return m8_mcp_rpc::error(request.id, e, true);
+    }
     let supported = [
+        CAPABILITY_MCP_CLIENTS_V1,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
@@ -717,7 +758,12 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         Some(capabilities),
     );
     action.client_instance_id = Some(client_instance_id);
-    action.actor = Some(actor);
+    action.mcp_hash = mcp_hash;
+    action.actor = Some(if mcp_hash.is_some() {
+        "MCP".into()
+    } else {
+        actor
+    });
     action
 }
 
@@ -1191,6 +1237,7 @@ fn success_action<T: serde::Serialize>(
     let response = serde_json::to_value(SuccessResponse { id, result })
         .expect("approved response DTOs must serialize");
     DispatchAction {
+        mcp_hash: None,
         response,
         complete_handshake: handshake,
         client_instance_id: None,
@@ -1204,6 +1251,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
     let response = serde_json::to_value(ErrorResponse { id, error })
         .expect("approved error DTO must serialize");
     DispatchAction {
+        mcp_hash: None,
         response,
         complete_handshake: None,
         client_instance_id: None,
@@ -1240,16 +1288,54 @@ async fn write_json_frame(stream: &mut IpcStream, value: &Value) -> io::Result<(
 mod tests {
     use super::*;
 
-    #[test]
-    fn hello_dispatch_advertises_the_current_store_schema_and_negotiated_capabilities() {
+    #[tokio::test]
+    async fn supplied_mcp_authentication_failure_closes_without_native_fallback() {
+        let path = std::env::temp_dir().join(format!("alcomd-auth-{}.db", OperationId::new()));
+        let store = StateStoreHandle::open(path.clone()).expect("isolated store");
         let state = ConnectionState {
+            mcp_hash: None,
+            connection_id: "negative-auth".into(),
+            client_instance_id: None,
+            actor: "Local IPC".into(),
+            handshake_complete: false,
+            capabilities: HashSet::new(),
+        };
+        for auth in [
+            serde_json::Value::Null,
+            serde_json::json!({"kind":"mcp-client","credential":"invalid".repeat(12)}),
+            serde_json::json!({"kind":"local-owner","credential":"invalid".repeat(12)}),
+            serde_json::json!({"kind":"mcp-client","credential":"invalid".repeat(12),"principalId":"builtin:local-owner"}),
+        ] {
+            let request = RequestEnvelope {
+                id: "auth-denied".into(),
+                method: METHOD_SYSTEM_HELLO.into(),
+                params: serde_json::json!({"rpcVersion":RPC_VERSION,"client":{"name":"alcomd-gui","version":"1","instanceId":"claimed-owner"},"capabilities":[],"authentication":auth}),
+            };
+            let action = dispatch_hello(request, &state, &store).await;
+            assert!(action.response.get("error").is_some());
+            assert!(action.complete_handshake.is_none());
+            assert!(action.mcp_hash.is_none());
+            assert!(action.close_after_response);
+        }
+        drop(store);
+        std::fs::remove_file(path).expect("remove owned isolated database");
+    }
+
+    #[tokio::test]
+    async fn hello_dispatch_advertises_the_current_store_schema_and_negotiated_capabilities() {
+        let state = ConnectionState {
+            mcp_hash: None,
             connection_id: "schema-handshake-test".to_owned(),
             client_instance_id: None,
             actor: "Local IPC".to_owned(),
             handshake_complete: false,
             capabilities: HashSet::new(),
         };
-        let requested = [CAPABILITY_STATE_CHECK_V1, "unsupported.test-capability"];
+        let requested = [
+            CAPABILITY_STATE_CHECK_V1,
+            CAPABILITY_MCP_CLIENTS_V1,
+            "unsupported.test-capability",
+        ];
         let action = dispatch_hello(
             RequestEnvelope {
                 id: "schema-handshake".to_owned(),
@@ -1265,7 +1351,12 @@ mod tests {
                 }),
             },
             &state,
-        );
+            &StateStoreHandle::open(
+                std::env::temp_dir().join(format!("alcomd-hello-{}.db", OperationId::new())),
+            )
+            .expect("isolated store"),
+        )
+        .await;
         let response: SuccessResponse<HelloResult> =
             serde_json::from_value(action.response).expect("successful typed hello response");
         assert_eq!(response.id, "schema-handshake");
@@ -1277,10 +1368,16 @@ mod tests {
             response.result.config_schema,
             Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
         );
-        assert_eq!(response.result.capabilities, [CAPABILITY_STATE_CHECK_V1]);
+        assert_eq!(
+            response.result.capabilities,
+            [CAPABILITY_MCP_CLIENTS_V1, CAPABILITY_STATE_CHECK_V1]
+        );
         assert_eq!(
             action.complete_handshake,
-            Some(HashSet::from([CAPABILITY_STATE_CHECK_V1.to_owned()]))
+            Some(HashSet::from([
+                CAPABILITY_STATE_CHECK_V1.to_owned(),
+                CAPABILITY_MCP_CLIENTS_V1.to_owned()
+            ]))
         );
         assert_eq!(
             action.client_instance_id.as_deref(),

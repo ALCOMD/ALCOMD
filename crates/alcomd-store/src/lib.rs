@@ -61,6 +61,7 @@ mod m7_copy;
 mod m7_delete;
 mod m7_unity_migration;
 mod m7_user_packages;
+mod m8_mcp;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;
@@ -73,7 +74,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 33;
+pub const CURRENT_DATA_SCHEMA: u32 = 34;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -306,6 +307,24 @@ impl alcomd_application::RepositoryListStore for StateStoreHandle {
 }
 
 impl M3RegistryStore for StateStoreHandle {
+    async fn get_mcp_project(
+        &self,
+        principal: PrincipalId,
+        id: ProjectId,
+    ) -> Result<ProjectRecord, M3Error> {
+        self.request_m3(move |db| m8_mcp::project(db, &principal, id))
+            .await
+    }
+    async fn list_mcp_projects(
+        &self,
+        principal: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+    ) -> Result<ProjectPage, M3Error> {
+        self.request_m3(move |db| m8_mcp::projects(db, &principal, cursor, limit))
+            .await
+    }
+
     async fn register_project(
         &self,
         owner: PrincipalId,

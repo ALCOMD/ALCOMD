@@ -34,6 +34,7 @@ mod m7_official;
 mod m7_presentation;
 mod m7_unity_migration;
 mod m7_user_packages;
+mod m8_mcp;
 mod operation_logs;
 mod project_authority;
 mod project_create;
@@ -56,6 +57,7 @@ pub use m7_official::*;
 pub use m7_presentation::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
+pub use m8_mcp::*;
 pub use operation_logs::*;
 pub use project_authority::*;
 pub use project_create::*;
@@ -604,6 +606,21 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
+    fn get_mcp_project(
+        &self,
+        _principal: PrincipalId,
+        _id: ProjectId,
+    ) -> impl Future<Output = Result<ProjectRecord, M3Error>> + Send {
+        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
+    }
+    fn list_mcp_projects(
+        &self,
+        _principal: PrincipalId,
+        _cursor: Option<RegistryCursor<ProjectId>>,
+        _limit: u32,
+    ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send {
+        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
+    }
     fn get_project(
         &self,
         owner: PrincipalId,
@@ -1040,6 +1057,7 @@ pub struct AccessContext {
     permissions: HashSet<Permission>,
     project_read_scopes: AccessScopes,
     extension_ui_scopes: AccessScopes,
+    mcp_identity: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1060,6 +1078,7 @@ impl AccessContext {
             permissions: permissions.into_iter().collect(),
             project_read_scopes: AccessScopes::None,
             extension_ui_scopes: AccessScopes::None,
+            mcp_identity: false,
         }
     }
 
@@ -1069,6 +1088,8 @@ impl AccessContext {
         let mut access = Self::new(
             PrincipalId::local_owner(),
             [
+                Permission::McpClientsRead,
+                Permission::McpClientsManage,
                 Permission::StateCheck,
                 Permission::OperationsRead,
                 Permission::OperationsCancel,
@@ -1099,6 +1120,14 @@ impl AccessContext {
         access.project_read_scopes = AccessScopes::All;
         access.extension_ui_scopes = AccessScopes::All;
         access
+    }
+
+    pub(crate) fn with_mcp_identity(mut self) -> Self {
+        self.mcp_identity = true;
+        self
+    }
+    pub fn is_mcp_client(&self) -> bool {
+        self.mcp_identity
     }
 
     /// Returns the authenticated transport-neutral Principal.
@@ -1548,10 +1577,15 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<ProjectPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
         validate_m3_limit(limit)?;
-        let mut page = self
-            .store
-            .list_projects(access.principal().clone(), cursor, limit)
-            .await?;
+        let mut page = if access.is_mcp_client() {
+            self.store
+                .list_mcp_projects(access.principal().clone(), cursor, limit)
+                .await?
+        } else {
+            self.store
+                .list_projects(access.principal().clone(), cursor, limit)
+                .await?
+        };
         self.observe_project_directories(&mut page).await;
         Ok(page)
     }
@@ -1565,6 +1599,9 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         expected_sequence: Option<u64>,
     ) -> Result<ProjectViewPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
+        if access.is_mcp_client() {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
         validate_m3_limit(limit)?;
         if cursor.is_some() != expected_sequence.is_some()
             || expected_sequence.is_some_and(|value| value > i64::MAX as u64)
@@ -1604,10 +1641,18 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         id: ProjectId,
     ) -> Result<ProjectDirectoryView, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        let project = self
-            .store
-            .get_project(access.principal().clone(), id)
-            .await?;
+        let project = if access.is_mcp_client() {
+            access
+                .require_project_read_scope(&id.to_string())
+                .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?;
+            self.store
+                .get_mcp_project(access.principal().clone(), id)
+                .await?
+        } else {
+            self.store
+                .get_project(access.principal().clone(), id)
+                .await?
+        };
         Ok(self.project_directory_view(project).await)
     }
 

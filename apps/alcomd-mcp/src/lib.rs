@@ -23,16 +23,56 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
+    serve_stdio_with_client(input, output, None).await
+}
+
+/// Connect through the existing typed client; authentication failure never retries as owner.
+pub async fn connect_core(
+    config: alcomd_client::ClientConfig,
+    secret: String,
+) -> anyhow::Result<alcomd_client::AlcomdClient> {
+    alcomd_client::AlcomdClient::connect(
+        config
+            .with_client_name("alcomd-mcp")
+            .with_mcp_credential(secret),
+    )
+    .await
+    .map_err(|error| {
+        let message=match error {
+            alcomd_client::ClientError::Remote(ref error) if matches!(error.code.as_str(),"permission_denied"|"authorization_required")=>"Core rejected the MCP client credentials",
+            alcomd_client::ClientError::Remote(_)=>"Core rejected the MCP client connection; verify that Core supports client authentication",
+            _=>"MCP Core connection is unavailable",
+        };
+        anyhow::anyhow!(message)
+    })
+}
+pub async fn serve_stdio_with_client<R, W>(
+    input: R,
+    output: W,
+    client: Option<alcomd_client::AlcomdClient>,
+) -> anyhow::Result<()>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
     let transport = stdio_transport::StdioTransport::new(input, output);
     // SDK's handshake entry also accepts legacy pre-init ping. Start its normal
     // dispatcher directly and validate every request here, without session state.
-    serve_directly(ProtocolService, transport, None)
-        .waiting()
-        .await?;
+    serve_directly(
+        ProtocolService {
+            core: tokio::sync::Mutex::new(client),
+        },
+        transport,
+        None,
+    )
+    .waiting()
+    .await?;
     Ok(())
 }
 
-struct ProtocolService;
+struct ProtocolService {
+    core: tokio::sync::Mutex<Option<alcomd_client::AlcomdClient>>,
+}
 
 impl Service<RoleServer> for ProtocolService {
     async fn handle_request(
@@ -62,6 +102,24 @@ impl Service<RoleServer> for ProtocolService {
                 requested,
                 &[MCP_PROTOCOL_VERSION],
             ));
+        }
+        // Bound connections are revalidated by Core on every discovery too;
+        // rotation/revocation never becomes a stale successful protocol response.
+        if let Some(core) = self.core.lock().await.as_mut() {
+            core.system_status().await.map_err(|error| {
+                let message = match error {
+                    alcomd_client::ClientError::Remote(ref error)
+                        if matches!(
+                            error.code.as_str(),
+                            "permission_denied" | "authorization_required"
+                        ) =>
+                    {
+                        "Core client authorization is no longer valid"
+                    }
+                    _ => "Core connection is unavailable",
+                };
+                ErrorData::internal_error(message, None)
+            })?;
         }
         match request {
             ClientRequest::DiscoverRequest(_) => Ok(ServerResult::DiscoverResult(

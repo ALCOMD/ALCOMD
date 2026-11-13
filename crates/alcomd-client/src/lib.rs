@@ -37,6 +37,7 @@ pub struct ClientConfig {
     data_directory: Option<PathBuf>,
     start_daemon: bool,
     daemon_path: Option<PathBuf>,
+    authentication: Option<alcomd_protocol::McpAuthentication>,
 }
 
 impl Default for ClientConfig {
@@ -47,11 +48,20 @@ impl Default for ClientConfig {
             data_directory: None,
             start_daemon: true,
             daemon_path: None,
+            authentication: None,
         }
     }
 }
 
 impl ClientConfig {
+    pub fn with_mcp_credential(mut self, credential: String) -> Self {
+        self.authentication = Some(alcomd_protocol::McpAuthentication {
+            kind: "mcp-client".into(),
+            credential,
+        });
+        self
+    }
+
     /// Identifies this entry point in the existing hello metadata.
     #[must_use]
     pub fn with_client_name(mut self, name: &str) -> Self {
@@ -118,14 +128,57 @@ impl AlcomdClient {
             next_request_id: 1,
             usable: true,
         };
-        let _ = client.hello(&config.client_name).await?;
+        let _ = client
+            .hello(&config.client_name, config.authentication.clone())
+            .await?;
         Ok(client)
     }
 
+    pub async fn mcp_clients_list(
+        &mut self,
+        params: alcomd_protocol::McpClientsListParams,
+    ) -> Result<alcomd_protocol::McpClientsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_LIST, params)
+            .await
+    }
+    pub async fn mcp_client_create(
+        &mut self,
+        params: alcomd_protocol::McpClientsCreateParams,
+    ) -> Result<alcomd_protocol::McpClientRecord, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_CREATE, params)
+            .await
+    }
+    pub async fn mcp_client_set_grants(
+        &mut self,
+        params: alcomd_protocol::McpClientsSetGrantsParams,
+    ) -> Result<alcomd_protocol::McpClientRecord, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_SET_GRANTS, params)
+            .await
+    }
+    pub async fn mcp_client_issue_credential(
+        &mut self,
+        params: alcomd_protocol::McpClientMutationParams,
+    ) -> Result<alcomd_protocol::McpClientCredentialResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_ISSUE_CREDENTIAL, params)
+            .await
+    }
+    pub async fn mcp_client_revoke(
+        &mut self,
+        params: alcomd_protocol::McpClientMutationParams,
+    ) -> Result<alcomd_protocol::McpClientRecord, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_REVOKE, params)
+            .await
+    }
+
     /// Performs the mandatory M1 handshake.
-    async fn hello(&mut self, client_name: &str) -> Result<HelloResult, ClientError> {
+    async fn hello(
+        &mut self,
+        client_name: &str,
+        authentication: Option<alcomd_protocol::McpAuthentication>,
+    ) -> Result<HelloResult, ClientError> {
         let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let params = HelloParams {
+            authentication,
             rpc_version: RPC_VERSION,
             client: ClientInfo {
                 name: client_name.to_owned(),
@@ -133,6 +186,7 @@ impl AlcomdClient {
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
             capabilities: vec![
+                alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
@@ -1190,6 +1244,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
         METHOD_SYSTEM_STATUS
             | METHOD_OPERATIONS_GET
             | METHOD_OPERATIONS_LIST
+            | METHOD_MCP_CLIENTS_LIST
             | METHOD_LOGS_READ
             | METHOD_EVENTS_LIST
             | METHOD_PROJECTS_LIST
@@ -1239,11 +1294,19 @@ async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientE
 }
 
 fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
+    daemon_command(config)?
+        .spawn()
+        .map_err(ClientError::StartDaemon)?;
+    Ok(())
+}
+
+fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
     let daemon = match &config.daemon_path {
         Some(path) => path.clone(),
         None => sibling_daemon_path()?,
     };
     let mut command = Command::new(daemon);
+    command.env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL");
     if let Some(runtime_directory) = &config.runtime_directory {
         command.arg("--runtime-dir").arg(runtime_directory);
     }
@@ -1253,10 +1316,8 @@ fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(ClientError::StartDaemon)?;
-    Ok(())
+        .stderr(Stdio::null());
+    Ok(command)
 }
 
 fn sibling_daemon_path() -> Result<PathBuf, ClientError> {
@@ -1350,6 +1411,21 @@ impl ClientError {
 #[cfg(test)]
 mod connection_reuse_tests {
     use super::*;
+
+    #[test]
+    fn mcp_startup_secret_is_redacted_and_excluded_from_daemon_environment() {
+        let marker = "startup-secret-must-not-be-in-debug".repeat(2);
+        let config = ClientConfig::default()
+            .with_daemon_path(PathBuf::from("not-executed"))
+            .with_mcp_credential(marker.clone());
+        assert!(!format!("{config:?}").contains(&marker));
+        let command = daemon_command(&config).expect("construct, never spawn");
+        assert!(
+            command
+                .get_envs()
+                .any(|(key, value)| key == "ALCOMD_MCP_CLIENT_CREDENTIAL" && value.is_none())
+        );
+    }
 
     #[cfg(unix)]
     async fn pair() -> (IpcStream, IpcStream) {

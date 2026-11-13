@@ -1,6 +1,6 @@
 use super::*;
 
-fn fixture() -> Connection {
+pub(super) fn fixture() -> Connection {
     fixture_at(Path::new(":memory:"))
 }
 
@@ -24,7 +24,7 @@ fn fixture_at(path: &Path) -> Connection {
     db
 }
 
-fn original_state(db: &Connection) -> Vec<(String, Vec<Vec<rusqlite::types::Value>>)> {
+pub(super) fn original_state(db: &Connection) -> Vec<(String, Vec<Vec<rusqlite::types::Value>>)> {
     let mut schema = db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'mcp_%' ORDER BY name").expect("tables");
     let names: Vec<String> = schema
         .query_map([], |r| r.get(0))
@@ -232,7 +232,7 @@ fn state33_failed_migration_rolls_back_all_new_objects() {
 }
 
 #[test]
-fn state33_initialization_upgrades_and_reopens_an_existing_database() {
+fn current_initialization_upgrades_state32_and_reopens_without_implicit_clients() {
     let path = std::env::temp_dir().join(format!("alcomd-state33-{}.db", Uuid::new_v4()));
     let db = fixture_at(&path);
     let before = original_state(&db);
@@ -243,7 +243,7 @@ fn state33_initialization_upgrades_and_reopens_an_existing_database() {
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("version"),
-            33
+            crate::CURRENT_DATA_SCHEMA
         );
         assert_eq!(
             db.query_row("SELECT count(*) FROM mcp_clients", [], |r| r
