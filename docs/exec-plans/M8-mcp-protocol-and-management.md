@@ -261,4 +261,21 @@ Apply调用方必须先展示完整Plan及风险并取得操作者确认，再�
 
 本机先原样复现同模块**6/3**（`current-schema-reproduction.log`），然后仅将三处严格相等预期从32同步到34，其余文件内容逐字不变，未改成范围断言或删除校验。修复后同模块单轮**9/0**（`current-schema-fixed.log`），定向严格Clippy、fmt/xtask/diff通过；独立本地提交`5bfbc90c425e250882cb6492614ec414b765518c`仅3行替换，文件SHA-256 `DE3C750D877291DC50BEE524DD3BC5A2A84D63332AD461AC7C5593F457847EAB`。同类当前Schema常量审计未见其他旧32相等断言；历史迁移版本保留。生产代码/Schema/权限/0033与0034迁移、Config和已有业务证据输入未变，不重复完整Rust/浏览器/release验证，也不盲目重跑workflow。
 
-运行JSON、job日志、本机复现与修复、严格检查及逐字差异审计位于`target/m8-hosted-fa1e7fc-20261113/`。本次只执行推送和本地静态合同修复，未暂停、替换原Core/GUI、迁移原数据或操作真实项目。额外修复及本节记录仅本地提交，未获新推送授权；修复候选没有新远端结果，不将fa1e7fc的CodeQL通过冒充修复后通过。M8继续进行中，本批远端验收完成前不进入HTTP或管理扩展。
+运行JSON、job日志、本机复现与修复、严格检查及逐字差异审计位于`target/m8-hosted-fa1e7fc-20261113/`。本次只执行推送和本地静态合同修复，未暂停、替换原Core/GUI、迁移原数据或操作真实项目。收尾当时额外修复及本节记录仅本地提交，没有修复后远端结果，不将fa1e7fc的CodeQL通过冒充修复后通过；其后所有者再次确认的实际交付见下一节。M8继续进行中。
+
+### 3ccc3f4获准推送与同SHA门禁（2026-11-13）
+
+所有者再次确认后，核对main干净工作树、远端fa1e7fc及完整两笔提交，以真实Windows用户普通快进推送`5bfbc90c425e250882cb6492614ec414b765518c`（三处严格当前State34预期）和`3ccc3f428ddadd6b113777b77cce7fe6fa78506d`（结果记录）。远端main实读为3ccc3f4，无夹带、强推、标签或发布，只收集push自动启动的同SHA运行，不手动dispatch/rerun。
+
+| 同SHA检查 | 实际结果 |
+| --- | --- |
+| [CI 43383251231](https://github.com/ALCOMD/ALCOMD/actions/runs/43383251231)，Ubuntu 22.04 | success；Chromium单轮703/0，17.1分钟 |
+| 同一CI，macOS 15 arm64 | success；Chromium单轮703/0，26.0分钟 |
+| 同一CI，Windows Server 2025 | success；Chromium单轮703/0，18.6分钟 |
+| [CodeQL 43383250817](https://github.com/ALCOMD/ALCOMD/actions/runs/43383250817) | completed/success，actions/Rust/JS-TS/Python四语言 |
+
+整轮CI及三平台job均completed/success，CodeQL四语言completed/success，全部绑定同一SHA `3ccc3f428ddadd6b113777b77cce7fe6fa78506d`。三平台日志逐项确认：严格workspace Clippy、完整Rust测试、原State16/19保全及三处当前State34合同通过；真实Core独立身份、实际SDK卸载以及取消/截断写响应风险用例均通过。两个脚本各自执行的Rust轮次分别保留，不累加成双倍测试数。生产release bins、Tauri no-bundle、平台约束、锁文件/diff及完整Chromium门禁据各平台真实步骤记录；浏览器沿用`retries: 0`，各平台分别单轮703/0，不借用旧M7的700项或拼接历史失败轮。
+
+最终run JSON（`ci-final.json`、`codeql-final.json`）及三平台完整job日志保存于`target/m8-hosted-3ccc3f4-20261113/`。此前fa1e7fc、49d0687、db37593、ca196c47失败及各自CodeQL结果保持历史，不改写为通过。GitHub查询期间一次HTTP504仅重查原运行，没有rerun；日志按平台保存而非拼接轮次。本机不为这次推送重复Rust/浏览器全套、release或真实端点验证；未暂停或替换原Core/GUI、迁移原数据、操作真实项目或恢复桌面控制。状态收尾只执行适用的metadata/xtask/diff检查并本地提交，不再次推送纯记录触发一轮CI。
+
+本轮仍只覆盖冻结STDIO协议、客户端身份和六工具卸载切片。安装/搜索/重装的来源委托、HTTP授权、正式管理扩展/Host桥未实施，未获本批实现授权，不因门禁进展自动开放；全部文件系统崩溃阶段和取消/丢响应竞态也未宣称穷尽。M8继续IN_PROGRESS，不重开M7或宣布整个M8完成。
