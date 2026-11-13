@@ -80,7 +80,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 证据父提交`ec5df3ae`，9份本批代码/Schema/合同输入聚合SHA-256 `5990ed5f3ab17a0161bef7da19e9b6836ae1b3028df305d652d49cf574e51d57`；逐文件摘要`target/m8-entry-audit-20261113/state33-inputs.json`。原始结果为`state33-tests.log`（初始四例）、`state33-tests-final.log`、`mcp-identity-dto-tests.log`、`state33-compatibility.log`、`state33-clippy.log`。
 
-这是一批实现检查点，**身份合同尚未全部实现**：没有接入hello认证或发布capability，原HelloParams仍拒绝额外认证字段，避免忽略凭据后以owner执行。application/Store客户端命令、随机凭据签发/摘要认证、管理RPC、逐请求撤销与范围复查、客户端隔离和秘密不落日志的真实Core用例继续按已批准合同实施；不得用DTO/SQLite约束测试冒充这些验证。没有启动新Core、升级原环境或恢复Computer Use；新增代码没有对应远端验证，不自动推送。
+这是当时的实现检查点，**当时身份合同尚未全部实现**：尚未接入hello认证或发布capability，当时HelloParams拒绝额外认证字段，避免忽略凭据后以owner执行。application/Store客户端命令、随机凭据签发/摘要认证、管理RPC、逐请求撤销与范围复查、客户端隔离和秘密不落日志的真实Core用例当时仍待实施；不以DTO/SQLite约束测试冒充这些验证。该首批没有启动新Core、升级原环境或恢复Computer Use；新增代码当时没有对应远端验证。当前闭环结果见后文，历史证据保留。
 
 ### 当前远端失败与身份接线历史
 
@@ -102,7 +102,7 @@ State34 增量迁移现已获所有者明确批准（“批准 State34 增量迁
 
 ### 2026-11-13 身份闭环实际验证
 
-本批完成点为身份闭环，不是M8整体完成。父提交`ca196c4727cdab642b703a37a919a1adbb2b60d5`；最终Windows工作区的462份Rust/manifest/lock/构建配置/合同输入聚合SHA-256为`b4706d1ea0046b8e4816de68a49157d69caf4e90e7d849320c729c0b463e19a4`，逐文件记录为`target/m8-entry-audit-20261113/identity-final-inputs.json`。下列是独立执行记录，不拼成Workspace全套通过：
+本批完成点为身份闭环，不是M8整体完成。本地代码候选`80dec2a5dd9f0507c05d2bd1dec575ee97cb2ca2`（父提交`ca196c4727cdab642b703a37a919a1adbb2b60d5`）；最终Windows工作区的462份Rust/manifest/lock/构建配置/合同输入聚合SHA-256为`b4706d1ea0046b8e4816de68a49157d69caf4e90e7d849320c729c0b463e19a4`，逐文件记录为`target/m8-entry-audit-20261113/identity-final-inputs.json`。提交后重新逐文件核对输入未变；随后只有状态文档整理，不重跑完整验证。下列是独立执行记录，不拼成Workspace全套通过：
 
 | 验证 | 实际结果 | 本轮原始记录（均在上述target目录） |
 | --- | --- | --- |
