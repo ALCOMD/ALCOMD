@@ -154,6 +154,15 @@ fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence()
     assert_eq!(after.remove("repository_credential_cleanup"), Some(vec![]));
     assert_eq!(after.remove("project_package_presentations"), None);
     assert_eq!(after.remove("project_presentation_observations"), None);
+    // State33/34 add client authority, but migrating a legacy database must
+    // never create implicit clients, credentials, or grants.
+    for table in ["mcp_clients", "mcp_client_grants", "mcp_client_credentials"] {
+        assert_eq!(
+            after.remove(table),
+            Some(vec![]),
+            "unexpected {table} authority"
+        );
+    }
     assert_eq!(after, before);
     assert_eq!(
         connection
