@@ -13,7 +13,13 @@ async fn raw(address: std::net::SocketAddr, request: &str) -> String {
     tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response))
         .await
         .expect("response deadline")
-        .expect("HTTP read");
+        .unwrap_or_else(|error| {
+            panic!(
+                "HTTP read failed: request bytes={}, response bytes={}, error={error}",
+                request.len(),
+                response.len()
+            )
+        });
     String::from_utf8(response).expect("bounded UTF-8 error")
 }
 

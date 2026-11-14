@@ -108,14 +108,8 @@ impl HttpServer {
                         // Its HTTP/1 parser is done; send only this fixed closing
                         // response before dropping the socket. Never echo input.
                         if let Some(completed) = completed {
-                            use tokio::io::AsyncWriteExt;
                             let mut stream=connection.into_parts().io.into_inner();
-                            if completed.is_err_and(|error| error.is_timeout()) {
-                                let _=tokio::time::timeout(OUTPUT_TIME,stream.write_all(b"HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n")).await;
-                            }
-                            // Preserve Hyper's normal write-half shutdown after
-                            // taking ownership of the completed connection.
-                            let _=tokio::time::timeout(OUTPUT_TIME,stream.shutdown()).await;
+                            finish_stream(&mut stream,completed.is_err_and(|error| error.is_timeout())).await;
                         }
                     });
                 }
@@ -134,6 +128,28 @@ impl HttpServer {
         }
         Ok(())
     }
+}
+
+async fn finish_stream(stream: &mut tokio::net::TcpStream, header_timed_out: bool) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if header_timed_out {
+        let _ = tokio::time::timeout(OUTPUT_TIME,stream.write_all(b"HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n")).await;
+    }
+    if !matches!(
+        tokio::time::timeout(OUTPUT_TIME, stream.shutdown()).await,
+        Ok(Ok(()))
+    ) {
+        return;
+    }
+    // Closing with rejected input still in the receive queue can reset the
+    // peer after our error response. Keep the read half open until its FIN,
+    // discarding only bounded bytes/time; never parse another request here.
+    let mut input = stream.take((BODY_LIMIT + HEAD_LIMIT) as u64);
+    let _ = tokio::time::timeout(
+        HEADER_TIME,
+        tokio::io::copy(&mut input, &mut tokio::io::sink()),
+    )
+    .await;
 }
 
 struct State {
@@ -578,6 +594,46 @@ impl ServerHandler for HttpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn closing_response_keeps_receive_half_until_peer_finishes_sending() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .expect("owned TCP listener");
+        let mut client = tokio::net::TcpStream::connect(listener.local_addr().expect("address"))
+            .await
+            .expect("client");
+        let (mut server, _) = listener.accept().await.expect("server");
+        client
+            .write_all(&[b'x'; 8192])
+            .await
+            .expect("pending rejected input");
+        let finishing = tokio::spawn(async move {
+            finish_stream(&mut server, false).await;
+        });
+        let mut byte = [0u8; 1];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), client.read(&mut byte))
+                .await
+                .expect("server FIN deadline")
+                .expect("clean server FIN"),
+            0
+        );
+        assert!(
+            !finishing.is_finished(),
+            "receive half dropped while peer still has rejected input to finish"
+        );
+        client
+            .write_all(b"remaining rejected input")
+            .await
+            .expect("peer receive half remains open");
+        client.shutdown().await.expect("client FIN");
+        tokio::time::timeout(Duration::from_secs(2), finishing)
+            .await
+            .expect("peer FIN releases connection")
+            .expect("join");
+    }
 
     #[tokio::test]
     async fn truncated_output_is_a_transport_error_and_releases_the_request_slot() {
