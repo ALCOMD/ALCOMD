@@ -680,3 +680,26 @@ resource_kind CHECK仅允许Extension/Project，resource_id最短3字节，组�
 先在本机复现两个新回归：`cli-output-before.log`为1通过/2失败，证实凭据断管退出码及延迟flush错误；修复后`cli-unit-after.log`单轮8/0。原真实CLI模块扩展一个闭管道阶段，保留原全部断言，`cli-real-after.log`单轮2/0：正常签发后revision2，只读输出故障仅一次轮换到3，闭管道故障仅一次轮换到4，均报告输出失败且不重签，零授权保持。只使用原端点空闲时的可丢弃Core，不暂停原环境或操作真实项目；本轮实例正常结束。
 
 CLI all-targets严格Clippy、fmt、metadata、xtask及diff通过；`cli-fix-inputs.json`记录两个准确文件摘要及修复SHA。`cli-fix-reuse-audit.json`核对旧1040份输入中1038份未变，仅CLI源码及其集成测试变化；只在原日志实际范围内复用证据，不扩大为新候选完整通过。没有重复完整Rust、Chromium、Tauri release或CI。本地修复的Unix条件分支尚无执行证据；dcc76ffe的远端失败/CodeQL成功都不覆盖db5b60a。本次推送授权只覆盖原候选；本轮远端结果现已收齐，修复及收尾记录的额外推送仍须单独确认，不自动推送。M8仍进行中，不推进新合同或功能范围。
+
+### CLI修复重推与管理候选验证（2026-11-14）
+
+以上为补充推送获批前的历史记录。所有者随后明确批准db5b60a与记录5207287两笔；真实Windows用户/main核对工作树干净、fetch后origin/main仍dcc76ffe，严格核对完整待推送链恰为这两笔及4个文件，无无关修改，普通快进推送成功，远端为`5207287572d0cfc812974e7f75e7386d5d70e353`。没有重写历史、打标签、发布或手动触发workflow，也没有为推送重复已有本地全量。
+
+只跟踪本次自动[CI 43609783925](https://github.com/ALCOMD/ALCOMD/actions/runs/43609783925)及[CodeQL 43609783793](https://github.com/ALCOMD/ALCOMD/actions/runs/43609783793)，两者headSha均为5207287、run_attempt均为1；本轮于2026-11-14推送、2026-11-15收齐全部作业，CI整体failure、CodeQL success。新证据目录`target/m8-hosted-5207287-20261114/`与dcc76ffe历史目录分开。
+
+| 同SHA远端范围 | 实际结果 |
+| --- | --- |
+| Ubuntu 22.04 | Workspace全部成功，原CLI真实模块2/0、新管理Component真实流程1/0；随后独立guest cargo test的原生cdylib链接失败，ELF导出脚本不能接受`alcomd:extension/...`中的冒号；后续release/Tauri/浏览器未执行 |
+| macOS 15 arm64 | Workspace全部成功，原CLI真实模块2/0、新管理Component真实流程1/0；随后独立guest原生dylib导出列表将Wasm符号解释为未定义的Mach-O符号，链接失败；后续release/Tauri/浏览器未执行 |
+| Windows Server 2025 | 整个job成功：完整Check/CLI自启动/release/Tauri no-bundle/锁/diff，Chromium单轮704/0（12.3m）、零重试 |
+| CodeQL | 四语言全部success，codeql-final.json及完整四job日志已归档 |
+
+#### guest原生导出边界的窄修
+
+两个Unix的实际失败点均已逐job日志核对，分别是ELF版本脚本语法错误和Mach-O未定义符号，没有把后者直接套成前者的同一错误消息。原CLI缺陷现已取得这两Unix真实通过证据，Workspace内的Core/Store/Host管理闭环也已执行通过；当前阻塞是独立guest测试构建误导出了Wasm Canonical ABI。Windows允许这些符号不等于原生共享库是支持的扩展运行形式；扩展仍只运行Wasm，不发布DLL/so/dylib。全部门禁保持，不删除或跳过原3项单元与1项绑定文档测试，不改cdylib/rlib构建合同、依赖、旧WIT、RPC、Schema或权限。
+
+本地窄修`4eb41313469ad826ca86730938a90324846e6c8b`：在guest入口只为wasm32调用export宏与导入Management实现，业务模块在wasm32或cfg(test)编译，生成绑定继续可用于原生单元及doc-test；同步provenance的入口源码摘要。只有这两个文件、5行目标条件/说明及1个摘要变化。
+
+实际定向结果：guest原生默认`cargo test --locked`单元3/0＋doc-test1/0，严格all-targets Clippy/fmt通过；Wasm release重建及既有encoder验证通过，新Component与原已提交产物逐字节相同，SHA256仍为`ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e`。因此复用这个未变运行时产物的真实Core/Host/桌面相关证据，不再次运行这些流程。新provenance/旧WIT/Schema合同2/0，metadata/xtask/diff通过，锁文件与包版本未改。guest-native-after.log、guest-clippy-after.log、guest-wasm-after.log、component-after.log、guest-contract-after.log、target-gating-proof.json及guest-fix-inputs.json记录准确输入和范围。
+
+ELF/Mach-O修复尚无实际执行通过证据，不能把Windows原生编译或Wasm字节相同写成Unix链接已通过，也不能把5207287的CodeQL成功当作4eb4131的远端验证。修复只本地提交，额外推送仍须明确授权。本轮作业现已全部收齐；ci-final.json/codeql-final.json、三平台完整job日志、四语言完整日志、hosted-summary.json及摘要已归档，少量GitHub EOF只重查固定run，没有重跑或取消作业。原运行Core/GUI/数据、真实项目和Unity未操作，桌面控制未恢复，M8仍进行中。
