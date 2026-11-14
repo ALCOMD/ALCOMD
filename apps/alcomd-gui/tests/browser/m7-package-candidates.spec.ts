@@ -16,7 +16,12 @@ test("Duplicate repository versions remain selectable and automatic source choic
     const automatic = await page.evaluate(() => window.packageRequests[0]);
     expect(automatic).toMatchObject({ method: "downgrade", params: { version: "1.1.0" } });
     expect(automatic?.params).not.toHaveProperty("source");
+    const closed = await review.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
     await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await closed.evaluate(({ event }) => event);
+    await closed.dispose();
+    await expect(review).toBeHidden();
+    await expect(trigger).toBeFocused();
     await chooseVersionSource(page, page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) }), "Local packages");
     await trigger.click();
     await page.getByRole("option", { name: "1.1.0", exact: true }).click();
