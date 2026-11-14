@@ -6,6 +6,8 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
+2026-11-15 下一步按所有者要求先完成[OAuth现状审计与集中待审差异](exec-plans/M8-mcp-protocol-and-management.md#完整oauth接入审计与集中待审合同2026-11-15)。既有身份、六工具、回环Bearer及管理扩展不重做；新的HTTPS/OAuth端点、Core认证入口与State36仅为待审方案，尚未实施，不广告OAuth能力。原生管理扩展[人工查看准备](testing/m8-management-manual-20261115.md)已核对真实开发包及当前源码摘要，但本机缺少匹配最新代码的完整Core/Host/GUI程序组，不能记为窗口已就绪或人工通过。只读进程检查未发现Core/GUI/Host/MCP在运行，未启动、暂停、恢复或迁移原环境，未恢复桌面控制；不推送、不进入M9、不重复全量验证。
+
 当前[管理扩展候选同SHA远端技术收束](exec-plans/M8-mcp-protocol-and-management.md#管理扩展候选同sha远端技术收束2026-11-15)：所有者批准4eb4131＋78920f3后已普通快进推送至`78920f382d1a0c58dece4a51fb2f54d84f48fcf2`。同SHA CI `43616497449`三平台整个job全部成功，含完整Check/Workspace/独立guest、真实CLI/Core/Host管理闭环、CLI自启动、release/Tauri、平台/锁/diff门禁；Chromium各单轮704/0、零重试（Windows18.4m、Ubuntu15.0m、macOS22.1m）。两个Unix真实挂载具名各1/0、零忽略。CodeQL `43616496767`四语言成功，两run_attempt均为1。CLI输出误报成功及guest原生ELF/Mach-O链接两个历史阻塞均在本轮真实验证通过；dcc76ffe和5207287失败、各轮本地定向与完整远端分别保留，不拼接轮次。完整JSON、三job/四语言日志及摘要已归档；Wasm产物仍为原逐字节相同的ce56c941…，不为状态文档重复本机全量。此管理切片技术门禁通过，M8保持IN_PROGRESS；完整OAuth、实时观测、正式默认分发、来源委托及原生人工查看仍待完成。原环境/数据未替换，桌面控制未恢复，纯状态收尾只本地提交、不追加推送。
 
 M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：所有者再次确认后，静态合同修复`5bfbc90`与记录已普通快进推送至`3ccc3f428ddadd6b113777b77cce7fe6fa78506d`。同SHA CI `43383251231`三平台完整成功，分别完成严格检查、Rust/合同验证、release/Tauri构建及Chromium单轮703/0（零重试）；CodeQL `43383250817`四语言成功。本批冻结STDIO、客户端身份及六工具卸载切片已取得本地与同SHA远端技术通过证据；真实身份、实际包卸载、在途取消和截断写响应风险用例在三平台均通过。历史失败与本地复现结果继续保留，未拼接为完整通过；本次不重复本地全量验证或推送纯状态记录。该远端基线不含HTTP；HTTP首片的最新结果见下一段，安装/搜索/重装的来源委托仍未实施，当时未实施的管理扩展/Host桥现已有首段所述本地候选，M8保持IN_PROGRESS，不重开M7，不宣布整个M8完成；原Core/GUI及原数据未替换或迁移。
