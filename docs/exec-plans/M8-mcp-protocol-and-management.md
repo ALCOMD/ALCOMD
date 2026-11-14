@@ -31,7 +31,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通，取得本地定向/真实隔离及7eac047同SHA三平台完整CI与四项CodeQL技术通过；历史失败/取消及额外本地测试修正见末节，不宣称管理扩展、完整OAuth或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通，取得本地定向/真实隔离及9fea7b6同SHA三平台完整CI与四项CodeQL技术通过（含5行测试同步）；历史失败/取消及后续只读审计见末节，不宣称管理扩展、完整OAuth或整个M8完成。
 
 ## 公共合同与接线状态
 
@@ -59,7 +59,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 ## 验证与交付边界
 
-日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；STDIO/身份/六工具的3ccc3f4远端基线与后续HTTP各轮实际结果见后文；历史f452ac5的CodeQL成功、CI有已确认Windows夹具失败，新增夹具修复12b4767已随7eac047获准推送，同SHA三平台完整CI和四项CodeQL均成功，本地dbe82de同步修正无远端结果，不复用旧M7结果替代。
+日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；STDIO/身份/六工具的3ccc3f4远端基线与后续HTTP各轮实际结果见后文；历史f452ac5的CodeQL成功、CI有已确认Windows夹具失败，新增夹具修复12b4767已随7eac047获准推送，同SHA三平台完整CI和四项CodeQL均成功，dbe82de同步修正已随9fea7b6获准推送并取得同SHA完整CI/CodeQL成功，不复用旧M7结果替代。
 
 稳定业务候选形成后再集中执行适用门禁，真实包/权限和管理界面另据实际实现验收。未实现、未执行与失败保持分列。
 
@@ -500,3 +500,38 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 逐平台完整日志、两Unix挂载原始片段、`ci-final.json`、`codeql-final.json`及验证这些计数的`hosted-summary.json`位于`target/m8-hosted-7eac047-20261114/`。部分GitHub只读请求EOF仅重查相同run；限额核对非耗尽，后续以官方run/jobs API及逐job日志收齐。进程级HTTP/1.1仅用于gh读取，保留TLS/认证，未改生产HTTP合同或全局网络设置。
 
 本轮已推送代码的远端门禁无剩余失败阻塞，获批回环预配Bearer/既有身份及六工具切片保持；不将其当作完整OAuth、管理扩展Host/WIT或M8完成。额外本地dbe82de的5行测试同步不含在7eac047，只有注入前后及最终4项定向证据和GUI check，不冒称完整703项或远端通过。该修正及本节收尾记录仅本地提交，工作树/提交链与metadata/xtask/diff按常规核对，不重复本地Rust/浏览器全套、release或制造纯文档CI；如需推送新增两笔仍须新的明确授权。
+
+### 9fea7b6获准推送与浏览器同步远端验证（2026-11-14）
+
+所有者明确批准后，以真实Windows用户在标准main核对干净工作树、origin/main基线7eac047及完整两笔`dbe82deb9829aa269710996de1c7cbb09c8515b9 → 9fea7b6e5afca24674230408041ae5e0789baa9f`，普通快进推送至9fea7b6，远端实读一致。差异仅一份浏览器测试新增5行及两份状态文档，生产源文件、Rust测试、manifest/锁文件及构建配置未变；不声称不同CI环境/产物字节相同。既有原行为/注入修复/移除注入后的4项定向及GUI check、metadata/xtask/diff证据按相同输入复用，没有重复本地全量、构建或已通过模块。
+
+本次push自动启动[CI 43571868211](https://github.com/ALCOMD/ALCOMD/actions/runs/43571868211)及[CodeQL 43571868047](https://github.com/ALCOMD/ALCOMD/actions/runs/43571868047)，均绑定9fea7b6；现已全部收齐、均completed/success，CI三平台整个job成功，Chromium各703/0、零重试，Windows/Ubuntu/macOS分别15.3/16.9/22.9分钟，两Unix真实挂载各1/0、正常清理；CodeQL四项成功。仅收齐这两项既有运行，不手动dispatch/rerun或取消作业，不把7eac047全通过拼接成当前通过。推送审计、准确测试SHA与原运行时不变证据、当前/最终JSON及完整日志保存于`target/m8-hosted-9fea7b6-20261114/`。本轮不操作原Core/GUI、数据、真实项目或Unity，M8仍IN_PROGRESS，不新增完整OAuth或管理扩展/Host合同。结果收尾仅本地提交，不推送纯状态记录触发新一轮完整门禁。
+
+#### 管理扩展后续只读复用审计（未实施、未批准新合同）
+
+等待上述既有CI期间，按已批准M8顺序只读核对现有实现，不与HTTP同时新增管理功能。`extensions/first-party/alcomd-extension-mcp`仍只有README/manifest scaffold，无Component或签名；M7的MCP管理Portable UI快照仅为渲染夹具，不代表真实管理扩展。
+
+| 已有能力 | 确认的最小缺口与后续审阅方向 |
+| --- | --- |
+| Core/application/Store/typed client已接通list/create/setGrants/issueCredential/revoke | Host WIT、私有消息白名单和runtime路由只有project-summary/self-data，没有MCP管理桥。后续仅补独立、显式协商的Host interface，按既有`mcp.clients.read/manage`映射；不得给扩展万能RPC或local-owner身份 |
+| M7已有current lease、InvocationContextId、Client/Extension双Principal、render只读/action写/close无权限 | 新能力逐调用复查两侧权限、lease/grant/lifecycle/UI状态，实际Extension Principal保留为写入/幂等actor。现有MCP客户端是全局管理对象，不存在客户端owner列，不能凭空宣称只管理扩展自己创建的客户端 |
+| Core列表最多3 MiB，单客户端最多4096条grant；WIT值256 KiB、Host帧512 KiB | 直接透传整份RPC DTO不成立。需审阅有界客户端摘要、revision绑定的授权分页及有界授权修改语义；大集合不能静默截断或借拆包伪称原子事务。推荐Core内单次revision/幂等接受的差量修改，是否增加公共方法须在最小合同中明确，当前不实施 |
+| issueCredential已在dispatcher及application双重限定local-owner，凭据一次返回 | 当前CLI/GUI没有普通用户签发入口，仅typed client/测试可调用。后续需单独定义owner显式签发/轮换入口；不向Host/Portable UI暴露签发或秘密，不代持owner、不自动签发或重试未知结果 |
+| Portable UI已有list/form/select/status/progress及M7签名安装/权限审阅 | 足以复用现有组件承载客户端及授权管理；不新增私有页面/HTML/特权渲染。当前client记录是登记/撤销/授权状态，没有实时连接/活跃请求查询，不把已签发或未撤销冒充在线；观测缺口另列最小合同 |
+
+后续审批必须遵守`extensions/AGENTS.md`的新Host能力要求（threat model、public permission、Schema及人工审批）和冻结ABI old-guest/new-host回归；现有WIT/type/world/权限Schema、State/Config、运行时与GUI均未改。此处仅记录真实复用点与缺口，不是整份M8重新规划，也不作为新Host、凭据入口或观测合同已获批的依据。
+
+#### 9fea7b6最终技术结果与后续边界
+
+准确远端候选`9fea7b6e5afca24674230408041ae5e0789baa9f`的[CI 43571868211](https://github.com/ALCOMD/ALCOMD/actions/runs/43571868211)与[CodeQL 43571868047](https://github.com/ALCOMD/ALCOMD/actions/runs/43571868047)均completed/success，全部平台/语言结论已独立收齐。此候选确实包含dbe82de的5行关闭/焦点同步，不再沿用“仅本地、未获远端验证”的当前状态；旧轮702/1、夹具失败、0项空跑及预算取消仍保留为历史事实，不拼成通过。
+
+| 9fea7b6同SHA结果 | 实际覆盖 |
+| --- | --- |
+| Windows Server 2025 | 整个job成功；完整Check（严格Clippy、Workspace/MCP、前端）、CLI权威daemon数量1、release/Tauri/锁/diff、Chromium703/0（15.3m），零重试 |
+| Ubuntu 22.04 | 整个job成功；完整Check/CLI/release/Tauri/GLIBC/锁/diff、Chromium703/0（16.9m）；同文件系统bind mount具名1通过/0失败/0忽略、正常清理 |
+| macOS 15 arm64 | 整个job成功；完整Check/CLI/release/Tauri/架构与部署目标/锁/diff、Chromium703/0（22.9m）；APFS挂载具名1通过/0失败/0忽略、正常卸载清理 |
+| CodeQL | Actions、Python、JavaScript/TypeScript、Rust四项成功，均绑定9fea7b6；逐job完整日志已归档 |
+
+本轮完整JSON、三个作业日志、两Unix挂载原始片段及`hosted-summary.json`保存在`target/m8-hosted-9fea7b6-20261114/`，并核对已提交浏览器测试文件的完整SHA-256与push-audit一致。生产/Rust源文件、manifest/锁和构建配置相对7eac047未变，不把“源码相同”扩大为不同CI环境或产物字节相同；本机200ms注入前0/1、修后1/0、移除注入后的4/0及GUI check证据仍按其准确测试输入保留，没有为推送重复本地全量。GitHub只读EOF仅重查固定run；未触发重复workflow、取消作业、放宽断言、延长单用例超时或操作真实Core/GUI/数据/项目/Unity。
+
+本轮HTTP回环预配Bearer候选技术门禁已通过，无当前远端失败阻塞；不是完整OAuth、管理扩展或M8整体签收。管理扩展只完成上述只读复用审计，新的Host/WIT/Schema/凭据入口及观测合同仍须具体差异审阅，不因本轮全通过而自动获批。状态收尾只本地提交、运行适用metadata/xtask/diff，工作树与提交链核对后不再推送纯状态文档。
