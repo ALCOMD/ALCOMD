@@ -594,13 +594,16 @@ async fn main() -> ExitCode {
 
     match execute(config, arguments.command, options).await {
         Ok(value) => {
-            let result = print_result(output_mode, command_name, &value);
-            if credential_output && result.is_err() {
-                eprintln!(
-                    "credential was issued, but output failed; plaintext cannot be recovered; no automatic reissue was made"
-                );
+            let result = if credential_output {
+                print_credential_result(output_mode, command_name, &value)
+            } else {
+                print_result(output_mode, command_name, &value)
+            };
+            if credential_output {
+                credential_output_exit(result)
+            } else {
+                output_exit(result)
             }
-            output_exit(result)
         }
         Err(CliError::OperationDetached(operation_id)) => {
             let result = serde_json::json!({
@@ -1475,6 +1478,41 @@ fn print_result(
 ) -> io::Result<()> {
     let stdout = io::stdout();
     let mut output = stdout.lock();
+    write_result(&mut output, output_mode, command, value)
+}
+
+fn print_credential_result(
+    output_mode: OutputMode,
+    command: &str,
+    value: &serde_json::Value,
+) -> io::Result<()> {
+    let stdout = io::stdout();
+    #[cfg(windows)]
+    if stdout.is_terminal() {
+        // Preserve the standard library's Unicode console handling.
+        return write_result(&mut stdout.lock(), output_mode, command, value);
+    }
+    // Stdout tolerates EBADF on Unix. One-time secrets must observe actual
+    // file/pipe failures; duplicate the existing handle, never open a destination.
+    #[cfg(unix)]
+    let file = {
+        use std::os::fd::AsFd;
+        std::fs::File::from(stdout.as_fd().try_clone_to_owned()?)
+    };
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::io::AsHandle;
+        std::fs::File::from(stdout.as_handle().try_clone_to_owned()?)
+    };
+    write_result(&mut io::BufWriter::new(file), output_mode, command, value)
+}
+
+fn write_result(
+    output: &mut impl Write,
+    output_mode: OutputMode,
+    command: &str,
+    value: &serde_json::Value,
+) -> io::Result<()> {
     if matches!(output_mode, OutputMode::Json | OutputMode::Ndjson) {
         let document = serde_json::json!({
             "type": "result",
@@ -1500,7 +1538,8 @@ fn print_result(
             "{}",
             serde_json::to_string_pretty(value).expect("approved result DTO must serialize")
         )
-    }
+    }?;
+    output.flush()
 }
 
 fn absolute_path(path: PathBuf) -> std::io::Result<String> {
@@ -1744,6 +1783,16 @@ fn output_exit(result: io::Result<()>) -> ExitCode {
     }
 }
 
+fn credential_output_exit(result: io::Result<()>) -> ExitCode {
+    if result.is_err() {
+        eprintln!(
+            "credential was issued, but output failed; plaintext cannot be recovered; no automatic reissue was made"
+        );
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
 fn output_error_exit(result: io::Result<()>) -> ExitCode {
     match result {
         Ok(()) | Err(_) => ExitCode::FAILURE,
@@ -1768,6 +1817,41 @@ fn write_completion(shell: CompletionShell) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_output_failure_is_never_a_successful_exit() {
+        for kind in [io::ErrorKind::BrokenPipe, io::ErrorKind::PermissionDenied] {
+            assert_eq!(credential_output_exit(Err(kind.into())), ExitCode::FAILURE);
+        }
+        assert_eq!(credential_output_exit(Ok(())), ExitCode::SUCCESS);
+        assert_eq!(
+            output_exit(Err(io::ErrorKind::BrokenPipe.into())),
+            ExitCode::SUCCESS
+        );
+    }
+
+    #[test]
+    fn result_output_reports_a_failure_deferred_until_flush() {
+        struct FlushFailure;
+        impl Write for FlushFailure {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Err(io::ErrorKind::BrokenPipe.into())
+            }
+        }
+        for mode in [OutputMode::Human, OutputMode::Json, OutputMode::Ndjson] {
+            let error = write_result(
+                &mut FlushFailure,
+                mode,
+                "fixture",
+                &serde_json::json!({"result": "non-secret"}),
+            )
+            .expect_err("a completed format write does not prove buffered delivery");
+            assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        }
+    }
 
     #[test]
     fn mcp_secret_output_requires_opt_in_before_any_connection() {

@@ -304,10 +304,46 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
     assert_eq!(current.items[0].revision, 3);
     assert!(current.items[0].grants.is_empty());
     assert!(
-        AlcomdClient::connect(config.with_mcp_credential(secret))
+        AlcomdClient::connect(config.clone().with_mcp_credential(secret.clone()))
             .await
             .is_err()
     );
+    // A closed pipe is a separate real OS failure from the read-only file above.
+    // Ordinary CLI output may treat BrokenPipe as success; a lost one-time secret cannot.
+    let (reader, writer) = std::io::pipe().expect("owned output pipe");
+    drop(reader);
+    let mut broken_pipe = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    broken_pipe.args(["--json", "--no-start-daemon"]);
+    if let Some(path) = &runtime {
+        broken_pipe.arg("--runtime-dir").arg(path);
+    }
+    let failed = broken_pipe
+        .args([
+            "mcp",
+            "client",
+            "issue-credential",
+            &record.client_id,
+            "--expected-revision",
+            "3",
+            "--idempotency-key",
+            "cli-closed-output",
+            "--yes",
+            "--secret-stdout",
+        ])
+        .stdout(Stdio::from(writer))
+        .stderr(Stdio::piped())
+        .output()
+        .expect("join closed-pipe CLI");
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(error.contains("credential was issued, but output failed"));
+    assert!(!error.contains(&secret));
+    let current = owner
+        .mcp_clients_list(McpClientsListParams::default())
+        .await
+        .expect("one closed-pipe rotation");
+    assert_eq!(current.items[0].revision, 4);
+    assert!(current.items[0].grants.is_empty());
     shutdown.store(true, Ordering::Release);
     assert!(daemon.await.expect("shutdown isolated Core").is_ok());
     if let Some(path) = runtime {
