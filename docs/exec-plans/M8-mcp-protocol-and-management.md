@@ -703,3 +703,22 @@ CLI all-targets严格Clippy、fmt、metadata、xtask及diff通过；`cli-fix-inp
 实际定向结果：guest原生默认`cargo test --locked`单元3/0＋doc-test1/0，严格all-targets Clippy/fmt通过；Wasm release重建及既有encoder验证通过，新Component与原已提交产物逐字节相同，SHA256仍为`ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e`。因此复用这个未变运行时产物的真实Core/Host/桌面相关证据，不再次运行这些流程。新provenance/旧WIT/Schema合同2/0，metadata/xtask/diff通过，锁文件与包版本未改。guest-native-after.log、guest-clippy-after.log、guest-wasm-after.log、component-after.log、guest-contract-after.log、target-gating-proof.json及guest-fix-inputs.json记录准确输入和范围。
 
 ELF/Mach-O修复尚无实际执行通过证据，不能把Windows原生编译或Wasm字节相同写成Unix链接已通过，也不能把5207287的CodeQL成功当作4eb4131的远端验证。修复只本地提交，额外推送仍须明确授权。本轮作业现已全部收齐；ci-final.json/codeql-final.json、三平台完整job日志、四语言完整日志、hosted-summary.json及摘要已归档，少量GitHub EOF只重查固定run，没有重跑或取消作业。原运行Core/GUI/数据、真实项目和Unity未操作，桌面控制未恢复，M8仍进行中。
+
+### 管理扩展候选同SHA远端技术收束（2026-11-15）
+
+上节为再次推送获批前的历史证据。所有者随后明确批准4eb4131及记录78920f3：真实Windows用户/标准目录/main核对干净工作树、fetch后origin/main仍5207287、完整待推送链恰为这两笔和4个文件；普通快进成功，Git及官方只读ref均核对远端为`78920f382d1a0c58dece4a51fb2f54d84f48fcf2`。没有夹带其他提交、重写历史、tag/release或改动GitHub设置/Secrets/真实签名材料。
+
+本次自动[CI 43616497449](https://github.com/ALCOMD/ALCOMD/actions/runs/43616497449)与[CodeQL 43616496767](https://github.com/ALCOMD/ALCOMD/actions/runs/43616496767)均headSha=78920f3、run_attempt=1，全部作业已成功终态；只有push自动运行，没有dispatch/rerun。
+
+| 同SHA范围 | 实际最终结果 |
+| --- | --- |
+| Windows Server 2025 | 整个job success；完整Check、CLI自启动、release bins、Tauri no-bundle、锁/diff；Chromium单轮704/0（18.4m），零重试 |
+| Ubuntu 22.04 | 整个job success；完整Check、CLI自启动、真实bind mount具名1/0/0忽略、release/Tauri、GLIBC/锁/diff；Chromium单轮704/0（15.0m），零重试 |
+| macOS 15 arm64 | 整个job success；完整Check、CLI自启动、真实APFS挂载具名1/0/0忽略并正常弹出、release/Tauri、架构/部署目标/锁/diff；Chromium单轮704/0（22.1m），零重试 |
+| CodeQL | Python、Actions、Rust、JavaScript/TypeScript四job全部success |
+
+三个完整Check均包含Workspace及独立guest。逐平台日志另核对真实CLI输出故障用例、实际Core/Host/Component管理闭环成功；guest原生3项业务单元与1项生成绑定doc-test全部保留并通过。原CLI输出错误及ELF/Mach-O原生链接两处阻塞至此均获同SHA实际修复证据，当前切片没有未解决的远端技术阻塞。此前dcc76ffe的CLI失败、5207287的guest链接失败、本地15/1与单项1/0等原始结果全部保留；本轮各平台704/0来自各自一次完整运行，不拼接局部通过。
+
+证据独立归档`target/m8-hosted-78920f3-20261115/`：完整两笔推送链/范围、首次运行证据、ci-final.json/codeql-final.json、三个job完整日志及四语言完整日志、两个Unix真实挂载原始片段、hosted-summary.json及逐文件SHA256。Wasm Component仍为逐字节相同的`ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e`，CLI与guest窄修本机证据仍各按准确提交/输入保存。本次同SHA完整结果来自Hosted，本机状态收尾仅metadata/diff检查，没有为纯文档重跑Rust/浏览器全套、release/Tauri或真实桌面流程；最终记录仅本地提交，不追加推送制造重复验证。
+
+本片技术门禁通过，M8仍IN_PROGRESS。完整OAuth、实时连接/请求/订阅观测、正式默认安装/启用分发、安装/搜索/重装来源委托及原生人工查看仍按既有计划保留，不能由此宣布M8整体完成。原运行程序/数据、实际项目及Unity保持，桌面控制未恢复；普通文案/布局/语言简化等非阻塞体验待办继续保留。
