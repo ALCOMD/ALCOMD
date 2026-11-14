@@ -118,7 +118,7 @@ fn path_text(path: PathBuf) -> Result<String, app::ProjectDiscoveryError> {
 mod tests {
     use std::fs;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::Duration;
 
     use alcomd_application::{
@@ -130,19 +130,28 @@ mod tests {
 
     use super::*;
 
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
     struct Fixture(PathBuf);
 
     impl Fixture {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!(
-                "alcomd-project-discovery-{}-{}",
-                std::process::id(),
+            Self::at_time(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .expect("clock")
-                    .as_nanos()
+                    .as_nanos(),
+            )
+        }
+
+        fn at_time(timestamp: u128) -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "alcomd-project-discovery-{}-{timestamp}-{}",
+                std::process::id(),
+                NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
             ));
-            fs::create_dir_all(path.join("Projects")).expect("fixture Projects");
+            fs::create_dir(&path).expect("exclusive fixture root");
+            fs::create_dir(path.join("Projects")).expect("fixture Projects");
             fs::create_dir(path.join("Backups")).expect("fixture Backups");
             Self(fs::canonicalize(path).expect("canonical fixture"))
         }
@@ -174,6 +183,27 @@ mod tests {
             }
             panic!("owned project discovery fixture could not be removed");
         }
+    }
+
+    #[test]
+    fn fixtures_created_in_same_clock_tick_are_isolated() {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let first = Fixture::at_time(timestamp);
+        let sentinel = first.0.join("sentinel.txt");
+        fs::write(&sentinel, b"first fixture").expect("first sentinel");
+        let second = Fixture::at_time(timestamp);
+        assert_ne!(first.0, second.0, "each fixture owns a distinct root");
+        assert!(second.0.join("Projects").is_dir());
+        assert!(second.0.join("Backups").is_dir());
+        assert!(!second.0.join("sentinel.txt").exists());
+        drop(second);
+        assert_eq!(
+            fs::read(sentinel).expect("first survives"),
+            b"first fixture"
+        );
     }
 
     struct FixturePlatform(PathBuf);
