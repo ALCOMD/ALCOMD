@@ -9,7 +9,7 @@
   "inputs": {
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml": "7aef145f377ede9a4edf8fa22427b635f18ce6c1a6807193d9b95ba8f66cc798",
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock": "85ae23ec0c5fca1501dbc25fa461e0a334951a6deea0c407805081a1815feb6f",
-    "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "00e0303d97d79ff50b324fc8bca1bdd77ae8291a10819be04453e1954573a6ee",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "db41d8a4a1ee71dc9ed781140f1ac2159597b93261d6216ba9617473544ed581",
     "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "c707e6efa0d6038ce72713ca03844ca75a64dd5aaa32071b69b099d0492914f5",
     "specs/extensions/wit/mcp-management-v1/management.wit": "c4ca610647aa3dff0430cc2132cfb16b7c42a12104bc052fcae640a51c6fbf0f",
     "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",

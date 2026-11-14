@@ -7,7 +7,12 @@ mod bindings {
         world: "management-v1",
         generate_all,
     });
+    #[cfg(target_arch = "wasm32")]
     use super::management::Management;
+    // Canonical ABI export names are Wasm symbols, not native ELF/Mach-O exports.
+    // Keep generated types available to native unit tests and binding doctests.
+    #[cfg(target_arch = "wasm32")]
     export!(Management with_types_in self);
 }
+#[cfg(any(target_arch = "wasm32", test))]
 mod management;
