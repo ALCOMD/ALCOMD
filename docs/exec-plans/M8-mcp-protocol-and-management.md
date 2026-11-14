@@ -388,7 +388,7 @@ base64 feature tree/锁审计确认只新增0.23.1、httpdate1.0.3、sse-stream0
 | --- | --- |
 | macOS 15 arm64 | 失败。`Check`中MCP单元5/0、真实业务工具4/0（含两项HTTP和两项STDIO）、身份1/0通过；HTTP准入模块1/1，`raw()`读响应遇`ConnectionReset`，后续合同/release/Tauri/浏览器均未执行 |
 | Windows Server 2025 | 失败。`Check`中MCP单元4/1；到期输出用例期待TimedOut，却得到`Collected([late])`。该点之后的业务/HTTP模块、合同、release/Tauri/浏览器均未执行 |
-| Ubuntu 22.04 | 全流程成功。Check（含严格Clippy、Workspace Rust及前端检查/构建）、合同、挂载边界、release、Tauri、GLIBC/锁文件/diff和Chromium703/0均完成；浏览器日志703 passed（14.6m），不与其他平台或轮次拼接 |
+| Ubuntu 22.04 | 全流程成功。Check（含严格Clippy、Workspace Rust及前端检查/构建）、合同、release、Tauri、GLIBC/锁文件/diff和Chromium703/0均完成；挂载夹具步骤虽成功但实跑0项，见末节覆盖更正；浏览器日志703 passed（14.6m），不与其他平台或轮次拼接 |
 | CodeQL | Actions、JavaScript/TypeScript、Python、Rust四项成功，绑定aab87a8，不能当作本地新增窄修的结果 |
 
 **关闭边界修复ddd557f**：旧macOS日志没有请求子项标签，只能精确定位到准入helper的TCP读。检查拒绝大输入后的关闭路径，发现发送FIN后立即释放仍有未读输入的接收端；这会让错误响应读到reset。新真实socket回归在本机原实现0/1，证明接收端在对方发送完成前被释放；没有声称在Windows复现macOS错误码54。窄修为写半关闭后，在既有10秒及4MiB+16KiB预算内丢弃待读字节直至peer FIN，再释放；不重新解析、鉴权或处理请求，不扩大接受上限，不记录输入、不延长既有5秒停机宽限。参照[Microsoft shutdown关闭序列](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-shutdown)。原431/408/准入及完整读断言保持，诊断仅添加请求/响应字节数，不打印headers/body/凭据。修复后macOS远端仍未验证。
@@ -419,12 +419,37 @@ Ubuntu check annotation明确为`The job has exceeded the maximum execution time
 | --- | --- |
 | CI 43545258103 | 总结论cancelled，非三平台完整通过 |
 | Windows Server 2025 | 整个job成功，严格检查/完整Rust/CLI集成/release/Tauri/锁/diff/Chromium703/0，零重试；浏览器18.6分钟 |
-| macOS 15 arm64 | 整个job成功，包含完整Rust/CLI集成/挂载边界/release/Tauri/部署目标/锁/diff/Chromium703/0，零重试；浏览器22.4分钟 |
-| Ubuntu 22.04 | 严格检查/完整Rust/CLI集成/挂载边界/release/Tauri/GLIBC/锁/diff均成功；浏览器703项执行中触及job60分钟预算而取消，没有最终计数，不记录为PASS |
+| macOS 15 arm64 | 整个job成功，包含完整Rust/CLI集成/release/Tauri/部署目标/锁/diff/Chromium703/0；挂载夹具步骤虽成功但实跑0项，见末节覆盖更正，零重试；浏览器22.4分钟 |
+| Ubuntu 22.04 | 严格检查/完整Rust/CLI集成/release/Tauri/GLIBC/锁/diff均成功；挂载夹具步骤虽成功但实跑0项，见末节覆盖更正；浏览器703项执行中触及job60分钟预算而取消，没有最终计数，不记录为PASS |
 | CodeQL 43545257774 | Actions、JavaScript/TypeScript、Python、Rust四项全部成功 |
 
-两个HTTP关闭/截止缺陷的新增回归及真实HTTP/Core闭环已在三平台Rust测试通过；e3cd4ac当前唯一未收束的门禁是Ubuntu的完整浏览器终态及总作业预算。Check与Test在同job重复执行完整Workspace/Discord/前端检查的证据保留原日志，不能用Mac/Win或aab87a8的浏览器结果拼接成Ubuntu当前通过。此轮只读查询偶发失败均仅重查原run，无手动dispatch/rerun。
+两个HTTP关闭/截止缺陷的新增回归及真实HTTP/Core闭环已在三平台Rust测试通过；当时定位的未收束门禁是Ubuntu的完整浏览器终态及总作业预算；3196e1b收尾又发现继承的挂载夹具空跑覆盖缺口，见末节更正。Check与Test在同job重复执行完整Workspace/Discord/前端检查的证据保留原日志，不能用Mac/Win或aab87a8的浏览器结果拼接成Ubuntu当前通过。此轮只读查询偶发失败均仅重查原run，无手动dispatch/rerun。
 
 待推送工作流候选`2a319d7a7d0f89bf72dcf728d8c778178eb3f95c`仅修改ci.yml三处串行编排，没有改生产代码、测试、聚合脚本、依赖、断言、超时或仓库设置。完整Check仍为每job默认必经前置，后续保留原Core/CLI构建及自动启动脚本；所有其他步骤及锁文件最终核对逐项相等。固定e3cd4ac基线的YAML结构/门禁集合审计、PowerShell AST、Bash -n、metadata/xtask/diff通过。468份运行时/测试输入3596d671不变，保留33811d4与e3cd4ac的有效功能证据，不为仅编排和文档变更重跑本机全量。
 
 ci-final/codeql-final JSON、三平台逐job日志、Ubuntu超时annotations及ci-coverage-audit.json均保存在`target/m8-hosted-e3cd4ac-20261114/`。新编排未在远端执行，不能提前记为通过；原三笔推送授权已用完，工作流候选及本节记录仅本地提交，等待新的明确推送授权，下一轮只由新push自动验证，不人工重跑旧job。M8保持IN_PROGRESS，完整OAuth/管理扩展Host桥等范围仍未实施。
+
+### 3196e1b获准推送与去重编排远端验证（2026-11-14）
+
+所有者明确批准后，核对真实Windows用户/main、干净工作树、远端e3cd4ac及完整两笔`2a319d7a → 3196e1b2`，普通快进推送至`3196e1b2c099d990cd561304f2ac7a52df33831d`，远端实读一致。468份运行时/测试输入摘要3596d671保持；本批只改CI编排及两份状态文档，不因推送重复本机全量、release或HTTP闭环，不操作原Core/GUI及数据。
+
+本次push自动启动[CI 43556014614](https://github.com/ALCOMD/ALCOMD/actions/runs/43556014614)及[CodeQL 43556014397](https://github.com/ALCOMD/ALCOMD/actions/runs/43556014397)，均绑定3196e1b；现已收齐全部结果，CI总结论failure，CodeQL四项成功。仅查询这两项既有运行，不手动dispatch/rerun、不把e3cd4ac或更早结果写为本候选通过。推送/输入审计、最终JSON及三平台逐job完整日志归档于`target/m8-hosted-3196e1b-20261114/`。M8保持IN_PROGRESS。
+
+| 3196e1b本轮实际结果 | 结论 |
+| --- | --- |
+| Windows Server 2025 | 整个job成功，完整Check/CLI/release/Tauri/锁/diff及Chromium703/0，零重试；浏览器13.1分钟 |
+| Ubuntu 22.04 | 整个job成功，完整Check/CLI/release/Tauri/GLIBC/锁/diff及Chromium703/0，零重试；浏览器14.4分钟、job约43.2分钟，未触及60分钟预算。旧挂载步骤虽成功但实跑0项，不记有效挂载覆盖 |
+| macOS 15 arm64 | 完整Check及CLI成功，HTTP相关回归和真实Core闭环随Check通过；随后挂载夹具Cargo空跑0项、卸载退出16。release/Tauri/部署目标/锁/diff/Chromium均未执行，不拼接e3cd4ac结果为本轮通过 |
+| CodeQL | Actions、Rust、Python、JavaScript/TypeScript四项成功，均为3196e1b；不覆盖本地新增夹具修复 |
+
+三平台新CLI集成均明确报告权威daemon数量1，去重编排没有跳过该附加验证。当前远端真实阻塞为macOS挂载夹具清理失败，并须补回Linux/macOS挂载测试实际执行证明；已认可HTTP身份/六工具及33811d4功能证据继续有效。收尾只做适用metadata/xtask/diff，新增夹具提交及本节状态记录仅本地保留；旧推送授权已用完，不自动推送或用旧运行冒充新修复通过。
+
+#### 挂载夹具空跑与清理窄修（本地6d370e9）
+
+3196e1b的macOS原始日志显示：完整Check、CLI自动启动通过后，挂载夹具的Cargo命令返回`0 passed; 0 failed; 40 filtered out`，随后EXIT清理中的`hdiutil detach -quiet`退出16。脚本路径确认退出来自卸载，不是CLI或HTTP断言；静默日志没有给出具体占用者，不声称已识别哪个进程。16对应Darwin的EBUSY（[Apple errno定义](https://raw.githubusercontent.com/apple-oss-distributions/xnu/main/bsd/sys/errno.h)），本次移除卸载的quiet以保留后续真实原因，不强制卸载或终止进程。
+
+检查源码确认真实忽略测试全名为`project_delete::tests::real_nested_mount_is_rejected_and_its_sentinel_survives`；旧脚本缺少`project_delete::`，搭配`--exact`造成零命中，不是缺少Cargo feature（该包没有feature门控）。同样核查已归档aab87a8的Ubuntu、e3cd4ac的Ubuntu/macOS及当前3196e1b的Ubuntu，均是0项；此前“挂载边界通过”的覆盖推断予以纠正，原job成功状态与其他有效结果保留，不能再据此宣称真实挂载断言已执行。证据`target/m8-hosted-3196e1b-20261114/mount-zero-test-audit.json`；不重开M7或撤回已有人工签收。
+
+本地提交`6d370e9378b86bca9e3d0e751248855183bdf1ce`只修原挂载脚本：完整模块名与`--lib`；挂载前精确列出并要求命中1项；执行后必须同时出现具名ok与1通过/0失败/0忽略，零执行不再成功。macOS只对卸载16作最多5次正常尝试、间隔1秒；其他错误立即失败，重试耗尽或Linux卸载失败均保留尚挂载的夹具，禁止继续递归清理；保留原测试失败退出码，单独清理失败也不能报成功。无生产代码、Rust测试断言、依赖、公共合同或工作流改动。
+
+真实Windows用户完成最终文本Bash语法检查及15项受控命令分支检查：Linux/macOS正常、预检空/重复/失败、运行空/错名/忽略/失败、繁忙恢复/耗尽、非繁忙失败、测试与卸载同时失败、Linux卸载失败及不支持平台。假命令仅验证脚本流程，不执行真实mount/hdiutil/Cargo/Core，也不替代Unix挂载证明；结果在`fixture-checks/results.json`及逐用例trace/output。metadata、xtask、diff通过；468份Rust/HTTP等既有输入逐文件摘要3596d671保持（该清单不包含本次修改的Unix夹具脚本），没有重跑本机完整Rust/Chromium/release。新增夹具的真实Linux/macOS执行仍未验证，需后续获准推送的自动CI；本轮已结束CI是3196e1b，不能覆盖本地6d370e9。该新增提交未获推送授权，当前全部远端结果已收齐，待以准确完整候选另获推送确认。
