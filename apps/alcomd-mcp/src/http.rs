@@ -470,7 +470,10 @@ impl Body for GuardedBody {
         if self.ended {
             return Poll::Ready(None);
         }
-        if self.deadline.as_mut().poll(cx).is_ready() {
+        // Timer readiness may lag its absolute deadline until the driver ticks.
+        // Ready data must not bypass the bound during that interval.
+        if Instant::now() >= self.deadline.deadline() || self.deadline.as_mut().poll(cx).is_ready()
+        {
             self.finish();
             return Poll::Ready(Some(Err(io::ErrorKind::TimedOut.into())));
         }
@@ -594,6 +597,19 @@ impl ServerHandler for HttpHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn output_deadline_precedes_ready_data_without_waiting_for_timer_tick() {
+        let mut body = GuardedBody::new(Full::new(Bytes::from_static(b"late")).boxed(), None, None);
+        body.deadline.as_mut().reset(Instant::now());
+        assert_eq!(
+            body.collect()
+                .await
+                .expect_err("ready data cannot overtake the absolute deadline")
+                .kind(),
+            io::ErrorKind::TimedOut
+        );
+    }
 
     #[tokio::test]
     async fn closing_response_keeps_receive_half_until_peer_finishes_sending() {
