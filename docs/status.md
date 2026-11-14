@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-11-13
+最后更新：2026-11-14
 
 ## 当前阶段
 
@@ -8,7 +8,7 @@
 
 M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：所有者再次确认后，静态合同修复`5bfbc90`与记录已普通快进推送至`3ccc3f428ddadd6b113777b77cce7fe6fa78506d`。同SHA CI `43383251231`三平台完整成功，分别完成严格检查、Rust/合同验证、release/Tauri构建及Chromium单轮703/0（零重试）；CodeQL `43383250817`四语言成功。本批冻结STDIO、客户端身份及六工具卸载切片已取得本地与同SHA远端技术通过证据；真实身份、实际包卸载、在途取消和截断写响应风险用例在三平台均通过。历史失败与本地复现结果继续保留，未拼接为完整通过；本次不重复本地全量验证或推送纯状态记录。该远端基线不含HTTP；HTTP本地候选见下一段，安装/搜索/重装的来源委托及管理扩展/Host桥仍未实施，M8保持IN_PROGRESS，不重开M7，不宣布整个M8完成；原Core/GUI及原数据未替换或迁移。
 
-获批[HTTP回环预配Bearer首片](exec-plans/M8-mcp-protocol-and-management.md#http本地候选与验证结果2026-11-13)已完成本地技术候选`8338d3e5480a90ba3ac818f31684312861228eb1`，**本地验证通过、远端未验证**，不代替HTTP人工验收或M8完成。冻结SDK与每请求独立typed Core身份接线、严格Host/Origin/限额、无session/owner回退已实现；同候选单元5/0、HTTP准入/资源2/0、STDIO12/0，真实HTTP SDK/Core整轮2/0，五类在途故障、零自动重试及原键恢复通过。严格MCP Clippy、fmt/xtask/metadata/diff、精确lock与feature审计通过，468份输入和可执行摘要见计划。base640.23.1仅为SDK传递依赖，MIT OR Apache-2.0、MSRV1.71及默认simd-unsafe影响已明确披露，无直接依赖或其他包升级；State/Config/权限不变。原Core/GUI在验证前已关闭且旧程序缺失，保持该真实状态；原36份data/346份profile和7个Unity/Hub进程核对不变。HTTP未推送、无对应Hosted CI/CodeQL；仅Windows实测，不用3ccc3f4旧门禁代替。完整OAuth与管理扩展Host/WIT等仍属后续，M8保持IN_PROGRESS。
+获批[HTTP回环预配Bearer首片](exec-plans/M8-mcp-protocol-and-management.md#aab87a8获准推送首轮远端失败与本地窄修2026-11-14)已按所有者明确确认，将四笔提交普通快进推送至`aab87a8db279ceaa8c2b8a54c93f91798f2eedd5`。同SHA CodeQL `43534404321`四项成功；CI `43534404444`的macOS已因HTTP拒绝响应ConnectionReset失败，Windows已因过期输出未报TimedOut失败，Ubuntu全流程成功（含Chromium703/0），本轮CI总结论failure，均已收齐。本地分别以真实socket和无timer tick的截止回归0/1定位，窄修提交`ddd557f`、`33811d4`；源码候选33811d4单元7/0、HTTP2/0、STDIO12/0和真实HTTP/Core整轮2/0、五类故障/零重试/原键恢复通过，严格MCP Clippy及fmt/xtask/metadata/diff通过。原断言、超时、权限和接受上限保持，修复后的远端尚未验证。原关闭环境不变，36份data/346份profile和当时10个Unity/Hub进程保全。新增提交未推送，不能用aab87a8的CodeQL代替修复后结果。完整OAuth/管理扩展Host桥等仍留后续，M8保持IN_PROGRESS。
 
 历史候选`fa1e7fc`的CI `43377645951`三平台旧静态合同模块6/3失败、CodeQL `43377644992`四语言成功均保留。失败为三处当前State32预期未随获批State34更新；本机原样复现6/3，仅同步严格相等预期后同模块9/0，修复现已随3ccc3f4推送，未删除其他合同断言，不将历史失败改写成通过。
 

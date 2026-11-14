@@ -380,3 +380,24 @@ base64 feature tree/锁审计确认只新增0.23.1、httpdate1.0.3、sse-stream0
 原环境维持验证前真实关闭状态；旧target/debug程序缺失状态保持。原36份data/346份profile逐文件摘要、7个Unity/Hub进程身份与启动时间相同，最终无Core/GUI/MCP残留。保全记录为上述candidate目录的`backup-manifest.json`/`result.json`；没有以“守候”代替核对，也没有为了快照重启原环境或迁移其数据。
 
 **未执行/后续边界**：HTTP新代码无Hosted CI/CodeQL，尚未推送；三平台旧3ccc3f4通过只属于旧STDIO/身份/六工具切片。此轮真实运行仅Windows；Unix Ctrl-C/SIGTERM及macOS/Linux HTTP尚未实测，第三方SIMD unsafe未做专项跨平台证明。真实SDK为冻结rmcp3.10.0，未逐个验证其他MCP客户端。已有测试覆盖10秒输出边界的错误/permit释放，但未声称穷尽所有网络背压、操作系统崩溃和并发竞态。完整OAuth profile、非回环/TLS/HTTP2/浏览器跨域、管理扩展/Host/WIT及安装/搜索/重装来源委托均不在本片实现，不开放无认证入口、不代持owner。M8保持IN_PROGRESS，后续公共差异仍按既有计划单独审阅。
+### aab87a8获准推送、首轮远端失败与本地窄修（2026-11-14）
+
+所有者明确确认后，以真实Windows用户在标准main核对干净工作树、origin地址及完整四笔`f5042f3a → df7d2700 → 8338d3e5 → aab87a8d`，普通快进从3ccc3f4推送至`aab87a8db279ceaa8c2b8a54c93f91798f2eedd5`；远端实读相同，468份已验输入未变、8338源码后的差异仅两份状态文档。没有强推、标签、发布、手动dispatch或rerun。该次push的CI `43534404444`已全部收齐，总结论failure：Ubuntu完整成功，macOS/Windows分别失败。CodeQL `43534404321`四项成功；仅收集这一轮自动运行，没有dispatch/rerun。
+
+| aab87a8本轮远端 | 实际结果 |
+| --- | --- |
+| macOS 15 arm64 | 失败。`Check`中MCP单元5/0、真实业务工具4/0（含两项HTTP和两项STDIO）、身份1/0通过；HTTP准入模块1/1，`raw()`读响应遇`ConnectionReset`，后续合同/release/Tauri/浏览器均未执行 |
+| Windows Server 2025 | 失败。`Check`中MCP单元4/1；到期输出用例期待TimedOut，却得到`Collected([late])`。该点之后的业务/HTTP模块、合同、release/Tauri/浏览器均未执行 |
+| Ubuntu 22.04 | 全流程成功。Check（含严格Clippy、Workspace Rust及前端检查/构建）、合同、挂载边界、release、Tauri、GLIBC/锁文件/diff和Chromium703/0均完成；浏览器日志703 passed（14.6m），不与其他平台或轮次拼接 |
+| CodeQL | Actions、JavaScript/TypeScript、Python、Rust四项成功，绑定aab87a8，不能当作本地新增窄修的结果 |
+
+**关闭边界修复ddd557f**：旧macOS日志没有请求子项标签，只能精确定位到准入helper的TCP读。检查拒绝大输入后的关闭路径，发现发送FIN后立即释放仍有未读输入的接收端；这会让错误响应读到reset。新真实socket回归在本机原实现0/1，证明接收端在对方发送完成前被释放；没有声称在Windows复现macOS错误码54。窄修为写半关闭后，在既有10秒及4MiB+16KiB预算内丢弃待读字节直至peer FIN，再释放；不重新解析、鉴权或处理请求，不扩大接受上限，不记录输入、不延长既有5秒停机宽限。参照[Microsoft shutdown关闭序列](https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-shutdown)。原431/408/准入及完整读断言保持，诊断仅添加请求/响应字节数，不打印headers/body/凭据。修复后macOS远端仍未验证。
+
+**绝对输出截止修复33811d4**：Windows原断言没有错误；仅检查Sleep readiness会在timer driver处理tick前放过已经到绝对截止的ready数据。新“截止等于now、无tick”的用例本机原实现0/1，返回late，确认根因。GuardedBody现先比较单调Instant与绝对截止，保留Sleep唤醒及原TimedOut/permit释放路径；不延长10秒输出预算、不改旧过去1ms断言或将错误改为成功。
+
+修复源码候选`33811d415a73fbcbceb88b1a9c1dcf7a155179d1`仅本地，含前一笔`ddd557fd11159a57378365ed3f410f2e7142cef1`。同输入集中验证：单元7/0、HTTP2/0、STDIO12/0（`deadline-regression-fixed.log`）；真实HTTP/Core单轮2/0、81.15秒，五类故障/5个Operation/10次Apply/5次原键恢复、自动重试0、业务cancel0均保持，37条业务+30条风险记录按既有六工具Schema校验。严格MCP Clippy、fmt/xtask/diff通过，无新RPC/State/Config/权限/依赖变化，不重跑全Workspace、浏览器或release。
+
+468份输入摘要`3596d671fae78cfc4b5bd1750f54f5e7940e3ad325d1204af660285533e0d291`，MCP可执行SHA-256 `d760cf0f6db06b4cbd7a05bc652549f0a9f74a0c3962854cf4f04c68bdac2e60`。远端JSON/逐job日志、本机两个0/1复现、修复后记录及`fixed-summary.json`保存在`target/m8-hosted-aab87a8-20261114/`；只读状态查询的两次短暂失败均只重查同一运行，没有重跑workflow。CI/CodeQL最终JSON及Ubuntu/macOS/Windows逐job原始日志均已归档，最终结果不能用于33811d4两笔新增修复。
+
+本轮两次隔离均保持原Core/GUI关闭、旧程序缺失状态；原36份data/346份profile逐文件摘要不变，保全当时10个Unity/Hub进程。最终修复保全见`target/m8-http-audit-20261113/native-preservation/hosted-two-fixes-20261114-20261114T0059073579071Z/result.json`，未操作真实项目或恢复桌面控制。macOS/Windows历史失败保留，修复后的Hosted CI/CodeQL仍未取得；原四笔推送授权不覆盖新增提交，现有结果已收齐，新增修复及本节记录等待单独确认额外推送。M8保持IN_PROGRESS，不以本地修复宣布远端通过或M8完成。
+本次远端失败没有导致修改工作流、删测试、放宽状态/完整读/截止断言或延长超时。本地新增修复只涉及HTTP模块和准入测试的有界诊断，公共合同/依赖/权限保持。`fixed-summary.json`核对67条适用输入/结果记录与5类故障，不能把旧轮68条记录写成本轮数量；Operation轮询次数可随真实完成时间变化。源码候选33811d4的21项无Core定向测试与2项真实HTTP/Core同输入结果、严格MCP Clippy、fmt/xtask/metadata/diff通过；后续仅本地文档整理，未再次运行全量验证、构建或触发CI。原四笔推送已完成，新增三笔（两项窄修及本次状态记录）尚未推送，需按项目推送边界明确授权后方可用新候选取得远端结果。
