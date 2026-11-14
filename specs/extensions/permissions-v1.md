@@ -58,6 +58,10 @@ mcp.configuration.manage
 
 ## 规则
 
+M8管理Host桥使用已存在的`mcp.clients.read/manage`，范围为`Global/*`；后者是全部MCP客户端的高风险管理权。
+不向扩展开放签发凭据；`projects.read`仍须逐`Project/<ProjectId>`授权。每次Host调用同时复查交互Client、
+Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v1.md`。
+
 - 第一方和第三方扩展使用同一权限名称。
 - 权限按 Principal 授予并可随时撤销。
 - Host Capability 每次调用仍需检查权限。

@@ -62,7 +62,8 @@ jobs:
           git diff --exit-code -- `
             Cargo.lock `
             package-lock.json `
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock `
+            extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
       - name: Install Playwright Chromium
@@ -132,7 +133,8 @@ jobs:
           git diff --exit-code -- \
             Cargo.lock \
             package-lock.json \
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock \
+            extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
       - name: Install Playwright Chromium and system test dependencies
@@ -190,7 +192,8 @@ jobs:
           git diff --exit-code -- \
             Cargo.lock \
             package-lock.json \
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock \
+            extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
       - name: Install Playwright Chromium

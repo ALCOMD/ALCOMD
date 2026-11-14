@@ -26,6 +26,8 @@ const CRASH_ROOT_ENV: &str = "ALCOMD_M6_CRASH_ROOT";
 const CRASH_METADATA_ENV: &str = "ALCOMD_M6_CRASH_METADATA";
 const KILL_GATE_ENV: &str = "ALCOMD_TEST_M6_KILL_GATE";
 const KILL_SIGNAL_ENV: &str = "ALCOMD_TEST_M6_KILL_SIGNAL";
+#[path = "support/m8_management_flow.rs"]
+mod m8_management_flow;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
@@ -927,14 +929,26 @@ fn create_signed_package_with_component(path: &Path, component: &[u8]) {
 }
 
 fn create_signed_package_with_profile(path: &Path, component: &[u8], name: &str, profile: &str) {
+    create_signed_package_with_interfaces(path, component, name, profile, &[], "MIT");
+}
+
+fn create_signed_package_with_interfaces(
+    path: &Path,
+    component: &[u8],
+    name: &str,
+    profile: &str,
+    interfaces: &[&str],
+    license: &str,
+) {
     const MANIFEST_PATH: &str = "alcomd-extension.toml";
     const COMPONENT_PATH: &str = "component/extension.wasm";
     const SIGNATURE_PATH: &str = "META-INF/alcomd-signature-v1.json";
     let signing = SigningKey::from_bytes(&[17_u8; 32]);
     let public_key = signing.verifying_key().to_bytes();
     let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
+    let interfaces = serde_json::to_string(interfaces).expect("interface names");
     let manifest = format!(
-        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"{name}\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = []\noptional = []\n\n{profile}"
+        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"{name}\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"{license}\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = {interfaces}\noptional = []\n\n{profile}"
     );
     let content = [
         (MANIFEST_PATH, manifest.as_bytes()),

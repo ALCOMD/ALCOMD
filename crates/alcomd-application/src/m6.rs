@@ -166,6 +166,7 @@ impl ExtensionPermissionsCursor {
             ("projects.read", "Project") => {
                 crate::ProjectId::parse(&self.after.resource_id).is_ok()
             }
+            ("mcp.clients.read" | "mcp.clients.manage", "Global") => self.after.resource_id == "*",
             _ => false,
         };
         if !valid_extension_id(&self.extension_id)
@@ -736,6 +737,21 @@ pub struct M6HostApplication<S: M6Store> {
 }
 
 impl<S: M6Store> M6HostApplication<S> {
+    pub async fn mcp_management(
+        &self,
+        lease: ExtensionInstanceLease,
+        authority: crate::ExtensionUiInvocationAuthority,
+        request: crate::ManagementRequest,
+        now_ms: u64,
+    ) -> Result<crate::ManagementResponse, crate::ManagementError>
+    where
+        S: crate::McpManagementStore,
+    {
+        self.store
+            .mcp_management(lease, authority, request, now_ms)
+            .await
+    }
+
     #[must_use]
     pub fn new(store: S) -> Self {
         Self { store }

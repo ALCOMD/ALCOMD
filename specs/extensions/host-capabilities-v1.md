@@ -32,6 +32,9 @@ Input/Output：
 
 ## Planned、未实现能力
 
+M8获批的`host-mcp-clients.list/grants/projects/create/change-grants/revoke`为独立、可协商接口；
+其分页/事务、双Principal、错误与秘密边界见`mcp-management-v1.md`。原v1 world及其既有方法形状保持冻结。
+
 以下名称在 M6 Stop A 不进入 WIT world、不链接、不广告，未来每项需要独立 permission、Schema、scope、quota、
 redaction、revocation 和人工审批：
 

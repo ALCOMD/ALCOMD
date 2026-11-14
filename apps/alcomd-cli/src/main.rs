@@ -10,6 +10,8 @@ enum CliError {
     OperationFailed(Box<alcomd_protocol::Operation>),
     OperationDetached(String),
     LocalIo(std::io::Error),
+    Usage(&'static str),
+    CredentialOutcomeUnknown,
 }
 
 impl From<alcomd_client::ClientError> for CliError {
@@ -26,6 +28,8 @@ impl std::fmt::Display for CliError {
             Self::OperationFailed(_) => formatter.write_str("operation did not succeed"),
             Self::OperationDetached(_) => formatter.write_str("operation follow was interrupted"),
             Self::LocalIo(_) => formatter.write_str("local CLI I/O failed"),
+            Self::Usage(message) => formatter.write_str(message),
+            Self::CredentialOutcomeUnknown => formatter.write_str("credential issuance outcome is unknown; check the client's revision before explicitly rotating again; the plaintext cannot be recovered; no retry was made"),
         }
     }
 }
@@ -35,9 +39,11 @@ impl std::error::Error for CliError {
         match self {
             Self::Client(error) => Some(error),
             Self::LocalIo(error) => Some(error),
-            Self::ConfirmationRequired | Self::OperationFailed(_) | Self::OperationDetached(_) => {
-                None
-            }
+            Self::ConfirmationRequired
+            | Self::OperationFailed(_)
+            | Self::OperationDetached(_)
+            | Self::Usage(_)
+            | Self::CredentialOutcomeUnknown => None,
         }
     }
 }
@@ -92,6 +98,11 @@ struct Arguments {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Manage MCP clients using the existing local-owner Core authority.
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommand,
+    },
     /// Inspect or control core components.
     System {
         #[command(subcommand)]
@@ -139,6 +150,36 @@ enum Command {
 enum SystemCommand {
     /// Query the running per-user daemon.
     Status,
+}
+
+#[derive(Debug, Subcommand)]
+enum McpCommand {
+    #[command(visible_alias = "clients")]
+    Client {
+        #[command(subcommand)]
+        command: McpClientCommand,
+    },
+}
+#[derive(Debug, Subcommand)]
+enum McpClientCommand {
+    /// List non-secret client records.
+    List {
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    /// Issue once or rotate a credential. The old credential becomes invalid immediately.
+    IssueCredential {
+        client_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+        /// Explicitly permit one-time secret output to a pipe or JSON/NDJSON.
+        #[arg(long)]
+        secret_stdout: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -523,6 +564,14 @@ async fn main() -> ExitCode {
         no_wait: arguments.no_wait,
     };
     let command_name = arguments.command.name();
+    let credential_output = matches!(
+        &arguments.command,
+        Command::Mcp {
+            command: McpCommand::Client {
+                command: McpClientCommand::IssueCredential { .. }
+            }
+        }
+    );
 
     if let Command::Completion { shell } = &arguments.command {
         return write_completion(*shell);
@@ -544,7 +593,15 @@ async fn main() -> ExitCode {
     }
 
     match execute(config, arguments.command, options).await {
-        Ok(value) => output_exit(print_result(output_mode, command_name, &value)),
+        Ok(value) => {
+            let result = print_result(output_mode, command_name, &value);
+            if credential_output && result.is_err() {
+                eprintln!(
+                    "credential was issued, but output failed; plaintext cannot be recovered; no automatic reissue was made"
+                );
+            }
+            output_exit(result)
+        }
         Err(CliError::OperationDetached(operation_id)) => {
             let result = serde_json::json!({
                 "operationId": operation_id,
@@ -557,13 +614,61 @@ async fn main() -> ExitCode {
     }
 }
 
+fn validate_mcp_output(
+    command: &Command,
+    options: ExecutionOptions,
+    stdout_is_terminal: bool,
+) -> Result<(), CliError> {
+    if let Command::Mcp {
+        command: McpCommand::Client { command },
+    } = command
+    {
+        if options.dry_run || options.no_wait {
+            return Err(CliError::Usage(
+                "MCP client commands do not support --dry-run or --no-wait",
+            ));
+        }
+        if let McpClientCommand::IssueCredential { secret_stdout, .. } = command
+            && (!stdout_is_terminal || options.output_mode != OutputMode::Human)
+            && !secret_stdout
+        {
+            return Err(CliError::Usage(
+                "credential output to a pipe or JSON/NDJSON requires explicit --secret-stdout; no request was sent",
+            ));
+        }
+    }
+    Ok(())
+}
+
 async fn execute(
     config: alcomd_client::ClientConfig,
     command: Command,
     options: ExecutionOptions,
 ) -> Result<serde_json::Value, CliError> {
+    validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
+        Command::Mcp { command: McpCommand::Client { command } } => match command {
+            McpClientCommand::List { cursor, limit } => serde_json::to_value(client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit }).await?),
+            McpClientCommand::IssueCredential { client_id, expected_revision, idempotency_key, .. } => {
+                let mut cursor = None;
+                let record = loop {
+                    let page = client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit: Some(64) }).await?;
+                    if let Some(record) = page.items.into_iter().find(|record|record.client_id == client_id) { break record; }
+                    cursor = page.next_cursor;
+                    if cursor.is_none() { return Err(CliError::Usage("MCP client was not found")); }
+                };
+                if record.revision != expected_revision || record.revoked_at_ms.is_some() { return Err(CliError::Usage("MCP client changed or was revoked; list current records before issuing")); }
+                eprintln!("Issue credential for {} ({}). The previous credential becomes invalid immediately.", record.display_name.escape_debug(), record.client_id);
+                confirm_high_impact(options)?;
+                let issued = client.mcp_client_issue_credential(alcomd_protocol::McpClientMutationParams { client_id, expected_revision, idempotency_key }).await.map_err(|error| match error {
+                    alcomd_client::ClientError::Remote(ref remote) if matches!(remote.code.as_str(), "store_unavailable" | "internal_error" | "daemon_unavailable") => CliError::CredentialOutcomeUnknown,
+                    alcomd_client::ClientError::Remote(_) => CliError::Client(error),
+                    _ => CliError::CredentialOutcomeUnknown,
+                })?;
+                serde_json::to_value(issued)
+            }
+        },
         Command::System {
             command: SystemCommand::Status,
         } => serde_json::to_value(client.system_status().await?),
@@ -1265,6 +1370,12 @@ async fn execute(
 impl Command {
     fn name(&self) -> &'static str {
         match self {
+            Self::Mcp {
+                command: McpCommand::Client { command },
+            } => match command {
+                McpClientCommand::List { .. } => "mcp client list",
+                McpClientCommand::IssueCredential { .. } => "mcp client issue-credential",
+            },
             Self::System { .. } => "system status",
             Self::Operation { command } => match command {
                 OperationCommand::List { .. } => "operation list",
@@ -1570,6 +1681,11 @@ fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {
     let mut output = stderr.lock();
     if matches!(output_mode, OutputMode::Json | OutputMode::Ndjson) {
         let (code, message) = match error {
+            CliError::Usage(message) => ("invalid_arguments", *message),
+            CliError::CredentialOutcomeUnknown => (
+                "credential_outcome_unknown",
+                "issuance may have succeeded; check current revision; plaintext cannot be recovered; no retry was made",
+            ),
             CliError::ConfirmationRequired => ("confirmation_required", "confirmation is required"),
             CliError::OperationFailed(operation) => (
                 operation
@@ -1635,7 +1751,8 @@ fn output_error_exit(result: io::Result<()>) -> ExitCode {
 }
 
 fn write_completion(shell: CompletionShell) -> ExitCode {
-    const COMMANDS: &str = "system operation project repository package unity backup completion";
+    const COMMANDS: &str =
+        "system operation project repository package unity backup mcp completion";
     let script = match shell {
         CompletionShell::Bash => format!("complete -W '{COMMANDS}' alcomd-cli\n"),
         CompletionShell::Zsh => {
@@ -1651,6 +1768,48 @@ fn write_completion(shell: CompletionShell) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mcp_secret_output_requires_opt_in_before_any_connection() {
+        let parse = |extra: &[&str]| {
+            let mut args = vec![
+                "alcomd-cli",
+                "mcp",
+                "client",
+                "issue-credential",
+                "00000000-0000-4000-8000-000000000001",
+                "--expected-revision",
+                "1",
+                "--idempotency-key",
+                "issue",
+            ];
+            args.extend_from_slice(extra);
+            Arguments::try_parse_from(args).expect("CLI")
+        };
+        let command = parse(&[]).command;
+        let mut options = ExecutionOptions {
+            output_mode: OutputMode::Human,
+            yes: true,
+            dry_run: false,
+            no_wait: false,
+        };
+        assert!(validate_mcp_output(&command, options, true).is_ok());
+        assert!(matches!(
+            validate_mcp_output(&command, options, false),
+            Err(CliError::Usage(_))
+        ));
+        options.output_mode = OutputMode::Json;
+        assert!(validate_mcp_output(&command, options, true).is_err());
+        let permitted = parse(&["--secret-stdout"]).command;
+        assert!(validate_mcp_output(&permitted, options, false).is_ok());
+        options.output_mode = OutputMode::Ndjson;
+        assert!(validate_mcp_output(&permitted, options, false).is_ok());
+        options.dry_run = true;
+        assert!(validate_mcp_output(&permitted, options, false).is_err());
+        options.dry_run = false;
+        options.no_wait = true;
+        assert!(validate_mcp_output(&permitted, options, false).is_err());
+    }
 
     #[test]
     fn project_create_requires_a_version_and_supports_no_template() {

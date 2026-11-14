@@ -17,6 +17,11 @@ cargo fmt --manifest-path $discordManifest -- --check
 cargo clippy --locked --manifest-path $discordManifest --all-targets -- -D warnings
 cargo test --locked --manifest-path $discordManifest
 
+$mcpManifest = "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml"
+cargo fmt --manifest-path $mcpManifest -- --check
+cargo clippy --locked --manifest-path $mcpManifest --all-targets -- -D warnings
+cargo test --locked --manifest-path $mcpManifest
+
 npm run check
 npm run build
 Invoke-MetadataValidator

@@ -12,7 +12,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde_json::{Value, json};
 use wasmtime::component::{Component, HasSelf, Linker};
-use wasmtime::{Config, Engine, Store, StoreLimits, StoreLimitsBuilder};
+use wasmtime::{Config, Engine, Store};
 
 wasmtime::component::bindgen!({
     path: "../../specs/extensions/wit/extension-v1",
@@ -23,6 +23,8 @@ wasmtime::component::bindgen!({
 
 use crate::alcomd::extension::{host_data, host_projects, types};
 use crate::exports::alcomd::extension::guest_ui;
+mod mcp_management;
+mod resource_limits;
 
 #[derive(Debug, Parser)]
 #[command(name = "alcomd-extension-host", version, about)]
@@ -34,7 +36,7 @@ struct Arguments {
 }
 
 struct HostState {
-    limits: StoreLimits,
+    limits: resource_limits::HostLimits,
     protocol: ProtocolChannel,
 }
 
@@ -105,16 +107,7 @@ async fn run() -> Result<()> {
     let engine = create_engine()?;
     let component = Component::from_file(&engine, &arguments.component)
         .map_err(|_| anyhow::anyhow!("component"))?;
-    let store_limits = StoreLimitsBuilder::new()
-        .memory_size(usize::try_from(limits.linear_memory_bytes).context("limit")?)
-        .table_elements(usize::try_from(limits.table_elements).context("limit")?)
-        // The Host creates exactly one top-level Component. This separate
-        // bound limits the core instances that Component may instantiate.
-        .instances(16)
-        .memories(1)
-        .tables(1)
-        .trap_on_grow_failure(true)
-        .build();
+    let store_limits = resource_limits::HostLimits::new(limits)?;
     let protocol = ProtocolChannel {
         input,
         output,
@@ -163,6 +156,7 @@ async fn run() -> Result<()> {
     let mut linker = Linker::new(&engine);
     ExtensionV1::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|_| anyhow::anyhow!("link"))?;
+    mcp_management::add_to_linker(&mut linker)?;
     let bindings = ExtensionV1::instantiate_async(&mut store, &component, &linker)
         .await
         .map_err(|_| anyhow::anyhow!("instantiate"))?;

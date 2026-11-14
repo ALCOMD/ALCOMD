@@ -217,9 +217,9 @@
             ],
             "properties": {
                 "extensionId": {"$ref": "#/$defs/extensionId"},
-                "permission": {"enum": ["background.run", "projects.read"]},
-                "resourceKind": {"enum": ["Extension", "Project"]},
-                "resourceId": {"type": "string", "minLength": 3, "maxLength": 255},
+                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage"]},
+                "resourceKind": {"enum": ["Extension", "Project", "Global"]},
+                "resourceId": {"type": "string", "minLength": 1, "maxLength": 255},
                 "expectedGrantRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
@@ -238,9 +238,9 @@
             "type": "object", "additionalProperties": false,
             "required": ["permission", "resourceKind", "resourceId"],
             "properties": {
-                "permission": {"enum": ["background.run", "projects.read"]},
-                "resourceKind": {"enum": ["Extension", "Project"]},
-                "resourceId": {"type": "string", "minLength": 3, "maxLength": 255}
+                "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage"]},
+                "resourceKind": {"enum": ["Extension", "Project", "Global"]},
+                "resourceId": {"type": "string", "minLength": 1, "maxLength": 255}
             }
         },
         "permissionsListResult": {

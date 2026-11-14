@@ -1,0 +1,31 @@
+[package]
+name = "alcomd-extension-mcp-backend"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+authors = ["VRCLearn"]
+homepage = "https://alcomd.vrclearn.com/"
+license = "AGPL-3.0-only"
+repository = "https://github.com/ALCOMD/ALCOMD"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[workspace]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = "debuginfo"
+
+[dependencies]
+wit-bindgen = { version = "=0.57.1", default-features = false, features = ["macros", "realloc", "std"] }
+
+[lints.rust]
+unused_must_use = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+unwrap_used = "warn"

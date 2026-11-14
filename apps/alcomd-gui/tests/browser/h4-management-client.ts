@@ -166,7 +166,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
             return response("extensions.permissions.list", { extensionId, grantRevision: extension.grantRevision,
-                requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: structuredClone(page),
+                requiredPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.read"] : ["projects.read"], optionalPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
         async extensionPlanInstall(packagePath, expectedRevision, publisherApproval) {
@@ -218,8 +218,10 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             await response("extensions.setGrant", undefined);
             const extension = installed(extensionId);
             if (extension.grantRevision !== expectedGrantRevision) throw { code: "revision_conflict" };
-            if ((permission !== "background.run" && permission !== "projects.read") || (resourceKind !== "Extension" && resourceKind !== "Project")) throw { code: "invalid_request" };
-            if (permission === "background.run" ? resourceKind !== "Extension" || resourceId !== extensionId : resourceKind !== "Project") throw { code: "extension_scope_denied" };
+            const mcp = permission === "mcp.clients.read" || permission === "mcp.clients.manage";
+            if (!mcp && permission !== "background.run" && permission !== "projects.read") throw { code: "invalid_request" };
+            if (resourceKind !== "Extension" && resourceKind !== "Project" && resourceKind !== "Global") throw { code: "invalid_request" };
+            if (mcp ? resourceKind !== "Global" || resourceId !== "*" : permission === "background.run" ? resourceKind !== "Extension" || resourceId !== extensionId : resourceKind !== "Project") throw { code: "extension_scope_denied" };
             const current = grants.get(extensionId) ?? [];
             if (!current.some((grant) => grant.permission === permission && grant.resourceKind === resourceKind && grant.resourceId === resourceId)) current.push({ permission, resourceKind, resourceId });
             grants.set(extensionId, current);

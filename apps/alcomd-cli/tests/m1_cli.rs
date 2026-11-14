@@ -8,9 +8,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use alcomd_client::{AlcomdClient, ClientConfig};
 use alcomd_platform::IpcConfig;
+static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cli_reports_human_and_json_status_over_real_ipc() {
+    let _serial = RPC_TEST_LOCK.lock().await;
     let (ipc, client, runtime) = isolated_configuration();
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
@@ -172,6 +174,145 @@ fn run_confirmation_required_cli(runtime: Option<PathBuf>) -> std::process::Outp
         "confirmation-contract",
     ]);
     command.output().expect("run confirmation CLI")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
+    use alcomd_protocol::{McpClientsCreateParams, McpClientsListParams};
+    use std::process::Stdio;
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon =
+        alcomd_daemon::test_support::start_until(ipc, wait_for_shutdown(Arc::clone(&shutdown)))
+            .await
+            .expect("owned isolated Core");
+    wait_until_ready(config.clone()).await;
+    let mut owner = AlcomdClient::connect(config.clone()).await.expect("owner");
+    let record = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "CLI isolated client".into(),
+            idempotency_key: "cli-create".into(),
+            grants: vec![],
+        })
+        .await
+        .expect("zero grants");
+    let args = [
+        "mcp",
+        "client",
+        "issue-credential",
+        record.client_id.as_str(),
+        "--expected-revision",
+        "1",
+        "--idempotency-key",
+        "cli-issue",
+        "--yes",
+    ];
+    let denied = run_group_cli(runtime.clone(), &args);
+    assert!(!denied.status.success());
+    let error: serde_json::Value =
+        serde_json::from_slice(&denied.stderr).expect("safe preflight error");
+    assert_eq!(error["error"]["code"], "invalid_arguments");
+    assert_eq!(
+        owner
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .expect("unchanged")
+            .items[0]
+            .revision,
+        1
+    );
+    let mut allowed = args.to_vec();
+    allowed.push("--secret-stdout");
+    let issued = run_group_cli(runtime.clone(), &allowed);
+    assert!(issued.status.success());
+    let result: serde_json::Value =
+        serde_json::from_slice(&issued.stdout).expect("one-time response");
+    let secret = result["result"]["credential"]
+        .as_str()
+        .expect("credential field")
+        .to_owned();
+    assert_eq!(secret.len(), 64);
+    assert!(!String::from_utf8_lossy(&issued.stderr).contains(&secret));
+    assert!(
+        AlcomdClient::connect(config.clone().with_mcp_credential(secret.clone()))
+            .await
+            .is_ok()
+    );
+    let repeated = run_group_cli(runtime.clone(), &allowed);
+    assert!(!repeated.status.success());
+    assert_eq!(
+        owner
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .expect("no repeated issue")
+            .items[0]
+            .revision,
+        2
+    );
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    command.args(["--json", "--no-start-daemon"]);
+    if let Some(path) = &runtime {
+        command.arg("--runtime-dir").arg(path);
+    }
+    command.args([
+        "mcp",
+        "client",
+        "issue-credential",
+        &record.client_id,
+        "--expected-revision",
+        "2",
+        "--idempotency-key",
+        "cli-broken-output",
+        "--yes",
+        "--secret-stdout",
+    ]);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let output_path =
+        std::env::temp_dir().join(format!("alcomd-cli-stdout-{}-{nonce}", std::process::id()));
+    let mut marker = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output_path)
+        .expect("owned output marker");
+    std::io::Write::write_all(&mut marker, b"preserved output sentinel").expect("sentinel");
+    drop(marker);
+    // A valid read-only OS handle deterministically rejects writes; a closed anonymous
+    // pipe did not provide a reliable failure on the first Windows run.
+    let read_only = std::fs::File::open(&output_path).expect("read-only output handle");
+    let failed = command
+        .stdout(Stdio::from(read_only))
+        .stderr(Stdio::piped())
+        .output()
+        .expect("join CLI");
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(error.contains("credential was issued, but output failed"));
+    assert!(!error.contains(&secret));
+    assert_eq!(
+        std::fs::read(&output_path).expect("preserved sentinel"),
+        b"preserved output sentinel"
+    );
+    std::fs::remove_file(output_path).expect("remove only owned output marker");
+    let current = owner
+        .mcp_clients_list(McpClientsListParams::default())
+        .await
+        .expect("authoritative final record");
+    assert_eq!(current.items[0].revision, 3);
+    assert!(current.items[0].grants.is_empty());
+    assert!(
+        AlcomdClient::connect(config.with_mcp_credential(secret))
+            .await
+            .is_err()
+    );
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("shutdown isolated Core").is_ok());
+    if let Some(path) = runtime {
+        let _ = std::fs::remove_dir_all(path);
+    }
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {

@@ -253,6 +253,17 @@ def main() -> int:
     backend = load_toml("extensions/first-party/alcomd-extension-discord/backend/Cargo.toml")["package"]
     require(backend["authors"] == workspace["authors"] and backend["homepage"] == workspace["homepage"],
             "Discord backend author/homepage do not match the product")
+    mcp_backend = load_toml("extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml")
+    require(mcp_backend["package"]["authors"] == workspace["authors"]
+            and mcp_backend["package"]["homepage"] == workspace["homepage"]
+            and mcp_backend["package"]["repository"] == PROJECT_REPOSITORY
+            and mcp_backend["package"]["license"] == PROJECT_LICENSE
+            and mcp_backend["package"]["rust-version"] == RUST_VERSION,
+            "MCP backend metadata does not match the product/toolchain")
+    require(mcp_backend["dependencies"]["wit-bindgen"] == {
+        "version": "=0.57.1", "default-features": False,
+        "features": ["macros", "realloc", "std"],
+    }, "Unexpected MCP guest binding features")
     require(product["product"]["version"] == "4.0.0-alpha.0", "Unexpected product version")
     require(
         product["identity"]["bundle_identifier"] == "com.vrclearn.alcomd",

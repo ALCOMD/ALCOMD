@@ -127,6 +127,7 @@ function Get-LockFileSnapshot {
         "Cargo.lock",
         "package-lock.json",
         "extensions/first-party/alcomd-extension-discord/backend/Cargo.lock"
+        "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock"
     )
     foreach ($relative in $lockFiles) {
         if (-not (Test-Path -LiteralPath $relative -PathType Leaf)) {
@@ -139,7 +140,7 @@ function Get-LockFileSnapshot {
 function Assert-LockFileSnapshot([string]$Before) {
     $after = Get-LockFileSnapshot
     if ($after -ne $Before) {
-        throw "One or more of the three required lock files changed while running the command."
+        throw "One or more required lock files changed while running the command."
     }
 }
 

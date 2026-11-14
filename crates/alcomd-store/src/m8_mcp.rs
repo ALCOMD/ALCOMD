@@ -34,7 +34,7 @@ fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
         grants,
     })
 }
-fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result<Vec<McpGrant>, E> {
+pub(super) fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result<Vec<McpGrant>, E> {
     let mut q=db.prepare("SELECT permission,resource_kind,resource_id FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=?2 ORDER BY permission,resource_kind,resource_id").map_err(unavailable)?;
     q.query_map(params![id, revision], |r| {
         Ok(McpGrant {
@@ -47,9 +47,15 @@ fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result<Vec<McpGra
     .collect::<Result<Vec<_>, _>>()
     .map_err(unavailable)
 }
-fn grants(db: &Connection, id: &str, revision: i64, items: Vec<McpGrant>) -> Result<(), E> {
+fn grants(
+    db: &Connection,
+    id: &str,
+    revision: i64,
+    items: Vec<McpGrant>,
+    check_projects: bool,
+) -> Result<(), E> {
     for g in items {
-        if g.resource_kind == "project" {
+        if check_projects && g.resource_kind == "project" {
             let exists: bool = db
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id=?1)",
@@ -77,6 +83,33 @@ fn write(
     command: W,
     now: u64,
 ) -> Result<R, E> {
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(unavailable)?;
+    let result = write_on(&tx, actor, key, command, now)?;
+    tx.commit().map_err(unavailable)?;
+    Ok(result)
+}
+
+pub(super) fn write_on(
+    tx: &rusqlite::Transaction<'_>,
+    actor: PrincipalId,
+    key: String,
+    mut command: W,
+    now: u64,
+) -> Result<R, E> {
+    if let W::ChangeGrants { add, remove, .. } = &mut command {
+        alcomd_application::validate_mcp_grant_delta(add, remove)?;
+        for items in [add, remove] {
+            items.sort_by(|a, b| {
+                (&a.permission, &a.resource_kind, &a.resource_id).cmp(&(
+                    &b.permission,
+                    &b.resource_kind,
+                    &b.resource_id,
+                ))
+            });
+        }
+    }
     let now = i64::try_from(now).map_err(|_| E::InvalidInput)?;
     let (method, input) = match &command {
         W::Create { name, grants } => ("mcp.clients.create", serde_json::json!([name, grants])),
@@ -92,6 +125,15 @@ fn write(
             "mcp.clients.issueCredential",
             serde_json::json!([id, expected]),
         ),
+        W::ChangeGrants {
+            id,
+            expected,
+            add,
+            remove,
+        } => (
+            "host-mcp-clients.change-grants",
+            serde_json::json!([id, expected, add, remove]),
+        ),
         W::Revoke { id, expected } => ("mcp.clients.revoke", serde_json::json!([id, expected])),
     };
     let digest = mcp_credential_hash(&input.to_string());
@@ -102,9 +144,6 @@ fn write(
             .collect::<String>(),
     )
     .map_err(unavailable)?;
-    let tx = db
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .map_err(unavailable)?;
     let replay=tx.query_row("SELECT request_fingerprint,response_json FROM idempotency_records WHERE principal_id=?1 AND method=?2 AND idempotency_key=?3",params![actor.as_str(),method,key],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(unavailable)?;
     if let Some((old, response)) = replay {
         if old != fingerprint {
@@ -116,7 +155,7 @@ fn write(
         let mut saved: serde_json::Value = serde_json::from_str(&response).map_err(unavailable)?;
         let client_id = saved["client"]["clientId"].as_str().ok_or(E::Unavailable)?;
         let revision = saved["grantRevision"].as_i64().ok_or(E::Unavailable)?;
-        let snapshot = grant_snapshot(&tx, client_id, revision)?;
+        let snapshot = grant_snapshot(tx, client_id, revision)?;
         saved["client"]["grants"] = serde_json::to_value(snapshot).map_err(unavailable)?;
         return Ok(R {
             client: serde_json::from_value(saved["client"].clone()).map_err(unavailable)?,
@@ -141,17 +180,18 @@ fn write(
                 params![id, format!("mcp:{id}"), name, now],
             )
             .map_err(unavailable)?;
-            grants(&tx, &id, 1, items)?;
+            grants(tx, &id, 1, items, true)?;
             id
         }
         command => {
             let (id, expected) = match &command {
                 W::SetGrants { id, expected, .. }
+                | W::ChangeGrants { id, expected, .. }
                 | W::Issue { id, expected, .. }
                 | W::Revoke { id, expected } => (id.to_string(), *expected),
                 W::Create { .. } => return Err(E::InvalidInput),
             };
-            let current = client(&tx, &id)?;
+            let current = client(tx, &id)?;
             if current.revoked_at_ms.is_some()
                 || current.revision != expected
                 || expected >= i64::MAX as u64
@@ -160,11 +200,46 @@ fn write(
             }
             match command {
                 W::SetGrants { grants: items, .. } => grants(
-                    &tx,
+                    tx,
                     &id,
                     i64::try_from(expected + 1).map_err(unavailable)?,
                     items,
+                    true,
                 )?,
+                W::ChangeGrants { add, remove, .. } => {
+                    let mut items = current.grants;
+                    if remove.iter().any(|g| !items.contains(g))
+                        || add.iter().any(|g| items.contains(g))
+                    {
+                        return Err(E::InvalidInput);
+                    }
+                    // Only additions require current project eligibility. Old orphan grants
+                    // remain removable; retaining one never creates a new authorization.
+                    for g in &add {
+                        if g.resource_kind == "project" {
+                            let exists: bool = tx
+                                .query_row(
+                                    "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id=?1)",
+                                    [&g.resource_id],
+                                    |r| r.get(0),
+                                )
+                                .map_err(unavailable)?;
+                            if !exists {
+                                return Err(E::InvalidInput);
+                            }
+                        }
+                    }
+                    items.retain(|g| !remove.contains(g));
+                    items.extend(add);
+                    alcomd_application::validate_mcp_grants(&items)?;
+                    grants(
+                        tx,
+                        &id,
+                        i64::try_from(expected + 1).map_err(unavailable)?,
+                        items,
+                        false,
+                    )?;
+                }
                 W::Issue { hash, .. } => {
                     tx.execute("UPDATE mcp_client_credentials SET revoked_at_ms=max(created_at_ms,?2) WHERE client_id=?1 AND revoked_at_ms IS NULL",params![id,now]).map_err(unavailable)?;
                     let cid = Uuid::new_v4().to_string();
@@ -190,7 +265,7 @@ fn write(
         }
     };
     let result = R {
-        client: client(&tx, &id)?,
+        client: client(tx, &id)?,
         credential_id,
     };
     let grant_revision = tx
@@ -208,7 +283,6 @@ fn write(
     let response=serde_json::json!({"client":metadata,"grantRevision":grant_revision,"credentialId":result.credential_id}).to_string();
     // Record only the request digest and non-secret result, including for issuance.
     tx.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES (?1,?2,?3,?4,'completed',?5,?6)",params![actor.as_str(),method,key,fingerprint,response,now]).map_err(unavailable)?;
-    tx.commit().map_err(unavailable)?;
     Ok(result)
 }
 

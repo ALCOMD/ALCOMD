@@ -1,0 +1,23 @@
+{
+  "artifact": "crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm",
+  "sha256": "ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e",
+  "toolchain": "1.97.1",
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "bindings": "wit-bindgen 0.57.1; default-features=false; macros/realloc/std",
+  "encoder": "wit-component 0.254.2 via cargo xtask component",
+  "inputs": {
+    "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml": "7aef145f377ede9a4edf8fa22427b635f18ce6c1a6807193d9b95ba8f66cc798",
+    "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock": "85ae23ec0c5fca1501dbc25fa461e0a334951a6deea0c407805081a1815feb6f",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "00e0303d97d79ff50b324fc8bca1bdd77ae8291a10819be04453e1954573a6ee",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "c707e6efa0d6038ce72713ca03844ca75a64dd5aaa32071b69b099d0492914f5",
+    "specs/extensions/wit/mcp-management-v1/management.wit": "c4ca610647aa3dff0430cc2132cfb16b7c42a12104bc052fcae640a51c6fbf0f",
+    "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
+    "specs/extensions/wit/mcp-management-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd"
+  }
+}

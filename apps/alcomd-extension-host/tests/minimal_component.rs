@@ -9,6 +9,114 @@ use alcomd_extensions::{
 use serde_json::json;
 
 #[test]
+fn management_component_links_new_import_and_keeps_permission_failure_readable() {
+    let root = std::env::temp_dir().join(format!(
+        "alcomd-management-host-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).expect("owned directory");
+    let component = root.join("extension.wasm");
+    std::fs::write(
+        &component,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm"),
+    )
+    .expect("actual guest component");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+        .args(["--extension", "dev.alcomd.fixture", "--component"])
+        .arg(&component)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("owned Host");
+    let mut input = BufWriter::new(child.stdin.take().expect("stdin"));
+    let mut output = BufReader::new(child.stdout.take().expect("stdout"));
+    let epoch = "10000000-0000-4000-8000-000000000001";
+    let instance = "20000000-0000-4000-8000-000000000002";
+    let lease = "30000000-0000-4000-8000-000000000003";
+    send(
+        &mut input,
+        epoch,
+        instance,
+        1,
+        HostMessageBody::Bootstrap {
+            nonce: "a".repeat(64),
+            lease_id: lease.into(),
+            extension_id: "dev.alcomd.fixture".into(),
+            api_world: "alcomd:extension/extension-v1@1.0.0".into(),
+            limits: RuntimeLimits::default(),
+        },
+    );
+    assert!(matches!(
+        read_host_message(&mut output).expect("ready").body,
+        HostMessageBody::Ready { .. }
+    ));
+    let context = invocation_context_id();
+    send(
+        &mut input,
+        epoch,
+        instance,
+        2,
+        HostMessageBody::InvokeExport {
+            request_id: "open".into(),
+            invocation_context_id: context.clone(),
+            export: "ui.open".into(),
+            input: json!({"sessionId":"00000000-0000-4000-8000-000000000005","locale":"zh-CN"}),
+        },
+    );
+    let call = read_host_message(&mut output).expect("new WIT capability call");
+    let HostMessageBody::CapabilityCall {
+        call_id,
+        invocation_context_id: actual_context,
+        lease_id,
+        capability,
+        ..
+    } = call.body
+    else {
+        panic!("guest did not call the new Host import")
+    };
+    assert_eq!(capability, "host-mcp-clients.list");
+    assert_eq!(actual_context, context);
+    assert_eq!(lease_id, lease);
+    // This is a Host ABI/consumer test. Real Core permission authority is tested separately.
+    send(
+        &mut input,
+        epoch,
+        instance,
+        3,
+        HostMessageBody::CapabilityResult {
+            call_id,
+            result: Some(json!({"error":{"code":"permission-denied","diagnosticId":null}})),
+            error: None,
+        },
+    );
+    let result = read_host_message(&mut output).expect("readable error document");
+    let HostMessageBody::ExportResult {
+        result: Some(document),
+        error: None,
+        ..
+    } = result.body
+    else {
+        panic!("guest failed to render typed permission error")
+    };
+    let document = serde_json::from_value::<alcomd_protocol::UiDocument>(document)
+        .expect("normal Portable UI contract");
+    document.validate().expect("same public UI validator");
+    let text = serde_json::to_string(&document).expect("document");
+    assert!(text.contains("没有执行此操作的权限"));
+    assert!(!text.contains("permission-denied"));
+    assert!(!text.contains("创建客户端"));
+    send(&mut input, epoch, instance, 4, HostMessageBody::Shutdown);
+    drop(input);
+    assert!(child.wait().expect("Host exit").success());
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+#[test]
 fn minimal_component_activates_revokes_and_deactivates() {
     let unique = SystemTime::now()
         .duration_since(UNIX_EPOCH)

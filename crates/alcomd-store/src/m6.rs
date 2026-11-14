@@ -272,7 +272,8 @@ fn require_extension_grants(
                 SELECT 1 FROM extension_grants g
                 WHERE g.extension_id=?1 AND g.permission_name=?2 AND g.state='granted'
                   AND ((?2='background.run' AND g.resource_kind='Extension' AND g.resource_id=?1)
-                    OR (?2='projects.read' AND g.resource_kind='Project'))
+                    OR (?2='projects.read' AND g.resource_kind='Project')
+                    OR (?2 IN ('mcp.clients.read','mcp.clients.manage') AND g.resource_kind='Global' AND g.resource_id='*'))
              )",
                 params![extension_id, permission],
                 |row| row.get(0),
@@ -2017,7 +2018,7 @@ fn insert_operation_event(
     Ok(())
 }
 
-fn validate_lease(
+pub(super) fn validate_lease(
     connection: &Connection,
     lease: &ExtensionInstanceLease,
     now_ms: u64,
@@ -2118,6 +2119,9 @@ fn save_idempotent<T: Serialize>(
 fn valid_scope(extension_id: &str, permission: &str, kind: &str, id: &str) -> bool {
     (permission == "background.run" && kind == "Extension" && id == extension_id)
         || (permission == "projects.read" && kind == "Project" && uuid::Uuid::parse_str(id).is_ok())
+        || (matches!(permission, "mcp.clients.read" | "mcp.clients.manage")
+            && kind == "Global"
+            && id == "*")
 }
 
 fn valid_data_key(key: &str) -> bool {

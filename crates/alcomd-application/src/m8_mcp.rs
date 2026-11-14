@@ -45,6 +45,13 @@ pub enum McpIdentityWrite {
         expected: u64,
         grants: Vec<McpGrant>,
     },
+    /// Internal bounded Host command; not a new Core RPC.
+    ChangeGrants {
+        id: McpClientId,
+        expected: u64,
+        add: Vec<McpGrant>,
+        remove: Vec<McpGrant>,
+    },
     Issue {
         id: McpClientId,
         expected: u64,
@@ -109,6 +116,24 @@ pub fn validate_mcp_grants(grants: &[McpGrant]) -> Result<(), McpIdentityError> 
     }
     if permissions.len() > 64 {
         return Err(McpIdentityError::LimitExceeded);
+    }
+    Ok(())
+}
+
+pub fn validate_mcp_grant_delta(
+    add: &[McpGrant],
+    remove: &[McpGrant],
+) -> Result<(), McpIdentityError> {
+    if add.len() > 128 || remove.len() > 128 {
+        return Err(McpIdentityError::LimitExceeded);
+    }
+    if add.is_empty() && remove.is_empty() {
+        return Err(McpIdentityError::InvalidInput);
+    }
+    validate_mcp_grants(add)?;
+    validate_mcp_grants(remove)?;
+    if add.iter().any(|g| remove.contains(g)) {
+        return Err(McpIdentityError::InvalidInput);
     }
     Ok(())
 }
@@ -231,6 +256,7 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
             return Err(McpIdentityError::InvalidInput);
         }
         if let McpIdentityWrite::SetGrants { expected, .. }
+        | McpIdentityWrite::ChangeGrants { expected, .. }
         | McpIdentityWrite::Issue { expected, .. }
         | McpIdentityWrite::Revoke { expected, .. } = &command
             && (*expected == 0 || *expected > i64::MAX as u64)
@@ -248,6 +274,9 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
                 validate_mcp_grants(grants)?;
             }
             McpIdentityWrite::SetGrants { grants, .. } => validate_mcp_grants(grants)?,
+            McpIdentityWrite::ChangeGrants { add, remove, .. } => {
+                validate_mcp_grant_delta(add, remove)?;
+            }
             McpIdentityWrite::Issue { .. } if access.principal() != &PrincipalId::local_owner() => {
                 return Err(McpIdentityError::PermissionDenied);
             }

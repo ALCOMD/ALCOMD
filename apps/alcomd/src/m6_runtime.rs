@@ -599,6 +599,50 @@ fn route_capability(
     }
     let runtime = tokio::runtime::Handle::current();
     match capability {
+        capability if capability.starts_with("host-mcp-clients.") => {
+            let invalid = || json!({"error": alcomd_application::ManagementError::from(alcomd_application::ManagementErrorCode::InvalidArgument)});
+            let ui = invocation
+                .ui_authority
+                .as_ref()
+                .ok_or_else(|| error(M6ErrorCode::ScopeDenied))?;
+            if invocation_cancelled(invocation) {
+                return Ok(
+                    json!({"error": alcomd_application::ManagementError::from(alcomd_application::ManagementErrorCode::Cancelled)}),
+                );
+            }
+            let Some(mut input) = input.as_object().cloned() else {
+                return Ok(invalid());
+            };
+            if input.contains_key("method") {
+                return Ok(invalid());
+            }
+            if let Some(id) = input.get("clientId")
+                && !id.as_str().is_some_and(|id| {
+                    alcomd_application::McpClientId::parse(id)
+                        .is_ok_and(|value| value.to_string() == id)
+                })
+            {
+                return Ok(invalid());
+            }
+            input.insert(
+                "method".into(),
+                Value::String(
+                    capability
+                        .trim_start_matches("host-mcp-clients.")
+                        .to_owned(),
+                ),
+            );
+            let Ok(request) = serde_json::from_value(Value::Object(input)) else {
+                return Ok(invalid());
+            };
+            let result =
+                runtime.block_on(authority.mcp_management(lease, ui.clone(), request, now_ms()?));
+            // Typed business result is distinct from the private channel's transport result.
+            Ok(match result {
+                Ok(value) => json!({"ok": value}),
+                Err(failure) => json!({"error": failure}),
+            })
+        }
         "host-projects.get-summary" => {
             let project_id = input
                 .get("projectId")
@@ -673,11 +717,27 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
             "host-projects.get-summary" | "host-data.get" | "host-data.set" | "host-data.delete"
         ),
         ExtensionInvocationKind::InteractiveUiRender => {
-            matches!(capability, "host-projects.get-summary" | "host-data.get")
+            matches!(
+                capability,
+                "host-projects.get-summary"
+                    | "host-data.get"
+                    | "host-mcp-clients.list"
+                    | "host-mcp-clients.grants"
+                    | "host-mcp-clients.projects"
+            )
         }
         ExtensionInvocationKind::InteractiveUiAction => matches!(
             capability,
-            "host-projects.get-summary" | "host-data.get" | "host-data.set" | "host-data.delete"
+            "host-projects.get-summary"
+                | "host-data.get"
+                | "host-data.set"
+                | "host-data.delete"
+                | "host-mcp-clients.list"
+                | "host-mcp-clients.grants"
+                | "host-mcp-clients.projects"
+                | "host-mcp-clients.create"
+                | "host-mcp-clients.change-grants"
+                | "host-mcp-clients.revoke"
         ),
         ExtensionInvocationKind::InteractiveUiClose => false,
     }
@@ -992,6 +1052,36 @@ mod tests {
 
     #[test]
     fn portable_ui_capability_matrix_is_explicit_and_closed() {
+        for capability in [
+            "host-mcp-clients.list",
+            "host-mcp-clients.grants",
+            "host-mcp-clients.projects",
+            "host-mcp-clients.create",
+            "host-mcp-clients.change-grants",
+            "host-mcp-clients.revoke",
+        ] {
+            assert!(!capability_allowed(
+                ExtensionInvocationKind::Background,
+                capability
+            ));
+            assert!(!capability_allowed(
+                ExtensionInvocationKind::InteractiveUiClose,
+                capability
+            ));
+            assert!(capability_allowed(
+                ExtensionInvocationKind::InteractiveUiAction,
+                capability
+            ));
+            assert_eq!(
+                capability_allowed(ExtensionInvocationKind::InteractiveUiRender, capability),
+                matches!(
+                    capability,
+                    "host-mcp-clients.list"
+                        | "host-mcp-clients.grants"
+                        | "host-mcp-clients.projects"
+                )
+            );
+        }
         for capability in [
             "host-projects.get-summary",
             "host-data.get",

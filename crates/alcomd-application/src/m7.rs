@@ -265,6 +265,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
         locale: String,
         now_ms: u64,
     ) -> Result<M7UiOpenResult, M7Error> {
+        let preparation_started_at = std::time::Instant::now();
         require_ui_access(access, &extension_id)?;
         let locale =
             canonical_locale(&locale).ok_or_else(|| M7Error::new(M7ErrorCode::InvalidInput))?;
@@ -323,6 +324,12 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
             let mut coordinator = self.sessions.lock().await;
             coordinator.bind_lease(&session_id, &lease)?;
         }
+        // Host creation/verification/Component compilation is preparation, not the
+        // first render export. Issue its unchanged 2s budget at actual dispatch;
+        // the coordinator still caps it at the original absolute/idle deadlines.
+        let invocation_now_ms = now_ms.saturating_add(
+            u64::try_from(preparation_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+        );
         let authority = {
             let coordinator = self.sessions.lock().await;
             coordinator.invocation(
@@ -331,7 +338,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
                 &connection_id,
                 ExtensionInvocationKind::InteractiveUiRender,
                 0,
-                now_ms,
+                invocation_now_ms,
             )?
         };
         let document = match self
@@ -366,7 +373,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
 
         let snapshot = {
             let mut coordinator = self.sessions.lock().await;
-            coordinator.commit_open(&session_id, document, now_ms)?
+            coordinator.commit_open(&session_id, document, invocation_now_ms)?
         };
         Ok(M7UiOpenResult {
             session: M7UiSessionInfo {
@@ -1823,6 +1830,53 @@ mod tests {
                 .code(),
             M7ErrorCode::SnapshotStale
         );
+    }
+
+    #[test]
+    fn prepared_host_uses_fresh_render_budget_and_keeps_session_deadline_cap() {
+        let (mut coordinator, access) = open_session();
+        let session = "00000000-0000-4000-8000-000000000004";
+        let before = coordinator
+            .invocation(
+                session,
+                &access,
+                "connection-a",
+                ExtensionInvocationKind::InteractiveUiRender,
+                1,
+                1000,
+            )
+            .expect("initial authority");
+        assert_eq!(before.deadline_ms, 3000);
+        // Component preparation outlived the first authority; the render is a new invocation.
+        let prepared = 8000;
+        assert!(before.deadline_ms < prepared);
+        let render = coordinator
+            .invocation(
+                session,
+                &access,
+                "connection-a",
+                ExtensionInvocationKind::InteractiveUiRender,
+                1,
+                prepared,
+            )
+            .expect("current render");
+        assert_eq!(render.deadline_ms - prepared, 2000);
+        coordinator
+            .sessions
+            .get_mut(session)
+            .expect("session")
+            .absolute_deadline_ms = 8100;
+        let capped = coordinator
+            .invocation(
+                session,
+                &access,
+                "connection-a",
+                ExtensionInvocationKind::InteractiveUiRender,
+                1,
+                prepared,
+            )
+            .expect("capped render");
+        assert_eq!(capped.deadline_ms, 8100);
     }
 
     #[test]

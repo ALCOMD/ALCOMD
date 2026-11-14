@@ -1,0 +1,63 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/extensions/mcp-management-v1.json",
+    "title": "Approved MCP management Host data contract",
+    "x-interface": "alcomd:mcp-management/clients@1.0.0",
+    "x-max-serialized-bytes": 65536,
+    "oneOf": [{"$ref": "#/$defs/request"}, {"$ref": "#/$defs/result"}],
+    "$defs": {
+        "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "cursor": {"type": ["string", "null"], "minLength": 1, "maxLength": 512, "pattern": "^[\\x00-\\x7f]+$"},
+        "key": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\x00-\\x7f]+$"},
+        "grant": {
+            "type": "object", "additionalProperties": false,
+            "required": ["permission", "resourceKind", "resourceId"],
+            "properties": {
+                "permission": {"enum": ["projects.read", "packages.manage", "state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "packages.read"]},
+                "resourceKind": {"enum": ["project", "global"]},
+                "resourceId": {"type": "string", "minLength": 1, "maxLength": 128}
+            },
+            "oneOf": [
+                {"properties": {"permission": {"enum": ["projects.read", "packages.manage"]}, "resourceKind": {"const": "project"}, "resourceId": {"$ref": "#/$defs/id"}}},
+                {"properties": {"permission": {"enum": ["state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "packages.read"]}, "resourceKind": {"const": "global"}, "resourceId": {"const": "*"}}}
+            ]
+        },
+        "request": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["method"], "properties": {"method": {"const": "list"}, "cursor": {"$ref": "#/$defs/cursor"}, "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 64}}},
+                {"type": "object", "additionalProperties": false, "required": ["method", "clientId", "expectedRevision"], "properties": {"method": {"const": "grants"}, "clientId": {"$ref": "#/$defs/id"}, "expectedRevision": {"$ref": "#/$defs/revision"}, "cursor": {"$ref": "#/$defs/cursor"}, "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 128}}},
+                {"type": "object", "additionalProperties": false, "required": ["method"], "properties": {"method": {"const": "projects"}, "cursor": {"$ref": "#/$defs/cursor"}, "limit": {"type": ["integer", "null"], "minimum": 1, "maximum": 64}}},
+                {"type": "object", "additionalProperties": false, "required": ["method", "displayName", "idempotencyKey"], "properties": {"method": {"const": "create"}, "displayName": {"type": "string", "minLength": 1, "maxLength": 128}, "idempotencyKey": {"$ref": "#/$defs/key"}}},
+                {"type": "object", "additionalProperties": false, "required": ["method", "clientId", "expectedRevision", "add", "remove", "idempotencyKey"], "properties": {"method": {"const": "change-grants"}, "clientId": {"$ref": "#/$defs/id"}, "expectedRevision": {"$ref": "#/$defs/revision"}, "add": {"type": "array", "items": {"$ref": "#/$defs/grant"}, "maxItems": 128, "uniqueItems": true}, "remove": {"type": "array", "items": {"$ref": "#/$defs/grant"}, "maxItems": 128, "uniqueItems": true}, "idempotencyKey": {"$ref": "#/$defs/key"}}},
+                {"type": "object", "additionalProperties": false, "required": ["method", "clientId", "expectedRevision", "idempotencyKey"], "properties": {"method": {"const": "revoke"}, "clientId": {"$ref": "#/$defs/id"}, "expectedRevision": {"$ref": "#/$defs/revision"}, "idempotencyKey": {"$ref": "#/$defs/key"}}}
+            ]
+        },
+        "client": {
+            "type": "object", "additionalProperties": false,
+            "required": ["clientId", "displayName", "revision", "createdAtMs", "revokedAtMs", "grantCount"],
+            "properties": {
+                "clientId": {"$ref": "#/$defs/id"}, "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
+                "revision": {"$ref": "#/$defs/revision"}, "createdAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "revokedAtMs": {"type": ["integer", "null"], "minimum": 0, "maximum": 9223372036854775807}, "grantCount": {"type": "integer", "minimum": 0, "maximum": 4096}
+            }
+        },
+        "clientPage": {"type": "object", "additionalProperties": false, "required": ["items", "nextCursor", "canManage"], "properties": {"items": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/client"}}, "nextCursor": {"$ref": "#/$defs/cursor"}, "canManage": {"type": "boolean"}}},
+        "grantPage": {"type": "object", "additionalProperties": false, "required": ["revision", "items", "nextCursor"], "properties": {"revision": {"$ref": "#/$defs/revision"}, "items": {"type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/grant"}}, "nextCursor": {"$ref": "#/$defs/cursor"}}},
+        "projectPage": {"type": "object", "additionalProperties": false, "required": ["items", "nextCursor"], "properties": {"items": {"type": "array", "maxItems": 64, "items": {"type": "object", "additionalProperties": false, "required": ["projectId", "name"], "properties": {"projectId": {"$ref": "#/$defs/id"}, "name": {"type": "string", "maxLength": 120}}}}, "nextCursor": {"$ref": "#/$defs/cursor"}}},
+        "response": {"oneOf": [
+            {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "clients"}, "value": {"$ref": "#/$defs/clientPage"}}},
+            {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "grants"}, "value": {"$ref": "#/$defs/grantPage"}}},
+            {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "projects"}, "value": {"$ref": "#/$defs/projectPage"}}},
+            {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "client"}, "value": {"$ref": "#/$defs/client"}}}
+        ]},
+        "error": {"type": "object", "additionalProperties": false, "required": ["code", "diagnosticId"], "properties": {
+            "code": {"enum": ["invalid-argument", "permission-denied", "scope-denied", "lease-expired", "lease-revoked", "revision-conflict", "idempotency-conflict", "resource-limit", "cancelled", "unavailable", "write-outcome-unknown", "internal-error"]},
+            "diagnosticId": {"type": ["string", "null"], "maxLength": 36}
+        }, "if": {"properties": {"code": {"not": {"const": "internal-error"}}}}, "then": {"properties": {"diagnosticId": {"const": null}}}},
+        "result": {"oneOf": [
+            {"type": "object", "additionalProperties": false, "required": ["ok"], "properties": {"ok": {"$ref": "#/$defs/response"}}},
+            {"type": "object", "additionalProperties": false, "required": ["error"], "properties": {"error": {"$ref": "#/$defs/error"}}}
+        ]}
+    }
+}

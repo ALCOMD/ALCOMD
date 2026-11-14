@@ -152,8 +152,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match command.as_str() {
         "check" => check(&root),
         "tree" => print_tree(&root),
+        "component" => encode_component(),
         other => Err(format!("unknown xtask command: {other}").into()),
     }
+}
+
+/// Development packaging only: the encoder validates the component before creating a new file.
+fn encode_component() -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+    let mut args = env::args().skip(2);
+    let input = args
+        .next()
+        .ok_or("usage: cargo xtask component <core.wasm> <new-component.wasm>")?;
+    let output = args.next().ok_or("missing component output path")?;
+    if args.next().is_some() {
+        return Err("unexpected component argument".into());
+    }
+    let bytes = fs::read(input)?;
+    let component = wit_component::ComponentEncoder::default()
+        .module(&bytes)?
+        .validate(true)
+        .encode()?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output)?;
+    if let Err(error) = file.write_all(&component).and_then(|()| file.sync_all()) {
+        drop(file);
+        // Only this invocation's exclusively-created output can be removed.
+        let _ = fs::remove_file(&output);
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 fn workspace_root() -> PathBuf {

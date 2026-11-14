@@ -282,11 +282,22 @@ impl HostMessage {
                             | "host-data.get"
                             | "host-data.set"
                             | "host-data.delete"
+                            | "host-mcp-clients.list"
+                            | "host-mcp-clients.grants"
+                            | "host-mcp-clients.projects"
+                            | "host-mcp-clients.create"
+                            | "host-mcp-clients.change-grants"
+                            | "host-mcp-clients.revoke"
                     )
                 {
                     return Err(HostProtocolError::InvalidEnvelope);
                 }
                 validate_value(input)?;
+                if capability.starts_with("host-mcp-clients.")
+                    && serde_json::to_vec(input).map_or(true, |bytes| bytes.len() > 65_536)
+                {
+                    return Err(HostProtocolError::FrameLimit);
+                }
             }
             HostMessageBody::CapabilityResult {
                 call_id,
@@ -641,6 +652,41 @@ mod tests {
             sequence: 1,
             body,
         }
+    }
+
+    #[test]
+    fn management_channel_has_a_narrower_payload_bound_and_no_credential_capability() {
+        let call = |capability: &str, input| {
+            message(HostMessageBody::CapabilityCall {
+                call_id: "management-call".into(),
+                invocation_context_id: invocation_context_id(),
+                lease_id: "00000000-0000-4000-8000-000000000003".into(),
+                capability: capability.into(),
+                input,
+            })
+        };
+        // These values satisfy the old 256 KiB WIT bound; the new interface is stricter.
+        let at_limit = Value::String("x".repeat(65_534));
+        assert_eq!(serde_json::to_vec(&at_limit).expect("JSON").len(), 65_536);
+        assert!(
+            call("host-mcp-clients.list", at_limit)
+                .validate_bounds()
+                .is_ok()
+        );
+        let too_large = Value::String("x".repeat(65_535));
+        assert!(
+            call("host-data.get", too_large.clone())
+                .validate_bounds()
+                .is_ok()
+        );
+        assert_eq!(
+            call("host-mcp-clients.list", too_large).validate_bounds(),
+            Err(HostProtocolError::FrameLimit)
+        );
+        assert_eq!(
+            call("host-mcp-clients.issue-credential", Value::Null).validate_bounds(),
+            Err(HostProtocolError::InvalidEnvelope)
+        );
     }
 
     #[test]

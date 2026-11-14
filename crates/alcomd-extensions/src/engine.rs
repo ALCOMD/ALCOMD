@@ -407,7 +407,9 @@ fn required_interfaces_supported(interfaces: &[String]) -> bool {
     interfaces.iter().all(|interface| {
         matches!(
             interface.as_str(),
-            "alcomd:extension/host-data@1.0.0" | "alcomd:extension/host-projects@1.0.0"
+            "alcomd:extension/host-data@1.0.0"
+                | "alcomd:extension/host-projects@1.0.0"
+                | "alcomd:mcp-management/clients@1.0.0"
         )
     })
 }
@@ -495,4 +497,25 @@ fn test_kill_gate(checkpoint: &str) -> Result<(), M6Error> {
 #[cfg(not(feature = "test-kill-gates"))]
 fn test_kill_gate(_checkpoint: &str) -> Result<(), M6Error> {
     Ok(())
+}
+
+#[cfg(test)]
+mod management_interface_tests {
+    use super::required_interfaces_supported;
+
+    #[test]
+    fn additive_management_import_keeps_unknown_and_future_versions_rejected() {
+        assert!(required_interfaces_supported(&[]));
+        assert!(required_interfaces_supported(&[
+            "alcomd:extension/host-data@1.0.0".into(),
+            "alcomd:mcp-management/clients@1.0.0".into(),
+        ]));
+        for unsupported in [
+            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/issue-credential@1.0.0",
+            "wasi:filesystem/types@0.2.0",
+        ] {
+            assert!(!required_interfaces_supported(&[unsupported.into()]));
+        }
+    }
 }

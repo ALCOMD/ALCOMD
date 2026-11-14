@@ -14,9 +14,9 @@ component = "component/extension.wasm"
 protocol = "portable-v1"
 
 [interfaces]
-required = []
+required = ["alcomd:mcp-management/clients@1.0.0"]
 optional = []
 
 [permissions]
-required = []
-optional = []
+required = ["mcp.clients.read"]
+optional = ["mcp.clients.manage", "projects.read"]

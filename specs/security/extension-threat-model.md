@@ -4,6 +4,13 @@
 
 ## Assets 与 trust boundaries
 
+M8 approved management bridge adds only bounded MCP client administration through Core use cases
+(`../extensions/mcp-management-v1.md`). It adds no ambient WASI authority. Mandatory negative vectors:
+forged/stale lease and UI context; one-sided permissions; project-scope escalation; grant revocation
+and package changes during paging or write acceptance; oversized grants; idempotency replay after
+revocation; accepted-write response loss; accidental credential/log disclosure. Grant checks and
+acceptance/replay share one Store transaction. First-party guests use the same interface and sandbox.
+
 - authority：ExtensionId/Principal/grant/scope/revision、official publisher policy、Operation/Plan authority；
 - confidentiality：project/private path、extension-owned data、credential、argv/environment、Host internal channel；
 - integrity：`.alcomdextension` content、Manifest/WIT/component、state.db、Project files、registry、journal；

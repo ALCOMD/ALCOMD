@@ -44,5 +44,9 @@ ABI v1 exact shape 冻结在 `abi-compatibility-v1.json`；old guest/new host fi
 
 ## Stable WIT error
 
+M8 approved additive interface: `alcomd:mcp-management/clients@1.0.0`, negotiated by Manifest.
+Its `management-v1` world includes this frozen world and adds only the independent import.
+Its types/errors are independent; see `mcp-management-v1.md`. No old signature or record changes.
+
 `extension-error.code` 是 machine fact。`diagnostic-id` 只允许用于 `internal-error`，不得包含 path、trap backtrace、
 environment、argv、token 或 extension-owned value。lease/grant/scope error 在 guest boundary 分别保持稳定。

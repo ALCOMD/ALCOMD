@@ -101,6 +101,7 @@ get_lock_file_snapshot() {
         Cargo.lock
         package-lock.json
         extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+        extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
     )
     local lock_file
     local hashes=()
@@ -120,7 +121,7 @@ assert_lock_file_snapshot() {
     local after
     after="$(get_lock_file_snapshot)"
     if [[ "$after" != "$before" ]]; then
-        echo "One or more of the three required lock files changed while running the command." >&2
+        echo "One or more required lock files changed while running the command." >&2
         exit 1
     fi
 }

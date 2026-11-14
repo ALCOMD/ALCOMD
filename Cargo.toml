@@ -74,6 +74,7 @@ unicode-normalization = { version = "=0.1.25", default-features = false, feature
 zip = { version = "=9.1.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ed25519-dalek = { version = "=3.0.0", default-features = false }
 wasmtime = { version = "=48.0.8", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
+wit-component = { version = "=0.254.2", default-features = false }
 open = { version = "=5.4.2", default-features = false }
 rmcp = { version = "=3.10.0", default-features = false, features = ["server", "transport-io"] }
 hyper = { version = "=1.11.0", default-features = false, features = ["server", "http1"] }

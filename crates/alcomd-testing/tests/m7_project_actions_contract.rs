@@ -99,7 +99,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 34);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 35);
 }
 
 #[test]
@@ -462,7 +462,7 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
     assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 34);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 35);
 }
 
 #[test]
@@ -623,7 +623,7 @@ fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection(
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR"));
     assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 34);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 35);
     assert!(ACTIVE_UNITY_MIGRATION.contains("DROP TABLE project_editor_preferences"));
     assert_eq!(
         active_unity["$defs"]["projectUnityLaunchConfig"]["required"],
