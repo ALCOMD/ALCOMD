@@ -6,7 +6,7 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-当前[管理扩展本地候选](exec-plans/M8-mcp-protocol-and-management.md#管理扩展本地候选与实际验证2026-11-14)为`30e7f7d1c3448da8b07c77787bac58b40be4b33e`，本地定向验证通过、远端待验证，尚未人工验收。已实现获批独立Host/WIT六函数、实际Portable UI guest、授权分页/原子差量与撤销、local-owner CLI一次性凭据入口；can-manage和State35均按追加审批落实。不新增Core RPC、Config或权限名称。真实隔离Core/Host/Component及CLI各具名用例通过；关联浏览器首轮15/1（创建页面时Target crashed）、该项单独复验1/0，均保留，不拼成完整通过。1040份输入与逐项结果见ExecPlan，未重跑Workspace/浏览器全套/Tauri release。原运行数据/程序未改，未恢复桌面控制；完整OAuth、实时观测、正式默认分发及原生人工查看仍未完成。M8保持IN_PROGRESS，不自动推送。
+当前[管理扩展候选与Hosted结果](exec-plans/M8-mcp-protocol-and-management.md#管理候选推送与hosted验证2026-11-14)：所有者批准后，四笔完整提交链039ea3c→15e9b2b→30e7f7d→dcc76ff已普通快进推送至`dcc76ffe22005a17ad787c76fe8412d903e20ea0`，推送前工作树干净。同SHA CodeQL `43601727390`四语言成功；CI `43601727656`已全部终态、整体failure：Windows整个job成功（完整Check/CLI/release/Tauri/锁/diff、Chromium单轮704/0、零重试）；Ubuntu/macOS均在CLI真实输出故障模块1/1失败，不能记为三平台通过。定位后已本地窄修`db5b60a7cf6af323718e118dd4d92de5e2b07c63`：一次性凭据不再吞掉真实输出错误或将断管算作成功，原测试断言保留并增补闭管道/flush回归；Windows单元8/0、真实IPC2/0、严格Clippy及metadata/xtask/fmt/diff通过，修复尚未推送、Unix与远端待验证。此前管理Core/Host/Component本地证据及浏览器15/1＋单项1/0分别保留，不拼接轮次。原运行数据/程序未改，未恢复桌面控制；完整OAuth、实时观测、正式默认分发及原生人工查看仍未完成。M8保持IN_PROGRESS。
 
 M8 当前[执行与复用记录](exec-plans/M8-mcp-protocol-and-management.md)：所有者再次确认后，静态合同修复`5bfbc90`与记录已普通快进推送至`3ccc3f428ddadd6b113777b77cce7fe6fa78506d`。同SHA CI `43383251231`三平台完整成功，分别完成严格检查、Rust/合同验证、release/Tauri构建及Chromium单轮703/0（零重试）；CodeQL `43383250817`四语言成功。本批冻结STDIO、客户端身份及六工具卸载切片已取得本地与同SHA远端技术通过证据；真实身份、实际包卸载、在途取消和截断写响应风险用例在三平台均通过。历史失败与本地复现结果继续保留，未拼接为完整通过；本次不重复本地全量验证或推送纯状态记录。该远端基线不含HTTP；HTTP首片的最新结果见下一段，安装/搜索/重装的来源委托仍未实施，当时未实施的管理扩展/Host桥现已有首段所述本地候选，M8保持IN_PROGRESS，不重开M7，不宣布整个M8完成；原Core/GUI及原数据未替换或迁移。
 

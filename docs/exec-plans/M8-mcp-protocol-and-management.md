@@ -621,7 +621,7 @@ resource_kind CHECK仅允许Extension/Project，resource_id最短3字节，组�
 
 ### 管理扩展本地候选与实际验证（2026-11-14）
 
-代码候选`30e7f7d1c3448da8b07c77787bac58b40be4b33e`，在标准目录/main、真实Windows用户`cqmhv-dt\m2922`本地提交；本批没有推送或远端运行。前序合同提交15e9b2b和远端记录039ea3c继续保留。9fea7b6的CI/CodeQL成功只证明旧HTTP候选，不覆盖此批新增代码。M8仍进行中，本片记为本地定向验证通过、远端及人工查看待验证。
+推送前代码候选`30e7f7d1c3448da8b07c77787bac58b40be4b33e`，在标准目录/main、真实Windows用户`cqmhv-dt\m2922`本地提交；本节记录当时尚未推送的本地证据，后续推送与远端结果见下一节。前序合同提交15e9b2b和远端记录039ea3c继续保留。9fea7b6的CI/CodeQL成功只证明旧HTTP候选，不覆盖此批新增代码。M8仍进行中，本片记为本地定向验证通过、远端及人工查看待验证。
 
 已接通实际Core→application/Store接受事务→独立Host/WIT→普通沙箱Component→原Portable UI renderer；管理界面可以登记零授权客户端、分页查看、审阅添加/删除授权、处理revision冲突及永久撤销。可选管理权限由Core的can-manage提示控制显示，写入始终重新校验；项目选择只来自双方可读交集，孤立授权仍可删除。接受后的写结果丢失不回滚、不自动重试。CLI复用现有typed client和一次性签发RPC，扩展看不到凭据。共享Material权限弹窗只增加既有MCP全局权限映射，没有第二套GUI或身份系统。
 
@@ -646,7 +646,7 @@ resource_kind CHECK仅允许Extension/Project，resource_id最短3字节，组�
 
 真实流程已证明扩展侧授权/项目范围与已连接MCP身份权限实时生效。交互Client双侧门禁复用Core-issued AccessContext、现有UI范围与调用身份回归；本片没有为获得受限交互Client而增加测试专用认证入口。UI未知结果的保留/禁写有guest单元证据；实际故障注入位于UI RPC成功回复边界，不冒称已注入SQLite底层commit未知故障。原生Tauri人工点击、跨平台执行、全部4096条授权在真实窗口逐页查看未执行；Store分页证据不能代替人工体验签收。
 
-历史失败不覆盖：初次State34真实流程0/1；旧单表配额Host ABI3/1、修表后新guest节点order验证0/1；冷启动预算0/1、自动脚本连续动作触及原限速0/1；修正实际原因后最终真实流程才取得上述1/0。脚本按原1次/秒节奏等待，不延长或取消产品限速。CLI首次闭管道注入未可靠制造Windows输出失败为0/1，改用只读句柄后真实故障用例1/0；浏览器新用例初次定位器歧义0/1、修正定位与生命周期等待后1/0。初次Store命令误编译无关集成目标遇到页面文件1455而未完成，随后只跑`--lib`定向；新摘要测试曾因sha2摘要类型不能直接LowerHex编译失败，改为逐字节编码后两合同模块通过。Clippy首轮分支/借用及新增测试模块位置失败均保留，修正后各适用严格检查通过。原始日志均未删除，未删断言、降权限或拼接失败轮次。
+历史失败不覆盖：初次State34真实流程0/1；旧单表配额Host ABI3/1、修表后新guest节点order验证0/1；冷启动预算0/1、自动脚本连续动作触及原限速0/1；修正实际原因后最终真实流程才取得上述1/0。脚本按原1次/秒节奏等待，不延长或取消产品限速。CLI首次闭管道用例0/1当时被归因为Windows注入不稳定，这一判断不准确：后续远端诊断已确认普通BrokenPipe成功退出策略会掩盖凭据输出错误，见下节。改用只读句柄后Windows用例1/0仅证明该路径，不能代表断管正确；浏览器新用例初次定位器歧义0/1、修正定位与生命周期等待后1/0。初次Store命令误编译无关集成目标遇到页面文件1455而未完成，随后只跑`--lib`定向；新摘要测试曾因sha2摘要类型不能直接LowerHex编译失败，改为逐字节编码后两合同模块通过。Clippy首轮分支/借用及新增测试模块位置失败均保留，修正后各适用严格检查通过。原始日志均未删除，未删断言、降权限或拼接失败轮次。
 
 依赖最终核对：根Cargo.lock包名/版本集合完全保持，仅xtask增加已锁定wit-component直接边；独立guest恰新增批准的10项构建包，MSRV/许可证/生成unsafe边界沿用上节披露。`final-dependency-audit.json`、`final-guest-feature-tree.txt`、`final-guest-metadata.json`与`final-guest-feature-audit.json`证实wit-bindgen仅macros/realloc/std，无WASI/async/额外feature。生成器与Host两代构建工具并存，不宣称生成绑定没有unsafe。
 
@@ -655,3 +655,28 @@ resource_kind CHECK仅允许Extension/Project，resource_id最短3字节，组�
 可安装开发包真实存在：`C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-mcp-management\management-development-state35.alcomdextension`（125919字节），由通过的实际流程按新建文件规则导出。它是AGPL-3.0-only测试身份`dev.alcomd.fixture`，使用既有开发测试密钥并经过正常验签/明确发布者批准，不是正式发布签名或默认分发包。只能在匹配本候选的隔离Core/Host/GUI使用：Extensions→安装扩展→选择此文件→明确批准测试发布者→创建/审阅/应用安装Plan→权限中授予必需MCP读取后启用；写入另需显式管理权限，项目选择另授指定隔离项目读取。勿装入原运行数据。本轮未打开或替换原生验收窗口，也未恢复桌面控制。
 
 运行前后只读检查均未发现原Core/GUI在运行；本轮未暂停、替换、升级或启动原程序，没有“守候恢复”进程。本轮自建隔离Core/Host已正常结束并清理，不停止未知进程或Unity，不读写真实项目。后续仍欠完整OAuth、实时连接/请求/订阅查询合同、默认安装/启用的正式分发证据；业务工具安装/搜索/重装来源委托未实施，本片不进入M9或宣布M8完成。普通文案/布局简化继续作为非阻塞体验事项；guest首片使用简体中文，其他语言未验证。
+
+### 管理候选推送与Hosted验证（2026-11-14）
+
+所有者明确批准当前候选推送及收齐自动运行。核对真实Windows用户、唯一标准目录/main、干净工作树、origin=`https://github.com/ALCOMD/ALCOMD.git`，fetch确认远端仍为9fea7b6、是HEAD祖先。完整链为039ea3cf（旧远端记录/复用审计）、15e9b2b1（获批合同）、30e7f7d1（实现）、dcc76ffe（本地证据/剩余项），无遗漏或无关修改；普通`git push origin main:main`成功，远端核对为`dcc76ffe22005a17ad787c76fe8412d903e20ea0`。未强推、打标签、发布或修改设置/Secrets/真实签名材料。
+
+只跟踪本次自动生成的[CI 43601727656](https://github.com/ALCOMD/ALCOMD/actions/runs/43601727656)与[CodeQL 43601727390](https://github.com/ALCOMD/ALCOMD/actions/runs/43601727390)，均核对headSha=dcc76ffe。没有dispatch/rerun或以旧结果代替。本地既有验证输入未变，不为这次推送重复全量本地验证。
+
+| 同SHA远端范围 | 实际结果 |
+| --- | --- |
+| Ubuntu 22.04 | Check失败；CLI集成模块1通过/1失败，在mcp_cli_issues_once_and_broken_stdout_never_reissues的`!failed.status.success()`断言；后续release/Tauri/浏览器未执行 |
+| macOS 15 arm64 | Check失败；同一CLI模块1通过/1失败、同一断言；后续release/Tauri/浏览器未执行 |
+| Windows Server 2025 | 整个job成功：完整Check（含Workspace、独立guest与前端门禁）/CLI自启动/release/Tauri no-bundle/锁/diff，Chromium单轮704/0（17.7m）、零重试 |
+| CodeQL | 四语言全部success，完整JSON及四job完整日志已归档 |
+
+最终CI结论为failure，CodeQL结论为success，所有作业均已终态；两Unix的Workspace在CLI处中止，后续Rust包及release/Tauri/浏览器均不能记为已执行。准确证据存放`target/m8-hosted-dcc76ff-20261114/`：完整推送链/范围、ci-final.json、codeql-final.json、三个平台完整job日志及codeql-full.log，hosted-summary.json保留各step/计数与证据SHA256。`gh run view --job --log`因整轮未结束拒绝提供日志后，只改用GitHub官方只读已完成job日志接口，没有重跑或取消任何作业。监视中一次GitHub API EOF仅重查同一个固定run；最终API另核对两个run_attempt均为1。此轮CI失败保留，CodeQL成功不能替代功能门禁。
+
+#### CLI输出失败的实际原因与本地窄修
+
+原只读句柄、哨兵文件保持、准确一次轮换、旧凭据失效、无secret错误输出等全部断言保留，没有删除失败测试或放宽成功条件。冻结Rust1.97.1的[官方stdio源码](https://github.com/rust-lang/rust/blob/1.97.1/library/std/src/io/stdio.rs)已通过只读API核对并归档：StdoutRaw把EBADF转成成功，Unix只读stdout正触发此行为；此前只在Windows验证通过，不能由此推断Unix故障交付已正确。另有生产错误：凭据复用普通CLI的BrokenPipe→成功退出策略；并且输出未显式flush，可能漏报延迟错误。
+
+本地修复`db5b60a7cf6af323718e118dd4d92de5e2b07c63`只涉及CLI源码及该真实集成测试。非控制台凭据输出安全复制已有stdout的OS句柄/描述符，以标准File写入并明确flush，避免StdoutRaw吞错；没有新建目标文件、存储秘密、手写unsafe或新增依赖。Windows真实控制台保留标准库Unicode输出。共用原格式化逻辑，Human/JSON/NDJSON输出形状不变；普通CLI保持原BrokenPipe约定，只有一次性凭据在输出错误时明确失败并提示“已签发、明文不能恢复、没有自动重签”。Core调用/幂等/身份/公共合同未变。
+
+先在本机复现两个新回归：`cli-output-before.log`为1通过/2失败，证实凭据断管退出码及延迟flush错误；修复后`cli-unit-after.log`单轮8/0。原真实CLI模块扩展一个闭管道阶段，保留原全部断言，`cli-real-after.log`单轮2/0：正常签发后revision2，只读输出故障仅一次轮换到3，闭管道故障仅一次轮换到4，均报告输出失败且不重签，零授权保持。只使用原端点空闲时的可丢弃Core，不暂停原环境或操作真实项目；本轮实例正常结束。
+
+CLI all-targets严格Clippy、fmt、metadata、xtask及diff通过；`cli-fix-inputs.json`记录两个准确文件摘要及修复SHA。`cli-fix-reuse-audit.json`核对旧1040份输入中1038份未变，仅CLI源码及其集成测试变化；只在原日志实际范围内复用证据，不扩大为新候选完整通过。没有重复完整Rust、Chromium、Tauri release或CI。本地修复的Unix条件分支尚无执行证据；dcc76ffe的远端失败/CodeQL成功都不覆盖db5b60a。本次推送授权只覆盖原候选；本轮远端结果现已收齐，修复及收尾记录的额外推送仍须单独确认，不自动推送。M8仍进行中，不推进新合同或功能范围。
