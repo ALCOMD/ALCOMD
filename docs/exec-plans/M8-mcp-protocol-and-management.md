@@ -31,13 +31,13 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已完成本地候选，定向与真实隔离验证通过，远端未验证，见末节；不宣称管理扩展或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通并取得定向、真实隔离及三平台既有Rust证据；完整CI各轮失败/取消和当前候选结果见末节，不宣称管理扩展、完整OAuth或整个M8完成。
 
 ## 公共合同与接线状态
 
 客户端身份最小合同和State34快照增量均已批准。application、Store、daemon dispatcher、typed client及受控STDIO已实际接通，真实Core闭环及最终capability协商候选复验通过，`mcp.clients.v1`已按真实实现协商。下列后续部分尚未完成：
 
-- HTTP授权与每请求Bearer绑定；不能取自clientInfo，也不能回退owner。
+- 完整HTTP OAuth profile及其发现/audience/expiry等最小合同尚未实施；获批回环预配Bearer已按每请求Core身份接通，不取自clientInfo、不回退owner。
 - MCP 管理扩展的客户端、请求、连接、订阅读取和授权管理；沿用既定权限分类及扩展所有权/范围规则。
 - 本次六工具之外的业务映射及来源委托；正式Schema已覆盖获批卸载切片，旧Draft未提供已部署ABI。现有Operation仅get/list/cancel，不能伪造尚无公开合同的input/approve/reject/resume。
 
@@ -59,7 +59,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 ## 验证与交付边界
 
-日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；已推送身份候选的实际远端失败/CodeQL通过见后文，本次工具及追加夹具修复尚无对应Hosted CI/CodeQL，不复用旧M7结果替代。
+日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；STDIO/身份/六工具的3ccc3f4远端基线与后续HTTP各轮实际结果见后文；当前f452ac5的CodeQL成功，CI有已确认Windows夹具失败，本地新增夹具修复12b4767尚无对应远端验证，不复用旧M7结果替代。
 
 稳定业务候选形成后再集中执行适用门禁，真实包/权限和管理界面另据实际实现验收。未实现、未执行与失败保持分列。
 
@@ -453,3 +453,19 @@ ci-final/codeql-final JSON、三平台逐job日志、Ubuntu超时annotations及c
 本地提交`6d370e9378b86bca9e3d0e751248855183bdf1ce`只修原挂载脚本：完整模块名与`--lib`；挂载前精确列出并要求命中1项；执行后必须同时出现具名ok与1通过/0失败/0忽略，零执行不再成功。macOS只对卸载16作最多5次正常尝试、间隔1秒；其他错误立即失败，重试耗尽或Linux卸载失败均保留尚挂载的夹具，禁止继续递归清理；保留原测试失败退出码，单独清理失败也不能报成功。无生产代码、Rust测试断言、依赖、公共合同或工作流改动。
 
 真实Windows用户完成最终文本Bash语法检查及15项受控命令分支检查：Linux/macOS正常、预检空/重复/失败、运行空/错名/忽略/失败、繁忙恢复/耗尽、非繁忙失败、测试与卸载同时失败、Linux卸载失败及不支持平台。假命令仅验证脚本流程，不执行真实mount/hdiutil/Cargo/Core，也不替代Unix挂载证明；结果在`fixture-checks/results.json`及逐用例trace/output。metadata、xtask、diff通过；468份Rust/HTTP等既有输入逐文件摘要3596d671保持（该清单不包含本次修改的Unix夹具脚本），没有重跑本机完整Rust/Chromium/release。新增夹具的真实Linux/macOS执行仍未验证，需后续获准推送的自动CI；本轮已结束CI是3196e1b，不能覆盖本地6d370e9。该新增提交未获推送授权，当前全部远端结果已收齐，待以准确完整候选另获推送确认。
+
+### f452ac5获准推送与真实挂载验证（2026-11-14）
+
+所有者明确批准后，以真实Windows用户在标准main核对干净工作树、origin/main基线3196e1b及完整两笔`6d370e9378b86bca9e3d0e751248855183bdf1ce → f452ac59788fb49653e8db693e0e02cacd468bf0`，普通快进推送至f452ac5，远端实读一致。首次只读ls-remote遇TLS EOF，保持TLS校验原样重查成功后才推送；没有重试不明写操作、强推、标签、发布或手动workflow。468份既有Rust/HTTP输入3596d671不变，Unix夹具脚本摘要单独记录，不因推送重跑本地全量、构建或受控夹具检查。
+
+本次自动启动[CI 43561391720](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391720)及[CodeQL 43561391559](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391559)，均绑定f452ac5；CodeQL四项成功、最终JSON及完整日志已归档；CI的Windows在项目发现夹具创建Backups时AlreadyExists失败，Linux/macOS已越过挂载步骤进入构建，整轮尚未结束。仅查询上述既有run，重点核对Linux/macOS挂载前列出1项、实际具名1项通过及正常清理，不能将旧0项日志或本机假命令检查当作真实挂载证据。推送审计、当前/最终JSON及完整日志保存于`target/m8-hosted-f452ac5-20261114/`。M8保持IN_PROGRESS，原环境未替换或迁移，结果收尾只本地整理，授权不覆盖额外提交推送。
+
+#### Windows项目发现夹具同刻度碰撞（本地12b4767）
+
+f452ac5的Windows在完整Workspace开始执行首个alcomd库测试时失败：54通过/1失败/1原有忽略；`startup_recovery_reservation_defers_discovery_before_any_prepare_io`在Fixture::new创建Backups时收到Windows183/AlreadyExists，后续alcomd-mcp包测试、CLI、release/Tauri及浏览器未执行。原日志`windows-failed.log`保留，不能用3196e1b的Windows703/0替代。
+
+根因是该测试模块的临时根目录名仅含PID与SystemTime时间戳；同一时钟刻度的夹具会被create_dir_all(Projects)合并，然后在严格创建Backups时冲突，并存在相互清理的风险。没有证据指向真实Core业务或HTTP失败。新增固定同一时刻的回归在原命名行为下0/1，复现同样183；修复`12b4767c31f72f762f8792160bcf17002ac8bbf1`只在cfg(test)夹具中加入进程内AtomicU64序号，并独占创建根目录，再严格创建Projects/Backups。回归同时核对根目录隔离、独立子目录、不会看到另一夹具sentinel，以及删除第二夹具不影响第一夹具文件。
+
+修复后项目发现模块单轮7/0（8个测试线程，包含原失败用例），受影响包严格Clippy、workspace fmt-check及diff通过；没有扩大为完整Rust/浏览器/release验证，没有占用Core端点或操作原数据/Unity。生产部分及从FixturePlatform起的全部原适配器/业务测试逐字节不变；既有468份输入中仅此文件的测试区域改变，不继续声称整份3596d671摘要仍相同。MCP/HTTP生产实现和其余467份原输入保持，原有效证据按各自输入保留。定向前后日志、Clippy及源码边界审计见本轮`discovery-collision-before.log`、`discovery-collision-fixed.log`、`discovery-fixed-clippy.log`、`discovery-fix-source-audit.json`。
+
+所有者随后明确“可以推送”，授权本笔12b4767及本节必要状态记录普通快进推送。提交记录前再次核对定向结果与生产边界，不重复通过的测试；推送前执行便宜的metadata/xtask/diff与完整提交链/工作树核对。f452ac5的Unix其余作业仍须收齐，不取消或手动重跑旧运行；新候选仅由获准push自动验证，不能用旧结果替代。当前授权只覆盖该窄修与记录，不包含其他新增代码或额外推送。
