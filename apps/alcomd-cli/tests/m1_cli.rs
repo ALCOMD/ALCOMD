@@ -351,6 +351,271 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
+    use alcomd_protocol::*;
+    use std::process::Stdio;
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let (ipc, config, runtime) = isolated_configuration();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon =
+        alcomd_daemon::test_support::start_until(ipc, wait_for_shutdown(Arc::clone(&shutdown)))
+            .await
+            .expect("owned isolated OAuth CLI Core");
+    let mut owner = AlcomdClient::connect(config.clone())
+        .await
+        .expect("native owner");
+    let record = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "OAuth CLI isolated".into(),
+            grants: vec![McpClientGrant {
+                permission: "state.check".into(),
+                resource_kind: "global".into(),
+                resource_id: "*".into(),
+            }],
+            idempotency_key: "cli-oauth-client".into(),
+        })
+        .await
+        .expect("explicit client grants");
+    let base = [
+        "mcp",
+        "oauth",
+        "registration",
+        "set",
+        record.client_id.as_str(),
+        "--port",
+        "5443",
+        "--redirect-uri",
+        "http://localhost:3456/callback",
+        "--confidential",
+        "--allow-refresh",
+        "--expected-revision",
+        "0",
+        "--idempotency-key",
+        "cli-oauth-create",
+        "--yes",
+    ];
+    let rejected = run_group_cli(runtime.clone(), &base);
+    assert!(!rejected.status.success());
+    assert!(
+        owner
+            .oauth_registrations_list(McpOAuthPageParams::default())
+            .await
+            .expect("no mutation")
+            .items
+            .is_empty()
+    );
+    let mut allowed = base.to_vec();
+    allowed.push("--secret-stdout");
+    let issued = run_group_cli(runtime.clone(), &allowed);
+    assert!(issued.status.success());
+    let result: serde_json::Value =
+        serde_json::from_slice(&issued.stdout).expect("explicit one-time JSON");
+    let secret = result["result"]["clientSecret"]
+        .as_str()
+        .expect("secret")
+        .to_string();
+    assert_eq!(secret.len(), 64);
+    assert!(!String::from_utf8_lossy(&issued.stderr).contains(&secret));
+    let repeated = run_group_cli(runtime.clone(), &allowed);
+    assert!(!repeated.status.success());
+    let list = owner
+        .oauth_registrations_list(McpOAuthPageParams::default())
+        .await
+        .expect("registration list");
+    assert_eq!(list.items.len(), 1);
+    assert_eq!(list.items[0].revision, 1);
+    assert!(
+        !serde_json::to_string(&list)
+            .expect("ordinary list")
+            .contains(&secret)
+    );
+    let (reader, writer) = std::io::pipe().expect("real closed output pipe");
+    drop(reader);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    command.args(["--json", "--no-start-daemon"]);
+    if let Some(path) = &runtime {
+        command.arg("--runtime-dir").arg(path);
+    }
+    let failed = command
+        .args([
+            "mcp",
+            "oauth",
+            "registration",
+            "set",
+            &record.client_id,
+            "--port",
+            "5443",
+            "--redirect-uri",
+            "http://localhost:3456/callback",
+            "--confidential",
+            "--allow-refresh",
+            "--expected-revision",
+            "1",
+            "--idempotency-key",
+            "cli-oauth-closed-output",
+            "--yes",
+            "--secret-stdout",
+        ])
+        .stdout(Stdio::from(writer))
+        .stderr(Stdio::piped())
+        .output()
+        .expect("join closed-pipe CLI");
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(error.contains("credential was issued, but output failed"));
+    assert!(!error.contains(&secret));
+    let after = owner
+        .oauth_registrations_list(McpOAuthPageParams::default())
+        .await
+        .expect("authoritative list");
+    assert_eq!(after.items[0].revision, 2);
+    let correction = run_group_cli(
+        runtime.clone(),
+        &[
+            "mcp",
+            "oauth",
+            "registration",
+            "set",
+            &record.client_id,
+            "--port",
+            "5443",
+            "--redirect-uri",
+            "http://localhost:3456/callback",
+            "--confidential",
+            "--allow-refresh",
+            "--expected-revision",
+            "2",
+            "--idempotency-key",
+            "cli-oauth-explicit-recovery",
+            "--yes",
+            "--secret-stdout",
+        ],
+    );
+    assert!(correction.status.success());
+    let corrected: serde_json::Value =
+        serde_json::from_slice(&correction.stdout).expect("explicit recovery response");
+    let new_secret = corrected["result"]["clientSecret"]
+        .as_str()
+        .expect("new secret")
+        .to_string();
+    assert!(new_secret != secret);
+    let registration = owner
+        .oauth_registrations_list(McpOAuthPageParams::default())
+        .await
+        .expect("current registration")
+        .items
+        .remove(0);
+    assert_eq!(registration.revision, 3);
+    let mut endpoint = AlcomdClient::connect(config.clone().with_oauth_endpoint())
+        .await
+        .expect("restricted OAuth endpoint");
+    let begin = endpoint
+        .oauth_begin(McpOAuthBeginParams {
+            oauth_client_id: registration.oauth_client_id.clone(),
+            issuer: registration.issuer.clone(),
+            resource: registration.resource.clone(),
+            redirect_uri: registration.redirect_uris[0].clone(),
+            code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".into(),
+            code_challenge_method: "S256".into(),
+            scopes: vec!["state.check".into()],
+            state: None,
+        })
+        .await
+        .expect("real pending request");
+    let shown = run_group_cli(
+        runtime.clone(),
+        &["mcp", "oauth", "request", "show", &begin.request_id],
+    );
+    assert!(shown.status.success());
+    let shown_json: serde_json::Value = serde_json::from_slice(&shown.stdout).expect("review JSON");
+    let fp = shown_json["result"]["approvalFingerprint"]
+        .as_str()
+        .expect("fingerprint");
+    assert!(!String::from_utf8_lossy(&shown.stdout).contains(&new_secret));
+    assert!(!String::from_utf8_lossy(&shown.stdout).contains(&begin.browser_secret));
+    let approved = run_group_cli(
+        runtime.clone(),
+        &[
+            "mcp",
+            "oauth",
+            "request",
+            "approve",
+            &begin.request_id,
+            "--expected-fingerprint",
+            fp,
+            "--idempotency-key",
+            "cli-oauth-approve",
+            "--grant",
+            "state.check/global/*",
+            "--yes",
+        ],
+    );
+    assert!(approved.status.success());
+    let finished = endpoint
+        .oauth_finish(McpOAuthFinishParams {
+            request_id: begin.request_id,
+            browser_secret: begin.browser_secret,
+        })
+        .await
+        .expect("approved browser continuation");
+    let url = finished.redirect_url.expect("callback");
+    let code = url
+        .split_once('?')
+        .expect("query")
+        .1
+        .split('&')
+        .find_map(|p| p.strip_prefix("code="))
+        .expect("code");
+    let token = endpoint
+        .oauth_token(McpOAuthTokenParams {
+            grant_type: "authorization_code".into(),
+            oauth_client_id: registration.oauth_client_id.clone(),
+            resource: registration.resource.clone(),
+            code: Some(code.into()),
+            redirect_uri: Some(registration.redirect_uris[0].clone()),
+            code_verifier: Some("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into()),
+            refresh_token: None,
+            scopes: None,
+            client_secret: Some(new_secret),
+        })
+        .await
+        .expect("real code exchange after CLI approval");
+    assert_eq!(token.scope, "state.check");
+    let mut authenticated =
+        AlcomdClient::connect(config.with_oauth_access(token.access_token, registration.resource))
+            .await
+            .expect("OAuth identity");
+    assert!(authenticated.system_status().await.is_ok());
+    let revoked = run_group_cli(
+        runtime.clone(),
+        &[
+            "mcp",
+            "oauth",
+            "registration",
+            "revoke",
+            &registration.oauth_client_id,
+            "--expected-revision",
+            "3",
+            "--idempotency-key",
+            "cli-oauth-revoke",
+            "--yes",
+        ],
+    );
+    assert!(revoked.status.success());
+    assert!(
+        matches!(authenticated.system_status().await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied" && e.data.as_ref().is_some_and(|v|v["oauthError"]=="invalid_client"))
+    );
+    drop(authenticated);
+    drop(endpoint);
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("stop isolated Core").is_ok());
+    if let Some(path) = runtime {
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Acquire) {
         tokio::time::sleep(Duration::from_millis(10)).await;

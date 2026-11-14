@@ -2,7 +2,7 @@ use super::*;
 use rusqlite::types::Value;
 
 const EXTENSION: &str = "dev.alcomd.state35";
-fn fixture() -> Connection {
+pub(super) fn fixture() -> Connection {
     let db = mcp_state32_fixture();
     db.execute_batch(MIGRATION_V33).expect("33");
     db.execute_batch(MIGRATION_V34).expect("34");
@@ -55,7 +55,7 @@ fn fixture() -> Connection {
     .expect("keep sequence above live max");
     db
 }
-fn snapshot(db: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
+pub(super) fn snapshot(db: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
     let mut rows = mcp_clients_migration_tests::original_state(db);
     for name in ["mcp_clients", "mcp_client_grants", "mcp_client_credentials"] {
         let mut query = db
@@ -197,7 +197,7 @@ fn state35_failed_rebuild_rolls_back_durably_then_initialization_reopens_current
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("version"),
-            35
+            crate::CURRENT_DATA_SCHEMA
         );
     }
     std::fs::remove_file(&path).expect("owned database cleanup");

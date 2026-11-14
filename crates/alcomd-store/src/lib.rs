@@ -63,6 +63,7 @@ mod m7_unity_migration;
 mod m7_user_packages;
 mod m8_management;
 mod m8_mcp;
+mod m8_oauth;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;
@@ -75,7 +76,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 35;
+pub const CURRENT_DATA_SCHEMA: u32 = 36;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -308,6 +309,18 @@ impl alcomd_application::RepositoryListStore for StateStoreHandle {
 }
 
 impl M3RegistryStore for StateStoreHandle {
+    async fn list_oauth_projects(
+        &self,
+        principal: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+        guard: alcomd_application::OAuthAccessGuard,
+    ) -> Result<ProjectPage, M3Error> {
+        self.request_m3(move |db| {
+            m8_mcp::projects_scoped(db, &principal, cursor, limit, Some(&guard))
+        })
+        .await
+    }
     async fn get_mcp_project(
         &self,
         principal: PrincipalId,
@@ -714,6 +727,32 @@ impl M4Store for StateStoreHandle {
                     expected_revision,
                     &idempotency_key,
                     created_at_ms,
+                )
+            },
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn accept_package_plan_with_oauth(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+        created_at_ms: u64,
+        guard: Option<alcomd_application::OAuthAccessGuard>,
+    ) -> Result<ApplyPlanOutcome, M4Error> {
+        self.request_worker(
+            move |db| {
+                m4::accept_package_plan_with_oauth(
+                    db,
+                    &owner,
+                    plan_id,
+                    expected_revision,
+                    &idempotency_key,
+                    created_at_ms,
+                    guard.as_ref(),
                 )
             },
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),

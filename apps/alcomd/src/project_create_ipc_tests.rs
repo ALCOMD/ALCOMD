@@ -128,6 +128,8 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         let mut stream = IpcStream::Server(server);
         let mut state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "private-create-test".to_owned(),
             client_instance_id: None,
             actor: "Local IPC".to_owned(),

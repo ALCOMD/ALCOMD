@@ -128,7 +128,14 @@ mod tests {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpAuthentication {
     pub kind: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub credential: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub resource: Option<String>,
 }
 impl std::fmt::Debug for McpAuthentication {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

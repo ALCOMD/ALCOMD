@@ -1,0 +1,43 @@
+# MCP OAuth v1
+
+Owner approved 2026-11-15. The exact approved limits and boundaries are in the M8 ExecPlan's
+OAuth contract. `m8-mcp-oauth-v1.schema.json` defines the separate public DTOs. Advertise
+`mcp.oauth.v1` only when the Core use cases, typed client and real isolated flow are wired.
+
+This is additive to MCP client identity v1. Existing STDIO and pre-provisioned Bearer modes
+remain explicit, with no authentication fallback between modes. Config13, resource ownership,
+the six business tools, permissions and WIT are unchanged.
+
+`system.hello.authentication` has two additional branches:
+
+- `{"kind":"mcp-oauth-endpoint"}` binds a zero-business-permission protocol ingress. It may call
+  only `mcp.oauth.begin/finish/token/revoke`. It cannot approve, manage clients, read projects,
+  or borrow local-owner authority. Self-reported clientInfo cannot change this restriction.
+- `{"kind":"mcp-oauth-access","credential":"oa1_…","resource":"https://localhost:<port>/mcp"}`
+  validates a Core-issued, unexpired, unrevoked access token for that exact resource and binds
+  the existing `mcp:<ClientId>` Principal. Recheck current status, credential generation and the
+  intersection of token ceilings/current grants for every RPC and package-write acceptance.
+
+Owner-only control RPCs use existing `mcp.clients.read/manage` plus local-owner identity:
+`mcp.oauth.registrations.list/set/revoke` and `mcp.oauth.requests.get/decide`.
+Registration and revocation use expected revisions/idempotency keys. Confidential client secrets
+are returned once only; no secret goes into generic idempotency responses. An unknown issuance
+outcome requires explicit inspection/rotation, never blind retry. Requests.get is paginated and
+contains a fingerprint of the actual review, including current Core grants and registration.
+Decide is an explicit approval/denial of that fingerprint and a subset of existing grants.
+HTTP requests cannot decide themselves. Pending requests/codes disappear on Core restart.
+
+Ingress RPCs are fixed typed operations. Token exchange validates registered client authentication,
+PKCE S256, exact redirect/resource and a one-use code or rotating refresh token. Opaque access and
+refresh secrets are separately tagged and only irreversible hashes persist in State36. Authorization
+code replay does not mint a new family. Refresh reuse revokes the family; lost one-time responses
+are not reconstructed or stored as general persistent idempotency results.
+
+New stable errors are `mcp_oauth_invalid_grant`, `mcp_oauth_expired` and
+`mcp_oauth_response_unavailable`; existing stable permission/revision/idempotency/invalid-request
+errors remain. Bounded `data.oauthError` carries only a fixed OAuth standard error tag, allowing
+the HTTPS adapter to map errors without parsing human text or reflecting input.
+
+Secrets, hashes and flow cookies are excluded from Debug, ordinary lists/events/UI and logs.
+The HTTPS profile is pre-registered OAuth, not automatic CIMD/DCR registration, and has no MCP
+protocol session. Protocol cancellation still cannot cancel an already accepted Core Operation.

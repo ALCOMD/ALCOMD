@@ -873,6 +873,30 @@ pub trait M4Store: RepositoryArchivePinStore {
         created_at_ms: u64,
     ) -> impl Future<Output = Result<ApplyPlanOutcome, M4Error>> + Send;
 
+    fn accept_package_plan_with_oauth(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+        created_at_ms: u64,
+        guard: Option<crate::OAuthAccessGuard>,
+    ) -> impl Future<Output = Result<ApplyPlanOutcome, M4Error>> + Send {
+        async move {
+            if guard.is_some() {
+                return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+            }
+            self.accept_package_plan(
+                owner,
+                plan_id,
+                expected_revision,
+                idempotency_key,
+                created_at_ms,
+            )
+            .await
+        }
+    }
+
     fn append_filesystem_journal(
         &self,
         entry: FilesystemJournalEntry,
@@ -1139,12 +1163,13 @@ where
         if plan.state == PlanState::Applied {
             return self
                 .store
-                .accept_package_plan(
+                .accept_package_plan_with_oauth(
                     access.principal().clone(),
                     plan_id,
                     expected_revision,
                     idempotency_key,
                     m4_time_ms()?,
+                    access.oauth_guard().cloned(),
                 )
                 .await;
         }
@@ -1193,12 +1218,13 @@ where
             &action,
             "accepted",
             Some(target),
-            self.store.accept_package_plan(
+            self.store.accept_package_plan_with_oauth(
                 access.principal().clone(),
                 plan_id,
                 expected_revision,
                 idempotency_key,
                 m4_time_ms()?,
+                access.oauth_guard().cloned(),
             ),
         )
         .await?;

@@ -121,6 +121,8 @@ mod tests {
             let mut stream = IpcStream::Server(server);
             let mut state = ConnectionState {
                 mcp_hash: None,
+                oauth_endpoint: false,
+                oauth_resource: None,
                 connection_id: "private-log-test".to_owned(),
                 client_instance_id: None,
                 actor: "Local IPC".to_owned(),

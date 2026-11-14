@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 31] = [
+const SCHEMAS: [(&str, &str); 32] = [
     (
         "m7-operation-logs",
         include_str!("../../../specs/rpc/m7-operation-logs.schema.json"),
@@ -134,7 +134,79 @@ const SCHEMAS: [(&str, &str); 31] = [
         "m7-repository-list",
         include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
+    (
+        "m8-mcp-oauth-v1",
+        include_str!("../../../specs/rpc/m8-mcp-oauth-v1.schema.json"),
+    ),
 ];
+
+#[test]
+fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
+    let contract = schema("m8-mcp-oauth-v1");
+    assert_eq!(
+        contract["x-alcomd-capability"],
+        alcomd_protocol::CAPABILITY_MCP_OAUTH_V1
+    );
+    let methods = contract["x-alcomd-methods"].as_object().expect("methods");
+    let mut names: Vec<_> = methods.keys().map(String::as_str).collect();
+    names.sort();
+    assert_eq!(
+        names,
+        [
+            "mcp.oauth.begin",
+            "mcp.oauth.finish",
+            "mcp.oauth.registrations.list",
+            "mcp.oauth.registrations.revoke",
+            "mcp.oauth.registrations.set",
+            "mcp.oauth.requests.decide",
+            "mcp.oauth.requests.get",
+            "mcp.oauth.revoke",
+            "mcp.oauth.token"
+        ]
+    );
+    let defs = &contract["$defs"];
+    assert_eq!(
+        defs["authentication"]["oneOf"]
+            .as_array()
+            .expect("roles")
+            .len(),
+        3
+    );
+    assert_eq!(
+        schema("system-hello.request")["properties"]["params"]["properties"]["authentication"]["$ref"],
+        "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
+    );
+    assert_eq!(
+        defs["PageParams"]["properties"]["limit"]["anyOf"][0]["minimum"],
+        1
+    );
+    assert_eq!(
+        defs["RequestDecideParams"]["properties"]["grants"]["maxItems"],
+        4096
+    );
+    for definition in defs
+        .as_object()
+        .expect("definitions")
+        .values()
+        .filter(|d| d["type"] == "object")
+    {
+        assert_eq!(definition["additionalProperties"], false);
+    }
+    assert!(
+        defs["Registration"]["properties"]
+            .get("clientSecret")
+            .is_none()
+    );
+    assert!(
+        defs["RequestReview"]["properties"]
+            .get("browserSecret")
+            .is_none()
+    );
+    assert_eq!(
+        defs["TokenParams"]["properties"]["refreshToken"]["anyOf"][0]["writeOnly"],
+        true
+    );
+}
 
 #[test]
 fn live_events_contract_separates_ready_responses_and_closed_bounded_notifications() {

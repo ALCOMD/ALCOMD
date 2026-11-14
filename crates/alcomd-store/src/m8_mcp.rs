@@ -10,7 +10,7 @@ use uuid::Uuid;
 fn unavailable<T>(_: T) -> E {
     E::Unavailable
 }
-fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
+pub(super) fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
     let mut record=db.query_row("SELECT client_id,principal_id,display_name,revision,created_at_ms,revoked_at_ms FROM mcp_clients WHERE client_id=?1",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,Option<i64>>(5)?))).optional().map_err(unavailable)?.ok_or(E::PermissionDenied)?;
     let revision = db
         .query_row(
@@ -344,7 +344,42 @@ pub(super) fn projects(
     cursor: Option<RegistryCursor<ProjectId>>,
     limit: u32,
 ) -> Result<ProjectPage, M3Error> {
-    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id) WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=p.project_id) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
+    projects_scoped(db, principal, cursor, limit, None)
+}
+pub(super) fn projects_scoped(
+    db: &Connection,
+    principal: &PrincipalId,
+    cursor: Option<RegistryCursor<ProjectId>>,
+    limit: u32,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+) -> Result<ProjectPage, M3Error> {
+    let scope = if let Some(guard) = guard {
+        let now = super::m8_oauth::wall_time()
+            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+        let limited = super::m8_oauth::authenticate(db, guard, now)
+            .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))?;
+        if &limited.principal_id != principal {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        if let Some(c) = &cursor {
+            super::m8_oauth::authorize_cursor(db, guard, now)
+                .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?;
+            if !limited
+                .grants
+                .iter()
+                .any(|g| g.permission == "projects.read" && g.resource_id == c.id.to_string())
+            {
+                return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+            }
+        }
+        Some(
+            serde_json::to_string(&limited.grants)
+                .map_err(|_| M3Error::new(M3ErrorCode::Internal))?,
+        )
+    } else {
+        None
+    };
+    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id) WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=p.project_id) AND (?5 IS NULL OR p.project_id IN (SELECT json_extract(value,'$.resourceId') FROM json_each(?5) WHERE json_extract(value,'$.permission')='projects.read' AND json_extract(value,'$.resourceKind')='project')) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
     let cursor_time = cursor
         .as_ref()
         .map(|c| i64::try_from(c.registered_at_ms))
@@ -356,7 +391,8 @@ pub(super) fn projects(
                 principal.as_str(),
                 cursor_time,
                 cursor.as_ref().map(|c| c.id.to_string()),
-                i64::from(limit) + 1
+                i64::from(limit) + 1,
+                scope,
             ],
             |r| r.get::<_, String>(0),
         )

@@ -25,6 +25,19 @@ pub struct TestDaemon {
 }
 
 impl TestDaemon {
+    /// A one-shot reply-loss gate after real OAuth commit. It retains no token payload.
+    pub async fn hold_next_oauth_token_response(&self) -> Arc<OAuthTokenResponseGate> {
+        let gate = Arc::new(OAuthTokenResponseGate {
+            accepted: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+            ready: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+        });
+        let mut slot = self.applications.oauth_token_response_gate.lock().await;
+        assert!(slot.is_none(), "only one OAuth reply fault may be armed");
+        *slot = Some(Arc::clone(&gate));
+        gate
+    }
     pub fn mcp_apply_request_count(&self) -> u64 {
         self.applications
             .mcp_apply_request_count
@@ -57,6 +70,39 @@ impl TestDaemon {
     /// Reports whether the serving task has finished.
     pub fn is_finished(&self) -> bool {
         self.task.is_finished()
+    }
+}
+
+pub struct OAuthTokenResponseGate {
+    accepted: std::sync::atomic::AtomicBool,
+    released: std::sync::atomic::AtomicBool,
+    ready: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+impl OAuthTokenResponseGate {
+    pub(super) async fn intercept(&self) {
+        self.accepted.store(true, Ordering::Release);
+        self.ready.notify_waiters();
+        loop {
+            let notified = self.release.notified();
+            if self.released.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+    pub async fn accepted(&self) {
+        loop {
+            let notified = self.ready.notified();
+            if self.accepted.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+    pub fn release(&self) {
+        self.released.store(true, Ordering::Release);
+        self.release.notify_waiters();
     }
 }
 

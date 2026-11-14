@@ -14,6 +14,8 @@ clap.workspace = true
 tokio.workspace = true
 rmcp = { workspace = true, features = ["transport-streamable-http-server"] }
 hyper.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
 hyper-util.workspace = true
 http-body-util.workspace = true
 alcomd-protocol.workspace = true

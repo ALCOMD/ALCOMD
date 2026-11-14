@@ -52,6 +52,7 @@ const MIGRATION_V32: &str = include_str!("../migrations/0032_optional_package_pr
 const MIGRATION_V33: &str = include_str!("../migrations/0033_mcp_clients.sql");
 const MIGRATION_V34: &str = include_str!("../migrations/0034_mcp_grant_snapshots.sql");
 const MIGRATION_V35: &str = include_str!("../migrations/0035_extension_mcp_permissions.sql");
+const MIGRATION_V36: &str = include_str!("../migrations/0036_mcp_oauth.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -268,6 +269,11 @@ pub(super) fn initialize_connection_with_report(
             .execute_batch(MIGRATION_V35)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
+    if version <= 35 {
+        connection
+            .execute_batch(MIGRATION_V36)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -448,6 +454,10 @@ mod mcp_snapshots_migration_tests;
 #[cfg(test)]
 #[path = "sqlite_extension_mcp_grants_tests.rs"]
 mod extension_mcp_grants_migration_tests;
+
+#[cfg(test)]
+#[path = "sqlite_oauth_tests.rs"]
+mod oauth_migration_tests;
 
 #[cfg(test)]
 pub(crate) fn mcp_state32_fixture() -> Connection {

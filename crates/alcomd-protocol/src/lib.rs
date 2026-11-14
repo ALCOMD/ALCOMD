@@ -13,6 +13,7 @@ mod events;
 mod m7;
 mod m7_candidates;
 mod m8_mcp;
+mod m8_oauth;
 mod operation_logs;
 mod project_create;
 mod repository_list;
@@ -21,6 +22,7 @@ pub use events::*;
 pub use m7::*;
 pub use m7_candidates::*;
 pub use m8_mcp::*;
+pub use m8_oauth::*;
 pub use operation_logs::*;
 pub use project_create::*;
 pub use repository_list::*;
@@ -699,11 +701,29 @@ impl HelloParams {
     pub fn validate(&self) -> Result<(), ContractViolation> {
         self.client.validate()?;
         if let Some(auth) = &self.authentication {
-            validate_non_empty_utf8("authentication.credential", &auth.credential, 256)?;
-            if auth.kind != "mcp-client"
-                || auth.credential.len() < 43
-                || !auth.credential.bytes().all(|b| b.is_ascii_graphic())
-            {
+            let valid = match auth.kind.as_str() {
+                "mcp-client" => {
+                    auth.resource.is_none()
+                        && (43..=256).contains(&auth.credential.len())
+                        && auth.credential.bytes().all(|b| b.is_ascii_graphic())
+                }
+                "mcp-oauth-endpoint" => auth.credential.is_empty() && auth.resource.is_none(),
+                "mcp-oauth-access" => {
+                    auth.credential.starts_with("oa1_")
+                        && auth.credential.len() == 68
+                        && auth.credential[4..]
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                        && auth.resource.as_ref().is_some_and(|r| {
+                            !r.is_empty()
+                                && r.len() <= 2048
+                                && r.is_ascii()
+                                && !r.bytes().any(|b| b.is_ascii_control())
+                        })
+                }
+                _ => false,
+            };
+            if !valid {
                 return Err(ContractViolation::InvalidAuthentication);
             }
         }

@@ -345,6 +345,8 @@ mod tests {
         let application = application();
         let state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "permission-test".into(),
             client_instance_id: Some("test".into()),
             actor: "Local IPC".to_owned(),

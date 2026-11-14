@@ -653,6 +653,8 @@ mod tests {
         );
         let state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "permissions-read-test".to_owned(),
             client_instance_id: Some("permissions-test".to_owned()),
             actor: "Local IPC".to_owned(),

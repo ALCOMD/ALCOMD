@@ -43,10 +43,12 @@ const BODY_TIME: Duration = Duration::from_secs(15);
 const CORE_TIME: Duration = Duration::from_secs(60);
 const OUTPUT_TIME: Duration = Duration::from_secs(10);
 type Sdk = StreamableHttpService<HttpHandler, NeverSessionManager>;
+mod oauth;
 
 pub struct HttpServer {
     listener: TcpListener,
     config: ClientConfig,
+    tls: Option<Arc<rustls::ServerConfig>>,
 }
 impl HttpServer {
     /// The address is deliberately not a parameter: non-loopback is unsupported.
@@ -54,17 +56,48 @@ impl HttpServer {
         Ok(Self {
             listener: TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?,
             config,
+            tls: None,
+        })
+    }
+    /// Explicit TLS profile; never changes certificate trust or falls back to HTTP.
+    pub async fn bind_oauth(
+        port: u16,
+        config: ClientConfig,
+        cert: std::path::PathBuf,
+        key: std::path::PathBuf,
+    ) -> io::Result<Self> {
+        if port == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "OAuth requires a stable nonzero port",
+            ));
+        }
+        let tls = oauth::tls_config(&cert, &key)?;
+        Ok(Self {
+            listener: TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?,
+            config,
+            tls: Some(Arc::new(tls)),
         })
     }
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.listener.local_addr()
     }
     pub async fn run_until(self, shutdown: impl Future<Output = ()> + Send) -> io::Result<()> {
-        let authority = self.local_addr()?.to_string();
+        let authority = if self.tls.is_some() {
+            format!("localhost:{}", self.local_addr()?.port())
+        } else {
+            self.local_addr()?.to_string()
+        };
+        let oauth_issuer = self.tls.as_ref().map(|_| format!("https://{authority}"));
+        let tls = self.tls.clone();
+        let mut allowed_hosts = vec![authority.clone()];
+        if oauth_issuer.as_deref() == Some("https://localhost:443") {
+            allowed_hosts.push("localhost".into());
+        }
         let config = StreamableHttpServerConfig::default()
             .with_legacy_session_mode(false)
             .with_stateless_protocol_metadata_required(true)
-            .with_allowed_hosts([authority.clone()])
+            .with_allowed_hosts(allowed_hosts)
             .enforce_origin_validation()
             .with_json_response(false)
             .with_sse_retry(None);
@@ -76,6 +109,8 @@ impl HttpServer {
             config: self.config,
             requests: Arc::new(Semaphore::new(16)),
             http_config: config,
+            oauth_issuer,
+            oauth_rate: Mutex::new(oauth::Rate::default()),
         });
         let connections = Arc::new(Semaphore::new(32));
         let (stop, _) = watch::channel(false);
@@ -89,28 +124,17 @@ impl HttpServer {
                     let (stream, _) = accepted?;
                     let Ok(permit) = connections.clone().try_acquire_owned() else { drop(stream); continue; };
                     let state = Arc::clone(&state);
+                    let tls=tls.clone();
                     let mut stopping = stop.subscribe();
                     tasks.spawn(async move {
                         let _connection_permit = permit;
-                        let handler = service_fn(move |request| {
-                            let state = Arc::clone(&state);
-                            Box::pin(async move { Ok::<_, Infallible>(state.handle(request).await) })
-                        });
-                        let mut builder = hyper::server::conn::http1::Builder::new();
-                        builder.max_headers(HEAD_COUNT).max_buf_size(HEAD_LIMIT)
-                            .header_read_timeout(HEADER_TIME).timer(TokioTimer::new());
-                        let mut connection = builder.serve_connection(TokioIo::new(stream), handler);
-                        let completed = tokio::select! {
-                            result = std::future::poll_fn(|cx| connection.poll_without_shutdown(cx)) => Some(result),
-                            _ = stopping.changed() => None,
-                        };
-                        // Hyper reports a header timeout without serializing 408.
-                        // Its HTTP/1 parser is done; send only this fixed closing
-                        // response before dropping the socket. Never echo input.
-                        if let Some(completed) = completed {
-                            let mut stream=connection.into_parts().io.into_inner();
-                            finish_stream(&mut stream,completed.is_err_and(|error| error.is_timeout())).await;
-                        }
+                        if let Some(tls)=tls {
+                            let accepted=tokio::select! {
+                                result=tokio::time::timeout(HEADER_TIME,tokio_rustls::TlsAcceptor::from(tls).accept(stream))=>result,
+                                _=stopping.changed()=>return,
+                            };
+                            if let Ok(Ok(stream))=accepted { serve_stream(stream,state,stopping).await }
+                        } else { serve_stream(stream,state,stopping).await }
                     });
                 }
                 _ = tasks.join_next(), if !tasks.is_empty() => {},
@@ -130,7 +154,36 @@ impl HttpServer {
     }
 }
 
-async fn finish_stream(stream: &mut tokio::net::TcpStream, header_timed_out: bool) {
+async fn serve_stream<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static>(
+    stream: S,
+    state: Arc<State>,
+    mut stopping: watch::Receiver<bool>,
+) {
+    let handler = service_fn(move |request| {
+        let state = Arc::clone(&state);
+        Box::pin(async move { Ok::<_, Infallible>(state.handle(request).await) })
+    });
+    let mut builder = hyper::server::conn::http1::Builder::new();
+    builder
+        .max_headers(HEAD_COUNT)
+        .max_buf_size(HEAD_LIMIT)
+        .header_read_timeout(HEADER_TIME)
+        .timer(TokioTimer::new());
+    let mut connection = builder.serve_connection(TokioIo::new(stream), handler);
+    let completed = tokio::select! { result=std::future::poll_fn(|cx|connection.poll_without_shutdown(cx))=>Some(result),_=stopping.changed()=>None };
+    if let Some(completed) = completed {
+        let mut stream = connection.into_parts().io.into_inner();
+        finish_stream(
+            &mut stream,
+            completed.is_err_and(|error| error.is_timeout()),
+        )
+        .await;
+    }
+}
+async fn finish_stream<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    stream: &mut S,
+    header_timed_out: bool,
+) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     if header_timed_out {
         let _ = tokio::time::timeout(OUTPUT_TIME,stream.write_all(b"HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n")).await;
@@ -157,6 +210,8 @@ struct State {
     config: ClientConfig,
     requests: Arc<Semaphore>,
     http_config: StreamableHttpServerConfig,
+    oauth_issuer: Option<String>,
+    oauth_rate: Mutex<oauth::Rate>,
 }
 #[derive(Clone)]
 struct BoundRequest {
@@ -176,12 +231,32 @@ impl State {
             _ => return rejected(StatusCode::BAD_REQUEST),
         };
         if let Some(authority) = parts.uri.authority()
-            && (authority.as_str() != host || parts.uri.scheme_str() != Some("http"))
+            && (authority.as_str() != host
+                || parts.uri.scheme_str()
+                    != Some(if self.oauth_issuer.is_some() {
+                        "https"
+                    } else {
+                        "http"
+                    }))
         {
             return rejected(StatusCode::BAD_REQUEST);
         }
-        if host != self.authority {
+        if host != self.authority
+            && !(self.oauth_issuer.as_deref() == Some("https://localhost:443")
+                && host == "localhost")
+        {
             return rejected(StatusCode::FORBIDDEN);
+        }
+        if let Some(issuer) = &self.oauth_issuer {
+            if headers
+                .keys()
+                .any(|key| key.as_str() == "forwarded" || key.as_str().starts_with("x-forwarded-"))
+            {
+                return rejected(StatusCode::BAD_REQUEST);
+            }
+            if parts.uri.path() != "/mcp" {
+                return oauth::handle(self, issuer, parts, body).await;
+            }
         }
         if headers.contains_key(header::ORIGIN) {
             return rejected(StatusCode::FORBIDDEN);
@@ -207,11 +282,24 @@ impl State {
         if unique(headers, "mcp-protocol-version").is_err() {
             return rejected(StatusCode::BAD_REQUEST);
         }
-        let credential = match bearer(headers) {
+        let credential = match if self.oauth_issuer.is_some() {
+            oauth::access_bearer(headers)
+        } else {
+            bearer(headers)
+        } {
             Ok(Some(secret)) => secret,
-            Ok(None) => return rejected(StatusCode::UNAUTHORIZED),
+            Ok(None) => return self.unauthorized(false),
             Err(()) => return rejected(StatusCode::BAD_REQUEST),
         };
+        if self.oauth_issuer.is_some()
+            && !(credential.len() == 68
+                && credential.starts_with("oa1_")
+                && credential[4..]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        {
+            return self.unauthorized(true);
+        }
         if !json_content_type(headers) {
             return rejected(StatusCode::UNSUPPORTED_MEDIA_TYPE);
         }
@@ -233,25 +321,29 @@ impl State {
         };
         let deadline = Instant::now() + CORE_TIME;
         // A request never borrows STDIO's startup identity and never retries as owner.
-        let core = match tokio::time::timeout_at(
-            deadline,
-            AlcomdClient::connect(
-                self.config
-                    .clone()
-                    .with_client_name("alcomd-mcp")
-                    .with_mcp_credential(credential),
-            ),
-        )
-        .await
-        {
+        let config = if let Some(issuer) = &self.oauth_issuer {
+            self.config
+                .clone()
+                .with_client_name("alcomd-mcp")
+                .with_oauth_access(credential, format!("{issuer}/mcp"))
+        } else {
+            self.config
+                .clone()
+                .with_client_name("alcomd-mcp")
+                .with_mcp_credential(credential)
+        };
+        let core = match tokio::time::timeout_at(deadline, AlcomdClient::connect(config)).await {
             Ok(Ok(core)) => core,
             Ok(Err(ClientError::Remote(e)))
                 if matches!(
                     e.code.as_str(),
-                    "permission_denied" | "authorization_required"
+                    "permission_denied"
+                        | "authorization_required"
+                        | "mcp_oauth_invalid_grant"
+                        | "mcp_oauth_expired"
                 ) =>
             {
-                return rejected(StatusCode::UNAUTHORIZED);
+                return self.unauthorized(true);
             }
             _ => return rejected(StatusCode::SERVICE_UNAVAILABLE),
         };
@@ -277,6 +369,7 @@ impl State {
             return protocol_rejected(StatusCode::BAD_REQUEST, Value::Null, -32600);
         }
         let id = value["id"].clone();
+        let required_scopes = oauth::tool_scopes(value["params"]["name"].as_str());
         let method = value["method"].as_str().unwrap_or_default();
         if !matches!(method, "server/discover" | "tools/list" | "tools/call") {
             return protocol_rejected(StatusCode::NOT_FOUND, id, -32601);
@@ -300,6 +393,28 @@ impl State {
             self.http_config.clone(),
         );
         let response = sdk.handle(request).await;
+        if let Some(issuer) = &self.oauth_issuer {
+            let rejection = service
+                .core
+                .lock()
+                .await
+                .as_mut()
+                .and_then(AlcomdClient::take_oauth_rejection);
+            match rejection {
+                Some(alcomd_client::OAuthRejection::InvalidToken) => {
+                    return self.unauthorized(true);
+                }
+                Some(alcomd_client::OAuthRejection::InsufficientScope) => {
+                    return oauth::challenge(
+                        issuer,
+                        StatusCode::FORBIDDEN,
+                        Some("insufficient_scope"),
+                        required_scopes,
+                    );
+                }
+                None => {}
+            }
+        }
         let (mut parts, body) = response.into_parts();
         parts.headers.insert(
             header::CACHE_CONTROL,
@@ -327,6 +442,17 @@ impl State {
         // first terminal message before returning this response, so output time
         // starts here, separately from the handler's Core deadline.
         Response::from_parts(parts, GuardedBody::new(body, Some(permit), Some(service)))
+    }
+    fn unauthorized(&self, invalid: bool) -> Response<GuardedBody> {
+        match &self.oauth_issuer {
+            Some(issuer) => oauth::challenge(
+                issuer,
+                StatusCode::UNAUTHORIZED,
+                invalid.then_some("invalid_token"),
+                &["projects.read"],
+            ),
+            None => rejected(StatusCode::UNAUTHORIZED),
+        }
     }
 }
 

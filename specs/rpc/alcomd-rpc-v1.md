@@ -1171,3 +1171,16 @@ native 导入按来源映射本机 ID 并恢复已有项，保留文件未包含
 ```
 
 owner仅为内部归属，不在条目中暴露；operationId仅关联已接受任务时存在。数据库不可用无法保证写历史，不能由前端补造。普通业务RPC错误不因此增加任意技术正文。
+
+## M8 OAuth（2026-11-15，所有者已批准）
+
+新增 `mcp.oauth.v1`、九个固定 typed RPC 和两个互斥 hello 身份分支，详见
+[OAuth RPC](m8-mcp-oauth-v1.md)及其 Schema；`system-hello.request.schema.json`
+引用完整的 authentication 联合。`mcp-oauth-endpoint` 仅能执行 begin/finish/token/revoke，
+永不取得 owner；`mcp-oauth-access` 逐请求验证 Core 签发 token、audience 和当前授权。
+其余五个控制 RPC 仅 authenticated local-owner，沿用现有权限。
+
+HTTPS/发现/授权码/刷新/撤销与错误边界见 [HTTP OAuth](../mcp/http-oauth-v1.md)，
+持久化见 [State36](../storage/state-v36.md)。此增量不修改 STDIO、预配 Bearer、
+六工具、Config13、权限名称、WIT 或现有资源 owner。秘密不进入普通响应、事件和
+通用幂等结果；一次性写响应丢失不自动重签。

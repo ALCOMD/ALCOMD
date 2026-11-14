@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 type Sdk = RunningService<RoleClient, ()>;
 static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+#[path = "support/oauth_flow.rs"]
+mod oauth_flow;
 
 struct HttpFixture {
     url: String,

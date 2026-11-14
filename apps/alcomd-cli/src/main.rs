@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+mod m8_oauth;
 
 #[derive(Debug)]
 enum CliError {
@@ -12,6 +13,7 @@ enum CliError {
     LocalIo(std::io::Error),
     Usage(&'static str),
     CredentialOutcomeUnknown,
+    OAuthCredentialOutcomeUnknown,
 }
 
 impl From<alcomd_client::ClientError> for CliError {
@@ -30,6 +32,7 @@ impl std::fmt::Display for CliError {
             Self::LocalIo(_) => formatter.write_str("local CLI I/O failed"),
             Self::Usage(message) => formatter.write_str(message),
             Self::CredentialOutcomeUnknown => formatter.write_str("credential issuance outcome is unknown; check the client's revision before explicitly rotating again; the plaintext cannot be recovered; no retry was made"),
+            Self::OAuthCredentialOutcomeUnknown => formatter.write_str("OAuth registration update outcome is unknown; list registrations and inspect its revision before explicit rotation; the one-time client secret cannot be recovered; no retry was made"),
         }
     }
 }
@@ -43,7 +46,8 @@ impl std::error::Error for CliError {
             | Self::OperationFailed(_)
             | Self::OperationDetached(_)
             | Self::Usage(_)
-            | Self::CredentialOutcomeUnknown => None,
+            | Self::CredentialOutcomeUnknown
+            | Self::OAuthCredentialOutcomeUnknown => None,
         }
     }
 }
@@ -154,6 +158,10 @@ enum SystemCommand {
 
 #[derive(Debug, Subcommand)]
 enum McpCommand {
+    Oauth {
+        #[command(subcommand)]
+        command: m8_oauth::OAuthCommand,
+    },
     #[command(visible_alias = "clients")]
     Client {
         #[command(subcommand)]
@@ -564,14 +572,15 @@ async fn main() -> ExitCode {
         no_wait: arguments.no_wait,
     };
     let command_name = arguments.command.name();
-    let credential_output = matches!(
-        &arguments.command,
-        Command::Mcp {
-            command: McpCommand::Client {
-                command: McpClientCommand::IssueCredential { .. }
+    let credential_output = matches!(&arguments.command,Command::Mcp{command:McpCommand::Oauth{command}} if m8_oauth::secret_output(command))
+        || matches!(
+            &arguments.command,
+            Command::Mcp {
+                command: McpCommand::Client {
+                    command: McpClientCommand::IssueCredential { .. }
+                }
             }
-        }
-    );
+        );
 
     if let Command::Completion { shell } = &arguments.command {
         return write_completion(*shell);
@@ -623,6 +632,12 @@ fn validate_mcp_output(
     stdout_is_terminal: bool,
 ) -> Result<(), CliError> {
     if let Command::Mcp {
+        command: McpCommand::Oauth { command },
+    } = command
+    {
+        return m8_oauth::validate(command, options, stdout_is_terminal);
+    }
+    if let Command::Mcp {
         command: McpCommand::Client { command },
     } = command
     {
@@ -651,6 +666,7 @@ async fn execute(
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
+        Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::List { cursor, limit } => serde_json::to_value(client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit }).await?),
             McpClientCommand::IssueCredential { client_id, expected_revision, idempotency_key, .. } => {
@@ -1374,6 +1390,9 @@ impl Command {
     fn name(&self) -> &'static str {
         match self {
             Self::Mcp {
+                command: McpCommand::Oauth { command },
+            } => m8_oauth::name(command),
+            Self::Mcp {
                 command: McpCommand::Client { command },
             } => match command {
                 McpClientCommand::List { .. } => "mcp client list",
@@ -1520,6 +1539,8 @@ fn write_result(
             "result": value,
         });
         writeln!(output, "{document}")
+    } else if command == "mcp oauth request show" {
+        m8_oauth::write_review(output, value)
     } else if let (Some(product), Some(version), Some(state), Some(rpc_version)) = (
         value.get("product").and_then(serde_json::Value::as_str),
         value
@@ -1724,6 +1745,10 @@ fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {
             CliError::CredentialOutcomeUnknown => (
                 "credential_outcome_unknown",
                 "issuance may have succeeded; check current revision; plaintext cannot be recovered; no retry was made",
+            ),
+            CliError::OAuthCredentialOutcomeUnknown => (
+                "credential_outcome_unknown",
+                "OAuth registration update may have succeeded; list registrations and check its revision before explicit rotation; the one-time client secret cannot be recovered; no retry was made",
             ),
             CliError::ConfirmationRequired => ("confirmation_required", "confirmation is required"),
             CliError::OperationFailed(operation) => (

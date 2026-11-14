@@ -50,6 +50,7 @@ mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
+mod m8_oauth_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -112,8 +113,12 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
+    oauth: alcomd_application::OAuthApplication<StateStoreHandle>,
     #[cfg(feature = "test-kill-gates")]
     mcp_apply_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpApplyResponseGate>>>,
+    #[cfg(feature = "test-kill-gates")]
+    oauth_token_response_gate:
+        tokio::sync::Mutex<Option<Arc<test_support::OAuthTokenResponseGate>>>,
     #[cfg(feature = "test-kill-gates")]
     mcp_apply_request_count: std::sync::atomic::AtomicU64,
     store: StateStoreHandle,
@@ -351,8 +356,11 @@ async fn initialize_daemon_with_directories(
     let repository_auto_refresh =
         alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
     let applications = Arc::new(Applications {
+        oauth: alcomd_application::OAuthApplication::new(store.clone()),
         #[cfg(feature = "test-kill-gates")]
         mcp_apply_response_gate: tokio::sync::Mutex::new(None),
+        #[cfg(feature = "test-kill-gates")]
+        oauth_token_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
         mcp_apply_request_count: std::sync::atomic::AtomicU64::new(0),
         store: store.clone(),
@@ -515,6 +523,8 @@ fn bind_as_io(error: BindError) -> io::Error {
 }
 
 struct ConnectionState {
+    oauth_endpoint: bool,
+    oauth_resource: Option<String>,
     mcp_hash: Option<[u8; 32]>,
     connection_id: String,
     client_instance_id: Option<String>,
@@ -529,6 +539,8 @@ async fn serve_connection(
 ) -> io::Result<()> {
     let mut state = ConnectionState {
         mcp_hash: None,
+        oauth_endpoint: false,
+        oauth_resource: None,
         connection_id: OperationId::new().to_string(),
         client_instance_id: None,
         actor: "Local IPC".to_owned(),
@@ -553,6 +565,17 @@ async fn serve_connection(
             }
             let action = Box::pin(dispatch_payload(&payload, &state, &applications)).await;
             #[cfg(feature = "test-kill-gates")]
+            if state.oauth_endpoint
+                && action.response["result"]["accessToken"].is_string()
+                && serde_json::from_slice::<Value>(&payload)
+                    .is_ok_and(|v| v["method"] == alcomd_protocol::METHOD_MCP_OAUTH_TOKEN)
+                && let Some(gate) = applications.oauth_token_response_gate.lock().await.take()
+            {
+                // No response or secret is captured: commit is known, then lose this IPC reply.
+                gate.intercept().await;
+                return Ok(());
+            }
+            #[cfg(feature = "test-kill-gates")]
             if is_mcp_apply && action.response["result"]["operationId"].is_string() {
                 let gate = applications.mcp_apply_response_gate.lock().await.take();
                 if let Some(gate) = gate
@@ -575,6 +598,8 @@ async fn serve_connection(
             }
             if let Some(capabilities) = action.complete_handshake {
                 state.mcp_hash = action.mcp_hash;
+                state.oauth_endpoint = action.oauth_endpoint;
+                state.oauth_resource = action.oauth_resource;
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;
@@ -603,6 +628,8 @@ async fn serve_connection(
 }
 
 struct DispatchAction {
+    oauth_endpoint: bool,
+    oauth_resource: Option<String>,
     mcp_hash: Option<[u8; 32]>,
     response: Value,
     complete_handshake: Option<HashSet<String>>,
@@ -640,22 +667,54 @@ async fn dispatch_payload(
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-    let access = if let Some(hash) = state.mcp_hash {
-        match alcomd_application::McpIdentityApplication::new(applications.store.clone())
-            .authenticate(hash)
-            .await
-        {
-            Ok(access) => access.with_actor("MCP".into()),
-            Err(e) => return m8_mcp_rpc::error(request.id, e, true),
-        }
-    } else {
-        AccessContext::local_owner().with_actor(state.actor.clone())
-    };
+    if state.oauth_endpoint {
+        let access = AccessContext::new(
+            alcomd_application::PrincipalId::parse("transport:mcp-oauth-endpoint")
+                .expect("fixed Principal"),
+            [],
+        );
+        return m8_oauth_rpc::dispatch(request, state, &applications.oauth, &access).await;
+    }
+    let access =
+        if let (Some(hash), Some(resource)) = (state.mcp_hash, state.oauth_resource.as_ref()) {
+            match applications
+                .oauth
+                .authenticate(
+                    alcomd_application::OAuthAccessGuard {
+                        token_hash: hash,
+                        resource: resource.clone(),
+                    },
+                    current_time_ms().unwrap_or(u64::MAX),
+                )
+                .await
+            {
+                Ok(access) => access.with_actor("MCP".into()),
+                Err(e) => return m8_oauth_rpc::error(request.id, e, true),
+            }
+        } else if let Some(hash) = state.mcp_hash {
+            match alcomd_application::McpIdentityApplication::new(applications.store.clone())
+                .authenticate(hash)
+                .await
+            {
+                Ok(access) => access.with_actor("MCP".into()),
+                Err(e) => return m8_mcp_rpc::error(request.id, e, true),
+            }
+        } else {
+            AccessContext::local_owner().with_actor(state.actor.clone())
+        };
     if access.is_mcp_client() && !m8_mcp_rpc::allowed_client_method(&request.method) {
         return error_action(Some(request.id), RpcError::permission_denied(), false);
     }
+    if access.oauth_scope_denied(m8_oauth_rpc::required_scopes(&request.method)) {
+        let mut error = RpcError::permission_denied();
+        error.data = Some(serde_json::json!({"oauthError":"insufficient_scope"}));
+        return error_action(Some(request.id), error, false);
+    }
     if request.method.starts_with("mcp.clients.") {
         return m8_mcp_rpc::dispatch(request, state, &applications.store, &access).await;
+    }
+    if request.method.starts_with("mcp.oauth.") {
+        return m8_oauth_rpc::dispatch(request, state, &applications.oauth, &access).await;
     }
 
     let repository_read = matches!(
@@ -717,11 +776,35 @@ async fn dispatch_hello(
             true,
         );
     }
+    let oauth_endpoint = hello
+        .authentication
+        .as_ref()
+        .is_some_and(|auth| auth.kind == "mcp-oauth-endpoint");
+    let oauth_resource = hello
+        .authentication
+        .as_ref()
+        .filter(|auth| auth.kind == "mcp-oauth-access")
+        .and_then(|auth| auth.resource.clone());
     let mcp_hash = hello
         .authentication
         .as_ref()
+        .filter(|auth| auth.kind != "mcp-oauth-endpoint")
         .map(|auth| alcomd_application::mcp_credential_hash(&auth.credential));
-    if let Some(hash) = mcp_hash
+    if let (Some(hash), Some(resource)) = (mcp_hash, oauth_resource.as_ref()) {
+        use alcomd_application::OAuthStore;
+        if let Err(e) = store
+            .oauth_authenticate(
+                alcomd_application::OAuthAccessGuard {
+                    token_hash: hash,
+                    resource: resource.clone(),
+                },
+                current_time_ms().unwrap_or(u64::MAX),
+            )
+            .await
+        {
+            return m8_oauth_rpc::error(request.id, e, true);
+        }
+    } else if let Some(hash) = mcp_hash
         && let Err(e) = alcomd_application::McpIdentityApplication::new(store.clone())
             .authenticate(hash)
             .await
@@ -729,6 +812,7 @@ async fn dispatch_hello(
         return m8_mcp_rpc::error(request.id, e, true);
     }
     let supported = [
+        alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
         CAPABILITY_MCP_CLIENTS_V1,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
@@ -786,6 +870,8 @@ async fn dispatch_hello(
     );
     action.client_instance_id = Some(client_instance_id);
     action.mcp_hash = mcp_hash;
+    action.oauth_endpoint = oauth_endpoint;
+    action.oauth_resource = oauth_resource;
     action.actor = Some(if mcp_hash.is_some() {
         "MCP".into()
     } else {
@@ -1265,6 +1351,8 @@ fn success_action<T: serde::Serialize>(
         .expect("approved response DTOs must serialize");
     DispatchAction {
         mcp_hash: None,
+        oauth_endpoint: false,
+        oauth_resource: None,
         response,
         complete_handshake: handshake,
         client_instance_id: None,
@@ -1279,6 +1367,8 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         .expect("approved error DTO must serialize");
     DispatchAction {
         mcp_hash: None,
+        oauth_endpoint: false,
+        oauth_resource: None,
         response,
         complete_handshake: None,
         client_instance_id: None,
@@ -1321,6 +1411,8 @@ mod tests {
         let store = StateStoreHandle::open(path.clone()).expect("isolated store");
         let state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "negative-auth".into(),
             client_instance_id: None,
             actor: "Local IPC".into(),
@@ -1352,6 +1444,8 @@ mod tests {
     async fn hello_dispatch_advertises_the_current_store_schema_and_negotiated_capabilities() {
         let state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "schema-handshake-test".to_owned(),
             client_instance_id: None,
             actor: "Local IPC".to_owned(),

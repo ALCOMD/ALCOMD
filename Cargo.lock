@@ -192,9 +192,11 @@ dependencies = [
  "reqwest",
  "rmcp",
  "rusqlite",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "uuid",
 ]
 

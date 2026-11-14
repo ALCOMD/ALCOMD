@@ -69,24 +69,7 @@
                     "uniqueItems": true
                 },
                 "authentication": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "kind": {
-                            "const": "mcp-client"
-                        },
-                        "credential": {
-                            "type": "string",
-                            "minLength": 43,
-                            "maxLength": 256,
-                            "writeOnly": true,
-                            "pattern": "^[\\x21-\\x7e]+$"
-                        }
-                    },
-                    "required": [
-                        "kind",
-                        "credential"
-                    ]
+                    "$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
                 }
             }
         }

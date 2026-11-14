@@ -400,6 +400,28 @@ pub(super) fn accept_package_plan(
     idempotency_key: &IdempotencyKey,
     created_at_ms: u64,
 ) -> Result<ApplyPlanOutcome, M4Error> {
+    accept_package_plan_with_oauth(
+        connection,
+        owner,
+        plan_id,
+        expected_revision,
+        idempotency_key,
+        created_at_ms,
+        None,
+    )
+}
+pub(super) fn accept_package_plan_with_oauth(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    plan_id: PlanId,
+    expected_revision: Revision,
+    idempotency_key: &IdempotencyKey,
+    created_at_ms: u64,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+) -> Result<ApplyPlanOutcome, M4Error> {
+    if guard.is_some() && !owner.as_str().starts_with("mcp:") {
+        return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+    }
     let created_at_ms = sqlite_integer(created_at_ms)?;
     let fingerprint = format!(
         "{{\"expectedRevision\":{},\"planId\":\"{}\",\"version\":1}}",
@@ -411,6 +433,31 @@ pub(super) fn accept_package_plan(
         .map_err(store_error)?;
     let delegated_revision = if owner.as_str().starts_with("mcp:") {
         let plan = load_plan(&transaction, owner, plan_id)?;
+        if let Some(guard) = guard {
+            let now = super::m8_oauth::wall_time().map_err(|_| internal())?;
+            let limited = super::m8_oauth::authenticate(&transaction, guard, now)
+                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            if &limited.principal_id != owner {
+                return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+            }
+            let access = alcomd_application::mcp_access(&limited)
+                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            access
+                .require_project_read_scope(&plan.project_id.to_string())
+                .and_then(|()| {
+                    access.require_project_package_write_scope(&plan.project_id.to_string())
+                })
+                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            for permission in [
+                alcomd_application::Permission::PackagesRead,
+                alcomd_application::Permission::RepositoriesRead,
+                alcomd_application::Permission::OperationsRead,
+            ] {
+                access
+                    .require(permission)
+                    .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+            }
+        }
         Some(require_mcp_removal_write(&transaction, owner, &plan)?)
     } else {
         None

@@ -36,6 +36,8 @@ mod m7_unity_migration;
 mod m7_user_packages;
 mod m8_management;
 mod m8_mcp;
+mod m8_oauth;
+mod m8_oauth_types;
 mod operation_logs;
 mod project_authority;
 mod project_create;
@@ -60,6 +62,8 @@ pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 pub use m8_management::*;
 pub use m8_mcp::*;
+pub use m8_oauth::*;
+pub use m8_oauth_types::*;
 pub use operation_logs::*;
 pub use project_authority::*;
 pub use project_create::*;
@@ -623,6 +627,15 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send {
         std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
     }
+    fn list_oauth_projects(
+        &self,
+        _principal: PrincipalId,
+        _cursor: Option<RegistryCursor<ProjectId>>,
+        _limit: u32,
+        _guard: OAuthAccessGuard,
+    ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send {
+        std::future::ready(Err(M3Error::new(M3ErrorCode::PermissionDenied)))
+    }
     fn get_project(
         &self,
         owner: PrincipalId,
@@ -1061,6 +1074,8 @@ pub struct AccessContext {
     project_package_write_scopes: AccessScopes,
     extension_ui_scopes: AccessScopes,
     mcp_identity: bool,
+    oauth_guard: Option<OAuthAccessGuard>,
+    oauth_scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1083,6 +1098,8 @@ impl AccessContext {
             project_package_write_scopes: AccessScopes::None,
             extension_ui_scopes: AccessScopes::None,
             mcp_identity: false,
+            oauth_guard: None,
+            oauth_scopes: Vec::new(),
         }
     }
 
@@ -1595,7 +1612,11 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<ProjectPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
         validate_m3_limit(limit)?;
-        let mut page = if access.is_mcp_client() {
+        let mut page = if let Some(guard) = access.oauth_guard() {
+            self.store
+                .list_oauth_projects(access.principal().clone(), cursor, limit, guard.clone())
+                .await?
+        } else if access.is_mcp_client() {
             self.store
                 .list_mcp_projects(access.principal().clone(), cursor, limit)
                 .await?

@@ -18,6 +18,18 @@ enum Command {
         #[arg(long, default_value_t = 0)]
         port: u16,
     },
+    /// Run the explicit HTTPS OAuth profile. Trust the supplied certificate in each client.
+    ServeOauth {
+        #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
+        port: u16,
+        #[arg(long)]
+        tls_cert: std::path::PathBuf,
+        #[arg(long)]
+        tls_key: std::path::PathBuf,
+        /// Connect only to an already running Core (required for isolated manual runs).
+        #[arg(long)]
+        no_start_daemon: bool,
+    },
 }
 
 #[tokio::main]
@@ -41,6 +53,22 @@ async fn main() -> anyhow::Result<()> {
             let server =
                 alcomd_mcp::HttpServer::bind(port, alcomd_client::ClientConfig::default()).await?;
             eprintln!("http://{}/mcp", server.local_addr()?);
+            server.run_until(shutdown()).await?;
+        }
+        Command::ServeOauth {
+            port,
+            tls_cert,
+            tls_key,
+            no_start_daemon,
+        } => {
+            let config = if no_start_daemon {
+                alcomd_client::ClientConfig::default().without_daemon_start()
+            } else {
+                alcomd_client::ClientConfig::default()
+            };
+            let server =
+                alcomd_mcp::HttpServer::bind_oauth(port, config, tls_cert, tls_key).await?;
+            eprintln!("https://localhost:{port}/mcp");
             server.run_until(shutdown()).await?;
         }
     }

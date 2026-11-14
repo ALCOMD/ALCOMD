@@ -169,6 +169,8 @@ mod tests {
         .expect("isolated store");
         let mut state = ConnectionState {
             mcp_hash: None,
+            oauth_endpoint: false,
+            oauth_resource: None,
             connection_id: "m8-management-gate".into(),
             client_instance_id: None,
             actor: "Local IPC".into(),

@@ -23,7 +23,9 @@ use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod events;
+mod m8_oauth;
 pub use events::EventSubscription;
+pub use m8_oauth::OAuthRejection;
 
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
@@ -58,6 +60,7 @@ impl ClientConfig {
         self.authentication = Some(alcomd_protocol::McpAuthentication {
             kind: "mcp-client".into(),
             credential,
+            resource: None,
         });
         self
     }
@@ -107,6 +110,7 @@ impl ClientConfig {
 
 /// A connection to the per-user `alcomd` process.
 pub struct AlcomdClient {
+    oauth_rejection: Option<OAuthRejection>,
     stream: IpcStream,
     next_request_id: u64,
     usable: bool,
@@ -124,6 +128,7 @@ impl AlcomdClient {
     pub async fn connect(config: ClientConfig) -> Result<Self, ClientError> {
         let stream = connect_with_policy(&config).await?;
         let mut client = Self {
+            oauth_rejection: None,
             stream,
             next_request_id: 1,
             usable: true,
@@ -186,6 +191,7 @@ impl AlcomdClient {
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
             capabilities: vec![
+                alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
@@ -1179,6 +1185,7 @@ impl AlcomdClient {
         params: P,
         deadline: Option<Duration>,
     ) -> Result<T, ClientError> {
+        self.oauth_rejection = None;
         if !self.usable {
             return Err(ClientError::InvalidResponse);
         }
@@ -1192,6 +1199,15 @@ impl AlcomdClient {
             None => self.exchange(method, params).await,
         };
         self.usable = result.is_ok() || matches!(&result, Err(ClientError::Remote(_)));
+        if let Err(ClientError::Remote(error)) = &result
+            && let Some(tag) = error.data.as_ref().and_then(|v| v["oauthError"].as_str())
+        {
+            self.oauth_rejection = match tag {
+                "insufficient_scope" => Some(OAuthRejection::InsufficientScope),
+                "invalid_grant" | "invalid_client" => Some(OAuthRejection::InvalidToken),
+                _ => None,
+            };
+        }
         result
     }
 
@@ -1452,6 +1468,7 @@ mod connection_reuse_tests {
 
     fn client(stream: IpcStream) -> AlcomdClient {
         AlcomdClient {
+            oauth_rejection: None,
             stream,
             next_request_id: 1,
             usable: true,
