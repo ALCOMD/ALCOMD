@@ -535,3 +535,56 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 本轮完整JSON、三个作业日志、两Unix挂载原始片段及`hosted-summary.json`保存在`target/m8-hosted-9fea7b6-20261114/`，并核对已提交浏览器测试文件的完整SHA-256与push-audit一致。生产/Rust源文件、manifest/锁和构建配置相对7eac047未变，不把“源码相同”扩大为不同CI环境或产物字节相同；本机200ms注入前0/1、修后1/0、移除注入后的4/0及GUI check证据仍按其准确测试输入保留，没有为推送重复本地全量。GitHub只读EOF仅重查固定run；未触发重复workflow、取消作业、放宽断言、延长单用例超时或操作真实Core/GUI/数据/项目/Unity。
 
 本轮HTTP回环预配Bearer候选技术门禁已通过，无当前远端失败阻塞；不是完整OAuth、管理扩展或M8整体签收。管理扩展只完成上述只读复用审计，新的Host/WIT/Schema/凭据入口及观测合同仍须具体差异审阅，不因本轮全通过而自动获批。状态收尾只本地提交、运行适用metadata/xtask/diff，工作树与提交链核对后不再推送纯状态文档。
+
+### 管理扩展最小合同批次（2026-11-14，待审批）
+
+所有者同意按既有顺序推进；本节集中提出新Extension API及必要入口的具体差异，尚未实施或宣称获批。复用现有State34、Config13、`mcp.clients.*`、身份与六工具，不新增Core RPC或权限名称。首片完成客户端登记、授权与撤销；完整OAuth、实时连接/请求/订阅观测、其他业务工具及M9以后仍不在本片。
+
+#### 独立Host接口与有界数据
+
+新增可协商接口`alcomd:mcp-management/clients@1.0.0`，新world `alcomd:mcp-management/management-v1@1.0.0`包含旧world并导入此接口。旧`alcomd:extension/extension-v1@1.0.0`、所有既有type及Portable UI协议保持原样；新包required声明该接口，旧Host明确拒绝，旧guest在新Host继续可用。新接口不是任意RPC透传，仅提供下表六个函数。
+
+公共投影：`client-summary={client-id,display-name,revision,created-at-ms,revoked-at-ms?,grant-count}`；grant保持现有`permission/resource-kind/resource-id`三元组；项目摘要只返回`project-id/name`；页统一为`{items,next-cursor?}`，授权页另带revision。UUID、revision、时间、grant字段沿用现有强类型及界限，游标最多512字节ASCII，幂等键沿用1–128字节ASCII。不返回Principal、凭据或凭据摘要、数据库路径或完整项目路径。所有输入/输出在既有私有消息编码下各限64 KiB，保留全局WIT值256 KiB/Host帧512 KiB限额；页按数量及字节双重限制并返回游标，不能静默丢项。
+
+| 新WIT函数（同步result） | 输入、输出及既有权限 |
+| --- | --- |
+| `list` | `{cursor?,limit?}`→客户端摘要页；默认32、最多64，稳定按client-id排序；`mcp.clients.read` |
+| `grants` | `{client-id,expected-revision,cursor?,limit?}`→`{revision,items,next-cursor?}`；默认64、最多128，按三元组排序；`mcp.clients.read` |
+| `projects` | `{cursor?,limit?}`→项目摘要页，默认32、最多64；只返回当前Client与Extension两侧均获`projects.read/project/<id>`授权的交集，不扩大资源owner或暴露其他项目 |
+| `create` | `{display-name,idempotency-key}`→摘要；名称沿用1–128字符规则，必定零授权；`mcp.clients.manage` |
+| `change-grants` | `{client-id,expected-revision,add,remove,idempotency-key}`→摘要；add/remove各最多128条，禁止空差量、重复或相互重叠；`mcp.clients.manage` |
+| `revoke` | `{client-id,expected-revision,idempotency-key}`→摘要；沿用永久撤销，不删除记录、回滚任务或伪造可恢复开关；`mcp.clients.manage` |
+
+游标是不透明的有界值，绑定查询种类、客户端（如适用）、当前集合/客户端及grant快照版本、调用双方与lease/包/授权版本；对应证据变化返回`revision-conflict`并要求重读，不混页，不建立持久查询会话。游标本身不是授权。项目读取同时绑定可见交集及当前项目摘要；读取与摘要投影来自Core权威状态，不缓存另一份管理数据库。Core内部新增投影用例，避免为客户端摘要读取整份4096条grants，更不能把最多3 MiB的现有RPC响应直接装进WIT。
+
+`change-grants`由Core在一个接受事务内核对expected-revision、合并差量、验证最终4096条/64种权限上限并写入单份State34授权快照、增加一次revision。新增元组沿用现有组合/项目资格规则；新增项目范围还须处于上述双方可读交集。保留元组不扩大权能，删除已失去登记或可见性的项目元组仍允许，不能因项目已删除而无法清除旧授权。Core新增内部命令，不新增公共RPC或State；幂等指纹绑定原始规范化差量及调用actor，使用固定独立方法命名空间，不能改为对重算的完整列表取指纹。同键同输入重放原非秘密摘要，同键不同输入拒绝，不把历史结果当作当前权限。
+
+新接口使用自己的错误type：`invalid-argument/permission-denied/scope-denied/lease-expired/lease-revoked/revision-conflict/idempotency-conflict/resource-limit/cancelled/unavailable/write-outcome-unknown/internal-error`；只在internal-error附不透明diagnostic-id，不改旧WIT错误枚举。客户端不存在/不可用走invalid-argument；撤销后写入或版本变化走revision-conflict，均不返回秘密或原始Store错误。私有消息层明确区分业务失败与传输成功；接受后的响应丢失或无法证明未接受时是write-outcome-unknown，不报告取消成功、回滚或自动重试。
+
+#### 权威、安全与普通界面
+
+沿用Core签发的InvocationContext、lease与UI会话，不信任guest传入的身份。render只读、action才写、close无权限；本片不开放后台MCP管理调用。每调用同时检查交互Client及实际Extension Principal的对应权限、当前lease/包/grant/会话；写接受与撤销竞争的检查必须在同一Core/Store权威事务内线性化，不能只凭入口缓存。写入与幂等actor保留实际Extension Principal；不代持local-owner。MCP客户端是全局管理对象，`mcp.clients.manage`明确代表可修改全部客户端的高影响管理权，不虚构每扩展客户端owner或自动授予此权限。
+
+审批后同步extension threat model、ABI协商规范、Manifest/权限映射、Host消息Schema/白名单及兼容快照，再实现。威胁重点为过大数据、伪造/过期上下文、授权撤销竞态、项目范围提升、重复写、秘密泄漏与第一方特权旁路。声明只表达申请；MCP扩展required `mcp.clients.read`，optional `mcp.clients.manage`、`projects.read`，无管理权时只读，无项目范围时不提供项目新增选择。既有沙箱不增加WASI、网络、进程、文件、环境、终端或凭据权限。
+
+客户端列表→详情/授权编辑→明确保存，撤销时确认名称及影响。复用Portable UI的list/form/select/status与现有Material/错误出口，项目用名称+ID区分，权限显示申请内容与实际范围。大集合提供真正分页/增删，不用一次加载或全量覆写冒充完成。刷新/授权变化后重新读权威状态，旧结果不得覆盖新状态；UI断开/取消不撤销已接受写入，未知结果提示重新核对，不自动重试。普通页面只显示登记、授权、撤销，不能把未撤销或签发过凭据显示为“在线”。本片不新建状态面板、第二套GUI组件或任务系统。
+
+#### local-owner正式凭据入口
+
+新增CLI `alcomd-cli mcp client list [--cursor … --limit …]`与`alcomd-cli mcp client issue-credential <client-id> --expected-revision <n> --idempotency-key <key> [--secret-stdout]`；复用现有OS IPC、typed client与原RPC，无扩展签发函数。签发/轮换前展示目标及“旧凭据立即失效”，沿用交互确认/全局`--yes`。stdout非终端或使用JSON/NDJSON时，须显式`--secret-stdout`才发送RPC；不支持的dry-run/no-wait组合预先拒绝，避免在意料之外签发。终端只一次展示秘密，list/普通错误/日志/事件/UI均无秘密。输出失败或连接结果未知不得再次自动签发；先读取非秘密revision，明确说明可能已生效且明文不能恢复，只有用户显式新确认才用新revision/key轮换。不开文件、剪贴板、外部客户端配置或秘密持久存储旁路。
+
+#### Component构建与依赖差异
+
+真实MCP Component尚不存在；推荐独立guest crate使用已锁定的`wit-bindgen = "=0.57.1"`，关闭default，仅`macros/realloc/std`，编译无WASI的guest，再复用现有`wit-component 0.254.2`作Component编码。官方生成器避免手写Canonical ABI和手工WAT业务程序；不安装功能更宽的wit-bindgen CLI，不重写运行时。生成绑定及realloc含Canonical ABI所需unsafe，只限生成层并说明来源；普通管理逻辑继续禁止手写unsafe，不能宣称没有unsafe影响。
+
+临时隔离Cargo解析已核对：运行时wit-bindgen 0.57.1原已锁定；新增构建期包为wit-bindgen-core/rust/rust-macro各0.57.1、prettyplease 0.2.37、unicode-xid 0.2.6，以及wasm-encoder/wasm-metadata/wasmparser/wit-component/wit-parser各0.247.0。后五者是宏生成器要求的并行构建依赖，**不降级**现有Host的0.254.2。三项wit-bindgen及WASM/WIT包许可证`Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`；prettyplease/unicode-xid为`MIT OR Apache-2.0`。已声明MSRV分别1.85、1.62、1.17；rust-macro未独立声明MSRV，不能冒称已验证，批准后以项目1.97.1编译确认。Bytecode Alliance上游生成器与Wasmtime版本各自冻结，维护成本为两代构建工具并存及生成ABI审计。
+
+解析的wit-bindgen feature集合确为macros/realloc/std，未启用其async/bitflags/macro-string或WASI；生成器传递wasmparser启用的simd是Wasm解析feature，不授予guest OS权能。准确metadata、临时清单/锁位于`target/m8-management-contract-audit/`，生产manifest/锁未改；初次metadata仅因Cargo缓存写权限失败，获工具审批后读取成功，不是编译或功能验证。批准后的最终锁与feature tree须再对照此闭包，出现额外依赖/feature时先说明，不能随意升级现有包。
+
+#### 本片验收与明确未覆盖项
+
+审批后定向覆盖：old-guest/new-host与不支持接口拒绝；无管理权/仅一侧权限/伪造过期lease；4096条授权完整分页、游标变化拒绝、项目交集与孤立授权删除；原子差量/revision竞争/撤销/幂等重放；接受后响应丢失和会话关闭；CLI非终端预拒绝、一次返回、输出失败不重签；真实Component安装信任/启停/管理UI及两客户端当前授权实际生效。复用已通过的身份/业务/HTTP证据，不重复开发或把旧结果当作新Host已通过。稳定候选再集中适用验证，不逐修改跑全量。
+
+测试包须遵守现有签名、发布者确认和范围授权，只在获准隔离环境用开发测试密钥；不读取或更改真实签名材料，不直接往原环境安装。架构A019的默认安装/启用仍需后续实际分发证据，不能由占位manifest或一次开发包安装冒充完成。实时连接/请求/订阅观测仍缺公共查询，完整OAuth及其他M8剩余项分别后续收束；本片不是M8完成或推送授权。
+
+本轮准备检查：metadata、`cargo xtask check`及diff检查通过，仅修改本计划与status；没有执行完整测试/发布构建、修改正式Schema/WIT/生产依赖或操作原运行环境。沿用9fea7b6的准确远端证据，不将其当作本节未实施接口已经通过；本节文档只本地提交。
