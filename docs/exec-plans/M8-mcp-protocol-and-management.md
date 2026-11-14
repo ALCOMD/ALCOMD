@@ -1,6 +1,6 @@
 # M8：MCP 协议与管理扩展
 
-状态：IN_PROGRESS，2026-11-13。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
+状态：IN_PROGRESS，2026-11-14。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
 
 ## 既有范围与复用核对
 
@@ -31,7 +31,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通并取得定向、真实隔离及三平台既有Rust证据；完整CI各轮失败/取消和当前候选结果见末节，不宣称管理扩展、完整OAuth或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通，取得本地定向/真实隔离及7eac047同SHA三平台完整CI与四项CodeQL技术通过；历史失败/取消及额外本地测试修正见末节，不宣称管理扩展、完整OAuth或整个M8完成。
 
 ## 公共合同与接线状态
 
@@ -59,7 +59,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 ## 验证与交付边界
 
-日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；STDIO/身份/六工具的3ccc3f4远端基线与后续HTTP各轮实际结果见后文；当前f452ac5的CodeQL成功，CI有已确认Windows夹具失败，本地新增夹具修复12b4767尚无对应远端验证，不复用旧M7结果替代。
+日常仅检查受影响包及关联合同，使用独立的`target/m8-check`，避免覆盖原环境程序。协议、身份和工具证据分别关联输入；STDIO/身份/六工具的3ccc3f4远端基线与后续HTTP各轮实际结果见后文；历史f452ac5的CodeQL成功、CI有已确认Windows夹具失败，新增夹具修复12b4767已随7eac047获准推送，同SHA三平台完整CI和四项CodeQL均成功，本地dbe82de同步修正无远端结果，不复用旧M7结果替代。
 
 稳定业务候选形成后再集中执行适用门禁，真实包/权限和管理界面另据实际实现验收。未实现、未执行与失败保持分列。
 
@@ -458,7 +458,7 @@ ci-final/codeql-final JSON、三平台逐job日志、Ubuntu超时annotations及c
 
 所有者明确批准后，以真实Windows用户在标准main核对干净工作树、origin/main基线3196e1b及完整两笔`6d370e9378b86bca9e3d0e751248855183bdf1ce → f452ac59788fb49653e8db693e0e02cacd468bf0`，普通快进推送至f452ac5，远端实读一致。首次只读ls-remote遇TLS EOF，保持TLS校验原样重查成功后才推送；没有重试不明写操作、强推、标签、发布或手动workflow。468份既有Rust/HTTP输入3596d671不变，Unix夹具脚本摘要单独记录，不因推送重跑本地全量、构建或受控夹具检查。
 
-本次自动启动[CI 43561391720](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391720)及[CodeQL 43561391559](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391559)，均绑定f452ac5；CodeQL四项成功、最终JSON及完整日志已归档；CI的Windows在项目发现夹具创建Backups时AlreadyExists失败，Linux/macOS已越过挂载步骤进入构建，整轮尚未结束。仅查询上述既有run，重点核对Linux/macOS挂载前列出1项、实际具名1项通过及正常清理，不能将旧0项日志或本机假命令检查当作真实挂载证据。推送审计、当前/最终JSON及完整日志保存于`target/m8-hosted-f452ac5-20261114/`。M8保持IN_PROGRESS，原环境未替换或迁移，结果收尾只本地整理，授权不覆盖额外提交推送。
+本次自动启动[CI 43561391720](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391720)及[CodeQL 43561391559](https://github.com/ALCOMD/ALCOMD/actions/runs/43561391559)，均绑定f452ac5；CodeQL四项成功、最终JSON及完整日志已归档；CI现已收齐、总结论failure：Windows在项目发现夹具创建Backups时AlreadyExists失败，Ubuntu整个job成功/Chromium703/0（14.7m），macOS在真实挂载/release/Tauri等通过后Chromium702/1（25.2m）。两Unix挂载均具名执行1项、正常清理，不能再描述为尚未覆盖。仅查询上述既有run，重点核对Linux/macOS挂载前列出1项、实际具名1项通过及正常清理，不能将旧0项日志或本机假命令检查当作真实挂载证据。推送审计、当前/最终JSON及完整日志保存于`target/m8-hosted-f452ac5-20261114/`。M8保持IN_PROGRESS，原环境未替换或迁移，结果收尾只本地整理，授权不覆盖额外提交推送。
 
 #### Windows项目发现夹具同刻度碰撞（本地12b4767）
 
@@ -469,3 +469,34 @@ f452ac5的Windows在完整Workspace开始执行首个alcomd库测试时失败：
 修复后项目发现模块单轮7/0（8个测试线程，包含原失败用例），受影响包严格Clippy、workspace fmt-check及diff通过；没有扩大为完整Rust/浏览器/release验证，没有占用Core端点或操作原数据/Unity。生产部分及从FixturePlatform起的全部原适配器/业务测试逐字节不变；既有468份输入中仅此文件的测试区域改变，不继续声称整份3596d671摘要仍相同。MCP/HTTP生产实现和其余467份原输入保持，原有效证据按各自输入保留。定向前后日志、Clippy及源码边界审计见本轮`discovery-collision-before.log`、`discovery-collision-fixed.log`、`discovery-fixed-clippy.log`、`discovery-fix-source-audit.json`。
 
 所有者随后明确“可以推送”，授权本笔12b4767及本节必要状态记录普通快进推送。提交记录前再次核对定向结果与生产边界，不重复通过的测试；推送前执行便宜的metadata/xtask/diff与完整提交链/工作树核对。f452ac5的Unix其余作业仍须收齐，不取消或手动重跑旧运行；新候选仅由获准push自动验证，不能用旧结果替代。当前授权只覆盖该窄修与记录，不包含其他新增代码或额外推送。
+
+### 7eac047获准推送与夹具隔离远端验证（2026-11-14）
+
+所有者在f452ac5的Unix作业尚未结束时明确“可以推送”；完成metadata/xtask/diff、真实Windows用户/main/干净工作树、完整两笔及origin/main基线核对后，普通快进推送`12b4767c31f72f762f8792160bcf17002ac8bbf1 → 7eac0479bdb40282f1668cb1466185bd218279de`，远端实读7eac047。仅含cfg(test)夹具窄修与两份状态文档，无生产或旧业务断言变更；没有重跑通过的模块、完整Rust/浏览器或release，也没有取消尚未结束的旧作业。
+
+push自动启动[CI 43564128872](https://github.com/ALCOMD/ALCOMD/actions/runs/43564128872)和[CodeQL 43564128896](https://github.com/ALCOMD/ALCOMD/actions/runs/43564128896)，均绑定7eac047；CodeQL四项成功，已逐job归档完整日志，CI三平台整个job均成功，Chromium各703/0、零重试，Windows/Ubuntu/macOS分别18.1/15.9/25.1分钟；两Unix具名真实挂载各1/0并正常清理。f452ac5原CI已独立收齐、结果见下节；新旧轮次的结论、挂载具名1项和浏览器计数分别核对，不拼接。新候选推送审计及当前/最终JSON、日志保存于`target/m8-hosted-7eac047-20261114/`，包含原468份输入的唯一变化及其完整文件hash、生产/旧测试不变证据引用；不把原3596d671摘要直接写成新测试输入。结果收尾仅本地提交，不再推送纯状态文档或手动触发检查；M8保持IN_PROGRESS，未实施完整OAuth或管理扩展Host/WIT。
+
+#### f452ac5最终结果与包来源用例同步修正（本地dbe82de）
+
+f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391720` failure，CodeQL `43561391559`四项success。Ubuntu整个job成功，Chromium703/0、14.7分钟；Windows54/1/1原有忽略的夹具碰撞保持失败。macOS的Check、CLI、具名真实挂载1项、release/Tauri/架构目标/锁/diff均成功，浏览器为702/1、25.2分钟，零重试；失败是`m7-package-candidates.spec.ts`首条“Duplicate repository versions...”在取消审阅后选择来源、等待opened超时。Linux同文件系统bind mount及macOS APFS的具名通过/1 passed和清理均已逐日志核对，证据`ubuntu-mount-proof.json`、`macos-mount-proof.json`，旧0项记录继续保留。
+
+源码表明Dialog在真实closed事件后才清理审阅状态，并等待原目标updateComplete再异步归还焦点；旧测试仅点击Cancel就转向来源菜单，未等待这两项合同完成。新临时故障注入只延迟原目标就绪200ms，原测试在相同来源opened等待点0/1；补closed事件及原版本控件焦点等待后，同注入1/0。证明了异步回焦可打断菜单打开的竞态；没有取得Mac失败trace，不声称本机自然复现其实际调度。首次npm命令受Windows转义影响No tests found，记录为未执行；随后仓库已安装Playwright直接入口确实执行单条，日志分开保留。
+
+本地`dbe82deb9829aa269710996de1c7cbb09c8515b9`仅新增5行测试同步/断言，临时注入全部移除，原来源/Plan业务断言、菜单opened/closed等待、703项总数、30秒超时及零重试保持；生产Material/Dialog/Core未改，不重开M7。最终未注入版本相关4/0（原失败用例及3项焦点归还合同），GUI tsc/Material/locale及diff通过。前后注入、最终回归、源码SHA和未执行首命令记录见`focus-before.log`、`focus-before-direct.log`、`focus-injected-fixed.log`、`focus-final.log`、`focus-gui-check.log`、`focus-fix-summary.json`；未重复本机完整浏览器、Rust或release。
+
+7eac047不含这5行，不能把它的远端结果写成dbe82de验证通过。该新增本地修正未获额外推送授权；7eac047完整结果已全部收齐，新增修正与必要记录按准确候选另行确认；不手动rerun任何旧workflow，不借本缺口扩展页面功能或将M7签收推翻。
+
+#### 7eac047最终技术结论与本地收尾
+
+[CI 43564128872](https://github.com/ALCOMD/ALCOMD/actions/runs/43564128872)与[CodeQL 43564128896](https://github.com/ALCOMD/ALCOMD/actions/runs/43564128896)均completed/success，准确候选为`7eac0479bdb40282f1668cb1466185bd218279de`。本轮没有手动dispatch/rerun、取消旧任务、扩大测试超时或删除断言。原f452ac5全部结果独立收齐，其Mac702/1不会被本轮703/0改写。
+
+| 7eac047本轮同SHA结果 | 实际证据 |
+| --- | --- |
+| Windows Server 2025 | 整个job成功，完整Check（含严格Clippy、Workspace/MCP及前端）、CLI权威daemon数1、release/Tauri/锁/diff、Chromium703/0（18.1m）。新增同刻度夹具隔离及原恢复预留用例均通过 |
+| Ubuntu 22.04 | 整个job成功，完整Check/CLI/release/Tauri/GLIBC/锁/diff、Chromium703/0（15.9m）。真实同文件系统bind mount具名1通过/0失败/0忽略，清理成功；新旧项目发现回归通过 |
+| macOS 15 arm64 | 整个job成功，完整Check/CLI/release/Tauri/架构与部署目标/锁/diff、Chromium703/0（25.1m）。真实APFS挂载具名1通过/0失败/0忽略，正常卸载清理；新旧项目发现回归通过 |
+| CodeQL | Actions、Python、JavaScript/TypeScript、Rust四项全部成功；逐job完整日志、最终JSON与准确SHA一致 |
+
+逐平台完整日志、两Unix挂载原始片段、`ci-final.json`、`codeql-final.json`及验证这些计数的`hosted-summary.json`位于`target/m8-hosted-7eac047-20261114/`。部分GitHub只读请求EOF仅重查相同run；限额核对非耗尽，后续以官方run/jobs API及逐job日志收齐。进程级HTTP/1.1仅用于gh读取，保留TLS/认证，未改生产HTTP合同或全局网络设置。
+
+本轮已推送代码的远端门禁无剩余失败阻塞，获批回环预配Bearer/既有身份及六工具切片保持；不将其当作完整OAuth、管理扩展Host/WIT或M8完成。额外本地dbe82de的5行测试同步不含在7eac047，只有注入前后及最终4项定向证据和GUI check，不冒称完整703项或远端通过。该修正及本节收尾记录仅本地提交，工作树/提交链与metadata/xtask/diff按常规核对，不重复本地Rust/浏览器全套、release或制造纯文档CI；如需推送新增两笔仍须新的明确授权。
