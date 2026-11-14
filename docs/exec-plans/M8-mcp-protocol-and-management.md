@@ -401,3 +401,30 @@ base64 feature tree/锁审计确认只新增0.23.1、httpdate1.0.3、sse-stream0
 
 本轮两次隔离均保持原Core/GUI关闭、旧程序缺失状态；原36份data/346份profile逐文件摘要不变，保全当时10个Unity/Hub进程。最终修复保全见`target/m8-http-audit-20261113/native-preservation/hosted-two-fixes-20261114-20261114T0059073579071Z/result.json`，未操作真实项目或恢复桌面控制。macOS/Windows历史失败保留，修复后的Hosted CI/CodeQL仍未取得；原四笔推送授权不覆盖新增提交，现有结果已收齐，新增修复及本节记录等待单独确认额外推送。M8保持IN_PROGRESS，不以本地修复宣布远端通过或M8完成。
 本次远端失败没有导致修改工作流、删测试、放宽状态/完整读/截止断言或延长超时。本地新增修复只涉及HTTP模块和准入测试的有界诊断，公共合同/依赖/权限保持。`fixed-summary.json`核对67条适用输入/结果记录与5类故障，不能把旧轮68条记录写成本轮数量；Operation轮询次数可随真实完成时间变化。源码候选33811d4的21项无Core定向测试与2项真实HTTP/Core同输入结果、严格MCP Clippy、fmt/xtask/metadata/diff通过；后续仅本地文档整理，未再次运行全量验证、构建或触发CI。原四笔推送已完成，新增三笔（两项窄修及本次状态记录）尚未推送，需按项目推送边界明确授权后方可用新候选取得远端结果。
+### e3cd4ac获准推送与修复后同SHA门禁（2026-11-14）
+
+所有者再次明确批准三笔提交后，核对真实Windows用户/main、干净工作树、远端aab87a8及完整链`ddd557f → 33811d4 → e3cd4ac`，普通快进推送至`e3cd4acb7db91e6a464272a947f0d4c7768055c1`，远端实读一致。源码仍为33811d4，之后仅两份状态文档，468份输入摘要3596d671未变；不因推送重复本地Rust/HTTP/浏览器全量或release构建，没有替换原Core/GUI或操作原数据。
+
+该push自动启动CI `43545258103`和CodeQL `43545257774`，均绑定e3cd4ac；现已全部收齐：CodeQL四项成功，CI总结论cancelled（macOS/Windows完整成功，Ubuntu因60分钟总预算在浏览器阶段取消），不能标为三平台完整通过，不复用aab87a8的成功/失败充当修复后结果。只读取这两轮既有run，无手动dispatch/rerun。当前JSON、最终日志与推送/输入审计保存于`target/m8-hosted-e3cd4ac-20261114/`。本次授权仅覆盖上述三笔；结果收尾只本地整理，不额外推送纯状态提交触发验证。M8保持IN_PROGRESS。
+#### e3cd4ac的CI总预算阻塞与重复执行收束（本地候选）
+
+Ubuntu check annotation明确为`The job has exceeded the maximum execution time of 1h0m0s`，不是测试断言失败或人工取消。该job在02:15:26Z开始、03:15:46Z结束；Check成功19.82分钟，后续Test repository contracts又用9.03分钟，release成功10.60分钟、Tauri成功3.35分钟，浏览器启动703项/2 workers、运行15.83分钟后被取消，没有完整终态，不能写703/0。macOS同SHA整个job成功，Chromium703/0（22.4m）；Windows同SHA整个job也已成功，Chromium703/0（18.6m）；本轮全部结果已收齐。
+
+原因审计确认`.github/workflows/ci.yml`连续调用check和test聚合脚本：Check已包含完整`cargo test --locked --workspace`、Discord测试及`npm run check`；test脚本重复这三项，只额外增加Core/CLI构建与CLI自动启动集成。修复`2a319d7a`仅更改三平台工作流编排：完整Check仍为默认必经前置步骤，之后直接执行原`cargo build --locked --package alcomd --package alcomd-cli`及原test-m1-auto-start脚本。没有删除测试文件、测试用例或断言，没有skip/continue-on-error，没有减少Rust/浏览器覆盖；Workspace/Discord/前端检查仍各完整执行一次。所有其他步骤、触发器、权限、runner及90/60/90分钟作业上限保持原样，测试和产品内超时也没有改变；本地check/test聚合脚本保持可独立使用的原行为。
+
+固定基线e3cd4ac与新YAML的逐job结构/命令集合审计通过，证据`ci-coverage-audit.json`验证每个原测试门禁都保留在未改动的Check、CLI附加用例仍保留且所有其他步骤相等。PyYAML6.0.3仅置于忽略的target审计目录，未改生产或CI依赖/manifest/lock。PowerShell AST、两个Bash -n及metadata/xtask/diff检查通过；Bash首次因沙箱不能创建MSYS命名对象而未执行，改在真实Windows用户环境完成语法检查，没有实际运行CLI/Core或重跑本地全量。未声称新编排已在远端通过；该新增工作流提交仍仅本地，本轮既有结果已收齐，待单独申请新增提交推送，不手动rerun已取消job。
+#### e3cd4ac最终结果与待推送编排候选
+
+| 本轮实际结果（均为e3cd4ac） | 结论 |
+| --- | --- |
+| CI 43545258103 | 总结论cancelled，非三平台完整通过 |
+| Windows Server 2025 | 整个job成功，严格检查/完整Rust/CLI集成/release/Tauri/锁/diff/Chromium703/0，零重试；浏览器18.6分钟 |
+| macOS 15 arm64 | 整个job成功，包含完整Rust/CLI集成/挂载边界/release/Tauri/部署目标/锁/diff/Chromium703/0，零重试；浏览器22.4分钟 |
+| Ubuntu 22.04 | 严格检查/完整Rust/CLI集成/挂载边界/release/Tauri/GLIBC/锁/diff均成功；浏览器703项执行中触及job60分钟预算而取消，没有最终计数，不记录为PASS |
+| CodeQL 43545257774 | Actions、JavaScript/TypeScript、Python、Rust四项全部成功 |
+
+两个HTTP关闭/截止缺陷的新增回归及真实HTTP/Core闭环已在三平台Rust测试通过；e3cd4ac当前唯一未收束的门禁是Ubuntu的完整浏览器终态及总作业预算。Check与Test在同job重复执行完整Workspace/Discord/前端检查的证据保留原日志，不能用Mac/Win或aab87a8的浏览器结果拼接成Ubuntu当前通过。此轮只读查询偶发失败均仅重查原run，无手动dispatch/rerun。
+
+待推送工作流候选`2a319d7a7d0f89bf72dcf728d8c778178eb3f95c`仅修改ci.yml三处串行编排，没有改生产代码、测试、聚合脚本、依赖、断言、超时或仓库设置。完整Check仍为每job默认必经前置，后续保留原Core/CLI构建及自动启动脚本；所有其他步骤及锁文件最终核对逐项相等。固定e3cd4ac基线的YAML结构/门禁集合审计、PowerShell AST、Bash -n、metadata/xtask/diff通过。468份运行时/测试输入3596d671不变，保留33811d4与e3cd4ac的有效功能证据，不为仅编排和文档变更重跑本机全量。
+
+ci-final/codeql-final JSON、三平台逐job日志、Ubuntu超时annotations及ci-coverage-audit.json均保存在`target/m8-hosted-e3cd4ac-20261114/`。新编排未在远端执行，不能提前记为通过；原三笔推送授权已用完，工作流候选及本节记录仅本地提交，等待新的明确推送授权，下一轮只由新push自动验证，不人工重跑旧job。M8保持IN_PROGRESS，完整OAuth/管理扩展Host桥等范围仍未实施。
