@@ -18,7 +18,9 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-mcp-management\management-develo
 
 ## 当前入口缺口
 
-只读Windows进程检查Core/GUI/Host/MCP均0，本轮没有暂停或恢复进程。`target/debug`、GUI的独立target/debug均没有当前程序，`target/m8-check/debug`只有先前MCP程序；找到的M7备份/旧构建不能作为State35/M8匹配Core/Host候选。以前真实管理用例会在结束时停用、卸载并清理可丢弃数据，不能据其成功声称仍有持久可查看环境。
+审计时只读Windows进程检查Core/GUI/Host/MCP均0，本轮没有暂停或恢复进程。审计当时`target/debug`、GUI的独立target/debug均没有当前程序，`target/m8-check/debug`只有先前MCP程序；找到的M7备份/旧构建不能作为State35/M8匹配Core/Host候选。以前真实管理用例会在结束时停用、卸载并清理可丢弃数据，不能据其成功声称仍有持久可查看环境。
+
+2026-11-15 OAuth代码`6bf3493cc69d28e7364f27192635e1f3f7aecade`已补齐`target/m8-check/debug`的当前Core/MCP/CLI debug构建及真实隔离用例，见[本地结果](../exec-plans/M8-mcp-protocol-and-management.md#已批准oauth本地候选与定向结果2026-11-15)。**匹配Host/嵌入前端GUI仍未补齐，窗口仍未就绪。** 本批隔离用例全部结束，原数据/profile摘要及Unity保持，未自动恢复桌面控制。新OAuth的自动化技术结果不代表本清单的原生人工查看已通过。
 
 下次准备窗口仅需补齐**匹配当前源输入的一组独立原生构建**，不需重跑Workspace/704项或三平台。使用同一隔离输出目录放置Core、CLI、Host和嵌入前端的GUI，绑定源码SHA及文件摘要；不能将普通debug GUI的devUrl误当已嵌入产物。复用既有`--data-dir`和`WEBVIEW2_USER_DATA_FOLDER`隔离方式，使用新建workspace/target下的数据、profile及两个可丢弃项目。不要执行指向原M7数据的旧`open-runtime.ps1`来代替隔离入口。
 

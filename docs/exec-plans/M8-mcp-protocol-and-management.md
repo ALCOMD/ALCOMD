@@ -725,7 +725,7 @@ ELF/Mach-O修复尚无实际执行通过证据，不能把Windows原生编译或
 
 ### 完整OAuth接入审计与集中待审合同（2026-11-15）
 
-**状态：审计完成，以下新合同待所有者集中审批，未实施。** 基线为远端78920f382d1a0c58dece4a51fb2f54d84f48fcf2及本地纯记录93967f5；现有同SHA CI/CodeQL通过仍有效，不用于证明尚未实现的OAuth。本轮只读源码、冻结规范和依赖核对，不重做身份、六工具、STDIO、HTTP或管理扩展，不推进M9，不推送。
+**状态：2026-11-15所有者已集中批准推荐方案，进入实施。** 批准涵盖本节HTTPS/预登记OAuth、9个RPC、两个hello分支、State36两表和两条锁定TLS依赖边，不再重复审批同一范围。基线为远端78920f382d1a0c58dece4a51fb2f54d84f48fcf2及本地审计478af1b；既有同SHA CI/CodeQL通过仍有效，但不覆盖OAuth新增代码。以下审计保留当时事实，实际实现与验证另记；不重做身份、六工具、STDIO、HTTP或管理扩展，不推进M9，不推送。
 
 #### 实际复用与必要缺口
 
@@ -766,7 +766,7 @@ AS元数据`scopes_supported`列现有可委托权限；PRM只给最小`projects
 
 预登记同时支持public `none`和confidential `client_secret_basic`，都强制S256；不支持implicit、password、client_credentials、私有JWT、token exchange。每个OAuth登记精确映射一个现有Core客户端，一个Core客户端至多一个有效登记；不同客户端不合并Principal。最多16个精确callback（HTTPS，或localhost/127.0.0.1/[::1]回环HTTP；拒绝userinfo/fragment、通配和任意端口匹配）。预登记不自动创建Core授权，默认仍零授权。CIMD暂不实现的SHOULD偏离理由：首批仅预登记、不新增远程metadata抓取及SSRF面；DCR不实施。能配置预登记client_id的客户端可接入；只支持自动注册的客户端不能宣称兼容，通用客户端自动接入仍列后续。
 
-#### 集中待审Core差异
+#### 已集中批准的Core差异
 
 新增capability **`mcp.oauth.v1`**，仅在真实接线和隔离测试完成后发布；不是现有mcp.clients.v1的重新审批。下表为固定typed用例，不提供通用RPC代理。
 
@@ -785,7 +785,7 @@ owner交互先复用正式CLI：`mcp oauth registration list/set/revoke`、`mcp 
 
 必要新增公开错误：RPC `mcp_oauth_invalid_grant`、`mcp_oauth_expired`、`mcp_oauth_response_unavailable`，其他复用invalid_request/permission_denied/revision_conflict/idempotency_conflict等稳定错误。HTTP按OAuth标准invalid_request/invalid_client/invalid_grant/unsupported_grant_type/invalid_scope/invalid_target/access_denied/temporarily_unavailable，未确认client/callback前绝不redirect；出错响应不反射原请求或秘密。原core_write_outcome_unknown仍只处理业务写响应未知。
 
-#### State36、生命周期和依赖（均待审批）
+#### State36、生命周期和依赖（2026-11-15已批准）
 
 仅新增0036增量、单事务迁移，不改0033–0035及其他历史迁移，不升级原运行数据。新增两张表：
 
@@ -813,3 +813,56 @@ Host精确`localhost:<port>`且仅127.0.0.1绑定，拒绝转发头/代理author
 本轮管理扩展人工入口准备见[短清单](../testing/m8-management-manual-20261115.md)：真实开发包存在、来源和Component输入需核对后复用；完整原生程序组缺失，尚未启动窗口，不恢复桌面控制。只读Windows进程核对Core/GUI/Host/MCP均0；没有需要本轮恢复的已暂停原进程，也没有修改原环境/数据。完整OAuth审批与原生匹配构建补齐分别处理；未实现的实时观测、正式分发及来源委托不夹入本批。
 
 本轮实际检查：开发包ZIP/manifest、Component摘要与12份provenance输入全部匹配；5份既有冻结正文摘要及同提交client-registration共6份核对通过。`scripts/validate-metadata.py`、`cargo run --locked -j 1 --target-dir target/m8-repository-check -p xtask -- check`、diff检查通过；`cargo tree --locked -p alcomd-mcp --edges normal,build,features`确认当前生产未开启rmcp auth或oauth2，本轮未改变manifest/lock/feature。审计JSON、冻结新增正文和feature tree位于`target/m8-oauth-audit-20261115/`。未运行Rust/Chromium全量、release、真实Core新用例或桌面安装，没有OAuth实现/新远端结果。只提交三份审计/状态/查看记录，不推送。
+
+### 已批准OAuth本地候选与定向结果（2026-11-15）
+
+所有者集中批准后，代码提交 `6bf3493cc69d28e7364f27192635e1f3f7aecade` 已在标准目录/main由真实Windows用户 `cqmhv-dt\m2922` 本地提交。上节审计的“没有实现”等描述仅指478af1b时点；本节为当前实现结果。没有推送或新增远端运行，78920f3的CI/CodeQL不覆盖此OAuth增量，M8保持IN_PROGRESS。
+
+已接通：Core application/SQLite State36/dispatcher/typed client、九个固定RPC、受限端点和access身份、正式CLI预登记及指纹审批、HTTPS发现/授权码/刷新/撤销、原SDK与六工具。签发和授权均由Core执行，访问取token上限与当前grants交集，写接受在原事务内重验；原资源owner、实际调用者Plan/Operation/幂等归属不变。端点角色不能借clientInfo或无凭据回退owner。普通STDIO、预配Bearer、六工具Schema、Config13、WIT及旧迁移0033–0035保持。
+
+补齐了实际边界：零授权不能批准/签发空scope；callback拒绝预含code/state/iss/error等响应参数；登记历史不因64个Core客户端上限丢失，元数据分页绑定完整快照并限制64KiB。已消费refresh在自身7天闲置到期后、family30天绝对期前重放，仍撤销存续后代。一次性token回复丢失返回503 temporarily_unavailable及固定“结果未知、重新授权”说明，不声称回滚、不自动重签；confidential CLI断管是失败退出，先检查登记revision再显式轮换。
+
+项目查询保留六工具既有tuple游标：Core在SQL分页前求当前token范围交集，续页核对签发grantRevision及游标项目是否仍在上限。**它不是携带token指纹的不透明游标，未提供跨token的游标来源证明；切换token须从第一页开始，不能宣称继续同一快照。** 如需严格拒绝所有跨token混用，既有游标公开形状需另作最小合同变更；本批没有暗改六工具。OAuth登记/审批自身的不透明游标已绑定对应完整快照，变化明确拒绝混读。
+
+444份最终输入见 `target/m8-oauth-audit-20261115/inputs-committed.json`，聚合SHA256 `74929637c95eb3e745cceeeff4dd312bc42d91ceda94f0d4030ef2745b28acdd`，提交前后相同。这是输入清单，不代表清单内所有模块都被执行。真实HTTPS轮次之后只变更两份静态合同测试和两份RPC Schema，随后相关模块单独通过；运行时代码/构建输入及真实用例代码未变，未为纯文档再跑业务闭环。原生/测试二进制摘要、依赖差异和完整逐模块日志位于同目录 `stable-summary.json` 及具名日志。
+
+| 实际验证范围 | 本轮最终结果 | 日志/说明 |
+| --- | --- | --- |
+| OAuth Store/use case + State36保全/回滚 | 11/0，零忽略 | `store-oauth-stable.log`；含并发refresh、重启、expiry、权限收窄、65条历史及字节分页 |
+| Protocol OAuth / 旧MCP DTO | 各2/0 | `protocol-oauth.log` / `protocol-mcp.log` |
+| RPC Schema整个模块 | 单轮50/0 | `protocol-schema-stable.log`，没有放宽旧断言 |
+| 旧MCP委托写 / State33 / State34 / State35 | 分别2/0、5/0、4/0、3/0 | 对应`store-mcp`/`migration-*`日志；原保全/序列/FK/回滚断言保持 |
+| 当前State静态合同 / client连接生命周期 | 9/0、3/0 | 仅将三处当前版本严格预期35改36；不重开M7 |
+| CLI单元 / MCP单元 / HTTP接入 / 冻结STDIO | 10/0、10/0、2/0、12/0 | `cli-unit`/`mcp-unit`/`http-admission`/`stdio-frozen`日志 |
+| 真实HTTPS/Core/冻结SDK业务闭环 | 1/0 | `native-stable-20261114T2211196189269Z/`，实际Core接受后截断业务写及token写回复 |
+| 真实OAuth CLI / 既有MCP CLI秘密输出 | 各1/0 | `native-cli-stable-20261114T2214432599634Z/`、`native-cli-existing-20261114T2216160704861Z/` |
+| 严格Clippy / fmt / metadata / xtask / diff | 通过 | Clippy限定受影响七包all-targets；不冒称workspace全量 |
+| Core、MCP、CLI本地debug构建 | 通过 | `build-native-stable.log`；没有release/Tauri/浏览器或三平台重跑 |
+
+保留诊断历史：最初OAuth Store6项1/5，原因是通用幂等fingerprint必须为合法JSON，原始hash未编码；修正后当时OAuth/迁移8/0，随后增加边界后10/0。新增迟到refresh单例原样0/1，修正实际撤销判断后最终整组11/0。Schema清单最初遗漏数组长度而编译失败，修正后单轮49/1发现新Schema `$id` 不在既定rpc/v1命名空间；只修文档ID后最终模块50/0。没有把局部通过拼成全套通过；首次Clippy的嵌套if告警及修正也保留。
+
+真实HTTPS用例使用三个独立客户端和可丢弃项目：未授权拒绝、owner选择项目子集、范围外拒绝、confidential Basic、token scope403、完整多页读取、原Plan Apply、跨客户端Plan/Operation拒绝、在途请求取消不取消已接受Operation、实际写响应丢失后显式原key恢复。Apply请求总数为5（含拒绝及显式恢复），恢复key只有一条幂等记录。token实际提交后丢回复，返回未知结果；原refresh重放不再签发并撤销family，登记下总共6条token行（原对+两轮各一对）。存续连接在授权变更/撤销后被拒绝。公开tool trace不含token/refresh/client secret；项目owner仍local-owner、Operation仍实际MCP Principal。
+
+依赖核对：Cargo.lock只增加alcomd-mcp→rustls/tokio-rustls两条直接边，没有新增锁包或升级。MCP生产normal/build图新增16个**工作区已锁定**的TLS及构建闭包包，包含aws-lc-rs/sys、webpki、zeroize及C工具链；不能写成“运行时图完全没变”。features仅是该闭包的std/aws_lc_rs及其依赖features，未开启rmcp auth/oauth2、ring、TLS1.2、fips或PQ。rustls0.23.46、tokio-rustls0.26.4的许可/MSRV沿上节批准记录。既有base640.23.1 simd-unsafe仍存在，aws-lc第三方C/汇编/unsafe影响明确保留；没有新增ALCOMD直接base64依赖。精确前后tree及inverse记录均归档。
+
+三次最终真实用例均先核对Core/GUI/Host/MCP进程为0；原环境本来已关闭，结束后仍关闭，没有“恢复了一个不存在的暂停进程”。原已识别data/profile逐文件摘要和已有Unity进程身份前后保持，本批runtime剩余0；未替换原程序、未迁移原运行数据、未访问真实工程。桌面控制没有恢复；测试证书为公开可丢弃end-entity/key，只在测试客户端信任，未写系统信任库或正式签名材料。
+
+实际候选入口（已构建并核对help，**未启动持久人工环境**）：
+
+```text
+C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-check\debug\alcomd.exe
+C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-check\debug\alcomd-mcp.exe
+C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-check\debug\alcomd-cli.exe
+```
+
+后续人工接入顺序：先确认用户唯一受保护端点空闲；Core必须显式`--data-dir <新建可丢弃目录>`。测试身份及最小项目范围需先通过既有typed `mcp.clients.create/setGrants`或管理扩展建立；当前正式CLI的`mcp client`只有list/issue-credential，**没有create/grants子命令**，不能提供不存在的命令。原生管理入口仍未准备好，不将此顺序称为现成一键环境。随后`mcp oauth registration set <ClientId> --port <固定非零端口> --redirect-uri <客户端实际回调> --expected-revision 0 --idempotency-key <新key>`预登记。所有隔离CLI加`--no-start-daemon`，不省略显式确认。
+
+端点命令为`alcomd-mcp.exe serve-oauth --port <同一端口> --tls-cert <受信任localhost证书.der> --tls-key <匹配密钥.pkcs8> --no-start-daemon`。普通浏览器/客户端须自身信任该证书，不推荐把已知测试私钥用作日常服务。冻结协议客户端完成发现、S256与resource请求后，浏览器只显示待审ID；本机`mcp oauth request show <RequestId>`审阅，`request approve <RequestId> --expected-fingerprint <所见指纹> --grant <permission/kind/id> --idempotency-key <新key>`显式确认，再回原页面继续，获得access后使用原六工具。不要把过时fingerprint或未知秘密写结果直接重试。
+
+未覆盖/后续：普通浏览器人工TLS接入、外部第三方客户端自动登录、CIMD/DCR和外部AS/自动证书均未验证或实施，不承诺任意MCP客户端兼容。管理扩展的匹配Host/GUI原生查看、实时观测、正式默认分发及包安装来源委托仍为M8后续；本批不进入这些实现或M9。现有tuple游标的严格跨token来源绑定限制如上保留。当前只有本地技术结果，等待新增代码远端验证；不自动推送。
+
+#### 唯一待决合同差异：OAuth项目续页来源绑定
+
+已批准要求“游标绑定token上限与当前授权快照”，同时保留原六工具合同。实际旧cursor只有timestamp/ProjectId，无法证明来自哪枚token；当前查询仍权威限制每页范围和revision，不存在借游标读取范围外项目，但不能把这一点冒充来源绑定完成。仅此更强保证未实施，其他接线与结果保持。
+
+推荐最小差异：仅给`projects.list`的cursor及六工具`alcomd_list_projects`对应cursor增加可选`authorizationBinding`（工具侧snake_case），非OAuth继续省略；OAuth返回Core生成的有界不可伪造绑定，续页必须带回。绑定覆盖token、当前grantRevision、token上限、timestamp/ProjectId；错误/缺失/不同token或快照用既有revision_conflict，要求重新第一页。不增加State、Config、权限、session、缓存或万能RPC。新字段需在DTO/Schema/typed client/工具透传及定向篡改/跨token/撤销回归同步。**尚未修改该公开形状**；依据AGENTS.md“公共 RPC、数据库 Schema、Extension API、权限名称和迁移删除清单须经人工审批”，仅此差异另待批准，不重审已批准OAuth身份、九RPC或依赖，也不推送。
