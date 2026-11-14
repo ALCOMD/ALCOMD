@@ -536,9 +536,9 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 
 本轮HTTP回环预配Bearer候选技术门禁已通过，无当前远端失败阻塞；不是完整OAuth、管理扩展或M8整体签收。管理扩展只完成上述只读复用审计，新的Host/WIT/Schema/凭据入口及观测合同仍须具体差异审阅，不因本轮全通过而自动获批。状态收尾只本地提交、运行适用metadata/xtask/diff，工作树与提交链核对后不再推送纯状态文档。
 
-### 管理扩展最小合同批次（2026-11-14，待审批）
+### 管理扩展最小合同批次（2026-11-14，已批准）
 
-所有者同意按既有顺序推进；本节集中提出新Extension API及必要入口的具体差异，尚未实施或宣称获批。复用现有State34、Config13、`mcp.clients.*`、身份与六工具，不新增Core RPC或权限名称。首片完成客户端登记、授权与撤销；完整OAuth、实时连接/请求/订阅观测、其他业务工具及M9以后仍不在本片。
+所有者于2026-11-14明确批准本节管理扩展合同及所列构建期依赖，授权直接实施、定向验证与稳定本地候选，不自动推送。复用现有Config13、`mcp.clients.*`、身份与六工具，不新增Core RPC或权限名称。随后另行批准下节State35和can-manage增量，修正最初“不改State”的假设。首片完成客户端登记、授权与撤销；完整OAuth、实时连接/请求/订阅观测、其他业务工具及M9以后仍不在本片。以下“审批后”要求从本次授权起执行，实际实现/验证结果另记，合同获批不等于功能验收通过。
 
 #### 独立Host接口与有界数据
 
@@ -557,7 +557,7 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 
 游标是不透明的有界值，绑定查询种类、客户端（如适用）、当前集合/客户端及grant快照版本、调用双方与lease/包/授权版本；对应证据变化返回`revision-conflict`并要求重读，不混页，不建立持久查询会话。游标本身不是授权。项目读取同时绑定可见交集及当前项目摘要；读取与摘要投影来自Core权威状态，不缓存另一份管理数据库。Core内部新增投影用例，避免为客户端摘要读取整份4096条grants，更不能把最多3 MiB的现有RPC响应直接装进WIT。
 
-`change-grants`由Core在一个接受事务内核对expected-revision、合并差量、验证最终4096条/64种权限上限并写入单份State34授权快照、增加一次revision。新增元组沿用现有组合/项目资格规则；新增项目范围还须处于上述双方可读交集。保留元组不扩大权能，删除已失去登记或可见性的项目元组仍允许，不能因项目已删除而无法清除旧授权。Core新增内部命令，不新增公共RPC或State；幂等指纹绑定原始规范化差量及调用actor，使用固定独立方法命名空间，不能改为对重算的完整列表取指纹。同键同输入重放原非秘密摘要，同键不同输入拒绝，不把历史结果当作当前权限。
+`change-grants`由Core在一个接受事务内核对expected-revision、合并差量、验证最终4096条/64种权限上限并写入单份State34授权快照、增加一次revision。新增元组沿用现有组合/项目资格规则；新增项目范围还须处于上述双方可读交集。保留元组不扩大权能，删除已失去登记或可见性的项目元组仍允许，不能因项目已删除而无法清除旧授权。Core新增内部命令，不新增公共RPC；配套唯一State增量是下节追加批准的State35。幂等指纹绑定原始规范化差量及调用actor，使用固定独立方法命名空间，不能改为对重算的完整列表取指纹。同键同输入重放原非秘密摘要，同键不同输入拒绝，不把历史结果当作当前权限。
 
 新接口使用自己的错误type：`invalid-argument/permission-denied/scope-denied/lease-expired/lease-revoked/revision-conflict/idempotency-conflict/resource-limit/cancelled/unavailable/write-outcome-unknown/internal-error`；只在internal-error附不透明diagnostic-id，不改旧WIT错误枚举。客户端不存在/不可用走invalid-argument；撤销后写入或版本变化走revision-conflict，均不返回秘密或原始Store错误。私有消息层明确区分业务失败与传输成功；接受后的响应丢失或无法证明未接受时是write-outcome-unknown，不报告取消成功、回滚或自动重试。
 
@@ -575,11 +575,11 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 
 #### Component构建与依赖差异
 
-真实MCP Component尚不存在；推荐独立guest crate使用已锁定的`wit-bindgen = "=0.57.1"`，关闭default，仅`macros/realloc/std`，编译无WASI的guest，再复用现有`wit-component 0.254.2`作Component编码。官方生成器避免手写Canonical ABI和手工WAT业务程序；不安装功能更宽的wit-bindgen CLI，不重写运行时。生成绑定及realloc含Canonical ABI所需unsafe，只限生成层并说明来源；普通管理逻辑继续禁止手写unsafe，不能宣称没有unsafe影响。
+本批审批时尚无真实MCP Component；现已采用独立guest crate和已锁定的`wit-bindgen = "=0.57.1"`，关闭default，仅`macros/realloc/std`，编译无WASI的guest，再复用现有`wit-component 0.254.2`作Component编码。官方生成器避免手写Canonical ABI和手工WAT业务程序；不安装功能更宽的wit-bindgen CLI，不重写运行时。生成绑定及realloc含Canonical ABI所需unsafe，只限生成层并说明来源；普通管理逻辑继续禁止手写unsafe，不能宣称没有unsafe影响。
 
 临时隔离Cargo解析已核对：运行时wit-bindgen 0.57.1原已锁定；新增构建期包为wit-bindgen-core/rust/rust-macro各0.57.1、prettyplease 0.2.37、unicode-xid 0.2.6，以及wasm-encoder/wasm-metadata/wasmparser/wit-component/wit-parser各0.247.0。后五者是宏生成器要求的并行构建依赖，**不降级**现有Host的0.254.2。三项wit-bindgen及WASM/WIT包许可证`Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT`；prettyplease/unicode-xid为`MIT OR Apache-2.0`。已声明MSRV分别1.85、1.62、1.17；rust-macro未独立声明MSRV，不能冒称已验证，批准后以项目1.97.1编译确认。Bytecode Alliance上游生成器与Wasmtime版本各自冻结，维护成本为两代构建工具并存及生成ABI审计。
 
-解析的wit-bindgen feature集合确为macros/realloc/std，未启用其async/bitflags/macro-string或WASI；生成器传递wasmparser启用的simd是Wasm解析feature，不授予guest OS权能。准确metadata、临时清单/锁位于`target/m8-management-contract-audit/`，生产manifest/锁未改；初次metadata仅因Cargo缓存写权限失败，获工具审批后读取成功，不是编译或功能验证。批准后的最终锁与feature tree须再对照此闭包，出现额外依赖/feature时先说明，不能随意升级现有包。
+审批前解析的wit-bindgen feature集合确为macros/realloc/std，未启用其async/bitflags/macro-string或WASI；生成器传递wasmparser启用的simd是Wasm解析feature，不授予guest OS权能。当时的准确metadata、临时清单/锁位于`target/m8-management-contract-audit/`，当时生产manifest/锁未改；初次metadata仅因Cargo缓存写权限失败，获工具审批后读取成功，不是编译或功能验证。批准后的最终锁与feature tree现已再次对照，结果见下节；不得随意升级现有包。
 
 #### 本片验收与明确未覆盖项
 
@@ -588,3 +588,70 @@ f452ac5两轮检查结果现已全部收齐，不与7eac047混读：CI `43561391
 测试包须遵守现有签名、发布者确认和范围授权，只在获准隔离环境用开发测试密钥；不读取或更改真实签名材料，不直接往原环境安装。架构A019的默认安装/启用仍需后续实际分发证据，不能由占位manifest或一次开发包安装冒充完成。实时连接/请求/订阅观测仍缺公共查询，完整OAuth及其他M8剩余项分别后续收束；本片不是M8完成或推送授权。
 
 本轮准备检查：metadata、`cargo xtask check`及diff检查通过，仅修改本计划与status；没有执行完整测试/发布构建、修改正式Schema/WIT/生产依赖或操作原运行环境。沿用9fea7b6的准确远端证据，不将其当作本节未实施接口已经通过；本节文档只本地提交。
+
+#### 实施中的单项信息缺口（已追加批准）
+
+真实guest无法从目前的客户端摘要获知可选`mcp.clients.manage`是否已授予。为实现“无管理权只读”，
+已单独请求在新接口`client-page`增加`can-manage: bool`：由Core根据当前Client/Extension双方权限、lease和UI状态
+计算，只控制控件展示，不是后续写入保证；写入仍在接受事务逐次复查。旧WIT/公共RPC/State/Config/权限名称不变。
+所有者随后明确批准此只读字段；新WIT/Schema、Core投影和guest控件展示已同步，真实流程证据见下节本地候选记录。
+该信息缺口不再等待审批，不重审已经批准的主体；旧编译或只读流程不能算作完整管理验收。
+
+#### 真实Core发现的扩展授权表约束缺口（State35已追加批准）
+
+首次真实隔离Core验证未通过：签名/发布者确认、安装、缺必需授权拒绝启用均已执行，随后
+`extensions.setGrant(mcp.clients.read, Global, *)`返回store_unavailable，不能记为完整流程通过。
+定位`0008_extension_runtime.sql`的`extension_grants`：permission_name CHECK仅允许background.run/projects.read，
+resource_kind CHECK仅允许Extension/Project，resource_id最短3字节，组合CHECK也仅允许旧两种。
+此前“不需要State变更”的复用审计漏查了这些数据库约束。不能通过复用background授权、self-data旁表、
+跳过CHECK或改写已推送迁移来假装接通；当时此部分暂停，独立实现继续，现已按下述追加批准修复。
+
+所有者随后明确批准一次State34→35增量，现已编写迁移及初始化接线：只在同一IMMEDIATE事务内重建extension_grants的CHECK，
+增加已存在的mcp.clients.read/manage名称、Global种类及仅这两项允许的`Global/*`组合。resource_id下限改1，
+仍由完整组合CHECK保证旧background仅Extension/自身ID、projects.read仅Project/36字节ID。保留全部旧列、
+主键、外键、state/grant_revision/updated_at_ms和每条现有记录；无新表类别或新字段，无权限名称/Config变化。
+步骤为create extension_grants_v35→逐列复制旧记录→drop旧表→rename新表→user_version35→commit；任一步失败全回滚。
+0008及已推送0033/0034保持字节不变；原运行数据仍不迁移，State35仅用于获准的隔离候选。公共授权Schema/DTO
+只同步这两个既有权限的Global/*映射，不开放其他全局扩展权限。本提案修正主体合同中的“不改State”一条，
+并非重审身份、六工具、HTTP或管理六函数。
+
+批准后已补真实旧授权/实例/数据/事件/序列保全、外键与CHECK拒绝、失败回滚及State35重启验证，并重做实际失败的
+管理流程；准确结果见下节。前期Store原子差量/分页单元通过与CLI编译不覆盖此表的可用性；0/1真实失败日志为
+`target/m8-mcp-management/host-flow-readonly.log`，历史结果保留。can-manage只读字段亦已获批；不再追加纯规划审批，实施与验证继续，原运行数据不升级。
+
+### 管理扩展本地候选与实际验证（2026-11-14）
+
+代码候选`30e7f7d1c3448da8b07c77787bac58b40be4b33e`，在标准目录/main、真实Windows用户`cqmhv-dt\m2922`本地提交；本批没有推送或远端运行。前序合同提交15e9b2b和远端记录039ea3c继续保留。9fea7b6的CI/CodeQL成功只证明旧HTTP候选，不覆盖此批新增代码。M8仍进行中，本片记为本地定向验证通过、远端及人工查看待验证。
+
+已接通实际Core→application/Store接受事务→独立Host/WIT→普通沙箱Component→原Portable UI renderer；管理界面可以登记零授权客户端、分页查看、审阅添加/删除授权、处理revision冲突及永久撤销。可选管理权限由Core的can-manage提示控制显示，写入始终重新校验；项目选择只来自双方可读交集，孤立授权仍可删除。接受后的写结果丢失不回滚、不自动重试。CLI复用现有typed client和一次性签发RPC，扩展看不到凭据。共享Material权限弹窗只增加既有MCP全局权限映射，没有第二套GUI或身份系统。
+
+实际Rust Component暴露了两个内部问题并已窄修：生成器需要guest表与Canonical ABI跳板表，Host现允许两表共享原10000元素总预算，64MiB/实例/燃料/时间限额不变；冷启动编译准备消耗了旧render时间戳，现于准备完成后签发原2秒render预算，仍受原会话idle/absolute期限限制。另修guest的同父节点连续order及select option合法ID，保留原公共验证器，未放宽协议。State35只重建扩展授权CHECK；0008/0033/0034字节未改，不升级原数据。
+
+本地集中定向结果（每行独立执行，不代表完整Workspace）：
+
+| 范围 | 实际结果与日志（均在`target/m8-mcp-management/`） |
+| --- | --- |
+| Store MCP写入/管理差量/4096完整分页 | 5/0，`final-store-m8.log`；含旧原生MCP写回归、原输入幂等重放、孤立授权、容量与游标变化 |
+| State33–35关联迁移 | 12/0，`final-store-migrations.log`；其中State35三项保全全表旧行/事件序列/凭据/实例/数据、精确CHECK/FK/PK、持久回滚/重启 |
+| 新合同及现有版本关联合同 | 2/0＋9/0，`final-contracts-2.log`；旧WIT六文件逐字节相同，新Schema界限及实际Component输入/二进制摘要 |
+| Core私有消息身份/能力矩阵 | 4/0，`final-core-authority.log`；伪造/过期上下文拒绝，render只读、action六函数、background/close拒绝 |
+| UI会话/范围/期限关联回归 | 13/0，`final-ui-authority.log`；含新冷启动预算与原绝对期限上限 |
+| Host旧/新ABI及资源配额 | 4/0＋2/0，`final-host-abi.log`、`final-host-limits.log`；旧guest仍运行，新接口错误可读，两表共享配额及失败增长返还 |
+| 扩展包/私有协议/接口协商 | 15/0，`final-extension-contracts.log`；含新版本/未知能力拒绝、65536字节精确界限，不开放凭据函数 |
+| 实际guest | 单元3/0＋生成绑定doc-test1/0，`final-guest-tests.log`；只读、未知写结果保留并禁写、撤销态；guest严格Clippy通过 |
+| 真实Core/Host/Component | 具名1/0，`final-real-management.log`；正常签名与发布者确认、缺必需授权拒绝启用、只读/启停/重开/卸载、实际创建/项目授撤权/并发冲突/永久撤销、已连接MCP身份立即受影响、范围外拒绝、接受后丢UI回复/关连接不重复写；任务均终态，项目只在可丢弃目录内 |
+| CLI真实签发与输出故障 | 具名1/0＋预检查1/0，`final-real-cli.log`、`final-cli-preflight.log`；无opt-in不发写请求，真实凭据可认证，过期revision不轮换，只读stdout故障后仅一次轮换、原哨兵文件保持，旧凭据失效 |
+| 关联Chromium | 首轮15通过/1失败，`final-browser.log`；失败是browserContext.newPage的Target crashed，尚未页面操作。原trace保留为`browser-page-crash-trace.zip`；该项单独复验1/0，`browser-crash-directed.log`，零自动重试。不记成单轮16/0；新管理授权用例首轮已通过 |
+| 静态/构建 | 受影响7个Rust包all-targets严格Clippy、新合同两test目标严格Clippy、guest Clippy、root/guest fmt、metadata、xtask、前端check/build、PowerShell脚本语法及diff通过；未运行完整Rust、703项浏览器、Tauri release或三平台CI |
+
+真实流程已证明扩展侧授权/项目范围与已连接MCP身份权限实时生效。交互Client双侧门禁复用Core-issued AccessContext、现有UI范围与调用身份回归；本片没有为获得受限交互Client而增加测试专用认证入口。UI未知结果的保留/禁写有guest单元证据；实际故障注入位于UI RPC成功回复边界，不冒称已注入SQLite底层commit未知故障。原生Tauri人工点击、跨平台执行、全部4096条授权在真实窗口逐页查看未执行；Store分页证据不能代替人工体验签收。
+
+历史失败不覆盖：初次State34真实流程0/1；旧单表配额Host ABI3/1、修表后新guest节点order验证0/1；冷启动预算0/1、自动脚本连续动作触及原限速0/1；修正实际原因后最终真实流程才取得上述1/0。脚本按原1次/秒节奏等待，不延长或取消产品限速。CLI首次闭管道注入未可靠制造Windows输出失败为0/1，改用只读句柄后真实故障用例1/0；浏览器新用例初次定位器歧义0/1、修正定位与生命周期等待后1/0。初次Store命令误编译无关集成目标遇到页面文件1455而未完成，随后只跑`--lib`定向；新摘要测试曾因sha2摘要类型不能直接LowerHex编译失败，改为逐字节编码后两合同模块通过。Clippy首轮分支/借用及新增测试模块位置失败均保留，修正后各适用严格检查通过。原始日志均未删除，未删断言、降权限或拼接失败轮次。
+
+依赖最终核对：根Cargo.lock包名/版本集合完全保持，仅xtask增加已锁定wit-component直接边；独立guest恰新增批准的10项构建包，MSRV/许可证/生成unsafe边界沿用上节披露。`final-dependency-audit.json`、`final-guest-feature-tree.txt`、`final-guest-metadata.json`与`final-guest-feature-audit.json`证实wit-bindgen仅macros/realloc/std，无WASI/async/额外feature。生成器与Host两代构建工具并存，不宣称生成绑定没有unsafe。
+
+输入与产物：`candidate-inputs.json`记录1040份本机文件摘要及Git blob，排除的仅为本计划和status两份持续更新记录，清单SHA256 `a65ab5886c636ce409f1777d219579490cf8d21611006d2c37371da034821da1`。各日志保留自己的执行范围；真实流程之后仅补/移动cfg(test)边界测试、格式化新合同测试及文档，运行时代码/实际Component不再变化，不由清单宣称所有命令读取过全部文件。已提交Component的SHA256 `ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e`，旁置provenance绑定guest清单/锁、源码、新旧WIT及工具链，合同测试核对。浏览器截图`permissions-global-scope.png`仅为harness权限弹窗截图，不是真实原生桌面。
+
+可安装开发包真实存在：`C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-mcp-management\management-development-state35.alcomdextension`（125919字节），由通过的实际流程按新建文件规则导出。它是AGPL-3.0-only测试身份`dev.alcomd.fixture`，使用既有开发测试密钥并经过正常验签/明确发布者批准，不是正式发布签名或默认分发包。只能在匹配本候选的隔离Core/Host/GUI使用：Extensions→安装扩展→选择此文件→明确批准测试发布者→创建/审阅/应用安装Plan→权限中授予必需MCP读取后启用；写入另需显式管理权限，项目选择另授指定隔离项目读取。勿装入原运行数据。本轮未打开或替换原生验收窗口，也未恢复桌面控制。
+
+运行前后只读检查均未发现原Core/GUI在运行；本轮未暂停、替换、升级或启动原程序，没有“守候恢复”进程。本轮自建隔离Core/Host已正常结束并清理，不停止未知进程或Unity，不读写真实项目。后续仍欠完整OAuth、实时连接/请求/订阅查询合同、默认安装/启用的正式分发证据；业务工具安装/搜索/重装来源委托未实施，本片不进入M9或宣布M8完成。普通文案/布局简化继续作为非阻塞体验事项；guest首片使用简体中文，其他语言未验证。
