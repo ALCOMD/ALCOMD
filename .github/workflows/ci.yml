@@ -44,9 +44,14 @@ jobs:
       - name: Check
         shell: pwsh
         run: .\scripts\check.ps1
-      - name: Test repository contracts
+      # Check already runs the complete workspace/Discord tests and frontend checks.
+      - name: Test CLI auto-start integration
         shell: pwsh
-        run: .\scripts\test.ps1
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          cargo build --locked --package alcomd --package alcomd-cli
+          .\scripts\test-m1-auto-start.ps1
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
@@ -108,8 +113,12 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test repository contracts
-        run: ./scripts/test.sh
+      # Keep the additional CLI smoke test without rerunning Check's full suites.
+      - name: Test CLI auto-start integration
+        run: |
+          set -euo pipefail
+          cargo build --locked --package alcomd --package alcomd-cli
+          ./scripts/test-m1-auto-start.sh
       - name: Test Project Delete same-filesystem bind-mount boundary
         run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
@@ -162,8 +171,12 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test repository contracts
-        run: ./scripts/test.sh
+      # Keep the additional CLI smoke test without rerunning Check's full suites.
+      - name: Test CLI auto-start integration
+        run: |
+          set -euo pipefail
+          cargo build --locked --package alcomd --package alcomd-cli
+          ./scripts/test-m1-auto-start.sh
       - name: Test Project Delete nested filesystem mount boundary
         run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
