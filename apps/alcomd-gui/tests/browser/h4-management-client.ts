@@ -37,7 +37,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     }
     const plans = new Map<string, ExtensionPlan>();
     const grants = new Map<string, ManagementGrant[]>();
-    for (const id of extensions.keys()) grants.set(id, [
+    for (const id of extensions.keys()) grants.set(id, query.has("m8-mcp-permissions") ? [] : [
         { permission: "background.run", resourceKind: "Extension", resourceId: id },
         { permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101" }
     ]);
@@ -166,7 +166,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
             return response("extensions.permissions.list", { extensionId, grantRevision: extension.grantRevision,
-                requiredPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.read"] : ["projects.read"], optionalPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
+                requiredPermissions: query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
         async extensionPlanInstall(packagePath, expectedRevision, publisherApproval) {

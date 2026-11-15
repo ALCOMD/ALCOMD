@@ -23,9 +23,14 @@ cargo build --locked --manifest-path extensions/first-party/alcomd-extension-mcp
 cargo xtask component extensions/first-party/alcomd-extension-mcp/backend/target/wasm32-unknown-unknown/release/alcomd_extension_mcp_backend.wasm target/new-management-component.wasm
 ```
 
-编码入口只创建新文件。包仍须真实签名、发布者确认和显式权限授权；本目录的占位fingerprint不是签名，
+编码入口只创建新文件。包仍须真实签名、发布者确认；本目录的占位fingerprint不是签名，
 不能直接压缩当作可安装正式包。开发验证使用独立测试身份和密钥、可丢弃数据，不更改正式签名材料。
 默认随产品安装/启用的分发尚需后续证据，不由一次开发包测试代替。
+
+本扩展的客户端读取、客户端管理和项目读取均为可选权限。零授权即可启用并打开页面，
+此时不显示客户端数据或写控件；明确授予读取权限后才能查看，管理权限及项目范围仍分别检查。
+启用本身不授予权限，撤销后原会话失效，新页面仍可打开为未授权状态。
+这一声明不改变其他扩展必需权限未授予时拒绝启用的既有合同。
 
 凭据仅由本机所有者通过正式CLI一次签发：`alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>`。
 每次签发立即作废旧凭据；管道或JSON/NDJSON输出须显式`--secret-stdout`，结果未知不自动重签。

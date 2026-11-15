@@ -24,6 +24,16 @@ function permissionName(permission: string, t: Translate): string {
     return t("Unknown permission: {permission}", { permission });
 }
 
+function permissionDescription(permission: string, t: Translate): string {
+    switch (permission) {
+        case "background.run": return t("Run background tasks when this extension's page is closed.");
+        case "projects.read": return t("View basic information about only the projects you allow below.");
+        case "mcp.clients.read": return t("View all registered MCP clients and their grants.");
+        case "mcp.clients.manage": return t("Create MCP clients, change their grants, and permanently revoke them.");
+        default: return t("This app cannot grant this permission.");
+    }
+}
+
 function editablePermission(permission: string): permission is ExtensionPermissionGrant["permission"] {
     return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage";
 }
@@ -60,10 +70,8 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const [projectsLoading, setProjectsLoading] = useState(false);
     const [error, setError] = useState<RpcError>();
     const [loading, setLoading] = useState(true);
-    const [moreLoading, setMoreLoading] = useState(false);
     const [writing, setWriting] = useState(false);
     const [writeUnknown, setWriteUnknown] = useState(false);
-    const [permission, setPermission] = useState<ExtensionPermissionGrant["permission"]>("projects.read");
     const [projectId, setProjectId] = useState("");
     const owner = useRef({ client, extensionId, generation, active: true, pending: false });
     if (owner.current.client !== client || owner.current.extensionId !== extensionId || owner.current.generation !== generation) {
@@ -89,12 +97,13 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const readPermissions = async () => {
         if (!canRead || !current()) return;
         const version = ++readVersion.current;
+        setLoading(true);
         try {
             const load = async () => {
                 let result = await client.extensionPermissionsList(extensionId);
                 if (result.extensionId !== extensionId || !hasPermissionRequests(result)) throw { code: "internal_error" };
-                const target = value?.grants.length ?? 0;
-                while (result.nextCursor !== undefined && result.grants.length < target) {
+                while (result.nextCursor !== undefined) {
+                    if (!current() || version !== readVersion.current) break;
                     const page = await client.extensionPermissionsList(extensionId, result.nextCursor);
                     if (page.extensionId !== extensionId || page.grantRevision !== result.grantRevision) throw { code: "revision_conflict" };
                     result = { ...page, grants: [...result.grants, ...page.grants] };
@@ -104,7 +113,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
             const result = events ? await events.consistentRead(["extensions"], load) : await load();
             if (current() && version === readVersion.current) { setValue(result); setError(undefined); }
         } catch (caught: unknown) {
-            if (current() && version === readVersion.current) setError(requestError(caught));
+            if (current() && version === readVersion.current) { setValue(undefined); setError(requestError(caught)); }
             throw caught;
         } finally { if (current() && version === readVersion.current) setLoading(false); }
     };
@@ -112,7 +121,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     useEffect(() => {
         scope.active = true;
-        setValue(undefined); setError(undefined); setLoading(true); setMoreLoading(false); setWriting(false); setWriteUnknown(false);
+        setValue(undefined); setError(undefined); setLoading(true); setWriting(false); setWriteUnknown(false);
         if (canRead) void readPermissions().catch(() => {}); else setLoading(false);
         return () => { scope.active = false; readVersion.current += 1; };
     }, [canRead, client, extensionId, scope]);
@@ -144,25 +153,8 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
         return () => { projectReadVersion.current += 1; };
     }, [canReadProjects, client, extensionId, generation]);
 
-    const more = async () => {
-        if (value?.nextCursor === undefined || scope.pending || !current()) return;
-        const version = readVersion.current;
-        scope.pending = true; setMoreLoading(true); setError(undefined);
-        try {
-            const page = await client.extensionPermissionsList(extensionId, value.nextCursor);
-            if (!current() || version !== readVersion.current) return;
-            if (page.extensionId !== extensionId || page.grantRevision !== value.grantRevision) throw { code: "revision_conflict" };
-            setValue({ ...page, grants: [...value.grants, ...page.grants] });
-        } catch (caught: unknown) {
-            if (!current()) return;
-            const nextError = requestError(caught);
-            if (nextError.code === "revision_conflict") setValue(undefined);
-            setError(nextError);
-        } finally { scope.pending = false; if (current()) setMoreLoading(false); }
-    };
-
     const write = async (grant: ExtensionPermissionGrant, revoke: boolean) => {
-        if (!canWrite || !current() || scope.pending || value === undefined) return;
+        if (!canWrite || !current() || scope.pending || loading || writeUnknown || value === undefined) return;
         scope.pending = true; setWriting(true); setError(undefined);  onBusyChange(true);
         try {
             await (revoke
@@ -170,6 +162,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 : client.extensionSetGrant(extensionId, grant.permission, grant.resourceKind, grant.resourceId, value.grantRevision));
             if (!current()) return;
 
+            if (!revoke && grant.permission === "projects.read") setProjectId("");
             onChanged?.(); reload();
         } catch (caught: unknown) {
             if (current()) {
@@ -180,38 +173,58 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
             }
         } finally { scope.pending = false; if (owner.current === scope) setWriting(false); onBusyChange(false); }
     };
-    const scopeLabel = (grant: ExtensionPermissionGrant) => grant.resourceKind === "Extension"
-        ? grant.resourceId === extensionId ? t("This extension") : grant.resourceId
-        : grant.resourceKind === "Global" ? t("All MCP clients")
-        : displayPath(projects.find((project) => project.projectId === grant.resourceId)?.rootPath ?? t("Project {id}", { id: grant.resourceId }));
-    const requested = value === undefined ? [] : [...new Set([...value.requiredPermissions, ...value.optionalPermissions])].filter(editablePermission);
-    const selected = requested.includes(permission) ? permission : requested[0];
+    const projectName = (id: string) => {
+        const project = projects.find((item) => item.projectId === id);
+        return project ? project.displayName || displayPath(project.rootPath) : t("Project {id}", { id });
+    };
+    const projectPath = (id: string) => {
+        const project = projects.find((item) => item.projectId === id);
+        return project ? displayPath(project.rootPath) : id;
+    };
+    const requested = value === undefined ? [] : [...new Set([...value.requiredPermissions, ...value.optionalPermissions])];
+    const blocked = !canWrite || writing || loading || writeUnknown;
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
-        {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : loading ? <LoadingState title={t("Loading…")} /> : null}
-        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
-        {value === undefined ? null : <>
-            <ExtensionPermissionRequests required={value.requiredPermissions} optional={value.optionalPermissions} />
-            <section aria-label={t("Allowed permissions")}>
-                <h3>{t("Allowed permissions")}</h3>
-                {value.grants.length === 0 ? <p>{t("No permissions granted")}</p> : <ul className="extension-grants">{value.grants.map((grant) => <li key={`${grant.permission}:${grant.resourceKind}:${grant.resourceId}`}>
-                    <div><strong>{permissionName(grant.permission, t)}</strong><span title={grant.resourceId}>{scopeLabel(grant)}</span></div>
-                    <Button disabled={!canWrite || writing || moreLoading} onClick={() => void write(grant, true)} type="button" variant="text">{t("Revoke")}</Button>
-                </li>)}</ul>}
-                {value.nextCursor === undefined ? null : <Button disabled={writing || moreLoading} onClick={() => void more()} type="button" variant="text">{t("Load more")}</Button>}
-            </section>
-            {selected === undefined ? null : <>
-                <Select disabled={writing || moreLoading} label={t("Permission")} value={selected} onChange={(next) => { if (editablePermission(next)) { setPermission(next); setError(undefined); } }} options={requested.map((item) => ({ value: item, label: permissionName(item, t) }))} />
-                {selected !== "projects.read" ? <p>{t(selected === "background.run" ? "This extension" : "All MCP clients")}</p> : <>
-                    <Select disabled={!canReadProjects || projectsLoading || writing || moreLoading} label={t("Project")} value={projectId} onChange={(next) => { setProjectId(next); setError(undefined); }} options={[{ value: "", label: t("Select project") }, ...projects.flatMap((project) => project.projectId === undefined ? [] : [{ value: project.projectId, label: displayPath(project.rootPath) }])]} />
-                    {projectsLoading ? <LoadingState title={t("Loading…")} /> : null}
-                    {projectsError === undefined ? null : <div role="alert" data-notification-error={projectsError.code}><p>{t(requestErrorMessage((projectsError).code))}</p><code>{(projectsError).code}</code>{projectsError.diagnosticId === undefined ? null : <p><code>{projectsError.diagnosticId}</code></p>}<LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
-                </>}
-                {selected !== "mcp.clients.manage" ? null : <p>{t("This permission can change grants and permanently revoke any MCP client.")}</p>}
-                <div className="dialog-actions"><Button disabled={!canWrite || writing || moreLoading || (selected === "projects.read" && !projects.some((project) => project.projectId === projectId))} onClick={() => void write({ permission: selected, resourceKind: selected === "background.run" ? "Extension" : selected === "projects.read" ? "Project" : "Global", resourceId: selected === "background.run" ? extensionId : selected === "projects.read" ? projectId : "*" }, false)} type="button">{t("Grant")}</Button></div>
-            </>}
-        </>}
-        <div className="dialog-actions"><DialogCloseButton disabled={writing} variant="text">{t("Close")}</DialogCloseButton>{!canRead ? null : <LoadingButton disabled={writing || moreLoading} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton>}</div>
+        {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : loading && value === undefined ? <LoadingState title={t("Loading…")} /> : null}
+        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+        {value === undefined ? null : requested.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
+            {requested.map((permission) => {
+                const name = permissionName(permission, t);
+                const grants = value.grants.filter((grant) => grant.permission === permission);
+                const projectPermission = permission === "projects.read";
+                const known = editablePermission(permission);
+                const kind = permission === "background.run" ? "Extension" : "Global";
+                const resourceId = permission === "background.run" ? extensionId : "*";
+                const allowed = !projectPermission && grants.some((grant) => grant.resourceKind === kind && grant.resourceId === resourceId);
+                const selectedAllowed = grants.some((grant) => grant.resourceKind === "Project" && grant.resourceId === projectId);
+                return <section className="extension-permission-option" role="group" aria-label={name} key={permission}>
+                    <div className="extension-permission-heading">
+                        <h3>{name}</h3>
+                        <div className="extension-permission-controls">
+                            <span className="extension-permission-state">{projectPermission && grants.length > 0 ? t("Allowed projects: {count}", { count: grants.length }) : t(allowed ? "Allowed" : "Not allowed")}</span>
+                            {!known || projectPermission ? null : <Button aria-label={t(allowed ? "Revoke {permission}" : "Allow {permission}", { permission: name })} disabled={blocked} onClick={() => void write({ permission, resourceKind: kind, resourceId }, allowed)} type="button" variant={allowed ? "text" : "tonal"}>{t(allowed ? "Revoke" : "Allow")}</Button>}
+                        </div>
+                    </div>
+                    <p className="extension-permission-description">{permissionDescription(permission, t)}</p>
+                    {!value.requiredPermissions.includes(permission) ? null : <p className="extension-permission-required">{t("Required to enable")}</p>}
+                    {!known ? null : projectPermission ? <>
+                        {grants.length === 0 ? null : <ul className="extension-grants">{grants.map((grant) => <li key={`${grant.resourceKind}:${grant.resourceId}`}>
+                            <span title={projectPath(grant.resourceId)}>{projectName(grant.resourceId)}</span>
+                            <Button aria-label={t("Revoke access to {project}", { project: projectName(grant.resourceId) })} disabled={blocked} onClick={() => void write(grant, true)} type="button" variant="text">{t("Revoke")}</Button>
+                        </li>)}</ul>}
+                        <div className="extension-project-permission">
+                            <Select disabled={!canReadProjects || projectsLoading || blocked} label={t("Project")} value={projectId} onChange={(next) => { setProjectId(next); setError(undefined); }} options={[{ value: "", label: t("Select project") }, ...projects.flatMap((project) => project.projectId === undefined ? [] : [{ value: project.projectId, label: project.displayName || displayPath(project.rootPath), title: displayPath(project.rootPath) }])]} />
+                            <Button disabled={blocked || projectsLoading || selectedAllowed || !projects.some((project) => project.projectId === projectId)} onClick={() => void write({ permission: "projects.read", resourceKind: "Project", resourceId: projectId }, false)} type="button" variant="tonal">{t("Allow selected project")}</Button>
+                        </div>
+                        {!projectId ? null : <p className="extension-permission-path" title={projectPath(projectId)}>{projectPath(projectId)}</p>}
+                        {projectsLoading ? <LoadingState title={t("Loading…")} /> : null}
+                        {projectsError === undefined ? null : <div role="alert" data-notification-error={projectsError.code}><p>{t(requestErrorMessage(projectsError.code))}</p><code>{projectsError.code}</code>{projectsError.diagnosticId === undefined ? null : <p><code>{projectsError.diagnosticId}</code></p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+                    </> : null}
+                </section>;
+            })}
+        </div>}
+        <div className="dialog-actions"><DialogCloseButton disabled={writing} variant="text">{t("Close")}</DialogCloseButton>{!canRead ? null : <LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton>}</div>
     </section>;
+
 }
 
 function requestError(caught: unknown): RpcError {

@@ -201,23 +201,27 @@ async function openPermissions(page: Page) {
     await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Extension permissions", exact: true })).toBeVisible();
 }
-const allowed = (page: Page) => modal(page).getByRole("region", { name: "Allowed permissions", exact: true });
+const permissions = (page: Page) => modal(page).locator(".extension-permission-options");
+const permission = (page: Page, name: string) => modal(page).getByRole("group", { name, exact: true });
+const background = (page: Page) => permission(page, "Run in background");
+const projects = (page: Page) => permission(page, "Read projects");
 
 test("H4 permission declarations remain separate from empty and partial actual grants", async ({ page }) => {
     await open(page, true);
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, []), H4_ALPHA);
     await openPermissions(page);
-    const requested = modal(page).getByRole("region", { name: "Requested permissions", exact: true });
-    await expect(requested.getByText("Read projects", { exact: true })).toBeVisible();
-    await expect(requested.getByText("Run in background", { exact: true })).toBeVisible();
-    await expect(allowed(page)).toContainText("No permissions granted");
-    await expect(allowed(page).locator("li")).toHaveCount(0);
+    await expect(projects(page).getByRole("heading", { name: "Read projects", exact: true })).toBeVisible();
+    await expect(background(page).getByRole("heading", { name: "Run in background", exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Required to enable", { exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(background(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(0);
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, [{ permission: "background.run", resourceKind: "Extension", resourceId: extensionId }]), H4_ALPHA);
     await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    await expect(allowed(page)).toContainText("Run in background");
-    await expect(allowed(page)).toContainText("This extension");
-    await expect(allowed(page)).not.toContainText("Read projects");
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(background(page).getByRole("button", { name: "Revoke Run in background", exact: true })).toBeEnabled();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(0);
     expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
 });
 
@@ -225,18 +229,20 @@ test("H4 project permission selection sends the exact project identity and refre
     await open(page, true, "&windows-paths=1");
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, []), H4_ALPHA);
     await openPermissions(page);
-    await expect(allowed(page)).toContainText("No permissions granted");
-    await modal(page).getByRole("combobox", { name: "Project", exact: true }).click();
-    await page.getByRole("option", { name: "C:\\Projects\\Sample", exact: true }).click();
-    await modal(page).getByRole("button", { name: "Grant", exact: true }).click();
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    await expect(allowed(page)).toContainText("Read projects");
-    await expect(allowed(page)).toContainText("C:\\Projects\\Sample");
-    await expect(allowed(page)).not.toContainText("\\\\?\\");
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await projects(page).getByRole("combobox", { name: "Project", exact: true }).click();
+    await page.getByRole("option", { name: "Sample", exact: true }).click();
+    await expect(projects(page)).toContainText("C:\\Projects\\Sample");
+    await expect(projects(page)).not.toContainText("\\\\?\\");
+    expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
+    await projects(page).getByRole("button", { name: "Allow selected project", exact: true }).click();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(1);
+    await expect(projects(page).getByText("Allowed projects: 1", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li > span")).toHaveAttribute("title", "C:\\Projects\\Sample");
     expect((await requests(page, "extensions.setGrant"))[0]!.params).toEqual({ extensionId: H4_ALPHA, permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101", expectedGrantRevision: 4 });
-    await allowed(page).getByRole("button", { name: "Revoke", exact: true }).click();
-    await expect(allowed(page)).toContainText("No permissions granted");
-    await expect(allowed(page).locator("li")).toHaveCount(0);
+    await projects(page).getByRole("button", { name: "Revoke access to Sample", exact: true }).click();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(0);
     expect((await requests(page, "extensions.revokeGrant"))[0]!.params).toEqual({ extensionId: H4_ALPHA, permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101", expectedGrantRevision: 5 });
     expect(await requests(page, "extensions.enable")).toHaveLength(0);
 });
@@ -248,53 +254,55 @@ test("H4 permission read failure stays visible until an explicit refresh and nev
     await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBeGreaterThan(0);
     await page.evaluate(() => {
         window.h4Management.hold("extensions.permissions.list", false);
-        // React StrictMode may have abandoned an earlier read; fail all outstanding reads.
-        while (window.h4Management.release("extensions.permissions.list", "store_unavailable")) { /* Drain only the reads already held. */ }
+        while (window.h4Management.release("extensions.permissions.list", "store_unavailable")) { /* Drain only initial held reads. */ }
     });
     await expectRequestError(modal(page).getByRole("alert"), "store_unavailable");
-    await expect(allowed(page)).toHaveCount(0);
-    await expect(modal(page).getByText("No permissions granted", { exact: true })).toHaveCount(0);
+    await expect(permissions(page)).toHaveCount(0);
+    await expect(modal(page).getByText("Not allowed", { exact: true })).toHaveCount(0);
     await modal(page).getByRole("alert").getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    await expect(allowed(page)).toContainText("Run in background");
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(1);
     expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
     expect(await requests(page, "extensions.revokeGrant")).toHaveLength(0);
     await page.evaluate(() => window.h4Management.failNext("extensions.revokeGrant", "daemon_unavailable"));
-    await allowed(page).getByRole("button", { name: "Revoke", exact: true }).click();
+    await background(page).getByRole("button", { name: "Revoke Run in background", exact: true }).click();
     await expect(modal(page).getByRole("alert")).toContainText("The permission change may have completed. Refresh permissions before trying again.");
-    await expect(allowed(page)).toHaveCount(0);
-    await expect(modal(page).getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0);
-    await expect(modal(page).getByRole("button", { name: "Grant", exact: true })).toHaveCount(0);
+    await expect(permissions(page)).toHaveCount(0);
+    await expect(modal(page).getByRole("button", { name: /^Revoke / })).toHaveCount(0);
+    await expect(modal(page).getByRole("button", { name: /^Allow / })).toHaveCount(0);
     expect(await requests(page, "extensions.revokeGrant")).toHaveLength(1);
     await modal(page).getByRole("alert").getByRole("button", { name: "Refresh", exact: true }).click();
-    // This fixture refused before writing; the authoritative permission remains granted.
-    await expect(allowed(page)).toContainText("Run in background");
-    await expect(allowed(page).locator("li")).toHaveCount(1);
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(1);
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "extensions.revokeGrant")).toHaveLength(1);
 });
 
 test("H4 grant pagination rejects a changed revision without mixing old scopes and refreshes before revoking", async ({ page }) => {
     await open(page, true);
+    await page.evaluate(() => {
+        window.coreEvents.hold(true);
+        window.h4Management.hold("extensions.permissions.list", true);
+    });
     await openPermissions(page);
-    await expect(allowed(page)).toContainText("Run in background");
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    // Another management client revokes the project scope between these pages.
-    await page.evaluate(() => window.coreEvents.hold(true));
-    await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, [{ permission: "background.run", resourceKind: "Extension", resourceId: extensionId }]), H4_ALPHA);
-    await allowed(page).getByRole("button", { name: "Load more", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBeGreaterThan(0);
+    // The first page is frozen at revision 3; change authority before the next cursor is queried.
+    await page.evaluate((extensionId) => {
+        window.h4Management.setGrants(extensionId, [{ permission: "background.run", resourceKind: "Extension", resourceId: extensionId }]);
+        window.h4Management.hold("extensions.permissions.list", false);
+        while (window.h4Management.release("extensions.permissions.list")) { /* Deliver only already-frozen pages. */ }
+    }, H4_ALPHA);
     await expectRequestError(modal(page).getByRole("alert"), "revision_conflict");
-    await expect(allowed(page)).toHaveCount(0);
+    await expect(permissions(page)).toHaveCount(0);
     await expect(modal(page).locator(".extension-grants li")).toHaveCount(0);
     await page.evaluate(() => window.coreEvents.hold(false));
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    await expect(allowed(page)).not.toContainText("Read projects");
-    await allowed(page).getByRole("button", { name: "Revoke", exact: true }).click();
-    await expect(allowed(page)).toContainText("No permissions granted");
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await background(page).getByRole("button", { name: "Revoke Run in background", exact: true }).click();
+    await expect(background(page).getByText("Not allowed", { exact: true })).toBeVisible();
     expect((await requests(page, "extensions.revokeGrant"))[0]!.params).toMatchObject({ permission: "background.run", resourceKind: "Extension", resourceId: H4_ALPHA, expectedGrantRevision: 4 });
-    const reads = await requests(page, "extensions.permissions.list");
-    expect(reads.some((request) => request.params.cursor === `${H4_ALPHA}:3:1`)).toBe(true);
+    expect((await requests(page, "extensions.permissions.list")).some((request) => request.params.cursor === `${H4_ALPHA}:3:1`)).toBe(true);
 });
 
 test("H4 late permission reads cannot overwrite a reopened dialog or its newer explicit refresh", async ({ page }) => {
@@ -309,20 +317,22 @@ test("H4 late permission reads cannot overwrite a reopened dialog or its newer e
         window.h4Management.hold("extensions.permissions.list", false);
     }, H4_ALPHA);
     await openPermissions(page);
-    await expect(allowed(page)).toHaveCount(0);
+    await expect(permissions(page)).toHaveCount(0);
     expect(await page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBe(1);
     await page.evaluate(() => window.h4Management.release("extensions.permissions.list"));
-    await expect(allowed(page)).toContainText("Read projects");
-    await expect(allowed(page)).not.toContainText("Run in background");
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(1);
+    await expect(background(page).getByText("Not allowed", { exact: true })).toBeVisible();
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, []), H4_ALPHA);
     await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(allowed(page)).toContainText("No permissions granted");
+    await expect(background(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
     await page.evaluate(async () => {
-        while (window.h4Management.release("extensions.permissions.list")) { /* Resolve the old dialog's outstanding reads. */ }
+        while (window.h4Management.release("extensions.permissions.list")) { /* Late old dialog reads must not publish. */ }
         await new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
     });
-    await expect(allowed(page)).toContainText("No permissions granted");
-    await expect(allowed(page).locator("li")).toHaveCount(0);
+    await expect(background(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(0);
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
 });
 
@@ -333,22 +343,20 @@ test("H4 project choice read failure preserves grants and explicit refresh resto
         window.h4Management.hold("projects.list", true);
     }, H4_ALPHA);
     await openPermissions(page);
-    await expect(allowed(page)).toContainText("Run in background");
-    await expect(allowed(page)).toContainText("This extension");
-    const projectChoice = modal(page).getByRole("combobox", { name: "Project", exact: true });
-    const projectSelect = modal(page).locator("md-filled-select").filter({ has: page.getByRole("combobox", { name: "Project", exact: true }) });
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    const projectChoice = projects(page).getByRole("combobox", { name: "Project", exact: true });
+    const projectSelect = projects(page).locator("md-filled-select");
     await expect(projectSelect).toHaveJSProperty("disabled", true);
-    await expect(modal(page).getByRole("button", { name: "Grant", exact: true })).toBeDisabled();
+    await expect(projects(page).getByRole("button", { name: "Allow selected project", exact: true })).toBeDisabled();
     await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "projects.list").length)).toBeGreaterThan(0);
     await page.evaluate(() => {
         window.h4Management.hold("projects.list", false);
-        while (window.h4Management.release("projects.list", "store_unavailable")) { /* Fail every initial StrictMode read still pending. */ }
+        while (window.h4Management.release("projects.list", "store_unavailable")) { /* Fail only held initial project reads. */ }
     });
-    const fieldError = modal(page).getByRole("alert").filter({ hasText: requestErrorMessage("store_unavailable") });
+    const fieldError = projects(page).getByRole("alert").filter({ hasText: requestErrorMessage("store_unavailable") });
     await expect(fieldError).toBeVisible();
-    await expect(allowed(page).locator("li")).toHaveCount(1);
-    await expect(allowed(page)).toContainText("This extension");
-    await expect(modal(page).getByRole("button", { name: "Grant", exact: true })).toBeDisabled();
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(projects(page).getByRole("button", { name: "Allow selected project", exact: true })).toBeDisabled();
     await projectChoice.click();
     await expect(page.getByRole("option", { name: "Select project", exact: true })).toBeVisible();
     await expect(page.getByRole("option")).toHaveCount(1);
@@ -364,11 +372,9 @@ test("H4 project choice read failure preserves grants and explicit refresh resto
     await expect(projectSelect).toHaveJSProperty("disabled", false);
     expect((await requests(page, "projects.list")).length).toBeGreaterThan(readsBeforeRefresh);
     await projectChoice.click();
-    await page.getByRole("option", { name: "C:\\Projects\\Sample", exact: true }).click();
-    await modal(page).getByRole("button", { name: "Grant", exact: true }).click();
-    await expect(allowed(page).getByRole("button", { name: "Load more", exact: true })).toBeVisible();
-    await allowed(page).getByRole("button", { name: "Load more", exact: true }).click();
-    await expect(allowed(page).locator("li")).toHaveCount(2);
-    await expect(allowed(page)).toContainText("C:\\Projects\\Sample");
+    await page.getByRole("option", { name: "Sample", exact: true }).click();
+    await projects(page).getByRole("button", { name: "Allow selected project", exact: true }).click();
+    await expect(projects(page).locator(".extension-grants > li")).toHaveCount(1);
+    await expect(background(page).getByText("Allowed", { exact: true })).toBeVisible();
     expect((await requests(page, "extensions.setGrant"))[0]!.params).toEqual({ extensionId: H4_ALPHA, permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101", expectedGrantRevision: 4 });
 });

@@ -18,5 +18,5 @@ required = ["alcomd:mcp-management/clients@1.0.0"]
 optional = []
 
 [permissions]
-required = ["mcp.clients.read"]
-optional = ["mcp.clients.manage", "projects.read"]
+required = []
+optional = ["mcp.clients.manage", "mcp.clients.read", "projects.read"]

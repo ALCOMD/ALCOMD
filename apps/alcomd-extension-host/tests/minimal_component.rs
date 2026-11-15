@@ -107,7 +107,8 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
         .expect("normal Portable UI contract");
     document.validate().expect("same public UI validator");
     let text = serde_json::to_string(&document).expect("document");
-    assert!(text.contains("没有执行此操作的权限"));
+    assert!(text.contains("尚未授权读取 MCP 客户端"));
+    assert!(text.contains("neutral"));
     assert!(!text.contains("permission-denied"));
     assert!(!text.contains("创建客户端"));
     send(&mut input, epoch, instance, 4, HostMessageBody::Shutdown);

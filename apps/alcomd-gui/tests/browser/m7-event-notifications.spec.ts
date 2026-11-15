@@ -208,15 +208,15 @@ test("cross-client grant changes update an already open permission list through 
     // MD's native dialog lives in Shadow DOM; the permission content is slotted
     // light DOM, so scope content through the open MD host as the H4 suite does.
     const dialog = page.locator("md-dialog[open]");
-    const allowed = dialog.getByRole("region", { name: "Allowed permissions", exact: true });
-    await expect(allowed).toContainText("Run in background");
+    const allowed = dialog.getByRole("group", { name: "Run in background", exact: true });
+    await expect(allowed.getByText("Allowed", { exact: true })).toBeVisible();
     await pauseClock(page);
     await page.clock.runFor(1_000);
     const reads = await page.evaluate(() => window.h4Management.requests.filter((item) => item.method === "extensions.permissions.list").length);
     await page.evaluate((id) => window.h4Management.setGrants(id, []), extensionId);
     await page.clock.runFor(500);
-    await expect(allowed).toContainText("No permissions granted");
-    await expect(allowed.locator("li")).toHaveCount(0);
+    await expect(allowed.getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(dialog.locator(".extension-grants li")).toHaveCount(0);
     expect(await page.evaluate(() => window.h4Management.requests.filter((item) => item.method === "extensions.permissions.list").length)).toBeGreaterThan(reads);
     expect(await page.evaluate(() => window.h4Management.requests.filter((item) => ["extensions.setGrant", "extensions.revokeGrant"].includes(item.method)).length)).toBe(0);
     await expect(page.getByRole("dialog", { name: "Extension permissions", exact: true })).toBeVisible();

@@ -146,7 +146,22 @@ impl View {
             Err(error) => {
                 self.clients.clear();
                 self.next_clients = None;
-                self.fail(error);
+                if matches!(error.code, host::ErrorCode::PermissionDenied) {
+                    self.selected = None;
+                    self.grants.clear();
+                    self.next_grants = None;
+                    self.projects.clear();
+                    if self.unknown_write {
+                        self.fail(error);
+                    } else {
+                        self.message = Some((
+                            "尚未授权读取 MCP 客户端。请在扩展管理中授权后重新打开页面。".into(),
+                            ui::Tone::Neutral,
+                        ));
+                    }
+                } else {
+                    self.fail(error);
+                }
                 false
             }
         }

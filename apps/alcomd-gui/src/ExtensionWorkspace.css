@@ -88,6 +88,52 @@
     margin: 0 0 10px;
 }
 
+.extension-permission-option {
+    min-width: 0;
+    padding-block: 16px;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.extension-permission-option:first-child { padding-block-start: 0; }
+.extension-permission-option:last-child { border-bottom: 0; }
+
+.extension-permission-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.extension-permission-heading h3 { margin: 0; }
+
+.extension-permission-description,
+.extension-permission-required,
+.extension-permission-path {
+    margin-block: 6px 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow-wrap: anywhere;
+}
+
+.extension-permission-state { color: var(--md-sys-color-on-surface-variant); }
+
+.extension-project-permission {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-block-start: 12px;
+}
+
+.extension-project-permission > md-filled-select {
+    flex: 1 1 180px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.extension-permission-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.extension-grants li > span { min-width: 0; overflow-wrap: anywhere; }
+
 .extension-grants {
     list-style: none;
     padding: 0;

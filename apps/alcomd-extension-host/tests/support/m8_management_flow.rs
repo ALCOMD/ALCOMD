@@ -5,6 +5,210 @@ use alcomd_protocol::{
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn optional_management_permissions_allow_zero_grant_start_and_restrict_data() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    let package = fixture.path().join("optional-management.alcomdextension");
+    let permissions = include_str!(
+        "../../../../extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml"
+    )
+    .split_once("[permissions]")
+    .expect("actual management permission declarations")
+    .1;
+    let profile = format!("[permissions]{permissions}\n[ui]\nprotocol = \"portable-v1\"\n");
+    create_signed_package_with_interfaces(
+        &package,
+        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm"),
+        "MCP management fixture",
+        &profile,
+        &["alcomd:mcp-management/clients@1.0.0"],
+        "AGPL-3.0-only",
+    );
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("isolated daemon");
+    let mut client = connect_with_retry(config).await;
+    client
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "授权后才可见的客户端".into(),
+            idempotency_key: "optional-management-seed".into(),
+            grants: vec![],
+        })
+        .await
+        .expect("owner seed");
+    let plan = client
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
+        })
+        .await
+        .expect("explicit fixture publisher approval")
+        .plan;
+    assert!(plan.required_permissions.is_empty());
+    assert!(
+        plan.optional_permissions
+            .iter()
+            .any(|p| p == "mcp.clients.read")
+    );
+    let install = client
+        .extension_apply_install(ExtensionApplyParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "optional-management-install".into(),
+        })
+        .await
+        .expect("install");
+    assert_eq!(
+        wait_for_terminal(&mut client, &install.operation_id).await,
+        OperationState::Succeeded
+    );
+    let extension = client
+        .extension_get("dev.alcomd.fixture".into())
+        .await
+        .expect("installed")
+        .extension;
+    let enabled = client
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: extension.extension_id.clone(),
+            expected_revision: extension.revision,
+            idempotency_key: "optional-management-zero-grants".into(),
+        })
+        .await
+        .expect("zero grants may enable an optional-permission extension")
+        .extension;
+    assert_eq!(enabled.desired_state, ExtensionDesiredState::Enabled);
+    let no_grants = client
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: extension.extension_id.clone(),
+            cursor: None,
+            limit: Some(64),
+        })
+        .await
+        .expect("actual grants");
+    assert!(no_grants.grants.is_empty(), "enable never grants authority");
+    let opened = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("zero-authority real Host page");
+    let restricted = serde_json::to_string(&opened.snapshot.document).expect("document");
+    assert!(restricted.contains("尚未授权读取 MCP 客户端"));
+    assert!(restricted.contains("neutral"));
+    assert!(!restricted.contains("授权后才可见的客户端"));
+    assert!(!restricted.contains("创建客户端"));
+    let forged = client
+        .extension_ui_dispatch(ExtensionUiDispatchParams {
+            session_id: opened.session.session_id,
+            expected_snapshot_revision: opened.snapshot.snapshot_revision,
+            sequence: 1,
+            request_id: "optional-management-forged-create".into(),
+            action: activate("create"),
+        })
+        .await;
+    assert!(
+        matches!(forged, Err(ClientError::Remote(error)) if error.code == "extension_ui_action_invalid")
+    );
+    assert_eq!(
+        client
+            .mcp_clients_list(McpClientsListParams::default())
+            .await
+            .expect("authority after refused action")
+            .items
+            .len(),
+        1
+    );
+    let read = client
+        .extension_set_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.clients.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: no_grants.grant_revision,
+            idempotency_key: "optional-management-read".into(),
+        })
+        .await
+        .expect("explicit read grant");
+    let readable = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("page after explicit read");
+    let document = serde_json::to_string(&readable.snapshot.document).expect("document");
+    assert!(document.contains("授权后才可见的客户端"));
+    assert!(!document.contains("创建客户端"));
+    client
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.clients.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: read.grant_revision,
+            idempotency_key: "optional-management-revoke".into(),
+        })
+        .await
+        .expect("revoke read");
+    assert!(
+        client
+            .extension_ui_refresh(ExtensionUiRefreshParams {
+                session_id: readable.session.session_id,
+                expected_snapshot_revision: readable.snapshot.snapshot_revision,
+            })
+            .await
+            .is_err()
+    );
+    let restricted_again = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("optional extension still opens after revocation");
+    let document = serde_json::to_string(&restricted_again.snapshot.document).expect("document");
+    assert!(document.contains("尚未授权读取 MCP 客户端"));
+    assert!(!document.contains("授权后才可见的客户端"));
+    assert!(!document.contains("创建客户端"));
+    assert_eq!(
+        client
+            .extension_get(extension.extension_id.clone())
+            .await
+            .expect("current authority")
+            .extension
+            .desired_state,
+        ExtensionDesiredState::Enabled
+    );
+    client
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: restricted_again.session.session_id,
+        })
+        .await
+        .expect("close the zero-authority page");
+    wait_for_runtime_state(
+        &mut client,
+        &extension.extension_id,
+        ExtensionRuntimeState::Stopped,
+    )
+    .await;
+    export_development_package(&package);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("clean shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn management_component_uses_real_core_grants_and_loses_access_after_revocation() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
@@ -491,6 +695,12 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .await
         .expect("extension removal keeps global clients");
     assert_eq!(kept.items.len(), 3);
+    export_development_package(&package);
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("join isolated daemon").is_ok());
+}
+
+fn export_development_package(package: &Path) {
     if let Some(destination) = std::env::var_os("ALCOMD_TEST_MCP_MANAGEMENT_PACKAGE_OUTPUT") {
         let destination = PathBuf::from(destination);
         let target = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -512,11 +722,9 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
             .open(destination)
             .expect("new development package output");
         output
-            .write_all(&fs::read(&package).expect("verified test package"))
+            .write_all(&fs::read(package).expect("verified test package"))
             .expect("persist development package");
     }
-    shutdown.store(true, Ordering::Release);
-    assert!(daemon.await.expect("join isolated daemon").is_ok());
 }
 
 fn text(id: &str, value: &str) -> UiSubmittedField {
