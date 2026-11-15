@@ -12,6 +12,76 @@ const KEY: &[u8] =
     include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/oauth-localhost.test-key.pkcs8");
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+struct CoreConfiguration {
+    ipc: IpcConfig,
+    client: ClientConfig,
+    #[cfg(unix)]
+    runtime: std::path::PathBuf,
+}
+impl CoreConfiguration {
+    fn new() -> Self {
+        #[cfg(unix)]
+        {
+            // Reuse the CLI fixture's private, short Unix endpoint convention.
+            #[cfg(target_os = "macos")]
+            let base = std::path::PathBuf::from("/private/tmp");
+            #[cfg(not(target_os = "macos"))]
+            let base = std::env::temp_dir();
+            let runtime = base.join(format!(
+                "ac-oauth-{}-{}",
+                std::process::id(),
+                uuid::Uuid::new_v4().simple()
+            ));
+            assert!(!runtime.exists(), "new owned runtime path");
+            Self {
+                ipc: IpcConfig::isolated(runtime.clone()),
+                client: ClientConfig::default()
+                    .without_daemon_start()
+                    .with_runtime_directory(runtime.clone()),
+                runtime,
+            }
+        }
+        #[cfg(windows)]
+        {
+            // Windows keeps its unchanged, protected per-user endpoint.
+            Self {
+                ipc: IpcConfig::default(),
+                client: ClientConfig::default().without_daemon_start(),
+            }
+        }
+    }
+}
+#[cfg(unix)]
+impl Drop for CoreConfiguration {
+    fn drop(&mut self) {
+        if !self.runtime.exists() {
+            return;
+        }
+        assert!(
+            !self
+                .runtime
+                .symlink_metadata()
+                .expect("owned runtime metadata")
+                .file_type()
+                .is_symlink()
+        );
+        let path = self.runtime.canonicalize().expect("owned runtime");
+        let parent = self
+            .runtime
+            .parent()
+            .expect("runtime parent")
+            .canonicalize()
+            .expect("runtime base");
+        assert_eq!(path.parent(), Some(parent.as_path()));
+        assert!(
+            path.file_name()
+                .expect("runtime name")
+                .to_string_lossy()
+                .starts_with(&format!("ac-oauth-{}-", std::process::id()))
+        );
+        std::fs::remove_dir_all(path).expect("remove only owned private runtime");
+    }
+}
 struct Https {
     issuer: String,
     client: reqwest::Client,
@@ -24,7 +94,7 @@ impl Drop for Https {
     }
 }
 impl Https {
-    async fn start(root: &Path) -> Self {
+    async fn start(root: &Path, config: ClientConfig) -> Self {
         let cert = root.join("public-test-cert.der");
         let key = root.join("public-test-key.pkcs8");
         std::fs::write(&cert, CERT).expect("test cert");
@@ -37,7 +107,7 @@ impl Https {
             drop(reservation);
             match alcomd_mcp::HttpServer::bind_oauth(
                 port,
-                ClientConfig::default().without_daemon_start(),
+                config.clone(),
                 cert.clone(),
                 key.clone(),
             )
@@ -275,14 +345,15 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(root.join("data")).expect("disposable data");
     let root = root.canonicalize().expect("isolated root");
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
     .await
     .expect("exclusive isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("owner");
     let mut allowed = Vec::new();
@@ -335,7 +406,7 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         })
         .await
         .expect("B");
-    let http = Https::start(&root).await;
+    let http = Https::start(&root, core.client.clone()).await;
     let reg_a = registration(&mut owner, &http, &a, false)
         .await
         .registration;
@@ -427,8 +498,8 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         );
     }
     let mut direct = AlcomdClient::connect(
-        ClientConfig::default()
-            .without_daemon_start()
+        core.client
+            .clone()
             .with_oauth_access(access.into(), http.resource()),
     )
     .await
@@ -533,15 +604,15 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     daemon.abort();
     let _ = daemon.await;
     let reopened = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
     .await
     .expect("reopen only isolated Core");
     let mut live = AlcomdClient::connect(
-        ClientConfig::default()
-            .without_daemon_start()
+        core.client
+            .clone()
             .with_oauth_access(b_access.into(), original_resource),
     )
     .await
@@ -578,19 +649,20 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(root.join("data")).expect("disposable data");
     let root = root.canonicalize().expect("root");
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
     .await
     .expect("exclusive isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("real native owner");
     let mut ingress = AlcomdClient::connect(
-        ClientConfig::default()
-            .without_daemon_start()
+        core.client
+            .clone()
             .with_client_name("alcomd-gui")
             .with_oauth_endpoint(),
     )
@@ -603,7 +675,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         matches!(ingress.oauth_request_get(McpOAuthRequestGetParams{request_id:uuid::Uuid::new_v4().to_string(),cursor:None,limit:None}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     drop(ingress);
-    let http = Https::start(&root).await;
+    let http = Https::start(&root, core.client.clone()).await;
     let port = reqwest::Url::parse(&http.issuer)
         .expect("issuer")
         .port()
@@ -801,8 +873,8 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let sb = http.sdk(&access_b).await;
     let mut trace = vec![];
     let mut persistent = AlcomdClient::connect(
-        ClientConfig::default()
-            .without_daemon_start()
+        core.client
+            .clone()
             .with_client_name("alcomd-gui")
             .with_oauth_access(access.clone(), http.resource()),
     )
