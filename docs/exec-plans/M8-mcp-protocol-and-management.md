@@ -1058,3 +1058,32 @@ State37仅新增0037，旧0033–0036原样保留。一个事务撤销旧扩展p
 新增unsupported_stored_grants_are_rejected_by_reads_and_idempotent_replays修复前真实0/1：client读取返回了project格式。修复后受影响M8模块单轮15/0；随后补正常八项能力逐页完整读取并收紧迁移证据过滤到精确客户端/新revision，最终单轮16/0。旧1024/4096样例现在分别证明不支持的快照/写入/重放拒绝、原始行和compact幂等记录保留；原分页数量、字节上限与游标快照/身份绑定继续保留，用原始证据ID测试通用page边界，不能据此宣称旧权限能分页读取。现行八项能力另有真实Store快照分页用例，不以旧格式冒充现行配置。State37保全/无扩大/回滚/重开模块4/0；Store lib/tests严格Clippy通过。日志unsupported-grants-{before,module,module-final,state37,clippy}.log位于target/m8-zero-grant-20261115，失败不覆盖、不拼接。
 
 同步当前RPC规范、State37解释与A-041，不新增State/Config、依赖、权限或接口。最终fmt/metadata/xtask/diff通过，仅本地提交、不推送。本次未重建部署程序或占用端点，不触碰正供用户查看的485eddb隔离Core/GUI，也不操作原数据；当前窗口、之前真实Core/浏览器证据只绑定原候选。本次后端严格读取只有上述本地定向证据，尚无新增原生/远端验证。M8仍IN_PROGRESS，不进入M9。
+
+### 内部逐项目授权模型清理（2026-11-16）
+
+所有者要求彻底清理内部残留并同步测试/文档。实际审计发现AccessContext仍能保存项目读取/包写入范围，构造器允许Exact项目集合；旧调用虽没有当前公开登记入口，模型仍可表达逐项目授权。代码`465f82386ba530b35cf883c7fe1370cea19cb6c6`现删除这两个字段、with_project_read_scopes及两类project-scope检查器，无旧别名/桥接/保留给未来适配器的旁路。ExtensionId访问仍需要独立隔离，原通用AccessScopes收紧命名为ExtensionUiScopes，仅用于extensions.ui.use。
+
+项目读取、候选查询、模板来源和Host交互改为检查ProjectsRead能力；包Apply保留PackagesManage及原read能力，OAuth接受事务仍实时读取token/当前授权并逐项检查。已有重复能力检查只删除冗余部分；实际项目/仓库可见性与owner、MCP真实Principal、原Plan/目标身份/revision/pinned source、Operation与幂等隔离不变。管理Host项目列表不再按内部项目集合过滤，仍在同一事务先检查Client与Extension双方能力/lease，再由既有safe summary取得目标。OAuth能力scope与UI的ExtensionId隔离不是逐项目授权，继续保留。
+
+管理客户端授权指纹删除项目范围项，继续编码排序后的当前权限、ExtensionId范围、Principal、连接/实例与会话；能力撤销或上述身份变化仍使游标绑定不同。旧内存会话/游标不建立兼容层。Store项目列表助手改名authorized_projects，明确其检查的是当前能力和OAuth上限，不是项目ACL。
+
+测试按现行合同更新：旧“对项目A允许、B拒绝”断言改为项目读取不隐含包修改/扩展页面权限；候选查询仍逐项拒绝缺少四种必要能力，并在读源前拒绝非法目标ProjectId。新增管理指纹测试验证权限顺序稳定，能力撤销、ExtensionId及Principal/连接/实例/会话变化均改变绑定。权限规范、主RPC、Portable UI、威胁模型及备份合同清除旧project read/write scope表述，架构和A-041明确内部模型也仅按能力授权。内部Rust API为有意删除，不新增公共RPC/WIT形状、权限、依赖、State/Config或数据库迁移。
+
+本轮证据目录`target/m8-project-model-cleanup-20261116/`，绑定上述代码（candidate-evidence.json），均为定向模块：
+
+| 证据 | 结果 |
+| --- | --- |
+| application-mcp.log | 5/0，零授权、身份/伪owner、未知格式、读写能力分离 |
+| application-portable.log | 14/0，含新增授权指纹、ExtensionId隔离、会话关闭与敏感回放清理 |
+| application-candidates.log | 5/0，必要能力、目标身份、查询/来源/游标变化 |
+| store-mcp-oauth.log | 16/0，真实Store包接受事务、撤销/重放/owner保留、OAuth轮换/上限/幂等及不支持格式拒绝 |
+| security-backup-contracts.log | 安全3/0、备份4/0；保留Host调用双方权限/lease绑定和备份权限边界 |
+| project-package-reads.log | 1/0，实际隔离文件读取、内存分页、读后数据库不变；不是原生IPC占端点测试 |
+| extension-project-capabilities.log | 2/0，必需全局读取、后续项目及lease逐次撤销/namespace校验 |
+| affected-clippy.log | application/store/Core所有targets严格Clippy通过 |
+| fmt.log、metadata.json、xtask.log | 格式、locked metadata、仓库一致性与diff通过 |
+| runtime-model-audit.json | 扫描436份相关Rust/TS源码，旧项目范围字段/构造/检查器与旧通用范围名零引用 |
+
+未重复完整Workspace、Chromium、Tauri/release或三平台，也未重新占用Windows唯一管道。旧SQL迁移、原始历史行、旧格式拒绝/迁移测试仍作为证据保留，不是可用的逐项目授权模型。之前各候选结果及失败记录不改写，不拼接为新候选完整通过。
+
+本轮未重建部署Core/GUI，不停止正供用户查看的review程序；review/candidate.json仍为485eddb，不能将源码清理描述成该窗口已升级或新原生闭环已通过。原数据未访问/升级，没有恢复桌面控制。未推送、没有本轮Hosted/CodeQL结果；M8保持IN_PROGRESS，人工查看仍待确认，不进入M9。
