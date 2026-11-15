@@ -1,6 +1,6 @@
 # M8 管理扩展人工查看准备
 
-2026-11-15，当前候选`36a782c7b78584a46e242b91270fb464bfd9fa29`。匹配程序、样例及隔离Core启动已准备并验证；**GUI尚未打开，人工查看未执行**。不自动恢复桌面控制。
+2026-11-15，当前候选`36a782c7b78584a46e242b91270fb464bfd9fa29`。匹配程序、样例及隔离Core启动已准备并验证；**GUI已实际启动并连接指定隔离Core，窗口保留等待人工查看；尚未签收**。不自动恢复桌面控制。
 
 ## 已核实的开发包
 
@@ -22,15 +22,15 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-mcp-management\management-develo
 
 随后6bf3493及0cc9b28已补齐Core/MCP/CLI及真实OAuth/游标验证，当前36a782c另补齐Host和嵌入前端的debug GUI。使用独立`target/m8-check`、单编译任务，Host构建成功，Tauri `build --debug --no-bundle`成功且前端check/build通过，没有运行完整Workspace/Chromium/release。444份输入摘要仍为`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`；运行时代码自0cc9b28未变，后续只改测试/夹具/文档。五个实际程序的路径与SHA256绑定在`target/m8-review-36a782c/candidate.json`，不声称不同构建的文件逐字节相同。
 
-程序组位于`target/m8-review-36a782c/`：Core/CLI/MCP/Host在`core/`，GUI单独在`gui/`且没有同目录alcomd.exe，避免隔离Core失联时GUI默认自启动访问原数据。`data/`、`webview-profile/`及两个`samples/`项目均为本轮可丢弃数据，不使用原M7启动入口。两个样例`M8-allowed-project`和`M8-other-project`已通过正式CLI登记，清单读取返回2项目、0活动任务、0客户端、0 OAuth登记。重开后五项公开结果逐项一致，两个ProjectId/revision保持；随后再次停止自有Core，runtime残留0。原Core/GUI原本关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（本次准备前后均0进程）。证据为`records/{preparation-result,reopen-result,reopen-preservation}.json`及两轮公开读取，不把隔离读取冒称原环境五组状态核对。
+程序组位于`target/m8-review-36a782c/`：Core/CLI/MCP/Host在`core/`，GUI单独在`gui/`且没有同目录alcomd.exe，避免隔离Core失联时GUI默认自启动访问原数据。`data/`、`webview-profile/`及两个`samples/`项目均为本轮可丢弃数据，不使用原M7启动入口。两个样例`M8-allowed-project`和`M8-other-project`已通过正式CLI登记，清单读取返回2项目、0活动任务、0客户端、0 OAuth登记。重开后五项公开结果逐项一致，两个ProjectId/revision保持；准备阶段随后再次停止自有Core，runtime残留0；本次查看已按下述入口重新启动并保持打开。原Core/GUI原本关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（本次准备前后均0进程）。证据为`records/{preparation-result,reopen-result,reopen-preservation}.json`及两轮公开读取，不把隔离读取冒称原环境五组状态核对。
 
-在PowerShell执行以下命令打开本轮隔离环境：
+当前隔离窗口已打开，无需重复启动。以后关闭后，可在PowerShell执行以下命令打开本轮隔离环境：
 
 ```powershell
 & 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-oauth-audit-20261115\Open-Review.ps1'
 ```
 
-该入口核对五程序摘要、当前运行进程及隔离路径，再启动指定数据目录的Core；随后GUI使用独立WebView2 profile。`-CoreOnly`分支已真实启动并通过公开查询，准备结束后核对0任务再停止自有Core；**GUI启动分支仅语法与源码核对，没有执行、没有截图或窗口成功结论**。若检测到已有Core/GUI/Host/MCP则拒绝启动，不自动暂停、强杀或连接原环境。若需要处理新的端点冲突，应先核对进程归属及无活动任务，再沿原有获批流程处理。
+该入口核对五程序摘要、当前运行进程及隔离路径，再启动指定数据目录的Core；随后GUI使用独立WebView2 profile。`-CoreOnly`分支已真实启动并通过公开查询，准备结束后核对0任务再停止自有Core；**GUI启动分支现已按所有者明确授权实际成功执行**。只读核对确认可见窗口ALCOMD3响应正常，GUI PID42264的5条管道连接均以隔离Core PID45200为服务端；Core命令行指定本轮data，WebView2使用本轮独立profile。证据为`records/gui-connection.json`，原36份data/346份profile摘要保持，见`records/gui-start-preservation.json`。没有恢复桌面控制、发送界面输入或拍摄截图，人工体验仍待用户查看。若检测到已有Core/GUI/Host/MCP则拒绝启动，不自动暂停、强杀或连接原环境。若需要处理新的端点冲突，应先核对进程归属及无活动任务，再沿原有获批流程处理。
 
 ## 手动打开后的最短操作
 

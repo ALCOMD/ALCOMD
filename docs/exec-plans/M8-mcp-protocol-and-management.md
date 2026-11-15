@@ -960,6 +960,8 @@ CI阻塞仍存在于远端候选33056db9；上述本地修复及本节记录超�
 - 从0cc9b28到本候选只变测试/测试证书/文档，生产源码与依赖未变，复用现有Core/CLI/MCP；444份输入摘要仍为`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`。五个实际程序的路径/摘要存于`target/m8-review-36a782c/candidate.json`，不承诺不同编译的二进制字节相同。GUI单独放置且无同目录Core，避免失联后默认自启动访问原数据。
 - 当前样例包125919字节、SHA256 `3f41189c80200eec2c0c8ef79676f51896b0518721180f10f55c04587f752ca7`保持；未改包、重做正式扩展或跳过验签/发布者/权限检查，安装留给正式流程。
 - `Open-Review.ps1 -CoreOnly`真实成功启动明确`--data-dir`的隔离Core，以正式CLI登记两个可丢弃项目；system/projects/operations/clients/oauth-registrations五项公开读取成功，2项目、0活动任务、0客户端、0OAuth登记。它们是隔离准备读取，不冒称原环境五组公开状态复核。核对自有PID/路径/命令行及0任务后关闭Core；随后重开、只读取得同样五项结果，两个ProjectId/revision保持，再核对0任务并停止自有Core，runtime残留0。原环境本来关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（准备前后均0进程）。证据`target/m8-review-36a782c/records/{preparation-result,reopen-result,reopen-preservation}.json`；辅助保全摘要首轮因空Unity数组未输出文件而未完成，按初始脚本实际零条语义核对后通过，未伪造历史快照、未重跑业务测试。
-- GUI启动分支仅语法/源码核对，未执行、没有真实窗口截图或人工通过结论。入口发现已有Core/GUI/Host/MCP即拒绝，不自动暂停、终止、替换或迁移原环境。普通浏览器/目标MCP客户端OAuth接入仍需用户受信任localhost证书，未安装系统信任、未启动新监听或用公开测试私钥作为日常服务。
+- 准备阶段GUI启动分支只做语法/源码核对，未执行、没有真实窗口截图或人工通过结论；随后按所有者明确启动授权实际打开，结果见下段。入口发现已有Core/GUI/Host/MCP即拒绝，不自动暂停、终止、替换或迁移原环境。普通浏览器/目标MCP客户端OAuth接入仍需用户受信任localhost证书，未安装系统信任、未启动新监听或用公开测试私钥作为日常服务。
 
 M8继续IN_PROGRESS。管理界面人工查看、普通浏览器TLS接入、实时连接/请求/订阅观测、正式默认分发及其余既有后续仍分别保留；不开始M9。本次状态与准备记录仅本地提交，不追加推送或因此制造全量验证。纯文档适用metadata、xtask及diff检查通过，444份输入未变；计划入口及扩展README不再将已实现预登记OAuth、客户端与授权管理误列为未实施，CIMD/DCR等未支持能力仍明确保留。
+
+所有者随后明确要求打开隔离验收环境并保留窗口。在确认没有原Core/GUI占端点、五程序摘要一致后，已实际执行Open-Review.ps1的GUI分支：隔离Core PID45200、GUI PID42264，窗口ALCOMD3可见且响应。只读查询GUI自身句柄的管道服务端PID，5条连接均指向45200；同时核对Core可执行文件/明确data参数、WebView2独立profile及预期2样例/启动时0活动任务，确认GUI确实连接本轮Core。没有恢复Computer Use、发送界面输入、拍摄截图、暂停或替换原环境。原36份data/346份profile摘要与准备基线相同，原环境继续关闭；本轮Core/GUI保持运行供用户检查。证据`target/m8-review-36a782c/records/{gui-connection,gui-start-preservation}.json`。这是窗口和连接核对，不是人工体验签收或M8完成；不推送，不重跑完整验证。
