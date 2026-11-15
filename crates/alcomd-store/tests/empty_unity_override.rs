@@ -59,11 +59,17 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
             .any(|(name, _)| name == "project_package_presentations"
                 || name == "project_presentation_observations")
     );
-    for table in ["mcp_clients", "mcp_client_grants", "mcp_client_credentials"] {
+    for table in [
+        "mcp_clients",
+        "mcp_client_grants",
+        "mcp_client_credentials",
+        "mcp_oauth_registrations",
+        "mcp_oauth_tokens",
+    ] {
         let index = retained
             .iter()
             .position(|(name, _)| name == table)
-            .expect("approved MCP authority table");
+            .expect("approved MCP/OAuth authority table");
         assert!(
             retained.remove(index).1.is_empty(),
             "legacy upgrade must not invent {table} authority"
