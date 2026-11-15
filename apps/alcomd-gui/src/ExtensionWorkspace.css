@@ -99,7 +99,7 @@
 
 .extension-permission-heading {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
@@ -108,54 +108,14 @@
 .extension-permission-heading h3 { margin: 0; }
 
 .extension-permission-description,
-.extension-permission-required,
-.extension-permission-path {
+.extension-permission-required {
     margin-block: 6px 12px;
     color: var(--md-sys-color-on-surface-variant);
     overflow-wrap: anywhere;
 }
 
-.extension-permission-state { color: var(--md-sys-color-on-surface-variant); }
-
-.extension-project-permission {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-block-start: 12px;
-}
-
-.extension-project-permission > md-filled-select {
-    flex: 1 1 180px;
-    min-width: 0;
-    max-width: 100%;
-}
-
-.extension-permission-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.extension-grants li > span { min-width: 0; overflow-wrap: anywhere; }
-
-.extension-grants {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.extension-grants li {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-}
-
-.extension-grants li > div {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-    overflow-wrap: anywhere;
-}
-
+.extension-permission-controls { display: flex; align-items: center; padding-inline: 4px; }
+.extension-permission-controls .material-toggle > span { display: none; }
 @media (max-width: 1100px) {
     .extension-cards {
         grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));

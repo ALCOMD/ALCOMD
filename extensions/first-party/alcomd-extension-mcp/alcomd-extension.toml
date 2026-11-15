@@ -19,4 +19,4 @@ optional = []
 
 [permissions]
 required = []
-optional = ["mcp.clients.manage", "mcp.clients.read", "projects.read"]
+optional = ["mcp.clients.manage", "mcp.clients.read"]

@@ -14,7 +14,8 @@ guest Component
 
 Authority：
 
-- permission 精确为 `projects.read`；scope 必须包含 request 中的 specific ProjectId。
+- permission 精确为 `projects.read`，扩展scope为`Global/*`，一次授权覆盖当前及未来登记项目的安全摘要。
+  request中的specific ProjectId只是读取目标，不再是用户逐项授权对象；交互Client仍须通过其权威检查。
 - daemon/application 以 Host channel 绑定的 current lease 重新解析 ExtensionId、PrincipalId、grant revision、
   lifecycle generation 和 scope；忽略 guest 自报 authority metadata。
 - grant revision 更新是 revoke linearization point。之后排队/未接受 call 返回 `lease-revoked` 或

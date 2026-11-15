@@ -3,10 +3,54 @@ import { H4_ALPHA } from "./h4-management-client";
 
 const route = "/browser-harness.html?route=%2Fextensions%2Fcom.example.alpha&state=ready&h4-management=1&m8-mcp-permissions=1&windows-paths=1";
 
+test("permission switches use keyboard input, lock pending writes and restore authority after failure", async ({ page }) => {
+    await page.goto(route);
+    await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    const manage = dialog.getByRole("switch", { name: "Manage MCP clients", exact: true });
+    const read = dialog.getByRole("switch", { name: "Read MCP clients", exact: true });
+    await expect(manage).not.toBeChecked();
+    await expect(read).not.toBeChecked();
+    await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
+    await manage.focus();
+    await page.keyboard.press("Space");
+    await expect(manage).toBeDisabled();
+    await expect(read).toBeDisabled();
+    expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(1);
+    await page.evaluate(() => {
+        window.h4Management.hold("extensions.setGrant", false);
+        window.h4Management.release("extensions.setGrant", "extension_permission_denied");
+    });
+    await expect(dialog.getByRole("alert")).toContainText("This action is outside the extension's allowed permissions or scope.");
+    await expect(manage).toBeEnabled();
+    await expect(manage).not.toBeChecked();
+    await expect(read).not.toBeChecked();
+    await manage.click();
+    await expect(manage).toBeChecked();
+    await expect(manage).toBeEnabled();
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await expect(read).not.toBeChecked();
+    await page.evaluate(() => window.h4Management.failNext("extensions.revokeGrant", "store_unavailable"));
+    await manage.click();
+    await expect(dialog.getByRole("alert")).toContainText("Core could not read or save its state.");
+    await expect(manage).toBeEnabled();
+    await expect(manage).toBeChecked();
+    await manage.click();
+    await expect(manage).not.toBeChecked();
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    const writes = await page.evaluate(() => window.h4Management.requests.filter((r) => ["extensions.setGrant", "extensions.revokeGrant"].includes(r.method)));
+    expect(writes.map((r) => [r.method, r.params.permission, r.params.resourceKind, r.params.resourceId, r.params.expectedGrantRevision])).toEqual([
+        ["extensions.setGrant", "mcp.clients.manage", "Global", "*", 3],
+        ["extensions.setGrant", "mcp.clients.manage", "Global", "*", 3],
+        ["extensions.revokeGrant", "mcp.clients.manage", "Global", "*", 4],
+        ["extensions.revokeGrant", "mcp.clients.manage", "Global", "*", 4]
+    ]);
+});
+
 test("MCP management permission rows read every grant page and use the exact global scope", async ({ page }) => {
     await page.goto(route);
     await page.evaluate((id) => window.h4Management.setGrants(id, [
-        { permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101" },
+        { permission: "projects.read", resourceKind: "Global", resourceId: "*" },
         { permission: "mcp.clients.read", resourceKind: "Global", resourceId: "*" }
     ]), H4_ALPHA);
     await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
@@ -14,21 +58,21 @@ test("MCP management permission rows read every grant page and use the exact glo
     const read = dialog.getByRole("group", { name: "Read MCP clients", exact: true });
     const manage = dialog.getByRole("group", { name: "Manage MCP clients", exact: true });
     const projects = dialog.getByRole("group", { name: "Read projects", exact: true });
-    await expect(read.getByText("Allowed", { exact: true })).toBeVisible();
-    await expect(manage.getByText("Not allowed", { exact: true })).toBeVisible();
-    await expect(projects.locator(".extension-grants > li")).toHaveCount(1);
+    await expect(read.getByRole("switch", { name: "Read MCP clients", exact: true })).toBeChecked();
+    await expect(manage.getByRole("switch", { name: "Manage MCP clients", exact: true })).not.toBeChecked();
+    await expect(projects.getByRole("switch", { name: "Read projects", exact: true })).toBeChecked();
     await expect(dialog.getByRole("combobox", { name: "Permission", exact: true })).toHaveCount(0);
     await expect(dialog.getByRole("region", { name: "Requested permissions", exact: true })).toHaveCount(0);
     await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
     await expect(manage).toContainText("Create MCP clients, change their grants, and permanently revoke them.");
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(0);
-    await manage.getByRole("button", { name: "Allow Manage MCP clients", exact: true }).click();
-    await expect(manage.getByText("Allowed", { exact: true })).toBeVisible();
+    await manage.getByRole("switch", { name: "Manage MCP clients", exact: true }).click();
+    await expect(manage.getByRole("switch", { name: "Manage MCP clients", exact: true })).toBeChecked();
     await expect.poll(() => page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").at(-1)?.params)).toEqual({
         extensionId: H4_ALPHA, permission: "mcp.clients.manage", resourceKind: "Global", resourceId: "*", expectedGrantRevision: 4
     });
-    await expect(read.getByText("Allowed", { exact: true })).toBeVisible();
-    await expect(projects.locator(".extension-grants > li")).toHaveCount(1);
+    await expect(read.getByRole("switch", { name: "Read MCP clients", exact: true })).toBeChecked();
+    await expect(projects.getByRole("switch", { name: "Read projects", exact: true })).toBeChecked();
     const reads = await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.permissions.list"));
     expect(reads.some((r) => r.params.cursor === `${H4_ALPHA}:4:1`)).toBe(true);
     expect(reads.some((r) => r.params.cursor === `${H4_ALPHA}:5:2`)).toBe(true);
@@ -36,43 +80,33 @@ test("MCP management permission rows read every grant page and use the exact glo
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-    test(`narrow ${colorScheme} permission dialog keeps long project scopes, keyboard actions, errors and retry usable`, async ({ browser }) => {
+    test(`narrow ${colorScheme} permission switches keep keyboard, error feedback and retry usable`, async ({ browser }) => {
         const context = await browser.newContext({ viewport: { width: 640, height: 450 }, deviceScaleFactor: 2, colorScheme });
         const page = await context.newPage();
         await page.goto("http://127.0.0.1:4173" + route + "&projectGrid=1");
-        await page.evaluate((id) => window.h4Management.setGrants(id, []), H4_ALPHA);
         await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
-        const read = dialog.getByRole("group", { name: "Read MCP clients", exact: true });
-        const projects = dialog.getByRole("group", { name: "Read projects", exact: true });
-        await expect(read.getByText("Not allowed", { exact: true })).toBeVisible();
-        await expect(projects.getByText("Not allowed", { exact: true })).toBeVisible();
-        await projects.getByRole("combobox", { name: "Project", exact: true }).click();
-        const longName = "非常长的项目名称用于检查卡片信息与操作是否保持整齐 Long Project Name";
-        await page.getByRole("option", { name: longName, exact: true }).click();
-        await expect(projects.locator(".extension-permission-path")).toContainText("Workspace with a long directory name");
-        await expect(projects).not.toContainText("\\\\?\\");
-        expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(0);
-        const allowProject = projects.getByRole("button", { name: "Allow selected project", exact: true });
-        await allowProject.focus();
-        await page.keyboard.press("Enter");
-        await expect(projects.getByText("Allowed projects: 1", { exact: true })).toBeVisible();
-        await expect(projects.locator(".extension-grants > li > span")).toHaveText(longName);
-        const remove = projects.getByRole("button", { name: `Revoke access to ${longName}`, exact: true });
-        await remove.scrollIntoViewIfNeeded();
+        const projects = dialog.getByRole("switch", { name: "Read projects", exact: true });
+        await expect(projects).not.toBeChecked();
+        await expect(dialog.getByRole("switch")).toHaveCount(3);
+        await expect(dialog.getByRole("combobox")).toHaveCount(0);
+        await projects.focus();
+        await page.keyboard.press("Space");
+        await expect(projects).toBeChecked();
+        await expect(projects).toBeEnabled();
+        expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "projects.list").length)).toBe(0);
         const overflow = await dialog.locator(".extension-permissions").evaluate((element) => element.scrollWidth - element.clientWidth);
         expect(overflow).toBeLessThanOrEqual(1);
-        await page.screenshot({ path: `target/m8-zero-grant/permissions-narrow-${colorScheme}.png`, fullPage: true });
+        await page.screenshot({ path: `target/m8-zero-grant/permission-switches-${colorScheme}.png`, fullPage: true });
         await page.evaluate(() => window.h4Management.failNext("extensions.revokeGrant", "extension_scope_denied"));
-        await remove.click();
-        await expect(dialog.getByRole("alert")).toBeVisible();
-        await expect(dialog.getByRole("alert")).toContainText("This action is outside the extension's allowed permissions or scope. Review its access to the selected resource.");
-        await expect(projects.locator(".extension-grants > li > span")).toHaveText(longName);
+        await projects.click();
+        await expect(dialog.getByRole("alert")).toContainText("This action is outside the extension's allowed permissions or scope.");
+        await expect(projects).toBeChecked();
+        await expect(projects).toBeEnabled();
         await dialog.getByRole("alert").scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `target/m8-zero-grant/permissions-error-${colorScheme}.png`, fullPage: true });
-        await remove.click();
-        await expect(projects.getByText("Not allowed", { exact: true })).toBeVisible();
-        await expect(projects.locator(".extension-grants > li")).toHaveCount(0);
+        await page.screenshot({ path: `target/m8-zero-grant/permission-switches-error-${colorScheme}.png`, fullPage: true });
+        await projects.click();
+        await expect(projects).not.toBeChecked();
         await expect(dialog.getByRole("alert")).toHaveCount(0);
         expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.revokeGrant").length)).toBe(2);
         await context.close();

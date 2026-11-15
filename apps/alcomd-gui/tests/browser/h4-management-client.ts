@@ -39,7 +39,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     const grants = new Map<string, ManagementGrant[]>();
     for (const id of extensions.keys()) grants.set(id, query.has("m8-mcp-permissions") ? [] : [
         { permission: "background.run", resourceKind: "Extension", resourceId: id },
-        { permission: "projects.read", resourceKind: "Project", resourceId: "00000000-0000-4000-8000-000000000101" }
+        { permission: "projects.read", resourceKind: "Global", resourceId: "*" }
     ]);
     const tasks = new Map<string, { operation: Operation; plan: ExtensionPlan }>();
     const held = new Set<string>();
@@ -220,8 +220,8 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             if (extension.grantRevision !== expectedGrantRevision) throw { code: "revision_conflict" };
             const mcp = permission === "mcp.clients.read" || permission === "mcp.clients.manage";
             if (!mcp && permission !== "background.run" && permission !== "projects.read") throw { code: "invalid_request" };
-            if (resourceKind !== "Extension" && resourceKind !== "Project" && resourceKind !== "Global") throw { code: "invalid_request" };
-            if (mcp ? resourceKind !== "Global" || resourceId !== "*" : permission === "background.run" ? resourceKind !== "Extension" || resourceId !== extensionId : resourceKind !== "Project") throw { code: "extension_scope_denied" };
+            if (resourceKind !== "Extension" && resourceKind !== "Global") throw { code: "invalid_request" };
+            if (mcp ? resourceKind !== "Global" || resourceId !== "*" : permission === "background.run" ? resourceKind !== "Extension" || resourceId !== extensionId : resourceKind !== "Global" || resourceId !== "*") throw { code: "extension_scope_denied" };
             const current = grants.get(extensionId) ?? [];
             if (!current.some((grant) => grant.permission === permission && grant.resourceKind === resourceKind && grant.resourceId === resourceId)) current.push({ permission, resourceKind, resourceId });
             grants.set(extensionId, current);

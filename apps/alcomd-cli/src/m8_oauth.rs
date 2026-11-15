@@ -251,22 +251,7 @@ pub(super) async fn execute(
             match command {
                 RequestCommand::Show { request_id } => {
                     let review = review(client, request_id).await?;
-                    let mut value = as_json!(&review)?;
-                    let mut labels = serde_json::Map::new();
-                    for g in &review.grants {
-                        if g.resource_kind == "project" && !labels.contains_key(&g.resource_id) {
-                            let label = match client.project_get(g.resource_id.clone()).await {
-                                Ok(p) => p
-                                    .project
-                                    .display_name
-                                    .unwrap_or_else(|| "Registered project".into()),
-                                Err(_) => "Project unavailable; inspect its registration".into(),
-                            };
-                            labels.insert(g.resource_id.clone(), label.into());
-                        }
-                    }
-                    value["projectLabels"] = labels.into();
-                    Ok(value)
+                    as_json!(&review)
                 }
                 RequestCommand::Approve {
                     request_id,
@@ -356,10 +341,9 @@ pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -
     if let Some(grants) = value["grants"].as_array() {
         for g in grants {
             let p = g["permission"].as_str().unwrap_or("");
-            let id = g["resourceId"].as_str().unwrap_or("");
             let label = match p {
-                "projects.read" => "Read project",
-                "packages.manage" => "Manage project packages",
+                "projects.read" => "Read all projects",
+                "packages.manage" => "Manage packages in all projects",
                 "packages.read" => "Read packages",
                 "repositories.read" => "Read repositories",
                 "operations.read" => "Read own operations",
@@ -368,18 +352,7 @@ pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -
                 "events.read" => "Read own events",
                 _ => "Unsupported permission",
             };
-            if g["resourceKind"] == "project" {
-                writeln!(
-                    output,
-                    "  {label}: {} ({id})",
-                    value["projectLabels"][id]
-                        .as_str()
-                        .unwrap_or("Project")
-                        .escape_debug()
-                )?;
-            } else {
-                writeln!(output, "  {label}: global")?;
-            }
+            writeln!(output, "  {label}")?;
         }
     }
     writeln!(
@@ -440,11 +413,11 @@ mod tests {
     }
     #[test]
     fn review_uses_labels_and_preserves_opaque_ids_without_terminal_controls() {
-        let value = serde_json::json!({"requestId":"request","displayName":"Name\ncontrol","oauthClientId":"client","resource":"https://localhost:5443/mcp","redirectUri":"http://localhost:1234/callback","status":"pending","approvalFingerprint":"fingerprint","grants":[{"permission":"projects.read","resourceKind":"project","resourceId":"project-id"}],"projectLabels":{"project-id":"Isolated Project"}});
+        let value = serde_json::json!({"requestId":"request","displayName":"Name\ncontrol","oauthClientId":"client","resource":"https://localhost:5443/mcp","redirectUri":"http://localhost:1234/callback","status":"pending","approvalFingerprint":"fingerprint","grants":[{"permission":"projects.read","resourceKind":"global","resourceId":"*"}]});
         let mut bytes = Vec::new();
         write_review(&mut bytes, &value).expect("human output");
         let text = String::from_utf8(bytes).expect("text");
-        assert!(text.contains("Read project: Isolated Project (project-id)"));
+        assert!(text.contains("Read all projects"));
         assert!(text.contains("Name\\ncontrol"));
         assert!(!text.contains("\"resourceKind\""));
     }

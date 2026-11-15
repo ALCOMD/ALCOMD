@@ -8,9 +8,9 @@
 
 grant 名称、资源种类及 opaque 资源 ID 为有界 ASCII，不能以路径或通配 owner 代替资源授权。分页同时受 RPC 帧字节上限约束，不能因客户端数量最多64就把全部 grant 一次塞入响应；到达字节预算时返回下一游标。Unsupported 的权限/范围组合明确拒绝。
 
-本批支持 `projects.read/project/<ProjectId>`；`state.check`、`operations.read`、`operations.cancel`、`events.read`、`repositories.read`、`packages.read` 的范围为 `global/*`。项目必须已登记，重复或其他组合拒绝；这不代表 MCP 业务工具已经开放。项目读取连接当前授权快照，不改变资源 owner；Operation、Plan、事件可见性和幂等键按实际调用 Principal 隔离。客户端不能调用未接通范围检查的入口，项目集合的专用视图筛选暂不开放。
+2026-11-15所有者批准统一能力授权：当前八项`projects.read`、`packages.manage`、`state.check`、`operations.read`、`operations.cancel`、`events.read`、`repositories.read`、`packages.read`均只接受`global/*`，不再按ProjectId授权。覆盖当前及未来登记项目；Operation、Plan、事件和幂等记录仍按实际Principal隔离，项目ID只是操作目标。未知权限、重复及其他组合拒绝。
 
-2026-11-13获批首条包业务切片增加支持`packages.manage/project/<ProjectId>`组合，不新增权限名称或身份接口。Apply必须同时具有同项目read、既有仓库/包read及operations.read；当前元组在接受事务内复查，不接受global包写授权。仅原remove Plan可由MCP委托执行，项目owner不变，已接受任务的执行/恢复绑定其原Operation/Plan/journal，之后的撤销不得被幂等重放绕过，也不自动取消既有任务。
+包修改要求显式`packages.manage/global/*`，不能由read推导；接受事务仍复查项目read、仓库/包read及operations.read。只Apply原remove Plan、保持明确确认、原Principal及资源owner，既有接受任务/journal与撤销边界不变。State37为旧逐项目授权建立去除该授权的新当前快照、递增revision；旧不可变快照仅保留历史，不自动扩大为global，须重新明确授予。
 
 写入使用既有 `idempotencyKey`，更换授权和撤销要求 `expectedRevision`。普通成功响应按原接受时的非秘密元数据及不可变授权快照精确重放；历史响应不是当前授权证明，当前状态须重新 list。State34 的当前快照指针是唯一有效授权来源，重放旧结果不会恢复权限。
 

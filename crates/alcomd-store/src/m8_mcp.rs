@@ -47,26 +47,9 @@ pub(super) fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result
     .collect::<Result<Vec<_>, _>>()
     .map_err(unavailable)
 }
-fn grants(
-    db: &Connection,
-    id: &str,
-    revision: i64,
-    items: Vec<McpGrant>,
-    check_projects: bool,
-) -> Result<(), E> {
+fn grants(db: &Connection, id: &str, revision: i64, items: Vec<McpGrant>) -> Result<(), E> {
+    alcomd_application::validate_mcp_grants(&items)?;
     for g in items {
-        if check_projects && g.resource_kind == "project" {
-            let exists: bool = db
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id=?1)",
-                    [&g.resource_id],
-                    |r| r.get(0),
-                )
-                .map_err(unavailable)?;
-            if !exists {
-                return Err(E::InvalidInput);
-            }
-        }
         db.execute("INSERT INTO mcp_client_grants(client_id,grant_revision,permission,resource_kind,resource_id) VALUES (?1,?2,?3,?4,?5)",params![id,revision,g.permission,g.resource_kind,g.resource_id]).map_err(unavailable)?;
     }
     db.execute(
@@ -180,7 +163,7 @@ pub(super) fn write_on(
                 params![id, format!("mcp:{id}"), name, now],
             )
             .map_err(unavailable)?;
-            grants(tx, &id, 1, items, true)?;
+            grants(tx, &id, 1, items)?;
             id
         }
         command => {
@@ -204,7 +187,6 @@ pub(super) fn write_on(
                     &id,
                     i64::try_from(expected + 1).map_err(unavailable)?,
                     items,
-                    true,
                 )?,
                 W::ChangeGrants { add, remove, .. } => {
                     let mut items = current.grants;
@@ -212,22 +194,6 @@ pub(super) fn write_on(
                         || add.iter().any(|g| items.contains(g))
                     {
                         return Err(E::InvalidInput);
-                    }
-                    // Only additions require current project eligibility. Old orphan grants
-                    // remain removable; retaining one never creates a new authorization.
-                    for g in &add {
-                        if g.resource_kind == "project" {
-                            let exists: bool = tx
-                                .query_row(
-                                    "SELECT EXISTS(SELECT 1 FROM projects WHERE project_id=?1)",
-                                    [&g.resource_id],
-                                    |r| r.get(0),
-                                )
-                                .map_err(unavailable)?;
-                            if !exists {
-                                return Err(E::InvalidInput);
-                            }
-                        }
                     }
                     items.retain(|g| !remove.contains(g));
                     items.extend(add);
@@ -237,7 +203,6 @@ pub(super) fn write_on(
                         &id,
                         i64::try_from(expected + 1).map_err(unavailable)?,
                         items,
-                        false,
                     )?;
                 }
                 W::Issue { hash, .. } => {
@@ -334,7 +299,7 @@ pub(super) fn project(
     id: ProjectId,
 ) -> Result<ProjectRecord, M3Error> {
     // Authorization is a join against current grants, never an owner substitution.
-    let owner=db.query_row("SELECT p.owner_principal_id FROM projects p JOIN mcp_client_grants g ON g.resource_id=p.project_id AND g.resource_kind='project' AND g.permission='projects.read' JOIN mcp_clients c ON c.client_id=g.client_id AND g.grant_revision=c.grant_revision WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND p.project_id=?2",params![principal.as_str(),id.to_string()],|r|r.get::<_,String>(0)).optional().map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?.ok_or_else(||M3Error::new(M3ErrorCode::PermissionDenied))?;
+    let owner=db.query_row("SELECT p.owner_principal_id FROM projects p JOIN mcp_client_grants g ON g.resource_id='*' AND g.resource_kind='global' AND g.permission='projects.read' JOIN mcp_clients c ON c.client_id=g.client_id AND g.grant_revision=c.grant_revision WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND p.project_id=?2",params![principal.as_str(),id.to_string()],|r|r.get::<_,String>(0)).optional().map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?.ok_or_else(||M3Error::new(M3ErrorCode::PermissionDenied))?;
     let owner = PrincipalId::parse(owner).map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
     crate::m3::get_project(db, &owner, id)
 }
@@ -393,10 +358,11 @@ fn projects_scoped_on(
                         == 0
             });
             if !matches
-                || !limited
-                    .grants
-                    .iter()
-                    .any(|g| g.permission == "projects.read" && g.resource_id == c.id.to_string())
+                || !limited.grants.iter().any(|g| {
+                    g.permission == "projects.read"
+                        && g.resource_kind == "global"
+                        && g.resource_id == "*"
+                })
             {
                 return Err(M3Error::new(M3ErrorCode::RevisionConflict));
             }
@@ -408,7 +374,7 @@ fn projects_scoped_on(
     } else {
         None
     };
-    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id) WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=p.project_id) AND (?5 IS NULL OR p.project_id IN (SELECT json_extract(value,'$.resourceId') FROM json_each(?5) WHERE json_extract(value,'$.permission')='projects.read' AND json_extract(value,'$.resourceKind')='project')) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
+    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id) WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='global' AND g.resource_id='*') AND (?5 IS NULL OR EXISTS (SELECT 1 FROM json_each(?5) WHERE json_extract(value,'$.permission')='projects.read' AND json_extract(value,'$.resourceKind')='global' AND json_extract(value,'$.resourceId')='*')) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
     let cursor_time = cursor
         .as_ref()
         .map(|c| i64::try_from(c.registered_at_ms))
@@ -503,8 +469,8 @@ mod tests {
         for permission in ["projects.read", "packages.manage"] {
             grants.push(McpGrant {
                 permission: permission.into(),
-                resource_kind: "project".into(),
-                resource_id: project.project_id.to_string(),
+                resource_kind: "global".into(),
+                resource_id: "*".into(),
             });
         }
         for permission in ["repositories.read", "packages.read", "operations.read"] {
@@ -684,18 +650,35 @@ mod tests {
                 resource_id: project.project_id.to_string(),
             });
         }
-        let original = write(
-            &mut db,
-            owner.clone(),
-            "create".into(),
-            W::Create {
-                name: "Large ACL".into(),
-                grants: items.clone(),
-            },
-            2,
+        // A genuine State34 record with its immutable, pre-State37 project grants.
+        // New requests reject this format; historical response evidence remains exact.
+        let id = Uuid::new_v4().to_string();
+        db.execute(
+            "INSERT INTO mcp_clients VALUES (?1,'mcp:'||?1,'Large ACL',1,2,NULL,1)",
+            [&id],
         )
-        .expect("large client")
-        .client;
+        .expect("historical client");
+        for grant in &items {
+            db.execute(
+                "INSERT INTO mcp_client_grants VALUES (?1,1,?2,?3,?4)",
+                params![id, grant.permission, grant.resource_kind, grant.resource_id],
+            )
+            .expect("historical snapshot");
+        }
+        let original = client(&db, &id).expect("historical result");
+        let mut metadata = serde_json::to_value(&original).expect("metadata");
+        metadata.as_object_mut().expect("object").remove("grants");
+        let response = serde_json::json!({"client":metadata,"grantRevision":1,"credentialId":null})
+            .to_string();
+        let input = serde_json::json!(["Large ACL", items]);
+        let fingerprint = serde_json::to_string(
+            &mcp_credential_hash(&input.to_string())
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        )
+        .expect("frozen request digest");
+        db.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES (?1,'mcp.clients.create','create',?2,'completed',?3,2)",params![owner.as_str(),fingerprint,response]).expect("historical compact response");
         assert!(serde_json::to_vec(&original).expect("full result").len() > 65536);
         let response_len:i64=db.query_row("SELECT length(response_json) FROM idempotency_records WHERE method='mcp.clients.create'",[],|r|r.get(0)).expect("compact record");
         assert!(response_len < 65536);
@@ -724,6 +707,10 @@ mod tests {
         .expect("original exact response")
         .client;
         assert_eq!(replay, original);
+        assert!(
+            alcomd_application::mcp_access(&replay).is_err(),
+            "historical response is not current authority"
+        );
         let current = client(&db, &original.client_id.to_string()).expect("current authority");
         assert!(current.grants.is_empty());
         assert!(

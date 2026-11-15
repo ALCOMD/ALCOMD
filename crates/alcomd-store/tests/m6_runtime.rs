@@ -136,7 +136,7 @@ async fn permission_project(store: &StateStoreHandle, index: u8) -> ProjectId {
 async fn permission_mutation(
     store: &StateStoreHandle,
     extension_id: &str,
-    project: Option<ProjectId>,
+    projects_read: bool,
     grant: bool,
     key: &str,
 ) {
@@ -150,19 +150,18 @@ async fn permission_mutation(
             owner,
             ExtensionGrantMutation {
                 extension_id: extension_id.to_owned(),
-                permission: if project.is_some() {
+                permission: if projects_read {
                     "projects.read"
                 } else {
                     "background.run"
                 }
                 .to_owned(),
-                resource_kind: if project.is_some() {
-                    "Project"
+                resource_kind: if projects_read { "Global" } else { "Extension" }.to_owned(),
+                resource_id: if projects_read {
+                    "*".into()
                 } else {
-                    "Extension"
-                }
-                .to_owned(),
-                resource_id: project.map_or_else(|| extension_id.to_owned(), |id| id.to_string()),
+                    extension_id.into()
+                },
                 expected_revision: record.grant_revision,
                 grant,
             },
@@ -229,7 +228,7 @@ async fn required_background_enable_and_recovery_refuse_without_side_effects_or_
     permission_mutation(
         &store,
         &package.extension_id,
-        None,
+        false,
         true,
         "required-background-first-grant",
     )
@@ -237,7 +236,7 @@ async fn required_background_enable_and_recovery_refuse_without_side_effects_or_
     permission_mutation(
         &store,
         &package.extension_id,
-        None,
+        false,
         false,
         "required-background-revoke",
     )
@@ -269,7 +268,7 @@ async fn required_background_enable_and_recovery_refuse_without_side_effects_or_
     permission_mutation(
         &store,
         &package.extension_id,
-        None,
+        false,
         true,
         "required-background-final-grant",
     )
@@ -349,7 +348,7 @@ async fn required_empty_ui_only_and_optional_permissions_enable_without_implicit
 }
 
 #[tokio::test]
-async fn required_project_permission_needs_an_active_explicit_project_scope() {
+async fn required_project_permission_needs_an_active_explicit_global_grant() {
     let mut package = evidence();
     package.required_permissions = vec!["projects.read".to_owned()];
     package.optional_permissions = vec!["background.run".to_owned()];
@@ -373,11 +372,32 @@ async fn required_project_permission_needs_an_active_explicit_project_scope() {
         .expect_err("required project permission cannot be bypassed by lack of background lease");
     assert_eq!(denied.code(), M6ErrorCode::PermissionDenied);
     assert_eq!(enable_state(&path), snapshot);
-    let project = permission_project(&store, 11).await;
+    let rejected = store
+        .set_grant(
+            owner.clone(),
+            ExtensionGrantMutation {
+                extension_id: package.extension_id.clone(),
+                permission: "projects.read".into(),
+                resource_kind: "Project".into(),
+                resource_id: ProjectId::new().to_string(),
+                expected_revision: before.grant_revision,
+                grant: true,
+            },
+            IdempotencyKey::parse("required-project-grant").expect("key"),
+            1030,
+        )
+        .await
+        .expect_err("old per-project approval is not silently widened");
+    assert_eq!(rejected.code(), M6ErrorCode::ScopeDenied);
+    assert_eq!(
+        enable_state(&path),
+        snapshot,
+        "invalid old scope has no side effects or idempotency consumption"
+    );
     permission_mutation(
         &store,
         &package.extension_id,
-        Some(project),
+        true,
         true,
         "required-project-grant",
     )
@@ -401,7 +421,7 @@ async fn required_project_permission_needs_an_active_explicit_project_scope() {
         .await
         .expect("exact current scope");
     assert_eq!(permissions.grants.len(), 1);
-    assert_eq!(permissions.grants[0].resource_id, project.to_string());
+    assert_eq!(permissions.grants[0].resource_id, "*");
     assert_eq!(permissions.grants[0].permission, "projects.read");
     drop(store);
     cleanup(&path);
@@ -414,7 +434,7 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
     permission_mutation(
         &store,
         &old_package.extension_id,
-        None,
+        false,
         true,
         "historical-background-grant",
     )
@@ -530,10 +550,9 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
         snapshot,
         "refusal must preserve grants, revisions, instances and idempotency"
     );
-    let project = permission_project(&store, 12).await;
     let granted = store.set_grant(owner.clone(), ExtensionGrantMutation {
-        extension_id: package.extension_id.clone(), permission: "projects.read".to_owned(), resource_kind: "Project".to_owned(),
-        resource_id: project.to_string(), expected_revision: current.grant_revision, grant: true,
+        extension_id: package.extension_id.clone(), permission: "projects.read".to_owned(), resource_kind: "Global".to_owned(),
+        resource_id: "*".to_owned(), expected_revision: current.grant_revision, grant: true,
     }, key, 2_011).await.expect("rejected permission did not consume key; current declared project scope can be explicitly granted");
     assert_eq!(granted.permission, "projects.read");
     let permissions = store
@@ -550,13 +569,13 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
         1,
         "old background grant must not survive reinstall or be recreated"
     );
-    assert_eq!(permissions.grants[0].resource_id, project.to_string());
+    assert_eq!(permissions.grants[0].resource_id, "*");
     drop(store);
     cleanup(&path);
 }
 
 #[tokio::test]
-async fn permissions_read_frozen_declarations_and_only_active_exact_project_scopes() {
+async fn permissions_read_frozen_declarations_and_only_active_global_grants() {
     let (store, path, package) = permissions_fixture("permissions-evidence").await;
     let owner = PrincipalId::local_owner();
     let initial = store
@@ -567,28 +586,20 @@ async fn permissions_read_frozen_declarations_and_only_active_exact_project_scop
     assert_eq!(initial.optional_permissions, package.optional_permissions);
     assert!(initial.grants.is_empty());
     assert!(initial.next_cursor.is_none());
-    let project = permission_project(&store, 1).await;
-    permission_mutation(
-        &store,
-        &package.extension_id,
-        Some(project),
-        true,
-        "permissions-add",
-    )
-    .await;
+    permission_mutation(&store, &package.extension_id, true, true, "permissions-add").await;
     let partial = store
         .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
         .await
         .expect("partial permissions");
     assert_eq!(partial.grants.len(), 1);
     assert_eq!(partial.grants[0].permission, "projects.read");
-    assert_eq!(partial.grants[0].resource_kind, "Project");
-    assert_eq!(partial.grants[0].resource_id, project.to_string());
+    assert_eq!(partial.grants[0].resource_kind, "Global");
+    assert_eq!(partial.grants[0].resource_id, "*");
     assert_eq!(partial.required_permissions, package.required_permissions);
     permission_mutation(
         &store,
         &package.extension_id,
-        Some(project),
+        true,
         false,
         "permissions-revoke",
     )
@@ -616,28 +627,47 @@ async fn permissions_read_frozen_declarations_and_only_active_exact_project_scop
 
 #[tokio::test]
 async fn permissions_keyset_pages_reject_revocation_and_package_snapshot_changes() {
-    let (store, path, package) = permissions_fixture("permissions-pages").await;
+    let mut package = evidence();
+    package.optional_permissions = vec![
+        "mcp.clients.manage".into(),
+        "mcp.clients.read".into(),
+        "projects.read".into(),
+    ];
+    let (store, path, package) =
+        permissions_fixture_with_package("permissions-pages", package).await;
     let owner = PrincipalId::local_owner();
     permission_mutation(
         &store,
         &package.extension_id,
-        None,
+        false,
         true,
         "permissions-background",
     )
     .await;
-    let mut projects = Vec::new();
-    for index in 2..5 {
-        let project = permission_project(&store, index).await;
-        permission_mutation(
-            &store,
-            &package.extension_id,
-            Some(project),
-            true,
-            &format!("permissions-grant-{index}"),
-        )
-        .await;
-        projects.push(project);
+    for (index, permission) in ["mcp.clients.manage", "mcp.clients.read", "projects.read"]
+        .into_iter()
+        .enumerate()
+    {
+        let record = store
+            .get_extension(owner.clone(), package.extension_id.clone())
+            .await
+            .expect("revision");
+        store
+            .set_grant(
+                owner.clone(),
+                ExtensionGrantMutation {
+                    extension_id: package.extension_id.clone(),
+                    permission: permission.into(),
+                    resource_kind: "Global".into(),
+                    resource_id: "*".into(),
+                    expected_revision: record.grant_revision,
+                    grant: true,
+                },
+                IdempotencyKey::parse(format!("permissions-grant-{index}")).expect("key"),
+                1020,
+            )
+            .await
+            .expect("global capability");
     }
     let first = store
         .list_permissions(owner.clone(), package.extension_id.clone(), None, 1)
@@ -675,7 +705,7 @@ async fn permissions_keyset_pages_reject_revocation_and_package_snapshot_changes
     permission_mutation(
         &store,
         &package.extension_id,
-        Some(projects[0]),
+        true,
         false,
         "permissions-page-revoke",
     )
@@ -747,16 +777,15 @@ async fn permissions_read_is_owner_bound_and_rejects_foreign_or_invalid_pages() 
     permission_mutation(
         &store,
         &package.extension_id,
-        None,
+        false,
         true,
         "permissions-owner-background",
     )
     .await;
-    let project = permission_project(&store, 7).await;
     permission_mutation(
         &store,
         &package.extension_id,
-        Some(project),
+        true,
         true,
         "permissions-owner-project",
     )
@@ -1124,7 +1153,7 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
 }
 
 #[tokio::test]
-async fn project_scope_data_namespace_and_revoke_revalidate_each_lease_call() {
+async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call() {
     let path = database_path("capabilities");
     let store = StateStoreHandle::open(path.clone()).expect("open store");
     let owner = PrincipalId::local_owner();
@@ -1211,8 +1240,8 @@ async fn project_scope_data_namespace_and_revoke_revalidate_each_lease_call() {
             ExtensionGrantMutation {
                 extension_id: package.extension_id.clone(),
                 permission: "projects.read".to_owned(),
-                resource_kind: "Project".to_owned(),
-                resource_id: project.project_id.to_string(),
+                resource_kind: "Global".to_owned(),
+                resource_id: "*".to_owned(),
                 expected_revision: Revision::new(1).expect("revision"),
                 grant: true,
             },
@@ -1243,9 +1272,18 @@ async fn project_scope_data_namespace_and_revoke_revalidate_each_lease_call() {
     let outside = store
         .project_summary(context.lease.clone(), ProjectId::new().to_string(), 410)
         .await
-        .expect_err("ungranted project scope");
-    assert_eq!(outside.code(), M6ErrorCode::ScopeDenied);
+        .expect_err("unregistered project must still be rejected");
+    assert_eq!(outside.code(), M6ErrorCode::ProjectNotFound);
 
+    let future = permission_project(&store, 99).await;
+    assert_eq!(
+        store
+            .project_summary(context.lease.clone(), future.to_string(), 411)
+            .await
+            .expect("same grant reads newly registered project")
+            .project_id,
+        future.to_string()
+    );
     let write = store
         .data_set(
             context.lease.clone(),
@@ -1286,8 +1324,8 @@ async fn project_scope_data_namespace_and_revoke_revalidate_each_lease_call() {
             ExtensionGrantMutation {
                 extension_id: package.extension_id,
                 permission: "projects.read".to_owned(),
-                resource_kind: "Project".to_owned(),
-                resource_id: project.project_id.to_string(),
+                resource_kind: "Global".to_owned(),
+                resource_id: "*".to_owned(),
                 expected_revision: project_grant.grant_revision,
                 grant: false,
             },
@@ -1507,8 +1545,8 @@ async fn policy_capability_outcome(
             ExtensionGrantMutation {
                 extension_id: package.extension_id.clone(),
                 permission: "projects.read".to_owned(),
-                resource_kind: "Project".to_owned(),
-                resource_id: project.project_id.to_string(),
+                resource_kind: "Global".to_owned(),
+                resource_id: "*".to_owned(),
                 expected_revision: Revision::new(1).expect("policy grant revision"),
                 grant: true,
             },

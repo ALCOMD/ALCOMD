@@ -994,3 +994,23 @@ M8继续IN_PROGRESS。管理界面人工查看、普通浏览器TLS接入、实�
 当前GUI PID39500、Core PID47292，窗口可见且响应，5条真实管道均连到指定review Core，WebView使用原review profile。新GUI SHA256 `9a2381b194948d6cd76067a22822169754378645f91956f7a7c70b4223efaa8a`；Core/CLI/MCP/Host字节复用36a782c输入，五程序/新包摘要及本地候选写入review的candidate.json。连接证据`gui-connection-zero-grant.json`；旧45200/42264已关闭，`records/gui-connection.json`现为最新状态。更新后的Open-Review入口仅做语法检查；相同程序/参数的实际启动与连接已分别验证，不冒称修改后的整个入口又执行过一遍。没有恢复桌面控制或伪造原生截图。浏览器前后截图分别在`target/m8-mcp-management/permissions-global-scope.png`和`apps/alcomd-gui/target/m8-zero-grant/`，明确属于浏览器夹具。
 
 窗口保留供所有者查看简化后的权限弹窗与零授权启动，清单见[当前人工入口](../testing/m8-management-manual-20261115.md)。原环境本来关闭并保持关闭；M8未人工签收、仍IN_PROGRESS，普通浏览器/目标客户端OAuth接入等后续保持，不进入M9，不自动推送。
+
+### 权限单开关与项目读取范围差异（已批准，2026-11-15）
+
+所有者要求每项权限仅用一个开关，不再逐项目选择。`background.run`和两项MCP权限本来就是单一scope，可直接复用现有Material Switch与set/revokeGrant，展示只反映Core已确认结果，不自动授权、合并权限或重试未知写入。
+
+`projects.read`现行公开合同及State36继承的CHECK仅允许`Project/<ProjectId>`，不能把GUI遍历当前项目逐条授权假装为一个全局权限。建议批准以下最小破坏性差异后再实施受影响部分：
+
+- 扩展的`projects.read`改为`Global/*`单开关：开启允许读取当前及未来登记项目的既有安全基本摘要，不开放原始文件/路径或写入；交互Client仍须有自己的项目读取权限，实际访问取双方交集。MCP客户端自身的项目范围、OAuth上限及六工具范围完全不变。
+- 复用原setGrant/revokeGrant/list与现有权限名称，不新增RPC、Config、WIT或自动授权。更新Core所有扩展项目读取、必需权限与管理Host项目列表的权威检查及对应Schema/规范。
+- State37单事务仅调整extension_grants组合；删除旧的扩展逐项目`projects.read`授权（含revoked记录），受影响扩展grant_revision/revision递增并使原lease/session失效，其他授权/客户端/项目/凭据与业务数据保留。旧有限授权不自动扩大为全局，迁移后需用户明确打开。历史迁移不改、原运行数据不升级。
+- GUI四项统一开关；读取未知时不显示假“关闭”，写入中锁定，失败还原权威状态，结果未知先刷新，撤销立即生效。定向验证保全/回滚、当前及后续项目、双重范围、关闭/撤销、旧会话与分页失效；无需重做身份/六工具或运行完整门禁。
+
+所有者已批准上述扩展Global/*与State37范围，直接实施，不再重审。其他三项Material开关已通过前端check及相关浏览器单轮15/0（含新增键盘/在途/失败还原用例），这尚不是四项完整整改通过。
+
+随后所有者明确“任何针对项目的授权”均不应反复按新项目授予。审计确认另有MCP客户端的`projects.read`与`packages.manage`仍绑定ProjectId，OAuth token上限继承该授权。所有者随后已批准以下统一能力公共语义及State37补充，直接实施，不再重复审批：
+
+- MCP客户端这两项改为与其余六项一样的`global/*`能力授权；覆盖当前和未来登记项目，其中`packages.manage`可修改任一项目的包，但仍须既有Plan、显式确认、原Plan Apply及实时权限检查。工具的project_id只是操作目标，保留真实Principal、owner/任务/计划/幂等隔离；不改成owner代理，不放宽路径、项目身份与事务保护。
+- 复用现有mcp.clients.*、CLI、Host/WIT、OAuth scope与六工具；输入输出形状/名称不变，仅收紧为全局组合并同步Schema。管理扩展不再让用户选择项目授权，按能力展示；OAuth仍绑定token/授权快照与既定scope上限，保留游标来源绑定、轮换和撤销，不重建身份。
+- 在同一未实施State37中追加：对当前含旧逐项目授权的MCP客户端创建新不可变快照，只移除这两种旧逐项目授权、保留其余权限，client revision/grant_revision递增；旧快照及历史幂等证据不改写，不作当前授权。使包含旧逐项目上限或对应受影响客户端的OAuth存续access/refresh family失效，需重新明确授权。普通客户端凭据/登记及业务数据不删除、不扩大权限；无受影响授权的客户端不变。
+- 这是对先前“其他MCP客户端范围不变”的已批准修订，与扩展State37一并实施。原运行数据不升级，不推送，不进入M9。定向覆盖未来项目、关闭/撤销、跨客户端Plan/Operation隔离、OAuth上限与旧token失效、快照/迁移保全及取消/写结果未知。

@@ -74,7 +74,7 @@ fn management_interface_is_additive_and_schema_preserves_bounded_secret_free_sha
     );
     assert_eq!(
         m6["$defs"]["permissionGrant"]["properties"]["resourceKind"]["enum"],
-        json!(["Extension", "Project", "Global"])
+        json!(["Extension", "Global"])
     );
     assert_eq!(
         m6["$defs"]["permissionGrant"]["properties"]["resourceId"]["minLength"],

@@ -5,6 +5,17 @@ use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as u
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
+const MCP_PERMISSIONS: [&str; 8] = [
+    "projects.read",
+    "packages.manage",
+    "state.check",
+    "operations.read",
+    "operations.cancel",
+    "events.read",
+    "repositories.read",
+    "packages.read",
+];
+
 pub struct Management;
 thread_local! { static SESSIONS: RefCell<BTreeMap<String, View>> = const { RefCell::new(BTreeMap::new()) }; }
 #[derive(Default)]
@@ -13,12 +24,8 @@ struct View {
     selected: Option<host::ClientSummary>,
     client_cursor: Option<String>,
     next_clients: Option<String>,
-    grant_cursor: Option<String>,
-    next_grants: Option<String>,
     grants: Vec<host::Grant>,
-    projects: Vec<host::ProjectSummary>,
-    project_cursor: Option<String>,
-    next_projects: Option<String>,
+    grants_loaded: bool,
     confirmation: Option<Confirmation>,
     message: Option<(String, ui::Tone)>,
     unknown_write: bool,
@@ -27,8 +34,10 @@ struct View {
 }
 enum Confirmation {
     Revoke,
-    Remove(host::Grant),
-    Add(host::Grant),
+    Change {
+        add: Vec<host::Grant>,
+        remove: Vec<host::Grant>,
+    },
 }
 
 impl guest_lifecycle::Guest for Management {
@@ -63,7 +72,6 @@ impl ui::Guest for Management {
             if view.load_clients() {
                 view.unknown_write = false;
                 if view.selected.is_some() {
-                    view.grant_cursor = None;
                     view.load_grants();
                 }
             }
@@ -149,8 +157,7 @@ impl View {
                 if matches!(error.code, host::ErrorCode::PermissionDenied) {
                     self.selected = None;
                     self.grants.clear();
-                    self.next_grants = None;
-                    self.projects.clear();
+                    self.grants_loaded = false;
                     if self.unknown_write {
                         self.fail(error);
                     } else {
@@ -167,42 +174,35 @@ impl View {
         }
     }
     fn load_grants(&mut self) {
+        self.grants_loaded = false;
+        self.grants.clear();
         let Some(selected) = &self.selected else {
             return;
         };
-        match host::grants(
-            &selected.client_id,
-            selected.revision,
-            self.grant_cursor.as_deref(),
-            Some(64),
-        ) {
-            Ok(page) => {
-                self.grants = page.items;
-                self.next_grants = page.next_cursor;
+        let id = selected.client_id.clone();
+        let revision = selected.revision;
+        let mut cursor = None;
+        loop {
+            match host::grants(&id, revision, cursor.as_deref(), Some(64)) {
+                Ok(page) if page.revision == revision => {
+                    self.grants.extend(page.items);
+                    cursor = page.next_cursor;
+                    if cursor.is_none() {
+                        self.grants_loaded = true;
+                        break;
+                    }
+                }
+                Ok(_) => {
+                    self.grants.clear();
+                    self.message = Some(("记录已变化，请刷新后再操作。".into(), ui::Tone::Danger));
+                    break;
+                }
+                Err(error) => {
+                    self.grants.clear();
+                    self.fail(error);
+                    break;
+                }
             }
-            Err(error) => {
-                self.grants.clear();
-                self.next_grants = None;
-                self.fail(error);
-            }
-        }
-    }
-    fn load_projects(&mut self) {
-        match host::projects(self.project_cursor.as_deref(), Some(64)) {
-            Ok(page) => {
-                self.projects = page.items;
-                self.next_projects = page.next_cursor;
-            }
-            Err(error)
-                if matches!(
-                    error.code,
-                    host::ErrorCode::PermissionDenied | host::ErrorCode::ScopeDenied
-                ) =>
-            {
-                self.projects.clear();
-                self.next_projects = None;
-            }
-            Err(error) => self.fail(error),
         }
     }
     fn key(&mut self, id: &str) -> String {
@@ -235,22 +235,6 @@ impl View {
                 self.client_cursor = None;
                 self.load_clients();
             }
-            "grants-next" => {
-                self.grant_cursor = self.next_grants.clone();
-                self.load_grants();
-            }
-            "grants-first" => {
-                self.grant_cursor = None;
-                self.load_grants();
-            }
-            "projects-next" => {
-                self.project_cursor = self.next_projects.clone();
-                self.load_projects();
-            }
-            "projects-first" => {
-                self.project_cursor = None;
-                self.load_projects();
-            }
             "cancel" => {
                 self.confirmation = None;
             }
@@ -260,35 +244,24 @@ impl View {
                 match host::create(&name, &key) {
                     Ok(client) => {
                         self.selected = Some(client);
-                        self.grant_cursor = None;
                         self.load_grants();
-                        self.load_projects();
                     }
                     Err(error) => self.fail(error),
                 }
             }
-            "add" if self.can_manage => {
-                let permission = field(&fields, "permission");
-                let selected_scope = field(&fields, "project");
-                let resource = selected_scope
-                    .strip_prefix("project-")
-                    .unwrap_or(&selected_scope)
-                    .to_owned();
-                let project = matches!(permission.as_str(), "projects.read" | "packages.manage");
-                if project && !self.projects.iter().any(|p| p.project_id == resource)
-                    || !project && resource != "global"
-                {
+            "permissions" if self.can_manage && self.grants_loaded => {
+                let Some((add, remove)) = permission_changes(&self.grants, &fields) else {
                     self.message = Some((
-                        "请选择与权限对应的项目或全局范围。".into(),
+                        "权限选项不完整，请刷新页面后重试。".into(),
                         ui::Tone::Danger,
                     ));
                     return;
+                };
+                if add.is_empty() && remove.is_empty() {
+                    self.message = Some(("权限未变化。".into(), ui::Tone::Neutral));
+                    return;
                 }
-                self.confirmation = Some(Confirmation::Add(host::Grant {
-                    permission,
-                    resource_kind: if project { "project" } else { "global" }.into(),
-                    resource_id: if project { resource } else { "*".into() },
-                }));
+                self.confirmation = Some(Confirmation::Change { add, remove });
             }
             "revoke" if self.can_manage => self.confirmation = Some(Confirmation::Revoke),
             "confirm" if self.can_manage => {
@@ -301,17 +274,13 @@ impl View {
                 let key = self.key(session_id);
                 let result = match confirmation {
                     Confirmation::Revoke => host::revoke(&client.client_id, client.revision, &key),
-                    Confirmation::Add(grant) => {
-                        host::change_grants(&client.client_id, client.revision, &[grant], &[], &key)
-                    }
-                    Confirmation::Remove(grant) => {
-                        host::change_grants(&client.client_id, client.revision, &[], &[grant], &key)
+                    Confirmation::Change { add, remove } => {
+                        host::change_grants(&client.client_id, client.revision, &add, &remove, &key)
                     }
                 };
                 match result {
                     Ok(client) => {
                         self.selected = Some(client);
-                        self.grant_cursor = None;
                         self.load_grants();
                     }
                     Err(error) => self.fail(error),
@@ -321,17 +290,7 @@ impl View {
                 if let Some(client) = self.clients.iter().find(|c| c.client_id == id[7..]) {
                     self.selected = Some(client.clone());
                     self.confirmation = None;
-                    self.grant_cursor = None;
                     self.load_grants();
-                    self.project_cursor = None;
-                    self.load_projects();
-                }
-            }
-            _ if id.starts_with("remove-") && self.can_manage => {
-                if let Ok(index) = id[7..].parse::<usize>()
-                    && let Some(grant) = self.grants.get(index)
-                {
-                    self.confirmation = Some(Confirmation::Remove(grant.clone()));
                 }
             }
             _ => self.message = Some(("当前操作已不可用，请刷新页面。".into(), ui::Tone::Warning)),
@@ -361,40 +320,46 @@ impl View {
                         "撤销后，此客户端的后续请求将被拒绝。已接受的业务任务不会回滚。",
                         ui::Tone::Warning,
                     ),
-                    Confirmation::Add(grant) => doc.key("允许", &self.grant_label(grant)),
-                    Confirmation::Remove(grant) => doc.key("撤销授权", &self.grant_label(grant)),
+                    Confirmation::Change { add, remove } => {
+                        for grant in add {
+                            doc.key("允许", permission_label(&grant.permission));
+                        }
+                        for grant in remove {
+                            doc.key("关闭", permission_label(&grant.permission));
+                        }
+                        if add
+                            .iter()
+                            .any(|grant| grant.permission == "packages.manage")
+                        {
+                            doc.status("允许修改所有现有及以后新建项目的包。实际修改仍需审阅并确认原计划。",ui::Tone::Warning);
+                        }
+                    }
                 }
                 doc.button("确认", "confirm", self.unknown_write);
                 doc.button("取消", "cancel", false);
             } else {
-                let list = doc.node(
-                    None,
-                    ui::NodePayload::List(ui::ListNode {
-                        label: Some("已允许的权限".into()),
-                    }),
-                );
-                for (index, grant) in self.grants.iter().enumerate() {
-                    let row = doc.node(
-                        Some(&list),
-                        ui::NodePayload::ListItem(ui::ListItemNode {
-                            label: Some(self.grant_label(grant)),
+                let editable = self.can_manage
+                    && self.grants_loaded
+                    && client.revoked_at_ms.is_none()
+                    && !self.unknown_write;
+                if !editable {
+                    let list = doc.node(
+                        None,
+                        ui::NodePayload::List(ui::ListNode {
+                            label: Some("已允许的权限".into()),
                         }),
                     );
-                    if self.can_manage && client.revoked_at_ms.is_none() {
+                    for grant in &self.grants {
                         doc.node(
-                            Some(&row),
-                            button("撤销此授权", &format!("remove-{index}"), self.unknown_write),
+                            Some(&list),
+                            ui::NodePayload::ListItem(ui::ListItemNode {
+                                label: Some(self.grant_label(grant)),
+                            }),
                         );
                     }
                 }
-                if self.grant_cursor.is_some() {
-                    doc.button("授权第一页", "grants-first", false);
-                }
-                if self.next_grants.is_some() {
-                    doc.button("下一页授权", "grants-next", false);
-                }
-                if self.can_manage && client.revoked_at_ms.is_none() && !self.unknown_write {
-                    self.add_form(&mut doc);
+                if editable {
+                    self.permissions_form(&mut doc);
                     doc.button("撤销客户端", "revoke", false);
                 }
             }
@@ -463,85 +428,72 @@ impl View {
         doc.finish()
     }
     fn grant_label(&self, grant: &host::Grant) -> String {
-        let scope = if grant.resource_kind == "global" {
-            "全局".into()
-        } else {
-            self.projects
-                .iter()
-                .find(|p| p.project_id == grant.resource_id)
-                .map_or_else(
-                    || format!("项目 {}", grant.resource_id),
-                    |p| format!("{} ({})", p.name, p.project_id),
-                )
-        };
-        format!("{} · {scope}", permission_label(&grant.permission))
+        permission_label(&grant.permission).into()
     }
-    fn add_form(&self, doc: &mut Document) {
+    fn permissions_form(&self, doc: &mut Document) {
         let form = doc.node(
             None,
             ui::NodePayload::Form(ui::FormNode {
-                submit_action_id: "add".into(),
-                submit_label: "审阅新增授权".into(),
+                submit_action_id: "permissions".into(),
+                submit_label: "审阅权限修改".into(),
                 disabled: false,
             }),
         );
-        let permissions = [
-            "projects.read",
-            "packages.manage",
-            "state.check",
-            "operations.read",
-            "operations.cancel",
-            "events.read",
-            "repositories.read",
-            "packages.read",
-        ];
-        doc.node(
-            Some(&form),
-            ui::NodePayload::Select(ui::SelectNode {
-                field_id: "permission".into(),
-                label: "权限".into(),
-                initial_option_id: Some("state.check".into()),
-                required: true,
-                options: permissions
-                    .iter()
-                    .map(|p| ui::SelectOption {
-                        option_id: (*p).into(),
-                        label: permission_label(p).into(),
-                    })
-                    .collect(),
-                disabled: false,
-                read_only: false,
-                validation: None,
-            }),
-        );
-        let mut options = vec![ui::SelectOption {
-            option_id: "global".into(),
-            label: "全局（非项目权限）".into(),
-        }];
-        options.extend(self.projects.iter().map(|p| ui::SelectOption {
-            option_id: format!("project-{}", p.project_id),
-            label: format!("{} ({})", p.name, p.project_id),
-        }));
-        doc.node(
-            Some(&form),
-            ui::NodePayload::Select(ui::SelectNode {
-                field_id: "project".into(),
-                label: "范围".into(),
-                initial_option_id: Some("global".into()),
-                required: true,
-                options,
-                disabled: false,
-                read_only: false,
-                validation: None,
-            }),
-        );
-        if self.project_cursor.is_some() {
-            doc.button("项目第一页", "projects-first", false);
-        }
-        if self.next_projects.is_some() {
-            doc.button("下一页项目", "projects-next", false);
+        for permission in MCP_PERMISSIONS {
+            doc.node(
+                Some(&form),
+                ui::NodePayload::Switch(ui::SwitchNode {
+                    field_id: permission.into(),
+                    label: permission_label(permission).into(),
+                    initial_value: self.grants.iter().any(|grant| {
+                        grant.permission == permission
+                            && grant.resource_kind == "global"
+                            && grant.resource_id == "*"
+                    }),
+                    disabled: false,
+                    read_only: false,
+                    validation: None,
+                }),
+            );
         }
     }
+}
+fn permission_changes(
+    grants: &[host::Grant],
+    fields: &[ui::SubmittedField],
+) -> Option<(Vec<host::Grant>, Vec<host::Grant>)> {
+    if fields.len() != MCP_PERMISSIONS.len() {
+        return None;
+    }
+    let mut add = Vec::new();
+    let mut remove = Vec::new();
+    for permission in MCP_PERMISSIONS {
+        let mut matching = fields.iter().filter(|field| field.field_id == permission);
+        let ui::FieldValue::Boolean(enabled) = matching.next()?.value else {
+            return None;
+        };
+        if matching.next().is_some() {
+            return None;
+        }
+        let allowed = grants.iter().any(|grant| {
+            grant.permission == permission
+                && grant.resource_kind == "global"
+                && grant.resource_id == "*"
+        });
+        if enabled != allowed {
+            let grant = host::Grant {
+                permission: permission.into(),
+                resource_kind: "global".into(),
+                resource_id: "*".into(),
+            };
+            if enabled {
+                add.push(grant);
+            } else {
+                remove.push(grant);
+            }
+        }
+    }
+    Some((add, remove))
 }
 fn field(fields: &[ui::SubmittedField], id: &str) -> String {
     fields
@@ -663,6 +615,82 @@ fn error_document(message: &str) -> ui::UiDocument {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn permission_form_has_eight_capability_switches_and_no_project_selector() {
+        let view = View {
+            selected: Some(selected()),
+            can_manage: true,
+            grants_loaded: true,
+            grants: vec![host::Grant {
+                permission: "projects.read".into(),
+                resource_kind: "global".into(),
+                resource_id: "*".into(),
+            }],
+            ..View::default()
+        };
+        let doc = view.document();
+        let fields = doc
+            .nodes
+            .iter()
+            .filter_map(|node| match &node.payload {
+                ui::NodePayload::Switch(field) => Some(ui::SubmittedField {
+                    field_id: field.field_id.clone(),
+                    value: ui::FieldValue::Boolean(field.initial_value),
+                }),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(fields.len(), 8);
+        assert!(
+            !doc.nodes
+                .iter()
+                .any(|node| matches!(node.payload, ui::NodePayload::Select(_)))
+        );
+        let (add, remove) = permission_changes(&view.grants, &fields).expect("unchanged draft");
+        assert!(add.is_empty() && remove.is_empty());
+        let mut changed = fields;
+        changed
+            .iter_mut()
+            .find(|field| field.field_id == "projects.read")
+            .expect("read")
+            .value = ui::FieldValue::Boolean(false);
+        changed
+            .iter_mut()
+            .find(|field| field.field_id == "packages.manage")
+            .expect("write")
+            .value = ui::FieldValue::Boolean(true);
+        let (add, remove) = permission_changes(&view.grants, &changed).expect("delta");
+        assert_eq!(add.len(), 1);
+        assert_eq!(remove.len(), 1);
+        assert_eq!(add[0].permission, "packages.manage");
+        assert_eq!(remove[0].permission, "projects.read");
+        assert!(
+            add.iter()
+                .chain(remove.iter())
+                .all(|grant| grant.resource_kind == "global" && grant.resource_id == "*")
+        );
+        changed.pop();
+        assert!(
+            permission_changes(&view.grants, &changed).is_none(),
+            "missing field never silently revokes a permission"
+        );
+    }
+
+    #[test]
+    fn incomplete_authoritative_grant_read_never_publishes_false_off_switches() {
+        let doc = View {
+            selected: Some(selected()),
+            can_manage: true,
+            grants_loaded: false,
+            ..View::default()
+        }
+        .document();
+        assert!(!doc.nodes.iter().any(|node| matches!(
+            node.payload,
+            ui::NodePayload::Form(_) | ui::NodePayload::Switch(_)
+        )));
+    }
     fn selected() -> host::ClientSummary {
         host::ClientSummary {
             client_id: "00000000-0000-4000-8000-000000000001".into(),

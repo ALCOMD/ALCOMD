@@ -29,6 +29,12 @@
         "extensions.setGrant": "#/$defs/grantResult",
         "extensions.revokeGrant": "#/$defs/grantResult"
     },
+    "x-alcomd-grant-scopes": {
+        "background.run": "Extension/<ExtensionId>",
+        "projects.read": "Global/*; all current and future registered projects, safe summaries only",
+        "mcp.clients.read": "Global/*",
+        "mcp.clients.manage": "Global/*"
+    },
     "x-alcomd-list-pagination": {
         "kind": "deterministic-keyset",
         "order": "extensionId ascending",
@@ -209,8 +215,15 @@
             "required": ["plan"],
             "properties": {"plan": {"$ref": "#/$defs/planRecord"}}
         },
+        "permissionScope": {
+            "oneOf": [
+                {"properties": {"permission": {"const": "background.run"}, "resourceKind": {"const": "Extension"}, "resourceId": {"$ref": "#/$defs/extensionId"}}},
+                {"properties": {"permission": {"enum": ["projects.read", "mcp.clients.read", "mcp.clients.manage"]}, "resourceKind": {"const": "Global"}, "resourceId": {"const": "*"}}}
+            ]
+        },
         "grantParams": {
             "type": "object", "additionalProperties": false,
+            "allOf": [{"$ref": "#/$defs/permissionScope"}],
             "required": [
                 "extensionId", "permission", "resourceKind", "resourceId",
                 "expectedGrantRevision", "idempotencyKey"
@@ -218,7 +231,7 @@
             "properties": {
                 "extensionId": {"$ref": "#/$defs/extensionId"},
                 "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage"]},
-                "resourceKind": {"enum": ["Extension", "Project", "Global"]},
+                "resourceKind": {"enum": ["Extension", "Global"]},
                 "resourceId": {"type": "string", "minLength": 1, "maxLength": 255},
                 "expectedGrantRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
@@ -236,10 +249,11 @@
         },
         "permissionGrant": {
             "type": "object", "additionalProperties": false,
+            "allOf": [{"$ref": "#/$defs/permissionScope"}],
             "required": ["permission", "resourceKind", "resourceId"],
             "properties": {
                 "permission": {"enum": ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage"]},
-                "resourceKind": {"enum": ["Extension", "Project", "Global"]},
+                "resourceKind": {"enum": ["Extension", "Global"]},
                 "resourceId": {"type": "string", "minLength": 1, "maxLength": 255}
             }
         },

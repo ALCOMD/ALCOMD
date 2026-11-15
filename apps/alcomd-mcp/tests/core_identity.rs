@@ -4,6 +4,7 @@ use alcomd_protocol::*;
 use std::{path::Path, time::Duration};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
+#[track_caller]
 fn denied<T>(result: Result<T, ClientError>) {
     assert!(
         matches!(result,Err(ClientError::Remote(ref error)) if error.code=="permission_denied")
@@ -21,8 +22,8 @@ fn grant(permission: &str, kind: &str, id: &str) -> McpClientGrant {
         resource_id: id.into(),
     }
 }
-fn permissions(project: &str) -> Vec<McpClientGrant> {
-    let mut grants = vec![grant("projects.read", "project", project)];
+fn permissions() -> Vec<McpClientGrant> {
+    let mut grants = vec![grant("projects.read", "global", "*")];
     for permission in [
         "state.check",
         "operations.read",
@@ -233,7 +234,7 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             client_id: a.client_id.clone(),
             expected_revision: a.revision,
             idempotency_key: "grant-a".into(),
-            grants: permissions(&p1id),
+            grants: permissions(),
         })
         .await
         .expect("grant A");
@@ -245,21 +246,45 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             client_id: b.client_id.clone(),
             expected_revision: issued_b.revision,
             idempotency_key: "grant-b".into(),
-            grants: permissions(&p2id),
+            grants: permissions(),
         })
         .await
         .expect("grant B");
     assert!(ca.project_get(p1id.clone()).await.is_ok());
-    denied(ca.project_get(p2id.clone()).await);
-    denied(cb.project_get(p1id.clone()).await);
+    assert!(ca.project_get(p2id.clone()).await.is_ok());
+    assert!(cb.project_get(p1id.clone()).await.is_ok());
     let visible = ca
         .projects_list(None, Some(100))
         .await
         .expect("filtered collection");
-    assert_eq!(visible.projects.len(), 1);
-    assert_eq!(
-        visible.projects[0].project_id.as_deref(),
-        Some(p1id.as_str())
+    assert_eq!(visible.projects.len(), 2);
+    assert!(
+        visible
+            .projects
+            .iter()
+            .any(|project| project.project_id.as_deref() == Some(p1id.as_str()))
+    );
+    assert!(
+        visible
+            .projects
+            .iter()
+            .any(|project| project.project_id.as_deref() == Some(p2id.as_str()))
+    );
+    let future_path = root.join("Created-after-grant");
+    project(&future_path);
+    let future = owner
+        .project_register(
+            future_path.to_string_lossy().into_owned(),
+            "future-project".into(),
+        )
+        .await
+        .expect("new disposable project")
+        .project;
+    assert!(
+        ca.project_get(future.project_id.expect("future ID"))
+            .await
+            .is_ok(),
+        "no repeat authorization for a new project"
     );
     let oa = ca.state_check("same-key".into()).await.expect("A write");
     let ob = cb.state_check("same-key".into()).await.expect("B write");
@@ -327,18 +352,18 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             client_id: a.client_id.clone(),
             expected_revision: a.revision,
             idempotency_key: "change-scope".into(),
-            grants: permissions(&p2id),
+            grants: vec![],
         })
         .await
         .expect("scope change while connected");
     denied(ca.project_get(p1id.clone()).await);
-    assert!(ca.project_get(p2id.clone()).await.is_ok());
+    denied(ca.project_get(p2id.clone()).await);
     a = owner
         .mcp_client_set_grants(McpClientsSetGrantsParams {
             client_id: a.client_id.clone(),
             expected_revision: a.revision,
             idempotency_key: "remove-operation-permissions".into(),
-            grants: vec![grant("projects.read", "project", &p2id)],
+            grants: vec![grant("projects.read", "global", "*")],
         })
         .await
         .expect("remove permissions while connected");
@@ -351,7 +376,7 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             client_id: a.client_id.clone(),
             expected_revision: a.revision,
             idempotency_key: "restore-explicit-permissions".into(),
-            grants: permissions(&p2id),
+            grants: permissions(),
         })
         .await
         .expect("explicitly regrant, no implicit restoration");
@@ -478,7 +503,15 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     .await
     .expect("persisted credential");
     assert!(ca.project_get(p2id.clone()).await.is_ok());
-    denied(ca.project_get(p1id.clone()).await);
+    assert!(ca.project_get(p1id.clone()).await.is_ok());
+    assert_eq!(
+        ca.projects_list(None, Some(100))
+            .await
+            .expect("capability persists across restart")
+            .projects
+            .len(),
+        3
+    );
     assert_eq!(
         ca.state_check("same-key".into())
             .await

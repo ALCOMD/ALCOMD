@@ -193,7 +193,10 @@ fn state35_failed_rebuild_rolls_back_durably_then_initialization_reopens_current
     drop(db);
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("actual initializer upgrade/reopen");
-        assert_eq!(snapshot(&db), before);
+        assert_eq!(
+            snapshot(&db),
+            permission_switch_migration_tests::expected_extension_delta(before.clone())
+        );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("version"),

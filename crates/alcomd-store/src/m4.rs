@@ -332,7 +332,7 @@ pub(super) fn create_package_plan(
             "SELECT p.revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
                 SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id)
                 WHERE c.principal_id=?2 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision
-                    AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=p.project_id
+                    AND g.permission='projects.read' AND g.resource_kind='global' AND g.resource_id='*'
                     AND EXISTS (SELECT 1 FROM mcp_client_grants r WHERE r.client_id=c.client_id AND r.grant_revision=c.grant_revision AND r.permission='repositories.read' AND r.resource_kind='global' AND r.resource_id='*')
                     AND EXISTS (SELECT 1 FROM mcp_client_grants k WHERE k.client_id=c.client_id AND k.grant_revision=c.grant_revision AND k.permission='packages.read' AND k.resource_kind='global' AND k.resource_id='*')
             ))",
@@ -607,8 +607,8 @@ fn require_mcp_removal_write(
     db.query_row(
         "SELECT p.revision FROM projects p JOIN mcp_clients c ON c.principal_id=?1
          WHERE p.project_id=?2 AND c.revoked_at_ms IS NULL
-            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='project' AND g.resource_id=?2)
-            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='packages.manage' AND g.resource_kind='project' AND g.resource_id=?2)
+            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='global' AND g.resource_id='*')
+            AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='packages.manage' AND g.resource_kind='global' AND g.resource_id='*')
             AND (SELECT count(DISTINCT g.permission) FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.resource_kind='global' AND g.resource_id='*' AND g.permission IN ('repositories.read','packages.read','operations.read'))=3",
         params![actor.as_str(),plan.project_id.to_string()],|r|r.get(0)
     ).optional().map_err(store_error)?.ok_or_else(||M4Error::new(M4ErrorCode::PermissionDenied))

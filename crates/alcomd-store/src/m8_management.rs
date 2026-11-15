@@ -5,7 +5,7 @@ use alcomd_application::{
     ManagementClientPage, ManagementClientSummary, ManagementError, ManagementErrorCode as E,
     ManagementGrantPage, ManagementPage, ManagementProject, ManagementRequest as Q,
     ManagementResponse as R, McpIdentityError, McpIdentityWrite, McpManagementStore, Permission,
-    management_client_fingerprint,
+    PrincipalId, management_client_fingerprint,
 };
 use rusqlite::{Connection, TransactionBehavior, params};
 use serde::Serialize;
@@ -172,9 +172,9 @@ fn execute(
             })
         }
         Q::Projects { cursor, limit } => {
-            let mut query = tx.prepare("SELECT p.project_id FROM projects p JOIN extension_grants g ON g.resource_id=p.project_id WHERE g.extension_id=?1 AND g.permission_name='projects.read' AND g.resource_kind='Project' AND g.state='granted' ORDER BY p.project_id").map_err(unavailable)?;
+            let mut query = tx.prepare("SELECT project_id FROM projects WHERE owner_principal_id=?1 ORDER BY project_id").map_err(unavailable)?;
             let ids = query
-                .query_map([&lease.extension_id], |r| r.get::<_, String>(0))
+                .query_map([PrincipalId::LOCAL_OWNER], |r| r.get::<_, String>(0))
                 .map_err(unavailable)?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(unavailable)?;
@@ -230,16 +230,6 @@ fn execute(
             idempotency_key,
         } => {
             alcomd_application::validate_mcp_grant_delta(&add, &remove).map_err(identity)?;
-            for grant in &add {
-                if grant.resource_kind == "project" {
-                    authority
-                        .client_access
-                        .require_project_read_scope(&grant.resource_id)
-                        .map_err(|_| ManagementError::from(E::ScopeDenied))?;
-                    crate::m6::project_summary(&tx, lease, &grant.resource_id, now)
-                        .map_err(|_| ManagementError::from(E::ScopeDenied))?;
-                }
-            }
             write(
                 &tx,
                 lease,
@@ -344,7 +334,7 @@ fn authorize(
     {
         return Err(E::LeaseRevoked.into());
     }
-    if permission != Permission::ProjectsRead && !management_granted(db, lease, permission)? {
+    if !management_granted(db, lease, permission)? {
         return Err(E::PermissionDenied.into());
     }
     Ok(())
@@ -545,7 +535,7 @@ mod tests {
         );
     }
     #[test]
-    fn delta_can_remove_orphan_grants_and_preserve_other_orphans() {
+    fn old_project_grants_migrate_out_of_current_authority_without_rewriting_history() {
         let mut db = fixture();
         let owner = PrincipalId::local_owner();
         let client = command(
@@ -574,24 +564,59 @@ mod tests {
             resource_kind: "project".into(),
             resource_id: ids[0].into(),
         };
+        for migration in [
+            include_str!("../migrations/0035_extension_mcp_permissions.sql"),
+            include_str!("../migrations/0036_mcp_oauth.sql"),
+            include_str!("../migrations/0037_capability_permission_switches.sql"),
+        ] {
+            db.execute_batch(migration).expect("approved migration");
+        }
+        let current =
+            crate::m8_mcp::client(&db, &client.client_id.to_string()).expect("migrated current");
+        assert_eq!(current.revision, 2);
+        assert!(current.grants.is_empty(), "no implicit global read");
+        assert_eq!(
+            command(
+                &mut db,
+                owner.clone(),
+                "old-remove",
+                W::ChangeGrants {
+                    id: client.client_id,
+                    expected: 2,
+                    add: vec![],
+                    remove: vec![removed]
+                }
+            )
+            .expect_err("old scope requests are no longer supported"),
+            McpIdentityError::InvalidInput
+        );
         let result = command(
             &mut db,
             owner,
-            "remove",
+            "allow",
             W::ChangeGrants {
                 id: client.client_id,
-                expected: 1,
-                add: vec![],
-                remove: vec![removed],
+                expected: 2,
+                add: vec![global("projects.read")],
+                remove: vec![],
             },
         )
-        .expect("orphan removal");
-        assert_eq!(result.revision, 2);
-        assert_eq!(result.grants.len(), 1);
-        assert_eq!(result.grants[0].resource_id, ids[1]);
+        .expect("explicit ability grant");
+        assert_eq!(result.revision, 3);
+        assert_eq!(result.grants, vec![global("projects.read")]);
+        let history = crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
+            .expect("original history");
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            history
+                .iter()
+                .map(|grant| grant.resource_id.as_str())
+                .collect::<Vec<_>>(),
+            ids
+        );
     }
     #[test]
-    fn all_4096_grants_page_completely_with_revision_and_authority_binding() {
+    fn historical_4096_grants_page_completely_with_revision_and_authority_binding() {
         let mut db = fixture();
         let client = command(
             &mut db,
@@ -651,20 +676,53 @@ mod tests {
             .expect_err("final cap remains enforced"),
             McpIdentityError::LimitExceeded
         );
+        assert_eq!(
+            command(
+                &mut db,
+                PrincipalId::local_owner(),
+                "replace-one",
+                W::ChangeGrants {
+                    id: client.client_id,
+                    expected: 1,
+                    add: vec![global("state.check")],
+                    remove: vec![items[0].clone()]
+                }
+            )
+            .expect_err("old project grant format is rejected"),
+            McpIdentityError::InvalidInput
+        );
+        assert_eq!(
+            crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
+                .expect("immutable history"),
+            items
+        );
+        for migration in [
+            include_str!("../migrations/0035_extension_mcp_permissions.sql"),
+            include_str!("../migrations/0036_mcp_oauth.sql"),
+            include_str!("../migrations/0037_capability_permission_switches.sql"),
+        ] {
+            db.execute_batch(migration).expect("approved migration");
+        }
+        assert!(
+            crate::m8_mcp::client(&db, &client.client_id.to_string())
+                .expect("current")
+                .grants
+                .is_empty()
+        );
         let changed = command(
             &mut db,
             PrincipalId::local_owner(),
-            "replace-one",
+            "explicit-ability",
             W::ChangeGrants {
                 id: client.client_id,
-                expected: 1,
+                expected: 2,
                 add: vec![global("state.check")],
-                remove: vec![items[0].clone()],
+                remove: vec![],
             },
         )
-        .expect("one atomic replacement at capacity");
-        assert_eq!(changed.revision, 2);
-        assert_eq!(changed.grants.len(), 4096);
+        .expect("one explicit capability");
+        assert_eq!(changed.revision, 3);
+        assert_eq!(changed.grants, vec![global("state.check")]);
         assert_eq!(
             page(&changed.grants, old.clone(), 128, 128, &binding)
                 .expect_err("actual data changed")

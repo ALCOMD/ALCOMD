@@ -1207,11 +1207,6 @@ impl AccessContext {
         require_scope(&self.project_read_scopes, project_id)
     }
 
-    pub(crate) fn with_project_package_write_scopes(mut self, ids: Vec<String>) -> Self {
-        self.project_package_write_scopes = AccessScopes::Exact(ids.into_iter().collect());
-        self
-    }
-
     pub fn require_project_package_write_scope(
         &self,
         project_id: &str,

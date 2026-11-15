@@ -209,13 +209,13 @@ test("cross-client grant changes update an already open permission list through 
     // light DOM, so scope content through the open MD host as the H4 suite does.
     const dialog = page.locator("md-dialog[open]");
     const allowed = dialog.getByRole("group", { name: "Run in background", exact: true });
-    await expect(allowed.getByText("Allowed", { exact: true })).toBeVisible();
+    await expect(allowed.getByRole("switch", { name: "Run in background", exact: true })).toBeChecked();
     await pauseClock(page);
     await page.clock.runFor(1_000);
     const reads = await page.evaluate(() => window.h4Management.requests.filter((item) => item.method === "extensions.permissions.list").length);
     await page.evaluate((id) => window.h4Management.setGrants(id, []), extensionId);
     await page.clock.runFor(500);
-    await expect(allowed.getByText("Not allowed", { exact: true })).toBeVisible();
+    await expect(allowed.getByRole("switch", { name: "Run in background", exact: true })).not.toBeChecked();
     await expect(dialog.locator(".extension-grants li")).toHaveCount(0);
     expect(await page.evaluate(() => window.h4Management.requests.filter((item) => item.method === "extensions.permissions.list").length)).toBeGreaterThan(reads);
     expect(await page.evaluate(() => window.h4Management.requests.filter((item) => ["extensions.setGrant", "extensions.revokeGrant"].includes(item.method)).length)).toBe(0);

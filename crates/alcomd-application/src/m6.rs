@@ -163,10 +163,9 @@ impl ExtensionPermissionsCursor {
             self.after.resource_kind.as_str(),
         ) {
             ("background.run", "Extension") => self.after.resource_id == self.extension_id,
-            ("projects.read", "Project") => {
-                crate::ProjectId::parse(&self.after.resource_id).is_ok()
+            ("projects.read" | "mcp.clients.read" | "mcp.clients.manage", "Global") => {
+                self.after.resource_id == "*"
             }
-            ("mcp.clients.read" | "mcp.clients.manage", "Global") => self.after.resource_id == "*",
             _ => false,
         };
         if !valid_extension_id(&self.extension_id)

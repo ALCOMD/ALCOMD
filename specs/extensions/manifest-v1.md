@@ -62,8 +62,8 @@ optional = ["background.run"]
 - Manifest 只声明 permission name，不包含 scope 或 grant。scope 由 daemon grant authority 保存。
 - required permission 未授予时不能 enable；optional 未授予时 Host 不链接对应 optional interface。
 - `background.run` 不由 `[ui]` 隐式添加。UI-only extension 可不请求该权限，并由 interactive UI session按需启动。
-  Project read grant 必须
-  绑定一个或多个 specific ProjectId；它不允许 guest 读取项目路径、项目文件或 `state.db`。
+  Project read grant 使用 `Global/*`，覆盖当前及以后登记项目的安全摘要，不逐ProjectId授权；
+  它不允许 guest 读取项目路径、项目文件或 `state.db`。
 - `network.request`、filesystem、clipboard、notification、Discord 与 private GUI authority 不属于本合同。
 
 ## 长度与确定性

@@ -59,7 +59,7 @@ mcp.configuration.manage
 ## 规则
 
 M8管理Host桥使用已存在的`mcp.clients.read/manage`，范围为`Global/*`；后者是全部MCP客户端的高风险管理权。
-不向扩展开放签发凭据；`projects.read`仍须逐`Project/<ProjectId>`授权。每次Host调用同时复查交互Client、
+不向扩展开放签发凭据；扩展`projects.read`按所有者2026-11-15批准的State37使用`Global/*`，不再逐项目授权。每次Host调用同时复查交互Client、
 Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v1.md`。
 
 - 第一方和第三方扩展使用同一权限名称。
@@ -83,8 +83,8 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   last-known-good cache；不允许 credential、自定义 header、package payload 下载或项目写入。
 - M3 `builtin:local-owner` 获得上述四项权限。capability、client metadata、路径、URL 与资源 ID
   均不是身份或授权凭据。
-- 外部 Principal 的逐项目/逐 repository resource scope 和 credential enrollment/revocation 尚未
-  实现；`access.principal-revocation` 继续保持 planned。
+- MCP外部Principal按M8已批准的能力授权，不提供逐项目用户授权；项目新建/删除不要求重复授权。
+  资源owner及实际调用Principal、任务和幂等隔离保持；其他尚未实现的外部权限不由名称存在而开放。
 
 ## M7 Project Directory Delete 权限
 
@@ -161,14 +161,14 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 | `extensions.manage` | local management Principal | plan/apply install、enable、disable、plan/apply uninstall；不隐含 permission grant |
 | `extensions.permissions.manage` | local management Principal | set/revoke extension grant 与 specific resource scope；grant revision durable update 是 revoke linearization point |
 | `background.run` | extension Principal | 允许已验证 background Component 被 Host 启动；不隐含任何业务 capability |
-| `projects.read` | extension Principal | 仅通过 `host-projects.get-summary` 读取 grant 中 specific ProjectId 的安全摘要 |
+| `projects.read` | extension Principal | 通过 `host-projects.get-summary` 读取当前及未来登记项目的安全摘要，须有 `Global/*` 授权 |
 
 规则：
 
 - extension Principal 默认零权限。Manifest request、ExtensionId、publisher、first-party status、package digest、
   WIT capability 或 `ExtensionInstanceLease` ID 都不是 grant。
-- M6 scope 的唯一 business resource kind 是 `Project`，resource ID 是 lowercase UUID。`projects.read` 对 extension
-  必须有至少一个 specific ProjectId；不允许 wildcard、path、URL 或自报 selector。
+- State37取代原逐项目授权：extension的`projects.read`只接受`Global/*`，覆盖当前及未来登记项目。
+  旧specific ProjectId授权清除，不自动扩大；只读取既有安全摘要，不授予路径、文件或写入。
 - `ExtensionInstanceLease` 绑定 current grant revision；每次 Host/data call 重新解析真实 Principal/grant/scope。
 - revoke transaction 提交后，尚未被 application 接受的 call、Host queue、session/handle 均失败或取消。
 - uninstall 无论 `retain_data|delete_data` 都在 package authority removal 前 revoke 全部 grant/lease/session/handle；

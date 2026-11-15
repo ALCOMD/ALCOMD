@@ -22,8 +22,9 @@ see `../storage/state-v35.md`. No old migration is edited and original user data
 
 Read permissions: `mcp.clients.read` for list/grants, exact `projects.read` intersection for projects.
 Writes require `mcp.clients.manage` on both the interactive Client and Extension. Extension grants
-use `Global/*` for the existing MCP permissions and `Project/<ProjectId>` for projects.read.
-MCP client grants retain the existing lowercase `global/project` kinds. These are distinct records.
+use `Global/*` for the existing MCP permissions and projects.read (State37, owner-approved on2026-11-15).
+Project read covers current and future registered projects; clients still pass their own authority checks.
+MCP client grants now use lowercase `global/*` for all eight supported capabilities. These remain distinct records from extension grants.
 Render can only read; action can read/write; background and close cannot invoke this interface.
 The Store acceptance transaction revalidates the Core-issued lease, current grants, UI authority
 and scoped UI use before inspecting/replaying or accepting writes. The actual Extension Principal
@@ -31,8 +32,8 @@ is the idempotency actor. No owner substitution, new persistent query session or
 the only State increment is the separately approved State35 grant CHECK migration above.
 
 Create has no grants. Change-grants merges at most 128 additions and 128 removals atomically, verifies
-the final 4096/64-permission bounds and increments one revision. New project grants require registered
-projects in the two-sided read intersection. Removing an orphan or inaccessible grant remains possible.
+the final 4096/64-permission bounds and increments one revision. Project read/package-management are capability switches, not per-project approvals.
+No project enumeration is required to edit those grants. Old project approvals are not silently widened.
 Revoke is permanent. Neither UI close nor protocol cancellation rolls back accepted changes.
 Unknown write results do not trigger automatic retries. No credential issuance or secret is exposed
 through this interface, Portable UI, data storage or diagnostics. Local-owner CLI issuance uses the

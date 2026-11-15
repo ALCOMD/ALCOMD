@@ -1,6 +1,6 @@
 use crate::AccessContext;
 pub use alcomd_domain::McpClientId;
-use alcomd_domain::{Permission, PrincipalId, ProjectId};
+use alcomd_domain::{Permission, PrincipalId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -97,18 +97,18 @@ pub fn validate_mcp_grants(grants: &[McpGrant]) -> Result<(), McpIdentityError> 
     let mut keys = HashSet::new();
     let mut permissions = HashSet::new();
     for grant in grants {
-        let valid = match grant.permission.as_str() {
-            "projects.read" | "packages.manage" => {
-                grant.resource_kind == "project"
-                    && ProjectId::parse(&grant.resource_id)
-                        .is_ok_and(|id| id.to_string() == grant.resource_id)
-            }
-            "state.check" | "operations.read" | "operations.cancel" | "events.read"
-            | "repositories.read" | "packages.read" => {
-                grant.resource_kind == "global" && grant.resource_id == "*"
-            }
-            _ => false,
-        };
+        let valid = matches!(
+            grant.permission.as_str(),
+            "projects.read"
+                | "packages.manage"
+                | "state.check"
+                | "operations.read"
+                | "operations.cancel"
+                | "events.read"
+                | "repositories.read"
+                | "packages.read"
+        ) && grant.resource_kind == "global"
+            && grant.resource_id == "*";
         if !valid || !keys.insert((&grant.permission, &grant.resource_kind, &grant.resource_id)) {
             return Err(McpIdentityError::InvalidInput);
         }
@@ -146,31 +146,28 @@ pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError>
     }
     validate_mcp_grants(&client.grants)?;
     let mut permissions = Vec::new();
-    let mut projects = Vec::new();
-    let mut package_writes = Vec::new();
     for grant in &client.grants {
         permissions.push(match grant.permission.as_str() {
-            "projects.read" => {
-                projects.push(grant.resource_id.clone());
-                Permission::ProjectsRead
-            }
+            "projects.read" => Permission::ProjectsRead,
             "state.check" => Permission::StateCheck,
             "operations.read" => Permission::OperationsRead,
             "operations.cancel" => Permission::OperationsCancel,
             "events.read" => Permission::EventsRead,
             "repositories.read" => Permission::RepositoriesRead,
             "packages.read" => Permission::PackagesRead,
-            "packages.manage" => {
-                package_writes.push(grant.resource_id.clone());
-                Permission::PackagesManage
-            }
+            "packages.manage" => Permission::PackagesManage,
             _ => return Err(McpIdentityError::PermissionDenied),
         });
     }
-    Ok(AccessContext::new(client.principal_id.clone(), permissions)
-        .with_project_read_scopes(projects)
-        .with_project_package_write_scopes(package_writes)
-        .with_mcp_identity())
+    let mut access =
+        AccessContext::new(client.principal_id.clone(), permissions).with_mcp_identity();
+    if access.require(Permission::ProjectsRead).is_ok() {
+        access.project_read_scopes = crate::AccessScopes::All;
+    }
+    if access.require(Permission::PackagesManage).is_ok() {
+        access.project_package_write_scopes = crate::AccessScopes::All;
+    }
+    Ok(access)
 }
 
 #[derive(Clone)]
@@ -291,6 +288,7 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alcomd_domain::ProjectId;
     fn record(grants: Vec<McpGrant>) -> McpClient {
         let id = McpClientId::new();
         McpClient {
@@ -319,19 +317,19 @@ mod tests {
         }
     }
     #[test]
-    fn project_read_is_exact_and_never_expands_to_writes() {
+    fn project_read_capability_covers_future_projects_but_never_expands_to_writes() {
         let project = ProjectId::new().to_string();
         let access = mcp_access(&record(vec![McpGrant {
             permission: "projects.read".into(),
-            resource_kind: "project".into(),
-            resource_id: project.clone(),
+            resource_kind: "global".into(),
+            resource_id: "*".into(),
         }]))
         .expect("scoped identity");
         assert!(access.require_project_read_scope(&project).is_ok());
         assert!(
             access
                 .require_project_read_scope(&ProjectId::new().to_string())
-                .is_err()
+                .is_ok()
         );
         assert!(access.require(Permission::ProjectsManage).is_err());
         assert!(access.require(Permission::PackagesManage).is_err());
@@ -339,7 +337,11 @@ mod tests {
     #[test]
     fn unknown_global_owner_and_duplicate_grants_are_rejected() {
         for (permission, kind, id) in [
-            ("projects.read", "global", "*"),
+            (
+                "projects.read",
+                "project",
+                "00000000-0000-4000-8000-000000000001",
+            ),
             ("mcp.clients.manage", "global", "*"),
             ("unknown", "global", "*"),
             ("projects.read", "project", "builtin:local-owner"),
@@ -380,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn package_write_is_an_exact_explicit_scope_not_implied_by_read_or_global_grants() {
+    fn package_write_is_a_separate_global_capability_not_implied_by_read() {
         let id = ProjectId::new().to_string();
         let grant = |permission: &str, kind: &str, resource: &str| McpGrant {
             permission: permission.into(),
@@ -388,18 +390,18 @@ mod tests {
             resource_id: resource.into(),
         };
         let access = mcp_access(&record(vec![
-            grant("projects.read", "project", &id),
-            grant("packages.manage", "project", &id),
+            grant("projects.read", "global", "*"),
+            grant("packages.manage", "global", "*"),
         ]))
         .expect("approved tuple");
         assert!(access.require_project_package_write_scope(&id).is_ok());
         assert!(
             access
                 .require_project_package_write_scope(&ProjectId::new().to_string())
-                .is_err()
+                .is_ok()
         );
-        assert!(validate_mcp_grants(&[grant("packages.manage", "global", "*")]).is_err());
-        let read = mcp_access(&record(vec![grant("projects.read", "project", &id)])).expect("read");
+        assert!(validate_mcp_grants(&[grant("packages.manage", "project", &id)]).is_err());
+        let read = mcp_access(&record(vec![grant("projects.read", "global", "*")])).expect("read");
         assert!(read.require_project_package_write_scope(&id).is_err());
     }
 }

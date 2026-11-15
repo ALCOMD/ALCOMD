@@ -406,7 +406,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     for (index, (permission, kind, id)) in [
         ("mcp.clients.read", "Global", "*"),
         ("mcp.clients.manage", "Global", "*"),
-        ("projects.read", "Project", project_id.as_str()),
+        ("projects.read", "Global", "*"),
     ]
     .into_iter()
     .enumerate()
@@ -480,27 +480,27 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     assert!(mcp.project_get(project_id.clone()).await.is_err());
     refresh(&mut client, &mut snapshot).await;
     let document = serde_json::to_string(&snapshot.document).expect("scope document");
-    assert!(document.contains("AllowedProject"));
+    assert!(!document.contains("AllowedProject"));
+    assert!(!document.contains(&project_id));
     assert!(!document.contains(&outside_id));
+    assert!(!document.contains("\"kind\":\"select\""));
     let bad = client
         .extension_ui_dispatch(ExtensionUiDispatchParams {
             session_id: snapshot.session_id.clone(),
             expected_snapshot_revision: snapshot.snapshot_revision,
             sequence: sequence + 1,
             request_id: uuid::Uuid::new_v4().to_string(),
-            action: grant_form("projects.read", &format!("project-{outside_id}")),
+            action: UiAction::SubmitForm {
+                action_id: "permissions".into(),
+                values: vec![text("project", &outside_id)],
+            },
         })
         .await;
     assert!(
         matches!(bad,Err(ClientError::Remote(error)) if error.code=="extension_ui_action_invalid")
     );
-    dispatch(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        grant_form("state.check", "global"),
-    )
-    .await;
+    let draft = grant_form(&snapshot, "state.check", true);
+    dispatch(&mut client, &mut snapshot, &mut sequence, draft).await;
     dispatch(
         &mut client,
         &mut snapshot,
@@ -514,24 +514,13 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
             .grants
             .is_empty()
     );
-    add(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        "state.check",
-        "global",
-    )
-    .await;
-    add(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        "projects.read",
-        &format!("project-{project_id}"),
-    )
-    .await;
+    add(&mut client, &mut snapshot, &mut sequence, "state.check").await;
+    add(&mut client, &mut snapshot, &mut sequence, "projects.read").await;
     assert!(mcp.project_get(project_id.clone()).await.is_ok());
-    assert!(mcp.project_get(outside_id.clone()).await.is_err());
+    assert!(
+        mcp.project_get(outside_id.clone()).await.is_ok(),
+        "single read permission covers all registered projects"
+    );
     let current = current_client(&mut client, &record.client_id).await;
     let retained = current
         .grants
@@ -548,14 +537,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         })
         .await
         .expect("real concurrent change");
-    add(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        "events.read",
-        "global",
-    )
-    .await;
+    add(&mut client, &mut snapshot, &mut sequence, "events.read").await;
     assert!(
         serde_json::to_string(&snapshot.document)
             .expect("readable conflict")
@@ -569,33 +551,9 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
             .any(|g| g.permission == "events.read")
     );
     refresh(&mut client, &mut snapshot).await;
-    add(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        "events.read",
-        "global",
-    )
-    .await;
-    let document = serde_json::to_value(&snapshot.document).expect("public UI tree");
-    let nodes = document["nodes"].as_array().expect("nodes");
-    let row = nodes
-        .iter()
-        .find(|node| {
-            node["kind"] == "list-item"
-                && node["payload"]["label"]
-                    .as_str()
-                    .is_some_and(|label| label.contains(&project_id))
-        })
-        .expect("project scope row");
-    let remove = nodes
-        .iter()
-        .find(|node| node["kind"] == "button" && node["parentId"] == row["nodeId"])
-        .expect("published removal action")["payload"]["actionId"]
-        .as_str()
-        .expect("action ID")
-        .to_owned();
-    dispatch(&mut client, &mut snapshot, &mut sequence, activate(&remove)).await;
+    add(&mut client, &mut snapshot, &mut sequence, "events.read").await;
+    let disable_read = grant_form(&snapshot, "projects.read", false);
+    dispatch(&mut client, &mut snapshot, &mut sequence, disable_read).await;
     dispatch(
         &mut client,
         &mut snapshot,
@@ -604,6 +562,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     )
     .await;
     assert!(mcp.project_get(project_id.clone()).await.is_err());
+    assert!(mcp.project_get(outside_id.clone()).await.is_err());
     dispatch(
         &mut client,
         &mut snapshot,
@@ -735,25 +694,38 @@ fn text(id: &str, value: &str) -> UiSubmittedField {
         },
     }
 }
-fn grant_form(permission: &str, scope: &str) -> UiAction {
+fn grant_form(snapshot: &UiSnapshot, permission: &str, enabled: bool) -> UiAction {
+    let value = serde_json::to_value(&snapshot.document).expect("public document");
+    let mut found = false;
+    let fields = value["nodes"]
+        .as_array()
+        .expect("nodes")
+        .iter()
+        .filter(|node| node["kind"] == "switch")
+        .map(|node| {
+            let id = node["payload"]["fieldId"].as_str().expect("field");
+            let checked = if id == permission {
+                found = true;
+                enabled
+            } else {
+                node["payload"]["initialValue"]
+                    .as_bool()
+                    .expect("authority")
+            };
+            UiSubmittedField {
+                field_id: id.into(),
+                value: UiFieldValue::Boolean { value: checked },
+            }
+        })
+        .collect::<Vec<_>>();
+    assert!(found);
+    assert_eq!(fields.len(), 8);
     UiAction::SubmitForm {
-        action_id: "add".into(),
-        values: vec![
-            UiSubmittedField {
-                field_id: "permission".into(),
-                value: UiFieldValue::Selection {
-                    value: permission.into(),
-                },
-            },
-            UiSubmittedField {
-                field_id: "project".into(),
-                value: UiFieldValue::Selection {
-                    value: scope.into(),
-                },
-            },
-        ],
+        action_id: "permissions".into(),
+        values: fields,
     }
 }
+
 fn activate(id: &str) -> UiAction {
     UiAction::Activate {
         action_id: id.into(),
@@ -790,9 +762,9 @@ async fn add(
     snapshot: &mut UiSnapshot,
     sequence: &mut u64,
     permission: &str,
-    scope: &str,
 ) {
-    dispatch(client, snapshot, sequence, grant_form(permission, scope)).await;
+    let action = grant_form(snapshot, permission, true);
+    dispatch(client, snapshot, sequence, action).await;
     dispatch(client, snapshot, sequence, activate("confirm")).await;
 }
 async fn refresh(client: &mut AlcomdClient, snapshot: &mut UiSnapshot) {

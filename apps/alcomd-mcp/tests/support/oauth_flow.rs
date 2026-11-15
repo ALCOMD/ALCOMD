@@ -356,11 +356,14 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("owner");
-    let mut allowed = Vec::new();
+    let allowed = vec![
+        grant("projects.read", "global", "*"),
+        grant("operations.read", "global", "*"),
+    ];
     for name in ["First", "Second", "Third"] {
         let path = root.join(name);
         project(&path, false);
-        let id = owner
+        owner
             .project_register(
                 path.to_string_lossy().into_owned(),
                 format!("register-{name}"),
@@ -370,7 +373,6 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
             .project
             .project_id
             .expect("id");
-        allowed.push(grant("projects.read", "project", &id));
     }
     let native = owner
         .projects_list(None, Some(1))
@@ -413,7 +415,7 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let reg_b = registration(&mut owner, &http, &b, false)
         .await
         .registration;
-    let code = http.code(&mut owner, &reg_a, &allowed[..2]).await;
+    let code = http.code(&mut owner, &reg_a, &allowed[..1]).await;
     let issued = http.exchange(&reg_a, &code, None).await;
     let access = issued["access_token"].as_str().expect("first access");
     let code = http.code(&mut owner, &reg_a, &allowed).await;
@@ -776,7 +778,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         .expect("zero review");
     assert!(zero_review.grants.is_empty());
     assert!(
-        matches!(owner.oauth_request_decide(McpOAuthRequestDecideParams{request_id:zero.clone(),approve:true,grants:vec![grant("projects.read","project",&uuid::Uuid::new_v4().to_string())],expected_fingerprint:zero_review.approval_fingerprint.clone(),idempotency_key:"zero-cannot-authorize".into()}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
+        matches!(owner.oauth_request_decide(McpOAuthRequestDecideParams{request_id:zero.clone(),approve:true,grants:vec![grant("projects.read","global","*")],expected_fingerprint:zero_review.approval_fingerprint.clone(),idempotency_key:"zero-cannot-authorize".into()}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     owner
         .oauth_request_decide(McpOAuthRequestDecideParams {
@@ -814,17 +816,11 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let selected = projects[0].1.project_id.clone().expect("selected");
     let unselected = projects[1].1.project_id.clone().expect("unselected");
     let other = projects[2].1.project_id.clone().expect("other");
-    let mut allowed = grants(&selected, true);
-    for i in [3, 4] {
-        let id = projects[i].1.project_id.as_deref().expect("risk ID");
-        allowed.push(grant("projects.read", "project", id));
-        allowed.push(grant("packages.manage", "project", id));
-    }
+    let allowed = grants(true);
     let mut all = allowed.clone();
-    all.push(grant("projects.read", "project", &unselected));
-    all.push(grant("packages.manage", "project", &unselected));
+    all.push(grant("state.check", "global", "*"));
     a = update(&mut owner, &a, all, "grant-a").await;
-    b = update(&mut owner, &b, grants(&other, true), "grant-b").await;
+    b = update(&mut owner, &b, grants(true), "grant-b").await;
     let code = http.code(&mut owner, &reg, &allowed).await;
     let bad = http
         .token(
@@ -913,20 +909,26 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
             break;
         }
     }
-    assert_eq!(ids.len(), 3);
+    assert_eq!(ids.len(), 5);
     assert!(ids.contains(&selected));
-    assert!(!ids.contains(&unselected));
-    assert!(!ids.contains(&other));
-    error(
-        call(
-            &sa,
-            &mut trace,
-            "get_project",
-            json!({"project_id":unselected}),
-        )
-        .await
-        .expect("outside token ceiling"),
-        "permission_denied",
+    assert!(ids.contains(&unselected));
+    assert!(ids.contains(&other));
+    assert_eq!(
+        data(
+            call(
+                &sa,
+                &mut trace,
+                "get_project",
+                json!({"project_id":unselected})
+            )
+            .await
+            .expect("one read capability covers all projects")
+        )["project_id"],
+        unselected
+    );
+    assert!(
+        matches!(persistent.state_check("outside-token-capability-ceiling".into()).await,Err(alcomd_client::ClientError::Remote(ref error)) if error.code=="permission_denied"),
+        "Core capability added after consent is not in the token ceiling"
     );
     let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":selected,"expected_revision":projects[0].1.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     error(call(&sb,&mut trace,"apply_package_changes",json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"shared-apply-key","confirm":true})).await.expect("other identity rejected"),"plan_not_found");
@@ -1030,7 +1032,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let c = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth confidential read-only".into(),
-            grants: vec![grant("projects.read", "project", &selected)],
+            grants: vec![grant("projects.read", "global", "*")],
             idempotency_key: "oauth-c".into(),
         })
         .await

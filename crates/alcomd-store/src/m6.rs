@@ -272,8 +272,7 @@ fn require_extension_grants(
                 SELECT 1 FROM extension_grants g
                 WHERE g.extension_id=?1 AND g.permission_name=?2 AND g.state='granted'
                   AND ((?2='background.run' AND g.resource_kind='Extension' AND g.resource_id=?1)
-                    OR (?2='projects.read' AND g.resource_kind='Project')
-                    OR (?2 IN ('mcp.clients.read','mcp.clients.manage') AND g.resource_kind='Global' AND g.resource_id='*'))
+                    OR (?2 IN ('projects.read','mcp.clients.read','mcp.clients.manage') AND g.resource_kind='Global' AND g.resource_id='*'))
              )",
                 params![extension_id, permission],
                 |row| row.get(0),
@@ -1740,9 +1739,9 @@ pub(super) fn project_summary(
     let granted: bool = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1
-             AND permission_name='projects.read' AND resource_kind='Project'
-             AND resource_id=?2 AND state='granted')",
-            params![lease.extension_id, project_id],
+             AND permission_name='projects.read' AND resource_kind='Global'
+             AND resource_id='*' AND state='granted')",
+            params![lease.extension_id],
             |row| row.get(0),
         )
         .map_err(store_error)?;
@@ -2118,9 +2117,10 @@ fn save_idempotent<T: Serialize>(
 
 fn valid_scope(extension_id: &str, permission: &str, kind: &str, id: &str) -> bool {
     (permission == "background.run" && kind == "Extension" && id == extension_id)
-        || (permission == "projects.read" && kind == "Project" && uuid::Uuid::parse_str(id).is_ok())
-        || (matches!(permission, "mcp.clients.read" | "mcp.clients.manage")
-            && kind == "Global"
+        || (matches!(
+            permission,
+            "projects.read" | "mcp.clients.read" | "mcp.clients.manage"
+        ) && kind == "Global"
             && id == "*")
 }
 

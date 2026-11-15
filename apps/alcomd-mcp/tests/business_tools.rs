@@ -202,7 +202,13 @@ async fn stop(client: Sdk) {
 
 // One real keep-alive TCP stream deliberately alternates identities and reuses
 // JSON-RPC IDs. No adapter mock or pooled-backend assumption is involved.
-async fn http_identity_and_admission(url: &str, a: &str, b: &str, a_project: &str) {
+async fn http_identity_and_admission(
+    url: &str,
+    a: &str,
+    b: &str,
+    a_project: &str,
+    expected_projects: &[&str],
+) {
     use http_body_util::{BodyExt, Full};
     use hyper::{Request, body::Bytes};
     use hyper_util::rt::TokioIo;
@@ -261,9 +267,20 @@ async fn http_identity_and_admission(url: &str, a: &str, b: &str, a_project: &st
         });
         assert_eq!(value["id"], 7);
         if allowed {
+            let items = value["result"]["structuredContent"]["data"]["projects"]
+                .as_array()
+                .expect("all registered projects");
+            let actual = items
+                .iter()
+                .map(|item| item["project_id"].as_str().expect("ID"))
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(items.len(), expected_projects.len());
             assert_eq!(
-                value["result"]["structuredContent"]["data"]["projects"][0]["project_id"],
-                a_project
+                actual,
+                expected_projects
+                    .iter()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
             );
         } else {
             assert_eq!(
@@ -718,10 +735,10 @@ fn grant(permission: &str, kind: &str, id: &str) -> McpClientGrant {
         resource_id: id.into(),
     }
 }
-fn grants(project: &str, write: bool) -> Vec<McpClientGrant> {
-    let mut result = vec![grant("projects.read", "project", project)];
+fn grants(write: bool) -> Vec<McpClientGrant> {
+    let mut result = vec![grant("projects.read", "global", "*")];
     if write {
-        result.push(grant("packages.manage", "project", project));
+        result.push(grant("packages.manage", "global", "*"));
     }
     for p in [
         "packages.read",
@@ -932,9 +949,21 @@ async fn package_removal_flow(http: bool) {
             .expect("default reject"),
         "permission_denied",
     );
-    a = update(&mut owner, &a, grants(&id, false), "read-a").await;
+    a = update(&mut owner, &a, grants(false), "read-a").await;
     if let Some(url) = url {
-        http_identity_and_admission(url, &token_a.credential, &token_b.credential, &id).await;
+        http_identity_and_admission(
+            url,
+            &token_a.credential,
+            &token_b.credential,
+            &id,
+            &[
+                &id,
+                &rid,
+                &cid,
+                detached_record.project_id.as_deref().expect("detached"),
+            ],
+        )
+        .await;
     }
     let listed = data(
         call(&sa, &mut trace, "list_projects", json!({"limit":1}))
@@ -942,12 +971,22 @@ async fn package_removal_flow(http: bool) {
             .expect("filtered read"),
     );
     assert_eq!(listed["projects"].as_array().expect("projects").len(), 1);
-    assert_eq!(listed["projects"][0]["project_id"], id);
-    error(
-        call(&sa, &mut trace, "get_project", json!({"project_id":rid}))
-            .await
-            .expect("outside scope"),
-        "permission_denied",
+    assert!(
+        [
+            id.as_str(),
+            rid.as_str(),
+            cid.as_str(),
+            detached_record.project_id.as_deref().expect("detached")
+        ]
+        .contains(&listed["projects"][0]["project_id"].as_str().expect("ID"))
+    );
+    assert_eq!(
+        data(
+            call(&sa, &mut trace, "get_project", json!({"project_id":rid}))
+                .await
+                .expect("global read covers every registered project")
+        )["project_id"],
+        rid
     );
     let read = data(
         call(&sa, &mut trace, "get_project", json!({"project_id":id}))
@@ -979,8 +1018,8 @@ async fn package_removal_flow(http: bool) {
         std::fs::read(p.join("Packages/vpm-manifest.json")).expect("no pre-confirm write"),
         before
     );
-    a = update(&mut owner, &a, grants(&id, true), "write-a").await;
-    update(&mut owner, &b, grants(&id, true), "same-resource-b").await;
+    a = update(&mut owner, &a, grants(true), "write-a").await;
+    update(&mut owner, &b, grants(true), "same-resource-b").await;
     error(
         call(&sb, &mut trace, "apply_package_changes", args.clone())
             .await
@@ -1007,17 +1046,14 @@ async fn package_removal_flow(http: bool) {
             .expect("old plan must fail"),
         "plan_stale",
     );
-    let mut scoped = grants(&id, true);
-    scoped.push(grant("projects.read", "project", &rid));
-    scoped.push(grant("projects.read", "project", &cid));
-    scoped.push(grant("packages.manage", "project", &cid));
-    a = update(&mut owner, &a, scoped, "explicit-second-projects").await;
     let risks=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":rid,"expected_revision":risk_record.revision,"package_id":"com.example.b"})).await.expect("dependency risk plan"));
     assert_eq!(
         risks["change_set"]["removal_conflicts"][0]["package_id"],
         "com.example.b"
     );
-    error(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":risks["plan_id"],"expected_revision":risks["project_revision"],"idempotency_key":"no-write-scope","confirm":true})).await.expect("read scope is not write scope"),"permission_denied");
+    a = update(&mut owner, &a, grants(false), "disable-package-capability").await;
+    error(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":risks["plan_id"],"expected_revision":risks["project_revision"],"idempotency_key":"no-write-scope","confirm":true})).await.expect("read capability is not write capability"),"permission_denied");
+    a = update(&mut owner, &a, grants(true), "restore-package-capability").await;
     let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"})).await.expect("fresh plan"));
     let apply = json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"accepted-removal","confirm":true});
     if let Some(url) = url {
@@ -1069,14 +1105,14 @@ async fn package_removal_flow(http: bool) {
         std::fs::read(p.join("Packages/manifest.json")).expect("UPM after"),
         upm_before
     );
-    a = update(&mut owner, &a, grants(&id, false), "withdraw-write").await;
+    a = update(&mut owner, &a, grants(false), "withdraw-write").await;
     error(
         call(&sa, &mut trace, "apply_package_changes", apply.clone())
             .await
             .expect("replay cannot bypass withdrawal"),
         "permission_denied",
     );
-    a = update(&mut owner, &a, grants(&cid, true), "cancel-project").await;
+    a = update(&mut owner, &a, grants(true), "cancel-project").await;
     let cancel_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":cid,"expected_revision":cancel_record.revision,"package_id":"com.example.fixture"})).await.expect("cancel plan"));
     let cancel_apply=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":cancel_plan["plan_id"],"expected_revision":cancel_plan["project_revision"],"idempotency_key":"cancel-task","confirm":true})).await.expect("cancel candidate"));
     let cancel_id = cancel_apply["operation_id"].as_str().expect("cancel ID");
@@ -1105,13 +1141,7 @@ async fn package_removal_flow(http: bool) {
     let cancel_terminal = terminal(&sa, &mut trace, cancel_id).await;
     assert!(cancel_terminal["state"] == "succeeded" || cancel_terminal["state"] == "cancelled");
     let detached_id = detached_record.project_id.expect("detached project ID");
-    a = update(
-        &mut owner,
-        &a,
-        grants(&detached_id, true),
-        "detached-grants",
-    )
-    .await;
+    a = update(&mut owner, &a, grants(true), "detached-grants").await;
     let detached_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":detached_id,"expected_revision":detached_record.revision,"package_id":"com.example.fixture"})).await.expect("detached plan"));
     let detached_op=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":detached_plan["plan_id"],"expected_revision":detached_plan["project_revision"],"idempotency_key":"disconnect-after-accept","confirm":true})).await.expect("accepted before EOF"));
     // Close the actual SDK/STDIO process immediately after acceptance. Query the
@@ -1143,7 +1173,7 @@ async fn package_removal_flow(http: bool) {
     let mut owner = AlcomdClient::connect(config.clone())
         .await
         .expect("native owner after restart");
-    a = update(&mut owner, &a, grants(&id, true), "restore-original-scope").await;
+    a = update(&mut owner, &a, grants(true), "restore-original-scope").await;
     let sa = sdk(&token_a.credential, url).await;
     let sb = sdk(&token_b.credential, url).await;
     let persisted = data(
@@ -1364,15 +1394,7 @@ async fn transport_risks(http: bool) {
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Transport risk client".into(),
-            grants: {
-                let mut scope = grants(projects[0].1.project_id.as_deref().expect("id"), true);
-                for (_, snapshot) in projects.iter().skip(1) {
-                    let id = snapshot.project_id.as_deref().expect("id");
-                    scope.push(grant("projects.read", "project", id));
-                    scope.push(grant("packages.manage", "project", id));
-                }
-                scope
-            },
+            grants: grants(true),
             idempotency_key: "risk-client".into(),
         })
         .await

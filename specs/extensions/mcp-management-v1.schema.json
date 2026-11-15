@@ -15,13 +15,9 @@
             "required": ["permission", "resourceKind", "resourceId"],
             "properties": {
                 "permission": {"enum": ["projects.read", "packages.manage", "state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "packages.read"]},
-                "resourceKind": {"enum": ["project", "global"]},
-                "resourceId": {"type": "string", "minLength": 1, "maxLength": 128}
-            },
-            "oneOf": [
-                {"properties": {"permission": {"enum": ["projects.read", "packages.manage"]}, "resourceKind": {"const": "project"}, "resourceId": {"$ref": "#/$defs/id"}}},
-                {"properties": {"permission": {"enum": ["state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "packages.read"]}, "resourceKind": {"const": "global"}, "resourceId": {"const": "*"}}}
-            ]
+                "resourceKind": {"const": "global"},
+                "resourceId": {"const": "*"}
+            }
         },
         "request": {
             "oneOf": [
