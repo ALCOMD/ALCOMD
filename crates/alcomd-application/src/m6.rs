@@ -163,7 +163,7 @@ impl ExtensionPermissionsCursor {
             self.after.resource_kind.as_str(),
         ) {
             ("background.run", "Extension") => self.after.resource_id == self.extension_id,
-            ("projects.read" | "mcp.clients.read" | "mcp.clients.manage", "Global") => {
+            (permission, "Global") if crate::EXTENSION_TOOL_PERMISSIONS.contains(&permission) => {
                 self.after.resource_id == "*"
             }
             _ => false,
@@ -359,6 +359,7 @@ pub struct ExtensionStartContext {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtensionActivationKind {
+    McpTool,
     Background,
     InteractiveUi,
 }

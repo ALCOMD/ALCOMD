@@ -10,6 +10,7 @@
     ],
     "properties": {
         "schema": {"const": 1},
+        "mcp": {"type":"object","additionalProperties":false,"required":["tools"],"properties":{"tools":{"const":"component/mcp-tools.json"}}},
         "id": {
             "type": "string",
             "minLength": 3,

@@ -28,6 +28,11 @@ declare global { interface Window { h4Management: ManagementFixture } }
 /** Opt-in public DTO fixture. It never reads or writes the native Core environment. */
 export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParams): GuiRpcClient {
     const hash = "a".repeat(64);
+    const providerPermissions: ManagementGrant["permission"][] = ["mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "projects.read"];
+    const toolPreviews: import("@alcomd/sdk").McpToolPreview[] = query.has("m8-tool-provider") ? [
+        { name: "alcomd_ext_aaaaaaaaaaaaaaaaaaaa_echo", title: "Echo text", description: "Compute a result without Core business access.", requiredPermissions: [], effect: "pure" },
+        { name: "alcomd_ext_aaaaaaaaaaaaaaaaaaaa_apply", title: "Review".repeat(48), description: "LongDescription".repeat(48), requiredPermissions: ["packages.manage"], effect: "apply" }
+    ] : [];
     const extensions = new Map<string, ExtensionRecord>();
     for (const id of [H4_ALPHA, H4_BETA, H4_GAMMA]) extensions.set(id, record(id));
     if (query.has("h4-quarantined")) {
@@ -37,7 +42,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     }
     const plans = new Map<string, ExtensionPlan>();
     const grants = new Map<string, ManagementGrant[]>();
-    for (const id of extensions.keys()) grants.set(id, query.has("m8-mcp-permissions") ? [] : [
+    for (const id of extensions.keys()) grants.set(id, query.has("m8-mcp-permissions") || query.has("m8-tool-provider") ? [] : [
         { permission: "background.run", resourceKind: "Extension", resourceId: id },
         { permission: "projects.read", resourceKind: "Global", resourceId: "*" }
     ]);
@@ -105,11 +110,11 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         return extension;
     }
     function plan(action: "install" | "uninstall", extensionId: string, dataDisposition: string): ExtensionPlan {
-        const result: ExtensionPlan = { planId: `00000000-0000-4000-8000-${String(800 + ++nextPlan).padStart(12, "0")}`, action,
+        const result: ExtensionPlan = { mcpTools: action === "install" ? structuredClone(toolPreviews) : [], planId: `00000000-0000-4000-8000-${String(800 + ++nextPlan).padStart(12, "0")}`, action,
             state: "unapplied", sourceKind: action === "install" ? "local_owner_selected" : "not_applicable", extensionId,
             version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: hash, publisherFingerprint: `ed25519-sha256:${hash}`,
             trustDecision: "user_approved_for_extension", dataDisposition, planFingerprint: hash, uiProtocol: "portable-v1",
-            requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] };
+            requiredPermissions: query.has("m8-tool-provider") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : ["background.run"] };
         plans.set(result.planId, result);
         return structuredClone(result);
     }
@@ -155,7 +160,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         },
         async extensionGet(extensionId) {
             log("extensions.get", { extensionId });
-            return response("extensions.get", { extension: structuredClone(installed(extensionId)) });
+            return response("extensions.get", { extension: structuredClone(installed(extensionId)), mcpTools: structuredClone(toolPreviews) });
         },
         async extensionPermissionsList(extensionId, cursor) {
             log("extensions.permissions.list", { extensionId, ...(cursor === undefined ? {} : { cursor }) });
@@ -166,7 +171,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
             return response("extensions.permissions.list", { extensionId, grantRevision: extension.grantRevision,
-                requiredPermissions: query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
+                requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
         async extensionPlanInstall(packagePath, expectedRevision, publisherApproval) {
@@ -218,10 +223,11 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             await response("extensions.setGrant", undefined);
             const extension = installed(extensionId);
             if (extension.grantRevision !== expectedGrantRevision) throw { code: "revision_conflict" };
-            const mcp = permission === "mcp.clients.read" || permission === "mcp.clients.manage";
-            if (!mcp && permission !== "background.run" && permission !== "projects.read") throw { code: "invalid_request" };
-            if (resourceKind !== "Extension" && resourceKind !== "Global") throw { code: "invalid_request" };
-            if (mcp ? resourceKind !== "Global" || resourceId !== "*" : permission === "background.run" ? resourceKind !== "Extension" || resourceId !== extensionId : resourceKind !== "Global" || resourceId !== "*") throw { code: "extension_scope_denied" };
+            const known = (value: string): value is ManagementGrant["permission"] => ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", ...providerPermissions].some((item) => item === value);
+            if (!known(permission) || (resourceKind !== "Global" && resourceKind !== "Extension")) throw { code: "invalid_request" };
+            const global = ["projects.read", "mcp.clients.read", "mcp.clients.manage", ...providerPermissions].includes(permission);
+            if (!global && permission !== "background.run") throw { code: "invalid_request" };
+            if (global ? resourceKind !== "Global" || resourceId !== "*" : resourceKind !== "Extension" || resourceId !== extensionId) throw { code: "extension_scope_denied" };
             const current = grants.get(extensionId) ?? [];
             if (!current.some((grant) => grant.permission === permission && grant.resourceKind === resourceKind && grant.resourceId === resourceId)) current.push({ permission, resourceKind, resourceId });
             grants.set(extensionId, current);

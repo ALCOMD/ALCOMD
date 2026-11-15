@@ -11,6 +11,7 @@ pub(super) async fn dispatch(
     state: &ConnectionState,
     application: &M6ExtensionApplication,
     access: &AccessContext,
+    store: &alcomd_store::StateStoreHandle,
 ) -> DispatchAction {
     let capability = if request.method == rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST {
         rpc::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1
@@ -56,13 +57,48 @@ pub(super) async fn dispatch(
                 Err(_) => return invalid(request.id),
             };
             match application.get(access, params.extension_id).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ExtensionResult {
-                        extension: record(value),
-                    },
-                    None,
-                ),
+                Ok(value) => {
+                    use app::M6Store;
+                    let preview = async {
+                        let locator = store
+                            .live_package_locator(
+                                access.principal().clone(),
+                                value.extension_id.clone(),
+                            )
+                            .await?;
+                        let expected = value.clone();
+                        let tools = tokio::task::spawn_blocking(move || {
+                            let package = alcomd_extensions::inspect_extension_directory(
+                                std::path::Path::new(&locator),
+                            )
+                            .map_err(|_| app::M6Error::new(app::M6ErrorCode::PackageInvalid))?;
+                            if package.package_digest != expected.package_digest
+                                || package.publisher_fingerprint != expected.publisher_fingerprint
+                            {
+                                return Err(app::M6Error::new(app::M6ErrorCode::PackageInvalid));
+                            }
+                            previews(&package.manifest.id, package.mcp_tools)
+                        })
+                        .await
+                        .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
+                        if application.get(access, value.extension_id.clone()).await? != value {
+                            return Err(app::M6Error::new(app::M6ErrorCode::RevisionConflict));
+                        }
+                        Ok(tools)
+                    }
+                    .await;
+                    match preview {
+                        Ok(tools) => success_action(
+                            request.id,
+                            rpc::ExtensionResult {
+                                extension: record(value),
+                                mcp_tools: Some(tools),
+                            },
+                            None,
+                        ),
+                        Err(e) => extension_error(request.id, e),
+                    }
+                }
                 Err(error) => extension_error(request.id, error),
             }
         }
@@ -163,11 +199,35 @@ pub(super) async fn dispatch(
                 .plan_install(access, evidence, trust, expected, fingerprint, now_ms())
                 .await
             {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ExtensionPlanResult { plan: plan(value) },
-                    None,
-                ),
+                Ok(value) => {
+                    let evidence = value.evidence.clone();
+                    let preview = tokio::task::spawn_blocking(move || {
+                        let verified = alcomd_extensions::inspect_extension_package(
+                            std::path::Path::new(&evidence.source_locator),
+                        )
+                        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PlanStale))?;
+                        if verified.package_digest != evidence.package_digest
+                            || verified.manifest_digest != evidence.manifest_digest
+                            || verified.component_digest != evidence.component_digest
+                        {
+                            return Err(app::M6Error::new(app::M6ErrorCode::PlanStale));
+                        }
+                        previews(&verified.manifest.id, verified.mcp_tools)
+                    })
+                    .await;
+                    match preview {
+                        Ok(Ok(tools)) => {
+                            let mut plan = plan(value);
+                            plan.mcp_tools = tools;
+                            success_action(request.id, rpc::ExtensionPlanResult { plan }, None)
+                        }
+                        Ok(Err(e)) => extension_error(request.id, e),
+                        Err(_) => extension_error(
+                            request.id,
+                            app::M6Error::new(app::M6ErrorCode::Internal),
+                        ),
+                    }
+                }
                 Err(error) => extension_error(request.id, error),
             }
         }
@@ -264,6 +324,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::ExtensionResult {
+                        mcp_tools: None,
                         extension: record(value),
                     },
                     None,
@@ -403,6 +464,7 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
 
 fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
     rpc::ExtensionPlan {
+        mcp_tools: Vec::new(),
         plan_id: value.plan_id.to_string(),
         action: value.action,
         state: value.state,
@@ -495,6 +557,31 @@ fn now_ms() -> u64 {
 
 fn hex(value: &[u8]) -> String {
     value.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn previews(
+    id: &str,
+    tools: Vec<app::ToolDeclaration>,
+) -> Result<Vec<rpc::McpToolPreview>, app::M6Error> {
+    tools
+        .into_iter()
+        .map(|tool| {
+            Ok(rpc::McpToolPreview {
+                name: app::tool_public_name(id, &tool.name),
+                title: tool.title.clone(),
+                description: tool.description.clone(),
+                required_permissions: tool.permissions(),
+                effect: serde_json::to_value(
+                    tool.effect()
+                        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PackageInvalid))?,
+                )
+                .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))?
+                .as_str()
+                .ok_or_else(|| app::M6Error::new(app::M6ErrorCode::Internal))?
+                .into(),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -674,6 +761,7 @@ mod tests {
             &state,
             &application,
             &AccessContext::local_owner(),
+            &store,
         )
         .await;
         let typed: rpc::SuccessResponse<rpc::ExtensionPermissionsListResult> =
@@ -691,13 +779,27 @@ mod tests {
             evidence.optional_permissions
         );
         let denied = AccessContext::new(app::PrincipalId::local_owner(), []);
-        let result = dispatch(request(params.clone()), &state, &application, &denied).await;
+        let result = dispatch(
+            request(params.clone()),
+            &state,
+            &application,
+            &denied,
+            &store,
+        )
+        .await;
         assert_eq!(result.response["error"]["code"], "permission_denied");
         let other = AccessContext::new(
             app::PrincipalId::parse("fixture:other-owner").expect("other owner"),
             [app::Permission::ExtensionsRead],
         );
-        let result = dispatch(request(params.clone()), &state, &application, &other).await;
+        let result = dispatch(
+            request(params.clone()),
+            &state,
+            &application,
+            &other,
+            &store,
+        )
+        .await;
         assert_eq!(result.response["error"]["code"], "extension_not_installed");
         for limit in [0, 1_001] {
             let result = dispatch(
@@ -705,6 +807,7 @@ mod tests {
                 &state,
                 &application,
                 &AccessContext::local_owner(),
+                &store,
             )
             .await;
             assert_eq!(result.response["error"]["code"], "invalid_request");
@@ -718,6 +821,7 @@ mod tests {
             &no_capability,
             &application,
             &AccessContext::local_owner(),
+            &store,
         )
         .await;
         assert!(

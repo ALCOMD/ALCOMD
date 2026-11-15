@@ -1087,3 +1087,15 @@ State37仅新增0037，旧0033–0036原样保留。一个事务撤销旧扩展p
 未重复完整Workspace、Chromium、Tauri/release或三平台，也未重新占用Windows唯一管道。旧SQL迁移、原始历史行、旧格式拒绝/迁移测试仍作为证据保留，不是可用的逐项目授权模型。之前各候选结果及失败记录不改写，不拼接为新候选完整通过。
 
 本轮未重建部署Core/GUI，不停止正供用户查看的review程序；review/candidate.json仍为485eddb，不能将源码清理描述成该窗口已升级或新原生闭环已通过。原数据未访问/升级，没有恢复桌面控制。未推送、没有本轮Hosted/CodeQL结果；M8保持IN_PROGRESS，人工查看仍待确认，不进入M9。
+
+### 扩展MCP工具Provider v1（2026-11-16，所有者已批准实施）
+
+所有者要求实现已集中讨论的设计。决策：扩展工具与内置工具统一目录/调用；MCP客户端仍仅按现有业务能力授权，不增加扩展或工具白名单。新增可选扩展权限mcp.tools.provide，默认关闭。首版包含真实Core写入，以既有包卸载Plan/Apply/Operation闭环验证，工具种类不限制为六种，不扩展Unity/备份/外部网络业务。
+
+批准公共增量：Manifest可选mcp.tools固定指向component/mcp-tools.json（签名包内容，最多32项/64KiB）；独立alcomd:mcp-tools/provider@1.0.0导出和core@1.0.0受限业务导入；mcp.tools.catalog与extensions.mcpTools.call，capability mcp.extension-tools.v1；扩展可授予现有repositories.read/packages.read/packages.manage/operations.read/operations.cancel，并使用Global/*，MCP客户端仍是原八项能力。State38只增窄extension_mcp_calls记录表和extension_grants权限CHECK；保全原行、旧迁移不改，Config13不变，不升级原运行数据。调用记录只保存摘要/冻结来源/权威Core结果，不保存参数、凭据或扩展正文。
+
+执行边界：真实MCP Principal+扩展当前权限/lease取交集，OAuth当前上限/撤销复查，Core业务接受事务原子记录结果引用；Plan/Operation/幂等保持实际MCP调用者。每次最多一个持久Core动作，不可一工具内静默Plan再Apply；请求取消不取消已接受Operation，同键恢复不得重跑guest。UI只加现有权限开关/声明预览，复用Material和共享错误。Provider按需运行，不伪装UI、不隐含background.run；旧WIT world/枚举不改。原验收窗口保持，原数据/Unity/桌面控制不动；不推送、不进入M9。
+
+生产依赖审批记录：Host新增jsonschema = =0.61.2，default-features=false，用于2020-12输入/输出和定义校验，不自研第二套Schema解释器。已通过官方rust-v0.61.2 tag核对MIT、MSRV1.85（低于1.97.1），发布2026-11-12。禁用resolve-http/file/async及TLS/idna；同时注入拒绝外部引用的retriever。替代仅手写类型不能支持扩展自定义Schema。新增传递闭包、serde_json float_roundtrip及bytecount/uuid-simd第三方SIMD/unsafe影响须记录最终tree/lock，不称零unsafe，不额外升级无关依赖。Schema校验只在有界Host子进程内，Core不被不可信Schema同步阻塞。锁定依赖闭包和许可检查属于本批实施与验证，不授权其他依赖或推送。
+
+实现和验证按接口依赖顺序进行，未完成接线不发布capability，不将Schema/表存在算功能通过。工作目录main；日常定向检查，稳定候选集中验证，不每次重跑完整Workspace/浏览器/release/三平台。实际结果另记。

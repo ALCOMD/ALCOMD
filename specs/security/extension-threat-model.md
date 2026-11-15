@@ -63,3 +63,13 @@ first/third-party parity。
 
 该 proposal 未接入 active Manifest/WIT/Host/RPC/Permission/State 或 renderer。只有项目所有者批准 Stop A 后才能开始
 production replacement；M6 backend runtime 已验收的 sandbox、lease、data 与 crash isolation 保持有效。
+
+
+## Extension MCP tools (owner-approved 2026-11-16)
+
+- A signed provider catalogue is untrusted data. Host-only JSON Schema validation rejects external/dynamic/circular references and header mappings; a deny retriever prevents network/file resolution. Preflight type-checks the provider ABI without guest execution. Native schema work, compilation and guest calls run in the supervised Host process with existing quotas and deadlines.
+- Core alone canonicalizes public names and derives business permissions/effect from the closed typed Host operations. Publication is optional `mcp.tools.provide`, default off. MCP clients retain existing global business capabilities; no project or per-extension client whitelists exist.
+- Every Host call reauthenticates current MCP credentials/OAuth and extension grants, package and lease. Writes check again inside acceptance transactions. Guest receives neither client credential nor an owner context. It cannot invent an RPC method, alter the captured Apply/cancel target or confirm for the caller.
+- Core-owned effect evidence cannot be forged by guest data. One persistent action is recorded atomically with business acceptance; lost replies, traps and protocol cancellation do not cancel or repeat accepted Operations. Explicit same-key recovery checks current caller/business authority and restores original evidence only; it never invokes a removed or revoked provider.
+- Catalogue continuations bind current authentication, client revision, provider packages/grant revisions and position. HTTP resolves Core effect metadata before calling; reserved write controls conservatively preserve unknown-write semantics across source changes. No new listener/session or credential forwarding to Wasm is introduced.
+- Native schema dependencies include third-party SIMD/unsafe code. Disabling default resolver features is not a claim of zero unsafe; dependency and feature evidence is recorded in M8.

@@ -187,6 +187,7 @@ impl std::error::Error for UserPackageError {
 impl From<StoreErrorKind> for UserPackageError {
     fn from(value: StoreErrorKind) -> Self {
         Self::new(match value {
+            StoreErrorKind::PermissionDenied => UserPackageErrorCode::PermissionDenied,
             StoreErrorKind::RevisionConflict => UserPackageErrorCode::RevisionConflict,
             StoreErrorKind::IdempotencyConflict => UserPackageErrorCode::IdempotencyConflict,
             StoreErrorKind::Unavailable => UserPackageErrorCode::StoreUnavailable,

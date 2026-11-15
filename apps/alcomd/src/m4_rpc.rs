@@ -294,7 +294,7 @@ fn bulk_intent(value: rpc::PackageBulkIntent) -> Result<app::PackageBulkIntent, 
     })
 }
 
-fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
+pub(super) fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
     rpc::PackagePlan {
         plan_id: value.plan_id.to_string(),
         action: match value.action {

@@ -32,7 +32,7 @@ import { backupCompressionOptions } from "./backup-compression";
 import { isBuiltinRepository, repositoryDefaultName, repositoryDisplayName } from "./repository-display";
 import type { RepositoryLinkDraft } from "./repository-link";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
-import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
+import { ExtensionToolPreview, ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
 interface ActionProps {
     client: GuiRpcClient;
@@ -923,6 +923,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         </form> : <>
             <h2>{t("Review extension install")}</h2>
             <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div><div><dt>{t("Trust")}</dt><dd>{t(humanize(plan.trustDecision))}</dd></div></dl>
+            <ExtensionToolPreview tools={plan.mcpTools} />
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}

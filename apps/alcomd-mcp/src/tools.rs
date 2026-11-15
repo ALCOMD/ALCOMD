@@ -352,6 +352,35 @@ fn error(
 }
 fn failure(cause: Failure) -> CallToolResult {
     match cause {
+        Failure::Remote(ClientError::Remote(e), _)
+            if e.code == "mcp_tool_write_outcome_unknown" =>
+        {
+            error(
+                "core_write_outcome_unknown",
+                "Core's effect response is unavailable. Do not retry automatically; recover with the original tool, arguments and key.",
+                false,
+                None,
+                true,
+            )
+        }
+        Failure::Remote(ClientError::Remote(e), _)
+            if [
+                "mcp_tool_provider_unavailable",
+                "mcp_tool_unavailable",
+                "mcp_tool_interrupted",
+                "mcp_tool_in_progress",
+                "mcp_tool_output_invalid",
+            ]
+            .contains(&e.code.as_str()) =>
+        {
+            error(
+                &e.code,
+                "The extension tool is unavailable or did not complete. Inspect any accepted Core effect before retrying.",
+                false,
+                None,
+                false,
+            )
+        }
         Failure::Remote(ClientError::Remote(e), writing) => {
             let contract: Value = match serde_json::from_str(CONTRACT) {
                 Ok(v) => v,
@@ -428,6 +457,60 @@ pub async fn execute(
     client: &mut AlcomdClient,
     params: CallToolRequestParams,
 ) -> Result<CallToolResult, ErrorData> {
+    let descriptor = match descriptor(client, params.name.as_ref()).await {
+        Ok(value) => value,
+        Err(error) => return Ok(failure(Failure::Remote(error, false))),
+    };
+    let recovery = descriptor.is_none()
+        && params.name.starts_with("alcomd_ext_")
+        && params
+            .arguments
+            .as_ref()
+            .is_some_and(|a| a.contains_key("idempotency_key"));
+    if descriptor.as_ref().is_some_and(|d| d.origin.is_some()) || recovery {
+        if params.input_responses.is_some() || params.request_state.is_some() {
+            return Err(invalid());
+        }
+        let arguments = Value::Object(params.arguments.unwrap_or_default());
+        let writing = descriptor.as_ref().is_none_or(descriptor_writes)
+            || arguments.get("idempotency_key").is_some();
+        let value = match client
+            .extension_mcp_tools_call(rpc::ExtensionMcpToolsCallParams {
+                name: params.name.into_owned(),
+                arguments,
+            })
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => return Ok(failure(Failure::Remote(error, writing))),
+        };
+        let accepted = value.core_effect.is_some();
+        let mut result = if value.error.is_some() {
+            CallToolResult::error(vec![ContentBlock::text(if accepted {
+                "Core accepted an action, but the extension did not complete. Inspect coreEffect; do not retry automatically."
+            } else {
+                "The extension tool did not complete."
+            })])
+        } else {
+            CallToolResult::success(vec![ContentBlock::text(if value.replayed {
+                "Restored the accepted Core effect without rerunning the extension."
+            } else {
+                "Extension tool completed."
+            })])
+        };
+        let mut output = json!({"data":value.data,"coreEffect":value.core_effect,"replayed":value.replayed,"error":null});
+        if let Some(error) = value.error {
+            output["error"] = json!({"code":error,"retryable":false});
+        }
+        result.structured_content = Some(output);
+        return Ok(result);
+    }
+    execute_builtin(client, params).await
+}
+async fn execute_builtin(
+    client: &mut AlcomdClient,
+    params: CallToolRequestParams,
+) -> Result<CallToolResult, ErrorData> {
     let input = parse(params)?;
     if !client.is_usable() {
         return Ok(error(
@@ -471,6 +554,50 @@ pub async fn execute(
         Ok((data, text, plan)) => success(data, text, plan),
         Err(e) => failure(e),
     })
+}
+
+pub(crate) fn descriptor_writes(value: &rpc::McpToolDescriptor) -> bool {
+    matches!(value.effect.as_str(), "plan" | "apply" | "cancel")
+}
+pub(crate) async fn descriptor(
+    client: &mut AlcomdClient,
+    name: &str,
+) -> Result<Option<rpc::McpToolDescriptor>, ClientError> {
+    let page = client
+        .mcp_tools_catalog(rpc::McpToolsCatalogParams {
+            name: Some(name.into()),
+            cursor: None,
+            limit: None,
+        })
+        .await?;
+    Ok(page.tools.into_iter().find(|t| t.name == name))
+}
+pub(crate) async fn list(
+    client: &mut AlcomdClient,
+    cursor: Option<String>,
+) -> Result<rmcp::model::ListToolsResult, ErrorData> {
+    let page = client
+        .mcp_tools_catalog(rpc::McpToolsCatalogParams {
+            name: None,
+            cursor,
+            limit: Some(16),
+        })
+        .await
+        .map_err(|_| {
+            ErrorData::internal_error(
+                "The current authorized tool catalogue is unavailable.",
+                None,
+            )
+        })?;
+    let tools=page.tools.into_iter().map(|tool|{
+        let writing=descriptor_writes(&tool);
+        serde_json::from_value::<Tool>(json!({"name":tool.name,"title":tool.title,"description":tool.description,"inputSchema":tool.input_schema,"outputSchema":tool.output_schema,"annotations":{"readOnlyHint":!writing,"destructiveHint":writing,"idempotentHint":!writing,"openWorldHint":false}})).map_err(|_|internal_protocol())
+    }).collect::<Result<Vec<_>,_>>()?;
+    let mut result = rmcp::model::ListToolsResult::with_all_items(tools)
+        .with_ttl_ms(0)
+        .with_cache_scope(rmcp::model::CacheScope::Private);
+    result.next_cursor = page.next_cursor;
+    Ok(result)
 }
 
 #[cfg(test)]

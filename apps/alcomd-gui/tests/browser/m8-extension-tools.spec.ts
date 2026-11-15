@@ -1,0 +1,52 @@
+import { expect, test } from "@playwright/test";
+const route = "/browser-harness.html?route=%2Fextensions%2Fcom.example.alpha&state=ready&h4-management=1&m8-tool-provider=1";
+test("provider publication is optional, global, keyboard accessible and failed writes keep authority", async ({ page }) => {
+    await page.goto(route);
+    await expect(page.getByRole("region", { name: "Declared MCP tools" })).toBeVisible();
+    await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    const publish = dialog.getByRole("switch", { name: "Publish MCP tools", exact: true });
+    await expect(dialog.getByRole("switch")).toHaveCount(7);
+    await expect(publish).not.toBeChecked();
+    await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
+    await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
+    await publish.focus(); await page.keyboard.press("Space");
+    await expect(publish).toBeDisabled();
+    await expect(dialog.getByRole("switch", { name: "Change project packages", exact: true })).toBeDisabled();
+    await page.evaluate(() => { window.h4Management.hold("extensions.setGrant", false); window.h4Management.release("extensions.setGrant", "extension_permission_denied"); });
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await expect(publish).not.toBeChecked(); await expect(publish).toBeEnabled();
+    await publish.click(); await expect(publish).toBeChecked(); await expect(publish).toBeEnabled();
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    const writes = await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant"));
+    expect(writes.map((r) => [r.params.permission, r.params.resourceKind, r.params.resourceId])).toEqual([["mcp.tools.provide", "Global", "*"], ["mcp.tools.provide", "Global", "*"]]);
+    expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "projects.list").length)).toBe(0);
+});
+for (const colorScheme of ["light", "dark"] as const) {
+    test(`provider ${colorScheme} signed review and long details fit a narrow window`, async ({ browser }) => {
+        const context = await browser.newContext({ viewport: { width: 640, height: 700 }, colorScheme });
+        const page = await context.newPage(); await page.goto("http://127.0.0.1:4173" + route);
+        const tools = page.getByRole("region", { name: "Declared MCP tools" });
+        await expect(tools.getByText("Echo text", { exact: true })).toBeVisible();
+        await tools.scrollIntoViewIfNeeded();
+        expect(await tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+        await page.screenshot({ path: `target/m8-extension-tools/provider-details-${colorScheme}.png`, fullPage: true });
+        await page.goto("http://127.0.0.1:4173/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&m8-tool-provider=1");
+        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        const dialog = page.locator("md-dialog[open]");
+        await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\provider.alcomdextension");
+        await dialog.getByRole("checkbox", { name: "Approve this publisher for this extension", exact: true }).check();
+        await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
+        await expect(dialog.getByRole("region", { name: "Declared MCP tools" })).toBeVisible();
+        await expect(dialog.getByText("Publish MCP tools", { exact: false })).toBeVisible();
+        await expect(dialog.getByRole("switch")).toHaveCount(0);
+        const preview = dialog.getByRole("region", { name: "Declared MCP tools" });
+        expect(await preview.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+        await dialog.getByRole("button", { name: "Apply reviewed plan", exact: true }).scrollIntoViewIfNeeded();
+        await expect(dialog.getByRole("button", { name: "Apply reviewed plan", exact: true })).toBeEnabled();
+        await page.screenshot({ path: `target/m8-extension-tools/provider-review-${colorScheme}.png`, fullPage: true });
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.applyInstall" || r.method === "extensions.setGrant").length)).toBe(0);
+        await context.close();
+    });
+}

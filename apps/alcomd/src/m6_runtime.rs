@@ -24,6 +24,9 @@ pub(super) struct PlatformExtensionRuntime {
 
 struct RuntimeInner {
     authority: M6HostApplication<StateStoreHandle>,
+    store: StateStoreHandle,
+    applications: Mutex<std::sync::Weak<super::Applications>>,
+    tool_gate: tokio::sync::Semaphore,
     daemon_epoch: String,
     host_executable: PathBuf,
     processes: Mutex<HashMap<String, HostProcess>>,
@@ -48,11 +51,14 @@ struct HostProcess {
     daemon_sequence: u64,
     host_sequence: u64,
     background_active: bool,
+    mcp_only: bool,
 }
 
 struct RuntimeInvocation {
     kind: ExtensionInvocationKind,
     ui_authority: Option<ExtensionUiInvocationAuthority>,
+    mcp_authority: Option<alcomd_application::ToolInvocation>,
+    mcp_connection: Option<Arc<super::ConnectionState>>,
 }
 
 impl PlatformExtensionRuntime {
@@ -88,7 +94,10 @@ impl PlatformExtensionRuntime {
         }
         Ok(Self {
             inner: Arc::new(RuntimeInner {
-                authority: M6HostApplication::new(store),
+                authority: M6HostApplication::new(store.clone()),
+                store,
+                applications: Mutex::new(std::sync::Weak::new()),
+                tool_gate: tokio::sync::Semaphore::new(1),
                 daemon_epoch: OperationId::new().to_string(),
                 host_executable,
                 processes: Mutex::new(HashMap::new()),
@@ -232,6 +241,8 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
                 input,
                 timeout,
                 RuntimeInvocation {
+                    mcp_authority: None,
+                    mcp_connection: None,
                     kind: authority.kind,
                     ui_authority: Some(authority),
                 },
@@ -338,8 +349,10 @@ fn start_host(
         daemon_sequence: 1,
         host_sequence: 1,
         background_active: context.activation_kind == ExtensionActivationKind::Background,
+        mcp_only: context.activation_kind == ExtensionActivationKind::McpTool,
     };
     let activation_kind = match context.activation_kind {
+        ExtensionActivationKind::McpTool => "mcp_tool",
         ExtensionActivationKind::Background => "background",
         ExtensionActivationKind::InteractiveUi => "interactive_ui",
     };
@@ -350,22 +363,27 @@ fn start_host(
         "lifecycleGeneration": process.lease.lifecycle_generation.get(),
         "kind": activation_kind
     });
-    if let Err(error) = invoke(
-        inner,
-        &mut process,
-        "activate",
-        activation,
-        Duration::from_millis(5_000),
-        RuntimeInvocation {
-            kind: match context.activation_kind {
-                ExtensionActivationKind::Background => ExtensionInvocationKind::Background,
-                ExtensionActivationKind::InteractiveUi => {
-                    ExtensionInvocationKind::InteractiveUiRender
-                }
+    if context.activation_kind != ExtensionActivationKind::McpTool
+        && let Err(error) = invoke(
+            inner,
+            &mut process,
+            "activate",
+            activation,
+            Duration::from_millis(5_000),
+            RuntimeInvocation {
+                mcp_authority: None,
+                mcp_connection: None,
+                kind: match context.activation_kind {
+                    ExtensionActivationKind::McpTool => ExtensionInvocationKind::McpTool,
+                    ExtensionActivationKind::Background => ExtensionInvocationKind::Background,
+                    ExtensionActivationKind::InteractiveUi => {
+                        ExtensionInvocationKind::InteractiveUiRender
+                    }
+                },
+                ui_authority: activation_authority,
             },
-            ui_authority: activation_authority,
-        },
-    ) {
+        )
+    {
         terminate(&mut process.child);
         return Err(error);
     }
@@ -432,21 +450,25 @@ fn stop_host(
             },
         },
     );
-    let _ = invoke(
-        inner,
-        &mut process,
-        "deactivate",
-        json!({"reason": reason}),
-        Duration::from_millis(2_000),
-        RuntimeInvocation {
-            kind: if reason == "interactive_ui_idle" {
-                ExtensionInvocationKind::InteractiveUiClose
-            } else {
-                ExtensionInvocationKind::Background
+    if !process.mcp_only {
+        let _ = invoke(
+            inner,
+            &mut process,
+            "deactivate",
+            json!({"reason": reason}),
+            Duration::from_millis(2_000),
+            RuntimeInvocation {
+                mcp_authority: None,
+                mcp_connection: None,
+                kind: if reason == "interactive_ui_idle" {
+                    ExtensionInvocationKind::InteractiveUiClose
+                } else {
+                    ExtensionInvocationKind::Background
+                },
+                ui_authority: None,
             },
-            ui_authority: None,
-        },
-    );
+        );
+    }
     process.daemon_sequence = process
         .daemon_sequence
         .checked_add(1)
@@ -536,7 +558,7 @@ fn invoke(
                     (None, Some(cancelled_error()))
                 } else {
                     match route_capability(
-                        &inner.authority,
+                        inner,
                         process.lease.clone(),
                         &invocation,
                         capability.as_str(),
@@ -588,7 +610,7 @@ fn invoke(
 }
 
 fn route_capability(
-    authority: &M6HostApplication<StateStoreHandle>,
+    inner: &RuntimeInner,
     lease: ExtensionInstanceLease,
     invocation: &RuntimeInvocation,
     capability: &str,
@@ -598,6 +620,30 @@ fn route_capability(
         return Err(error(M6ErrorCode::PermissionDenied));
     }
     let runtime = tokio::runtime::Handle::current();
+    let authority = &inner.authority;
+    if invocation.kind == ExtensionInvocationKind::McpTool {
+        let context = invocation
+            .mcp_authority
+            .clone()
+            .ok_or_else(|| error(M6ErrorCode::PermissionDenied))?;
+        let connection = invocation
+            .mcp_connection
+            .clone()
+            .ok_or_else(|| error(M6ErrorCode::PermissionDenied))?;
+        let apps = inner
+            .applications
+            .lock()
+            .map_err(|_| internal())?
+            .upgrade()
+            .ok_or_else(internal)?;
+        return runtime.block_on(super::m8_tools_rpc::business(
+            &apps,
+            &connection,
+            context,
+            capability,
+            input,
+        ));
+    }
     match capability {
         capability if capability.starts_with("host-mcp-clients.") => {
             let invalid = || json!({"error": alcomd_application::ManagementError::from(alcomd_application::ManagementErrorCode::InvalidArgument)});
@@ -712,6 +758,15 @@ fn route_capability(
 
 fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
     match kind {
+        ExtensionInvocationKind::McpTool => matches!(
+            capability,
+            "host-mcp-tools.projects.list"
+                | "host-mcp-tools.projects.get"
+                | "host-mcp-tools.packages.planUninstall"
+                | "host-mcp-tools.packages.applyPlan"
+                | "host-mcp-tools.operations.get"
+                | "host-mcp-tools.operations.cancel"
+        ),
         ExtensionInvocationKind::Background => matches!(
             capability,
             "host-projects.get-summary" | "host-data.get" | "host-data.set" | "host-data.delete"
@@ -744,9 +799,14 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
 }
 
 fn invocation_cancelled(invocation: &RuntimeInvocation) -> bool {
-    invocation.ui_authority.as_ref().is_some_and(|authority| {
-        !authority.is_current() || now_ms().map_or(true, |now_ms| now_ms >= authority.deadline_ms)
-    })
+    invocation
+        .mcp_authority
+        .as_ref()
+        .is_some_and(|a| now_ms().map_or(true, |now| !a.is_current(now)))
+        || invocation.ui_authority.as_ref().is_some_and(|authority| {
+            !authority.is_current()
+                || now_ms().map_or(true, |now_ms| now_ms >= authority.deadline_ms)
+        })
 }
 
 fn require_ui_data_authority(
@@ -935,6 +995,144 @@ fn error(code: M6ErrorCode) -> M6Error {
 
 fn internal() -> M6Error {
     error(M6ErrorCode::Internal)
+}
+
+impl PlatformExtensionRuntime {
+    pub(super) fn host_executable(&self) -> PathBuf {
+        self.inner.host_executable.clone()
+    }
+    pub(super) fn attach(&self, applications: std::sync::Weak<super::Applications>) {
+        if let Ok(mut slot) = self.inner.applications.lock() {
+            *slot = applications;
+        }
+    }
+    pub(super) async fn invoke_tool(
+        &self,
+        provider: alcomd_application::ToolProvider,
+        mut authority: alcomd_application::ToolInvocation,
+        arguments: Value,
+        connection: super::ConnectionState,
+    ) -> Result<Value, alcomd_application::ToolError> {
+        use alcomd_application::{M6Store, ToolError as E};
+        let _permit = self
+            .inner
+            .tool_gate
+            .try_acquire()
+            .map_err(|_| E::ResourceLimit)?;
+        let existing = self
+            .active_lease(provider.record.extension_id.clone())
+            .await
+            .map_err(|_| E::ProviderUnavailable)?;
+        let owned = existing.is_none();
+        let lease = if let Some(lease) = existing {
+            lease
+        } else {
+            let mut context = self
+                .inner
+                .store
+                .prepare_instance(
+                    provider.owner,
+                    provider.record.extension_id.clone(),
+                    self.daemon_epoch(),
+                    now_ms().map_err(|_| E::Unavailable)?,
+                )
+                .await
+                .map_err(|_| E::ProviderUnavailable)?;
+            context.activation_kind = ExtensionActivationKind::McpTool;
+            let lease = context.lease.clone();
+            let inner = Arc::clone(&self.inner);
+            tokio::task::spawn_blocking(move || start_host(&inner, context, None))
+                .await
+                .map_err(|_| E::ProviderUnavailable)?
+                .map_err(|_| E::ProviderUnavailable)?;
+            self.inner
+                .store
+                .mark_instance_running(lease.clone(), now_ms().map_err(|_| E::Unavailable)?)
+                .await
+                .map_err(|_| E::ProviderUnavailable)?;
+            lease
+        };
+        authority.lease = Some(lease.clone());
+        let result = async {
+            self.inner.store.tool_check(authority.clone(), None).await?;
+            let inner = Arc::clone(&self.inner);
+            let auth = authority.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut processes = inner.processes.try_lock().map_err(|_| E::ResourceLimit)?;
+                let process = processes
+                    .get_mut(&auth.origin.extension_id)
+                    .filter(|p| {
+                        auth.lease.as_ref().is_some_and(|lease| {
+                            p.lease.instance_id == lease.instance_id
+                                && p.lease.lifecycle_generation == lease.lifecycle_generation
+                                && p.lease.grant_revision == lease.grant_revision
+                        })
+                    })
+                    .ok_or(E::ProviderUnavailable)?;
+                let value = invoke(
+                    &inner,
+                    process,
+                    "mcp.invoke",
+                    json!({"declaration":auth.declaration,"arguments":arguments}),
+                    Duration::from_millis(5000),
+                    RuntimeInvocation {
+                        kind: ExtensionInvocationKind::McpTool,
+                        ui_authority: None,
+                        mcp_authority: Some(auth),
+                        mcp_connection: Some(Arc::new(connection)),
+                    },
+                )
+                .map_err(|_| E::ProviderUnavailable)?;
+                let reply: alcomd_application::ToolProviderOutcome =
+                    serde_json::from_value(value).map_err(|_| E::ProviderUnavailable)?;
+                if reply.fault && !owned {
+                    terminate(&mut process.child);
+                }
+                Ok(reply)
+            })
+            .await
+            .map_err(|_| E::ProviderUnavailable)?
+        }
+        .await;
+        let fault = match &result {
+            Ok(reply) => reply.fault,
+            Err(E::ProviderUnavailable | E::OutputInvalid) => true,
+            Err(_) => false,
+        };
+        if owned && fault {
+            let _ = self
+                .inner
+                .store
+                .record_instance_crash(
+                    lease.clone(),
+                    "mcp_tool_failed".into(),
+                    now_ms().unwrap_or(0),
+                )
+                .await;
+        }
+        let result = match result {
+            Ok(reply) => match reply.error {
+                Some(e) => Err(e),
+                None => Ok(reply.data),
+            },
+            Err(e) => Err(e),
+        };
+        authority.cancel();
+        if owned {
+            let _ = self
+                .stop(
+                    lease.extension_id.clone(),
+                    ExtensionStopReason::InteractiveUiIdle,
+                )
+                .await;
+            let _ = self
+                .inner
+                .store
+                .mark_instance_stopped(lease.extension_id, now_ms().unwrap_or(0))
+                .await;
+        }
+        result
+    }
 }
 
 #[cfg(test)]

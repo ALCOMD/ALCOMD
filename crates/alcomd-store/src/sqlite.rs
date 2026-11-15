@@ -54,6 +54,7 @@ const MIGRATION_V34: &str = include_str!("../migrations/0034_mcp_grant_snapshots
 const MIGRATION_V35: &str = include_str!("../migrations/0035_extension_mcp_permissions.sql");
 const MIGRATION_V36: &str = include_str!("../migrations/0036_mcp_oauth.sql");
 const MIGRATION_V37: &str = include_str!("../migrations/0037_capability_permission_switches.sql");
+const MIGRATION_V38: &str = include_str!("../migrations/0038_extension_mcp_tools.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -278,6 +279,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 36 {
         connection
             .execute_batch(MIGRATION_V37)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 37 {
+        connection
+            .execute_batch(MIGRATION_V38)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -884,6 +890,18 @@ pub(super) fn cancel_operation(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(store_failure)?;
+    let tool_guard = super::m8_tools::guard(
+        &transaction,
+        alcomd_application::ToolOperation::OperationCancel,
+    )
+    .map_err(|_| StoreError::new(StoreErrorKind::PermissionDenied))?;
+    if let Some(tool) = tool_guard.as_ref()
+        && (tool.control["operation_id"].as_str() != Some(operation_id.to_string().as_str())
+            || tool.control["expected_revision"].as_u64() != Some(expected_revision.get())
+            || tool.control["idempotency_key"].as_str() != Some(idempotency_key.as_str()))
+    {
+        return Err(StoreError::new(StoreErrorKind::PermissionDenied));
+    }
     let existing = transaction
         .query_row(
             "SELECT request_fingerprint, response_json
@@ -899,6 +917,7 @@ pub(super) fn cancel_operation(
             return Err(StoreError::new(StoreErrorKind::IdempotencyConflict));
         }
         let operation = serde_json::from_str(&response_json).map_err(|_| corrupt_state())?;
+        super::m8_tools::effect(&transaction,tool_guard.as_ref(),alcomd_application::ToolOperation::OperationCancel,serde_json::json!({"kind":"cancel","operationId":operation_id.to_string(),"replayed":true})).map_err(|_|StoreError::new(StoreErrorKind::PermissionDenied))?;
         transaction.commit().map_err(store_failure)?;
         return Ok((operation, true));
     }
@@ -1013,6 +1032,7 @@ pub(super) fn cancel_operation(
             ],
         )
         .map_err(store_failure)?;
+    super::m8_tools::effect(&transaction,tool_guard.as_ref(),alcomd_application::ToolOperation::OperationCancel,serde_json::json!({"kind":"cancel","operationId":operation_id.to_string(),"state":state_name(updated.state),"revision":updated.revision.get(),"replayed":false})).map_err(|_|StoreError::new(StoreErrorKind::PermissionDenied))?;
     transaction.commit().map_err(store_failure)?;
     Ok((updated, false))
 }
@@ -1791,3 +1811,7 @@ pub(super) fn unavailable() -> StoreError {
 fn corrupt_state() -> StoreError {
     StoreError::new(StoreErrorKind::CorruptState)
 }
+
+#[cfg(test)]
+#[path = "sqlite_extension_tools_tests.rs"]
+mod extension_tools_migration_tests;

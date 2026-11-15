@@ -1,0 +1,7 @@
+# State38 · Extension MCP tool effects
+
+Owner-approved extension tool provider increment. One IMMEDIATE transaction rebuilds only `extension_grants` with the six added Global/* capability names, preserving every old cell, key, foreign key and event sequence. No old migration is changed, no grant is automatically created and no original running data is upgraded.
+
+`extension_mcp_calls` is the narrow acceptance receipt, unique by actual MCP Principal, public tool name and idempotency key. It stores request digest, frozen extension/publisher/package, required business capabilities, effect kind, call state and authoritative Core effect references. It stores no arguments, guest output or credentials. Plan/Apply/cancel acceptance writes its effect receipt in the same existing business transaction. A second persistent effect is rejected. Actual Plan/Operation/idempotency ownership remains the MCP caller; project ownership is unchanged.
+
+Startup marks abandoned running calls interrupted. Explicit recovery authenticates the current caller and rechecks the original business capabilities, compares the exact request digest, and returns only the original Core evidence without guest execution. Recovery remains possible after the provider is disabled/uninstalled, since it performs no new extension action. Missing evidence is reported interrupted/in-progress, never success. Source metadata on Core effects identifies the original package. Failure rolls the entire migration back; older Core rejects version 38.

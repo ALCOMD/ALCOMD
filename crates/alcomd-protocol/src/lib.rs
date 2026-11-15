@@ -14,6 +14,7 @@ mod m7;
 mod m7_candidates;
 mod m8_mcp;
 mod m8_oauth;
+mod m8_tools;
 mod operation_logs;
 mod project_create;
 mod repository_list;
@@ -23,6 +24,7 @@ pub use m7::*;
 pub use m7_candidates::*;
 pub use m8_mcp::*;
 pub use m8_oauth::*;
+pub use m8_tools::*;
 pub use operation_logs::*;
 pub use project_create::*;
 pub use repository_list::*;
@@ -3475,6 +3477,7 @@ pub struct ExtensionRecord {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPlan {
+    pub mcp_tools: Vec<McpToolPreview>,
     pub plan_id: String,
     pub action: String,
     pub state: String,
@@ -3505,6 +3508,8 @@ pub struct ExtensionsListResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mcp_tools: Option<Vec<McpToolPreview>>,
     pub extension: ExtensionRecord,
 }
 

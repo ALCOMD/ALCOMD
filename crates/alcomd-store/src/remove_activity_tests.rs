@@ -162,6 +162,7 @@ fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence()
         "mcp_client_credentials",
         "mcp_oauth_registrations",
         "mcp_oauth_tokens",
+        "extension_mcp_calls",
     ] {
         assert_eq!(
             after.remove(table),

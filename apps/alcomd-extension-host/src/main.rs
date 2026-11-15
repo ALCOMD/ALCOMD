@@ -24,6 +24,7 @@ wasmtime::component::bindgen!({
 use crate::alcomd::extension::{host_data, host_projects, types};
 use crate::exports::alcomd::extension::guest_ui;
 mod mcp_management;
+mod mcp_tools;
 mod resource_limits;
 
 #[derive(Debug, Parser)]
@@ -33,6 +34,8 @@ struct Arguments {
     extension: String,
     #[arg(long)]
     component: PathBuf,
+    #[arg(long)]
+    check_tools: bool,
 }
 
 struct HostState {
@@ -73,6 +76,20 @@ async fn main() {
 async fn run() -> Result<()> {
     let arguments = Arguments::parse();
     validate_component_path(&arguments.component)?;
+    if arguments.check_tools {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        std::io::stdin().take(65_537).read_to_end(&mut bytes)?;
+        if bytes.len() > 65_536 {
+            bail!("catalogue limit");
+        }
+        let engine = create_engine()?;
+        let component = Component::from_file(&engine, &arguments.component)
+            .map_err(|_| anyhow::anyhow!("component"))?;
+        mcp_tools::preflight(&engine, &component, &bytes)?;
+        println!("tools-valid-v1");
+        return Ok(());
+    }
     let mut input = std::io::stdin();
     let mut output = std::io::stdout();
     let bootstrap = read_host_message(&mut input).map_err(|_| anyhow::anyhow!("protocol"))?;
@@ -157,10 +174,14 @@ async fn run() -> Result<()> {
     ExtensionV1::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|_| anyhow::anyhow!("link"))?;
     mcp_management::add_to_linker(&mut linker)?;
-    let bindings = ExtensionV1::instantiate_async(&mut store, &component, &linker)
+    mcp_tools::add_to_linker(&mut linker)?;
+    let instance = linker
+        .instantiate_async(&mut store, &component)
         .await
         .map_err(|_| anyhow::anyhow!("instantiate"))?;
-    let result = event_loop(&bindings, &mut store, limits).await;
+    let bindings =
+        ExtensionV1::new(&mut store, &instance).map_err(|_| anyhow::anyhow!("bindings"))?;
+    let result = event_loop(&bindings, &instance, &mut store, limits).await;
     ticker_running.store(false, Ordering::Release);
     let _ = ticker.join();
     result
@@ -168,6 +189,7 @@ async fn run() -> Result<()> {
 
 async fn event_loop(
     bindings: &ExtensionV1,
+    instance: &wasmtime::component::Instance,
     store: &mut Store<HostState>,
     limits: &RuntimeLimits,
 ) -> Result<()> {
@@ -194,6 +216,7 @@ async fn event_loop(
                     Some(invocation_context_id);
                 prepare_call(store, limits, export.as_str())?;
                 let result = match export.as_str() {
+                    "mcp.invoke" => mcp_tools::invoke(instance, store, input).await,
                     "activate" => invoke_activate(bindings, store, &input).await,
                     "deactivate" => invoke_deactivate(bindings, store, &input).await,
                     "ui.open" => invoke_ui_open(bindings, store, &input).await,

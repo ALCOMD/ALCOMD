@@ -272,7 +272,7 @@ fn require_extension_grants(
                 SELECT 1 FROM extension_grants g
                 WHERE g.extension_id=?1 AND g.permission_name=?2 AND g.state='granted'
                   AND ((?2='background.run' AND g.resource_kind='Extension' AND g.resource_id=?1)
-                    OR (?2 IN ('projects.read','mcp.clients.read','mcp.clients.manage') AND g.resource_kind='Global' AND g.resource_id='*'))
+                    OR (?2<>'background.run' AND g.resource_kind='Global' AND g.resource_id='*'))
              )",
                 params![extension_id, permission],
                 |row| row.get(0),
@@ -352,6 +352,7 @@ pub(super) fn create_install_plan(
     })
     .map_err(|_| internal())?;
     let transaction = transaction(connection)?;
+    reject_tool_namespace_collision(&transaction, &draft.evidence)?;
     let current = extension_revision(&transaction, owner, &draft.evidence.extension_id)?;
     if current.is_some() {
         return Err(error(M6ErrorCode::AlreadyInstalled));
@@ -819,6 +820,7 @@ pub(super) fn finish_install(
         return Err(internal());
     }
     let p = &plan.evidence;
+    reject_tool_namespace_collision(&transaction, p)?;
     let now = sqlite_integer(now_ms)?;
     let existing = transaction
         .query_row(
@@ -2117,10 +2119,8 @@ fn save_idempotent<T: Serialize>(
 
 fn valid_scope(extension_id: &str, permission: &str, kind: &str, id: &str) -> bool {
     (permission == "background.run" && kind == "Extension" && id == extension_id)
-        || (matches!(
-            permission,
-            "projects.read" | "mcp.clients.read" | "mcp.clients.manage"
-        ) && kind == "Global"
+        || (alcomd_application::EXTENSION_TOOL_PERMISSIONS.contains(&permission)
+            && kind == "Global"
             && id == "*")
 }
 
@@ -2314,4 +2314,30 @@ fn error_code(code: M6ErrorCode) -> &'static str {
         M6ErrorCode::StoreUnavailable => "store_unavailable",
         M6ErrorCode::Internal => "internal_error",
     }
+}
+
+fn reject_tool_namespace_collision(
+    db: &Connection,
+    evidence: &ExtensionPackageEvidence,
+) -> Result<(), M6Error> {
+    if !evidence
+        .optional_permissions
+        .iter()
+        .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
+    {
+        return Ok(());
+    }
+    let prefix = alcomd_application::tool_public_name(&evidence.extension_id, "");
+    let mut query = db
+        .prepare("SELECT extension_id FROM extensions WHERE extension_id<>?1 ORDER BY extension_id")
+        .map_err(store_error)?;
+    let ids = query
+        .query_map([&evidence.extension_id], |r| r.get::<_, String>(0))
+        .map_err(store_error)?;
+    for id in ids {
+        if alcomd_application::tool_public_name(&id.map_err(store_error)?, "") == prefix {
+            return Err(error(M6ErrorCode::PackageInvalid));
+        }
+    }
+    Ok(())
 }

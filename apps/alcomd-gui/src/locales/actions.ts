@@ -2,6 +2,24 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Declared MCP tools": {"zh-CN":"声明的 MCP 工具","ja-JP":"宣言された MCP ツール"},
+    "Read or compute": {"zh-CN":"读取或计算","ja-JP":"読み取りまたは計算"},
+    "Creates a review plan": {"zh-CN":"生成待审阅计划","ja-JP":"確認用の計画を作成"},
+    "Applies the confirmed plan": {"zh-CN":"应用已确认的计划","ja-JP":"確認済みの計画を適用"},
+    "Requests task cancellation": {"zh-CN":"请求取消任务","ja-JP":"タスクのキャンセルを要求"},
+    "Publish MCP tools": {"zh-CN": "发布 MCP 工具", "ja-JP": "MCP ツールを公開"},
+    "Read repositories": {"zh-CN": "读取仓库", "ja-JP": "リポジトリの読み取り"},
+    "Read package information": {"zh-CN": "读取软件包信息", "ja-JP": "パッケージ情報の読み取り"},
+    "Change project packages": {"zh-CN": "修改项目软件包", "ja-JP": "プロジェクトのパッケージを変更"},
+    "Read operation results": {"zh-CN": "读取任务结果", "ja-JP": "タスク結果の読み取り"},
+    "Cancel operations": {"zh-CN": "取消任务", "ja-JP": "タスクをキャンセル"},
+    "Make declared tools available to MCP clients with matching business permissions.": {"zh-CN": "向拥有对应业务权限的 MCP 客户端提供清单中声明的工具。", "ja-JP": "対応する権限を持つ MCP クライアントに宣言済みツールを公開します。"},
+    "Read repository and package source information.": {"zh-CN": "读取仓库和软件包来源信息。", "ja-JP": "リポジトリとパッケージの参照元情報を読み取ります。"},
+    "Read available packages and prepare package change plans.": {"zh-CN": "读取可用软件包并生成软件包变更计划。", "ja-JP": "利用可能なパッケージを読み取り、変更計画を作成します。"},
+    "Apply explicitly confirmed package change plans to current and future projects.": {"zh-CN": "对当前及以后登记的项目应用明确确认的软件包变更计划。", "ja-JP": "現在および今後登録されるプロジェクトに、明示的に確認された変更計画を適用します。"},
+    "Read the invoking client’s operation status and results.": {"zh-CN": "读取调用客户端自己的任务状态和结果。", "ja-JP": "呼び出したクライアント自身のタスク状態と結果を読み取ります。"},
+    "Request cancellation of the invoking client’s operations.": {"zh-CN": "请求取消调用客户端自己的任务。", "ja-JP": "呼び出したクライアント自身のタスクのキャンセルを要求します。"},
+
     "Manually select": { "zh-CN": "手动选择", "ja-JP": "手動で選択" },
     "Searching for Unity installations…": { "zh-CN": "正在查找 Unity 安装…", "ja-JP": "Unity のインストールを検索中…" },
     "Selecting Unity Editor…": { "zh-CN": "正在选择 Unity Editor…", "ja-JP": "Unity Editor を選択中…" },

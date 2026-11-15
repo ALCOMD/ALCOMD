@@ -522,3 +522,137 @@ fn send(
     .expect("send");
     input.flush().expect("flush");
 }
+#[test]
+fn signed_provider_component_invokes_without_lifecycle_activation() {
+    let root = std::env::temp_dir().join(format!(
+        "alcomd-mcp-provider-host-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("valid isolated Provider ABI fixture")
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).expect("valid isolated Provider ABI fixture");
+    let path = root.join("extension.wasm");
+    std::fs::write(
+        &path,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-tools-provider-v1.wasm"),
+    )
+    .expect("valid isolated Provider ABI fixture");
+    let declaration = json!({"name":"echo","title":"Echo","description":"Fixture","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false},"outputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false},"uses":[]});
+    let mut check = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+        .args(["--extension", "dev.alcomd.fixture", "--component"])
+        .arg(&path)
+        .arg("--check-tools")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("valid isolated Provider ABI fixture");
+    check
+        .stdin
+        .take()
+        .expect("valid isolated Provider ABI fixture")
+        .write_all(
+            json!({"version":1,"tools":[declaration.clone()]})
+                .to_string()
+                .as_bytes(),
+        )
+        .expect("valid isolated Provider ABI fixture");
+    assert!(
+        check
+            .wait_with_output()
+            .expect("valid isolated Provider ABI fixture")
+            .status
+            .success(),
+        "actual native ABI and Schema validation"
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+        .args(["--extension", "dev.alcomd.fixture", "--component"])
+        .arg(&path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("valid isolated Provider ABI fixture");
+    let mut input = BufWriter::new(
+        child
+            .stdin
+            .take()
+            .expect("valid isolated Provider ABI fixture"),
+    );
+    let mut output = BufReader::new(
+        child
+            .stdout
+            .take()
+            .expect("valid isolated Provider ABI fixture"),
+    );
+    let epoch = "10000000-0000-4000-8000-000000000001";
+    let instance = "20000000-0000-4000-8000-000000000002";
+    send(
+        &mut input,
+        epoch,
+        instance,
+        1,
+        HostMessageBody::Bootstrap {
+            nonce: "a".repeat(64),
+            lease_id: "30000000-0000-4000-8000-000000000003".into(),
+            extension_id: "dev.alcomd.fixture".into(),
+            api_world: "alcomd:extension/extension-v1@1.0.0".into(),
+            limits: RuntimeLimits::default(),
+        },
+    );
+    assert!(matches!(
+        read_host_message(&mut output)
+            .expect("valid isolated Provider ABI fixture")
+            .body,
+        HostMessageBody::Ready { .. }
+    ));
+    // Fixture activate always returns an error; only the independent provider export works.
+    for (sequence, args, ok) in [
+        (2, json!({"text":"real wasm"}), true),
+        (3, json!({"text":42}), false),
+    ] {
+        send(
+            &mut input,
+            epoch,
+            instance,
+            sequence,
+            HostMessageBody::InvokeExport {
+                request_id: format!("tool-{sequence}"),
+                invocation_context_id: invocation_context_id(),
+                export: "mcp.invoke".into(),
+                input: json!({"declaration":declaration,"arguments":args}),
+            },
+        );
+        match read_host_message(&mut output)
+            .expect("valid isolated Provider ABI fixture")
+            .body
+        {
+            HostMessageBody::ExportResult { result, error, .. } => {
+                if ok {
+                    let result = result.expect("valid isolated Provider ABI fixture");
+                    assert_eq!(result["data"], args);
+                    assert!(result["error"].is_null());
+                    assert_eq!(result["fault"], false);
+                    assert!(error.is_none());
+                } else {
+                    let result = result.expect("valid isolated Provider ABI fixture");
+                    assert_eq!(result["error"], "invalid_input");
+                    assert_eq!(result["fault"], false);
+                    assert!(error.is_none());
+                }
+            }
+            _ => panic!("provider response"),
+        }
+    }
+    send(&mut input, epoch, instance, 4, HostMessageBody::Shutdown);
+    drop(input);
+    assert!(
+        child
+            .wait()
+            .expect("valid isolated Provider ABI fixture")
+            .success()
+    );
+    std::fs::remove_dir_all(root).expect("valid isolated Provider ABI fixture");
+}

@@ -47,7 +47,7 @@ export interface ClientInfo {
 }
 
 export interface ExtensionPermissionGrant {
-    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage";
+    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage" | "mcp.tools.provide" | "repositories.read" | "packages.read" | "packages.manage" | "operations.read" | "operations.cancel";
     resourceKind: "Extension" | "Global";
     resourceId: string;
 }

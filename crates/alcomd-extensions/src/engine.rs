@@ -15,6 +15,7 @@ use crate::{
 pub struct ExtensionEngine<S: M6Store> {
     store: S,
     root: PathBuf,
+    tools_validator: Option<PathBuf>,
 }
 
 impl<S: M6Store> ExtensionEngine<S> {
@@ -28,7 +29,100 @@ impl<S: M6Store> ExtensionEngine<S> {
             .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
         let root = std::fs::canonicalize(root)
             .map_err(|cause| error(M6ErrorCode::RecoveryRequired).with_source(cause))?;
-        Ok(Self { store, root })
+        Ok(Self {
+            store,
+            root,
+            tools_validator: None,
+        })
+    }
+
+    /// A trusted sibling Host validates schemas and the provider ABI without guest execution.
+    pub fn with_tools_validator(mut self, host: PathBuf) -> Self {
+        self.tools_validator = Some(host);
+        self
+    }
+
+    async fn validate_tools(&self, verified: &VerifiedExtensionPackage) -> Result<(), M6Error> {
+        if verified.mcp_tools.is_empty() {
+            return Ok(());
+        }
+        let host = self
+            .tools_validator
+            .clone()
+            .ok_or_else(|| error(M6ErrorCode::ApiUnsupported))?;
+        let root = self.root.join("staging");
+        let bytes = verified.component_bytes.clone();
+        let declarations = serde_json::to_vec(&alcomd_application::ToolDeclarations {
+            version: 1,
+            tools: verified.mcp_tools.clone(),
+        })
+        .map_err(|_| error(M6ErrorCode::PackageInvalid))?;
+        let id = verified.manifest.id.clone();
+        tokio::task::spawn_blocking(move || {
+            use std::io::Write;
+            use std::process::{Command, Stdio};
+            let directory = root.join(format!("validate-{}", OperationId::new()));
+            std::fs::create_dir(&directory)
+                .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
+            struct TemporaryDirectory(PathBuf);
+            impl Drop for TemporaryDirectory {
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_file(self.0.join("extension.wasm"));
+                    let _ = std::fs::remove_dir(&self.0);
+                }
+            }
+            let _directory = TemporaryDirectory(directory.clone());
+            let path = directory.join("extension.wasm");
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
+            file.write_all(&bytes)
+                .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
+            drop(file);
+            let mut child = Command::new(host)
+                .args(["--extension", &id, "--component"])
+                .arg(&path)
+                .arg("--check-tools")
+                .env_clear()
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
+            let write = child
+                .stdin
+                .take()
+                .ok_or_else(|| error(M6ErrorCode::PackageInvalid))
+                .and_then(|mut input| {
+                    input
+                        .write_all(&declarations)
+                        .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))
+                });
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => {
+                        return if status.success() && write.is_ok() {
+                            Ok(())
+                        } else {
+                            Err(error(M6ErrorCode::PackageInvalid))
+                        };
+                    }
+                    Ok(None) if std::time::Instant::now() < deadline => {
+                        std::thread::sleep(std::time::Duration::from_millis(10))
+                    }
+                    _ => {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(error(M6ErrorCode::PackageInvalid));
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|_| error(M6ErrorCode::Internal))?
     }
 
     fn package_path(&self, plan: &ExtensionPlanRecord) -> PathBuf {
@@ -106,6 +200,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
                 .await
                 .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))?
                 .map_err(map_package_error)?;
+        self.validate_tools(&verified).await?;
         package_evidence(source_kind, canonical, identity, verified)
     }
 
@@ -119,6 +214,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
             .await
             .map_err(|cause| error(M6ErrorCode::Internal).with_source(cause))?
             .map_err(map_package_error)?;
+        self.validate_tools(&verified).await?;
         if record.extension_id != verified.manifest.id
             || record.version != verified.manifest.version
             || record.api_major != verified.manifest.api
@@ -410,6 +506,7 @@ fn required_interfaces_supported(interfaces: &[String]) -> bool {
             "alcomd:extension/host-data@1.0.0"
                 | "alcomd:extension/host-projects@1.0.0"
                 | "alcomd:mcp-management/clients@1.0.0"
+                | "alcomd:mcp-tools/core@1.0.0"
         )
     })
 }

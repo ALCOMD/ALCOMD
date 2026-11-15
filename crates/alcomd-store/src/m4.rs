@@ -327,6 +327,11 @@ pub(super) fn create_package_plan(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(store_error)?;
+    let tool_guard = super::m8_tools::guard(
+        &transaction,
+        alcomd_application::ToolOperation::PlanUninstall,
+    )
+    .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
     let project_revision = transaction
         .query_row(
             "SELECT p.revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
@@ -380,6 +385,7 @@ pub(super) fn create_package_plan(
         u64::try_from(created_at_ms).map_err(|_| internal())?,
     )
     .map_err(|error| M4Error::from(error.kind()).with_source(error))?;
+    super::m8_tools::effect(&transaction,tool_guard.as_ref(),alcomd_application::ToolOperation::PlanUninstall,serde_json::json!({"kind":"plan","planId":record.plan_id.to_string(),"projectRevision":record.project_revision.get(),"changeSetFingerprint":alcomd_application::oauth_hex(&record.change_set_fingerprint)})).map_err(|_|M4Error::new(M4ErrorCode::PermissionDenied))?;
     transaction.commit().map_err(store_error)?;
     Ok(record)
 }
@@ -431,6 +437,17 @@ pub(super) fn accept_package_plan_with_oauth(
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(store_error)?;
+    let tool_guard =
+        super::m8_tools::guard(&transaction, alcomd_application::ToolOperation::ApplyPlan)
+            .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+    if let Some(tool) = tool_guard.as_ref()
+        && (tool.control["plan_id"].as_str() != Some(plan_id.to_string().as_str())
+            || tool.control["expected_revision"].as_u64() != Some(expected_revision.get())
+            || tool.control["confirm"] != true
+            || tool.control["idempotency_key"].as_str() != Some(idempotency_key.as_str()))
+    {
+        return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+    }
     let delegated_revision = if owner.as_str().starts_with("mcp:") {
         let plan = load_plan(&transaction, owner, plan_id)?;
         if let Some(guard) = guard {
@@ -476,6 +493,7 @@ pub(super) fn accept_package_plan_with_oauth(
             serde_json::from_str(&response_json).map_err(|_| internal())?;
         outcome.replayed = true;
         outcome.schedule = false;
+        super::m8_tools::effect(&transaction,tool_guard.as_ref(),alcomd_application::ToolOperation::ApplyPlan,serde_json::json!({"kind":"apply","operationId":outcome.operation_id.to_string(),"replayed":true})).map_err(|_|M4Error::new(M4ErrorCode::PermissionDenied))?;
         transaction.commit().map_err(store_error)?;
         return Ok(outcome);
     }
@@ -587,6 +605,7 @@ pub(super) fn accept_package_plan_with_oauth(
             ],
         )
         .map_err(store_error)?;
+    super::m8_tools::effect(&transaction,tool_guard.as_ref(),alcomd_application::ToolOperation::ApplyPlan,serde_json::json!({"kind":"apply","operationId":saved.operation_id.to_string(),"replayed":saved.replayed})).map_err(|_|M4Error::new(M4ErrorCode::PermissionDenied))?;
     transaction.commit().map_err(store_error)?;
     Ok(saved)
 }

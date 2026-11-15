@@ -19,6 +19,12 @@ function permissionName(permission: string, t: Translate): string {
     if (permission === "projects.read") return t("Read projects");
     if (permission === "mcp.clients.read") return t("Read MCP clients");
     if (permission === "mcp.clients.manage") return t("Manage MCP clients");
+    if (permission === "mcp.tools.provide") return t("Publish MCP tools");
+    if (permission === "repositories.read") return t("Read repositories");
+    if (permission === "packages.read") return t("Read package information");
+    if (permission === "packages.manage") return t("Change project packages");
+    if (permission === "operations.read") return t("Read operation results");
+    if (permission === "operations.cancel") return t("Cancel operations");
     return t("Unknown permission: {permission}", { permission });
 }
 
@@ -28,12 +34,18 @@ function permissionDescription(permission: string, t: Translate): string {
         case "projects.read": return t("View basic information about all current and future projects.");
         case "mcp.clients.read": return t("View all registered MCP clients and their grants.");
         case "mcp.clients.manage": return t("Create MCP clients, change their grants, and permanently revoke them.");
+        case "mcp.tools.provide": return t("Make declared tools available to MCP clients with matching business permissions.");
+        case "repositories.read": return t("Read repository and package source information.");
+        case "packages.read": return t("Read available packages and prepare package change plans.");
+        case "packages.manage": return t("Apply explicitly confirmed package change plans to current and future projects.");
+        case "operations.read": return t("Read the invoking client’s operation status and results.");
+        case "operations.cancel": return t("Request cancellation of the invoking client’s operations.");
         default: return t("This app cannot grant this permission.");
     }
 }
 
 function editablePermission(permission: string): permission is ExtensionPermissionGrant["permission"] {
-    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage";
+    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel";
 }
 
 export function ExtensionPermissionRequests({ required, optional }: { required: string[]; optional: string[] }) {
@@ -171,4 +183,10 @@ function requestError(caught: unknown): RpcError {
         return { code: caught.code, message: "", ...("diagnosticId" in caught && typeof caught.diagnosticId === "string" ? { diagnosticId: caught.diagnosticId } : {}) };
     }
     return { code: "internal_error", message: "" };
+}
+
+export function ExtensionToolPreview({ tools }: { tools: import("@alcomd/sdk").McpToolPreview[] | undefined }) {
+    const { t } = useTranslation();
+    if (tools === undefined || tools.length === 0) return null;
+    return <section className="extension-tool-preview" aria-label={t("Declared MCP tools")}><h3>{t("Declared MCP tools")}</h3><dl className="dialog-summary">{tools.map((tool) => <div key={tool.name}><dt>{tool.title}</dt><dd><p>{tool.description}</p><p>{t(tool.effect === "pure" || tool.effect === "read" ? "Read or compute" : tool.effect === "plan" ? "Creates a review plan" : tool.effect === "apply" ? "Applies the confirmed plan" : "Requests task cancellation")}</p>{tool.requiredPermissions.length === 0 ? null : <p>{tool.requiredPermissions.map((p) => permissionName(p, t)).join(" · ")}</p>}</dd></div>)}</dl></section>;
 }

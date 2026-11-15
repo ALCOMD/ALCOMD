@@ -69,7 +69,13 @@ fn management_interface_is_additive_and_schema_preserves_bounded_secret_free_sha
             "background.run",
             "projects.read",
             "mcp.clients.read",
-            "mcp.clients.manage"
+            "mcp.clients.manage",
+            "mcp.tools.provide",
+            "repositories.read",
+            "packages.read",
+            "packages.manage",
+            "operations.read",
+            "operations.cancel"
         ])
     );
     assert_eq!(

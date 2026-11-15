@@ -254,7 +254,8 @@ impl HostMessage {
                 validate_invocation_context_id(invocation_context_id)?;
                 if !matches!(
                     export.as_str(),
-                    "activate"
+                    "mcp.invoke"
+                        | "activate"
                         | "deactivate"
                         | "ui.open"
                         | "ui.refresh"
@@ -288,12 +289,19 @@ impl HostMessage {
                             | "host-mcp-clients.create"
                             | "host-mcp-clients.change-grants"
                             | "host-mcp-clients.revoke"
+                            | "host-mcp-tools.projects.list"
+                            | "host-mcp-tools.projects.get"
+                            | "host-mcp-tools.packages.planUninstall"
+                            | "host-mcp-tools.packages.applyPlan"
+                            | "host-mcp-tools.operations.get"
+                            | "host-mcp-tools.operations.cancel"
                     )
                 {
                     return Err(HostProtocolError::InvalidEnvelope);
                 }
                 validate_value(input)?;
-                if capability.starts_with("host-mcp-clients.")
+                if (capability.starts_with("host-mcp-clients.")
+                    || capability.starts_with("host-mcp-tools."))
                     && serde_json::to_vec(input).map_or(true, |bytes| bytes.len() > 65_536)
                 {
                     return Err(HostProtocolError::FrameLimit);

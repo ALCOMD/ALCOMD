@@ -117,6 +117,21 @@ pub struct AlcomdClient {
 }
 
 impl AlcomdClient {
+    pub async fn mcp_tools_catalog(
+        &mut self,
+        params: alcomd_protocol::McpToolsCatalogParams,
+    ) -> Result<alcomd_protocol::McpToolsCatalogResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_TOOLS_CATALOG, params)
+            .await
+    }
+    pub async fn extension_mcp_tools_call(
+        &mut self,
+        params: alcomd_protocol::ExtensionMcpToolsCallParams,
+    ) -> Result<alcomd_protocol::ExtensionMcpToolsCallResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL, params)
+            .await
+    }
+
     /// Whether the last exchange completed and this stream can serve another request.
     /// Cancelled or interrupted exchanges must be discarded rather than pooled.
     #[must_use]
@@ -191,6 +206,7 @@ impl AlcomdClient {
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
             capabilities: vec![
+                alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
@@ -1260,6 +1276,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
         METHOD_SYSTEM_STATUS
             | METHOD_OPERATIONS_GET
             | METHOD_OPERATIONS_LIST
+            | METHOD_MCP_TOOLS_CATALOG
             | METHOD_MCP_CLIENTS_LIST
             | METHOD_LOGS_READ
             | METHOD_EVENTS_LIST

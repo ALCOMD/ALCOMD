@@ -38,6 +38,7 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_oauth_types;
+mod m8_tools;
 mod operation_logs;
 mod project_authority;
 mod project_create;
@@ -64,6 +65,7 @@ pub use m8_management::*;
 pub use m8_mcp::*;
 pub use m8_oauth::*;
 pub use m8_oauth_types::*;
+pub use m8_tools::*;
 pub use operation_logs::*;
 pub use project_authority::*;
 pub use project_create::*;
@@ -904,6 +906,8 @@ pub struct CreateOperationOutcome {
 /// Store failure category safe for application decisions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StoreErrorKind {
+    /// Current invocation authority has been revoked.
+    PermissionDenied,
     /// The store cannot currently complete the request.
     Unavailable,
     /// The Operation does not exist or is not visible.

@@ -217,8 +217,12 @@ impl McpApplyResponseGate {
         response: &serde_json::Value,
     ) -> std::io::Result<bool> {
         use tokio::io::AsyncWriteExt;
-        let accepted =
-            serde_json::from_value(response["result"].clone()).map_err(std::io::Error::other)?;
+        let accepted_value = if response["result"]["operationId"].is_string() {
+            response["result"].clone()
+        } else {
+            serde_json::json!({"operationId":response["result"]["coreEffect"]["operationId"],"replayed":response["result"]["replayed"]})
+        };
+        let accepted = serde_json::from_value(accepted_value).map_err(std::io::Error::other)?;
         *self.accepted.lock().await = Some(accepted);
         self.ready.notify_one();
         self.release.notified().await;

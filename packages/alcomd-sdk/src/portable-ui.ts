@@ -31,6 +31,7 @@ export interface ExtensionRecord {
 }
 
 export interface ExtensionResult {
+    mcpTools?: McpToolPreview[];
     extension: ExtensionRecord;
 }
 
@@ -179,3 +180,5 @@ export interface ExtensionUiCloseParams {
 export interface ExtensionUiCloseResult {
     closed: boolean;
 }
+
+export interface McpToolPreview { name: string; title: string; description: string; requiredPermissions: string[]; effect: "pure" | "read" | "plan" | "apply" | "cancel" }

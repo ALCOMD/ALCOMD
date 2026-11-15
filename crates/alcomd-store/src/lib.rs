@@ -64,6 +64,7 @@ mod m7_user_packages;
 mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
+mod m8_tools;
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;
@@ -76,7 +77,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 37;
+pub const CURRENT_DATA_SCHEMA: u32 = 38;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -216,6 +217,7 @@ impl StateStoreHandle {
         commands
             .send(Command::WithLogContext(
                 alcomd_application::log_write_context(),
+                alcomd_application::tool_invocation().map(Box::new),
                 Box::new(create(sender)),
             ))
             .await
@@ -245,9 +247,11 @@ impl StateStoreHandle {
             .cloned()
             .ok_or_else(&unavailable)?;
         let log_context = alcomd_application::log_write_context();
+        let tool_context = alcomd_application::tool_invocation();
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _log = operation_logs::ContextGuard::install(log_context);
+                let _tool = m8_tools::ContextGuard::install(tool_context);
                 let _ = reply.send(work(connection));
                 false
             })))
@@ -271,9 +275,11 @@ impl StateStoreHandle {
             .cloned()
             .ok_or_else(m6::unavailable)?;
         let log_context = alcomd_application::log_write_context();
+        let tool_context = alcomd_application::tool_invocation();
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _log = operation_logs::ContextGuard::install(log_context);
+                let _tool = m8_tools::ContextGuard::install(tool_context);
                 let (result, changed) = match work(connection) {
                     Ok((value, changed)) => (Ok(value), changed),
                     Err(error) => (Err(error), false),
@@ -2567,7 +2573,11 @@ enum Command {
     HasUnfinishedOperations {
         reply: oneshot::Sender<Result<bool, StoreError>>,
     },
-    WithLogContext(alcomd_application::LogWriteContext, Box<Command>),
+    WithLogContext(
+        alcomd_application::LogWriteContext,
+        Option<Box<alcomd_application::ToolInvocation>>,
+        Box<Command>,
+    ),
     M3(Box<dyn FnOnce(&mut rusqlite::Connection) -> bool + Send>),
     CreateStateCheck {
         owner: PrincipalId,
@@ -2693,11 +2703,18 @@ fn run_worker(
     commits: watch::Sender<EventCommitWatermark>,
 ) {
     while let Some(command) = receiver.blocking_recv() {
-        let (command, log_context) = match command {
-            Command::WithLogContext(context, command) => (*command, context),
-            command => (command, alcomd_application::LogWriteContext::default()),
+        let (command, log_context, tool_context) = match command {
+            Command::WithLogContext(context, tool, command) => {
+                (*command, context, tool.map(|v| *v))
+            }
+            command => (
+                command,
+                alcomd_application::LogWriteContext::default(),
+                None,
+            ),
         };
         let _log = operation_logs::ContextGuard::install(log_context);
+        let _tool = m8_tools::ContextGuard::install(tool_context);
         let changes = connection.total_changes();
         let was_autocommit = connection.is_autocommit();
         let mut extensions_changed = false;

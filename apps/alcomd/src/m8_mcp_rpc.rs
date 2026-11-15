@@ -142,7 +142,9 @@ pub(super) async fn dispatch(
 pub(super) fn allowed_client_method(method: &str) -> bool {
     matches!(
         method,
-        "system.status"
+        "mcp.tools.catalog"
+            | "extensions.mcpTools.call"
+            | "system.status"
             | "projects.get"
             | "projects.list"
             | "state.check"

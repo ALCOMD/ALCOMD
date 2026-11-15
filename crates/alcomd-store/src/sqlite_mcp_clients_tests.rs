@@ -25,7 +25,24 @@ fn fixture_at(path: &Path) -> Connection {
 }
 
 pub(super) fn original_state(db: &Connection) -> Vec<(String, Vec<Vec<rusqlite::types::Value>>)> {
-    let mut schema = db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'mcp_%' ORDER BY name").expect("tables");
+    // This helper compares historical fixtures with the current initializer.
+    // A newly added receipt table must be empty, never silently ignored.
+    if db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='extension_mcp_calls')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .expect("receipt table existence")
+    {
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM extension_mcp_calls", [], |row| row
+                .get::<_, u32>(0))
+                .expect("no implicit tool effects"),
+            0
+        );
+    }
+    let mut schema = db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'mcp_%' AND name<>'extension_mcp_calls' ORDER BY name").expect("tables");
     let names: Vec<String> = schema
         .query_map([], |r| r.get(0))
         .expect("names")

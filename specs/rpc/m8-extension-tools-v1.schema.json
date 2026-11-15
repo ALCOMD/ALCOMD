@@ -1,0 +1,222 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/m8-extension-tools-v1.json",
+    "title": "M8 extension-provided MCP tools",
+    "x-capability": "mcp.extension-tools.v1",
+    "x-methods": {
+        "mcp.tools.catalog": {
+            "params": "catalogParams",
+            "result": "catalogResult"
+        },
+        "extensions.mcpTools.call": {
+            "params": "callParams",
+            "result": "callResult"
+        }
+    },
+    "x-authority": "Authenticated MCP caller; current business capabilities intersect signed provider uses and current extension grants/lease. No owner fallback.",
+    "x-max-call-json-bytes": 65536,
+    "$defs": {
+        "catalogParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32
+                }
+            }
+        },
+        "catalogResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "tools",
+                "nextCursor"
+            ],
+            "properties": {
+                "tools": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "name",
+                            "title",
+                            "description",
+                            "inputSchema",
+                            "outputSchema",
+                            "requiredPermissions",
+                            "effect",
+                            "origin"
+                        ],
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                            },
+                            "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 514
+                            },
+                            "description": {
+                                "type": "string",
+                                "maxLength": 2048
+                            },
+                            "inputSchema": {
+                                "type": "object"
+                            },
+                            "outputSchema": {
+                                "type": "object"
+                            },
+                            "requiredPermissions": {
+                                "type": "array",
+                                "maxItems": 8,
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                }
+                            },
+                            "effect": {
+                                "enum": [
+                                    "pure",
+                                    "read",
+                                    "plan",
+                                    "apply",
+                                    "cancel"
+                                ]
+                            },
+                            "origin": {
+                                "anyOf": [
+                                    {
+                                        "type": "object",
+                                        "additionalProperties": false,
+                                        "required": [
+                                            "extensionId",
+                                            "publisherFingerprint",
+                                            "packageDigest",
+                                            "version"
+                                        ],
+                                        "properties": {
+                                            "extensionId": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 255
+                                            },
+                                            "publisherFingerprint": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 128
+                                            },
+                                            "packageDigest": {
+                                                "type": "string",
+                                                "pattern": "^[0-9a-f]{64}$"
+                                            },
+                                            "version": {
+                                                "type": "string",
+                                                "minLength": 1,
+                                                "maxLength": 128
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                },
+                "nextCursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        },
+        "callParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "name",
+                "arguments"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                "arguments": {
+                    "type": "object"
+                }
+            }
+        },
+        "callResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "data",
+                "coreEffect",
+                "replayed",
+                "error"
+            ],
+            "properties": {
+                "data": {},
+                "coreEffect": {
+                    "type": [
+                        "object",
+                        "null"
+                    ]
+                },
+                "replayed": {
+                    "type": "boolean"
+                },
+                "error": {
+                    "anyOf": [
+                        {
+                            "enum": [
+                                "invalid_input",
+                                "permission_denied",
+                                "revision_conflict",
+                                "idempotency_conflict",
+                                "resource_limit",
+                                "unavailable",
+                                "provider_unavailable",
+                                "output_invalid",
+                                "in_progress",
+                                "interrupted",
+                                "write_outcome_unknown"
+                            ]
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

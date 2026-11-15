@@ -697,12 +697,45 @@ impl ServerHandler for HttpHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let bound = self.binding.clone();
-        let writing = matches!(
-            params.name.as_ref(),
-            "alcomd_plan_package_uninstall"
-                | "alcomd_apply_package_changes"
-                | "alcomd_cancel_operation"
-        );
+        // Resolve current Core metadata before the business call. Failure here is read-only.
+        let metadata = tokio::time::timeout_at(bound.deadline, async {
+            let mut slot = bound.service.core.lock().await;
+            let core = slot.as_mut().ok_or_else(super::unsupported_method)?;
+            tools::descriptor(core, params.name.as_ref())
+                .await
+                .map_err(|_| {
+                    ErrorData::internal_error("The current tool catalogue is unavailable.", None)
+                })
+        })
+        .await
+        .map_err(|_| ErrorData::internal_error("Core catalogue timed out", None))??;
+        // A source change after lookup cannot turn a keyless read into a persistent action.
+        // Conservatively retain unknown-write semantics when reserved write controls exist.
+        let writing = match metadata.as_ref() {
+            Some(tool) => tools::descriptor_writes(tool),
+            None if params.name.starts_with("alcomd_ext_")
+                && params
+                    .arguments
+                    .as_ref()
+                    .is_some_and(|a| a.contains_key("idempotency_key")) =>
+            {
+                true
+            }
+            None => {
+                let builtin = tools::definitions()?
+                    .into_iter()
+                    .find(|t| t.name == params.name)
+                    .ok_or_else(super::unsupported_method)?;
+                // Builtins retain their existing fixed execution contracts, including denied calls.
+                !builtin
+                    .annotations
+                    .and_then(|a| a.read_only_hint)
+                    .unwrap_or(false)
+            }
+        } || params
+            .arguments
+            .as_ref()
+            .is_some_and(|a| a.contains_key("idempotency_key"));
         let response = tokio::time::timeout_at(
             bound.deadline,
             bound.service.handle_request(
@@ -712,7 +745,10 @@ impl ServerHandler for HttpHandler {
         )
         .await;
         match response {
-            Err(_) => Ok(CallToolResponse::Complete(tools::interrupted(writing))),
+            Err(_) => {
+                bound.service.core.lock().await.take();
+                Ok(CallToolResponse::Complete(tools::interrupted(writing)))
+            }
             Ok(Ok(ServerResult::CallToolResult(value))) => Ok(CallToolResponse::Complete(value)),
             Ok(Err(error)) => Err(error),
             _ => Err(super::unsupported_method()),

@@ -1329,3 +1329,127 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         root.display()
     );
 }
+pub(super) async fn extension_provider_oauth(
+    owner: &mut AlcomdClient,
+    root: &Path,
+    client: &McpClientRecord,
+) -> String {
+    let http = Https::start(root, ClientConfig::default().without_daemon_start()).await;
+    let reg = registration(owner, &http, client, false).await.registration;
+    let code = http.code(owner, &reg, &grants(true)).await;
+    let first = http.exchange(&reg, &code, None).await;
+    let access = first["access_token"]
+        .as_str()
+        .expect("valid isolated Provider OAuth fixture");
+    let code = http.code(owner, &reg, &grants(true)).await;
+    let second = http.exchange(&reg, &code, None).await;
+    let other = second["access_token"]
+        .as_str()
+        .expect("valid isolated Provider OAuth fixture");
+    let code = http
+        .code(owner, &reg, &[grant("operations.read", "global", "*")])
+        .await;
+    let empty = http.exchange(&reg, &code, None).await;
+    let empty_access = empty["access_token"]
+        .as_str()
+        .expect("valid isolated Provider OAuth fixture");
+    let sa = http.sdk(access).await;
+    let sb = http.sdk(other).await;
+    let zero = http.sdk(empty_access).await;
+    let page = sa
+        .list_tools(None)
+        .await
+        .expect("valid isolated Provider OAuth fixture");
+    let cursor = page.next_cursor.expect("provider OAuth pagination");
+    assert!(
+        sb.list_tools(Some(
+            rmcp::model::PaginatedRequestParams::default().with_cursor(Some(cursor))
+        ))
+        .await
+        .is_err(),
+        "same principal, distinct token cannot reuse catalogue cursor"
+    );
+    let pure = alcomd_application::tool_public_name("dev.alcomd.tools-fixture", "echo");
+    let reading = alcomd_application::tool_public_name("dev.alcomd.tools-fixture", "projects");
+    let page = zero
+        .list_tools(None)
+        .await
+        .expect("valid isolated Provider OAuth fixture");
+    assert!(page.tools.iter().all(|t| t.name != reading));
+    let result = zero
+        .call_tool_once(
+            CallToolRequestParams::new(pure).with_arguments(
+                json!({"text":"limited OAuth ceiling"})
+                    .as_object()
+                    .expect("valid isolated Provider OAuth fixture")
+                    .clone(),
+            ),
+        )
+        .await
+        .expect("valid isolated Provider OAuth fixture");
+    let CallToolResponse::Complete(result) = result else {
+        panic!("normal result")
+    };
+    assert_ne!(result.is_error, Some(true));
+    assert!(
+        zero.call_tool_once(CallToolRequestParams::new(reading).with_arguments(Default::default()))
+            .await
+            .is_err(),
+        "no upper-bound escalation"
+    );
+    let directory = root.join("OAuth-provider-project");
+    project(&directory, false);
+    let registered = owner
+        .project_register(
+            directory.to_string_lossy().into_owned(),
+            "provider-oauth-project".into(),
+        )
+        .await
+        .expect("valid isolated Provider OAuth fixture")
+        .project;
+    let plan=super::extension_tools_flow::ext(&sa,"plan_remove",json!({"project_id":registered.project_id,"expected_revision":registered.revision,"package_id":"com.example.fixture","idempotency_key":"oauth-provider-plan"})).await.structured_content.expect("valid isolated Provider OAuth fixture");
+    let plan = &plan["coreEffect"];
+    let applied=super::extension_tools_flow::ext(&sa,"apply",json!({"plan_id":plan["planId"],"expected_revision":plan["projectRevision"],"idempotency_key":"oauth-provider-apply","confirm":true})).await;
+    assert_ne!(applied.is_error, Some(true));
+    let operation = applied
+        .structured_content
+        .expect("valid isolated Provider OAuth fixture")["coreEffect"]["operationId"]
+        .as_str()
+        .expect("valid isolated Provider OAuth fixture")
+        .to_owned();
+    let mut trace = vec![];
+    assert_eq!(
+        terminal(&sa, &mut trace, &operation).await["state"],
+        "succeeded"
+    );
+    assert!(!directory.join("Packages/com.example.fixture").exists());
+    let mut form =
+        reqwest::Url::parse("https://localhost/").expect("valid isolated Provider OAuth fixture");
+    form.query_pairs_mut()
+        .append_pair("client_id", &reg.oauth_client_id)
+        .append_pair("token", access);
+    assert_eq!(
+        http.client
+            .post(format!("{}/revoke", http.issuer))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(
+                form.query()
+                    .expect("valid isolated Provider OAuth fixture")
+                    .to_owned()
+            )
+            .send()
+            .await
+            .expect("valid isolated Provider OAuth fixture")
+            .status(),
+        200
+    );
+    assert!(
+        sa.list_tools(None).await.is_err(),
+        "revoked OAuth provider connection"
+    );
+    stop(sa).await;
+    stop(sb).await;
+    stop(zero).await;
+    http.finish_server().await;
+    operation
+}

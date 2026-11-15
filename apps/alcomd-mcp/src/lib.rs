@@ -5,8 +5,8 @@ use std::borrow::Cow;
 use rmcp::{
     ErrorData, RoleServer, Service,
     model::{
-        CacheScope, ClientNotification, ClientRequest, DiscoverResult, ErrorCode, Implementation,
-        ListToolsResult, ProtocolVersion, ServerCapabilities, ServerConfig, ServerResult,
+        ClientNotification, ClientRequest, DiscoverResult, ErrorCode, Implementation,
+        ProtocolVersion, ServerCapabilities, ServerConfig, ServerResult,
     },
     service::{NotificationContext, RequestContext, serve_directly},
 };
@@ -141,15 +141,24 @@ impl Service<RoleServer> for ProtocolService {
             // retains and executes any Operation it has already accepted.
             let invoke = async {
                 let mut guard = self.core.lock().await;
-                let core = guard.as_mut().ok_or_else(unsupported_method)?;
+                let Some(core) = guard.as_mut() else {
+                    return Ok(ServerResult::CallToolResult(tools::interrupted(false)));
+                };
                 tools::execute(core, request.params)
                     .await
                     .map(ServerResult::CallToolResult)
             };
-            return tokio::select! {
+            let outcome = tokio::select! {
                 biased;
-                () = context.ct.cancelled() => Err(ErrorData::internal_error("MCP request cancelled", None)),
-                result = invoke => result,
+                () = context.ct.cancelled() => None,
+                result = invoke => Some(result),
+            };
+            return match outcome {
+                Some(result) => result,
+                None => {
+                    self.core.lock().await.take();
+                    Err(ErrorData::internal_error("MCP request cancelled", None))
+                }
             };
         }
         // Bound connections are revalidated by Core on every discovery too;
@@ -160,16 +169,11 @@ impl Service<RoleServer> for ProtocolService {
                 DiscoverResult::from_server_info(vec![MCP_PROTOCOL_VERSION], self.get_info()),
             )),
             ClientRequest::ListToolsRequest(request) if self.bound => {
-                if request.params.and_then(|p| p.cursor).is_some() {
-                    return Err(ErrorData::invalid_params(
-                        "This tool list has no continuation cursor.",
-                        None,
-                    ));
-                }
+                let cursor = request.params.and_then(|p| p.cursor);
+                let mut guard = self.core.lock().await;
+                let core = guard.as_mut().ok_or_else(unsupported_method)?;
                 Ok(ServerResult::ListToolsResult(
-                    ListToolsResult::with_all_items(tools::definitions()?)
-                        .with_ttl_ms(0)
-                        .with_cache_scope(CacheScope::Private),
+                    tools::list(core, cursor).await?,
                 ))
             }
             // Do not return empty business results or advertise unimplemented

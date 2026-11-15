@@ -84,6 +84,7 @@ pub struct ExtensionManifest {
     pub license: String,
     pub entrypoints: ManifestEntrypoints,
     pub ui: Option<ManifestUi>,
+    pub mcp: Option<ManifestMcp>,
     pub interfaces: ManifestRequirements,
     pub permissions: ManifestRequirements,
 }
@@ -92,6 +93,12 @@ pub struct ExtensionManifest {
 #[serde(deny_unknown_fields)]
 pub struct ManifestEntrypoints {
     pub component: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestMcp {
+    pub tools: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -110,6 +117,8 @@ pub struct ManifestRequirements {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedExtensionPackage {
     pub manifest: ExtensionManifest,
+    pub mcp_tools: Vec<alcomd_application::ToolDeclaration>,
+    pub component_bytes: Vec<u8>,
     pub package_digest: [u8; 32],
     pub manifest_digest: [u8; 32],
     pub component_digest: [u8; 32],
@@ -157,6 +166,16 @@ pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage
     let manifest_bytes = read_named(&mut archive, &plans, MANIFEST_PATH, MAX_MANIFEST_BYTES)?;
     let signature_bytes = read_named(&mut archive, &plans, SIGNATURE_PATH, MAX_SIGNATURE_BYTES)?;
     let manifest = parse_manifest(&manifest_bytes)?;
+    if manifest.mcp.is_none()
+        && manifest
+            .permissions
+            .required
+            .iter()
+            .chain(&manifest.permissions.optional)
+            .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
+    {
+        return Err(error(PackageErrorCode::ManifestInvalid));
+    }
     let package_digest = canonical_digest(&mut archive, &plans)?;
     let manifest_digest = Sha256::digest(&manifest_bytes).into();
     let component_bytes = read_named(&mut archive, &plans, COMPONENT_PATH, MAX_ENTRY_BYTES)?;
@@ -168,8 +187,21 @@ pub fn inspect_extension_package(path: &Path) -> Result<VerifiedExtensionPackage
                 .with_path(path.display().to_string())
         })?;
     verify_signature(&manifest, package_digest, &envelope)?;
+    let mcp_tools = if manifest.mcp.is_some() {
+        let bytes = read_named(
+            &mut archive,
+            &plans,
+            alcomd_application::MCP_TOOLS_PATH,
+            65536,
+        )?;
+        tools(&manifest, &bytes)?
+    } else {
+        Vec::new()
+    };
     Ok(VerifiedExtensionPackage {
         manifest,
+        mcp_tools,
+        component_bytes,
         package_digest,
         manifest_digest,
         component_digest,
@@ -219,6 +251,16 @@ pub fn inspect_extension_directory(root: &Path) -> Result<VerifiedExtensionPacka
         MAX_ENTRY_BYTES,
     )?;
     let manifest = parse_manifest(&manifest_bytes)?;
+    if manifest.mcp.is_none()
+        && manifest
+            .permissions
+            .required
+            .iter()
+            .chain(&manifest.permissions.optional)
+            .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
+    {
+        return Err(error(PackageErrorCode::ManifestInvalid));
+    }
     let package_digest = directory_digest(&files)?;
     let envelope: SignatureEnvelope =
         serde_json::from_slice(&signature_bytes).map_err(|cause| {
@@ -227,8 +269,21 @@ pub fn inspect_extension_directory(root: &Path) -> Result<VerifiedExtensionPacka
                 .with_path(root.display().to_string())
         })?;
     verify_signature(&manifest, package_digest, &envelope)?;
+    let mcp_tools = if manifest.mcp.is_some() {
+        let bytes = read_bounded_file(
+            files
+                .get(alcomd_application::MCP_TOOLS_PATH)
+                .ok_or_else(|| error(PackageErrorCode::ManifestInvalid))?,
+            65536,
+        )?;
+        tools(&manifest, &bytes)?
+    } else {
+        Vec::new()
+    };
     Ok(VerifiedExtensionPackage {
         manifest,
+        mcp_tools,
+        component_bytes: component_bytes.clone(),
         package_digest,
         manifest_digest: Sha256::digest(&manifest_bytes).into(),
         component_digest: Sha256::digest(&component_bytes).into(),
@@ -803,6 +858,45 @@ fn error(code: PackageErrorCode) -> PackageError {
         code,
         context: alcomd_application::TechnicalErrorContext::default(),
     }
+}
+
+fn tools(
+    manifest: &ExtensionManifest,
+    bytes: &[u8],
+) -> Result<Vec<alcomd_application::ToolDeclaration>, PackageError> {
+    let invalid = || error(PackageErrorCode::ManifestInvalid);
+    if manifest
+        .mcp
+        .as_ref()
+        .is_none_or(|m| m.tools != alcomd_application::MCP_TOOLS_PATH)
+        || manifest
+            .permissions
+            .required
+            .iter()
+            .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
+        || !manifest
+            .permissions
+            .optional
+            .iter()
+            .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
+    {
+        return Err(invalid());
+    }
+    let tools = alcomd_application::ToolDeclarations::parse(bytes).map_err(|_| invalid())?;
+    for tool in &tools {
+        for permission in tool.permissions() {
+            if !manifest
+                .permissions
+                .required
+                .iter()
+                .chain(&manifest.permissions.optional)
+                .any(|p| p == &permission)
+            {
+                return Err(invalid());
+            }
+        }
+    }
+    Ok(tools)
 }
 
 #[cfg(test)]

@@ -1812,3 +1812,5 @@ code {
     --md-filled-select-text-field-hover-input-text-color: var(--md-sys-color-error);
     --md-filled-select-text-field-focus-input-text-color: var(--md-sys-color-error);
 }
+
+.extension-tool-preview dt { min-width: 0; overflow-wrap: anywhere; }

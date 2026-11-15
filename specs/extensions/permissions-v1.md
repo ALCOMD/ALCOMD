@@ -206,3 +206,8 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
   它不授权任意窗口几何、文件或数据库写入。
 - 日志与活动权限已随2026-11-05所有者批准的整套系统删除撤销；不再提供 `activity.read`、`diagnostics.read` 或对应读取接口。普通任务和Event读取保留自身权限。
 - `settings.get`、`settings.update` 保持base RPC v1，不把client metadata当作permission。
+
+
+### MCP tool providers
+
+Optional `mcp.tools.provide` publishes signed tool declarations and does not enable an extension or grant business authority. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution intersects declared closed operations, current extension grants/lease and the actual MCP client's current capabilities/OAuth ceiling. `projects.read` retains safe project projections, with no path/filesystem authority. See `../mcp/extension-tools-v1.md` and State38. MCP client capability names remain the existing eight.

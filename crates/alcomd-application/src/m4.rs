@@ -815,6 +815,7 @@ impl std::error::Error for M4Error {
 impl From<StoreErrorKind> for M4Error {
     fn from(value: StoreErrorKind) -> Self {
         let code = match value {
+            StoreErrorKind::PermissionDenied => M4ErrorCode::PermissionDenied,
             StoreErrorKind::RevisionConflict => M4ErrorCode::RevisionConflict,
             StoreErrorKind::IdempotencyConflict => M4ErrorCode::IdempotencyConflict,
             StoreErrorKind::Unavailable => M4ErrorCode::StoreUnavailable,

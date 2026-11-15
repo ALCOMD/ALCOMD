@@ -51,6 +51,7 @@ mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
 mod m8_oauth_rpc;
+mod m8_tools_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -113,6 +114,9 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
+    locks: Arc<ResourceLockCoordinator>,
+    tools_cursor_key: [u8; 32],
+    extension_runtime: m6_runtime::PlatformExtensionRuntime,
     oauth: alcomd_application::OAuthApplication<StateStoreHandle>,
     #[cfg(feature = "test-kill-gates")]
     mcp_apply_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpApplyResponseGate>>>,
@@ -304,17 +308,16 @@ async fn initialize_daemon_with_directories(
         )
         .map_err(|_| BindError::Io(io::Error::other("User Package initialization failed")))?,
     );
-    let extension_engine =
-        alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
-            .map_err(|_| {
-                BindError::Io(io::Error::other("Extension engine initialization failed"))
-            })?;
     let extension_runtime = m6_runtime::PlatformExtensionRuntime::new(store.clone())
         .map_err(|_| BindError::Io(io::Error::other("Extension Host initialization failed")))?;
+    let extension_engine =
+        alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
+            .map_err(|_| BindError::Io(io::Error::other("Extension engine initialization failed")))?
+            .with_tools_validator(extension_runtime.host_executable());
     let m6 = M6Application::new(
         store.clone(),
         extension_engine,
-        extension_runtime,
+        extension_runtime.clone(),
         Arc::clone(&locks),
     );
     m6.recover(current_time_ms()?)
@@ -358,7 +361,14 @@ async fn initialize_daemon_with_directories(
     let mut oauth_cursor_key = [0u8; 32];
     getrandom::fill(&mut oauth_cursor_key)
         .map_err(|_| BindError::Io(io::Error::other("OAuth cursor key initialization failed")))?;
+    store
+        .tool_recover_startup()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Tool recovery failed")))?;
     let applications = Arc::new(Applications {
+        locks: Arc::clone(&locks),
+        tools_cursor_key: oauth_cursor_key,
+        extension_runtime,
         oauth: alcomd_application::OAuthApplication::new(store.clone(), oauth_cursor_key),
         #[cfg(feature = "test-kill-gates")]
         mcp_apply_response_gate: tokio::sync::Mutex::new(None),
@@ -396,6 +406,9 @@ async fn initialize_daemon_with_directories(
         user_packages,
         unity_migration,
     });
+    applications
+        .extension_runtime
+        .attach(Arc::downgrade(&applications));
     let listener = instance.bind()?;
     Ok((listener, applications))
 }
@@ -525,6 +538,7 @@ fn bind_as_io(error: BindError) -> io::Error {
     }
 }
 
+#[derive(Clone)]
 struct ConnectionState {
     oauth_endpoint: bool,
     oauth_resource: Option<String>,
@@ -566,7 +580,16 @@ async fn serve_connection(
                     .mcp_apply_request_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            let action = Box::pin(dispatch_payload(&payload, &state, &applications)).await;
+            let is_tool_call=serde_json::from_slice::<Value>(&payload).is_ok_and(|v|v["method"]==alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL);
+            let action=if is_tool_call {
+                // One in-flight typed RPC per connection. EOF revokes only this
+                // invocation's authority; the detached finalizer preserves accepted work.
+                let mut probe=[0u8;1];
+                tokio::select! {
+                    action=Box::pin(dispatch_payload(&payload,&state,&applications))=>action,
+                    closed=tokio::io::AsyncReadExt::read(&mut stream,&mut probe)=>{closed?;return Ok(());}
+                }
+            }else{Box::pin(dispatch_payload(&payload,&state,&applications)).await};
             #[cfg(feature = "test-kill-gates")]
             if state.oauth_endpoint
                 && action.response["result"]["accessToken"].is_string()
@@ -579,7 +602,7 @@ async fn serve_connection(
                 return Ok(());
             }
             #[cfg(feature = "test-kill-gates")]
-            if is_mcp_apply && action.response["result"]["operationId"].is_string() {
+            if (is_mcp_apply && action.response["result"]["operationId"].is_string()) || (state.mcp_hash.is_some() && is_tool_call && action.response["result"]["coreEffect"]["kind"]=="apply" && action.response["result"]["coreEffect"]["operationId"].is_string()) {
                 let gate = applications.mcp_apply_response_gate.lock().await.take();
                 if let Some(gate) = gate
                     && gate.intercept(&mut stream, &action.response).await?
@@ -710,6 +733,13 @@ async fn dispatch_payload(
         error.data = Some(serde_json::json!({"oauthError":"insufficient_scope"}));
         return error_action(Some(request.id), error, false);
     }
+    if matches!(
+        request.method.as_str(),
+        alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
+            | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
+    ) {
+        return m8_tools_rpc::dispatch(request, state, applications, &access).await;
+    }
     if request.method.starts_with("mcp.clients.") {
         return m8_mcp_rpc::dispatch(request, state, &applications.store, &access).await;
     }
@@ -809,6 +839,7 @@ async fn dispatch_hello(
         return m8_mcp_rpc::error(request.id, e, true);
     }
     let supported = [
+        alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
         CAPABILITY_MCP_CLIENTS_V1,
         CAPABILITY_STATE_CHECK_V1,
@@ -1143,7 +1174,14 @@ async fn dispatch_m2(
             ) {
                 m7_rpc::dispatch(request, state, &applications.m7, access).await
             } else {
-                m6_rpc::dispatch(request, state, &applications.m6, access).await
+                m6_rpc::dispatch(
+                    request,
+                    state,
+                    &applications.m6,
+                    access,
+                    &applications.store,
+                )
+                .await
             }
         }
         _ if matches!(
@@ -1321,6 +1359,7 @@ fn application_rpc_error(error: ApplicationError) -> RpcError {
         ApplicationError::PermissionDenied => RpcError::permission_denied(),
         ApplicationError::InvalidInput => RpcError::invalid_request(),
         ApplicationError::Store(error) => match error.kind() {
+            StoreErrorKind::PermissionDenied => RpcError::permission_denied(),
             StoreErrorKind::OperationNotFound => RpcError::operation_not_found(),
             StoreErrorKind::RevisionConflict => RpcError::revision_conflict(),
             StoreErrorKind::IdempotencyConflict => RpcError::idempotency_conflict(),
@@ -1452,6 +1491,7 @@ mod tests {
         let requested = [
             CAPABILITY_STATE_CHECK_V1,
             CAPABILITY_MCP_CLIENTS_V1,
+            alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
             "unsupported.test-capability",
         ];
         let action = dispatch_hello(
@@ -1488,13 +1528,18 @@ mod tests {
         );
         assert_eq!(
             response.result.capabilities,
-            [CAPABILITY_MCP_CLIENTS_V1, CAPABILITY_STATE_CHECK_V1]
+            [
+                CAPABILITY_MCP_CLIENTS_V1,
+                alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
+                CAPABILITY_STATE_CHECK_V1,
+            ]
         );
         assert_eq!(
             action.complete_handshake,
             Some(HashSet::from([
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
-                CAPABILITY_MCP_CLIENTS_V1.to_owned()
+                CAPABILITY_MCP_CLIENTS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
             ]))
         );
         assert_eq!(

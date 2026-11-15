@@ -1,3 +1,4 @@
+import { ExtensionToolPreview } from "./ExtensionPermissions";
 import { Translated, useTranslation } from "./i18n";
 import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
@@ -2259,11 +2260,12 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
     return <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { setOperationTerminal(true); setCompletedOperation(operation); }} operationId={operationId} background />}
         {completedOperation?.state === "succeeded" ? <section className="utility-workspace page-surface--utility"><PageHeader title={t("Extension detail")} leading={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} /><p role="status">{t("Extension uninstalled.")}</p></section>
-        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <>
+        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools }, refresh) => <>
         <h2 className="extension-detail-identity">{extension.extensionId}</h2>
         <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {extension.ui?.protocol === "portable-v1" ? <NavigationButton to={`/extensions/${encodeURIComponent(extensionId)}/ui`} disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</NavigationButton> : null}
         <ExtensionActions client={client} extension={extension} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
+        <ExtensionToolPreview tools={mcpTools} />
     </>}</UtilityWorkspace>}
     </>;
 }

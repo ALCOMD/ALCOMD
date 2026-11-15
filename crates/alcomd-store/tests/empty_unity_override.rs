@@ -65,6 +65,7 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
         "mcp_client_credentials",
         "mcp_oauth_registrations",
         "mcp_oauth_tokens",
+        "extension_mcp_calls",
     ] {
         let index = retained
             .iter()

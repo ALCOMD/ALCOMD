@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 type Sdk = RunningService<RoleClient, ()>;
 static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+#[path = "support/extension_tools_flow.rs"]
+mod extension_tools_flow;
 #[path = "support/oauth_flow.rs"]
 mod oauth_flow;
 
@@ -936,7 +938,10 @@ async fn package_removal_flow(http: bool) {
     let sb = sdk(&token_b.credential, url).await;
     let mut trace = vec![];
     let definitions = sa.list_tools(None).await.expect("SDK tools/list");
-    assert_eq!(definitions.tools.len(), 6);
+    assert!(
+        definitions.tools.is_empty(),
+        "zero-grant identity sees no business tools"
+    );
     assert_eq!(definitions.ttl_ms, Some(0));
     std::fs::write(
         root.join("tools-list.json"),
