@@ -922,3 +922,22 @@ MAC采用现有sha2的标准HMAC-SHA256，向量核对[RFC4231](https://www.rfc-
 444份新输入摘要为`312a22297d5499a2a0368cf14fd5908197b1e14cabf5f2f8ba6ebdba2556bc6e`，提交前后相同；相对已推送33056db9的前批输入只改变两份Rust测试及一个测试DER文件（README另为文字记录），生产代码/构建manifest/Cargo.lock/State36原迁移均未变，不为测试修正重做Rust全量、292/704项浏览器、release/Tauri或三平台本地验证。此处4/0和两个1/0均为本机定向轮次，不替代33056db9的真实远端失败。
 
 CI阻塞仍存在于远端候选33056db9；上述本地修复及本节记录超出这次固定候选推送范围，未自动推送，须由所有者另行明确授权普通快进到origin/main。后续若获批只由push触发现有CI/CodeQL，不dispatch或rerun旧运行。M8保持IN_PROGRESS，管理扩展原生窗口与普通浏览器人工TLS接入等未覆盖项沿既有归属保留，不开始M9。
+
+### OAuth候选4005583远端收齐与State16补充（2026-11-15）
+
+所有者明确批准983a67b、f334910、4005583三笔后，已在真实Windows用户环境核对固定SHA、三笔完整链、干净工作树、远端祖先关系、metadata/xtask/diff，再普通快进推送至`4005583087921f40d9fdbd869588edcc7ae07939`。没有额外提交、强推、tag、release、workflow_dispatch或rerun；沿用原本地有效输入，不重复全量验证。
+
+本轮同SHA自动运行现已全部结束，均run_attempt=1：
+
+- [CI43703345842](https://github.com/ALCOMD/ALCOMD/actions/runs/43703345842)：**三平台失败**。Windows/Ubuntu/macOS均在`empty_unity_override`的`state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reopen`失败，三个模块各为单轮2/1，失败差异都是新增的两张空OAuth表。
+- 三平台此前的MCP business_tools各单轮6/0（含两个OAuth真实用例）、Store lib各单轮124/0。State19保全用例三平台均通过；macOS的原生TLS校验、私有IPC、真实身份/业务/游标闭环已实际通过，f334910不再记为仅Windows本地证据。这是本轮各模块的实际结果，不与旧33056db9或本地轮次拼接。
+- [CodeQL43703345588](https://github.com/ALCOMD/ALCOMD/actions/runs/43703345588)：rust、javascript-typescript、actions、python四项全部成功（该自动分析event为dynamic）。此结果属于4005583，不冒称后续本地修复已取得CodeQL结果。
+- 三个CI job均停止在Check，独立CLI自启动、两个Unix挂载用例、release、Tauri、平台/锁/diff和Chromium步骤均skipped。完整workspace、独立guest/前端检查及后续步骤不能据前缀模块通过而记为整体通过。M8仍IN_PROGRESS，M7签收不重开，未进入M9。
+
+完整最终JSON、三job原始日志、CodeQL完整日志及每份SHA256/大小位于`target/m8-oauth-hosted-4005583-20261115/`，总表为`evidence-summary.json`。与33056db9的目录分开保存，两个失败轮次和各自CodeQL成功分别保留。只持续只读跟踪这两个自动run，没有重启、取消或重复workflow。
+
+关联核对时发现上一轮只补了State19，未同步State16的另一处相同保全夹具。本机在未改动时运行该三用例模块原样2/1（state16-before.log），不是等远端失败后盲重跑。`174aa35ed2857cf46af21903d722fcf982aeed17`只给`crates/alcomd-store/tests/empty_unity_override.rs`的已批准新增权威表清单补mcp_oauth_registrations/mcp_oauth_tokens，仍要求两表存在且为空，再继续完整retained==before、事件序列、外键、空override重开保留及失败回滚等原断言；没有过滤未知表或删除/放宽测试。
+
+修复后同模块单轮3/0、零忽略（state16-after.log），该integration target严格Clippy（state16-clippy.log）、fmt、xtask和diff通过。没有重跑Store全套、完整Rust/浏览器、release/Tauri或三平台本地测试。新输入444份，摘要`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`；相对已推送4005583的有效输入仅一份Rust测试变化，生产代码/manifest/Cargo.lock/State36迁移均未变。原环境/原数据/Unity未操作，不恢复桌面控制。本机3/0不替代远端2/1，也不是整个剩余workspace通过。
+
+当前远端阻塞为4005583中的State16旧保全夹具。174aa35及本节记录为本次推送之后的新增本地提交，尚未推送；待所有者明确授权普通快进后，仅由push触发下一候选CI/CodeQL，不手动重跑旧运行。原生管理扩展窗口、普通浏览器人工TLS接入、CIMD/DCR等既有未覆盖项继续保留，不因技术前缀验证通过而宣布M8整体完成。
