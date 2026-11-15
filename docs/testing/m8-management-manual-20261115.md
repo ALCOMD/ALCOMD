@@ -1,56 +1,53 @@
 # M8 管理扩展人工查看准备
 
-2026-11-15，当前本地代码`5884d5e1dc5152995bec20206f1a642d21d7ae9f`。已按所有者反馈修正零授权启动与“管理扩展 → 管理权限”弹窗，**新版GUI已实际启动并连接指定隔离Core，窗口保留等待人工查看；尚未签收**。新代码未推送、没有对应远端验证，36a782c的三平台CI/CodeQL通过只属于此前基线。不恢复桌面控制。
+更新于2026-11-16。当前本地代码`485eddb2548f122037585667b19c383b729d48e6`，**新版真实GUI已连接新版隔离Core并保留窗口，等待人工查看，未签收M8**。未推送，无此代码远端验证；36a782c的CI/CodeQL只是此前基线。此前5884d5e的按钮/逐项目选择及三项声明已被本轮整改替代，历史证据保留在[M8 ExecPlan](../exec-plans/M8-mcp-protocol-and-management.md)。不恢复桌面控制。
 
-## 已核实的开发包
-
-可复制路径：
+## 当前可安装样例
 
 ```text
-C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-zero-grant-20261115\management-zero-grant.alcomdextension
+C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-zero-grant-20261115\management-capabilities.alcomdextension
 ```
 
-- 文件真实存在，126423字节，SHA256 `223b35f44ee3b35437da209b4b5c30968305897d487ffa3f4f35c06cfb6c47a6`。
-- 测试身份`dev.alcomd.fixture`，名称`MCP management fixture`、1.0.0、AGPL-3.0-only；发布者`ALCOMD Test`，指纹`ed25519-sha256:10ba682c8ad13513971e8b56881aab8bd702bb807796eca81932c735a94d6e6d`。它不是正式产品扩展ID或正式发行签名。
-- 没有必需业务权限；可选`mcp.clients.manage`、`mcp.clients.read`及`projects.read`。必需Host接口`alcomd:mcp-management/clients@1.0.0`，Portable UI v1。
-- 包内Component等于当前夹具`crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm`，SHA256 `1ec0fb1ac969e6711db44103d95cba225b8c9b251c1c1a325be4af75c7156ba8`；provenance逐文件核对当前guest源码、WIT和构建锁，合同用例2/0。
-- 本轮通过正式Core签名/发布者批准/安装Plan/Apply流程，替换了review中旧包（卸载retain_data），两个实际Operation均成功。当前已启用、实际grants为空，真实Host页面可打开为未授权状态；没有绕过签名或授予权限。记录为`target/m8-zero-grant-20261115/live-package-update.log`。原来125919字节、required-read的旧开发包仍保留作历史证据，**当前不要再用旧包安装**。
+文件真实存在，119860字节；SHA256 `8980614f33694a4fadd11faf05d2a106d848b48ee8eed8cc651988aaaa10b9da`。测试身份`dev.alcomd.fixture`、MCP management fixture、1.0.0、AGPL-3.0-only；测试发布者ALCOMD Test，指纹`ed25519-sha256:10ba682c8ad13513971e8b56881aab8bd702bb807796eca81932c735a94d6e6d`。不是正式产品ID或发行签名。
 
-当前窗口已装好新包，无需再次安装。先查看零授权下能否打开页面，再进入“管理权限”：每项直接显示用途、已允许/未允许及操作；读取客户端与管理客户端分别允许，项目读取只对明确选择的项目生效。选择项目本身不授权，需要点击“允许所选项目”。
+- required=[]，optional=[mcp.clients.manage,mcp.clients.read]，不再申请自身用不到的项目读取。
+- 复用原Host接口及Portable UI v1，Component SHA256 `d43bd812027db11da1670755874c3a87c523dfd41acea759ff88cf44ff41a496`，12项provenance与当前guest源码逐项一致。
+- review中旧样例已通过正常retain_data卸载、发布者明确批准、签名校验和安装Plan/Apply更换，两个Operation均成功；当前已启用、grants为空、0活动任务。未绕过信任、签名或权限检查。
+- **当前窗口已安装，无需再装**。新建空隔离环境时才选择此路径，核对测试身份/发布者，明确批准发布者，创建安装计划、确认并等待任务成功，再直接启用。旧management-zero-grant及更早包只留历史，不再用于此次查看。
 
-## 隔离查看入口
+## 只需查看这些操作
 
-以下初始准备段落保留36a782c时的真实历史输入与执行记录，不作为新代码验证；当前程序及窗口见本节后半段。
+1. **扩展 → MCP management fixture → 管理权限**：应只有“读取MCP客户端”和“管理MCP客户端”两项开关。没有项目下拉列表或逐项目授权。当前均关闭；这是本扩展只申请两项权限，不是整个系统只有两种权限。
+2. **打开扩展页面**：零授权也能启用、打开同窗口受限页面；没有客户端数据或创建控件。返回管理权限，开启读取后重开，应显示只读客户端列表；再按需开启管理，才出现创建/变更控件。
+3. **同窗口扩展页 → 创建一个测试客户端 → 编辑权限**：客户端默认零授权，八项能力各一个开关；切换编辑草稿，审阅实际增减并确认后保存。项目读取覆盖当前及以后登记项目；包管理也覆盖全部项目，真实写入仍需原Plan、明确确认和Apply。这里不选择项目，也不展示或签发秘密。
+4. **撤销与重开**：关闭扩展读取开关后旧页面应失效，重开进入受限页；不能仍显示为已授权或误报写成功。窄窗/键盘操作只需查看本次开关，不重复验收M7各页面。
 
-审计时只读Windows进程检查Core/GUI/Host/MCP均0，本轮没有暂停或恢复进程。审计当时`target/debug`、GUI的独立target/debug均没有当前程序，`target/m8-check/debug`只有先前MCP程序；找到的M7备份/旧构建不能作为State35/M8匹配Core/Host候选。以前真实管理用例会在结束时停用、卸载并清理可丢弃数据，不能据其成功声称仍有持久可查看环境。
+新建/授权仅用于上述可丢弃数据，不操作用户实际工程。系统仍只允许Core支持且扩展清单申请的权限；required/optional是扩展的申请，不等于已授予。其他扩展真正声明必需权限但未获授权时，原启用拒绝合同保持。
 
-随后6bf3493及0cc9b28已补齐Core/MCP/CLI及真实OAuth/游标验证，当前36a782c另补齐Host和嵌入前端的debug GUI。使用独立`target/m8-check`、单编译任务，Host构建成功，Tauri `build --debug --no-bundle`成功且前端check/build通过，没有运行完整Workspace/Chromium/release。444份输入摘要仍为`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`；运行时代码自0cc9b28未变，后续只改测试/夹具/文档。五个实际程序的路径与SHA256绑定在`target/m8-review-36a782c/candidate.json`，不声称不同构建的文件逐字节相同。
+## 当前环境及启动入口
 
-程序组位于`target/m8-review-36a782c/`：Core/CLI/MCP/Host在`core/`，GUI单独在`gui/`且没有同目录alcomd.exe，避免隔离Core失联时GUI默认自启动访问原数据。`data/`、`webview-profile/`及两个`samples/`项目均为本轮可丢弃数据，不使用原M7启动入口。两个样例`M8-allowed-project`和`M8-other-project`已通过正式CLI登记，清单读取返回2项目、0活动任务、0客户端、0 OAuth登记。重开后五项公开结果逐项一致，两个ProjectId/revision保持；准备阶段随后再次停止自有Core，runtime残留0；本次查看已按下述入口重新启动并保持打开。原Core/GUI原本关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（本次准备前后均0进程）。证据为`records/{preparation-result,reopen-result,reopen-preservation}.json`及两轮公开读取，不把隔离读取冒称原环境五组状态核对。
+- 程序组：`target/m8-review-36a782c/capabilities-37/core/`与`capabilities-37/gui/`，GUI无同目录Core。
+- 明确数据：`target/m8-review-36a782c/data/`，实际State37；此前State36备份`backup-before-state37/`保留。原开发数据未升级。
+- WebView profile：同review的`webview-profile/`；两个既有可丢弃项目保持。M8-allowed-project/M8-other-project是历史样例名称，当前不再代表两种授权范围。
+- 当前Core49940、GUI48912，窗口可见且响应，5条真实GUI管道指向该Core。有界启动助手退出后仍有实际GUI连接；无截图或输入自动化。
+- 五程序与包摘要在review/candidate.json；连接在records/gui-connection.json，保全在`target/m8-zero-grant-20261115/capability-final-preservation.json`。
 
-当前隔离窗口已打开，无需重复启动。上述隔离准备与旧45200/42264为此前记录；**现在为Core47292/GUI39500**，新GUI摘要`9a2381b194948d6cd76067a22822169754378645f91956f7a7c70b4223efaa8a`，其余四程序字节保持。窗口可见且响应、5条管道均指向该Core，WebView仍使用同一隔离profile；证据`target/m8-zero-grant-20261115/gui-connection-zero-grant.json`。本次只暂停并恢复自有review实例进行两项定向Core回归，原环境本来关闭并保持关闭、原36份data/346份profile和Unity保持。
-
-以后关闭后，可在PowerShell使用以下入口。更新后的候选/hash与有界只读启动连接已同步，**此版入口仅语法检查，实际程序启动和连接已分步验证，未重新端到端执行整份入口**：
+窗口已打开，请勿重复启动。以后完全关闭本轮Core/GUI/Host/MCP后可用：
 
 ```powershell
 & 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-oauth-audit-20261115\Open-Review.ps1'
 ```
 
-该入口核对五程序与启动助手摘要、当前运行进程及隔离路径，再启动指定数据目录的Core，GUI使用独立WebView2 profile。有界只读连接仅覆盖WebView启动间隙，不启动其他Core或执行写入；不改变Core空闲退出合同。检测到已有Core/GUI/Host/MCP即拒绝，不自动暂停、强杀或连接原环境。若有新的端点冲突，应先核对归属与无活动任务，再沿既有授权处理。原始36a782c入口的CoreOnly/GUI分支曾实际执行成功，当前5884d5e程序已按相同明确参数分步启动，连接证据以上述新记录为准。没有恢复桌面控制、发送界面输入或拍摄原生截图，人工体验仍待用户查看。
+更新后的完整入口本轮已实际成功执行，核对当前候选/五程序/启动助手摘要，明确指定隔离data/profile。发现已有运行实例就拒绝，不自动暂停、强杀、连接原环境或启动默认Core。只读有界连接只覆盖WebView启动，不改变Core空闲合同。若出现端点冲突，先核对归属与任务状态。
 
-## 手动打开后的最短操作
+原环境本来关闭并保持关闭，原36份data/346份profile摘要一致、Unity未干扰。没有替换原程序或迁移原运行数据。隔离包升级第一次误传不存在的包路径，Core正确拒绝；核对已接受卸载终态后继续真实包安装，未重复删除。启动期Core退出、脚本检查失败及修正细节均保留在ExecPlan，不把失败记录抹掉。
 
-1. **扩展 → MCP management fixture → 打开扩展页面**：当前已启用但没有授权，应能打开同窗口页面，显示“尚未授权读取 MCP 客户端”，没有客户端数据或创建控件。启动不再要求预先授权。
-2. **返回扩展详情 → 管理权限**：查看每项用途和未允许状态；允许“读取 MCP 客户端”后重新打开页面，应只读显示且没有创建控件。按需分别允许“管理 MCP 客户端”和`M8-allowed-project`的“读取项目”；暂不允许`M8-other-project`。撤销按钮位于对应权限/项目旁，不用再从通用权限下拉框拼装范围。
-3. **同窗口扩展页**：授权管理后可新建测试客户端（客户端初始零授权），为它增加已允许隔离项目的读取权限；可选项目应只来自扩展当前获准范围。修改、刷新、撤销结果应准确；不要在这里查找或展示token。
-4. **切换/关闭/重开**：在普通页面与扩展页之间切换，再关闭重开。撤销扩展读取权限后旧会话应失效，重新打开仍可显示未授权页面；启停/卸载保持原管理入口。未实际制造的断线/超时不计通过。
+## 实际证据和未覆盖项
 
-只有新建空隔离环境时才需要先安装：选择上列包路径，核对测试发布者与指纹并明确批准，创建安装计划、确认安装、等待真实任务成功，随后可不授权直接启用。其他真正声明必需权限的扩展继续按原合同处理。
+浏览器相关最终单轮15/0，guest5/0、doc-test1/0、Host ABI1/0、两项真实Core/Host各1/0、真实双客户端身份复验1/0、Store关联13/0与14/0、State37 4/0、CLI OAuth2/0、合同5/0＋9/0＋2/0。真实六工具首轮4/2，两个旧格式断言修正后各定向1/0；没有重跑整模块，不拼成6/0。早先浏览器12/2（焦点环溢出）及5884d5e的6/8等原始轮次均保留。协议范围样例另以仅测试提交768022a补齐，具名1/0，运行程序输入未变。前端/匹配五程序debug构建、受影响严格Clippy、fmt/metadata/xtask/diff通过，未重跑完整Workspace/Chromium/release/三平台。
 
-本轮验证：guest3/0、doc-test1/0、Host ABI1/0、合同2/0、两项真实Core用例各1/0；权限相关浏览器最终单轮14/0，之后真实错误码与可读提示三例3/0（与14项重叠）。首轮浏览器6/8及新包清单排序拒绝0/1保留，未拼成完整704项通过。前端check/build、嵌入GUI debug构建、定向严格Clippy、fmt/metadata/xtask/diff通过；新代码远端未验证。浏览器前后截图为`target/m8-mcp-management/permissions-global-scope.png`及`apps/alcomd-gui/target/m8-zero-grant/permissions-{explicit-scopes,narrow-light,narrow-dark,error-light,error-dark}.png`，不是原生桌面截图。
+截图`apps/alcomd-gui/target/m8-zero-grant/permission-switches-{light,dark}.png`及error两图是浏览器夹具，**不是原生桌面截图**。真实窗口只读核对可见/响应/连接，体验留给用户确认。
 
-权限强制与双客户端隔离继续引用真实Core/Store/Host证据，不要求人工重复证明整个安全系统。没有实时连接/请求/订阅API，页面不宣称客户端“在线”；OAuth浏览器授权、正式默认分发、表单/会话超时/外部断线和MCP/Discord正式业务不因本清单通过而算完成。
+普通浏览器和目标MCP客户端OAuth接入仍未人工验证，需要用户受信任localhost证书/PKCS8私钥；本轮没有安装系统信任、开新监听或把公开测试私钥用于日常服务。实时连接/请求/订阅、正式默认分发、会话超时/外部断线及正式MCP/Discord业务等原有未覆盖项继续保留，不能由这份开关查看宣称通过或整个M8完成。
 
-普通浏览器OAuth人工接入另需用户提供受信任的localhost证书与PKCS8私钥，使用本组`core/alcomd-mcp.exe serve-oauth --no-start-daemon --port <已登记端口> --tls-cert <DER证书> --tls-key <PKCS8私钥>`。本轮没有启动监听、安装系统信任或把公开测试私钥用于日常服务；实际浏览器/目标MCP客户端接入仍未执行，不能从SDK自动化通过推定人工接入通过。
-
-查看结束后确认隔离Operation全终态，再关闭本轮自己的GUI/Core/Host。若未暂停原环境则保持原状态；若实际暂停过，恢复原程序/数据并核对五组公开状态、设置及无活动任务，不能仅报告恢复进程守候。
+查看结束后先确认隔离Operation全终态，再关闭本轮自有GUI/Core/Host。原环境未暂停，不需要启动原程序；如后续实际暂停过，须按既有授权恢复并核对公开状态，不能只报告守候进程。

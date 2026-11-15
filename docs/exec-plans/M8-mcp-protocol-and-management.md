@@ -1014,3 +1014,37 @@ M8继续IN_PROGRESS。管理界面人工查看、普通浏览器TLS接入、实�
 - 复用现有mcp.clients.*、CLI、Host/WIT、OAuth scope与六工具；输入输出形状/名称不变，仅收紧为全局组合并同步Schema。管理扩展不再让用户选择项目授权，按能力展示；OAuth仍绑定token/授权快照与既定scope上限，保留游标来源绑定、轮换和撤销，不重建身份。
 - 在同一未实施State37中追加：对当前含旧逐项目授权的MCP客户端创建新不可变快照，只移除这两种旧逐项目授权、保留其余权限，client revision/grant_revision递增；旧快照及历史幂等证据不改写，不作当前授权。使包含旧逐项目上限或对应受影响客户端的OAuth存续access/refresh family失效，需重新明确授权。普通客户端凭据/登记及业务数据不删除、不扩大权限；无受影响授权的客户端不变。
 - 这是对先前“其他MCP客户端范围不变”的已批准修订，与扩展State37一并实施。原运行数据不升级，不推送，不进入M9。定向覆盖未来项目、关闭/撤销、跨客户端Plan/Operation隔离、OAuth上限与旧token失效、快照/迁移保全及取消/写结果未知。
+
+### 统一能力开关与State37本地收束（2026-11-16）
+
+所有者已集中批准上节两批差异。本地代码`485eddb2548f122037585667b19c383b729d48e6`，在标准目录/main由真实Windows用户`cqmhv-dt\m2922`提交，未推送。本节取代5884d5e的逐项目按钮作为当前状态，保留其历史结果；M8继续IN_PROGRESS，人工查看未签收，不进入M9。
+
+**实现与破坏性边界**：GUI四种扩展权限复用已有Material Switch；读取失败不伪装全关，分页读齐、写入中锁定、失败/未知刷新和旧响应防护保留。扩展projects.read只授予当前/未来项目的安全摘要，交互Client仍须有相同读取权。MCP八项授权只接受global/*；目标ProjectId仍绑定原业务、Plan/Operation/幂等与实际Principal，资源owner不改。OAuth当前授权/能力上限与token来源游标绑定继续复用。管理guest将八项能力编辑为开关草稿，沿用原审阅确认和change-grants，不再列项目或增加新接口；自身无项目读取调用，清单仅剩read/manage两项可选权限，零授权仍可启用。四种可授予扩展能力为background.run、projects.read、mcp.clients.read/manage；并非整个系统权限目录均能授予扩展。扩展在签名清单中声明required/optional只是申请，实际授予仍由用户和Core决定。
+
+State37仅新增0037，旧0033–0036原样保留。一个事务撤销旧扩展project-read及lease、递增revision；MCP当前含旧project授权的客户端转到去掉旧授权的新快照，其他授权保留，旧快照/历史幂等不改；相关OAuth family失效，无受影响记录不变。没有全局授权补造、原数据升级、新依赖、Config、权限名称、RPC/WIT形状或身份框架。规格见state-v37及当前RPC/扩展Schema；资源范围枚举和组合同步收紧，不兼容旧逐项目授权请求。历史大快照仍可精确重放，但不能成为当前授权。
+
+证据位于`target/m8-zero-grant-20261115/`，均为此代码输入；以下为各自轮次，不能相加为完整套件：
+
+| 范围 | 实际结果 |
+| --- | --- |
+| GUI定向 | 第一轮12/2，窄窗两个主题的Material焦点环超出4px；只为开关行补容纳空间，保留<=1px断言。最终单轮15/0、零重试，含键盘/在途锁定/失败还原/完整授权读取/迟到请求/两主题窄窗；`switch-global-browser-{first,second}.log`。此前三开关15/0仅为中间输入 |
+| Store扩展 | 首轮12/1，旧假设把不存在的项目当未授权；正确区分ProjectNotFound后同模块13/0，后补旧Project格式拒绝与无副作用断言，具名最终1/0；`store-extension-capabilities{,-second}.log`、`store-required-global-final.log` |
+| Store MCP/OAuth | 首轮13/1为4096历史容量用例仍尝试登记旧范围，按批准迁移及新请求拒绝改为精确历史/当前快照断言后同模块14/0；`store-capabilities-{first,second}.log`，没有删除容量、分页或幂等断言 |
+| State37及既有迁移 | 新迁移模块4/0，精确旧行保全、无自动扩大、lease/revision、旧token family失效、安全family仍认证、回滚/重开；旧State35关联3/0。初期缺少PrincipalId导入编译失败保留，非运行通过；`state37-final.log`、`state35-reopen-state37.log` |
+| Application/CLI/合同 | 身份5/0、OAuth CLI单元2/0，m6合同5/0、M7现行版本断言9/0、管理合同/真实产物来源2/0；`application-capabilities.log`、`cli-oauth-capabilities.log`、`capability-contracts-final.log`。M7仅同步获批版本断言，不重开验收 |
+| Guest/Host | guest5/0、doc-test1/0、严格Clippy及单独Wasm release成功；Component `d43bd812027db11da1670755874c3a87c523dfd41acea759ff88cf44ff41a496`，12项provenance核对通过。实际Host ABI1/0、正常签名/零授权Core及原完整管理Core用例各1/0；`guest-switches-final.log`、`capability-host-abi.log`、`capability-native-{optional,management}.log` |
+| 双客户端真实身份 | 首轮0/1，重启后旧断言仍期望另一项目拒绝；改为精确读取包含授权后新建项目的全部三项后1/0。默认拒绝、实时授权/撤销、轮换/重启、Plan/任务/幂等隔离保留；`capability-native-identity-first-failed.log`与`capability-native-identity.log` |
+| 真实STDIO/HTTP/OAuth六工具 | 首轮4/2，STDIO卸载及两类在途取消/丢响应、OAuth游标来源绑定通过；HTTP仍假设列表第一条必为旧单项目，OAuth零授权用例仍发送旧project格式。分别修成精确四项目集合与合法global请求仍拒绝越过零上限后，两例各1/0；`capability-native-business-first-failed.log`、`capability-native-{http,oauth}-recheck.log`。没有重跑整模块，不记6/0 |
+| 构建/严格检查 | 前端check/build、嵌入前端GUI debug与匹配Core/CLI/MCP/Host debug构建通过；受影响包及guest严格Clippy、最终测试Clippy、root/guest fmt、locked metadata、xtask/diff通过。两次错误target的GUI编译已仅停止自有编译树，保留interrupted日志；最终用绝对target构建成功。无全量Workspace/Chromium/release/新三平台 |
+
+806份源码/测试/Schema/清单/锁输入的`capability-inputs.json`摘要为`52633e9de3deb8946bb63099ad6622d6d6a2299ef08345a8faf8271985f0721f`；五个实际程序/包摘要在review/candidate.json，不宣称不同构建字节相同。现有远端36a782c、CI43708317935、CodeQL43708317682通过仅属于原候选，本轮新增代码尚无远端验证。
+
+**真实隔离更新**：先核对自有review PID/路径/data及0任务，保存system/projects/operations/clients/oauth-registrations五组公开结果；仅暂停本轮Core/GUI，备份review data后升级36→37（只读核对实际版本）。新程序组放在review/capabilities-37，GUI目录无同名Core，旧程序/备份保留，不创建worktree或并行运行两套Core。旧测试包正常retain_data卸载Operation `316775e7-452d-48d4-a5a8-ff4ffc56b6f6`成功；初次安装助手误把目录拼成不存在的m8-capabilities，Core正确拒绝extension_package_invalid。核对卸载终态和空扩展列表后，仅继续安装真实包，未重复卸载/删除备份/跳过校验。新安装Operation `cb56acab-d537-4c9b-b8c1-c8dc0fb4ba25`成功，实际packageDigest `a9100306ceb8ade3450fe9b9b359d1d25a81f5bc50a2016dfa0ec4ee8949bac7`。正常测试发布者批准、真实签名校验、启用和Core开页均成功，required=[]、optional=[manage,read]、grants=[]，未自动授权。
+
+新包`target/m8-zero-grant-20261115/management-capabilities.alcomdextension`真实存在，119860字节，SHA256 `8980614f33694a4fadd11faf05d2a106d848b48ee8eed8cc651988aaaa10b9da`。更新前后两个项目、客户端和OAuth登记逐项一致、0活动任务。原环境本来关闭并保持关闭，原36份data/346份profile摘要保持，Unity未干扰。首轮部署只读断言误用了system.status没有的dataSchema字段、恢复脚本漏带快照函数，均在写入前停止并修正；日志保留，不计产品通过。部署助手编译初期serde_json指纹目录匹配失败亦保留。
+
+前次分段部署的60秒只读启动连接在助手排障间隙过期，GUI虽可见但Core空闲退出，未把它记为连接成功。完成安装后，已实际执行更新后的Open-Review完整入口同时打开Core/GUI，复用已有有界保活覆盖WebView启动，无新启动机制或空闲合同修改。当前GUI48912可见且响应，5条GUI自身管道均连Core49940，WebView使用review/profile；后续最终核对确认保活已退出而GUI连接仍在。记录`capability-final-start.log`、`capability-gui-connection.log`、`capability-live-package-{update-path-failed,install}.log`、`capability-final-preservation.json`及review/records。未恢复桌面控制或拍摄原生截图。浏览器截图仅为夹具，前后分别`permissions-narrow-light.png`与`permission-switches-light.png`，不冒称真实桌面。
+
+人工入口见现有manual：只看扩展两项开关、零授权启动与客户端八项能力编辑，不重新验收M7或身份安全系统。普通浏览器受信任TLS/目标客户端人工接入、会话超时/外部断线、实时观测与正式默认分发等既有后续仍未覆盖，不宣布M8完成，不自动推送。
+
+最终残留核对发现协议序列化样例仍写旧Project，另以纯测试提交`768022aa361779e2710e4fd2972f7df08b73a209`同步为Global/*并断言Schema范围组合；仅该具名用例1/0（其余50项过滤），证据`permission-schema-final.log`与`permission-schema-final-input.json`。未改运行源码/依赖/构建输入，继续复用485eddb实际程序，不再构建或重跑业务回归。最终被动核对时启动助手已自然退出，GUI48912仍有5条连接Core49940；Unity状态与原快照一致。
