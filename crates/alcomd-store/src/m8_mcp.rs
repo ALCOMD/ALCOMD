@@ -36,16 +36,19 @@ pub(super) fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
 }
 pub(super) fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result<Vec<McpGrant>, E> {
     let mut q=db.prepare("SELECT permission,resource_kind,resource_id FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=?2 ORDER BY permission,resource_kind,resource_id").map_err(unavailable)?;
-    q.query_map(params![id, revision], |r| {
-        Ok(McpGrant {
-            permission: r.get(0)?,
-            resource_kind: r.get(1)?,
-            resource_id: r.get(2)?,
+    let items = q
+        .query_map(params![id, revision], |r| {
+            Ok(McpGrant {
+                permission: r.get(0)?,
+                resource_kind: r.get(1)?,
+                resource_id: r.get(2)?,
+            })
         })
-    })
-    .map_err(unavailable)?
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(unavailable)
+        .map_err(unavailable)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(unavailable)?;
+    alcomd_application::validate_mcp_grants(&items).map_err(unavailable)?;
+    Ok(items)
 }
 fn grants(db: &Connection, id: &str, revision: i64, items: Vec<McpGrant>) -> Result<(), E> {
     alcomd_application::validate_mcp_grants(&items)?;
@@ -81,6 +84,9 @@ pub(super) fn write_on(
     mut command: W,
     now: u64,
 ) -> Result<R, E> {
+    if let W::Create { grants, .. } | W::SetGrants { grants, .. } = &command {
+        alcomd_application::validate_mcp_grants(grants)?;
+    }
     if let W::ChangeGrants { add, remove, .. } = &mut command {
         alcomd_application::validate_mcp_grant_delta(add, remove)?;
         for items in [add, remove] {
@@ -614,7 +620,86 @@ mod tests {
     }
 
     #[test]
-    fn large_grant_results_replay_exactly_without_reauthorizing_historical_scopes() {
+    fn unsupported_stored_grants_are_rejected_by_reads_and_idempotent_replays() {
+        let snapshot = |db: &Connection| {
+            [
+                "mcp_clients",
+                "mcp_client_grants",
+                "idempotency_records",
+                "sqlite_sequence",
+            ]
+            .map(|table| {
+                let mut query = db
+                    .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+                    .expect("snapshot query");
+                let count = query.column_count();
+                query
+                    .query_map([], |row| {
+                        (0..count)
+                            .map(|i| row.get::<_, rusqlite::types::Value>(i))
+                            .collect::<Result<Vec<_>, _>>()
+                    })
+                    .expect("snapshot")
+                    .collect::<Result<Vec<_>, _>>()
+                    .expect("rows")
+            })
+        };
+        for (permission, kind, resource) in [
+            (
+                "projects.read",
+                "project",
+                "00000000-0000-4000-8000-000000000001",
+            ),
+            (
+                "packages.manage",
+                "project",
+                "00000000-0000-4000-8000-000000000001",
+            ),
+            ("unknown.permission", "global", "*"),
+        ] {
+            let mut db = crate::sqlite::mcp_state32_fixture();
+            db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
+                .expect("33");
+            db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
+                .expect("34");
+            let owner = PrincipalId::local_owner();
+            let request = || W::Create {
+                name: "Capabilities".into(),
+                grants: vec![],
+            };
+            let original = write(&mut db, owner.clone(), "create".into(), request(), 1)
+                .expect("create")
+                .client;
+            let id = original.client_id.to_string();
+            db.execute(
+                "INSERT INTO mcp_client_grants VALUES (?1,1,?2,?3,?4)",
+                params![id, permission, kind, resource],
+            )
+            .expect("unsupported stored input");
+            let before = snapshot(&db);
+            assert_eq!(
+                client(&db, &id).expect_err("unsupported current configuration"),
+                E::Unavailable
+            );
+            assert_eq!(
+                grant_snapshot(&db, &id, 1).expect_err("unsupported snapshot"),
+                E::Unavailable
+            );
+            assert_eq!(
+                write(&mut db, owner, "create".into(), request(), 2)
+                    .expect_err("unsupported original response"),
+                E::Unavailable
+            );
+            assert_eq!(
+                snapshot(&db),
+                before,
+                "no repair, conversion or mutation on read/replay"
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_large_snapshots_do_not_replay_or_gain_authority() {
         let mut db = crate::sqlite::mcp_state32_fixture();
         db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
             .expect("State33");
@@ -651,7 +736,7 @@ mod tests {
             });
         }
         // A genuine State34 record with its immutable, pre-State37 project grants.
-        // New requests reject this format; historical response evidence remains exact.
+        // Evidence remains raw and immutable; runtime does not understand this format.
         let id = Uuid::new_v4().to_string();
         db.execute(
             "INSERT INTO mcp_clients VALUES (?1,'mcp:'||?1,'Large ACL',1,2,NULL,1)",
@@ -665,7 +750,19 @@ mod tests {
             )
             .expect("historical snapshot");
         }
-        let original = client(&db, &id).expect("historical result");
+        let original = McpClient {
+            client_id: McpClientId::parse(&id).expect("id"),
+            principal_id: PrincipalId::parse(format!("mcp:{id}")).expect("principal"),
+            display_name: "Large ACL".into(),
+            revision: 1,
+            created_at_ms: 2,
+            revoked_at_ms: None,
+            grants: items.clone(),
+        };
+        assert_eq!(
+            client(&db, &id).expect_err("unsupported stored configuration"),
+            E::Unavailable
+        );
         let mut metadata = serde_json::to_value(&original).expect("metadata");
         metadata.as_object_mut().expect("object").remove("grants");
         let response = serde_json::json!({"client":metadata,"grantRevision":1,"credentialId":null})
@@ -682,19 +779,14 @@ mod tests {
         assert!(serde_json::to_vec(&original).expect("full result").len() > 65536);
         let response_len:i64=db.query_row("SELECT length(response_json) FROM idempotency_records WHERE method='mcp.clients.create'",[],|r|r.get(0)).expect("compact record");
         assert!(response_len < 65536);
-        write(
-            &mut db,
-            owner.clone(),
-            "empty".into(),
-            W::SetGrants {
-                id: original.client_id,
-                expected: original.revision,
-                grants: vec![],
-            },
-            3,
-        )
-        .expect("remove all current grants");
-        let replay = write(
+        for migration in [
+            include_str!("../migrations/0035_extension_mcp_permissions.sql"),
+            include_str!("../migrations/0036_mcp_oauth.sql"),
+            include_str!("../migrations/0037_capability_permission_switches.sql"),
+        ] {
+            db.execute_batch(migration).expect("approved cleanup");
+        }
+        let rejected = write(
             &mut db,
             owner,
             "create".into(),
@@ -704,12 +796,12 @@ mod tests {
             },
             4,
         )
-        .expect("original exact response")
-        .client;
-        assert_eq!(replay, original);
-        assert!(
-            alcomd_application::mcp_access(&replay).is_err(),
-            "historical response is not current authority"
+        .expect_err("unsupported old request is not reinterpreted for replay");
+        assert_eq!(rejected, E::InvalidInput);
+        assert_eq!(
+            grant_snapshot(&db, &id, 1)
+                .expect_err("old response evidence is not a supported grant snapshot"),
+            E::Unavailable
         );
         let current = client(&db, &original.client_id.to_string()).expect("current authority");
         assert!(current.grants.is_empty());

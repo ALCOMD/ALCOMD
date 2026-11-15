@@ -1048,3 +1048,13 @@ State37仅新增0037，旧0033–0036原样保留。一个事务撤销旧扩展p
 人工入口见现有manual：只看扩展两项开关、零授权启动与客户端八项能力编辑，不重新验收M7或身份安全系统。普通浏览器受信任TLS/目标客户端人工接入、会话超时/外部断线、实时观测与正式默认分发等既有后续仍未覆盖，不宣布M8完成，不自动推送。
 
 最终残留核对发现协议序列化样例仍写旧Project，另以纯测试提交`768022aa361779e2710e4fd2972f7df08b73a209`同步为Global/*并断言Schema范围组合；仅该具名用例1/0（其余50项过滤），证据`permission-schema-final.log`与`permission-schema-final-input.json`。未改运行源码/依赖/构建输入，继续复用485eddb实际程序，不再构建或重跑业务回归。最终被动核对时启动助手已自然退出，GUI48912仍有5条连接Core49940；Unity状态与原快照一致。
+
+### 未发布授权格式严格读取（2026-11-16）
+
+所有者针对“旧逐项目授权撤销”明确修订：未发布版本的运行逻辑只认识现行能力授权，逐项目数据不是可兼容解释的配置。该要求覆盖输入、列表、认证、授权快照与幂等重放；原章节关于旧格式快照仍精确返回的实现/结果仅为前候选历史，不是现行行为。
+
+只修实际残留：Store grant_snapshot复用validate_mcp_grants，遇到不支持的存储组合整体返回既有Unavailable，列表/认证/Host分页/幂等读取共同生效；create/setGrants在查幂等记录前也校验输入，不借旧记录接受无效请求。没有逐项目特例、兼容解析/转换、静默删项、空授权回退或新错误码。扩展现有valid_scope及OAuth token校验原本已拒绝，无需重复开发。State37仍是此前批准的开发数据清理，SQL与旧迁移未改；保留原始历史行不等于运行时支持其授权语义。
+
+新增unsupported_stored_grants_are_rejected_by_reads_and_idempotent_replays修复前真实0/1：client读取返回了project格式。修复后受影响M8模块单轮15/0；随后补正常八项能力逐页完整读取并收紧迁移证据过滤到精确客户端/新revision，最终单轮16/0。旧1024/4096样例现在分别证明不支持的快照/写入/重放拒绝、原始行和compact幂等记录保留；原分页数量、字节上限与游标快照/身份绑定继续保留，用原始证据ID测试通用page边界，不能据此宣称旧权限能分页读取。现行八项能力另有真实Store快照分页用例，不以旧格式冒充现行配置。State37保全/无扩大/回滚/重开模块4/0；Store lib/tests严格Clippy通过。日志unsupported-grants-{before,module,module-final,state37,clippy}.log位于target/m8-zero-grant-20261115，失败不覆盖、不拼接。
+
+同步当前RPC规范、State37解释与A-041，不新增State/Config、依赖、权限或接口。最终fmt/metadata/xtask/diff通过，仅本地提交、不推送。本次未重建部署程序或占用端点，不触碰正供用户查看的485eddb隔离Core/GUI，也不操作原数据；当前窗口、之前真实Core/浏览器证据只绑定原候选。本次后端严格读取只有上述本地定向证据，尚无新增原生/远端验证。M8仍IN_PROGRESS，不进入M9。

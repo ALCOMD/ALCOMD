@@ -123,7 +123,10 @@ fn with_mcp_scopes() -> (Connection, String, String) {
 #[test]
 fn state37_current_mcp_snapshot_drops_old_scopes_and_revokes_related_oauth_families_only() {
     let (db, affected, unaffected) = with_mcp_scopes();
-    let history = crate::m8_mcp::grant_snapshot(&db, &affected, 2).expect("old snapshot");
+    let history = snapshot(&db)
+        .into_iter()
+        .find(|(name, _)| name == "mcp_client_grants")
+        .expect("raw grant evidence");
     let unaffected_before = crate::m8_mcp::client(&db, &unaffected).expect("unaffected");
     let credentials = snapshot(&db)
         .into_iter()
@@ -135,8 +138,19 @@ fn state37_current_mcp_snapshot_drops_old_scopes_and_revokes_related_oauth_famil
     assert_eq!(current.grants.len(), 1);
     assert_eq!(current.grants[0].permission, "state.check");
     assert_eq!(
-        crate::m8_mcp::grant_snapshot(&db, &affected, 2).expect("retained history"),
-        history
+        snapshot(&db)
+            .into_iter()
+            .find(|(name, _)| name == "mcp_client_grants")
+            .expect("retained raw evidence")
+            .1
+            .into_iter()
+            .filter(|row| !(row[0] == Value::Text(affected.clone()) && row[1] == Value::Integer(5)))
+            .collect::<Vec<_>>(),
+        history.1
+    );
+    assert!(
+        crate::m8_mcp::grant_snapshot(&db, &affected, 2).is_err(),
+        "retained raw history is not a supported grant snapshot"
     );
     assert_eq!(
         crate::m8_mcp::client(&db, &unaffected).expect("unchanged"),

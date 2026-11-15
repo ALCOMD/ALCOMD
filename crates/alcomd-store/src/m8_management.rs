@@ -604,19 +604,70 @@ mod tests {
         .expect("explicit ability grant");
         assert_eq!(result.revision, 3);
         assert_eq!(result.grants, vec![global("projects.read")]);
-        let history = crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
-            .expect("original history");
-        assert_eq!(history.len(), 2);
         assert_eq!(
-            history
-                .iter()
-                .map(|grant| grant.resource_id.as_str())
-                .collect::<Vec<_>>(),
-            ids
+            crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
+                .expect_err("unsupported historical data is not an authorization result"),
+            McpIdentityError::Unavailable
         );
+        let mut query = db.prepare("SELECT resource_id FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=1 ORDER BY resource_id").expect("raw evidence");
+        let history = query
+            .query_map([client.client_id.to_string()], |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("raw rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("evidence");
+        assert_eq!(history, ids);
     }
     #[test]
-    fn historical_4096_grants_page_completely_with_revision_and_authority_binding() {
+    fn current_capabilities_page_completely_without_project_authorization() {
+        let mut db = fixture();
+        let items = [
+            "projects.read",
+            "packages.manage",
+            "state.check",
+            "operations.read",
+            "operations.cancel",
+            "events.read",
+            "repositories.read",
+            "packages.read",
+        ]
+        .map(global)
+        .to_vec();
+        let current = command(
+            &mut db,
+            PrincipalId::local_owner(),
+            "create-global",
+            W::Create {
+                name: "Capabilities".into(),
+                grants: items.clone(),
+            },
+        )
+        .expect("create");
+        let snapshot = crate::m8_mcp::grant_snapshot(&db, &current.client_id.to_string(), 1)
+            .expect("supported snapshot");
+        let binding = serde_json::json!(["grants", current.client_id, 1]);
+        let mut cursor = None;
+        let mut seen = Vec::new();
+        loop {
+            let next = page(&snapshot, cursor, 1, 128, &binding).expect("capability page");
+            assert_eq!(next.items.len(), 1);
+            seen.extend(next.items);
+            cursor = next.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+        assert_eq!(seen, snapshot);
+        assert_eq!(seen.len(), 8);
+        assert!(
+            seen.iter()
+                .all(|g| g.resource_kind == "global" && g.resource_id == "*")
+        );
+    }
+
+    #[test]
+    fn unsupported_4096_rows_are_rejected_while_evidence_and_page_bounds_remain() {
         let mut db = fixture();
         let client = command(
             &mut db,
@@ -638,9 +689,23 @@ mod tests {
             )
             .expect("grant fixture");
         }
-        let items = crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
-            .expect("actual full snapshot");
+        let raw_ids = |db: &Connection| {
+            let mut query = db.prepare("SELECT resource_id FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=1 ORDER BY resource_id").expect("raw evidence");
+            query
+                .query_map([client.client_id.to_string()], |r| r.get::<_, String>(0))
+                .expect("rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("evidence")
+        };
+        assert_eq!(
+            crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
+                .expect_err("unsupported configuration"),
+            McpIdentityError::Unavailable
+        );
+        let items = raw_ids(&db);
         assert_eq!(items.len(), 4096);
+        // Exercise the generic bounded page helper with raw evidence IDs, not
+        // permissions: no runtime caller can read these rows as supported grants.
         let binding = serde_json::json!([
             "grants",
             client.client_id,
@@ -673,8 +738,8 @@ mod tests {
                     remove: vec![]
                 }
             )
-            .expect_err("final cap remains enforced"),
-            McpIdentityError::LimitExceeded
+            .expect_err("unrecognized current data cannot be repaired by a grant write"),
+            McpIdentityError::Unavailable
         );
         assert_eq!(
             command(
@@ -685,17 +750,17 @@ mod tests {
                     id: client.client_id,
                     expected: 1,
                     add: vec![global("state.check")],
-                    remove: vec![items[0].clone()]
+                    remove: vec![McpGrant {
+                        permission: "projects.read".into(),
+                        resource_kind: "project".into(),
+                        resource_id: items[0].clone()
+                    }]
                 }
             )
             .expect_err("old project grant format is rejected"),
             McpIdentityError::InvalidInput
         );
-        assert_eq!(
-            crate::m8_mcp::grant_snapshot(&db, &client.client_id.to_string(), 1)
-                .expect("immutable history"),
-            items
-        );
+        assert_eq!(raw_ids(&db), items);
         for migration in [
             include_str!("../migrations/0035_extension_mcp_permissions.sql"),
             include_str!("../migrations/0036_mcp_oauth.sql"),
@@ -724,7 +789,7 @@ mod tests {
         assert_eq!(changed.revision, 3);
         assert_eq!(changed.grants, vec![global("state.check")]);
         assert_eq!(
-            page(&changed.grants, old.clone(), 128, 128, &binding)
+            page(&["changed".to_owned()], old.clone(), 128, 128, &binding)
                 .expect_err("actual data changed")
                 .code,
             E::RevisionConflict

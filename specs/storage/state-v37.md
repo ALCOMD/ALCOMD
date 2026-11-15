@@ -23,3 +23,8 @@ current authority. Credential hashes and registrations remain unchanged. Token f
 with an old project ceiling, or a registration for an affected client, are revoked;
 users must explicitly authorize capabilities again. Unaffected clients/families remain.
 The temporary migration ID set is dropped before commit; no persistent session/table is added.
+
+The unreleased runtime has no per-project grant compatibility reader. Retained raw
+rows are evidence only: an unsupported snapshot is rejected on list/authentication
+or idempotent replay, not decoded into a successful grant result or silently
+filtered/converted. State37 cleanup does not introduce a runtime fallback.
