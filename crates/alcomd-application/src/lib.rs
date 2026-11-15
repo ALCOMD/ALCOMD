@@ -339,6 +339,8 @@ pub struct RepositoryRecord {
 pub struct RegistryCursor<I> {
     pub registered_at_ms: u64,
     pub id: I,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_binding: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1612,6 +1614,13 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
     ) -> Result<ProjectPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
         validate_m3_limit(limit)?;
+        if access.oauth_guard().is_none()
+            && cursor
+                .as_ref()
+                .is_some_and(|c| c.authorization_binding.is_some())
+        {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+        }
         let mut page = if let Some(guard) = access.oauth_guard() {
             self.store
                 .list_oauth_projects(access.principal().clone(), cursor, limit, guard.clone())

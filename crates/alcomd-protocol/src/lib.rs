@@ -1301,6 +1301,19 @@ pub struct RegistryCursor {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectRegistryCursor {
+    pub registered_at_ms: u64,
+    pub id: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub authorization_binding: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageCursor {
     pub package_id: String,
     pub version: String,
@@ -1326,7 +1339,7 @@ pub struct RegistryListParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectsListParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<RegistryCursor>,
+    pub cursor: Option<ProjectRegistryCursor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
     #[serde(
@@ -1504,7 +1517,7 @@ pub struct ProjectResult {
 pub struct ProjectsListResult {
     pub projects: Vec<ProjectSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<RegistryCursor>,
+    pub next_cursor: Option<ProjectRegistryCursor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view_sequence: Option<u64>,
 }

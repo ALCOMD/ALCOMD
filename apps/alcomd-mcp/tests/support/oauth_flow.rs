@@ -268,6 +268,309 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-oauth-cursor-real")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(root.join("data")).expect("disposable data");
+    let root = root.canonicalize().expect("isolated root");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(root.join("data")),
+        std::future::pending(),
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .expect("owner");
+    let mut allowed = Vec::new();
+    for name in ["First", "Second", "Third"] {
+        let path = root.join(name);
+        project(&path, false);
+        let id = owner
+            .project_register(
+                path.to_string_lossy().into_owned(),
+                format!("register-{name}"),
+            )
+            .await
+            .expect("project")
+            .project
+            .project_id
+            .expect("id");
+        allowed.push(grant("projects.read", "project", &id));
+    }
+    let native = owner
+        .projects_list(None, Some(1))
+        .await
+        .expect("native page");
+    let native_cursor = native.next_cursor.expect("native next");
+    assert!(native_cursor.authorization_binding.is_none());
+    assert!(
+        serde_json::to_value(&native_cursor)
+            .expect("native wire")
+            .get("authorizationBinding")
+            .is_none()
+    );
+    assert!(
+        owner
+            .projects_list(Some(native_cursor), Some(1))
+            .await
+            .is_ok()
+    );
+    let mut a = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Cursor A".into(),
+            grants: allowed.clone(),
+            idempotency_key: "cursor-a".into(),
+        })
+        .await
+        .expect("A");
+    let b = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Cursor B".into(),
+            grants: allowed.clone(),
+            idempotency_key: "cursor-b".into(),
+        })
+        .await
+        .expect("B");
+    let http = Https::start(&root).await;
+    let reg_a = registration(&mut owner, &http, &a, false)
+        .await
+        .registration;
+    let reg_b = registration(&mut owner, &http, &b, false)
+        .await
+        .registration;
+    let code = http.code(&mut owner, &reg_a, &allowed[..2]).await;
+    let issued = http.exchange(&reg_a, &code, None).await;
+    let access = issued["access_token"].as_str().expect("first access");
+    let code = http.code(&mut owner, &reg_a, &allowed).await;
+    let other_issued = http.exchange(&reg_a, &code, None).await;
+    let other_access = other_issued["access_token"]
+        .as_str()
+        .expect("same principal second token");
+    let code = http.code(&mut owner, &reg_b, &allowed).await;
+    let b_issued = http.exchange(&reg_b, &code, None).await;
+    let b_access = b_issued["access_token"].as_str().expect("B token");
+    let sa = http.sdk(access).await;
+    let sa2 = http.sdk(other_access).await;
+    let sb = http.sdk(b_access).await;
+    let mut trace = vec![];
+    let first = data(
+        call(&sa, &mut trace, "list_projects", json!({"limit":1}))
+            .await
+            .expect("first page"),
+    );
+    let cursor = first["next_cursor"].clone();
+    let binding = cursor["authorization_binding"].as_str().expect("Core MAC");
+    assert_eq!(binding.len(), 64);
+    assert!(
+        binding
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    );
+    let next = data(
+        call(
+            &sa,
+            &mut trace,
+            "list_projects",
+            json!({"limit":1,"cursor":cursor}),
+        )
+        .await
+        .expect("bound continuation"),
+    );
+    assert_eq!(next["projects"].as_array().expect("next projects").len(), 1);
+    assert_ne!(
+        first["projects"][0]["project_id"],
+        next["projects"][0]["project_id"]
+    );
+    let mut missing = cursor.clone();
+    missing
+        .as_object_mut()
+        .expect("cursor")
+        .remove("authorization_binding");
+    let mut forged = cursor.clone();
+    forged["authorization_binding"] = json!(if let Some(rest) = binding.strip_prefix('0') {
+        format!("1{rest}")
+    } else {
+        format!("0{}", &binding[1..])
+    });
+    let mut timestamp = cursor.clone();
+    timestamp["registered_at_ms"] = json!(cursor["registered_at_ms"].as_u64().expect("time") + 1);
+    let mut position = cursor.clone();
+    position["project_id"] = next["projects"][0]["project_id"].clone();
+    for invalid in [missing, forged, timestamp, position] {
+        error(
+            call(
+                &sa,
+                &mut trace,
+                "list_projects",
+                json!({"limit":1,"cursor":invalid}),
+            )
+            .await
+            .expect("bounded rejection"),
+            "revision_conflict",
+        );
+    }
+    for client in [&sa2, &sb] {
+        error(
+            call(
+                client,
+                &mut trace,
+                "list_projects",
+                json!({"limit":1,"cursor":cursor}),
+            )
+            .await
+            .expect("cross token rejected"),
+            "revision_conflict",
+        );
+    }
+    let mut direct = AlcomdClient::connect(
+        ClientConfig::default()
+            .without_daemon_start()
+            .with_oauth_access(access.into(), http.resource()),
+    )
+    .await
+    .expect("typed authenticated Core");
+    let mut wire = ProjectRegistryCursor {
+        registered_at_ms: cursor["registered_at_ms"].as_u64().expect("time"),
+        id: cursor["project_id"].as_str().expect("id").into(),
+        authorization_binding: Some(binding.into()),
+    };
+    assert!(
+        direct
+            .projects_list(Some(wire.clone()), Some(1))
+            .await
+            .is_ok()
+    );
+    wire.authorization_binding = None;
+    assert!(
+        matches!(direct.projects_list(Some(wire),Some(1)).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="revision_conflict"),
+        "no adapter-only enforcement"
+    );
+    let mut changed = allowed.clone();
+    changed.push(grant("state.check", "global", "*"));
+    a = update(&mut owner, &a, changed, "cursor-grants-changed").await;
+    error(
+        call(
+            &sa,
+            &mut trace,
+            "list_projects",
+            json!({"limit":1,"cursor":cursor}),
+        )
+        .await
+        .expect("stale authorization snapshot"),
+        "revision_conflict",
+    );
+    let restarted = data(
+        call(&sa, &mut trace, "list_projects", json!({"limit":1}))
+            .await
+            .expect("restart on current grant snapshot"),
+    );
+    assert_ne!(
+        restarted["next_cursor"]["authorization_binding"],
+        cursor["authorization_binding"]
+    );
+    assert!(
+        call(
+            &sa,
+            &mut trace,
+            "list_projects",
+            json!({"limit":1,"cursor":restarted["next_cursor"]})
+        )
+        .await
+        .expect("new snapshot continuation")
+        .is_error
+            != Some(true)
+    );
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: a.client_id,
+            expected_revision: a.revision,
+            idempotency_key: "cursor-revoke".into(),
+        })
+        .await
+        .expect("revoke");
+    assert_eq!(
+        raw_tool(
+            &http,
+            access,
+            "alcomd_list_projects",
+            json!({"limit":1,"cursor":restarted["next_cursor"]})
+        )
+        .await
+        .status(),
+        401
+    );
+    assert!(
+        direct.projects_list(None, Some(1)).await.is_err(),
+        "live Core connection also revoked"
+    );
+    let b_first = data(
+        call(&sb, &mut trace, "list_projects", json!({"limit":1}))
+            .await
+            .expect("B before restart"),
+    );
+    let b_cursor = &b_first["next_cursor"];
+    let b_wire = ProjectRegistryCursor {
+        registered_at_ms: b_cursor["registered_at_ms"].as_u64().expect("B time"),
+        id: b_cursor["project_id"].as_str().expect("B id").into(),
+        authorization_binding: Some(
+            b_cursor["authorization_binding"]
+                .as_str()
+                .expect("B MAC")
+                .into(),
+        ),
+    };
+    let original_resource = http.resource();
+    drop(direct);
+    drop(owner);
+    stop(sa).await;
+    stop(sa2).await;
+    stop(sb).await;
+    http.finish_server().await;
+    daemon.abort();
+    let _ = daemon.await;
+    let reopened = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(root.join("data")),
+        std::future::pending(),
+    )
+    .await
+    .expect("reopen only isolated Core");
+    let mut live = AlcomdClient::connect(
+        ClientConfig::default()
+            .without_daemon_start()
+            .with_oauth_access(b_access.into(), original_resource),
+    )
+    .await
+    .expect("persistent token after restart");
+    assert!(
+        matches!(live.projects_list(Some(b_wire),Some(1)).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="revision_conflict"),
+        "private cursor key rotates on Core restart"
+    );
+    let fresh = live
+        .projects_list(None, Some(1))
+        .await
+        .expect("restart first page");
+    assert!(live.projects_list(fresh.next_cursor, Some(1)).await.is_ok());
+    drop(live);
+    reopened.abort();
+    let _ = reopened.await;
+    let visible = serde_json::to_vec_pretty(&trace).expect("public results");
+    let text = String::from_utf8_lossy(&visible);
+    for secret in [access, other_access, b_access] {
+        assert!(!text.contains(secret));
+    }
+    std::fs::write(root.join("cursor-trace.json"), visible).expect("public trace");
+    println!(
+        "OAuth cursor binding verified through real HTTPS/Core/SDK; isolated evidence: {}",
+        root.display()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

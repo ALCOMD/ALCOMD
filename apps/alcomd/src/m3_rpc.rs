@@ -100,7 +100,7 @@ pub(super) async fn dispatch(
                                 snapshot
                             })
                             .collect(),
-                        next_cursor: page.next_cursor.map(registry_cursor),
+                        next_cursor: page.next_cursor.map(project_registry_cursor),
                         view_sequence,
                     },
                     None,
@@ -521,10 +521,13 @@ fn repository_mutation(
     ))
 }
 
-fn project_cursor(value: rpc::RegistryCursor) -> Result<app::RegistryCursor<app::ProjectId>, ()> {
+fn project_cursor(
+    value: rpc::ProjectRegistryCursor,
+) -> Result<app::RegistryCursor<app::ProjectId>, ()> {
     Ok(app::RegistryCursor {
         registered_at_ms: value.registered_at_ms,
         id: app::ProjectId::parse(&value.id).map_err(|_| ())?,
+        authorization_binding: value.authorization_binding,
     })
 }
 
@@ -534,6 +537,7 @@ fn repository_cursor(
     Ok(app::RegistryCursor {
         registered_at_ms: value.registered_at_ms,
         id: app::RepositoryId::parse(&value.id).map_err(|_| ())?,
+        authorization_binding: None,
     })
 }
 
@@ -541,6 +545,16 @@ fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryC
     rpc::RegistryCursor {
         registered_at_ms: value.registered_at_ms,
         id: value.id.to_string(),
+    }
+}
+
+fn project_registry_cursor(
+    value: app::RegistryCursor<app::ProjectId>,
+) -> rpc::ProjectRegistryCursor {
+    rpc::ProjectRegistryCursor {
+        registered_at_ms: value.registered_at_ms,
+        id: value.id.to_string(),
+        authorization_binding: value.authorization_binding,
     }
 }
 

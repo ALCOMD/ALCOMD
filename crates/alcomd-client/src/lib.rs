@@ -848,7 +848,7 @@ impl AlcomdClient {
 
     pub async fn projects_list(
         &mut self,
-        cursor: Option<alcomd_protocol::RegistryCursor>,
+        cursor: Option<alcomd_protocol::ProjectRegistryCursor>,
         limit: Option<u32>,
     ) -> Result<alcomd_protocol::ProjectsListResult, ClientError> {
         self.projects_list_with_view(alcomd_protocol::ProjectsListParams {

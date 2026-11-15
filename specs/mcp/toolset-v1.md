@@ -51,6 +51,12 @@ alcomd_cancel_operation
 
 项目查询只展示当前授权的登记快照，Plan重读当前文件。Apply要求显式confirm=true，只应用本Principal的原remove Plan，接受Operation不代表业务成功。来源委托、安装/重装、备份工具及管理扩展不在本切片。
 
+2026-11-15所有者批准OAuth项目游标补充：`alcomd_list_projects`的cursor新增可选
+`authorization_binding`（64位小写hex），透传Core `authorizationBinding`，不由适配器签发。
+OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化返回既有revision_conflict，
+重新读取第一页。绑定还覆盖token上限、resource和时间/ProjectId位置，不扩大权限。
+非OAuth继续省略该字段；没有新的工具、State、Config、权限、session或缓存。
+
 ## 长任务
 
 核心权威状态为 ALCOMD Operation；本切片任务查询/取消只支持packages.apply。4.0.0不采用或广告MCP Tasks。协议请求取消/STDIO EOF只结束当前请求，不能默认取消已经接受的Operation；只有显式cancel_operation请求Core合作式业务取消。

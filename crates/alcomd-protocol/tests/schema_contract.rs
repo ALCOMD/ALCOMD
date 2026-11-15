@@ -209,6 +209,49 @@ fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
 }
 
 #[test]
+fn project_cursor_binding_is_optional_nonnullable_and_does_not_change_repository_cursors() {
+    use alcomd_protocol::{ProjectRegistryCursor, ProjectsListParams, RegistryListParams};
+    let legacy = json!({"registeredAtMs":100,"id":"00000000-0000-4000-8000-000000000101"});
+    let unbound: ProjectRegistryCursor =
+        serde_json::from_value(legacy.clone()).expect("legacy project cursor");
+    assert!(unbound.authorization_binding.is_none());
+    assert_eq!(
+        serde_json::to_value(unbound).expect("unchanged legacy wire"),
+        legacy
+    );
+    let mut bound = legacy;
+    bound["authorizationBinding"] = json!("a".repeat(64));
+    let params: ProjectsListParams =
+        serde_json::from_value(json!({"cursor":bound})).expect("OAuth cursor");
+    assert_eq!(
+        params.cursor.expect("cursor").authorization_binding,
+        Some("a".repeat(64))
+    );
+    assert!(serde_json::from_value::<RegistryListParams>(json!({"cursor":bound})).is_err());
+    bound["authorizationBinding"] = Value::Null;
+    assert!(serde_json::from_value::<ProjectsListParams>(json!({"cursor":bound})).is_err());
+    let contract = schema("m3-project-repository");
+    let defs = &contract["$defs"];
+    assert!(
+        defs["registryCursor"]["properties"]
+            .get("authorizationBinding")
+            .is_none()
+    );
+    assert_eq!(
+        defs["projectRegistryCursor"]["properties"]["authorizationBinding"]["maxLength"],
+        64
+    );
+    assert_eq!(
+        defs["projectListParams"]["properties"]["cursor"]["oneOf"][0]["$ref"],
+        "#/$defs/projectRegistryCursor"
+    );
+    assert_eq!(
+        defs["registryListParams"]["properties"]["cursor"]["oneOf"][0]["$ref"],
+        "#/$defs/registryCursor"
+    );
+}
+
+#[test]
 fn live_events_contract_separates_ready_responses_and_closed_bounded_notifications() {
     use alcomd_protocol::{
         EventNotification, EventsSubscribeParams, EventsSubscribeResult, OperationsListResult,

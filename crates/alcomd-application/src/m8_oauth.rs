@@ -42,10 +42,114 @@ pub enum OAuthError {
 pub struct OAuthAccessGuard {
     pub token_hash: [u8; 32],
     pub resource: String,
+    cursor_key: Option<[u8; 32]>,
+}
+impl OAuthAccessGuard {
+    pub fn new(token_hash: [u8; 32], resource: String) -> Self {
+        Self {
+            token_hash,
+            resource,
+            cursor_key: None,
+        }
+    }
 }
 pub struct OAuthAuthenticated {
     pub client: McpClient,
     pub scopes: Vec<String>,
+}
+
+/// Stateless, domain-separated HMAC-SHA256 under a private Core process key.
+/// Access secrets and their digests are client-derivable and must never be the key.
+pub fn oauth_project_cursor_binding(
+    guard: &OAuthAccessGuard,
+    grant_revision: u64,
+    ceiling: &[McpGrant],
+    cursor: &RegistryCursor<ProjectId>,
+) -> Result<String, OAuthError> {
+    let message = serde_json::to_vec(&(
+        "alcomd.m8.oauth.project-cursor.v1",
+        &guard.token_hash,
+        &guard.resource,
+        grant_revision,
+        ceiling,
+        cursor.registered_at_ms,
+        cursor.id,
+    ))
+    .map_err(|_| OAuthError::Unavailable)?;
+    let key = guard.cursor_key.as_ref().ok_or(OAuthError::Denied)?;
+    Ok(oauth_hex(&cursor_hmac(key, &message)))
+}
+
+// RFC2104 construction over the existing SHA256 implementation. Production
+// keys are exactly32 bytes; the short-key branch is checked by RFC4231 vectors.
+fn cursor_hmac(key: &[u8], message: &[u8]) -> [u8; 32] {
+    let mut block = [0u8; 64];
+    if key.len() > block.len() {
+        block[..32].copy_from_slice(&Sha256::digest(key));
+    } else {
+        block[..key.len()].copy_from_slice(key);
+    }
+    let inner_pad = block.map(|b| b ^ 0x36);
+    let outer_pad = block.map(|b| b ^ 0x5c);
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(message);
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner.finalize());
+    outer.finalize().into()
+}
+
+#[cfg(test)]
+mod cursor_binding_tests {
+    use super::*;
+    #[test]
+    fn cursor_hmac_matches_rfc4231_short_and_long_key_vectors() {
+        // https://www.rfc-editor.org/rfc/rfc4231.html sections4.2,4.3,4.7.
+        for (key, message, expected) in [
+            (
+                vec![0x0b; 20],
+                b"Hi There".as_slice(),
+                "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",
+            ),
+            (
+                b"Jefe".to_vec(),
+                b"what do ya want for nothing?".as_slice(),
+                "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843",
+            ),
+            (
+                vec![0xaa; 131],
+                b"Test Using Larger Than Block-Size Key - Hash Key First".as_slice(),
+                "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54",
+            ),
+        ] {
+            assert_eq!(oauth_hex(&cursor_hmac(&key, message)), expected);
+        }
+    }
+    #[test]
+    fn a_client_known_token_digest_is_not_the_core_cursor_key() {
+        let guard = OAuthAccessGuard::new([23; 32], "https://localhost:5443/mcp".into());
+        let cursor = RegistryCursor {
+            registered_at_ms: 1,
+            id: ProjectId::new(),
+            authorization_binding: None,
+        };
+        assert!(oauth_project_cursor_binding(&guard, 1, &[], &cursor).is_err());
+        let mut signed = guard.clone();
+        signed.cursor_key = Some([17; 32]);
+        let mac = oauth_project_cursor_binding(&signed, 1, &[], &cursor).expect("private Core key");
+        let mut forged = guard;
+        forged.cursor_key = Some(forged.token_hash);
+        assert_ne!(
+            oauth_project_cursor_binding(&forged, 1, &[], &cursor).expect("client guess"),
+            mac
+        );
+        signed.cursor_key = Some([18; 32]);
+        assert_ne!(
+            oauth_project_cursor_binding(&signed, 1, &[], &cursor).expect("new process key"),
+            mac
+        );
+    }
 }
 impl std::fmt::Debug for OAuthAccessGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -162,6 +266,7 @@ impl OAuthEntropy {
 pub struct OAuthApplication<S: OAuthStore> {
     store: S,
     pending: Arc<Mutex<VecDeque<Pending>>>,
+    cursor_key: [u8; 32],
 }
 struct Pending {
     id: String,
@@ -367,18 +472,20 @@ fn review(
 }
 
 impl<S: OAuthStore> OAuthApplication<S> {
-    pub fn new(store: S) -> Self {
+    pub fn new(store: S, cursor_key: [u8; 32]) -> Self {
         Self {
             store,
             pending: Arc::new(Mutex::new(VecDeque::new())),
+            cursor_key,
         }
     }
     pub async fn authenticate(
         &self,
-        guard: OAuthAccessGuard,
+        mut guard: OAuthAccessGuard,
         now: u64,
     ) -> Result<AccessContext, OAuthError> {
         let authenticated = self.store.oauth_authenticate(guard.clone(), now).await?;
+        guard.cursor_key = Some(self.cursor_key);
         Ok(mcp_access(&authenticated.client)
             .map_err(|_| OAuthError::Denied)?
             .with_oauth_guard(guard, authenticated.scopes))

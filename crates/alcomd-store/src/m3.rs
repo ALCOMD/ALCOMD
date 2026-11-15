@@ -444,6 +444,7 @@ pub(super) fn list_projects(
             projects.last().map(|record| RegistryCursor {
                 registered_at_ms: record.registered_at_ms,
                 id: record.project_id,
+                authorization_binding: None,
             })
         })
         .flatten();
@@ -582,6 +583,7 @@ pub(super) fn list_project_view(
         projects.last().map(|record| RegistryCursor {
             registered_at_ms: record.registered_at_ms,
             id: record.project_id,
+            authorization_binding: None,
         })
     } else {
         None
@@ -1571,6 +1573,7 @@ pub(super) fn list_repositories(
             repositories.last().map(|record| RegistryCursor {
                 registered_at_ms: record.registered_at_ms,
                 id: record.repository_id,
+                authorization_binding: None,
             })
         })
         .flatten();

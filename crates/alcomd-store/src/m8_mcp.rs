@@ -353,6 +353,26 @@ pub(super) fn projects_scoped(
     limit: u32,
     guard: Option<&alcomd_application::OAuthAccessGuard>,
 ) -> Result<ProjectPage, M3Error> {
+    if guard.is_some() {
+        // Scope, snapshot binding and page contents must see the same read transaction.
+        let tx = db
+            .unchecked_transaction()
+            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+        let page = projects_scoped_on(&tx, principal, cursor, limit, guard)?;
+        tx.commit()
+            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+        Ok(page)
+    } else {
+        projects_scoped_on(db, principal, cursor, limit, None)
+    }
+}
+fn projects_scoped_on(
+    db: &Connection,
+    principal: &PrincipalId,
+    cursor: Option<RegistryCursor<ProjectId>>,
+    limit: u32,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+) -> Result<ProjectPage, M3Error> {
     let scope = if let Some(guard) = guard {
         let now = super::m8_oauth::wall_time()
             .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
@@ -362,12 +382,21 @@ pub(super) fn projects_scoped(
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         if let Some(c) = &cursor {
-            super::m8_oauth::authorize_cursor(db, guard, now)
+            let expected = super::m8_oauth::project_cursor_binding(db, guard, now, c)
                 .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?;
-            if !limited
-                .grants
-                .iter()
-                .any(|g| g.permission == "projects.read" && g.resource_id == c.id.to_string())
+            let matches = c.authorization_binding.as_deref().is_some_and(|actual| {
+                actual.len() == expected.len()
+                    && actual
+                        .bytes()
+                        .zip(expected.bytes())
+                        .fold(0u8, |difference, (a, b)| difference | (a ^ b))
+                        == 0
+            });
+            if !matches
+                || !limited
+                    .grants
+                    .iter()
+                    .any(|g| g.permission == "projects.read" && g.resource_id == c.id.to_string())
             {
                 return Err(M3Error::new(M3ErrorCode::RevisionConflict));
             }
@@ -408,14 +437,23 @@ pub(super) fn projects_scoped(
             ProjectId::parse(&id).map_err(|_| M3Error::new(M3ErrorCode::Internal))?,
         )?);
     }
-    let next_cursor = if more {
+    let mut next_cursor = if more {
         records.last().map(|r| RegistryCursor {
             registered_at_ms: r.registered_at_ms,
             id: r.project_id,
+            authorization_binding: None,
         })
     } else {
         None
     };
+    if let (Some(guard), Some(next)) = (guard, next_cursor.as_mut()) {
+        let now = super::m8_oauth::wall_time()
+            .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
+        next.authorization_binding = Some(
+            super::m8_oauth::project_cursor_binding(db, guard, now, next)
+                .map_err(|_| M3Error::new(M3ErrorCode::RevisionConflict))?,
+        );
+    }
     Ok(ProjectPage {
         projects: records,
         next_cursor,

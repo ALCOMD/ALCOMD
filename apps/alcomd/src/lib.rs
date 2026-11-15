@@ -355,8 +355,11 @@ async fn initialize_daemon_with_directories(
     let m3 = M3ReadApplication::new(store.clone(), reader.clone());
     let repository_auto_refresh =
         alcomd_application::RepositoryAutoRefresh::new(m3.clone(), official_gui.clone());
+    let mut oauth_cursor_key = [0u8; 32];
+    getrandom::fill(&mut oauth_cursor_key)
+        .map_err(|_| BindError::Io(io::Error::other("OAuth cursor key initialization failed")))?;
     let applications = Arc::new(Applications {
-        oauth: alcomd_application::OAuthApplication::new(store.clone()),
+        oauth: alcomd_application::OAuthApplication::new(store.clone(), oauth_cursor_key),
         #[cfg(feature = "test-kill-gates")]
         mcp_apply_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
@@ -680,10 +683,7 @@ async fn dispatch_payload(
             match applications
                 .oauth
                 .authenticate(
-                    alcomd_application::OAuthAccessGuard {
-                        token_hash: hash,
-                        resource: resource.clone(),
-                    },
+                    alcomd_application::OAuthAccessGuard::new(hash, resource.clone()),
                     current_time_ms().unwrap_or(u64::MAX),
                 )
                 .await
@@ -794,10 +794,7 @@ async fn dispatch_hello(
         use alcomd_application::OAuthStore;
         if let Err(e) = store
             .oauth_authenticate(
-                alcomd_application::OAuthAccessGuard {
-                    token_hash: hash,
-                    resource: resource.clone(),
-                },
+                alcomd_application::OAuthAccessGuard::new(hash, resource.clone()),
                 current_time_ms().unwrap_or(u64::MAX),
             )
             .await

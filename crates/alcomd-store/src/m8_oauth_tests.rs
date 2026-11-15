@@ -170,10 +170,7 @@ fn refresh_input(reg: &OAuthRegistration, token: String) -> OAuthTokenParams {
     }
 }
 fn guard(reg: &OAuthRegistration, token: &str) -> OAuthAccessGuard {
-    OAuthAccessGuard {
-        token_hash: mcp_credential_hash(token),
-        resource: reg.resource.clone(),
-    }
+    OAuthAccessGuard::new(mcp_credential_hash(token), reg.resource.clone())
 }
 
 #[test]
@@ -199,7 +196,7 @@ fn s256_matches_rfc7636_and_targets_do_not_accept_aliases_or_cleartext() {
 #[tokio::test]
 async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_request() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(&store, vec![], "zero").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
@@ -328,7 +325,7 @@ async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_r
 #[tokio::test]
 async fn pkce_client_redirect_audience_and_code_response_loss_do_not_mint_twice() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(
         &store,
         vec![grant("state.check"), grant("operations.read")],
@@ -417,7 +414,7 @@ async fn pkce_client_redirect_audience_and_code_response_loss_do_not_mint_twice(
 async fn refresh_rotation_reuse_and_restart_preserve_revocation_without_reissuing_secrets() {
     let file = path();
     let store = StateStoreHandle::open(file.clone()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(&store, vec![grant("state.check")], "refresh").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
@@ -434,7 +431,7 @@ async fn refresh_rotation_reuse_and_restart_preserve_revocation_without_reissuin
     drop(service);
     drop(store);
     let store = StateStoreHandle::open(file).expect("reopen");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     assert!(
         matches!(
             service
@@ -482,7 +479,7 @@ async fn refresh_rotation_reuse_and_restart_preserve_revocation_without_reissuin
 #[tokio::test]
 async fn current_grants_narrow_existing_tokens_and_later_additions_do_not_expand_them() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(&store, vec![grant("state.check")], "scope").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
@@ -554,7 +551,7 @@ async fn current_grants_narrow_existing_tokens_and_later_additions_do_not_expand
 #[tokio::test]
 async fn confidential_registration_response_is_one_shot_and_pending_consent_cannot_drift() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(&store, vec![grant("state.check")], "confidential").await;
     let created = register(&service, core.client_id, true).await;
     let secret = created.client_secret.clone().expect("secret");
@@ -646,7 +643,7 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
 #[tokio::test]
 async fn concurrent_refresh_has_one_consumer_and_reuse_revokes_the_family() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let core = seed(&store, vec![grant("state.check")], "concurrent").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
@@ -657,8 +654,8 @@ async fn concurrent_refresh_has_one_consumer_and_reuse_revokes_the_family() {
         .expect("token");
     let input = refresh_input(&reg, issued.refresh_token.expect("refresh"));
     // Independent use-case instances intentionally do not share their volatile lock.
-    let first = OAuthApplication::new(store.clone());
-    let second = OAuthApplication::new(store.clone());
+    let first = OAuthApplication::new(store.clone(), [17; 32]);
+    let second = OAuthApplication::new(store.clone(), [17; 32]);
     let (a, b) = tokio::join!(
         first.token(input.clone(), entropy(5), 107),
         second.token(input, entropy(6), 107)
@@ -695,7 +692,7 @@ async fn concurrent_refresh_has_one_consumer_and_reuse_revokes_the_family() {
 async fn consumed_refresh_replay_still_revokes_a_live_family_after_its_idle_deadline() {
     let store = StateStoreHandle::open(path()).expect("store");
     let core = seed(&store, vec![grant("state.check")], "late-replay").await;
-    let service = OAuthApplication::new(store);
+    let service = OAuthApplication::new(store, [17; 32]);
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
     let code = approve(&service, &request, vec![grant("state.check")]).await;
@@ -737,7 +734,7 @@ async fn consumed_refresh_replay_still_revokes_a_live_family_after_its_idle_dead
 #[tokio::test]
 async fn registration_history_is_preserved_with_snapshot_and_byte_bounded_pages() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let service = OAuthApplication::new(store.clone());
+    let service = OAuthApplication::new(store.clone(), [17; 32]);
     let owner = AccessContext::local_owner();
     let core = seed(&store, vec![], "history").await;
     let mut active = None;

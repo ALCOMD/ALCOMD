@@ -31,6 +31,10 @@ identity. The browser is never owner. Token scopes/grants can only narrow existi
 Zero grants cannot approve requested scopes; do not issue a misleading zero-scope token. A
 revoked or changed grant stays authoritative even on an existing connection. Refresh never
 widens its previous ceiling. A new authorization review is needed for broader grants.
+Project continuation cursors carry Core-issued authorization_binding, tied to the token,
+current grant snapshot, ceiling and position. Missing/changed/cross-token bindings return
+revision_conflict. An independent private Core process key authenticates them; Core restart
+requires a new first page, without turning a cursor into authority or a protocol session.
 
 Registered callback queries cannot contain OAuth response keys code/state/iss/error/
 error_description/error_uri, preventing duplicate response parameters. Registered redirects

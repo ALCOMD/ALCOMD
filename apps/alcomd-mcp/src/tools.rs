@@ -53,6 +53,11 @@ fn key(value: &str) -> bool {
 struct Cursor {
     registered_at_ms: u64,
     project_id: String,
+    #[serde(default, deserialize_with = "cursor_binding")]
+    authorization_binding: Option<String>,
+}
+fn cursor_binding<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    String::deserialize(d).map(Some)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -436,10 +441,10 @@ pub async fn execute(
     let result:Result<(Value,String,bool),Failure>=async {
         match input {
             Input::List(p) => {
-                let page=client.projects_list(p.cursor.map(|c|rpc::RegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id}),p.limit).await.map_err(read)?;
+                let page=client.projects_list(p.cursor.map(|c|rpc::ProjectRegistryCursor{registered_at_ms:c.registered_at_ms,id:c.project_id,authorization_binding:c.authorization_binding}),p.limit).await.map_err(read)?;
                 let items=page.projects.into_iter().map(|p|project(p,false)).collect::<Result<Vec<_>,_>>()?;
                 let mut data=json!({"projects":items});
-                if let Some(c)=page.next_cursor {data["next_cursor"]=json!({"registered_at_ms":c.registered_at_ms,"project_id":c.id});}
+                if let Some(c)=page.next_cursor {let mut cursor=json!({"registered_at_ms":c.registered_at_ms,"project_id":c.id});if let Some(binding)=c.authorization_binding{cursor["authorization_binding"]=json!(binding);}data["next_cursor"]=cursor;}
                 Ok((data,"Authorized registered projects.".into(),false))
             }
             Input::Project(p) => Ok((project(client.project_get(p.project_id).await.map_err(read)?.project,true)?,"Registered package snapshot; planning rechecks current project files.".into(),false)),
@@ -527,5 +532,43 @@ mod tests {
         assert!(matches!(unknown,Err(e) if e.code==rmcp::model::ErrorCode::METHOD_NOT_FOUND));
         assert!(safe_numbers(&json!({"revision":MAX_SAFE})));
         assert!(!safe_numbers(&json!({"revision":MAX_SAFE+1})));
+    }
+    #[test]
+    fn project_cursor_binding_is_exposed_and_preserved_without_adapter_authority() {
+        let contract: Value = serde_json::from_str(CONTRACT).expect("contract");
+        assert_eq!(
+            contract["$defs"]["cursor"]["properties"]["authorization_binding"]["maxLength"],
+            64
+        );
+        for binding in [None, Some(json!("a".repeat(64)))] {
+            let mut cursor =
+                json!({"registered_at_ms":1,"project_id":"00000000-0000-4000-8000-000000000101"});
+            if let Some(value) = binding {
+                cursor["authorization_binding"] = value;
+            }
+            let result = parse(
+                CallToolRequestParams::new("alcomd_list_projects")
+                    .with_arguments(json!({"cursor":cursor}).as_object().expect("args").clone()),
+            )
+            .expect("optional field");
+            let Input::List(list) = result else {
+                panic!("list")
+            };
+            assert_eq!(
+                list.cursor
+                    .expect("cursor")
+                    .authorization_binding
+                    .as_deref(),
+                cursor.get("authorization_binding").and_then(Value::as_str)
+            );
+        }
+        let invalid = json!({"cursor":{"registered_at_ms":1,"project_id":"00000000-0000-4000-8000-000000000101","authorization_binding":null}});
+        assert!(
+            parse(
+                CallToolRequestParams::new("alcomd_list_projects")
+                    .with_arguments(invalid.as_object().expect("args").clone())
+            )
+            .is_err()
+        );
     }
 }

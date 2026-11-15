@@ -284,6 +284,7 @@ fn validate_token(
         // after its own idle deadline. Its caller must revoke the whole family.
         || (t.expires <= now && !(t.kind == "refresh" && t.consumed))
         || t.absolute <= now
+        || t.grant_revision > current.grant_revision
         || t.reg_revision != current.registration.revision
         || t.generation != current.credential_generation
         || t.issuer != current.registration.issuer
@@ -307,17 +308,18 @@ pub(super) fn authenticate(
     client.grants.retain(|g| t.grants.contains(g));
     Ok(client)
 }
-pub(super) fn authorize_cursor(
+pub(super) fn project_cursor_binding(
     db: &Connection,
     guard: &OAuthAccessGuard,
     now: u64,
-) -> Result<(), OAuthError> {
+    cursor: &RegistryCursor<ProjectId>,
+) -> Result<String, OAuthError> {
     let t = token(db, &guard.token_hash)?;
-    let current = validate_token(db, &t, now)?;
-    if t.grant_revision != current.grant_revision {
-        return Err(OAuthError::RevisionConflict);
+    if t.kind != "access" || t.resource != guard.resource {
+        return Err(OAuthError::InvalidGrant);
     }
-    Ok(())
+    let current = validate_token(db, &t, now)?;
+    oauth_project_cursor_binding(guard, current.grant_revision, &t.grants, cursor)
 }
 fn revoke_family(db: &Connection, family: &str, now: u64) -> Result<(), OAuthError> {
     db.execute("UPDATE mcp_oauth_tokens SET revoked_at_ms=max(created_at_ms,?2) WHERE family_id=?1 AND revoked_at_ms IS NULL",params![family,integer(now)?]).map_err(unavailable)?;
