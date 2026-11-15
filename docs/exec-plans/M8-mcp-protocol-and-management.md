@@ -861,8 +861,36 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-check\debug\alcomd-cli.exe
 
 未覆盖/后续：普通浏览器人工TLS接入、外部第三方客户端自动登录、CIMD/DCR和外部AS/自动证书均未验证或实施，不承诺任意MCP客户端兼容。管理扩展的匹配Host/GUI原生查看、实时观测、正式默认分发及包安装来源委托仍为M8后续；本批不进入这些实现或M9。现有tuple游标的严格跨token来源绑定限制如上保留。当前只有本地技术结果，等待新增代码远端验证；不自动推送。
 
-#### 唯一待决合同差异：OAuth项目续页来源绑定
+#### 已批准合同补充：OAuth项目续页来源绑定
 
-已批准要求“游标绑定token上限与当前授权快照”，同时保留原六工具合同。实际旧cursor只有timestamp/ProjectId，无法证明来自哪枚token；当前查询仍权威限制每页范围和revision，不存在借游标读取范围外项目，但不能把这一点冒充来源绑定完成。仅此更强保证未实施，其他接线与结果保持。
+c791a94时记录的差异：已批准要求“游标绑定token上限与当前授权快照”，同时保留原六工具合同。实际旧cursor只有timestamp/ProjectId，无法证明来自哪枚token；当时查询仍权威限制每页范围和revision，不存在借游标读取范围外项目，但不能把这一点冒充来源绑定完成。该历史缺口现已按所有者补充批准实施，实际结果如下；不改写旧候选的边界。
 
-推荐最小差异：仅给`projects.list`的cursor及六工具`alcomd_list_projects`对应cursor增加可选`authorizationBinding`（工具侧snake_case），非OAuth继续省略；OAuth返回Core生成的有界不可伪造绑定，续页必须带回。绑定覆盖token、当前grantRevision、token上限、timestamp/ProjectId；错误/缺失/不同token或快照用既有revision_conflict，要求重新第一页。不增加State、Config、权限、session、缓存或万能RPC。新字段需在DTO/Schema/typed client/工具透传及定向篡改/跨token/撤销回归同步。**尚未修改该公开形状**；依据AGENTS.md“公共 RPC、数据库 Schema、Extension API、权限名称和迁移删除清单须经人工审批”，仅此差异另待批准，不重审已批准OAuth身份、九RPC或依赖，也不推送。
+所有者已明确批准此最小补充，直接实施，不再重复审批。仅给`projects.list`的cursor及六工具`alcomd_list_projects`对应cursor增加可选`authorizationBinding`（工具侧snake_case），非OAuth继续省略；OAuth返回Core生成的有界不可伪造绑定，续页必须带回。绑定覆盖token、当前grantRevision、token上限、timestamp/ProjectId；错误/缺失/不同token或快照用既有revision_conflict，要求重新第一页。不增加State、Config、权限、session、缓存或万能RPC。新字段同步DTO/Schema/typed client/工具透传及定向篡改/跨token/撤销回归；原仓库游标公开形状不变。实现采用现有sha2的标准HMAC-SHA256、Core启动时由OS随机生成的256位独立私钥及有域隔离的规范序列化；token摘要作为绑定消息，不能当作客户端可推导的MAC key。私钥不写数据库、响应或Debug，Core重启后旧游标需重读第一页，无新依赖或unsafe。此处更新的是实施授权，不提前记录测试通过；不重审OAuth身份、九RPC或依赖，也不推送。
+
+### OAuth游标补充的本地收束（2026-11-15）
+
+代码提交`0cc9b28fef07661d3e4d99f47a1d11cdcea865f3`在标准目录/main本地完成，工作者为真实Windows用户。前批6bf3493/c791a94中的tuple来源绑定缺口现已收束；没有借此重审OAuth九RPC、身份或依赖，没有推送或启动M9。原远端78920f3的CI/CodeQL仍不覆盖这些新增代码。
+
+`projects.list`使用单独的ProjectRegistryCursor，仓库仍使用原RegistryCursor；仅项目请求/结果增加可选authorizationBinding。非OAuth省略字段，原JSON保持。typed client及MCP对应cursor的authorization_binding完整透传，适配器不签发、验证或扩大权威。Core在同一SQLite读取事务中校验token/当前grants、HMAC和分页内容；绑定覆盖token摘要、resource、当前grantRevision、冻结token上限及timestamp/ProjectId。缺失、篡改、位置变化、同一Principal换token、跨客户端或授权修订变化均返回既有revision_conflict。
+
+MAC采用现有sha2的标准HMAC-SHA256，向量核对[RFC4231](https://www.rfc-editor.org/rfc/rfc4231.html)；向量通过不替代密钥来源检查。Core启动时用既有getrandom生成独立256位私钥，不以客户端可推导的token/摘要作密钥。私钥只附在Core认证产生的内部上下文，不写State、响应、事件或Debug。没有新依赖、State/Config、权限、session、持久查询或缓存。Core重启后旧MAC失效，原本仍有效的token可重新读取第一页；这是无持久游标状态的明确边界，不是假定token被撤销。
+
+本轮最终输入444份，`target/m8-oauth-audit-20261115/inputs-cursor-committed.json`聚合SHA256 `6778aab1f45ec206d190bf4b4528f974ca43cd7464da140415bb1277660e8930`，代码提交前后未变。`cursor-receipt.json`绑定准确代码SHA、原生三程序字节/摘要、两个真实用例的二进制摘要及环境保全结果；输入清单不代表每个所列模块都已执行。
+
+| 本轮实际范围 | 结果 | 对应记录 |
+| --- | --- | --- |
+| HMAC向量及独立Core密钥边界 | 2/0 | cursor-mac-stable.log |
+| RPC Schema整个模块，含可选/非null字段及仓库不变 | 单轮51/0 | cursor-schema.log；原50/0仍属前批 |
+| MCP单元，含字段解析/公开Schema | 11/0 | cursor-mcp-unit.log |
+| 相关OAuth/迁移用例 | 11/0 | cursor-oauth-associated.log，原断言保持 |
+| 既有仓库分页 / 项目视图分页 | 各1/0 | cursor-repository-page.log / cursor-project-view.log |
+| 新增真实HTTPS/SDK/Core游标用例 | 1/0，零忽略 | native-cursor-20261115T0736167205046Z/ |
+| 既有真实HTTPS卸载闭环关联复验 | 1/0，零忽略 | native-cursor-associated-20261115T0738466128829Z/ |
+| 受影响六包all-targets严格Clippy、fmt/metadata/xtask/diff | 通过 | clippy-cursor-stable.log及本轮检查记录 |
+| Core/MCP/CLI debug候选构建 | 通过，2m35s | cursor-receipt.json；没有GUI/release/全量重跑 |
+
+真实游标用例读取完整两页并直接调用typed Core证明不是GUI/适配器检查；篡改MAC、时间、ProjectId、缺失绑定、同Principal另一token（较大上限）及另一个客户端均被拒绝。授权变化后旧游标失效，同一token重新第一页/续页成功；撤销作用于新HTTP请求及存续Core连接。关闭并重开同一隔离Core后，另一个未撤销token仍可认证，旧MAC拒绝，重新第一页/续页正常。非OAuth native第一页和续页没有新增输出字段。公开trace位于`target/m8-oauth-cursor-real/eb0e3d5a-d7e4-4dc7-980a-bb9e9572636f/cursor-trace.json`，不含access秘密。
+
+原真实OAuth卸载用例完整保留此前Plan/Operation/权限、取消及实际响应丢失断言，关联复验1/0；不是整个business_tools六用例全部通过，也没有拼接为Workspace或全量浏览器通过。首次Clippy因新增测试手动去前缀告警失败，改用strip_prefix后最终严格通过，原日志clippy-cursor.log保留。原生构建首次调用在工具自动审批阶段超时，未启动；工具允许的一次重试已实际成功，不将超时写成构建成功。
+
+两个真实用例的入口都先确认原Core/GUI/Host/MCP为0，结束后无本批runtime残留；原已识别data/profile文件摘要及Unity进程前后相同。原环境本来关闭，继续保持关闭，没有替换原程序/迁移原数据，也没有自动恢复桌面控制。现有`target/m8-check/debug/alcomd.exe`、`alcomd-mcp.exe`和`alcomd-cli.exe`已匹配本轮源码重建；只提供本地候选，不称持久人工窗口已打开。管理扩展仍缺匹配Host/嵌入前端GUI，普通浏览器TLS/外部客户端人工接入尚未验收，其他M8后续沿既有记录。本批结果为本地技术通过、远端待验证，M8保持IN_PROGRESS。
