@@ -6,7 +6,7 @@
 
 M8 approved management bridge adds only bounded MCP client administration through Core use cases
 (`../extensions/mcp-management-v1.md`). It adds no ambient WASI authority. Mandatory negative vectors:
-forged/stale lease and UI context; one-sided permissions; project-scope escalation; grant revocation
+forged/stale lease and UI context; one-sided permissions; project capability escalation; grant revocation
 and package changes during paging or write acceptance; oversized grants; idempotency replay after
 revocation; accepted-write response loss; accidental credential/log disclosure. Grant checks and
 acceptance/replay share one Store transaction. First-party guests use the same interface and sandbox.
@@ -29,7 +29,7 @@ Host pipe、daemon/application authority、SQLite/object store。第一方 packa
 | guest imports ambient OS authority | no inherit env/argv/stdio/network/preopen; exact WIT linker allowlist; no WASI imports in first slice | import-set golden |
 | guest forges Principal/Extension/scope | daemon-created lease bound to spawned pipe session; guest authority metadata ignored | stale/forged lease vectors |
 | revoke race / cached authorization | durable grant revision commit linearizes; every call rechecks; queue/session/handle cancellation | revoke-in-flight matrix |
-| guest reads project files/DB | only extension-safe Project summary application use case | scope/capability vectors |
+| guest reads project files/DB | only extension-safe Project summary application use case | capability and target-identity vectors |
 | cross-extension data read | lease-selected namespace, no ExtensionId argument, transaction/quota constraints | cross-read vectors |
 | publisher reuses retained ExtensionId data | namespace owner binds ExtensionId + publisher fingerprint; mismatch fails closed; no publisher transfer | owner-mismatch vectors |
 | infinite loop/memory/table/call flood | exact fuel+epoch/wall/memory/table/instance/concurrency/rate limits | resource-limit vectors |

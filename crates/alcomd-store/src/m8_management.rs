@@ -180,18 +180,12 @@ fn execute(
                 .map_err(unavailable)?;
             let mut items = Vec::new();
             for id in ids {
-                if authority
-                    .client_access
-                    .require_project_read_scope(&id)
-                    .is_ok()
-                {
-                    let summary = crate::m6::project_summary(&tx, lease, &id, now)
-                        .map_err(|_| ManagementError::from(E::ScopeDenied))?;
-                    items.push(ManagementProject {
-                        project_id: id,
-                        name: summary.display_name,
-                    });
-                }
+                let summary = crate::m6::project_summary(&tx, lease, &id, now)
+                    .map_err(|_| ManagementError::from(E::ScopeDenied))?;
+                items.push(ManagementProject {
+                    project_id: id,
+                    name: summary.display_name,
+                });
             }
             R::Projects(page(
                 &items,

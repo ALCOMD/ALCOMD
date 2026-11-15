@@ -630,7 +630,7 @@ ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 
 }
 ```
 
-Apply 需要 `packages.apply.v1`、`packages.manage` 与目标 project write scope，并重新验证 read 权限、
+Apply 需要 `packages.apply.v1`及`packages.manage`能力，并重新验证 read 权限、
 Plan owner、project identity/revision/fingerprint，以及每个 pinned repository ID/revision、source
 identity、manifest fingerprint、package version、artifact URL 与 SHA-256。任一前提变化返回
 `plan_stale` 与 `m4-package-transaction.schema.json#/$defs/planStaleReason` 中的稳定 subreason；Apply
@@ -783,7 +783,7 @@ State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-cre
 
 Backup Create 在 RPC major 1 上冻结并发布两项 capability：`backups.read.v1` 与
 `backups.create.v1`。完整 DTO 与 bounds 由 `m5-backup-create.schema.json` 冻结：`backups.list/get`
-要求 `backups.read`；`backups.create` 要求 `backups.manage` 与目标 Project read scope，并直接返回预分配
+要求 `backups.read`；`backups.create` 要求 `backups.manage`和`projects.read`能力、复验目标项目归属，并直接返回预分配
 且可幂等重放的 `operationId`/`backupId`。它没有 Plan/Apply，不接收任意 output path。
 
 请求必须提供 `projectId`、`expectedRevision`、`idempotencyKey`。`compressionMode`、`excludeVpmPackages`、`includeLibrary`

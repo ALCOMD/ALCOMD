@@ -1688,17 +1688,74 @@ mod tests {
     }
 
     #[test]
-    fn exact_scopes_do_not_expand_each_other() {
+    fn project_capability_does_not_expand_extension_ui_authority() {
         let access = AccessContext::new(
             crate::PrincipalId::parse("client:test").expect("principal"),
             [Permission::ProjectsRead, Permission::ExtensionsUiUse],
         )
-        .with_project_read_scopes(["project-a".to_owned()])
         .with_extension_ui_scopes(["dev.example.a".to_owned()]);
-        assert!(access.require_project_read_scope("project-a").is_ok());
-        assert!(access.require_project_read_scope("project-b").is_err());
+        assert!(access.require(Permission::ProjectsRead).is_ok());
+        assert!(access.require(Permission::PackagesManage).is_err());
         assert!(access.require_extension_ui_scope("dev.example.a").is_ok());
         assert!(access.require_extension_ui_scope("dev.example.b").is_err());
+    }
+
+    #[test]
+    fn management_cursor_binding_tracks_capabilities_and_extension_authority() {
+        let principal = crate::PrincipalId::parse("client:management").expect("principal");
+        let access = AccessContext::new(
+            principal.clone(),
+            [Permission::ProjectsRead, Permission::ExtensionsUiUse],
+        )
+        .with_extension_ui_scopes(["dev.example.a".into()]);
+        let original = ExtensionUiInvocationAuthority {
+            kind: ExtensionInvocationKind::InteractiveUiRender,
+            client_access: access,
+            client_connection_id: "connection".into(),
+            client_instance_id: "instance".into(),
+            session_id: "session".into(),
+            snapshot_revision: 1,
+            deadline_ms: 2000,
+            current: Arc::new(AtomicBool::new(true)),
+        };
+        let fingerprint = crate::management_client_fingerprint(&original);
+        let mut reordered = original.clone();
+        reordered.client_access = AccessContext::new(
+            principal.clone(),
+            [Permission::ExtensionsUiUse, Permission::ProjectsRead],
+        )
+        .with_extension_ui_scopes(["dev.example.a".into()]);
+        assert_eq!(
+            crate::management_client_fingerprint(&reordered),
+            fingerprint
+        );
+        for changed_access in [
+            AccessContext::new(principal.clone(), [Permission::ExtensionsUiUse])
+                .with_extension_ui_scopes(["dev.example.a".into()]),
+            AccessContext::new(
+                principal,
+                [Permission::ProjectsRead, Permission::ExtensionsUiUse],
+            )
+            .with_extension_ui_scopes(["dev.example.b".into()]),
+            AccessContext::new(
+                crate::PrincipalId::parse("client:other").expect("other"),
+                [Permission::ProjectsRead, Permission::ExtensionsUiUse],
+            )
+            .with_extension_ui_scopes(["dev.example.a".into()]),
+        ] {
+            let mut changed = original.clone();
+            changed.client_access = changed_access;
+            assert_ne!(crate::management_client_fingerprint(&changed), fingerprint);
+        }
+        for field in ["connection", "instance", "session"] {
+            let mut changed = original.clone();
+            match field {
+                "connection" => changed.client_connection_id = "other".into(),
+                "instance" => changed.client_instance_id = "other".into(),
+                _ => changed.session_id = "other".into(),
+            }
+            assert_ne!(crate::management_client_fingerprint(&changed), fingerprint);
+        }
     }
 
     fn extension_record() -> ExtensionRecord {

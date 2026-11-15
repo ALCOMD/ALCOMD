@@ -287,6 +287,12 @@ ExternalConfig(provider_id)
 
 每个客户端独立身份，不共享万能 token。
 
+项目权限按能力一次授予，覆盖当前及未来登记项目。运行时AccessContext不保存项目ID授权集合，
+也不提供逐项目授权构造或检查入口；读取与包修改分别检查projects.read与packages.manage。
+ProjectId仍用于操作目标、资源归属、Plan/修订及文件身份校验，不作为权限范围。
+Portable UI的ExtensionId访问隔离、OAuth能力上限、实际Principal和Operation/幂等归属继续独立检查。
+
+
 后续可选 `alcomd-api`：
 
 - 默认关闭。

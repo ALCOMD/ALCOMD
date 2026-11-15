@@ -155,11 +155,11 @@ pub trait McpManagementStore: Clone + Send + Sync + 'static {
 
 /// Stable, canonical fingerprint of the trusted client authority, never guest metadata.
 pub fn management_client_fingerprint(authority: &ExtensionUiInvocationAuthority) -> String {
-    fn scopes(scope: &crate::AccessScopes) -> Vec<String> {
+    fn extension_scopes(scope: &crate::ExtensionUiScopes) -> Vec<String> {
         match scope {
-            crate::AccessScopes::None => vec![],
-            crate::AccessScopes::All => vec!["*".into()],
-            crate::AccessScopes::Exact(ids) => {
+            crate::ExtensionUiScopes::None => vec![],
+            crate::ExtensionUiScopes::All => vec!["*".into()],
+            crate::ExtensionUiScopes::Exact(ids) => {
                 let mut ids: Vec<_> = ids.iter().cloned().collect();
                 ids.sort();
                 ids
@@ -172,8 +172,7 @@ pub fn management_client_fingerprint(authority: &ExtensionUiInvocationAuthority)
     let value = serde_json::json!([
         access.principal().as_str(),
         permissions,
-        scopes(&access.project_read_scopes),
-        scopes(&access.extension_ui_scopes),
+        extension_scopes(&access.extension_ui_scopes),
         authority.client_connection_id,
         authority.client_instance_id,
         authority.session_id

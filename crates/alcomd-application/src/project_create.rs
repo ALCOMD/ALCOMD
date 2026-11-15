@@ -651,18 +651,15 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         match &source {
             ProjectTemplateSource::File { source_file } => validate_template_path(source_file)?,
             ProjectTemplateSource::Project {
-                project_id,
                 expected_project_revision,
                 id,
                 name,
                 ..
             } => {
-                access
-                    .require_project_read_scope(&project_id.to_string())
-                    .map_err(|cause| {
-                        ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied)
-                            .with_source(cause)
-                    })?;
+                access.require(Permission::ProjectsRead).map_err(|cause| {
+                    ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied)
+                        .with_source(cause)
+                })?;
                 validate_safe_revision(*expected_project_revision)?;
                 validate_template_metadata(id, name)?;
             }

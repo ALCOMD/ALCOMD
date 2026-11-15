@@ -83,7 +83,8 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   last-known-good cache；不允许 credential、自定义 header、package payload 下载或项目写入。
 - M3 `builtin:local-owner` 获得上述四项权限。capability、client metadata、路径、URL 与资源 ID
   均不是身份或授权凭据。
-- MCP外部Principal按M8已批准的能力授权，不提供逐项目用户授权；项目新建/删除不要求重复授权。
+- 项目访问只检查对应能力；内部AccessContext也不保存项目ID授权集合或提供按项目缩小授权的入口。
+  MCP外部Principal按M8已批准的能力授权，项目新建/删除不要求重复授权。
   资源owner及实际调用Principal、任务和幂等隔离保持；其他尚未实现的外部权限不由名称存在而开放。
 
 ## M7 Project Directory Delete 权限
@@ -112,15 +113,15 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 ## M4 Package Plan/Apply 权限
 
 - `packages.planInstall/planRemove/planUpgrade/planDowngrade/planResolve` 必须同时具备
-  `projects.read`、`repositories.read` 与 `packages.read`，并受目标 project 与所引用 repository
-  scope 限制。Plan 的内部 durable persistence 不要求 `packages.manage`，也不授权项目写入。
-- `packages.applyPlan` 必须再次具备上述 read 权限，并额外具备 `packages.manage` 与目标 project
-  write scope；每次 Apply 都复验 Plan owner、scope、revision 与 pinned source。
+  `projects.read`、`repositories.read` 与 `packages.read`，并复核目标项目及所引用仓库的可见性、归属和来源。
+  不存在逐项目授权集合。Plan 的内部 durable persistence 不要求 `packages.manage`，也不授权项目写入。
+- `packages.applyPlan` 必须再次具备上述 read 权限，并额外具备 `packages.manage` 能力；
+  每次 Apply 都复验 Plan owner、当前能力、目标项目revision与pinned source。
 - `packages.manage` 不隐含 repository credential、legacy cleanup、任意项目路径写入或 Unity 启动。
   它只授权执行已经批准且绑定目标 ProjectId 的 package ChangeSet。
 - capability、PlanId、OperationId、package/repository ID、SID 和 client metadata 都不是身份凭据。
-- M4 仅允许 `builtin:local-owner` 使用 Apply 写路径。真实外部 credential enrollment/revocation 与
-  第三方 mutation 尚未实现，不得因 Schema 已冻结而描述为开放。
+- 普通Apply写路径仅允许`builtin:local-owner`；M8已批准的MCP身份另只开放原remove Plan卸载切片，
+  逐次检查当前能力/OAuth上限、原调用Principal及任务归属，不能代理owner或扩展到尚未实现的写入。
 
 ## CLI、Unity、项目创建与备份权限
 
@@ -137,7 +138,7 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 - `projects.create` 入口与 `projectTemplates.*` 目录操作只允许 `builtin:local-owner`。模板目录不新增权限。
   使用模板依赖创建项目时另检查 `packages.read`、`repositories.read` 和 `packages.manage`。
 - `backups.list` 与 `backups.get` 只要求 `backups.read`。Backup Create contract-first 的
-  `backups.create` 要求 `backups.manage` 与目标 Project 的 `projects.read` scope；它不要求
+  `backups.create` 要求 `backups.manage` 与 `projects.read` 能力，另复验目标项目归属；它不要求
   `projects.manage`、`projects.create` 或 `packages.manage`。`excludeVpmPackages` 只读取 normalized locked
   set，不授予 package mutation authority。filesystem write 仍只对 `builtin:local-owner` 开放。
 - `backups.planRestore` 需要 `backups.read + projects.create`；它只创建永久 immutable Plan，不创建

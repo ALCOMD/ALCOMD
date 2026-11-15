@@ -317,7 +317,7 @@ impl M3RegistryStore for StateStoreHandle {
         guard: alcomd_application::OAuthAccessGuard,
     ) -> Result<ProjectPage, M3Error> {
         self.request_m3(move |db| {
-            m8_mcp::projects_scoped(db, &principal, cursor, limit, Some(&guard))
+            m8_mcp::authorized_projects(db, &principal, cursor, limit, Some(&guard))
         })
         .await
     }

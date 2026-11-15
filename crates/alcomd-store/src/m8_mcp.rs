@@ -315,9 +315,9 @@ pub(super) fn projects(
     cursor: Option<RegistryCursor<ProjectId>>,
     limit: u32,
 ) -> Result<ProjectPage, M3Error> {
-    projects_scoped(db, principal, cursor, limit, None)
+    authorized_projects(db, principal, cursor, limit, None)
 }
-pub(super) fn projects_scoped(
+pub(super) fn authorized_projects(
     db: &Connection,
     principal: &PrincipalId,
     cursor: Option<RegistryCursor<ProjectId>>,
@@ -329,15 +329,15 @@ pub(super) fn projects_scoped(
         let tx = db
             .unchecked_transaction()
             .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
-        let page = projects_scoped_on(&tx, principal, cursor, limit, guard)?;
+        let page = authorized_projects_on(&tx, principal, cursor, limit, guard)?;
         tx.commit()
             .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
         Ok(page)
     } else {
-        projects_scoped_on(db, principal, cursor, limit, None)
+        authorized_projects_on(db, principal, cursor, limit, None)
     }
 }
-fn projects_scoped_on(
+fn authorized_projects_on(
     db: &Connection,
     principal: &PrincipalId,
     cursor: Option<RegistryCursor<ProjectId>>,

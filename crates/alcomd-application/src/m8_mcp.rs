@@ -159,15 +159,7 @@ pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError>
             _ => return Err(McpIdentityError::PermissionDenied),
         });
     }
-    let mut access =
-        AccessContext::new(client.principal_id.clone(), permissions).with_mcp_identity();
-    if access.require(Permission::ProjectsRead).is_ok() {
-        access.project_read_scopes = crate::AccessScopes::All;
-    }
-    if access.require(Permission::PackagesManage).is_ok() {
-        access.project_package_write_scopes = crate::AccessScopes::All;
-    }
-    Ok(access)
+    Ok(AccessContext::new(client.principal_id.clone(), permissions).with_mcp_identity())
 }
 
 #[derive(Clone)]
@@ -318,19 +310,15 @@ mod tests {
     }
     #[test]
     fn project_read_capability_covers_future_projects_but_never_expands_to_writes() {
-        let project = ProjectId::new().to_string();
         let access = mcp_access(&record(vec![McpGrant {
             permission: "projects.read".into(),
             resource_kind: "global".into(),
             resource_id: "*".into(),
         }]))
         .expect("scoped identity");
-        assert!(access.require_project_read_scope(&project).is_ok());
-        assert!(
-            access
-                .require_project_read_scope(&ProjectId::new().to_string())
-                .is_ok()
-        );
+        assert!(access.require(Permission::ProjectsRead).is_ok());
+        assert!(access.is_mcp_client());
+        assert_ne!(access.principal(), &PrincipalId::local_owner());
         assert!(access.require(Permission::ProjectsManage).is_err());
         assert!(access.require(Permission::PackagesManage).is_err());
     }
@@ -394,14 +382,10 @@ mod tests {
             grant("packages.manage", "global", "*"),
         ]))
         .expect("approved tuple");
-        assert!(access.require_project_package_write_scope(&id).is_ok());
-        assert!(
-            access
-                .require_project_package_write_scope(&ProjectId::new().to_string())
-                .is_ok()
-        );
+        assert!(access.require(Permission::PackagesManage).is_ok());
+        assert!(access.require(Permission::ProjectsRead).is_ok());
         assert!(validate_mcp_grants(&[grant("packages.manage", "project", &id)]).is_err());
         let read = mcp_access(&record(vec![grant("projects.read", "global", "*")])).expect("read");
-        assert!(read.require_project_package_write_scope(&id).is_err());
+        assert!(read.require(Permission::PackagesManage).is_err());
     }
 }

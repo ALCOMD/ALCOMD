@@ -442,13 +442,9 @@ pub(super) fn accept_package_plan_with_oauth(
             }
             let access = alcomd_application::mcp_access(&limited)
                 .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
-            access
-                .require_project_read_scope(&plan.project_id.to_string())
-                .and_then(|()| {
-                    access.require_project_package_write_scope(&plan.project_id.to_string())
-                })
-                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
             for permission in [
+                alcomd_application::Permission::ProjectsRead,
+                alcomd_application::Permission::PackagesManage,
                 alcomd_application::Permission::PackagesRead,
                 alcomd_application::Permission::RepositoriesRead,
                 alcomd_application::Permission::OperationsRead,

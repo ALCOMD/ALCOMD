@@ -269,9 +269,6 @@ impl<S: CandidateStore, E: CandidateEvidenceEngine, R: CandidateProjectReader>
                 .require(permission)
                 .map_err(|_| CandidateQueryError::PermissionDenied)?;
         }
-        access
-            .require_project_read_scope(&request.project_id)
-            .map_err(|_| CandidateQueryError::PermissionDenied)?;
         let project_id =
             ProjectId::parse(&request.project_id).map_err(|_| CandidateQueryError::InvalidInput)?;
         if self
@@ -1070,7 +1067,7 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn all_four_permissions_and_exact_project_scope_are_required_before_reads() {
+    async fn all_four_capabilities_and_valid_target_are_required_before_reads() {
         let application = ProjectCandidateApplication::new(
             NeverRead,
             NeverRead,
@@ -1092,8 +1089,7 @@ mod tests {
             let access = AccessContext::new(
                 PrincipalId::local_owner(),
                 permissions.into_iter().filter(|p| *p != omitted),
-            )
-            .with_project_read_scopes([request().project_id]);
+            );
             assert_eq!(
                 application
                     .query(&access, request())
@@ -1102,14 +1098,15 @@ mod tests {
                 CandidateQueryError::PermissionDenied
             );
         }
-        let access = AccessContext::new(PrincipalId::local_owner(), permissions)
-            .with_project_read_scopes(["22222222-2222-4222-8222-222222222222".into()]);
+        let access = AccessContext::new(PrincipalId::local_owner(), permissions);
+        let mut invalid_target = request();
+        invalid_target.project_id = "invalid-target".into();
         assert_eq!(
             application
-                .query(&access, request())
+                .query(&access, invalid_target)
                 .await
-                .expect_err("query must be denied"),
-            CandidateQueryError::PermissionDenied
+                .expect_err("target identity is still validated"),
+            CandidateQueryError::InvalidInput
         );
     }
 

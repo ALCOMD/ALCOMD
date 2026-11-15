@@ -150,7 +150,7 @@ fn rpc_permissions_errors_phases_and_cli_publication_are_narrow() {
         cli["commands"][2]["forbiddenOptions"],
         json!(["--yes", "--dry-run", "--output"])
     );
-    assert!(PERMISSIONS.contains("`backups.manage` 与目标 Project 的 `projects.read` scope"));
+    assert!(PERMISSIONS.contains("`backups.manage` 与 `projects.read` 能力，另复验目标项目归属"));
     for code in [
         "backup_not_found",
         "backup_unavailable",

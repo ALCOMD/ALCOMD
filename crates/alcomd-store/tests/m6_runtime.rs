@@ -553,7 +553,7 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
     let granted = store.set_grant(owner.clone(), ExtensionGrantMutation {
         extension_id: package.extension_id.clone(), permission: "projects.read".to_owned(), resource_kind: "Global".to_owned(),
         resource_id: "*".to_owned(), expected_revision: current.grant_revision, grant: true,
-    }, key, 2_011).await.expect("rejected permission did not consume key; current declared project scope can be explicitly granted");
+    }, key, 2_011).await.expect("rejected permission did not consume key; current declared project-read capability can be explicitly granted");
     assert_eq!(granted.permission, "projects.read");
     let permissions = store
         .list_permissions(owner, package.extension_id, None, 100)

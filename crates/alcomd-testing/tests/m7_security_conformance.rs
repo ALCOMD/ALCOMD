@@ -5,20 +5,27 @@ const APPLICATION_M7: &str = include_str!("../../alcomd-application/src/m7.rs");
 const RPC_M7: &str = include_str!("../../../apps/alcomd/src/m7_rpc.rs");
 
 #[test]
-fn client_scope_is_exact_and_does_not_substitute_for_extension_authority() {
+fn project_capability_does_not_substitute_for_extension_authority() {
     let access = AccessContext::new(
         PrincipalId::parse("client:m7-security").expect("principal"),
         [Permission::ProjectsRead, Permission::ExtensionsUiUse],
     )
-    .with_project_read_scopes(["project-a".to_owned()])
     .with_extension_ui_scopes(["dev.example.a".to_owned()]);
 
-    assert!(access.require_project_read_scope("project-a").is_ok());
-    assert!(access.require_project_read_scope("project-b").is_err());
+    assert!(access.require(Permission::ProjectsRead).is_ok());
+    assert!(access.require(Permission::PackagesManage).is_err());
     assert!(access.require_extension_ui_scope("dev.example.a").is_ok());
     assert!(access.require_extension_ui_scope("dev.example.b").is_err());
+    let project_read_only =
+        AccessContext::new(access.principal().clone(), [Permission::ProjectsRead])
+            .with_extension_ui_scopes(["dev.example.a".into()]);
+    assert!(
+        project_read_only
+            .require_extension_ui_scope("dev.example.a")
+            .is_err()
+    );
 
-    assert!(DAEMON_RUNTIME.contains("require_project_read_scope(project_id)"));
+    assert!(DAEMON_RUNTIME.contains(".require(alcomd_application::Permission::ProjectsRead)"));
     assert!(DAEMON_RUNTIME.contains("authority.project_summary("));
     assert!(DAEMON_RUNTIME.contains("require_extension_ui_scope(&lease.extension_id)"));
     assert!(DAEMON_RUNTIME.contains("authority.data_get(lease"));

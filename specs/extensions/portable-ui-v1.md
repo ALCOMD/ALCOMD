@@ -41,8 +41,8 @@ M7 只允许以下四种显式 invocation kind，不建立通用 policy engine�
 
 render invocation 必须保持纯读取。若 guest 在 render 中请求 `host-data.set` 或 `host-data.delete`，daemon 使用既有稳定
 `extension_permission_denied` 拒绝该 capability call；这不是 Host protocol violation、guest crash 或 quarantine evidence。
-guest 可以处理该拒绝并继续返回有效 document。项目读取同时要求 Client Principal 与 Extension Principal 对同一 ProjectId
-均具备 `projects.read`；extension-owned host-data 同时要求 Client Principal 的 scoped `extensions.ui.use` 与 Extension Principal
+guest 可以处理该拒绝并继续返回有效 document。项目读取同时要求 Client Principal 与 Extension Principal
+均具备 `projects.read`能力，ProjectId仅为读取目标；extension-owned host-data 同时要求 Client Principal 的 scoped `extensions.ui.use` 与 Extension Principal
 只能访问自身 ExtensionId namespace。client metadata、guest-session-id 与 InvocationContextId 都不替代这组双重授权。
 
 ## Flat tree 与 exact parent/child matrix

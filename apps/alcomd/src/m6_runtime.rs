@@ -655,7 +655,7 @@ fn route_capability(
                     .as_ref()
                     .ok_or_else(|| error(M6ErrorCode::ScopeDenied))?
                     .client_access
-                    .require_project_read_scope(project_id)
+                    .require(alcomd_application::Permission::ProjectsRead)
                     .map_err(|_| error(M6ErrorCode::ScopeDenied))?;
             }
             let value = runtime.block_on(authority.project_summary(

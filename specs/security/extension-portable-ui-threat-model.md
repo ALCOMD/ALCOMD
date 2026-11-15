@@ -15,7 +15,8 @@ daemon-issued UI session/invocation context 才构成授权边界。
   fail closed；host-owned chrome永远位于 Snapshot 外，并显示daemon record中的name、ExtensionId、publisher/trust、
   version、desired/runtime/quarantine与extension-provided标记。
 - confused deputy：open/refresh/dispatch同时检查 client `extensions.ui.use` scope 与 extension current lease；UI 内业务
-  Host call取双方等价 scope 交集。project summary要求双方对同一 ProjectId 均有 `projects.read`；extension-owned host-data
+  Host call取双方已授权能力交集。project summary要求双方均有 `projects.read`能力；ProjectId只是读取目标，
+  不保存逐项目授权集合。extension-owned host-data
   同时要求client scoped UI permission与extension self namespace，且不向client暴露raw data。
 - render impurity：`interactive-ui-render`只允许project summary与host-data get；render中的set/delete稳定返回
   `extension_permission_denied`，guest可处理后返回有效document，不计作protocol violation、crash或quarantine。

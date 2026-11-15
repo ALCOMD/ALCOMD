@@ -1056,9 +1056,6 @@ where
             return Err(M4Error::new(M4ErrorCode::InvalidInput));
         }
         let project = if access.is_mcp_client() {
-            access
-                .require_project_read_scope(&request.project_id.to_string())
-                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
             self.store
                 .get_mcp_project(access.principal().clone(), request.project_id)
                 .await
@@ -1150,12 +1147,6 @@ where
             .await?;
         if access.is_mcp_client() {
             require(access, crate::Permission::OperationsRead)?;
-            access
-                .require_project_read_scope(&plan.project_id.to_string())
-                .and_then(|()| {
-                    access.require_project_package_write_scope(&plan.project_id.to_string())
-                })
-                .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
             if plan.action != PlanAction::Remove || !plan.source_set.is_empty() {
                 return Err(M4Error::new(M4ErrorCode::PermissionDenied));
             }
