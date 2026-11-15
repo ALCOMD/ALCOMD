@@ -894,3 +894,31 @@ MAC采用现有sha2的标准HMAC-SHA256，向量核对[RFC4231](https://www.rfc-
 原真实OAuth卸载用例完整保留此前Plan/Operation/权限、取消及实际响应丢失断言，关联复验1/0；不是整个business_tools六用例全部通过，也没有拼接为Workspace或全量浏览器通过。首次Clippy因新增测试手动去前缀告警失败，改用strip_prefix后最终严格通过，原日志clippy-cursor.log保留。原生构建首次调用在工具自动审批阶段超时，未启动；工具允许的一次重试已实际成功，不将超时写成构建成功。
 
 两个真实用例的入口都先确认原Core/GUI/Host/MCP为0，结束后无本批runtime残留；原已识别data/profile文件摘要及Unity进程前后相同。原环境本来关闭，继续保持关闭，没有替换原程序/迁移原数据，也没有自动恢复桌面控制。现有`target/m8-check/debug/alcomd.exe`、`alcomd-mcp.exe`和`alcomd-cli.exe`已匹配本轮源码重建；只提供本地候选，不称持久人工窗口已打开。管理扩展仍缺匹配Host/嵌入前端GUI，普通浏览器TLS/外部客户端人工接入尚未验收，其他M8后续沿既有记录。本批结果为本地技术通过、远端待验证，M8保持IN_PROGRESS。
+
+### OAuth候选33056db9远端收齐与本地窄修（2026-11-15）
+
+所有者明确批准当前OAuth候选推送后，实际Windows用户cqmhv-dt\m2922先fetch核对origin/main=78920f382d1a0c58dece4a51fb2f54d84f48fcf2、工作树/暂存区干净、无分叉，再普通快进推送至`33056db9017036a1c8a5b0e6816698ac37e9ceb7`。完整六笔依次为93967f57（前批管理远端记录）、478af1b5（OAuth审计/查看准备）、6bf3493c（OAuth实现）、c791a94f（结果/缺口记录）、0cc9b28f（获批游标补充）、33056db9（收尾记录），无无关修改。推送前metadata/xtask/diff通过，复用已有准确本地输入，未重复完整测试。推送未强制、未发布或打tag。
+
+这次自动运行现已全部结束，均绑定上述同SHA、run_attempt=1：
+
+| 运行 / job | 实际结果 | 具体范围 |
+| --- | --- | --- |
+| [CI43699307220](https://github.com/ALCOMD/ALCOMD/actions/runs/43699307220) / Windows Server2025 | 失败 | Check中的Store lib123/1；旧State19保全测试失败。此前MCP business_tools单轮6/0，含两项OAuth真实用例 |
+| 同CI / Ubuntu22.04 | 失败 | 同一旧State19保全测试，Store lib123/1；此前MCP business_tools单轮6/0 |
+| 同CI / macOS15 arm64 | 失败 | MCP business_tools单轮4/2；两个OAuth用例分别在Core启动AlreadyRunning、原生TLS校验InvalidCertificate处失败；未执行后续Store测试 |
+| [CodeQL43699306717](https://github.com/ALCOMD/ALCOMD/actions/runs/43699306717) | 四项全部通过 | actions、python、javascript-typescript、rust；该自动分析的event为dynamic，并非手动dispatch |
+
+三个CI job均停止在Check；独立CLI自启动、两个Unix挂载用例、release、Tauri、平台/锁/diff及Chromium步骤均skipped，不写成通过。真实OAuth CLI具名用例此前在三个job中均通过，但这不等于整个CI成功；不将Windows/Ubuntu的MCP6/0与macOS局部结果拼成三平台完整通过。78920f3及其他旧候选的成功仍只属于旧证据。
+
+完整最终JSON为`target/m8-oauth-hosted-20261115/{ci,codeql}-final.json`；Windows/Ubuntu/macOS逐job日志及CodeQL完整日志均保存在同目录，摘要/大小/准确失败用例见`evidence-summary.json`。持续读取时曾因沙箱无法使用keyring而触发匿名API限流，停止该轮询后改用真实Windows用户已有有效gh认证读取；没有重新登录、更改认证配置、操作Secrets或启动重复workflow。
+
+诊断及本地修复分开提交：
+
+- `983a67bf673f076d16d115b6df4b2f364b0869ee`仅修`remove_activity_tests`：迁移后两张State36 OAuth表均为空，但旧快照比较未列入它们。真实Windows原用例原样0/1（state19-before.log），补充mcp_oauth_registrations/mcp_oauth_tokens必须存在且为空，再保留完整after==before、事件水位+1、触发器移除及独立失败回滚断言。相关整个模块单轮4/0（state19-after-module.log），Store all-targets严格Clippy/fmt/xtask/diff通过；没有改生产代码、历史迁移或删除测试。
+- `f334910a505d5bc5b25fade6a8bed2a7cd85837b`仅修OAuth测试设施：旧自签leaf有效期2020–2045，超过[Apple对2019-07后TLS证书的825天要求](https://support.apple.com/en-ph/103769)，macOS原生验证明确拒绝。使用原公开可丢弃测试私钥重签365天leaf，2026-11-01至2027-11-01，SHA256 c25ff3e9ac18e3fc0042e90bbb84744d6d606217e5dd6495a73d5fdb95918988；RSA2048/SHA256、SAN localhost、serverAuth及CA:false保持。没有关闭验证、切换弱验证器、改生产证书或系统信任库；fixture必须在2027-11-01前按README轮换。另沿用既有CLI测试的Unix私有短runtime目录方式，将新OAuth测试的Core、owner、HTTP后端和存续客户端统一绑定该实例，重开也用同一路径；只清理已核对的自有目录，Windows仍保留原受保护唯一端点。它不是生产发现/认证或IPC新入口。
+
+本机仅重编译受影响business_tools二进制，具名游标和原HTTPS业务用例分别1/0（2.26s、2.04s），保留全部权限、取消及实际响应丢失断言；具名记录为`target/m8-oauth-audit-20261115/native-hosted-fixture-cursor-20261115T0958105053347Z/`及`native-hosted-fixture-flow-20261115T0959493714988Z/`。两轮原data/profile摘要及Unity身份前后保持，runtime残留0，原环境本来关闭并保持关闭，无桌面控制。MCP all-targets严格Clippy、fmt、metadata、xtask、diff通过。**当前Windows没有本机执行macOS原生证书策略或Unix分支；这些修正仍需下一候选的真实远端确认，不声称macOS已通过。**
+
+444份新输入摘要为`312a22297d5499a2a0368cf14fd5908197b1e14cabf5f2f8ba6ebdba2556bc6e`，提交前后相同；相对已推送33056db9的前批输入只改变两份Rust测试及一个测试DER文件（README另为文字记录），生产代码/构建manifest/Cargo.lock/State36原迁移均未变，不为测试修正重做Rust全量、292/704项浏览器、release/Tauri或三平台本地验证。此处4/0和两个1/0均为本机定向轮次，不替代33056db9的真实远端失败。
+
+CI阻塞仍存在于远端候选33056db9；上述本地修复及本节记录超出这次固定候选推送范围，未自动推送，须由所有者另行明确授权普通快进到origin/main。后续若获批只由push触发现有CI/CodeQL，不dispatch或rerun旧运行。M8保持IN_PROGRESS，管理扩展原生窗口与普通浏览器人工TLS接入等未覆盖项沿既有归属保留，不开始M9。

@@ -6,6 +6,10 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
+2026-11-15 [本轮OAuth推送及远端结果](exec-plans/M8-mcp-protocol-and-management.md#oauth候选33056db9远端收齐与本地窄修2026-11-15)：按所有者授权核对完整六笔提交链及干净工作树后，已从78920f3普通快进推送至`33056db9017036a1c8a5b0e6816698ac37e9ceb7`。同SHA CI `43699307220`三平台**失败**、CodeQL `43699306717`四项**通过**，均attempt1，没有dispatch/rerun。Windows/Ubuntu在旧State19保全测试各123/1，macOS在MCP业务模块4/2（测试证书不符合原生策略、默认IPC已占用）；release/Tauri/Chromium等后续步骤均未执行。全部最终JSON、三job/四项分析完整日志已归档。已原样本机复现State19失败0/1，窄修`983a67b`补两张OAuth表必须为空、原数据/序列/回滚断言保持，模块4/0。测试修正`f334910`仅更新365天公共测试证书（原测试私钥/系统信任不变）及Unix私有端点，Windows两项真实用例各1/0、受影响严格检查和便宜门禁通过；**macOS/Unix修复尚待远端验证，未把本机局部通过拼成原失败套件通过**。生产代码、RPC、权限、迁移和依赖未改；修复及记录只本地提交，额外推送待明确授权。原环境/数据/Unity保持、未恢复桌面控制，M8继续IN_PROGRESS，不进入M9。
+
+以下0cc9b28/6bf3493的“本地验证、未推送”属于当时历史状态；当前已推送及失败/通过结果以上段33056db9为准。
+
 2026-11-15 当前[OAuth游标补充本地结果](exec-plans/M8-mcp-protocol-and-management.md#oauth游标补充的本地收束2026-11-15)代码为 `0cc9b28fef07661d3e4d99f47a1d11cdcea865f3`。所有者批准的`authorizationBinding`/`authorization_binding`已接通DTO、Schema、typed client、Core与六工具中的项目列表；以独立Core私钥绑定token、当前授权修订、上限及位置，同一SQL读取快照校验，缺失/篡改/跨token/快照变化均拒绝。重启后原token仍按原合同有效，旧游标需从第一页重新读取；仓库及非OAuth游标保持原形状。新增真实游标用例和原HTTPS卸载闭环分别1/0，MAC2/0、Schema51/0、MCP单元11/0、OAuth/迁移11/0及两项旧分页各1/0，受影响六包严格Clippy、fmt/metadata/xtask/diff及Core/MCP/CLI debug构建通过。444份输入已绑定，此前缺口现已收束；无新依赖/State/Config/权限/session或缓存。**仅本地验证，未推送、没有新增代码远端通过结果**。原环境本来关闭并保持关闭，原数据/profile和Unity前后保持；未恢复桌面控制。管理扩展匹配Host/GUI人工窗口、普通浏览器TLS接入及其余M8后续仍未完成，M8保持IN_PROGRESS，不进入M9。
 
 以下6bf3493及其“游标来源绑定限制”是补充前候选的历史结果，该限制已由上段0cc9b28收束；旧轮次通过不改写为新增代码的验证。
