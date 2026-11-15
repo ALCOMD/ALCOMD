@@ -35,10 +35,10 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 ## 公共合同与接线状态
 
-客户端身份最小合同和State34快照增量均已批准。application、Store、daemon dispatcher、typed client及受控STDIO已实际接通，真实Core闭环及最终capability协商候选复验通过，`mcp.clients.v1`已按真实实现协商。下列后续部分尚未完成：
+客户端身份最小合同和State34快照增量均已批准。application、Store、daemon dispatcher、typed client及受控STDIO已实际接通，真实Core闭环及最终capability协商候选复验通过，`mcp.clients.v1`已按真实实现协商。当前接线与后续边界（各候选证据分别见下文）：
 
-- 完整HTTP OAuth profile及其发现/audience/expiry等最小合同尚未实施；获批回环预配Bearer已按每请求Core身份接通，不取自clientInfo、不回退owner。
-- MCP 管理扩展的客户端、请求、连接、订阅读取和授权管理；沿用既定权限分类及扩展所有权/范围规则。
+- 获批回环预配Bearer及预登记客户端HTTPS/OAuth均已实现，含发现/resource绑定、到期、PKCE、审批、刷新轮换、撤销及逐请求Core授权；不取自clientInfo、不回退owner。OAuth普通浏览器/目标客户端人工接入待验证，CIMD/DCR/外部授权服务器尚不支持；本候选远端门禁见末节，不能据实现存在宣布整个M8完成。
+- MCP管理扩展的客户端及授权管理、独立Host/WIT、真实Core/Host/Component闭环已实现，隔离人工查看入口已准备、人工查看未执行。实时请求、连接、订阅读取及正式默认分发仍未完成；沿用既定权限分类及扩展所有权/范围规则，不将未撤销记录当作在线。
 - 本次六工具之外的业务映射及来源委托；正式Schema已覆盖获批卸载切片，旧Draft未提供已部署ABI。现有Operation仅get/list/cancel，不能伪造尚无公开合同的input/approve/reject/resume。
 
 本批身份合同不再等待审批。其余真正新增的公共合同仍先提交具体差异，不暂停独立实现。
@@ -941,3 +941,25 @@ CI阻塞仍存在于远端候选33056db9；上述本地修复及本节记录超�
 修复后同模块单轮3/0、零忽略（state16-after.log），该integration target严格Clippy（state16-clippy.log）、fmt、xtask和diff通过。没有重跑Store全套、完整Rust/浏览器、release/Tauri或三平台本地测试。新输入444份，摘要`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`；相对已推送4005583的有效输入仅一份Rust测试变化，生产代码/manifest/Cargo.lock/State36迁移均未变。原环境/原数据/Unity未操作，不恢复桌面控制。本机3/0不替代远端2/1，也不是整个剩余workspace通过。
 
 当前远端阻塞为4005583中的State16旧保全夹具。174aa35及本节记录为本次推送之后的新增本地提交，尚未推送；待所有者明确授权普通快进后，仅由push触发下一候选CI/CodeQL，不手动重跑旧运行。原生管理扩展窗口、普通浏览器人工TLS接入、CIMD/DCR等既有未覆盖项继续保留，不因技术前缀验证通过而宣布M8整体完成。
+
+### OAuth候选36a782c与隔离查看准备（2026-11-15）
+
+所有者在明确的两笔推送及后续顺序后确认继续，已由真实Windows用户核对干净main、174aa35→36a782c完整链、origin/main祖先关系及提交文字，普通快进至`36a782c7b78584a46e242b91270fb464bfd9fa29`。未夹带新合同或其他修改，无强推/tag/release/dispatch/rerun。上一节的“未推送、待授权”是当时历史状态，本候选已包含State16修复。
+
+同SHA自动运行现已完整收齐，均attempt1，没有dispatch/rerun：
+
+- [CI43708317935](https://github.com/ALCOMD/ALCOMD/actions/runs/43708317935)三平台整个job全部成功：完整Check（Workspace/独立guest/前端与metadata）、CLI自启动、release/Tauri、适用平台/锁/diff门禁均完成。Chromium各单轮704/0、零重试，Windows17.8m、Ubuntu14.9m、macOS24.0m；两个Unix真实挂载具名各1/0、零忽略，保留常规Workspace内原有忽略，不冒称所有条件用例均执行。
+- 三平台MCP business_tools各单轮6/0、Store lib各124/0、State16保全integration模块各3/0，以上模块均零忽略。两个真实OAuth（HTTPS/权限/业务/取消/实际响应丢失与游标来源绑定）用例及State19/State16具名保全用例在三平台全部通过，已批准修复现有同SHA证据；不是把旧33056db9、4005583或本地局部结果拼成通过。
+- [CodeQL43708317682](https://github.com/ALCOMD/ALCOMD/actions/runs/43708317682)的rust、javascript-typescript、actions、python四项全部成功。当前切片没有遗留远端技术门禁阻塞；M8后续及人工查看未据此完成。
+
+最终JSON、三平台逐job完整原始日志、CodeQL完整日志及每份大小/SHA256位于`target/m8-oauth-hosted-36a782c-20261115/`，总表`evidence-summary.json`。摘要提取对Windows颜色码及macOS stdout/stderr交错仅规范解析视图，原始日志保留；没有重跑测试。期间一次GitHub只读轮询因unexpected EOF结束，随后以同一认证读取原运行并继续收齐，未重启workflow。旧33056db9、4005583的CI失败及各自CodeQL成功继续保留；本段结果只属于36a782c。
+
+并行补齐[管理扩展隔离查看入口](../testing/m8-management-manual-20261115.md)，不恢复桌面控制：
+
+- 只在独立`target/m8-check`单任务构建Host及Tauri嵌入前端debug GUI，分别成功；Tauri的beforeBuild前端check/build通过。没有执行release、完整Workspace或浏览器全套。本轮构建日志为`target/m8-oauth-audit-20261115/manual-{host,gui}-build.log`。
+- 从0cc9b28到本候选只变测试/测试证书/文档，生产源码与依赖未变，复用现有Core/CLI/MCP；444份输入摘要仍为`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`。五个实际程序的路径/摘要存于`target/m8-review-36a782c/candidate.json`，不承诺不同编译的二进制字节相同。GUI单独放置且无同目录Core，避免失联后默认自启动访问原数据。
+- 当前样例包125919字节、SHA256 `3f41189c80200eec2c0c8ef79676f51896b0518721180f10f55c04587f752ca7`保持；未改包、重做正式扩展或跳过验签/发布者/权限检查，安装留给正式流程。
+- `Open-Review.ps1 -CoreOnly`真实成功启动明确`--data-dir`的隔离Core，以正式CLI登记两个可丢弃项目；system/projects/operations/clients/oauth-registrations五项公开读取成功，2项目、0活动任务、0客户端、0OAuth登记。它们是隔离准备读取，不冒称原环境五组公开状态复核。核对自有PID/路径/命令行及0任务后关闭Core；随后重开、只读取得同样五项结果，两个ProjectId/revision保持，再核对0任务并停止自有Core，runtime残留0。原环境本来关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（准备前后均0进程）。证据`target/m8-review-36a782c/records/{preparation-result,reopen-result,reopen-preservation}.json`；辅助保全摘要首轮因空Unity数组未输出文件而未完成，按初始脚本实际零条语义核对后通过，未伪造历史快照、未重跑业务测试。
+- GUI启动分支仅语法/源码核对，未执行、没有真实窗口截图或人工通过结论。入口发现已有Core/GUI/Host/MCP即拒绝，不自动暂停、终止、替换或迁移原环境。普通浏览器/目标MCP客户端OAuth接入仍需用户受信任localhost证书，未安装系统信任、未启动新监听或用公开测试私钥作为日常服务。
+
+M8继续IN_PROGRESS。管理界面人工查看、普通浏览器TLS接入、实时连接/请求/订阅观测、正式默认分发及其余既有后续仍分别保留；不开始M9。本次状态与准备记录仅本地提交，不追加推送或因此制造全量验证。纯文档适用metadata、xtask及diff检查通过，444份输入未变；计划入口及扩展README不再将已实现预登记OAuth、客户端与授权管理误列为未实施，CIMD/DCR等未支持能力仍明确保留。

@@ -1,6 +1,6 @@
 # M8 管理扩展人工查看准备
 
-2026-11-15，源码远端基线`78920f382d1a0c58dece4a51fb2f54d84f48fcf2`；本地93967f5仅状态记录。以下是准备核对与短清单，**尚未形成可操作的原生窗口，不是人工验收通过**。不自动恢复桌面控制。
+2026-11-15，当前候选`36a782c7b78584a46e242b91270fb464bfd9fa29`。匹配程序、样例及隔离Core启动已准备并验证；**GUI尚未打开，人工查看未执行**。不自动恢复桌面控制。
 
 ## 已核实的开发包
 
@@ -16,23 +16,31 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-mcp-management\management-develo
 - 包内Component须等于当前冻结夹具`crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm`，SHA256 `ce56c941109c0a034ff0191baedd03c32b814aa1e40915222c6da00004350b7e`；provenance逐文件核对当前guest源码、WIT和构建锁。核对记录位于`target/m8-oauth-audit-20261115/manual-package-audit.json`。
 - 正常验签、发布者确认、未授权启用拒绝及真实Core/Host/Component操作已有78920f3同SHA三平台证据。本轮只核对包字节和输入，**没有重新运行安装或声称重新做过密码学验签**。不得手工改包或绕过发布者/权限确认。
 
-## 当前入口缺口
+## 隔离查看入口
 
 审计时只读Windows进程检查Core/GUI/Host/MCP均0，本轮没有暂停或恢复进程。审计当时`target/debug`、GUI的独立target/debug均没有当前程序，`target/m8-check/debug`只有先前MCP程序；找到的M7备份/旧构建不能作为State35/M8匹配Core/Host候选。以前真实管理用例会在结束时停用、卸载并清理可丢弃数据，不能据其成功声称仍有持久可查看环境。
 
-2026-11-15 OAuth代码`6bf3493cc69d28e7364f27192635e1f3f7aecade`已补齐`target/m8-check/debug`的当前Core/MCP/CLI debug构建及真实隔离用例，见[本地结果](../exec-plans/M8-mcp-protocol-and-management.md#已批准oauth本地候选与定向结果2026-11-15)。后续游标补充`0cc9b28fef07661d3e4d99f47a1d11cdcea865f3`已重建同目录Core/MCP/CLI，两个真实游标/关联闭环用例各1/0，详见同计划末节。**匹配Host/嵌入前端GUI仍未补齐，窗口仍未就绪。** 本批隔离用例全部结束，原数据/profile摘要及Unity保持，未自动恢复桌面控制。新OAuth的自动化技术结果不代表本清单的原生人工查看已通过。
+随后6bf3493及0cc9b28已补齐Core/MCP/CLI及真实OAuth/游标验证，当前36a782c另补齐Host和嵌入前端的debug GUI。使用独立`target/m8-check`、单编译任务，Host构建成功，Tauri `build --debug --no-bundle`成功且前端check/build通过，没有运行完整Workspace/Chromium/release。444份输入摘要仍为`1b2a4e32d6545093cb1233c0b4547164f19fb641b5f75ca6b927b3799d635abf`；运行时代码自0cc9b28未变，后续只改测试/夹具/文档。五个实际程序的路径与SHA256绑定在`target/m8-review-36a782c/candidate.json`，不声称不同构建的文件逐字节相同。
 
-下次准备窗口仅需补齐**匹配当前源输入的一组独立原生构建**，不需重跑Workspace/704项或三平台。使用同一隔离输出目录放置Core、CLI、Host和嵌入前端的GUI，绑定源码SHA及文件摘要；不能将普通debug GUI的devUrl误当已嵌入产物。复用既有`--data-dir`和`WEBVIEW2_USER_DATA_FOLDER`隔离方式，使用新建workspace/target下的数据、profile及两个可丢弃项目。不要执行指向原M7数据的旧`open-runtime.ps1`来代替隔离入口。
+程序组位于`target/m8-review-36a782c/`：Core/CLI/MCP/Host在`core/`，GUI单独在`gui/`且没有同目录alcomd.exe，避免隔离Core失联时GUI默认自启动访问原数据。`data/`、`webview-profile/`及两个`samples/`项目均为本轮可丢弃数据，不使用原M7启动入口。两个样例`M8-allowed-project`和`M8-other-project`已通过正式CLI登记，清单读取返回2项目、0活动任务、0客户端、0 OAuth登记。重开后五项公开结果逐项一致，两个ProjectId/revision保持；随后再次停止自有Core，runtime残留0。原Core/GUI原本关闭并保持关闭，原36份data/346份profile摘要保持，未操作Unity（本次准备前后均0进程）。证据为`records/{preparation-result,reopen-result,reopen-preservation}.json`及两轮公开读取，不把隔离读取冒称原环境五组状态核对。
 
-此时不提供会把旧Core接到新GUI、或未完成构建仍继续启动的“一键启动”封装。匹配程序组和实例身份核对完成后，再给出准确启动命令与实际打开结果；新封装如只做语法检查，应继续标为未验证启动。Windows受保护管道每用户唯一：若届时发现原Core/GUI运行，先按已有授权核对无活动任务、保存五组公开状态，再沿既有暂停/恢复流程处理；归属不明或有活动任务即停在该步骤，不强杀、不操作Unity。
+在PowerShell执行以下命令打开本轮隔离环境：
 
-## 窗口具备条件后的最短操作
+```powershell
+& 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-oauth-audit-20261115\Open-Review.ps1'
+```
+
+该入口核对五程序摘要、当前运行进程及隔离路径，再启动指定数据目录的Core；随后GUI使用独立WebView2 profile。`-CoreOnly`分支已真实启动并通过公开查询，准备结束后核对0任务再停止自有Core；**GUI启动分支仅语法与源码核对，没有执行、没有截图或窗口成功结论**。若检测到已有Core/GUI/Host/MCP则拒绝启动，不自动暂停、强杀或连接原环境。若需要处理新的端点冲突，应先核对进程归属及无活动任务，再沿原有获批流程处理。
+
+## 手动打开后的最短操作
 
 1. **扩展 → 安装扩展**：选择上面的完整包路径，核对测试发布者与指纹，明确勾选为此扩展批准发布者。创建安装计划后应看到上列申请权限，确认安装并等待真实任务成功。
-2. **扩展 → MCP management fixture → 权限**：先允许必需的“MCP客户端读取”全局范围并启用；打开扩展页面应只读显示，不出现可写控件。再允许“MCP客户端管理”全局范围，以及一个隔离项目的“项目读取”，刷新该页。
+2. **扩展 → MCP management fixture → 权限**：先允许必需的“MCP客户端读取”全局范围并启用；打开扩展页面应只读显示，不出现可写控件。再允许“MCP客户端管理”全局范围，以及`M8-allowed-project`的“项目读取”，刷新该页；暂不授权`M8-other-project`。
 3. **同窗口扩展页**：新建一个测试客户端，初始零授权；为它增加该隔离项目的读取权限。可选项目应只在扩展当前获准范围内；修改后刷新仍为同一客户端和授权。撤销后应显示已撤销且不可继续修改。不要在这里查找或展示token。
 4. **同窗口切换/关闭/重开**：切到普通页面后返回，再关闭和重新打开扩展页，核对当前状态。启用/停用/卸载仍在扩展上下文操作，失败保留可理解的错误；没有实际制造的断线/超时不计通过。
 
 权限强制与双客户端隔离继续引用真实Core/Store/Host证据，不要求人工重复证明整个安全系统。没有实时连接/请求/订阅API，页面不宣称客户端“在线”；OAuth浏览器授权、正式默认分发、表单/会话超时/外部断线和MCP/Discord正式业务不因本清单通过而算完成。
+
+普通浏览器OAuth人工接入另需用户提供受信任的localhost证书与PKCS8私钥，使用本组`core/alcomd-mcp.exe serve-oauth --no-start-daemon --port <已登记端口> --tls-cert <DER证书> --tls-key <PKCS8私钥>`。本轮没有启动监听、安装系统信任或把公开测试私钥用于日常服务；实际浏览器/目标MCP客户端接入仍未执行，不能从SDK自动化通过推定人工接入通过。
 
 查看结束后确认隔离Operation全终态，再关闭本轮自己的GUI/Core/Host。若未暂停原环境则保持原状态；若实际暂停过，恢复原程序/数据并核对五组公开状态、设置及无活动任务，不能仅报告恢复进程守候。
