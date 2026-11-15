@@ -965,3 +965,32 @@ CI阻塞仍存在于远端候选33056db9；上述本地修复及本节记录超�
 M8继续IN_PROGRESS。管理界面人工查看、普通浏览器TLS接入、实时连接/请求/订阅观测、正式默认分发及其余既有后续仍分别保留；不开始M9。本次状态与准备记录仅本地提交，不追加推送或因此制造全量验证。纯文档适用metadata、xtask及diff检查通过，444份输入未变；计划入口及扩展README不再将已实现预登记OAuth、客户端与授权管理误列为未实施，CIMD/DCR等未支持能力仍明确保留。
 
 所有者随后明确要求打开隔离验收环境并保留窗口。在确认没有原Core/GUI占端点、五程序摘要一致后，已实际执行Open-Review.ps1的GUI分支：隔离Core PID45200、GUI PID42264，窗口ALCOMD3可见且响应。只读查询GUI自身句柄的管道服务端PID，5条连接均指向45200；同时核对Core可执行文件/明确data参数、WebView2独立profile及预期2样例/启动时0活动任务，确认GUI确实连接本轮Core。没有恢复Computer Use、发送界面输入、拍摄截图、暂停或替换原环境。原36份data/346份profile摘要与准备基线相同，原环境继续关闭；本轮Core/GUI保持运行供用户检查。证据`target/m8-review-36a782c/records/{gui-connection,gui-start-preservation}.json`。这是窗口和连接核对，不是人工体验签收或M8完成；不推送，不重跑完整验证。
+
+### 管理扩展零授权启动与权限弹窗整改（2026-11-15）
+
+所有者实际遇到无法启用，并明确要求无需预授权即可启动；随后确认看不懂的是“管理扩展 → 管理权限”弹窗。只整改这两个入口，不重开M7或扩建身份系统。本地代码候选为`5884d5e1dc5152995bec20206f1a642d21d7ae9f`，未推送；36a782c的Hosted通过仅属于此前基线，不能替代本次新代码远端验证。
+
+**原因与改动**：原开发包把`mcp.clients.read`列为必需，而实际grants为空，Core依既有合同正确拒绝启用。现将此管理扩展的read/manage/projects.read三项均声明为可选，零授权可启用、打开受限页面；未获读取权限时显示中性未授权状态，不泄漏客户端数据或提供写控件。明确授权后才读取，撤销使旧会话失效，重新打开仍可进入受限页面。没有自动授权、owner旁路、Core校验删除或公共合同变化；其他扩展的必需权限未获授权仍拒绝启用。
+
+权限弹窗原先分离展示声明、授权列表和通用下拉表单，难以看出“这一项允许了什么”。现每项直接展示中文名称、用途、实际状态及允许/撤销按钮；项目权限列出具体项目并单独确认所选项目，选择本身不授权。展示前读齐同revision所有分页，读取失败不伪装为零授权，迟到旧读取不能覆盖新状态；结果未知时先刷新权威状态，不能自动重写。继续复用Material、共享反馈与displayPath，仅改变显示文本，原ProjectId及RPC参数保持。不建立新通知/授权系统；无RPC、State/Config、WIT、权限名称或依赖增量。
+
+本地定向证据全部位于`target/m8-zero-grant-20261115/`：
+
+| 范围 | 真实结果与输入 |
+| --- | --- |
+| 独立guest | 单元3/0、doc-test1/0、严格Clippy通过；仅重建受影响Wasm release，Component SHA256 `1ec0fb1ac969e6711db44103d95cba225b8c9b251c1c1a325be4af75c7156ba8`，12项provenance输入已更新，依赖/WIT/工具链未变 |
+| Host及合同 | 实际Component链接/普通Portable UI校验1/0；`m8_management_contract`2/0；Host tests严格Clippy通过 |
+| 真实Core新增 | `optional_management_permissions_allow_zero_grant_start_and_restrict_data`1/0：正常验签与明确测试发布者批准、零授权启用/开页、无数据/写控件、伪造创建拒绝且权威客户端数未变、显式读取授权/撤销、旧会话拒绝及新受限页、终态清理 |
+| 真实Core关联 | 原`management_component_uses_real_core_grants_and_loses_access_after_revocation`1/0：原必需权限启用拒绝、真实管理操作、项目范围、实际授权及撤销、结果未知保护全部保留；不是GUI假客户端证明安全 |
+| GUI | check与嵌入前端debug no-bundle构建通过；权限/事件/反馈关联子集最终单轮14/0、零重试；随后只将两项错误夹具改用真实公开`extension_scope_denied`并断言可读信息，同文件三项3/0。后三项覆盖前述子集，不相加或称完整704项通过 |
+| 格式与仓库 | root/guest fmt、locked metadata、xtask、diff检查通过；无Workspace全量、完整Chromium、Tauri release或新三平台运行 |
+
+失败轮次保留：浏览器首轮6/8为新选择器误计Material内部li/span，收窄到实际授权行后第二轮14/0、最终界面轮14/0，原精确数量/身份/授权/迟到断言保留；首轮新增真实Core0/1，在Plan阶段被`extension_manifest_invalid`拒绝，原因是新可选权限未按现行合同字典序排列，修正清单后同例1/0，不放宽验证。日志分别为`browser-{first,second,final}.log`、`browser-error-contract.log`及`native-optional-first-failed.log`、`native-{optional,existing}.log`。临时部署助手首次因选中不同构建的serde rlib而编译失败，匹配client实际依赖指纹后编译成功，未新增依赖。
+
+**真实隔离更新**：仅核对0活动任务后暂停本轮自有Core/GUI，为上述两例让出唯一管道，测试使用全新可丢弃数据；finally恢复同一review数据/profile。首次恢复窗口的CLI短连接断开后触发Core既有1秒空闲退出，已确认无Core而非强杀未知进程；后续用有界60秒只读typed连接覆盖WebView启动间隙，实际GUI连上后不再依赖该连接，不修改Core空闲合同。首次复制GUI时进程退出后的文件锁尚未释放，核对旧摘要未变且GUI已退出后才完成复制，未删除或改用原环境程序。原36份data/346份profile及Unity保持，证据`native-preservation.json`与最终保全记录。
+
+测试成功后，review中的旧开发包经正常Core卸载Plan/Apply（retain_data）与新安装Plan/Apply更新；两个Operation均succeeded，0活动任务。新包为`target/m8-zero-grant-20261115/management-zero-grant.alcomdextension`，126423字节，SHA256 `223b35f44ee3b35437da209b4b5c30968305897d487ffa3f4f35c06cfb6c47a6`，同一已批准测试发布者，包内摘要`8625ebed1877900d8b68f5f25dda1dceb861a187de56088adbd0875ebee20a01`。实际启用成功、required=[]、grants=[]，通过Core打开的真实Portable UI为未授权中性状态，无创建控件；原两个项目及客户端记录保持。记录`live-package-update.log`及`live-after.log`，没有GUI/脚本直接读写数据库。
+
+当前GUI PID39500、Core PID47292，窗口可见且响应，5条真实管道均连到指定review Core，WebView使用原review profile。新GUI SHA256 `9a2381b194948d6cd76067a22822169754378645f91956f7a7c70b4223efaa8a`；Core/CLI/MCP/Host字节复用36a782c输入，五程序/新包摘要及本地候选写入review的candidate.json。连接证据`gui-connection-zero-grant.json`；旧45200/42264已关闭，`records/gui-connection.json`现为最新状态。更新后的Open-Review入口仅做语法检查；相同程序/参数的实际启动与连接已分别验证，不冒称修改后的整个入口又执行过一遍。没有恢复桌面控制或伪造原生截图。浏览器前后截图分别在`target/m8-mcp-management/permissions-global-scope.png`和`apps/alcomd-gui/target/m8-zero-grant/`，明确属于浏览器夹具。
+
+窗口保留供所有者查看简化后的权限弹窗与零授权启动，清单见[当前人工入口](../testing/m8-management-manual-20261115.md)。原环境本来关闭并保持关闭；M8未人工签收、仍IN_PROGRESS，普通浏览器/目标客户端OAuth接入等后续保持，不进入M9，不自动推送。
