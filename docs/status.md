@@ -6,7 +6,13 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-2026-11-16 当前[内部逐项目授权模型清理](exec-plans/M8-mcp-protocol-and-management.md#内部逐项目授权模型清理2026-11-16)：代码`465f82386ba530b35cf883c7fe1370cea19cb6c6`已在标准目录/main本地提交。AccessContext已删除项目读取/包写入范围字段、逐项目构造器和检查器；项目调用只检查对应能力，MCP身份不再补造项目All范围。通用范围模型改为仅用于ExtensionId的ExtensionUiScopes，保留扩展页面隔离；管理授权指纹只绑定当前能力、ExtensionId及Principal/连接/会话，不再编码项目范围。目标项目ID、owner、原Plan/revision/身份、当前授权与OAuth上限、任务/幂等归属继续复查；不新增RPC、State/Config、依赖或兼容层，历史迁移未改。
+2026-11-16 最新[扩展 MCP 工具本地候选](testing/m8-extension-tools-20261116.md)：代码 `54ba42fd47b7228d1a7be08dff9d468a6d31821e` 已本地提交。已批准的签名工具声明、独立 provider/core WIT、Core 合并目录/调用、双方当前能力与 OAuth 上限、原 Plan/确认/Apply、State38 原子接受记录及同键恢复已接通；可选 `mcp.tools.provide` 默认关闭，GUI 复用原开关/声明预览。无逐项目授权、owner 代理或任意 RPC 透传，不隐含 UI/后台启动，不改旧 WIT/Config13/身份模型。
+
+真实冻结 SDK→STDIO/HTTP/HTTPS OAuth→Core/Host 业务模块单轮7/0；最终生产 capability 开放后的 Provider 同例1/0、77.01秒，实际八次卸载、取消/真实写响应丢失恢复、跨客户端隔离、OAuth上限/撤销及故障隔离均有证据。Store整轮136/0后新增重启用例1/0，旧State16/Schema分别3/0和42/0；应用94/0、协议23/0、扩展15/0、Core46/0及1原有ignored、MCP11/0、Host组件5/0、Schema策略3/0。GUI相关Chromium单轮21/0、零重试及前端check/build通过，匹配三程序debug构建、受影响严格Clippy与fmt/metadata/xtask/diff通过。各轮输入/失败分别保留，不拼成全量结果。831份输入及程序摘要已绑定；新依赖闭包和SIMD/unsafe影响见记录。
+
+本轮原环境/review测试前均已关闭，当前仍关闭，无自有Core/GUI/Host遗留；原data36份、review data10份/profile303份集合及摘要不变，原Unity PID40632保持。未升级原库、替换或打开原GUI，未恢复桌面控制；下文旧PID和“窗口保持”属于各轮历史。本批新增代码未推送、尚无对应Hosted CI/CodeQL、跨平台或原生GUI人工验收；运行中任务经新Provider成功取消的独立原生场景仍未制造。M8继续IN_PROGRESS，不进入M9，不将本批局部完成写成M8整体完成。
+
+2026-11-16 此前[内部逐项目授权模型清理](exec-plans/M8-mcp-protocol-and-management.md#内部逐项目授权模型清理2026-11-16)：代码`465f82386ba530b35cf883c7fe1370cea19cb6c6`已在标准目录/main本地提交。AccessContext已删除项目读取/包写入范围字段、逐项目构造器和检查器；项目调用只检查对应能力，MCP身份不再补造项目All范围。通用范围模型改为仅用于ExtensionId的ExtensionUiScopes，保留扩展页面隔离；管理授权指纹只绑定当前能力、ExtensionId及Principal/连接/会话，不再编码项目范围。目标项目ID、owner、原Plan/revision/身份、当前授权与OAuth上限、任务/幂等归属继续复查；不新增RPC、State/Config、依赖或兼容层，历史迁移未改。
 
 436份相关源码的旧模型符号扫描零匹配。应用MCP5/0、Portable UI14/0、候选查询5/0、Store/OAuth16/0、安全合同3/0、备份合同4/0、真实项目包读取1/0、扩展项目能力2/0，受影响application/store/Core全targets严格Clippy及fmt/metadata/xtask/diff通过，各模块分别记录，不称完整Workspace或原生闭环通过。新增授权指纹回归保留能力撤销、ExtensionId隔离、Principal/连接/实例/会话变化拒绝混读。关联架构/权限/RPC/威胁模型规范及测试已同步。**源码清理完成，未推送、无本轮远端验证；本轮没有重建部署验收程序，review仍对应485eddb。** 原窗口和原数据未操作，M8保持IN_PROGRESS，不进入M9。
 

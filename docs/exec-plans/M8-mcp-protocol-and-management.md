@@ -1099,3 +1099,13 @@ State37仅新增0037，旧0033–0036原样保留。一个事务撤销旧扩展p
 生产依赖审批记录：Host新增jsonschema = =0.61.2，default-features=false，用于2020-12输入/输出和定义校验，不自研第二套Schema解释器。已通过官方rust-v0.61.2 tag核对MIT、MSRV1.85（低于1.97.1），发布2026-11-12。禁用resolve-http/file/async及TLS/idna；同时注入拒绝外部引用的retriever。替代仅手写类型不能支持扩展自定义Schema。新增传递闭包、serde_json float_roundtrip及bytecount/uuid-simd第三方SIMD/unsafe影响须记录最终tree/lock，不称零unsafe，不额外升级无关依赖。Schema校验只在有界Host子进程内，Core不被不可信Schema同步阻塞。锁定依赖闭包和许可检查属于本批实施与验证，不授权其他依赖或推送。
 
 实现和验证按接口依赖顺序进行，未完成接线不发布capability，不将Schema/表存在算功能通过。工作目录main；日常定向检查，稳定候选集中验证，不每次重跑完整Workspace/浏览器/release/三平台。实际结果另记。
+
+### 扩展工具本地接线与稳定候选（2026-11-16）
+
+代码 `54ba42fd47b7228d1a7be08dff9d468a6d31821e` 已由真实Windows用户在main提交，未推送。[实际结果与未覆盖项](../testing/m8-extension-tools-20261116.md)取代上节“待接线”作为当前状态。生产 capability 仅在真实接线验证后开放，hello具名1/0；最终同一代码的签名Provider→冻结SDK→真实Core/Host复验1/0，整轮MCP关联模块7/0另保留输入。真实权限、OAuth上限/撤销、原Plan/实际Principal、原子结果、取消和写响应丢失的恢复已接通；不把guest输出当Core接受证据。
+
+State38仅0038新增，旧迁移未动。Store136/0后仅新增持久重启用例1/0，不写成整轮137项通过；旧迁移测试只补新表为空和现行版本，不削弱原行保全/序列/回滚。Host Schema3/0及真实组件5/0、前端check/build和相关浏览器单轮21/0、受影响严格Clippy/门禁与三程序debug构建通过；无完整Workspace/Chromium/release/三平台重复执行。失败轮与修正依据见测试记录，不拼接为全量通过。
+
+最终依赖审计：精确新增28个锁定包、无旧包移除/升级，完整名称/版本/许可/MSRV及feature树见测试记录和其dependency-audit.json/host-feature-tree.txt。jsonschema feature集为空，HTTP/file/async/TLS/idna resolver关闭；serde_json新增float_roundtrip feature统一。bytecount runtime-dispatch-simd、uuid-simd/vsimd detect以及zerocopy simd包含第三方SIMD/unsafe，不作零unsafe声明；五个传递包未声明MSRV，当前冻结工具链Windows编译已验证。无需其他生产依赖；MCP仅增加三个既有包的测试边。参考组件输入按仓库LF规范化后重建，字节摘要保持d9ac5e89…e8721，provenance/旧WIT精确合同2/0。
+
+831份输入摘要afc5f954…a4f55d1；原data36份、review data10份/profile303份逐文件集合和SHA256保持。测试前原Core/GUI已经关闭，测试后仍关闭，无待恢复进程或本轮Core/Host遗留，Unity40632未动；不替换原程序、不升级原库、不恢复桌面控制。新GUI未部署或人工验收，截图仅浏览器夹具；Provider对运行中任务成功取消的独立原生场景、跨平台/Hosted/CodeQL仍未验证。OAuth仍复用非空consent，零授权纯计算不因此新增OAuth模型。M8保持IN_PROGRESS，不进入M9，不自动推送。
