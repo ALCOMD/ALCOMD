@@ -423,6 +423,18 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
         )
         .is_err()
     );
+    assert_eq!(
+        contract["$defs"]["permissionGrant"]["properties"]["resourceKind"]["enum"],
+        json!(["Extension", "Global"])
+    );
+    assert_eq!(
+        contract["$defs"]["permissionScope"]["oneOf"][1]["properties"]["resourceKind"]["const"],
+        "Global"
+    );
+    assert_eq!(
+        contract["$defs"]["permissionScope"]["oneOf"][1]["properties"]["resourceId"]["const"],
+        "*"
+    );
     let result = alcomd_protocol::ExtensionPermissionsListResult {
         extension_id: "dev.example.fixture".to_owned(),
         grant_revision: 3,
@@ -430,15 +442,15 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
         optional_permissions: vec!["projects.read".to_owned()],
         grants: vec![alcomd_protocol::ExtensionPermissionGrant {
             permission: "projects.read".to_owned(),
-            resource_kind: "Project".to_owned(),
-            resource_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+            resource_kind: "Global".to_owned(),
+            resource_id: "*".to_owned(),
         }],
         next_cursor: None,
     };
     let value = serde_json::to_value(result).expect("typed permissions result");
     assert_eq!(
         value,
-        json!({"extensionId":"dev.example.fixture","grantRevision":3,"requiredPermissions":["background.run"],"optionalPermissions":["projects.read"],"grants":[{"permission":"projects.read","resourceKind":"Project","resourceId":"00000000-0000-4000-8000-000000000001"}]})
+        json!({"extensionId":"dev.example.fixture","grantRevision":3,"requiredPermissions":["background.run"],"optionalPermissions":["projects.read"],"grants":[{"permission":"projects.read","resourceKind":"Global","resourceId":"*"}]})
     );
     let required = contract["$defs"]["planRecord"]["required"]
         .as_array()
