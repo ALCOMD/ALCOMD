@@ -1,6 +1,6 @@
 # 发布者确认彻底删除（2026-11-16）
 
-代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。未推送；M8仍IN_PROGRESS，不进入M9。
+代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
 ## 当前行为
 
@@ -36,6 +36,31 @@ State39新增0039，单事务仅删除extensions和extension_plans的trust_decis
 
 首次最终保全脚本在原Unity PID40632已不再存在时报告进程集合不同（final-preservation.log），不能记作原进程保持。再次核对分别记录：数据全部保持、无自有运行时遗留、原Unity已不再观测到，原因未确定。本轮没有执行Unity启动/关闭，也不自动恢复用户程序；未把该外部状态变化伪写成产品测试失败或通过。
 
-远端仍为2a9d1233：CI43803776166三平台失败、CodeQL43803775667四语言成功。CI读状态冲突已在本地b9f19d5修复，本轮真实Host模块包含原失败用例并整轮通过；b9f19d5及本次State39均尚无对应远端验证，不用原CodeQL结果替代。未额外推送或触发workflow。
+此前远端2a9d1233的CI43803776166三平台失败、CodeQL43803775667四语言成功保留为历史。CI读状态冲突在b9f19d5修复，本轮真实Host模块包含原失败用例并整轮通过；该修复及State39现已按所有者四笔授权推送。本轮e99cd2c的实际终态单独列于下节，不用原CodeQL结果替代，也不重跑旧workflow。
 
-原生GUI人工查看、跨平台执行及本批远端结果仍待验证；Provider成功取消运行中任务的独立原生场景、OAuth目标客户端人工接入及其他既有M8后续继续保留。本次只完成取消发布者确认，不宣布M8完成。
+原生GUI人工查看仍待验证；本批跨平台与远端实际结果见下节，不记整体通过；Provider成功取消运行中任务的独立原生场景、OAuth目标客户端人工接入及其他既有M8后续继续保留。本次只完成取消发布者确认，不宣布M8完成。
+
+
+## e99cd2c推送与浏览器同步修复
+
+所有者批准的四笔链为b9f19d5 → 9c6f329 → de8ead3 → e99cd2c，基线2a9d123；推送前核对main、干净工作树、精确链和远端祖先关系，真实Windows用户普通快进并用ls-remote确认`e99cd2c9d9254025eb8926c23ea2976f599e99fd`。未夹带额外提交、强推、发布、打标签或手动触发/重跑workflow；推送前xtask/diff通过，未重跑既有完整本地验证。
+
+本轮自动CI43816630421、CodeQL43816630482均为上述SHA、attempt1。Ubuntu完整Chromium为709通过/1失败（17.6分钟），Windows为710通过/0失败（18.3分钟），macOS为710通过/0失败（23.2分钟）；各轮分别保留，不能拼成全平台通过。Windows/macOS整个CI job success，Ubuntu仅Chromium步骤失败；三平台Check、CLI自动启动、release/Tauri构建、锁文件/diff均通过，前轮真实Host生命周期的revision_conflict不再阻塞。
+
+Ubuntu唯一失败位于`m7-project-backup-defaults.spec.ts`英文六种压缩选项用例：选level7后value仍为fast，原5秒断言超时。源码核对发现测试点击前未等待Material select完成展开/焦点初始化，点击后也未等待关闭；已按既有motion用例的公开opened/closed事件同步，不改实际点击、六种标签、值、RPC载荷和精确一次写入断言，不加重试、force或放宽超时。修复仅测试代码，提交`882eb3d99474158a7440dc8050ff3a5c8f64e276`，尚未推送。
+
+本机未复现原远端失败：原英文用例在6倍CPU节流下单轮重复4次为4/0；不能据此证明具体远端事件时序。修复后备份默认值+motion两个模块单轮19/0、30.8秒，英文同条件4/0、46.8秒，前端check通过。CPU诊断钩子已移除，记录分别为select-before-cpu6.log、select-module-fixed.log、select-after-cpu6.log及select-frontend-check.log。修复是有依据的同步候选，远端是否收敛仍待新授权推送验证；不把本地19/0或其他平台通过用于抹掉Ubuntu709/1。
+
+原始远端状态、各平台日志及本地定向输出保存于`target/m8-push-e99cd2c-20261116/`。未重复Rust全量、Chromium全套、release或三平台运行，原运行环境/数据与桌面控制未操作。
+
+
+### 远端最终结果（同e99cd2c、attempt1）
+
+| 检查 | 真实结果 |
+| --- | --- |
+| [CI43816630421](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630421) / Ubuntu | failure，Chromium709/1；唯一失败见上文 |
+| 同CI / Windows | success，Chromium710/0 |
+| 同CI / macOS | success，Chromium710/0 |
+| [CodeQL43816630482](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630482) | actions、Rust、JavaScript/TypeScript、Python全部success |
+
+运行已全部终止，ci-final-metadata.json、codeql-final-metadata.json及三平台job.log保留真实终态。监视中一次只读查询EOF后重新读取状态，未重试任何workflow。修复后的本地状态检查为locked metadata、cargo xtask check和diff通过；不重复完整测试或构建。882eb3d与本轮文档记录超出四笔推送授权，均未推送，修复远端验证仍缺失；后续需另获普通快进授权，不能宣称本轮CI通过或M8完成。

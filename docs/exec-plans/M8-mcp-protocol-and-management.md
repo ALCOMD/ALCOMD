@@ -1133,3 +1133,15 @@ State38仅0038新增，旧迁移未动。Store136/0后仅新增持久重启用�
 新迁移4/0后Store全库单轮141/0，扩展Store13/0、协议24/0、相关合同各自通过；真实Core/Host模块单轮7/0及1原有ignored、Provider具名1/0（70.69秒）；GUI相关单轮26/0、零重试，后仅删除无当前调用者的旧映射/译文，再补check/build通过。受影响严格Clippy/fmt/metadata/xtask/diff及Core/MCP/Host debug构建通过。原CI失败用例包含在本轮Host模块中，不改断言；初次新负向测试的ZIP API编译失败保留，修正后再完整执行。不重复全量Workspace/Chromium/Tauri/release/三平台，不拼成其他模块完整通过。
 
 834份输入汇总789f1440…e20ec1d5；原data36份、review data10份/profile303份逐文件集合和SHA256保持，原环境/review原本关闭并保持关闭，无本轮Core/GUI/Host遗留、未升级原库或部署新GUI。最终原Unity40632已不再观测到、原因未定；本轮没有Unity启停指令，也不自动恢复。数据保全通过与进程集合变化分别记录，不写成原进程保持。b9f19d5与本次代码仍未推送、无对应远端结果；2a9d123的CI失败/CodeQL成功仍只对应原候选。M8保持IN_PROGRESS，不进入M9，不恢复桌面控制。
+
+### e99cd2c四笔推送与远端收集（2026-11-16）
+
+所有者明确批准四笔：b9f19d57291c69db6308a06f11985c435b33f7c1、9c6f3291c98cbb9d1126e804e09be24945ff6983、de8ead33f789c1264df574c69ecae0fb5bf155bd、e99cd2c9d9254025eb8926c23ea2976f599e99fd。已逐项核对精确提交链、干净main、最新远端2a9d123及祖先关系，执行普通快进推送并通过ls-remote确认目标SHA。推送前cargo xtask check/diff通过，不为推送重复既有完整本地验证。无无关提交、强推、标签或发布。
+
+自动CI43816630421与CodeQL43816630482均head=e99cd2c、attempt1，运行路径分别ci.yml及dynamic/github-code-scanning/codeql；终态已收齐：CI failure，Ubuntu Chromium709/1、Windows710/0（18.3分钟）、macOS710/0（23.2分钟）；Windows/macOS整个job成功，Ubuntu仅浏览器步骤失败，三平台Check/release/Tauri及锁文件/diff均成功。CodeQL四语言全部success。只读监视保存完整状态/step JSON于target/m8-push-e99cd2c-20261116，不dispatch或rerun旧运行。前节“未推送”为历史，当前结果不由2a9d123替代；M8保持IN_PROGRESS，不操作原环境或开始下一切片。
+
+
+Ubuntu完整Chromium709/1的唯一失败为备份压缩下拉框英文用例，选择level7后值仍fast。测试未同步Material select展开/关闭生命周期；窄修`882eb3d99474158a7440dc8050ff3a5c8f64e276`复用已有opened/closed同步，原交互/标签/值/RPC/精确写入断言、超时和生产代码保持。原例本机6倍CPU四次4/0，未复现远端失败，不声称已捕获远端确切事件顺序；修复后相关两模块单轮19/0、英文同条件4/0、前端check通过。新提交仅本地、尚无对应远端结果，需另获推送授权；macOS当前完整710/0不能替代Ubuntu失败。详细运行与日志见本轮发布者确认验收记录。
+
+
+最终收集使用同SHA、attempt1的实际日志与metadata，未重跑workflow；ci-final-metadata.json、codeql-final-metadata.json及三个平台job.log保存于本轮target证据目录。锁定metadata、cargo xtask check及diff检查通过，未因状态记录重跑完整测试或构建。仅上述四笔已推送，新修复882eb3d及本轮结果记录均留在本地，待所有者另行批准普通快进；M8仍IN_PROGRESS。
