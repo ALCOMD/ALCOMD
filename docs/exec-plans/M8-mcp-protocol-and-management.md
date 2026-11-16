@@ -1125,3 +1125,11 @@ State38仅0038新增，旧迁移未动。Store136/0后仅新增持久重启用�
 所有者授权后核对干净main、origin与完整12笔链，普通快进36a782c→2a9d12331d01dfde1ca82958e71bb3fc9f7edb10；推送前cargo xtask check/diff通过，不因推送重跑完整测试。自动CI43803776166三平台均failure，CodeQL43803775667四语言全部success，均attempt1，没有dispatch/rerun。失败不是新代码已通过远端：三平台均在m6_lifecycle中repeated_real_host_crashes_quarantine_only_that_enabled_extension的extensions.get处返回revision_conflict，模块各6/1及1原有ignored；之后步骤不能据前缀检查通过记整体通过。原始失败日志ci-43803776166-failed.log保留。
 
 根因是54ba42f增加签名声明预览后对两次完整ExtensionRecord做相等比较，后台崩溃/重启在读期间合法变更revision/runtime。窄修b9f19d5只用包摘要和发布者指纹判断声明来源是否变化，并返回第二次已授权查询的最新状态；不缓存状态、不重试、不放宽包/权限校验，不改原失败用例或公开合同。原具名真实Core/Host回归1/0（7.76秒）、Core所有targets严格Clippy及fmt/diff通过；日志quarantine-read-regression.log/quarantine-clippy.log。未重跑整个模块/Workspace/浏览器/三平台，该修复尚未推送、无对应远端结果。原Core/GUI已关闭，测试只用本轮可丢弃目录，Unity40632未动，未恢复桌面控制。M8保持IN_PROGRESS，发布者确认整改仍按上节独立等待必要删除清单确认。
+
+### 发布者确认删除本地收束（2026-11-16）
+
+所有者已明确批准彻底删除，前节“待确认”为当时历史。代码de8ead33f789c1264df574c69ecae0fb5bf155bd已本地提交，[完整记录](../testing/m8-publisher-confirmation-20261116.md)。当前安装只接受所选有效包，无发布者确认字段、信任状态或自动批准；原Plan/Apply、严格签名/摘要、来源及发布者数据身份、零授权与必需权限门禁保持。State39原子删除两列，触发器仅删除对应比较；旧0001–0038和所有无关数据不改。当前模型无残留TrustDecision类型或批准输入，历史SQL/审计/负向拒绝夹具不作为兼容功能。
+
+新迁移4/0后Store全库单轮141/0，扩展Store13/0、协议24/0、相关合同各自通过；真实Core/Host模块单轮7/0及1原有ignored、Provider具名1/0（70.69秒）；GUI相关单轮26/0、零重试，后仅删除无当前调用者的旧映射/译文，再补check/build通过。受影响严格Clippy/fmt/metadata/xtask/diff及Core/MCP/Host debug构建通过。原CI失败用例包含在本轮Host模块中，不改断言；初次新负向测试的ZIP API编译失败保留，修正后再完整执行。不重复全量Workspace/Chromium/Tauri/release/三平台，不拼成其他模块完整通过。
+
+834份输入汇总789f1440…e20ec1d5；原data36份、review data10份/profile303份逐文件集合和SHA256保持，原环境/review原本关闭并保持关闭，无本轮Core/GUI/Host遗留、未升级原库或部署新GUI。最终原Unity40632已不再观测到、原因未定；本轮没有Unity启停指令，也不自动恢复。数据保全通过与进程集合变化分别记录，不写成原进程保持。b9f19d5与本次代码仍未推送、无对应远端结果；2a9d123的CI失败/CodeQL成功仍只对应原候选。M8保持IN_PROGRESS，不进入M9，不恢复桌面控制。

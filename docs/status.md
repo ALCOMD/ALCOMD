@@ -6,9 +6,13 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
+2026-11-16 当前[发布者确认彻底删除](testing/m8-publisher-confirmation-20261116.md)：所有者已批准完整公共删除和State39，代码`de8ead33f789c1264df574c69ecae0fb5bf155bd`已本地提交。有效扩展包无需额外信任/发布者确认即可按原流程安装；publisherApproval、trustDecision、对应运行时类型/错误/GUI展示及两个数据库列已删除，不自动补批准、不保留旧输入兼容。严格签名/摘要/来源身份、原Plan/Apply、权限和留存数据的发布者身份隔离保持。旧迁移、Config13、依赖和身份模型不改，不升级原运行数据。
+
+Store单轮141/0、扩展Store13/0、协议24/0；真实Core/Host整轮7/0及1原有ignored，包含坏签名拒绝和无确认正常安装；Provider具名1/0（70.69秒）。相关Chromium单轮26/0、零重试；随后只清理弃用译文/映射，前端最终check/build、受影响严格Clippy/门禁和三程序debug构建通过。834份输入及程序摘要已绑定，失败/未执行分别保留，无全量或三平台重跑。原data36份、review data10份/profile303份集合及摘要保持，无Core/GUI/Host遗留；原Unity进程最终已不再观测到，原因未定，本轮未执行Unity启停或自动恢复。未部署新版原生GUI、未恢复桌面控制。本次与b9f19d5尚未推送，无对应Hosted/CodeQL，不进入M9。下段“Core门禁尚未移除/State39待确认”是审批前检查点，当前已完成删除。
+
 2026-11-16 补记：按所有者“可以先推送”授权，完整12笔链已普通快进推送至`2a9d12331d01dfde1ca82958e71bb3fc9f7edb10`，未dispatch/rerun。[CI43803776166](https://github.com/ALCOMD/ALCOMD/actions/runs/43803776166)三平台均失败，[CodeQL43803775667](https://github.com/ALCOMD/ALCOMD/actions/runs/43803775667)四项全部成功。共同失败为真实Host崩溃隔离用例读取extensions.get时返回revision_conflict：声明预览误把runtime/grant状态变化当成包替换。窄修`b9f19d5`改为保留包摘要/发布者绑定并返回最新运行状态，原具名用例1/0、Core所有targets严格Clippy及diff通过；未重跑整模块，未推送该修复。
 
-当前按所有者新要求优先[移除发布者确认](exec-plans/M8-mcp-protocol-and-management.md#移除发布者确认2026-11-16行为已授权state39删除清单待确认)：GUI确认框及信任状态展示已从源码移除、前端check通过，尚未提交或部署该界面改动。Core门禁和公共/存储模型完整删除尚未完成，不计为无确认安装已通过；State39两列删除及公共输出删字段的精确清单待所有者确认。签名、摘要、权限与沙箱保留，未修改原运行数据或恢复桌面控制。下文“未推送/无本轮远端验证”均保留为当时本地候选的历史状态，本批实际远端结果以上述2a9d123为准。
+审批前检查点：[移除发布者确认](exec-plans/M8-mcp-protocol-and-management.md#移除发布者确认2026-11-16state39与公共删除清单已批准)的GUI确认框及信任状态展示已从源码移除、前端check通过，当时未提交或部署。Core门禁和公共/存储模型完整删除当时尚未完成，不计为无确认安装已通过；State39删除清单其后获所有者明确批准，当前结果见上段。签名、摘要、权限与沙箱保留，未修改原运行数据或恢复桌面控制。下文“未推送/无本轮远端验证”保留为当时本地候选的历史状态，本批实际远端结果仍为上述2a9d123，不包含后续本地修复。
 
 2026-11-16 最新[扩展 MCP 工具本地候选](testing/m8-extension-tools-20261116.md)：代码 `54ba42fd47b7228d1a7be08dff9d468a6d31821e` 已本地提交。已批准的签名工具声明、独立 provider/core WIT、Core 合并目录/调用、双方当前能力与 OAuth 上限、原 Plan/确认/Apply、State38 原子接受记录及同键恢复已接通；可选 `mcp.tools.provide` 默认关闭，GUI 复用原开关/声明预览。无逐项目授权、owner 代理或任意 RPC 透传，不隐含 UI/后台启动，不改旧 WIT/Config13/身份模型。
 
