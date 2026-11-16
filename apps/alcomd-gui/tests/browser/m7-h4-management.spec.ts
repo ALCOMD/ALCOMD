@@ -1,3 +1,4 @@
+import { confirmPermissionChange } from "./permission-switch-actions";
 import { expectRequestError } from "./request-error-assertions";
 import { requestErrorMessage } from "../../src/request-errors";
 import { displayPath } from "../../src/display-path";
@@ -233,10 +234,10 @@ test("H4 project-read permission is one capability switch and never enumerates p
     await expect(projects(page)).toContainText("View basic information about all current and future projects.");
     await expect(modal(page).getByRole("combobox")).toHaveCount(0);
     expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
-    await toggle.click();
+    await confirmPermissionChange(page, "extensions.setGrant", () => toggle.click());
     await expect(toggle).toBeChecked();
     expect((await requests(page, "extensions.setGrant"))[0]!.params).toEqual({ extensionId: H4_ALPHA, permission: "projects.read", resourceKind: "Global", resourceId: "*", expectedGrantRevision: 4 });
-    await toggle.click();
+    await confirmPermissionChange(page, "extensions.revokeGrant", () => toggle.click());
     await expect(toggle).not.toBeChecked();
     expect((await requests(page, "extensions.revokeGrant"))[0]!.params).toEqual({ extensionId: H4_ALPHA, permission: "projects.read", resourceKind: "Global", resourceId: "*", expectedGrantRevision: 5 });
     expect(await requests(page, "projects.list")).toHaveLength(0);
@@ -295,7 +296,7 @@ test("H4 grant pagination rejects a changed revision without mixing old scopes a
     await page.evaluate(() => window.coreEvents.hold(false));
     await expect(background(page).getByRole("switch", { name: "Run in background", exact: true })).toBeChecked();
     await expect(projects(page).getByRole("switch", { name: "Read projects", exact: true })).not.toBeChecked();
-    await background(page).getByRole("switch", { name: "Run in background", exact: true }).click();
+    await confirmPermissionChange(page, "extensions.revokeGrant", () => background(page).getByRole("switch", { name: "Run in background", exact: true }).click());
     await expect(background(page).getByRole("switch", { name: "Run in background", exact: true })).not.toBeChecked();
     expect((await requests(page, "extensions.revokeGrant"))[0]!.params).toMatchObject({ permission: "background.run", resourceKind: "Extension", resourceId: H4_ALPHA, expectedGrantRevision: 4 });
     expect((await requests(page, "extensions.permissions.list")).some((request) => request.params.cursor === `${H4_ALPHA}:3:1`)).toBe(true);
@@ -338,7 +339,7 @@ test("H4 project permission does not depend on loading a project list", async ({
     await openPermissions(page);
     const toggle = projects(page).getByRole("switch", { name: "Read projects", exact: true });
     await expect(toggle).toBeChecked();
-    await toggle.click();
+    await confirmPermissionChange(page, "extensions.revokeGrant", () => toggle.click());
     await expect(toggle).not.toBeChecked();
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "projects.list")).toHaveLength(0);

@@ -71,6 +71,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     const events = useCoreEvents();
     const readVersion = useRef(0);
+    const acceptedRead = useRef<object | undefined>(undefined);
     const [generation, setGeneration] = useState(0);
     const [value, setValue] = useState<ExtensionPermissionsListResult>();
     const [error, setError] = useState<RpcError>();
@@ -83,6 +84,10 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
         owner.current = { client, extensionId, generation, active: true, pending: false };
     }
     const scope = owner.current;
+    // A new owner renders before its read effect; never expose its predecessor's grants.
+    const ownsRead = acceptedRead.current === scope;
+    const visibleValue = ownsRead && canRead ? value : undefined;
+    const visibleError = ownsRead ? error : undefined;
     const current = () => scope.active && owner.current === scope;
     const reload = () => { scope.active = false; setGeneration((version) => version + 1); };
     const refreshFeedback = useActionFeedback(loading);
@@ -113,9 +118,9 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 return result;
             };
             const result = events ? await events.consistentRead(["extensions"], load) : await load();
-            if (current() && version === readVersion.current) { setValue(result); setError(undefined); }
+            if (current() && version === readVersion.current) { acceptedRead.current = scope; setValue(result); setError(undefined); }
         } catch (caught: unknown) {
-            if (current() && version === readVersion.current) { setValue(undefined); setError(requestError(caught)); }
+            if (current() && version === readVersion.current) { acceptedRead.current = scope; setValue(undefined); setError(requestError(caught)); }
             throw caught;
         } finally { if (current() && version === readVersion.current) setLoading(false); }
     };
@@ -129,7 +134,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     }, [canRead, client, extensionId, scope]);
 
     const write = async (grant: ExtensionPermissionGrant, revoke: boolean) => {
-        if (!canWrite || !current() || scope.pending || loading || writeUnknown || value === undefined) return;
+        if (!canWrite || !canRead || !current() || !ownsRead || scope.pending || loading || writeUnknown || value === undefined) return;
         scope.pending = true; setWriting(true); setError(undefined);  onBusyChange(true);
         try {
             await (revoke
@@ -147,15 +152,15 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
             }
         } finally { scope.pending = false; if (owner.current === scope) setWriting(false); onBusyChange(false); }
     };
-    const requested = value === undefined ? [] : [...new Set([...value.requiredPermissions, ...value.optionalPermissions])];
-    const blocked = !canWrite || writing || loading || writeUnknown;
+    const requested = visibleValue === undefined ? [] : [...new Set([...visibleValue.requiredPermissions, ...visibleValue.optionalPermissions])];
+    const blocked = !canWrite || !ownsRead || writing || loading || writeUnknown;
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
-        {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : loading && value === undefined ? <LoadingState title={t("Loading…")} /> : null}
-        {error === undefined ? null : <div role="alert" data-notification-error={error.code}><p>{t(requestErrorMessage(error.code))}</p><code>{error.code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
-        {value === undefined ? null : requested.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
+        {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : (loading || !ownsRead) && visibleValue === undefined ? <LoadingState title={t("Loading…")} /> : null}
+        {visibleError === undefined ? null : <div role="alert" data-notification-error={visibleError.code}><p>{t(requestErrorMessage(visibleError.code))}</p><code>{visibleError.code}</code>{visibleError.diagnosticId === undefined ? null : <p><code>{visibleError.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
+        {visibleValue === undefined ? null : requested.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
             {requested.map((permission) => {
                 const name = permissionName(permission, t);
-                const grants = value.grants.filter((grant) => grant.permission === permission);
+                const grants = visibleValue.grants.filter((grant) => grant.permission === permission);
                 const known = editablePermission(permission);
                 const kind = permission === "background.run" ? "Extension" : "Global";
                 const resourceId = permission === "background.run" ? extensionId : "*";
@@ -168,7 +173,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                         </div>
                     </div>
                     <p className="extension-permission-description">{permissionDescription(permission, t)}</p>
-                    {!value.requiredPermissions.includes(permission) ? null : <p className="extension-permission-required">{t("Required to enable")}</p>}
+                    {!visibleValue.requiredPermissions.includes(permission) ? null : <p className="extension-permission-required">{t("Required to enable")}</p>}
 
                 </section>;
             })}

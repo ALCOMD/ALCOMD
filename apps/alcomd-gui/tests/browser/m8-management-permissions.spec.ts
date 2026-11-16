@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { H4_ALPHA } from "./h4-management-client";
+import { confirmPermissionChange } from "./permission-switch-actions";
 
 const route = "/browser-harness.html?route=%2Fextensions%2Fcom.example.alpha&state=ready&h4-management=1&m8-mcp-permissions=1&windows-paths=1";
 
@@ -25,7 +26,7 @@ test("permission switches use keyboard input, lock pending writes and restore au
     await expect(manage).toBeEnabled();
     await expect(manage).not.toBeChecked();
     await expect(read).not.toBeChecked();
-    await manage.click();
+    await confirmPermissionChange(page, "extensions.setGrant", () => manage.click());
     await expect(manage).toBeChecked();
     await expect(manage).toBeEnabled();
     await expect(dialog.getByRole("alert")).toHaveCount(0);
@@ -35,7 +36,7 @@ test("permission switches use keyboard input, lock pending writes and restore au
     await expect(dialog.getByRole("alert")).toContainText("Core could not read or save its state.");
     await expect(manage).toBeEnabled();
     await expect(manage).toBeChecked();
-    await manage.click();
+    await confirmPermissionChange(page, "extensions.revokeGrant", () => manage.click());
     await expect(manage).not.toBeChecked();
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     const writes = await page.evaluate(() => window.h4Management.requests.filter((r) => ["extensions.setGrant", "extensions.revokeGrant"].includes(r.method)));
@@ -45,6 +46,48 @@ test("permission switches use keyboard input, lock pending writes and restore au
         ["extensions.revokeGrant", "mcp.clients.manage", "Global", "*", 4],
         ["extensions.revokeGrant", "mcp.clients.manage", "Global", "*", 4]
     ]);
+});
+
+test("permission reload never exposes old writable switches after a successful grant", async ({ page }) => {
+    await page.goto(route);
+    await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    const manage = dialog.getByRole("switch", { name: "Manage MCP clients", exact: true });
+    await expect(manage).not.toBeChecked();
+    await expect(manage).toBeEnabled();
+    await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
+    await manage.click();
+    await expect(manage).toBeDisabled();
+    await page.evaluate(() => window.h4Management.hold("extensions.permissions.list", true));
+    const observed = await dialog.evaluateHandle((element) => {
+        const state = { writable: false, observer: undefined as MutationObserver | undefined };
+        state.observer = new MutationObserver(() => {
+            for (const control of element.querySelectorAll("md-switch")) {
+                if (!(control as HTMLElement & { disabled: boolean }).disabled) state.writable = true;
+            }
+        });
+        state.observer.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ["disabled"] });
+        return state;
+    });
+    let writable: boolean;
+    try {
+        await page.evaluate(() => {
+            window.h4Management.hold("extensions.setGrant", false);
+            window.h4Management.release("extensions.setGrant");
+        });
+        await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBeGreaterThan(0);
+        writable = await observed.evaluate((state) => state.writable);
+    } finally {
+        await observed.evaluate((state) => state.observer?.disconnect());
+        await observed.dispose();
+        await page.evaluate(() => {
+            window.h4Management.hold("extensions.permissions.list", false);
+            while (window.h4Management.release("extensions.permissions.list")) { /* Release only held read responses. */ }
+        });
+    }
+    expect(writable).toBe(false);
+    await expect(manage).toBeChecked();
+    await expect(manage).toBeEnabled();
 });
 
 test("MCP management permission rows read every grant page and use the exact global scope", async ({ page }) => {
@@ -66,7 +109,7 @@ test("MCP management permission rows read every grant page and use the exact glo
     await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
     await expect(manage).toContainText("Create MCP clients, change their grants, and permanently revoke them.");
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(0);
-    await manage.getByRole("switch", { name: "Manage MCP clients", exact: true }).click();
+    await confirmPermissionChange(page, "extensions.setGrant", () => manage.getByRole("switch", { name: "Manage MCP clients", exact: true }).click());
     await expect(manage.getByRole("switch", { name: "Manage MCP clients", exact: true })).toBeChecked();
     await expect.poll(() => page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").at(-1)?.params)).toEqual({
         extensionId: H4_ALPHA, permission: "mcp.clients.manage", resourceKind: "Global", resourceId: "*", expectedGrantRevision: 4
@@ -90,8 +133,10 @@ for (const colorScheme of ["light", "dark"] as const) {
         await expect(projects).not.toBeChecked();
         await expect(dialog.getByRole("switch")).toHaveCount(3);
         await expect(dialog.getByRole("combobox")).toHaveCount(0);
-        await projects.focus();
-        await page.keyboard.press("Space");
+        await confirmPermissionChange(page, "extensions.setGrant", async () => {
+            await projects.focus();
+            await page.keyboard.press("Space");
+        });
         await expect(projects).toBeChecked();
         await expect(projects).toBeEnabled();
         expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "projects.list").length)).toBe(0);
@@ -105,7 +150,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         await expect(projects).toBeEnabled();
         await dialog.getByRole("alert").scrollIntoViewIfNeeded();
         await page.screenshot({ path: `target/m8-zero-grant/permission-switches-error-${colorScheme}.png`, fullPage: true });
-        await projects.click();
+        await confirmPermissionChange(page, "extensions.revokeGrant", () => projects.click());
         await expect(projects).not.toBeChecked();
         await expect(dialog.getByRole("alert")).toHaveCount(0);
         expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.revokeGrant").length)).toBe(2);
