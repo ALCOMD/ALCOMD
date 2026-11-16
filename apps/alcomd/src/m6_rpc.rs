@@ -81,17 +81,23 @@ pub(super) async fn dispatch(
                         })
                         .await
                         .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
-                        if application.get(access, value.extension_id.clone()).await? != value {
+                        let current = application.get(access, value.extension_id.clone()).await?;
+                        // Tool declarations bind the signed package, not mutable runtime
+                        // or grant state. Return the latest status without making normal
+                        // background/crash transitions fail an otherwise valid read.
+                        if current.package_digest != value.package_digest
+                            || current.publisher_fingerprint != value.publisher_fingerprint
+                        {
                             return Err(app::M6Error::new(app::M6ErrorCode::RevisionConflict));
                         }
-                        Ok(tools)
+                        Ok((current, tools))
                     }
                     .await;
                     match preview {
-                        Ok(tools) => success_action(
+                        Ok((current, tools)) => success_action(
                             request.id,
                             rpc::ExtensionResult {
-                                extension: record(value),
+                                extension: record(current),
                                 mcp_tools: Some(tools),
                             },
                             None,
