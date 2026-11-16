@@ -1154,3 +1154,14 @@ Ubuntu完整Chromium709/1的唯一失败为备份压缩下拉框英文用例，�
 自动CI43837500362及CodeQL43837499791均绑定3752c08/attempt1。终态：Ubuntu success/Chromium710/0（12.3分钟），Windows success/710/0（18.4分钟），macOS failure/709/1（26.1分钟）；三平台Check、CLI自动启动、release/Tauri及锁文件/diff通过，CodeQL四语言success。前轮备份压缩选择已在本轮三平台通过；本轮唯一失败为m7-package-workspace.spec.ts:301用户包来源选择后仍显示Multiple sources，不替换或拼接历史失败结果。
 
 核对现有调用和Material生命周期后，测试窄修56eed3fd9d4cdbd0077d86b3c8bde6cc170277b4等待opened/closed，原点击/显示/Plan审阅断言及超时不变，生产代码未改。原例CPU6倍四次4/0未复现远端失败，明确不声称已捕获远端时序；修复后整个相关模块单轮29/0、单worker CPU6倍四次4/0、前端check及locked metadata/xtask/diff通过。初次诊断grep经npm.cmd转义后未发现测试，保留该未执行记录，修正调用后才有4/0；诊断钩子已清理。新修复及结果记录仅本地、需新推送授权，当前远端仍为CI失败，不宣布M8完成。完整日志和终态JSON保留于target/m8-push-3752c08-20261116，原环境、数据和桌面控制未操作。
+
+
+### e371d27两笔推送与事件证据初始化（2026-11-16）
+
+所有者批准56eed3fd9d4cdbd0077d86b3c8bde6cc170277b4、e371d27f961404a6606700ed87e4c01a8cfb6c6c后，已核对真实Windows用户、干净main、最新origin/main=3752c08、精确两笔链/祖先关系，普通快进至e371d27并以ls-remote确认。无夹带、强推、标签/发布或手动dispatch/rerun，不为推送重复完整本地验证。
+
+同SHA/attempt1的CI43851129715终态failure：Ubuntu完整Chromium710/0（17.5分钟）、macOS710/0（26.5分钟），两job成功；Windows709/1（19.0分钟）。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均success；CodeQL43851129372四语言success。前两轮两个选择用例在本轮三平台均通过，但旧失败仍保留；当前唯一失败为Windows m7-event-limits.spec.ts:63的5000行缓存测试，其初始化助手在eventLimits未定义时解引用coordinator，尚未进入缓存断言。
+
+已沿harness确认标题先渲染、再void import证据模块，旧expect.poll回调异常不会等待模块。测试窄修6ffde60599087e895cdaec86f5c2bfac9957e416使缺失的全局返回未就绪，仍精确要求ready后暂停时钟，不吞业务异常或放宽超时。新增受控模块延迟回归，在首次读取发生后才释放模块；旧逻辑下单轮1失败、相同TypeError，修复后该模块单轮10/0（9原例+1新例）、前端check及locked metadata/xtask/diff通过。所有缓存/限流/任务等原断言保持，生产代码和harness未改；不重复完整Workspace/Chromium/release。
+
+原始各平台日志、终态metadata与确定性前后回归见target/m8-push-e371d27-20261116；新修复/结果记录仅本地、需新的明确推送授权，不把10/0写成远端通过。原Core/GUI、原数据、Unity及桌面控制均未操作，M8仍IN_PROGRESS，不进入M9。

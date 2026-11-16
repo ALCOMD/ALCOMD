@@ -2,7 +2,7 @@
 
 代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
-当前远端已推进至3752c08，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
+当前远端已推进至e371d27，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
 
 ## 当前行为
 
@@ -97,3 +97,27 @@ Ubuntu唯一失败位于`m7-project-backup-defaults.spec.ts`英文六种压缩�
 | locked metadata、cargo xtask check、diff | 通过；无完整Rust/Chromium/release重跑 |
 
 本机没有捕获远端具体事件顺序，生命周期缺口修复属于待远端确认的候选，不把本地通过写成远端失败已消失。临时CPU钩子已恢复并扫描确认不存在；56eed3f及本次结果文档只本地提交，超出已执行的两笔授权，不自动推送。原Core/GUI、数据、Unity与桌面控制未操作；既有原生人工与其他M8未覆盖项不因此变成通过，M8继续IN_PROGRESS。
+
+
+## e371d27两笔推送与事件证据初始化
+
+所有者批准56eed3f、e371d27两笔后，核对真实Windows用户cqmhv-dt\m2922、干净main、最新origin/main=3752c08、准确两笔链/祖先关系，普通快进至`e371d27f961404a6606700ed87e4c01a8cfb6c6c`并通过ls-remote确认。未夹带、强推、标签/发布或手动dispatch/rerun，复用已通过本地证据，不因推送重复完整测试。
+
+下表为本候选同SHA、attempt1的独立完整运行，不与历史局部通过拼接：
+
+| 检查 | 终态 |
+| --- | --- |
+| [CI43851129715](https://github.com/ALCOMD/ALCOMD/actions/runs/43851129715) / Ubuntu | success，完整Chromium710/0，17.5分钟 |
+| 同CI / macOS | success，完整Chromium710/0，26.5分钟 |
+| 同CI / Windows | failure，完整Chromium709/1，19.0分钟 |
+| [CodeQL43851129372](https://github.com/ALCOMD/ALCOMD/actions/runs/43851129372) | actions、Rust、JavaScript/TypeScript、Python全部success |
+
+三平台Check、CLI自动启动、release/Tauri构建、锁文件/diff均success。前两轮压缩/来源选择的失败用例在本轮三平台均通过，旧e99cd2c及3752c08失败记录保留。Windows本轮唯一失败为m7-event-limits.spec.ts:63的5000行缓存测试：open助手在window.eventLimits未定义时读取coordinator，抛TypeError，未进入该例缓存断言。此为实际失败，不是超时取消，不记整体CI通过。完整各平台job.log、ci-final-metadata.json、codeql-final-metadata.json及逐步状态JSON保留在target/m8-push-e371d27-20261116；一次只读查询临时失败后继续读取，未重跑workflow。
+
+### 根因与最小回归
+
+UtilityWorkspaceEvidence.tsx先render标题，再void import("./event-limits-evidence")；标题可见不保证动态模块已赋值window.eventLimits。旧助手的expect.poll回调直接解引用，异常终止轮询。窄修`6ffde60599087e895cdaec86f5c2bfac9957e416`仅对尚未定义的全局返回未就绪，仍以原精确ready断言作为初始化门槛，随后才暂停原模拟时钟；实际coordinator错误不会被捕获或吞掉。
+
+新增回归仅拦截测试证据JS模块，在助手实际首次读取eventLimits后才释放，真实运行原证据模块及coordinator；不修改生产代码或harness，不增加旁路。旧初始化逻辑下新例单轮1失败，复现相同coordinator未定义异常（event-startup-before.log和before.ts）；修复后整个模块单轮10/0、15.7秒、1 worker，包含9个原缓存/限流/任务/断线用例和新初始化用例（event-startup-module-fixed.log）。原5000行、8MiB、并发/查询上限及任务状态断言全部保留，原超时和零重试配置不变。
+
+前端check（Material及1286条三语言）、locked metadata、cargo xtask check、diff通过；event-startup-frontend-check.log及local-final-metadata.json保留。未重跑完整Rust、浏览器全套或release。6ffde60与本轮文档记录仅本地、无对应远端验证，超出本次已执行两笔授权，不自动推送。原Core/GUI、数据、Unity及桌面控制未操作；其他既有M8人工未覆盖项保持，不宣布M8完成。
