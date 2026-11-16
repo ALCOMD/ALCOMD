@@ -1187,3 +1187,12 @@ macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。�
 权限本地修复f1f1027819b78558d9ddc8e82863a1ccf99a8473：ExtensionPermissions把快照绑定到当前owner/generation，新的归属读取完成前不展示旧授权为可编辑；保留当前Core与readVersion检查、未知写结果冻结、所有分页/revision/权限与声明规则。受控旧行为暴露可编辑窗口，单例1失败；新回归在最终四模块中通过。原测试把Material原生乐观checked当成Core提交完成，请求诊断失败时仅记录两次setGrant、没有revoke；成功操作现在控制现有模拟写入和读回边界，仍由真实键盘/点击驱动，不删原状态/错误/精确RPC/revision断言，不添加生产旁路或通用框架。测试辅助的初版挂起时机与一处RPC参数错误均留存为实施失败，不能算Core失败或通过。
 
 动画088710612a7bb37fdaac7a759c3b626a87bdc586只给现有live-OS测试增加原生matchMedia状态和change事件输入见证及7字段有界失败记录，原quick/页面状态/写入断言、超时与零重试不变；生产motion.ts及依赖未改。原Windows失败本机CPU6倍四次4/0未复现，**真实原因仍未知，不标记修复或豁免**。新本地输入四相关模块单轮37/0（1.1分钟）、前端check/build、metadata/xtask/diff通过，不重复完整Rust/Chromium/Tauri release。JS829aca43…414b25df、CSS480fdffa…9d4725b与源码摘要绑定于target/m8-push-e10bce7-20261116/permissions-motion-inputs-and-build.json。新候选需远端核对权限修复并取得原生输入证据；未新增RPC/Schema/权限/依赖或修改workflow，未自动推送，原环境与桌面控制未操作，M8仍IN_PROGRESS。
+
+
+### 6bbf876推送、终态与读回布局窄修（2026-11-17）
+
+所有者明确批准f1f1027819b78558d9ddc8e82863a1ccf99a8473、088710612a7bb37fdaac7a759c3b626a87bdc586、6bbf876fb5b2c413eaa50fba0f7fde1dcc3258e2后，真实Windows用户核对干净main、精确完整三笔链、最新origin与祖先关系，普通快进e10bce7→6bbf876并ls-remote确认。CI43915767271同SHA/attempt1终态failure：Windows完整Chromium714/0（18.0分钟）、job成功；Ubuntu713/1（15.6分钟），项目读取开关第二次点击没有撤销RPC；两平台此前Check、CLI自动启动、release/Tauri及锁文件/diff均success。macOS未取得托管arm64 runner，官方容量/未获取注解、空runner与零步骤证据确认其取消且未执行。CodeQL43915766843四语言success，未dispatch/rerun，不以旧结果代替未覆盖平台。Windows动画用例本轮通过，不据此宣称上轮未知根因已修复。
+
+沿唯一代码失败定向定位：CPU6倍四次4/0未复现；原速带有界输入诊断6通过/2失败，第二次只有pointerdown、没有pointerup/change或撤销RPC。读回时移除授权行使弹窗收缩/重排，trace中点击目标纵坐标由359.5变为458；受控读回布局回归在旧代码1失败。225726bc4ebb13156688d6b58588f19cadc29d1a在同Core/同扩展重读时保留禁用行及位置，仍以当前归属读回为写前提，不将上一代数据当成可写权威；不同身份不可见旧快照，读取能力变更也使旧归属失效。未知写结果、错误、分页/revision与精确RPC断言保持；测试辅助由行移除断言改为相同行数全部禁用，并新增位置稳定/一次撤销断言，不屏蔽后台事件、不重复点击、不加重试或延长超时。未修改共享Material、Core/RPC/Schema/权限/依赖/workflow。
+
+相关三模块单轮29/0、45.5秒，原失败例原速8/0、21.8秒；前端check/build（372模块、1286条三语言）、xtask/diff通过，locked metadata复用同依赖输入；不重跑完整Rust/Chromium/Tauri release。最终仅澄清一行注释，无执行逻辑差异。JS8e8752d3…6f7c19f1、CSS480fdffa…9d4725b，完整输入/构建摘要见target/m8-push-6bbf876-20261117/permission-layout-inputs-and-build.json，原失败日志/trace及各轮结果分别保留。新代码和记录仅本地，需新的明确推送授权，无对应远端/原生桌面证据；原环境与桌面控制未操作，M8仍IN_PROGRESS。

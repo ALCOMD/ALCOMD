@@ -2,7 +2,7 @@
 
 代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
-当前远端已推进至e10bce7，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
+当前远端已推进至6bbf876，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
 
 ## 当前行为
 
@@ -188,3 +188,35 @@ RepositoryRefresh完成后异步重读目录，PagedItems按新first-page引用�
 前端check/build通过（permissions-frontend-build.log），Material/1286条三语言、372模块通过；原有大chunk提示保留。JS index-C_kTntgB.js SHA256为829aca43ad66d692fe9c0fafa6ae1003680fcf9b33170a286ce759a2414b25df；CSS index-8F20k4yu.css为480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b。源码/输入/产物摘要和两笔代码SHA保存于permissions-motion-inputs-and-build.json，locked metadata/xtask/diff通过。未重跑完整Rust、浏览器全套或Tauri release。
 
 新权限修复与动画诊断及结果文档仅本地，无对应远端或原生桌面复验；远端当前仍e10bce7失败。下一批如获新推送授权，应确认权限修复并收集动画输入证据，不能先写成全绿。原Core/GUI、数据与Unity未操作，未恢复桌面控制；其余既有未覆盖项保持，M8仍IN_PROGRESS，不进入M9。
+
+
+## 6bbf876推送与权限读回布局（2026-11-17）
+
+已按所有者明确批准普通快进推送f1f1027、0887106、6bbf876，候选`6bbf876fb5b2c413eaa50fba0f7fde1dcc3258e2`。真实Windows用户、干净main、精确完整链与远端祖先关系均已核对，ls-remote确认；无夹带、强推、发布/标签或手动workflow操作。以下均同SHA、attempt1，旧轮次不拼接。
+
+| 检查 | 本轮实际终态 |
+| --- | --- |
+| [CI43915767271](https://github.com/ALCOMD/ALCOMD/actions/runs/43915767271) / Windows | success；完整Chromium714/0、18.0分钟 |
+| 同CI / Ubuntu | failure；完整Chromium713/1、15.6分钟 |
+| 同CI / macOS | cancelled；未获取托管runner、零步骤，测试与构建未执行 |
+| [CodeQL43915766843](https://github.com/ALCOMD/ALCOMD/actions/runs/43915766843) | Python、JavaScript/TypeScript、Rust、Actions全部success |
+
+Windows和Ubuntu的Check、CLI自动启动、release/Tauri、锁文件/diff均success。macOS官方注解为托管runner多次未获取，并明确arm64容量限制；runner字段为空、steps为空，非测试失败，不能记通过。原注解/macOS job元数据、全部终态metadata/jobs及两平台完整日志保存在target/m8-push-6bbf876-20261117。查询/日志下载短暂EOF仅重试只读获取，未重跑检查。Windows动画原用例本轮通过，原未知根因仍不写成已定位；Ubuntu唯一失败为m7-h4-management.spec.ts:240等待撤销请求（permission-switch-actions.ts:8）得到0而非1。
+
+### 连续点击与布局根因
+
+原速本机复现6通过/2失败，请求只有setGrant没有revokeGrant；输入捕获显示第二次pointerdown时开关启用且已选中，但没有后续pointerup/change。失败trace第二次点击位置y458，首次y359.5。成功写入后的新归属读回会移除整组行并显示加载，导致弹窗收缩后再重新定位，点击序列可能落到已移动的区域。CPU6倍四次4/0未复现，不能当作修复证据。原日志、trace.zip和headless失败截图分别保存，不冒充原生桌面截图。
+
+225726bc4ebb13156688d6b58588f19cadc29d1a保留同Core/扩展的禁用权限行，读取完成前不可写；不同身份不沿用旧内容，读取能力变化撤销旧归属。保留未知写结果冻结、失败提示、分页/revision和原精确RPC断言；成功时保持操作位置，读取失败仍明确清除不可用快照。测试辅助明确验证相同行数全部禁用，新例另验读回前后位置及下一次点击仅发出一次撤销。不关闭事件、不强制点击、不放宽超时、不自动重试、不改公共合同或共享Material。
+
+| 本地文件 | 结果（分别记录） |
+| --- | --- |
+| permission-click-diagnostic.log | CPU6倍原例4/0，42.8秒，未复现 |
+| permission-click-native-speed.log | 原速6通过/2失败，35.4秒，捕获无第二次change/RPC |
+| permission-layout-before.log | 旧代码受控布局单例1失败，等待3个开关实际为0 |
+| permission-layout-modules-fixed.log | 修复后三相关模块单轮29/0，45.5秒 |
+| permission-click-fixed-native-speed.log | 原失败例原速8/0，21.8秒 |
+
+前端check/build通过（permission-layout-frontend-build.log，372模块、1286条三语言、3.79秒），既有大chunk提示保留；xtask/diff通过，locked metadata复用未变依赖输入的有效结果。最终源文件仅在测试/构建后澄清一行注释，无执行逻辑变化。JS index-CuCXm1Lf.js SHA256为8e8752d38bdd077adc3e88ef2488dc358e2aeeb06ff5edcbf0bd32dc6f7c19f1，CSS480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b；完整代码SHA/输入/产物摘要见permission-layout-inputs-and-build.json。不把29/0与8/0拼为完整套件通过，未重复完整Rust/Chromium/Tauri release。
+
+当前远端仍6bbf876，CI失败且macOS未覆盖；225726b及本地记录未推送、无对应远端/原生桌面验证，新增推送需另获明确授权。原Core/GUI、数据、Unity和桌面控制未操作；既有人工未覆盖项保留，M8仍IN_PROGRESS，不进入M9。
