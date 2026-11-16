@@ -1109,3 +1109,19 @@ State38仅0038新增，旧迁移未动。Store136/0后仅新增持久重启用�
 最终依赖审计：精确新增28个锁定包、无旧包移除/升级，完整名称/版本/许可/MSRV及feature树见测试记录和其dependency-audit.json/host-feature-tree.txt。jsonschema feature集为空，HTTP/file/async/TLS/idna resolver关闭；serde_json新增float_roundtrip feature统一。bytecount runtime-dispatch-simd、uuid-simd/vsimd detect以及zerocopy simd包含第三方SIMD/unsafe，不作零unsafe声明；五个传递包未声明MSRV，当前冻结工具链Windows编译已验证。无需其他生产依赖；MCP仅增加三个既有包的测试边。参考组件输入按仓库LF规范化后重建，字节摘要保持d9ac5e89…e8721，provenance/旧WIT精确合同2/0。
 
 831份输入摘要afc5f954…a4f55d1；原data36份、review data10份/profile303份逐文件集合和SHA256保持。测试前原Core/GUI已经关闭，测试后仍关闭，无待恢复进程或本轮Core/Host遗留，Unity40632未动；不替换原程序、不升级原库、不恢复桌面控制。新GUI未部署或人工验收，截图仅浏览器夹具；Provider对运行中任务成功取消的独立原生场景、跨平台/Hosted/CodeQL仍未验证。OAuth仍复用非空consent，零授权纯计算不因此新增OAuth模型。M8保持IN_PROGRESS，不进入M9，不自动推送。
+
+### 移除发布者确认（2026-11-16，行为已授权；State39删除清单待确认）
+
+所有者明确要求：用户选择安装扩展即可安装，不再提供或要求额外的发布者信任确认。移除GUI复选框、信任状态展示、安装输入publisherApproval及PublisherConfirmationRequired错误，不通过自动勾选或偷偷补approve_for_extension模拟删除。安装仍走原Plan/Apply/Operation；申请能力审阅与实际授权不自动扩大，扩展权限、隔离与恢复不变。包仍须原严格Ed25519签名、内容摘要、发布者指纹一致性和路径/ABI/Schema校验；签名用于完整性与来源身份，不将“签名有效”表述为发布者可信。外部调用者不能伪造first_party_packaged来源，保留既有来源限制和留存扩展数据的发布者身份隔离。
+
+为彻底删除不再有意义的模型，建议一次批准的破坏性差异：从安装RPC/DTO删除publisherApproval枚举/字段，从ExtensionRecord/ExtensionPlan及SDK/Portable UI的只读扩展摘要删除trustDecision，清除共享错误合同中的extension_publisher_confirmation_required。不保留旧参数兼容、自动批准字段或第二套安装机制；未知旧参数按既有严格解析拒绝。
+
+State39最小删除清单：仅删除extensions.trust_decision和extension_plans.trust_decision两列；单事务先重建引用该列的extension_plans_immutable触发器，再通过SQLite DROP COLUMN去除两列。原计划的其余不可变条件、主键/外键/索引、签名/来源摘要、权限/数据、MCP调用接受记录、业务结果及事件序列逐项保留。旧0008/0009/0038等已提交迁移不改，不新增持久表、Config、权限、依赖或身份合同，不升级原运行数据。补State38→39精确删列/全旧值保全/回滚/重开，以及无确认正常安装、坏签名拒绝、必需权限与实际授权仍独立的定向回归。数据库删除清单及对应public输出删字段尚待本节人工确认；不因此停止独立的GUI清理和源码核对。
+
+独立GUI改动已移除确认checkbox及三处信任状态展示，frontend-removal-check.log通过；仍未提交/部署，Core确认门禁未移除，不冒称功能完成。实际修改及日志在target/m8-publisher-confirmation-20261116。未自动填approve_for_extension，也未删签名、权限或留存数据的发布者身份保护。
+
+### 2a9d123远端结果及声明预览修复（2026-11-16）
+
+所有者授权后核对干净main、origin与完整12笔链，普通快进36a782c→2a9d12331d01dfde1ca82958e71bb3fc9f7edb10；推送前cargo xtask check/diff通过，不因推送重跑完整测试。自动CI43803776166三平台均failure，CodeQL43803775667四语言全部success，均attempt1，没有dispatch/rerun。失败不是新代码已通过远端：三平台均在m6_lifecycle中repeated_real_host_crashes_quarantine_only_that_enabled_extension的extensions.get处返回revision_conflict，模块各6/1及1原有ignored；之后步骤不能据前缀检查通过记整体通过。原始失败日志ci-43803776166-failed.log保留。
+
+根因是54ba42f增加签名声明预览后对两次完整ExtensionRecord做相等比较，后台崩溃/重启在读期间合法变更revision/runtime。窄修b9f19d5只用包摘要和发布者指纹判断声明来源是否变化，并返回第二次已授权查询的最新状态；不缓存状态、不重试、不放宽包/权限校验，不改原失败用例或公开合同。原具名真实Core/Host回归1/0（7.76秒）、Core所有targets严格Clippy及fmt/diff通过；日志quarantine-read-regression.log/quarantine-clippy.log。未重跑整个模块/Workspace/浏览器/三平台，该修复尚未推送、无对应远端结果。原Core/GUI已关闭，测试只用本轮可丢弃目录，Unity40632未动，未恢复桌面控制。M8保持IN_PROGRESS，发布者确认整改仍按上节独立等待必要删除清单确认。
