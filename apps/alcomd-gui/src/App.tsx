@@ -795,7 +795,6 @@ function ExtensionIdentity({ extension }: { extension: ExtensionRecord }) {
         <dl className="extension-identity" aria-label={t("Host-verified extension identity")}>
             <div><dt>{t("Version")}</dt><dd>{extension.version}</dd></div>
             <div><dt>{t("Publisher")}</dt><dd><code>{shortFingerprint(extension.publisherFingerprint)}</code></dd></div>
-            <div><dt>{t("Trust")}</dt><dd>{t(humanize(extension.trustDecision))}</dd></div>
             <div><dt>{t("Desired state")}</dt><dd>{t(humanize(extension.desiredState))}</dd></div>
             <div><dt>{t("Runtime")}</dt><dd>{t(humanize(extension.runtimeState))}</dd></div>
             <div><dt>{t("Quarantine")}</dt><dd>{t(humanize(extension.quarantineState))}</dd></div>

@@ -51,7 +51,6 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("explicit fixture publisher approval")
@@ -249,18 +248,11 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         source_kind: ExtensionSourceKind::LocalOwnerSelected,
         package_path: package.to_string_lossy().into_owned(),
         expected_revision: 0,
-        publisher_approval: ExtensionPublisherApproval::None,
     };
-    assert!(
-        matches!(client.extension_plan_install(params.clone()).await,Err(ClientError::Remote(error)) if error.code=="extension_publisher_confirmation_required")
-    );
     let plan = client
-        .extension_plan_install(ExtensionPlanInstallParams {
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
-            ..params
-        })
+        .extension_plan_install(params)
         .await
-        .expect("explicit trust")
+        .expect("owner-selected package needs no publisher confirmation")
         .plan;
     assert_eq!(plan.required_permissions, vec!["mcp.clients.read"]);
     let install = client

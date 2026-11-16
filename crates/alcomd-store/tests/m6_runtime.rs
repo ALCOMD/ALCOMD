@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     ExtensionDataDisposition, ExtensionGrantMutation, ExtensionInstallPlanDraft,
-    ExtensionPackageEvidence, ExtensionSourceKind, ExtensionTrustDecision, ExtensionUiProtocol,
+    ExtensionPackageEvidence, ExtensionSourceKind, ExtensionUiProtocol,
     ExtensionUninstallPlanDraft, IdempotencyKey, M3RegistryStore, M6ErrorCode, M6Store,
     ManifestState, PrincipalId, ProjectObservation, ProjectType,
 };
@@ -65,7 +65,6 @@ async fn permissions_fixture_with_package(
     let owner = PrincipalId::local_owner();
     let draft = |package| ExtensionInstallPlanDraft {
         evidence: package,
-        trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
         expected_revision: None,
         plan_fingerprint: [8; 32],
     };
@@ -487,7 +486,6 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: None,
                 plan_fingerprint: [23; 32],
             },
@@ -829,7 +827,6 @@ async fn plan_authority_round_trips_and_install_recovery_is_idempotent() {
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: None,
                 plan_fingerprint: [4; 32],
             },
@@ -892,7 +889,6 @@ async fn plan_authority_round_trips_and_install_recovery_is_idempotent() {
             owner,
             ExtensionInstallPlanDraft {
                 evidence: package,
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: Some(installed.revision),
                 plan_fingerprint: [5; 32],
             },
@@ -916,7 +912,6 @@ async fn uninstall_begin_durably_revokes_grants_before_filesystem_mutation() {
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: None,
                 plan_fingerprint: [6; 32],
             },
@@ -1022,7 +1017,6 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: None,
                 plan_fingerprint: [8; 32],
             },
@@ -1163,7 +1157,6 @@ async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                 expected_revision: None,
                 plan_fingerprint: [9; 32],
             },
@@ -1344,20 +1337,12 @@ async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call
 }
 
 #[tokio::test]
-async fn first_party_policy_and_owner_approved_policy_share_the_same_runtime_authority() {
-    let owner_approved = policy_capability_outcome(
-        "owner-approved",
-        ExtensionSourceKind::LocalOwnerSelected,
-        ExtensionTrustDecision::UserApprovedForExtension,
-    )
-    .await;
-    let first_party = policy_capability_outcome(
-        "first-party",
-        ExtensionSourceKind::FirstPartyPackaged,
-        ExtensionTrustDecision::Official,
-    )
-    .await;
-    assert_eq!(owner_approved, first_party);
+async fn first_party_and_owner_selected_sources_share_the_same_runtime_authority() {
+    let owner_selected =
+        policy_capability_outcome("owner-selected", ExtensionSourceKind::LocalOwnerSelected).await;
+    let first_party =
+        policy_capability_outcome("first-party", ExtensionSourceKind::FirstPartyPackaged).await;
+    assert_eq!(owner_selected, first_party);
 }
 
 #[tokio::test]
@@ -1381,7 +1366,6 @@ async fn extension_list_uses_exclusive_extension_id_keyset_order() {
                 owner.clone(),
                 ExtensionInstallPlanDraft {
                     evidence: package,
-                    trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
                     expected_revision: None,
                     plan_fingerprint: [u8::try_from(index + 1).expect("fingerprint marker"); 32],
                 },
@@ -1454,7 +1438,6 @@ async fn extension_list_uses_exclusive_extension_id_keyset_order() {
 async fn policy_capability_outcome(
     name: &str,
     source_kind: ExtensionSourceKind,
-    trust_decision: ExtensionTrustDecision,
 ) -> (String, Vec<u8>, Vec<String>, Vec<String>) {
     let path = database_path(name);
     let store = StateStoreHandle::open(path.clone()).expect("open policy store");
@@ -1468,7 +1451,6 @@ async fn policy_capability_outcome(
             owner.clone(),
             ExtensionInstallPlanDraft {
                 evidence: package.clone(),
-                trust_decision,
                 expected_revision: None,
                 plan_fingerprint: [21; 32],
             },

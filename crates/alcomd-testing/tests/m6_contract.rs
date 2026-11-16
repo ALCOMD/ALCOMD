@@ -388,7 +388,6 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     for code in [
         "extension_manifest_invalid",
         "extension_package_untrusted",
-        "extension_publisher_confirmation_required",
         "extension_signature_invalid",
         "extension_permission_denied",
         "extension_scope_denied",

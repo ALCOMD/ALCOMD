@@ -462,7 +462,6 @@ export interface ExtensionPlan {
     profileVersion: number;
     packageDigest: string;
     publisherFingerprint: string;
-    trustDecision: string;
     dataDisposition: string;
     planFingerprint: string;
     uiProtocol?: string;

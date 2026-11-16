@@ -101,7 +101,7 @@ export interface GuiRpcClient {
     extensionsList(cursor?: string): Promise<ExtensionsListResult>;
     extensionGet(extensionId: string): Promise<ExtensionResult>;
     extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult>;
-    extensionPlanInstall(packagePath: string, expectedRevision: number, publisherApproval: "none" | "approve_for_extension"): Promise<ExtensionPlanResult>;
+    extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult>;
     extensionApplyInstall(planId: string): Promise<ExtensionOperationResult>;
     extensionEnable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
     extensionDisable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
@@ -479,8 +479,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_extension_permissions_list", { params: { extensionId, limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
     }
 
-    extensionPlanInstall(packagePath: string, expectedRevision: number, publisherApproval: "none" | "approve_for_extension"): Promise<ExtensionPlanResult> {
-        return invokeTyped("gui_extension_plan_install", { params: { sourceKind: "local_owner_selected", packagePath, expectedRevision, publisherApproval } });
+    extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult> {
+        return invokeTyped("gui_extension_plan_install", { params: { sourceKind: "local_owner_selected", packagePath, expectedRevision } });
     }
 
     extensionApplyInstall(planId: string): Promise<ExtensionOperationResult> {

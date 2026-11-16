@@ -293,14 +293,6 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "应用已确认的计划",
         "ja-JP": "確認済みのプランを適用"
     },
-    "approve for extension": {
-        "zh-CN": "为此扩展批准",
-        "ja-JP": "この拡張機能で承認"
-    },
-    "Approve this publisher for this extension": {
-        "zh-CN": "为此扩展批准该发布者",
-        "ja-JP": "この拡張機能でこの発行元を承認する"
-    },
     "Back up {name}.": {
         "zh-CN": "备份 {name}。",
         "ja-JP": "{name}をバックアップします。"
@@ -622,10 +614,6 @@ export const actionMessages: TranslationTable = {
     "No registered projects available.": {
         "zh-CN": "没有已添加的项目。",
         "ja-JP": "登録済みのプロジェクトはありません。"
-    },
-    "official": {
-        "zh-CN": "官方",
-        "ja-JP": "Official"
     },
     "One argument per line. The daemon validates forbidden arguments.": {
         "zh-CN": "每行填写一个参数。后台服务将检查禁止使用的参数。",
@@ -1082,10 +1070,6 @@ export const actionMessages: TranslationTable = {
     "Unregister this project?": {
         "zh-CN": "从列表删除此项目？",
         "ja-JP": "このプロジェクトを一覧から削除しますか？"
-    },
-    "user approved for extension": {
-        "zh-CN": "用户为此扩展批准",
-        "ja-JP": "ユーザーがこの拡張機能で承認"
     },
     "Version {version}": {
         "zh-CN": "版本 {version}",

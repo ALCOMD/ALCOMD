@@ -269,7 +269,8 @@ fn state37_fault_rolls_back_deleted_grants_revisions_leases_and_table_rebuild() 
 #[test]
 fn state37_real_initializer_migrates_once_and_reopens_without_regranting() {
     let db = fixture();
-    let expected = expected_extension_delta(snapshot(&db));
+    let expected =
+        publisher_trust_removal_tests::expected_state39(expected_extension_delta(snapshot(&db)));
     let path = std::env::temp_dir().join(format!("alcomd-state37-{}.db", Uuid::new_v4()));
     db.execute("VACUUM INTO ?1", [path.to_str().expect("path")])
         .expect("isolated copy");

@@ -142,7 +142,7 @@
             "type": "object", "additionalProperties": false,
             "required": [
                 "extensionId", "version", "apiMajor", "packageDigest", "publisherFingerprint",
-                "trustDecision", "desiredState", "quarantineState", "runtimeState", "grantRevision",
+                "desiredState", "quarantineState", "runtimeState", "grantRevision",
                 "lifecycleGeneration", "revision"
             ],
             "properties": {
@@ -151,7 +151,6 @@
                 "apiMajor": {"const": 1},
                 "packageDigest": {"$ref": "#/$defs/sha256"},
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
-                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling"]},
                 "quarantineState": {"enum": ["clear", "quarantined"]},
                 "runtimeState": {"enum": ["stopped", "starting", "running", "stopping", "crashed"]},

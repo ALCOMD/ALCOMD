@@ -119,14 +119,14 @@ fn state38_real_initializer_upgrades_once_then_reopens() {
             [path.to_str().expect("valid isolated authority fixture")],
         )
         .expect("valid isolated authority fixture");
-    let before = rows(&source);
+    let before = publisher_trust_removal_tests::expected_state39(rows(&source));
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("valid isolated authority fixture");
         assert_eq!(rows(&db), before);
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("valid isolated authority fixture"),
-            38
+            CURRENT_DATA_SCHEMA
         );
     }
     std::fs::remove_file(path).expect("valid isolated authority fixture");
@@ -458,7 +458,7 @@ async fn tool_restart_recovers_accepted_evidence_and_never_restarts_an_unaccepte
             .expect("accepted effect evidence");
             tx.commit().expect("durable receipt");
         }
-        let before = rows(&db);
+        let before = publisher_trust_removal_tests::expected_state39(rows(&db));
         let path = std::env::temp_dir().join(format!("alcomd-tool-restart-{}.db", Uuid::new_v4()));
         db.execute("VACUUM INTO ?1", [path.to_str().expect("fixture path")])
             .expect("durable isolated fixture");

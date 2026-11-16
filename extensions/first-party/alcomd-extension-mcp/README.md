@@ -23,7 +23,7 @@ cargo build --locked --manifest-path extensions/first-party/alcomd-extension-mcp
 cargo xtask component extensions/first-party/alcomd-extension-mcp/backend/target/wasm32-unknown-unknown/release/alcomd_extension_mcp_backend.wasm target/new-management-component.wasm
 ```
 
-编码入口只创建新文件。包仍须真实签名、发布者确认；本目录的占位fingerprint不是签名，
+编码入口只创建新文件。包仍须真实签名和完整性校验，用户选择安装即可，无额外发布者确认；本目录的占位fingerprint不是签名，
 不能直接压缩当作可安装正式包。开发验证使用独立测试身份和密钥、可丢弃数据，不更改正式签名材料。
 默认随产品安装/启用的分发尚需后续证据，不由一次开发包测试代替。
 

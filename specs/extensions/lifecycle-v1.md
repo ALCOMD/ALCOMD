@@ -50,7 +50,7 @@ termination 不自动回滚它，也不授予任何新的后续 capability autho
 
 Install source kind 只允许 `local_owner_selected` 或 `first_party_packaged`；没有 URL、registry、marketplace、remote
 catalog 或任意网络 fetch。Install Plan immutable 固定 source kind/identity、ExtensionId/version/API、package/Manifest/component digest、publisher key/
-trust decision、permissions/interfaces、archive profile v1、expected absence/revision。Apply 不重新 Plan。
+fingerprint、permissions/interfaces、archive profile v1、expected absence/revision。无额外发布者确认或信任决策；Apply 不重新 Plan。
 
 Install phases：`accepted -> source_verified -> archive_verified -> staging_complete -> publish_intent ->
 package_published -> state_commit_intent -> state_committed -> cleanup_complete`。

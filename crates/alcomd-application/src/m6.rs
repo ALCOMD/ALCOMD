@@ -18,13 +18,6 @@ pub enum ExtensionSourceKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExtensionTrustDecision {
-    Official,
-    UserApprovedForExtension,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ExtensionDesiredState {
     InstalledDisabled,
     Enabled,
@@ -99,7 +92,6 @@ pub struct ExtensionRecord {
     pub api_major: u32,
     pub package_digest: [u8; 32],
     pub publisher_fingerprint: String,
-    pub trust_decision: ExtensionTrustDecision,
     pub desired_state: ExtensionDesiredState,
     pub quarantine_state: ExtensionQuarantineState,
     pub runtime_state: ExtensionRuntimeState,
@@ -198,7 +190,6 @@ pub struct ExtensionPlanRecord {
     pub action: String,
     pub state: String,
     pub evidence: ExtensionPackageEvidence,
-    pub trust_decision: ExtensionTrustDecision,
     pub expected_revision: Option<Revision>,
     pub data_disposition: Option<ExtensionDataDisposition>,
     pub plan_fingerprint: [u8; 32],
@@ -209,7 +200,6 @@ pub struct ExtensionPlanRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExtensionInstallPlanDraft {
     pub evidence: ExtensionPackageEvidence,
-    pub trust_decision: ExtensionTrustDecision,
     pub expected_revision: Option<Revision>,
     pub plan_fingerprint: [u8; 32],
 }
@@ -404,7 +394,6 @@ pub enum M6ErrorCode {
     ManifestInvalid,
     PackageInvalid,
     PackageUntrusted,
-    PublisherConfirmationRequired,
     SignatureInvalid,
     AlreadyInstalled,
     NotInstalled,
@@ -900,7 +889,6 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         &self,
         access: &AccessContext,
         evidence: ExtensionPackageEvidence,
-        trust_decision: ExtensionTrustDecision,
         expected_revision: Option<Revision>,
         plan_fingerprint: [u8; 32],
         now_ms: u64,
@@ -913,7 +901,6 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 access.principal().clone(),
                 ExtensionInstallPlanDraft {
                     evidence,
-                    trust_decision,
                     expected_revision,
                     plan_fingerprint,
                 },

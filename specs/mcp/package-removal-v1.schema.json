@@ -1176,7 +1176,6 @@
                         "extension_package_untrusted",
                         "extension_permission_denied",
                         "extension_plan_stale",
-                        "extension_publisher_confirmation_required",
                         "extension_quarantined",
                         "extension_recovery_required",
                         "extension_resource_limit",

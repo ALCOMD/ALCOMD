@@ -1,5 +1,7 @@
 # ALCOMD State Schema v8：Extension Runtime contract draft
 
+历史说明：本页保留 State8 的原始表和迁移合同。当前 State39 已按所有者批准删除两处 trust_decision，不再要求或保存发布者确认；见 [State39](state-v39.md)。旧迁移不改。
+
 状态：M6 Stop A review closure；`state.db` production migration 尚未实现，daemon 仍广告 v7。
 
 权威 contract snapshot 是 `state-v8-migration.contract.json`。生产获批后才允许创建

@@ -1,8 +1,7 @@
 use super::*;
 use alcomd_application::{
     AccessContext, Application, EventInvalidation, EventsCursor, ExtensionInstallPlanDraft,
-    ExtensionPackageEvidence, ExtensionSourceKind, ExtensionTrustDecision, FilesystemPhase,
-    JournalState, Permission,
+    ExtensionPackageEvidence, ExtensionSourceKind, FilesystemPhase, JournalState, Permission,
 };
 use rusqlite::params;
 use std::time::Duration;
@@ -74,7 +73,6 @@ pub(super) async fn installed_extension_for(
                 optional_interfaces: vec![],
                 ui_protocol: None,
             },
-            trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
             expected_revision: None,
             plan_fingerprint: [8; 32],
         },

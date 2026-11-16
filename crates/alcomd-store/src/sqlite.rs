@@ -55,6 +55,7 @@ const MIGRATION_V35: &str = include_str!("../migrations/0035_extension_mcp_permi
 const MIGRATION_V36: &str = include_str!("../migrations/0036_mcp_oauth.sql");
 const MIGRATION_V37: &str = include_str!("../migrations/0037_capability_permission_switches.sql");
 const MIGRATION_V38: &str = include_str!("../migrations/0038_extension_mcp_tools.sql");
+const MIGRATION_V39: &str = include_str!("../migrations/0039_remove_publisher_trust.sql");
 
 #[cfg(test)]
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
@@ -284,6 +285,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 37 {
         connection
             .execute_batch(MIGRATION_V38)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 38 {
+        connection
+            .execute_batch(MIGRATION_V39)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -1815,3 +1821,7 @@ fn corrupt_state() -> StoreError {
 #[cfg(test)]
 #[path = "sqlite_extension_tools_tests.rs"]
 mod extension_tools_migration_tests;
+
+#[cfg(test)]
+#[path = "sqlite_publisher_trust_removal_tests.rs"]
+mod publisher_trust_removal_tests;

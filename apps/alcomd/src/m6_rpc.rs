@@ -171,27 +171,14 @@ pub(super) async fn dispatch(
                 Ok(value) => value,
                 Err(error) => return extension_error(request.id, error),
             };
-            let trust = match (source_kind, params.publisher_approval) {
-                (
-                    app::ExtensionSourceKind::LocalOwnerSelected,
-                    rpc::ExtensionPublisherApproval::ApproveForExtension,
-                ) => app::ExtensionTrustDecision::UserApprovedForExtension,
-                (
-                    app::ExtensionSourceKind::LocalOwnerSelected,
-                    rpc::ExtensionPublisherApproval::None,
-                ) => {
-                    return extension_error(
-                        request.id,
-                        app::M6Error::new(app::M6ErrorCode::PublisherConfirmationRequired),
-                    );
-                }
-                _ => {
-                    return extension_error(
-                        request.id,
-                        app::M6Error::new(app::M6ErrorCode::PackageUntrusted),
-                    );
-                }
-            };
+            // Preserve permission/package validation before the existing source
+            // restriction; callers cannot claim the controlled bundled source.
+            if source_kind != app::ExtensionSourceKind::LocalOwnerSelected {
+                return extension_error(
+                    request.id,
+                    app::M6Error::new(app::M6ErrorCode::PackageUntrusted),
+                );
+            }
             let expected = if params.expected_revision == 0 {
                 None
             } else {
@@ -202,7 +189,7 @@ pub(super) async fn dispatch(
             };
             let fingerprint = evidence.package_digest;
             match application
-                .plan_install(access, evidence, trust, expected, fingerprint, now_ms())
+                .plan_install(access, evidence, expected, fingerprint, now_ms())
                 .await
             {
                 Ok(value) => {
@@ -429,12 +416,6 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
         api_major: value.api_major,
         package_digest: hex(&value.package_digest),
         publisher_fingerprint: value.publisher_fingerprint,
-        trust_decision: match value.trust_decision {
-            app::ExtensionTrustDecision::Official => rpc::ExtensionTrustDecision::Official,
-            app::ExtensionTrustDecision::UserApprovedForExtension => {
-                rpc::ExtensionTrustDecision::UserApprovedForExtension
-            }
-        },
         desired_state: match value.desired_state {
             app::ExtensionDesiredState::InstalledDisabled => {
                 rpc::ExtensionDesiredState::InstalledDisabled
@@ -486,12 +467,6 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
         profile_version: value.evidence.profile_version,
         package_digest: hex(&value.evidence.package_digest),
         publisher_fingerprint: value.evidence.publisher_fingerprint,
-        trust_decision: match value.trust_decision {
-            app::ExtensionTrustDecision::Official => rpc::ExtensionTrustDecision::Official,
-            app::ExtensionTrustDecision::UserApprovedForExtension => {
-                rpc::ExtensionTrustDecision::UserApprovedForExtension
-            }
-        },
         data_disposition: match value.data_disposition {
             None => "not_applicable",
             Some(app::ExtensionDataDisposition::RetainData) => "retain_data",
@@ -529,9 +504,6 @@ fn error_name(code: app::M6ErrorCode) -> &'static str {
         app::M6ErrorCode::ManifestInvalid => rpc::error_code::EXTENSION_MANIFEST_INVALID,
         app::M6ErrorCode::PackageInvalid => rpc::error_code::EXTENSION_PACKAGE_INVALID,
         app::M6ErrorCode::PackageUntrusted => rpc::error_code::EXTENSION_PACKAGE_UNTRUSTED,
-        app::M6ErrorCode::PublisherConfirmationRequired => {
-            rpc::error_code::EXTENSION_PUBLISHER_CONFIRMATION_REQUIRED
-        }
         app::M6ErrorCode::SignatureInvalid => rpc::error_code::EXTENSION_SIGNATURE_INVALID,
         app::M6ErrorCode::AlreadyInstalled => rpc::error_code::EXTENSION_ALREADY_INSTALLED,
         app::M6ErrorCode::NotInstalled => rpc::error_code::EXTENSION_NOT_INSTALLED,
@@ -695,7 +667,6 @@ mod tests {
                 app::PrincipalId::local_owner(),
                 app::ExtensionInstallPlanDraft {
                     evidence: evidence.clone(),
-                    trust_decision: app::ExtensionTrustDecision::UserApprovedForExtension,
                     expected_revision: None,
                     plan_fingerprint: [4; 32],
                 },

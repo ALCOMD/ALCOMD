@@ -1622,7 +1622,6 @@ fn map_m6(error: M6Error) -> M7Error {
         M6ErrorCode::ManifestInvalid
         | M6ErrorCode::PackageInvalid
         | M6ErrorCode::PackageUntrusted
-        | M6ErrorCode::PublisherConfirmationRequired
         | M6ErrorCode::SignatureInvalid
         | M6ErrorCode::AlreadyInstalled
         | M6ErrorCode::ProjectNotFound
@@ -1767,7 +1766,6 @@ mod tests {
             api_major: 1,
             package_digest: [7; 32],
             publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
-            trust_decision: crate::ExtensionTrustDecision::Official,
             desired_state: ExtensionDesiredState::Enabled,
             quarantine_state: ExtensionQuarantineState::Clear,
             runtime_state: crate::ExtensionRuntimeState::Running,

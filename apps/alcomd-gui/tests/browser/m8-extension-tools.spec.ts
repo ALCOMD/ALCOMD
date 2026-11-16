@@ -35,7 +35,6 @@ for (const colorScheme of ["light", "dark"] as const) {
         await page.getByRole("button", { name: "Install extension", exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
         await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\provider.alcomdextension");
-        await dialog.getByRole("checkbox", { name: "Approve this publisher for this extension", exact: true }).check();
         await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
         await expect(dialog.getByRole("region", { name: "Declared MCP tools" })).toBeVisible();
         await expect(dialog.getByText("Publish MCP tools", { exact: false })).toBeVisible();

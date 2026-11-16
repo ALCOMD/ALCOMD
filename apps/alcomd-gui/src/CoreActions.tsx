@@ -864,7 +864,6 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
     const [path, setPath] = useState("");
-    const [approvePublisher, setApprovePublisher] = useState(false);
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [submitted, setSubmitted] = useState(false);
@@ -886,7 +885,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
                 completeDialog?.();
             } else {
                 // Core accepts new installs only; zero binds the plan to expected absence.
-                const result = await client.extensionPlanInstall(path, 0, approvePublisher ? "approve_for_extension" : "none");
+                const result = await client.extensionPlanInstall(path, 0);
                 if (!current()) return;
                 setPlan(result.plan);
                 setFeedback({ busy: false });
@@ -918,11 +917,10 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
                 <PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                 <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
             </div>
-            <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={(value) => { setApprovePublisher(value); setFeedback(INITIAL_FEEDBACK); }} />
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
         </form> : <>
             <h2>{t("Review extension install")}</h2>
-            <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div><div><dt>{t("Trust")}</dt><dd>{t(humanize(plan.trustDecision))}</dd></div></dl>
+            <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
             <ExtensionToolPreview tools={plan.mcpTools} />
             {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>

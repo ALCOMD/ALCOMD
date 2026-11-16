@@ -1,5 +1,5 @@
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -12,9 +12,8 @@ use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     ExtensionApplyParams, ExtensionDataDisposition, ExtensionDesiredState, ExtensionGrantParams,
     ExtensionLifecycleParams, ExtensionPlanInstallParams, ExtensionPlanUninstallParams,
-    ExtensionPublisherApproval, ExtensionRuntimeState, ExtensionSourceKind, ExtensionUiCloseParams,
-    ExtensionUiDispatchParams, ExtensionUiOpenParams, ExtensionUiRefreshParams, OperationState,
-    UiAction,
+    ExtensionRuntimeState, ExtensionSourceKind, ExtensionUiCloseParams, ExtensionUiDispatchParams,
+    ExtensionUiOpenParams, ExtensionUiRefreshParams, OperationState, UiAction,
 };
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
@@ -53,12 +52,33 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
     .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
 
+    let invalid = fixture.path().join("invalid-signature.alcomdextension");
+    invalid_signature_copy(&package, &invalid);
+    assert!(matches!(
+        client.extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: invalid.to_string_lossy().into_owned(),
+            expected_revision: 0,
+        }).await,
+        Err(ClientError::Remote(error)) if error.code == "extension_signature_invalid"
+    ));
+    assert!(
+        client
+            .extensions_list(alcomd_protocol::ExtensionsListParams {
+                cursor: None,
+                limit: Some(10)
+            })
+            .await
+            .expect("no side effect from invalid signature")
+            .extensions
+            .is_empty()
+    );
+
     let plan = client
         .extension_plan_install(ExtensionPlanInstallParams {
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("plan install")
@@ -244,7 +264,6 @@ async fn portable_ui_runs_through_real_rpc_daemon_and_host() {
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("plan UI install")
@@ -459,7 +478,6 @@ async fn malformed_portable_ui_document_terminates_and_quarantines_the_guest() {
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("plan malformed UI fixture")
@@ -568,7 +586,6 @@ async fn repeated_real_host_crashes_quarantine_only_that_enabled_extension() {
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("plan crash fixture")
@@ -677,7 +694,6 @@ async fn subprocess_extension_apply_until_killed() {
             source_kind: ExtensionSourceKind::LocalOwnerSelected,
             package_path: package.to_string_lossy().into_owned(),
             expected_revision: 0,
-            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
         })
         .await
         .expect("plan install")
@@ -890,6 +906,33 @@ fn create_signed_package(path: &Path) {
         path,
         include_bytes!("../../../crates/alcomd-testing/fixtures/m6/minimal-extension-v1.wasm"),
     );
+}
+
+fn invalid_signature_copy(source: &Path, target: &Path) {
+    let mut archive =
+        zip::ZipArchive::new(File::open(source).expect("signed source")).expect("valid package");
+    let mut writer = zip::ZipWriter::new(File::create(target).expect("owned invalid fixture"));
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("package member");
+        let name = entry.name().expect("valid UTF-8 member name").into_owned();
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes).expect("member bytes");
+        if name == "META-INF/alcomd-signature-v1.json" {
+            let mut envelope: serde_json::Value = serde_json::from_slice(&bytes).expect("envelope");
+            envelope["signature"] = serde_json::json!("00".repeat(64));
+            bytes = serde_json::to_vec(&envelope).expect("invalid detached signature");
+        }
+        writer
+            .start_file(
+                name,
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .expect("fixture member");
+        writer
+            .write_all(&bytes)
+            .expect("unchanged content and valid ZIP checksum");
+    }
+    writer.finish().expect("owned invalid package");
 }
 
 fn create_signed_background_ui_package(path: &Path) {

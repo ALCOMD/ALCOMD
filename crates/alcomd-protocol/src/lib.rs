@@ -333,8 +333,6 @@ pub mod error_code {
     pub const EXTENSION_MANIFEST_INVALID: &str = "extension_manifest_invalid";
     pub const EXTENSION_PACKAGE_INVALID: &str = "extension_package_invalid";
     pub const EXTENSION_PACKAGE_UNTRUSTED: &str = "extension_package_untrusted";
-    pub const EXTENSION_PUBLISHER_CONFIRMATION_REQUIRED: &str =
-        "extension_publisher_confirmation_required";
     pub const EXTENSION_SIGNATURE_INVALID: &str = "extension_signature_invalid";
     pub const EXTENSION_ALREADY_INSTALLED: &str = "extension_already_installed";
     pub const EXTENSION_NOT_INSTALLED: &str = "extension_not_installed";
@@ -3366,20 +3364,12 @@ pub enum ExtensionSourceKind {
     FirstPartyPackaged,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ExtensionPublisherApproval {
-    None,
-    ApproveForExtension,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionPlanInstallParams {
     pub source_kind: ExtensionSourceKind,
     pub package_path: String,
     pub expected_revision: u64,
-    pub publisher_approval: ExtensionPublisherApproval,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3425,13 +3415,6 @@ pub struct ExtensionGrantParams {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ExtensionTrustDecision {
-    Official,
-    UserApprovedForExtension,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ExtensionDesiredState {
     InstalledDisabled,
     Enabled,
@@ -3463,7 +3446,6 @@ pub struct ExtensionRecord {
     pub api_major: u32,
     pub package_digest: String,
     pub publisher_fingerprint: String,
-    pub trust_decision: ExtensionTrustDecision,
     pub desired_state: ExtensionDesiredState,
     pub quarantine_state: ExtensionQuarantineState,
     pub runtime_state: ExtensionRuntimeState,
@@ -3488,7 +3470,6 @@ pub struct ExtensionPlan {
     pub profile_version: u32,
     pub package_digest: String,
     pub publisher_fingerprint: String,
-    pub trust_decision: ExtensionTrustDecision,
     pub data_disposition: String,
     pub plan_fingerprint: String,
     pub required_permissions: Vec<String>,
@@ -3538,6 +3519,41 @@ pub struct ExtensionGrantResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owner_selected_install_has_no_publisher_approval_and_rejects_the_removed_parameter() {
+        let params = serde_json::json!({"sourceKind":"local_owner_selected","packagePath":"C:/fixture/sample.alcomdextension","expectedRevision":0});
+        let typed: ExtensionPlanInstallParams =
+            serde_json::from_value(params.clone()).expect("selection is enough");
+        assert_eq!(
+            serde_json::to_value(typed).expect("current install contract"),
+            params
+        );
+        let mut obsolete = params;
+        obsolete["publisherApproval"] = serde_json::json!("approve_for_extension");
+        assert!(serde_json::from_value::<ExtensionPlanInstallParams>(obsolete).is_err());
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../specs/rpc/m6-extension-runtime.schema.json"
+        ))
+        .expect("current schema");
+        for (definition, field) in [
+            ("planInstallParams", "publisherApproval"),
+            ("planRecord", "trustDecision"),
+            ("extensionRecord", "trustDecision"),
+        ] {
+            assert!(
+                schema["$defs"][definition]["properties"]
+                    .get(field)
+                    .is_none()
+            );
+            assert!(
+                !schema["$defs"][definition]["required"]
+                    .as_array()
+                    .expect("required fields")
+                    .contains(&serde_json::json!(field))
+            );
+        }
+    }
 
     #[test]
     fn frame_prefix_is_little_endian() {

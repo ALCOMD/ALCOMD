@@ -19,7 +19,6 @@ async function requests(page: Page, method: string) {
 async function installReview(page: Page) {
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
     await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
-    await modal(page).getByLabel("Approve this publisher for this extension", { exact: true }).check();
     await expect(modal(page).getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
     await modal(page).getByRole("button", { name: "Create install plan", exact: true }).click();
     await expect(modal(page).getByRole("heading", { name: "Review extension install", exact: true })).toBeVisible();
@@ -90,7 +89,7 @@ test("H4 failed extension toggle retains its state and retries without changing 
 test("H4 install preserves its raw path, reviews expected absence, and follows one accepted operation through completion", async ({ page }) => {
     await open(page);
     await installReview(page);
-    expect((await requests(page, "extensions.planInstall"))[0]!.params).toEqual({ packagePath, expectedRevision: 0, publisherApproval: "approve_for_extension" });
+    expect((await requests(page, "extensions.planInstall"))[0]!.params).toEqual({ packagePath, expectedRevision: 0 });
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
     await modal(page).getByRole("button", { name: "Discard plan", exact: true }).click();
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue(displayPath(packagePath));

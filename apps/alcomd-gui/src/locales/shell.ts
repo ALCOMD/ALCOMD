@@ -578,14 +578,6 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "无法加载此页面。",
         "ja-JP": "このページを読み込めませんでした。"
     },
-    "Trust": {
-        "zh-CN": "信任状态",
-        "ja-JP": "信頼状態"
-    },
-    "trusted": {
-        "zh-CN": "已信任",
-        "ja-JP": "信頼済み"
-    },
     "Unavailable because {capability} was not negotiated.": {
         "zh-CN": "未协商 {capability}，因此不可用。",
         "ja-JP": "{capability} がネゴシエートされていないため利用できません。"
@@ -613,10 +605,6 @@ export const shellMessages: TranslationTable = {
     "Unknown": {
         "zh-CN": "未知",
         "ja-JP": "不明"
-    },
-    "untrusted": {
-        "zh-CN": "未信任",
-        "ja-JP": "未信頼"
     },
     "Update": {
         "zh-CN": "更新",

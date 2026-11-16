@@ -1110,15 +1110,15 @@ State38仅0038新增，旧迁移未动。Store136/0后仅新增持久重启用�
 
 831份输入摘要afc5f954…a4f55d1；原data36份、review data10份/profile303份逐文件集合和SHA256保持。测试前原Core/GUI已经关闭，测试后仍关闭，无待恢复进程或本轮Core/Host遗留，Unity40632未动；不替换原程序、不升级原库、不恢复桌面控制。新GUI未部署或人工验收，截图仅浏览器夹具；Provider对运行中任务成功取消的独立原生场景、跨平台/Hosted/CodeQL仍未验证。OAuth仍复用非空consent，零授权纯计算不因此新增OAuth模型。M8保持IN_PROGRESS，不进入M9，不自动推送。
 
-### 移除发布者确认（2026-11-16，行为已授权；State39删除清单待确认）
+### 移除发布者确认（2026-11-16，State39与公共删除清单已批准）
 
 所有者明确要求：用户选择安装扩展即可安装，不再提供或要求额外的发布者信任确认。移除GUI复选框、信任状态展示、安装输入publisherApproval及PublisherConfirmationRequired错误，不通过自动勾选或偷偷补approve_for_extension模拟删除。安装仍走原Plan/Apply/Operation；申请能力审阅与实际授权不自动扩大，扩展权限、隔离与恢复不变。包仍须原严格Ed25519签名、内容摘要、发布者指纹一致性和路径/ABI/Schema校验；签名用于完整性与来源身份，不将“签名有效”表述为发布者可信。外部调用者不能伪造first_party_packaged来源，保留既有来源限制和留存扩展数据的发布者身份隔离。
 
-为彻底删除不再有意义的模型，建议一次批准的破坏性差异：从安装RPC/DTO删除publisherApproval枚举/字段，从ExtensionRecord/ExtensionPlan及SDK/Portable UI的只读扩展摘要删除trustDecision，清除共享错误合同中的extension_publisher_confirmation_required。不保留旧参数兼容、自动批准字段或第二套安装机制；未知旧参数按既有严格解析拒绝。
+所有者已明确批准“彻底删除”，直接实施以下破坏性差异：从安装RPC/DTO删除publisherApproval枚举/字段，从ExtensionRecord/ExtensionPlan及SDK/Portable UI的只读扩展摘要删除trustDecision，清除共享错误合同中的extension_publisher_confirmation_required。不保留旧参数兼容、自动批准字段或第二套安装机制；未知旧参数按既有严格解析拒绝。
 
-State39最小删除清单：仅删除extensions.trust_decision和extension_plans.trust_decision两列；单事务先重建引用该列的extension_plans_immutable触发器，再通过SQLite DROP COLUMN去除两列。原计划的其余不可变条件、主键/外键/索引、签名/来源摘要、权限/数据、MCP调用接受记录、业务结果及事件序列逐项保留。旧0008/0009/0038等已提交迁移不改，不新增持久表、Config、权限、依赖或身份合同，不升级原运行数据。补State38→39精确删列/全旧值保全/回滚/重开，以及无确认正常安装、坏签名拒绝、必需权限与实际授权仍独立的定向回归。数据库删除清单及对应public输出删字段尚待本节人工确认；不因此停止独立的GUI清理和源码核对。
+已批准的State39最小删除清单：仅删除extensions.trust_decision和extension_plans.trust_decision两列；单事务临时移除extension_plans_immutable触发器，通过SQLite DROP COLUMN去除两列，随后重建触发器，仅去除对应比较。原计划的其余不可变条件、主键/外键/索引、签名/来源摘要、权限/数据、MCP调用接受记录、业务结果及事件序列逐项保留。旧0008/0009/0038等已提交迁移不改，不新增持久表、Config、权限、依赖或身份合同，不升级原运行数据。补State38→39精确删列/全旧值保全/回滚/重开，以及无确认正常安装、坏签名拒绝、必需权限与实际授权仍独立的定向回归。此项不再等待审批，实际结果见后续收束记录。
 
-独立GUI改动已移除确认checkbox及三处信任状态展示，frontend-removal-check.log通过；仍未提交/部署，Core确认门禁未移除，不冒称功能完成。实际修改及日志在target/m8-publisher-confirmation-20261116。未自动填approve_for_extension，也未删签名、权限或留存数据的发布者身份保护。
+批准前的独立GUI检查点：移除确认checkbox及三处信任状态展示，frontend-removal-check.log通过；当时未提交/部署、Core确认门禁尚未移除，不作为完整功能证据。后续完整删除和验证在同一target/m8-publisher-confirmation-20261116记录，不自动填approve_for_extension，也不删签名、权限或留存数据的发布者身份保护。
 
 ### 2a9d123远端结果及声明预览修复（2026-11-16）
 

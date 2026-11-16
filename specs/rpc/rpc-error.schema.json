@@ -111,7 +111,6 @@
                 "extension_manifest_invalid",
                 "extension_package_invalid",
                 "extension_package_untrusted",
-                "extension_publisher_confirmation_required",
                 "extension_signature_invalid",
                 "extension_already_installed",
                 "extension_not_installed",

@@ -11,7 +11,7 @@ and package changes during paging or write acceptance; oversized grants; idempot
 revocation; accepted-write response loss; accidental credential/log disclosure. Grant checks and
 acceptance/replay share one Store transaction. First-party guests use the same interface and sandbox.
 
-- authority：ExtensionId/Principal/grant/scope/revision、official publisher policy、Operation/Plan authority；
+- authority：ExtensionId/Principal/grant/scope/revision、受控安装来源、Operation/Plan authority；
 - confidentiality：project/private path、extension-owned data、credential、argv/environment、Host internal channel；
 - integrity：`.alcomdextension` content、Manifest/WIT/component、state.db、Project files、registry、journal；
 - availability：daemon unique writer、其他 Extension Host、bounded CPU/memory/storage/call capacity。
@@ -24,8 +24,8 @@ Host pipe、daemon/application authority、SQLite/object store。第一方 packa
 | threat | mitigation | negative evidence |
 |---|---|---|
 | traversal/absolute/device/UNC/link/collision/special ZIP entry | Extension-specific preflight quota、existing hostile path stack、staging、no convenience extract | hostile package vectors |
-| package replacement / Manifest says first-party | canonical content SHA-256、strict Ed25519、fingerprint/trust/source layering、Apply revalidation | digest/signature/trust vectors |
-| unknown publisher silently trusted | explicit high-impact per-extension approval in immutable Plan; uninstall clears approval | confirmation vectors |
+| package replacement / Manifest says first-party | canonical content SHA-256、strict Ed25519、fingerprint/source identity binding、Apply revalidation | digest/signature/source vectors |
+| installation or a valid signature is mistaken for publisher certification | owner-selected installation has no publisher approval/trust flag; signatures prove integrity/identity only; install never grants capabilities | valid self-signed install without approval, invalid signature rejection, default-zero grants |
 | guest imports ambient OS authority | no inherit env/argv/stdio/network/preopen; exact WIT linker allowlist; no WASI imports in first slice | import-set golden |
 | guest forges Principal/Extension/scope | daemon-created lease bound to spawned pipe session; guest authority metadata ignored | stale/forged lease vectors |
 | revoke race / cached authorization | durable grant revision commit linearizes; every call rechecks; queue/session/handle cancellation | revoke-in-flight matrix |

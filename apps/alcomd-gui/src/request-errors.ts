@@ -60,9 +60,7 @@ export function requestErrorMessage(code: string): string {
         case "extension_package_invalid":
             return "The extension package or manifest is invalid. Choose a valid extension package.";
         case "extension_package_untrusted":
-            return "This extension package is not trusted for this install. Check its publisher and use an approved package.";
-        case "extension_publisher_confirmation_required":
-            return "The publisher has not been approved for this extension. If you trust it, select the publisher approval checkbox and create the install plan again.";
+            return "This installation source is not supported. Select a local extension package.";
         case "extension_signature_invalid":
             return "The extension signature could not be verified. Obtain a valid package from its publisher before installing.";
         case "extension_already_installed":

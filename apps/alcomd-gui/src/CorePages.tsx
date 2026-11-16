@@ -2241,7 +2241,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
                 const quarantined = extension.quarantineState === "quarantined";
                 return <article className="extension-card" key={extension.extensionId} aria-label={extension.extensionId}>
                     <div className="extension-card-heading"><div><h4>{extension.extensionId}</h4><p>{t("Version ")}{extension.version}</p></div>{extension.ui?.protocol !== "portable-v1" ? null : <NavigationButton to={`/extensions/${encodeURIComponent(extension.extensionId)}/ui`} disabled={!canOpen || !enabled || uninstalling || quarantined || busy} onClick={() => navigate(`/extensions/${encodeURIComponent(extension.extensionId)}/ui`)} title={capabilityUnavailableTitle(canOpen, capabilities.extensionsPortableUi, t)} type="button" variant="tonal">{t("Open")}</NavigationButton>}</div>
-                    <p className="extension-card-status">{humanize(t, extension.runtimeState)} · {humanize(t, extension.trustDecision)}{extension.quarantineState === "clear" ? "" : ` · ${humanize(t, extension.quarantineState)}`}</p>
+                    <p className="extension-card-status">{humanize(t, extension.runtimeState)}{extension.quarantineState === "clear" ? "" : ` · ${humanize(t, extension.quarantineState)}`}</p>
                     <div className="extension-card-actions"><NavigationButton to={`/extensions/${encodeURIComponent(extension.extensionId)}`} onClick={() => navigate(`/extensions/${encodeURIComponent(extension.extensionId)}`)} type="button" variant="text">{t("Manage extension")}</NavigationButton><Switch disabled={!canManage || busy || uninstalling || quarantined} label={t("Enabled")} selected={enabled} onChange={(next) => void toggle(extension.extensionId, extension.revision, next, refresh)} /></div>
                 </article>;
             })}</div>}
@@ -2262,7 +2262,7 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
         {completedOperation?.state === "succeeded" ? <section className="utility-workspace page-surface--utility"><PageHeader title={t("Extension detail")} leading={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} /><p role="status">{t("Extension uninstalled.")}</p></section>
         : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools }, refresh) => <>
         <h2 className="extension-detail-identity">{extension.extensionId}</h2>
-        <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
+        <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {extension.ui?.protocol === "portable-v1" ? <NavigationButton to={`/extensions/${encodeURIComponent(extensionId)}/ui`} disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</NavigationButton> : null}
         <ExtensionActions client={client} extension={extension} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
         <ExtensionToolPreview tools={mcpTools} />
@@ -2350,8 +2350,6 @@ function humanize(t: Translate, value: string): string {
         "suspected": "suspected",
         "not_observed": "not observed",
         "unknown": "unknown",
-        "official": "official",
-        "user_approved_for_extension": "user approved for extension",
         "installed_disabled": "installed disabled",
         "enabled": "enabled",
         "uninstalling": "uninstalling",

@@ -216,21 +216,11 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .expect("valid isolated Provider fixture");
     let path = root.join("provider.alcomdextension");
     package(&path);
-    let mut request = ExtensionPlanInstallParams {
+    let request = ExtensionPlanInstallParams {
         source_kind: ExtensionSourceKind::LocalOwnerSelected,
         package_path: path.to_string_lossy().into_owned(),
         expected_revision: 0,
-        publisher_approval: ExtensionPublisherApproval::None,
     };
-    let rejected = owner
-        .extension_plan_install(request.clone())
-        .await
-        .expect_err("publisher confirmation remains mandatory");
-    assert!(
-        matches!(rejected,alcomd_client::ClientError::Remote(ref e) if e.code=="extension_publisher_confirmation_required"),
-        "unexpected real rejection: {rejected}"
-    );
-    request.publisher_approval = ExtensionPublisherApproval::ApproveForExtension;
     let plan = owner
         .extension_plan_install(request)
         .await

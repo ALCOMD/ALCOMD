@@ -20,7 +20,6 @@ export interface ExtensionRecord {
     apiMajor: number;
     packageDigest: string;
     publisherFingerprint: string;
-    trustDecision: "official" | "user_approved_for_extension";
     desiredState: "installed_disabled" | "enabled" | "uninstalling";
     quarantineState: "clear" | "quarantined";
     runtimeState: "stopped" | "starting" | "running" | "stopping" | "crashed";

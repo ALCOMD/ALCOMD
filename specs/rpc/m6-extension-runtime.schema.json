@@ -84,7 +84,7 @@
             "type": "object", "additionalProperties": true,
             "required": [
                 "extensionId", "version", "apiMajor", "packageDigest", "publisherFingerprint",
-                "trustDecision", "desiredState", "quarantineState", "runtimeState", "grantRevision",
+                "desiredState", "quarantineState", "runtimeState", "grantRevision",
                 "lifecycleGeneration", "revision"
             ],
             "properties": {
@@ -93,7 +93,6 @@
                 "apiMajor": {"const": 1},
                 "packageDigest": {"$ref": "#/$defs/sha256"},
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
-                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "desiredState": {"$ref": "#/$defs/desiredState"},
                 "quarantineState": {"$ref": "#/$defs/quarantineState"},
                 "runtimeState": {"$ref": "#/$defs/runtimeState"},
@@ -128,12 +127,11 @@
         },
         "planInstallParams": {
             "type": "object", "additionalProperties": false,
-            "required": ["sourceKind", "packagePath", "expectedRevision", "publisherApproval"],
+            "required": ["sourceKind", "packagePath", "expectedRevision"],
             "properties": {
                 "sourceKind": {"enum": ["local_owner_selected", "first_party_packaged"]},
                 "packagePath": {"$ref": "#/$defs/absolutePath"},
-                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
-                "publisherApproval": {"enum": ["none", "approve_for_extension"]}
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"}
             }
         },
         "planUninstallParams": {
@@ -150,7 +148,7 @@
             "required": [
                 "planId", "action", "state", "sourceKind", "extensionId", "packageDigest",
                 "version", "apiMajor", "profileVersion", "publisherFingerprint",
-                "trustDecision", "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions", "mcpTools"
+                "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions", "mcpTools"
             ],
             "properties": {
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
@@ -164,7 +162,6 @@
                 "profileVersion": {"const": 1},
                 "packageDigest": {"$ref": "#/$defs/sha256"},
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
-                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "dataDisposition": {"enum": ["not_applicable", "retain_data", "delete_data"]},
                 "planFingerprint": {"$ref": "#/$defs/sha256"},
                 "requiredPermissions": {"$ref": "#/$defs/permissionDeclarations"},

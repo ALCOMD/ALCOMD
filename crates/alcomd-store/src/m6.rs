@@ -5,9 +5,8 @@ use alcomd_application::{
     ExtensionInstanceLease, ExtensionPackageEvidence, ExtensionPage, ExtensionPermissionGrant,
     ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
-    ExtensionSourceKind, ExtensionStartContext, ExtensionTrustDecision, ExtensionUiProtocol,
-    ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId, PlanId,
-    PrincipalId, Revision,
+    ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol, ExtensionUninstallPlanDraft,
+    IdempotencyKey, M6Error, M6ErrorCode, OperationId, PlanId, PrincipalId, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -34,7 +33,7 @@ pub(super) fn list_extensions(
     let mut statement = connection
         .prepare(
             "SELECT e.extension_id, e.version, e.api_major, e.package_digest,
-                    e.publisher_fingerprint, e.trust_decision, e.desired_state,
+                    e.publisher_fingerprint, e.desired_state,
                     e.quarantine_state, COALESCE(i.runtime_state, 'stopped'),
                     e.grant_revision, e.lifecycle_generation, e.revision, e.ui_protocol
              FROM extensions e
@@ -77,7 +76,7 @@ pub(super) fn get_extension(
     connection
         .query_row(
             "SELECT e.extension_id, e.version, e.api_major, e.package_digest,
-                    e.publisher_fingerprint, e.trust_decision, e.desired_state,
+                    e.publisher_fingerprint, e.desired_state,
                     e.quarantine_state, COALESCE(i.runtime_state, 'stopped'),
                     e.grant_revision, e.lifecycle_generation, e.revision, e.ui_protocol
              FROM extensions e
@@ -233,7 +232,7 @@ fn installed_permission_evidence(
           AND p.package_digest=e.package_digest AND p.manifest_digest=e.manifest_digest
           AND p.component_digest=e.component_digest AND p.version=e.version
           AND p.api_major=e.api_major AND p.publisher_fingerprint=e.publisher_fingerprint
-          AND p.trust_decision=e.trust_decision AND p.ui_protocol IS e.ui_protocol
+          AND p.ui_protocol IS e.ui_protocol
          JOIN extension_filesystem_journal j ON j.operation_id=p.apply_operation_id
           AND j.phase='state_committed' AND j.state='completed'
          WHERE e.principal_id=?1 AND e.extension_id=?2 AND j.updated_at_ms>=e.installed_at_ms
@@ -367,11 +366,11 @@ pub(super) fn create_install_plan(
                 plan_id, owner_principal_id, action, state, extension_id, version,
                 api_major, profile_version, expected_revision,
                 source_kind, source_locator, source_identity, package_digest, manifest_digest,
-                component_digest, publisher_fingerprint, trust_decision,
+                component_digest, publisher_fingerprint,
                 requested_permissions_json, requested_interfaces_json, data_disposition,
                 plan_fingerprint, created_at_ms, ui_protocol
              ) VALUES (?1, ?2, 'install', 'unapplied', ?3, ?4, ?5, ?6, ?7, ?8, ?9,
-                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, 'not_applicable', ?18, ?19, ?20)",
+                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, 'not_applicable', ?17, ?18, ?19)",
             params![
                 plan_id.to_string(),
                 owner.as_str(),
@@ -387,7 +386,6 @@ pub(super) fn create_install_plan(
                 draft.evidence.manifest_digest.as_slice(),
                 draft.evidence.component_digest.as_slice(),
                 draft.evidence.publisher_fingerprint,
-                trust(draft.trust_decision),
                 permissions,
                 interfaces,
                 draft.plan_fingerprint.as_slice(),
@@ -437,13 +435,13 @@ pub(super) fn create_uninstall_plan(
                 plan_id, owner_principal_id, action, state, extension_id, version,
                 api_major, profile_version, expected_revision,
                 source_kind, package_digest, manifest_digest, component_digest,
-                publisher_fingerprint, trust_decision, requested_permissions_json,
+                publisher_fingerprint, requested_permissions_json,
                 requested_interfaces_json, data_disposition, plan_fingerprint, created_at_ms,
                 ui_protocol
              ) SELECT ?1, ?2, 'uninstall', 'unapplied', e.extension_id, e.version,
                       e.api_major, 1, e.revision,
                       'not_applicable', e.package_digest, e.manifest_digest, e.component_digest,
-                      e.publisher_fingerprint, e.trust_decision,
+                      e.publisher_fingerprint,
                       installed.requested_permissions_json,
                       installed.requested_interfaces_json,
                       ?3, ?4, ?5, e.ui_protocol
@@ -825,7 +823,7 @@ pub(super) fn finish_install(
     let existing = transaction
         .query_row(
             "SELECT version, api_major, package_digest, manifest_digest, component_digest,
-                    publisher_fingerprint, trust_decision, principal_id, live_package_locator,
+                    publisher_fingerprint, principal_id, live_package_locator,
                     ui_protocol
              FROM extensions WHERE extension_id=?1",
             [&p.extension_id],
@@ -839,8 +837,7 @@ pub(super) fn finish_install(
                     row.get::<_, String>(5)?,
                     row.get::<_, String>(6)?,
                     row.get::<_, String>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, Option<String>>(9)?,
+                    row.get::<_, Option<String>>(8)?,
                 ))
             },
         )
@@ -853,10 +850,9 @@ pub(super) fn finish_install(
             || existing.3 != p.manifest_digest
             || existing.4 != p.component_digest
             || existing.5 != p.publisher_fingerprint
-            || existing.6 != trust(plan.trust_decision)
-            || existing.7 != plan.owner.as_str()
-            || existing.8 != live_locator
-            || existing.9.as_deref() != p.ui_protocol.map(ExtensionUiProtocol::as_str)
+            || existing.6 != plan.owner.as_str()
+            || existing.7 != live_locator
+            || existing.8.as_deref() != p.ui_protocol.map(ExtensionUiProtocol::as_str)
         {
             return Err(error(M6ErrorCode::RecoveryRequired));
         }
@@ -865,11 +861,11 @@ pub(super) fn finish_install(
             .execute(
                 "INSERT INTO extensions (
                 extension_id, version, api_major, package_digest, manifest_digest,
-                component_digest, publisher_fingerprint, trust_decision, principal_id,
+                component_digest, publisher_fingerprint, principal_id,
                 live_package_locator, desired_state, quarantine_state, grant_revision,
                 lifecycle_generation, revision, ui_protocol, installed_at_ms, updated_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
-                       'installed_disabled', 'clear', 1, 1, 1, ?11, ?12, ?12)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,
+                       'installed_disabled', 'clear', 1, 1, 1, ?10, ?11, ?11)",
                 params![
                     p.extension_id,
                     p.version,
@@ -878,7 +874,6 @@ pub(super) fn finish_install(
                     p.manifest_digest.as_slice(),
                     p.component_digest.as_slice(),
                     p.publisher_fingerprint,
-                    trust(plan.trust_decision),
                     plan.owner.as_str(),
                     live_locator,
                     p.ui_protocol.map(ExtensionUiProtocol::as_str),
@@ -1793,7 +1788,7 @@ fn get_plan_on(connection: &Connection, plan_id: PlanId) -> Result<ExtensionPlan
                     api_major, profile_version, expected_revision, source_kind,
                     COALESCE(source_locator, ''),
                     COALESCE(source_identity, X''), package_digest, manifest_digest,
-                    component_digest, publisher_fingerprint, trust_decision,
+                    component_digest, publisher_fingerprint,
                     requested_permissions_json, requested_interfaces_json, data_disposition,
                     plan_fingerprint, apply_operation_id, created_at_ms, ui_protocol
              FROM extension_plans WHERE plan_id=?1",
@@ -1806,8 +1801,8 @@ fn get_plan_on(connection: &Connection, plan_id: PlanId) -> Result<ExtensionPlan
 }
 
 fn load_plan_row(row: &Row<'_>) -> rusqlite::Result<ExtensionPlanRecord> {
-    let permissions: PermissionEvidence = json_row(row, 17)?;
-    let interfaces: InterfaceEvidence = json_row(row, 18)?;
+    let permissions: PermissionEvidence = json_row(row, 16)?;
+    let interfaces: InterfaceEvidence = json_row(row, 17)?;
     Ok(ExtensionPlanRecord {
         plan_id: PlanId::parse(&row.get::<_, String>(0)?).map_err(|_| invalid_query())?,
         owner: PrincipalId::parse(row.get::<_, String>(1)?).map_err(|_| invalid_query())?,
@@ -1829,17 +1824,16 @@ fn load_plan_row(row: &Row<'_>) -> rusqlite::Result<ExtensionPlanRecord> {
             optional_permissions: permissions.optional,
             required_interfaces: interfaces.required,
             optional_interfaces: interfaces.optional,
-            ui_protocol: parse_ui_protocol(row.get(23)?)?,
+            ui_protocol: parse_ui_protocol(row.get(22)?)?,
         },
-        trust_decision: parse_trust(&row.get::<_, String>(16)?)?,
         expected_revision: optional_revision(row.get(8)?)?,
-        data_disposition: parse_disposition(&row.get::<_, String>(19)?)?,
-        plan_fingerprint: digest(row.get(20)?)?,
+        data_disposition: parse_disposition(&row.get::<_, String>(18)?)?,
+        plan_fingerprint: digest(row.get(19)?)?,
         apply_operation_id: row
-            .get::<_, Option<String>>(21)?
+            .get::<_, Option<String>>(20)?
             .map(|value| OperationId::parse(&value).map_err(|_| invalid_query()))
             .transpose()?,
-        created_at_ms: nonnegative(row.get(22)?)?,
+        created_at_ms: nonnegative(row.get(21)?)?,
     })
 }
 
@@ -1850,14 +1844,13 @@ fn load_extension_row(row: &Row<'_>) -> rusqlite::Result<ExtensionRecord> {
         api_major: u32::try_from(row.get::<_, i64>(2)?).map_err(|_| invalid_query())?,
         package_digest: digest(row.get(3)?)?,
         publisher_fingerprint: row.get(4)?,
-        trust_decision: parse_trust(&row.get::<_, String>(5)?)?,
-        desired_state: parse_desired(&row.get::<_, String>(6)?)?,
-        quarantine_state: parse_quarantine(&row.get::<_, String>(7)?)?,
-        runtime_state: parse_runtime(&row.get::<_, String>(8)?)?,
-        grant_revision: row_revision(row, 9)?,
-        lifecycle_generation: row_revision(row, 10)?,
-        revision: row_revision(row, 11)?,
-        ui_protocol: parse_ui_protocol(row.get(12)?)?,
+        desired_state: parse_desired(&row.get::<_, String>(5)?)?,
+        quarantine_state: parse_quarantine(&row.get::<_, String>(6)?)?,
+        runtime_state: parse_runtime(&row.get::<_, String>(7)?)?,
+        grant_revision: row_revision(row, 8)?,
+        lifecycle_generation: row_revision(row, 9)?,
+        revision: row_revision(row, 10)?,
+        ui_protocol: parse_ui_protocol(row.get(11)?)?,
     })
 }
 
@@ -2191,21 +2184,6 @@ fn parse_source_kind(value: &str) -> rusqlite::Result<ExtensionSourceKind> {
     }
 }
 
-fn trust(value: ExtensionTrustDecision) -> &'static str {
-    match value {
-        ExtensionTrustDecision::Official => "official",
-        ExtensionTrustDecision::UserApprovedForExtension => "user_approved_for_extension",
-    }
-}
-
-fn parse_trust(value: &str) -> rusqlite::Result<ExtensionTrustDecision> {
-    match value {
-        "official" => Ok(ExtensionTrustDecision::Official),
-        "user_approved_for_extension" => Ok(ExtensionTrustDecision::UserApprovedForExtension),
-        _ => Err(invalid_query()),
-    }
-}
-
 fn parse_ui_protocol(value: Option<String>) -> rusqlite::Result<Option<ExtensionUiProtocol>> {
     match value.as_deref() {
         None => Ok(None),
@@ -2294,7 +2272,6 @@ fn error_code(code: M6ErrorCode) -> &'static str {
         M6ErrorCode::ManifestInvalid => "extension_manifest_invalid",
         M6ErrorCode::PackageInvalid => "extension_package_invalid",
         M6ErrorCode::PackageUntrusted => "extension_package_untrusted",
-        M6ErrorCode::PublisherConfirmationRequired => "extension_publisher_confirmation_required",
         M6ErrorCode::SignatureInvalid => "extension_signature_invalid",
         M6ErrorCode::AlreadyInstalled => "extension_already_installed",
         M6ErrorCode::NotInstalled => "extension_not_installed",

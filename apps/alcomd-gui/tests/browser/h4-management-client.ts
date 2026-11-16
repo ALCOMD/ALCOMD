@@ -92,7 +92,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
 
     function record(extensionId: string): ExtensionRecord {
         return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: hash, publisherFingerprint: `ed25519-sha256:${hash}`,
-            trustDecision: "user_approved_for_extension", desiredState: "enabled", quarantineState: "clear", runtimeState: "running",
+            desiredState: "enabled", quarantineState: "clear", runtimeState: "running",
             grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } };
     }
     function log(method: string, params: Record<string, unknown>) { fixture.requests.push({ method, params: structuredClone(params) }); }
@@ -113,7 +113,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         const result: ExtensionPlan = { mcpTools: action === "install" ? structuredClone(toolPreviews) : [], planId: `00000000-0000-4000-8000-${String(800 + ++nextPlan).padStart(12, "0")}`, action,
             state: "unapplied", sourceKind: action === "install" ? "local_owner_selected" : "not_applicable", extensionId,
             version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: hash, publisherFingerprint: `ed25519-sha256:${hash}`,
-            trustDecision: "user_approved_for_extension", dataDisposition, planFingerprint: hash, uiProtocol: "portable-v1",
+            dataDisposition, planFingerprint: hash, uiProtocol: "portable-v1",
             requiredPermissions: query.has("m8-tool-provider") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : ["background.run"] };
         plans.set(result.planId, result);
         return structuredClone(result);
@@ -174,10 +174,9 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
                 requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
-        async extensionPlanInstall(packagePath, expectedRevision, publisherApproval) {
-            log("extensions.planInstall", { packagePath, expectedRevision, publisherApproval });
+        async extensionPlanInstall(packagePath, expectedRevision) {
+            log("extensions.planInstall", { packagePath, expectedRevision });
             if (expectedRevision !== 0) throw { code: "revision_conflict" };
-            if (publisherApproval !== "approve_for_extension") throw { code: "extension_publisher_confirmation_required" };
             if (extensions.has(H4_ADDED)) throw { code: "extension_already_installed" };
             return response("extensions.planInstall", { plan: plan("install", H4_ADDED, "not_applicable") });
         },
