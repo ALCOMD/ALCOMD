@@ -42,15 +42,15 @@ for (const preference of ["system", "full", "reduced"] as const) {
 test("system follows live OS changes while explicit preferences stay fixed", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "no-preference" });
     await openSettings(page);
-    await page.emulateMedia({ reducedMotion: "reduce" });
+    await emulateSystemMotion(page, "reduce");
     await expect(page.locator("#settings-motion")).toHaveJSProperty("quick", true);
-    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await emulateSystemMotion(page, "no-preference");
     await expect(page.locator("#settings-motion")).toHaveJSProperty("quick", false);
     for (const [value, quick] of [["full", false], ["reduced", true]] as const) {
         await selectOption(page, value);
         await expect(page.locator("html")).toHaveAttribute("data-motion", value);
         for (const system of ["reduce", "no-preference"] as const) {
-            await page.emulateMedia({ reducedMotion: system });
+            await emulateSystemMotion(page, system);
             await expect(page.locator("#settings-motion")).toHaveJSProperty("quick", quick);
         }
     }
@@ -111,3 +111,37 @@ async function selectOption(page: Page, value: string) {
 function maxDuration(value: string) {
     return Math.max(...value.split(",").map((duration) => duration.trim().endsWith("ms") ? parseFloat(duration) / 1000 : parseFloat(duration)));
 }
+
+async function emulateSystemMotion(page: Page, reducedMotion: "reduce" | "no-preference") {
+    const expected = reducedMotion === "reduce";
+    const input = await page.evaluateHandle(() => {
+        const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+        let delivered = media.matches;
+        const changed = (event: MediaQueryListEvent) => { delivered = event.matches; };
+        media.addEventListener("change", changed);
+        return { get matches() { return media.matches; }, get delivered() { return delivered; }, dispose() { media.removeEventListener("change", changed); } };
+    });
+    try {
+        await page.emulateMedia({ reducedMotion });
+        await expect.poll(() => input.evaluate((state) => state.matches)).toBe(expected);
+        await expect.poll(() => input.evaluate((state) => state.delivered)).toBe(expected);
+    } catch (error) {
+        console.log("MOTION_INPUT_STATE", JSON.stringify(await input.evaluate((state) => ({ matches: state.matches, delivered: state.delivered }))));
+        throw error;
+    } finally {
+        await input.evaluate((state) => state.dispose());
+        await input.dispose();
+    }
+}
+
+test.afterEach(async ({ page }, info) => {
+    if (info.status === info.expectedStatus || page.isClosed()) return;
+    const evidence = await page.evaluate(() => {
+        const control = document.querySelector("#settings-motion") as (HTMLElement & { quick?: boolean; value?: string }) | null;
+        return { matches: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+            visibility: document.visibilityState, focused: document.hasFocus(),
+            preference: document.documentElement.dataset.motion, reduced: document.documentElement.dataset.reducedMotion,
+            quick: control?.quick, value: control?.value };
+    }).catch(() => null);
+    console.log("MOTION_FAILURE_STATE", JSON.stringify(evidence));
+});
