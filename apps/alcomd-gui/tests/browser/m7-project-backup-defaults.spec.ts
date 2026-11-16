@@ -23,9 +23,19 @@ for (const [locale, labels] of [
         const control = page.locator("#settings-backup-compression");
         const writes = await page.evaluate(() => window.settingsWrites.length);
         await expect(control).toHaveJSProperty("value", "fast");
-        await control.click();
-        await expect(control.locator("md-select-option")).toHaveText([...labels]);
-        await control.getByRole("option", { name: labels[4], exact: true }).click();
+        const lifecycle = await control.evaluateHandle((element) => ({
+            opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+            closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+        }));
+        try {
+            await control.click();
+            await lifecycle.evaluate((events) => events.opened);
+            await expect(control.locator("md-select-option")).toHaveText([...labels]);
+            await control.getByRole("option", { name: labels[4], exact: true }).click();
+            await lifecycle.evaluate((events) => events.closed);
+        } finally {
+            await lifecycle.dispose();
+        }
         await expect(control).toHaveJSProperty("value", "level7");
         await expect.poll(() => page.evaluate(() => window.settingsRequests.at(-1)?.update.backups?.compressionMode)).toBe("level7");
         await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(writes + 1);
