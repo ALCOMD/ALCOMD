@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PackageCursor, RepositoryPackagesResult, RepositoryPackageVersion, RepositorySnapshot } from "./core-models";
 import type { RepositoryPackageSettings, RpcError } from "@alcomd/sdk";
 import { useActionScope } from "./CoreActions";
@@ -51,25 +51,29 @@ export function repositoryPackageColumns(t: Translate): DesktopListColumn[] {
     return [{ key: "enabled", header: t("Enabled"), width: "64px" }, { key: "name", header: t("Package") }];
 }
 
+interface CatalogFocus {
+    origins: Map<string, HTMLElement>;
+    returnTo?: string;
+}
+
 export function RepositoryPackageCatalog({ client, repositoryId, initial, onSelect, visibility }: { client: GuiRpcClient; repositoryId: string; initial: RepositoryPackagesResult; onSelect(id: string | undefined): void; visibility: PackageVisibility }) {
     const [selectedId, setSelectedId] = useState<string>();
     const [version, setVersion] = useState<string>();
+    const focusState = useRef<CatalogFocus>({ origins: new Map() });
     const select = (id: string | undefined) => { setSelectedId(id); setVersion(undefined); onSelect(id); };
     return <PagedItems initialItems={initial.packages} initialCursor={initial.nextCursor} showPagination={selectedId === undefined}
         loadMore={async (cursor) => { const result = await client.repositoryPackages(repositoryId, cursor); return { items: result.packages, nextCursor: result.nextCursor }; }}>
-        {(items, pagination) => <CatalogContents client={client} repositoryId={repositoryId} visibility={visibility} items={items} selectedId={selectedId} select={select} version={version} setVersion={setVersion} pagination={pagination} />}
+        {(items, pagination) => <CatalogContents client={client} repositoryId={repositoryId} visibility={visibility} focusState={focusState.current} items={items} selectedId={selectedId} select={select} version={version} setVersion={setVersion} pagination={pagination} />}
     </PagedItems>;
 }
 
-function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion, repositoryId, visibility }: {
-    repositoryId: string; visibility: PackageVisibility;
+function CatalogContents({ client, items, selectedId, select, pagination, version, setVersion, repositoryId, visibility, focusState }: {
+    repositoryId: string; visibility: PackageVisibility; focusState: CatalogFocus;
     client: GuiRpcClient; items: RepositoryPackageVersion[]; selectedId?: string; select(id: string | undefined): void;
     pagination: { cursor?: PackageCursor; loading: boolean; error?: RpcError; next(): Promise<void> };
     version?: string; setVersion(version: string): void;
 }) {
     const { t } = useTranslation();
-    const origins = useRef(new Map<string, HTMLElement>());
-    const returnTo = useRef<string | undefined>(undefined);
     const heading = useRef<HTMLHeadingElement>(null);
     const toggle = (id: string, name: string, labelHidden = false) => {
         const groups = visibility.groups;
@@ -107,20 +111,28 @@ function CatalogContents({ client, items, selectedId, select, pagination, versio
         if (selectedId !== undefined && versions === undefined) select(undefined);
         if (incomplete && !pagination.loading && !pagination.error) void pagination.next();
     }, [selectedId, versions, incomplete, pagination.cursor, pagination.loading, pagination.error, pagination.next, select]);
+    useLayoutEffect(() => () => {
+        // A refreshed page session removes these buttons. Capture only the
+        // currently focused package before its Material shadow control detaches.
+        for (const [id, origin] of focusState.origins) {
+            if (origin.matches(":focus-within")) { focusState.returnTo = id; break; }
+        }
+    }, [focusState]);
     useEffect(() => {
-        if (selectedId !== undefined || returnTo.current === undefined) return;
-        const origin = origins.current.get(returnTo.current) as (HTMLElement & { updateComplete?: Promise<unknown> }) | undefined;
+        if (selectedId !== undefined || focusState.returnTo === undefined) return;
+        const origin = focusState.origins.get(focusState.returnTo) as (HTMLElement & { updateComplete?: Promise<unknown> }) | undefined;
+        if (origin === undefined) { focusState.returnTo = undefined; return; }
         let active = true;
         // The name button is mounted again after leaving details. Material must
         // finish creating its focusable shadow control before focus can return.
         void Promise.resolve(origin?.updateComplete).then(() => {
-            if (active && origin?.isConnected) { origin.focus(); returnTo.current = undefined; }
+            if (active && origin.isConnected) { origin.focus(); focusState.returnTo = undefined; }
         });
         return () => { active = false; };
-    }, [selectedId]);
+    }, [selectedId, focusState]);
     useEffect(() => { if (selectedId !== undefined) heading.current?.focus(); }, [selectedId]);
     if (versions !== undefined && selectedId !== undefined) return <section className="repository-package-detail">
-        <Button variant="text" type="button" onClick={() => { returnTo.current = selectedId; select(undefined); }}>{t("Back to packages")}</Button>
+        <Button variant="text" type="button" onClick={() => { focusState.returnTo = selectedId; select(undefined); }}>{t("Back to packages")}</Button>
         <h2 ref={heading} tabIndex={-1}>{versions.find((item) => item.displayName)?.displayName ?? selectedId}</h2>
         {toggle(selectedId, versions.find((item) => item.displayName)?.displayName ?? selectedId)}
         {incomplete ? <>
@@ -131,7 +143,7 @@ function CatalogContents({ client, items, selectedId, select, pagination, versio
     return <DesktopList className="repository-package-list" label={t("Repository packages")} minWidth={320}
         columns={repositoryPackageColumns(t)} emptyMessage={t("No matching items")} rows={[...groups].map(([id, group]) => ({ key: id, cells: [
             toggle(id, group.find((item) => item.displayName)?.displayName ?? id, true),
-            <Button className="repository-package-name" ref={(element) => { if (element) origins.current.set(id, element); else origins.current.delete(id); }}
+            <Button className="repository-package-name" ref={(element) => { if (element) focusState.origins.set(id, element); else focusState.origins.delete(id); }}
                 variant="text" type="button" title={group.find((item) => item.displayName)?.displayName ?? id} onClick={() => select(id)}>{group.find((item) => item.displayName)?.displayName ?? id}</Button>
         ] }))} />;
 }

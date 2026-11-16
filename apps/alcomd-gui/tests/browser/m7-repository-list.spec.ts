@@ -230,6 +230,35 @@ test("package browsing groups versions and reads only the selected trailing pack
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
+for (const moveFocus of [false, true]) {
+    test(`a delayed repository refresh ${moveFocus ? "does not steal focus from another dialog control" : "preserves the returned package focus"}`, async ({ page }) => {
+        await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&hold-resource-refresh=1");
+        await page.getByRole("button", { name: "Browse packages", exact: true }).click();
+        const host = page.locator("md-dialog[open]");
+        await host.getByRole("button", { name: "Avatar tools", exact: true }).click();
+        await expect(host.getByRole("combobox", { name: "Version", exact: true })).toBeVisible();
+        await host.getByRole("button", { name: "Refresh repository", exact: true }).click();
+        await expect(host.getByRole("button", { name: "Refreshing repository", exact: true })).toBeVisible();
+        await host.getByRole("button", { name: "Back to packages", exact: true }).click();
+        const name = host.getByRole("table", { name: "Repository packages", exact: true }).getByRole("button", { name: "Avatar tools", exact: true });
+        await expect(name).toBeFocused();
+        const previous = await name.elementHandle();
+        expect(previous).not.toBeNull();
+        const close = host.getByRole("button", { name: "Close", exact: true });
+        try {
+            if (moveFocus) {
+                await close.focus();
+                await expect(close).toBeFocused();
+            }
+            await page.evaluate(() => window.dispatchEvent(new Event("test-resource-refresh-ready")));
+            await expect.poll(() => previous!.evaluate((element) => element.isConnected)).toBe(false);
+            await expect(moveFocus ? close : name).toBeFocused();
+        } finally {
+            await previous?.dispose();
+        }
+    });
+}
+
 test("a package detail continuation failure retries without showing an incomplete version selector", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&repository-browser-details=1&repository-browser-next-error=1");
     await page.getByRole("button", { name: "Browse packages", exact: true }).click();
