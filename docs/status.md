@@ -6,9 +6,13 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-2026-11-16 本轮推送：所有者明确批准b9f19d5、9c6f329、de8ead3、e99cd2c四笔提交，已核对干净main、最新origin/main、完整准确提交链和祖先关系，由真实Windows用户普通快进2a9d1233→`e99cd2c9d9254025eb8926c23ea2976f599e99fd`。远端SHA已实际确认，推送前xtask/diff通过，未重复本地完整验证。自动[CI43816630421](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630421)与[CodeQL43816630482](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630482)均为同SHA/attempt1；CodeQL四语言全部success；CI已收齐为failure：Windows成功（Chromium710/0）、macOS成功（710/0）、Ubuntu失败（709/1，唯一为备份压缩下拉框英文用例），不记整体通过；未dispatch/rerun。下文“尚未推送/无对应远端”为当时本地检查点，当前结果以上述e99cd2c终态为准，不用2a9d123旧结果替代。
+2026-11-16 最新两笔推送：所有者批准882eb3d、3752c08后，已核对真实Windows用户、干净main、最新远端及精确两笔链，普通快进e99cd2c→`3752c0870574536524d966c975e5c831a656f9ed`，ls-remote确认，无额外提交/强推/手动workflow。自动[CI43837500362](https://github.com/ALCOMD/ALCOMD/actions/runs/43837500362)与[CodeQL43837499791](https://github.com/ALCOMD/ALCOMD/actions/runs/43837499791)均同SHA/attempt1、终态已收齐：CI failure，Ubuntu和Windows各710/0、macOS709/1；CodeQL四语言全部success。前轮备份压缩选择用例本轮三平台均通过；macOS唯一失败是用户包来源选择后displayText仍为Multiple sources，未将不同轮次拼为完整通过。
 
-2026-11-16 CI定向收尾：本地测试修复`882eb3d99474158a7440dc8050ff3a5c8f64e276`仅给既有Material压缩选择用例等待opened/closed，保留全部实际交互、断言与超时；相关备份+motion单轮19/0、英文6倍CPU四次4/0、前端check通过。原例本机未复现，远端具体事件时序未捕获，不把同步候选写成已远端修复。三平台Check、release及Tauri构建已通过，前轮Host读取冲突不再出现；本轮Ubuntu709/1原结果保留。锁定metadata、xtask、diff通过，修复及本轮记录仅本地，超出已批准四笔推送范围，等待新的推送授权；无重复workflow或完整本地重跑。
+该来源用例同样缺少Material opened/closed同步，按同模块现有模式窄修`56eed3fd9d4cdbd0077d86b3c8bde6cc170277b4`，只改一项测试的等待，不改生产代码、真实交互、原断言或超时。相关模块单轮29/0，修复后6倍CPU/单worker四次4/0，前端check、locked metadata/xtask/diff通过。原例本机6倍CPU四次4/0，未复现远端失败，不声称捕获远端具体时序；修复仅本地、远端未验证。本轮结果与下一候选见[现有验收记录](testing/m8-publisher-confirmation-20261116.md#3752c08两笔推送与远端终态)。下文为各轮历史检查点，最新远端以3752c08为准。M8保持IN_PROGRESS，不进入M9、不操作原运行环境或恢复桌面控制。
+
+2026-11-16 上轮四笔推送：所有者明确批准b9f19d5、9c6f329、de8ead3、e99cd2c四笔提交，已核对干净main、最新origin/main、完整准确提交链和祖先关系，由真实Windows用户普通快进2a9d1233→`e99cd2c9d9254025eb8926c23ea2976f599e99fd`。远端SHA已实际确认，推送前xtask/diff通过，未重复本地完整验证。自动[CI43816630421](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630421)与[CodeQL43816630482](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630482)均为同SHA/attempt1；CodeQL四语言全部success；CI已收齐为failure：Windows成功（Chromium710/0）、macOS成功（710/0）、Ubuntu失败（709/1，唯一为备份压缩下拉框英文用例），不记整体通过；未dispatch/rerun。下文“尚未推送/无对应远端”为当时本地检查点，该轮结果以上述e99cd2c终态为准，不用2a9d123旧结果替代。
+
+2026-11-16 上轮CI定向收尾（推送前记录）：本地测试修复`882eb3d99474158a7440dc8050ff3a5c8f64e276`仅给既有Material压缩选择用例等待opened/closed，保留全部实际交互、断言与超时；相关备份+motion单轮19/0、英文6倍CPU四次4/0、前端check通过。原例本机未复现，远端具体事件时序未捕获，不把同步候选写成已远端修复。三平台Check、release及Tauri构建已通过，前轮Host读取冲突不再出现；本轮Ubuntu709/1原结果保留。锁定metadata、xtask、diff通过，修复及本轮记录仅本地，超出已批准四笔推送范围，等待新的推送授权；无重复workflow或完整本地重跑。
 
 2026-11-16 当前[发布者确认彻底删除](testing/m8-publisher-confirmation-20261116.md)：所有者已批准完整公共删除和State39，代码`de8ead33f789c1264df574c69ecae0fb5bf155bd`已本地提交。有效扩展包无需额外信任/发布者确认即可按原流程安装；publisherApproval、trustDecision、对应运行时类型/错误/GUI展示及两个数据库列已删除，不自动补批准、不保留旧输入兼容。严格签名/摘要/来源身份、原Plan/Apply、权限和留存数据的发布者身份隔离保持。旧迁移、Config13、依赖和身份模型不改，不升级原运行数据。
 

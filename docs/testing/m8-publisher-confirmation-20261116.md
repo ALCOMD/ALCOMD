@@ -2,6 +2,8 @@
 
 代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
+当前远端已推进至3752c08，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
+
 ## 当前行为
 
 用户选择有效扩展包后按原安装流程安装，不再提供或要求发布者确认。GUI复选框、列表/详情/审阅中的信任状态、弃用翻译/映射、安装RPC的publisherApproval及枚举、ExtensionRecord/ExtensionPlan/SDK的trustDecision及运行时类型、确认专用错误均已删除。不是自动勾选或偷偷发送approve_for_extension；旧参数按严格解析拒绝。
@@ -64,3 +66,34 @@ Ubuntu唯一失败位于`m7-project-backup-defaults.spec.ts`英文六种压缩�
 | [CodeQL43816630482](https://github.com/ALCOMD/ALCOMD/actions/runs/43816630482) | actions、Rust、JavaScript/TypeScript、Python全部success |
 
 运行已全部终止，ci-final-metadata.json、codeql-final-metadata.json及三平台job.log保留真实终态。监视中一次只读查询EOF后重新读取状态，未重试任何workflow。修复后的本地状态检查为locked metadata、cargo xtask check和diff通过；不重复完整测试或构建。882eb3d与本轮文档记录超出四笔推送授权，均未推送，修复远端验证仍缺失；后续需另获普通快进授权，不能宣称本轮CI通过或M8完成。
+
+
+## 3752c08两笔推送与远端终态
+
+所有者批准882eb3d、3752c08两笔后，已核对main、干净工作树、真实Windows用户cqmhv-dt\m2922、最新origin/main=e99cd2c及准确两笔链/祖先关系，普通快进推送至`3752c0870574536524d966c975e5c831a656f9ed`并用ls-remote确认。未夹带新提交，未强推、标签、发布或手动触发/重跑workflow，也未重复既有完整本地测试。
+
+以下均为本次候选SHA、attempt1的真实终态：
+
+| 检查 | 结果 |
+| --- | --- |
+| [CI43837500362](https://github.com/ALCOMD/ALCOMD/actions/runs/43837500362) / Ubuntu | success，完整Chromium710/0，12.3分钟 |
+| 同CI / Windows | success，完整Chromium710/0，18.4分钟 |
+| 同CI / macOS | failure，完整Chromium709/1，26.1分钟 |
+| [CodeQL43837499791](https://github.com/ALCOMD/ALCOMD/actions/runs/43837499791) | actions、Rust、JavaScript/TypeScript、Python全部success |
+
+三平台Check、CLI自动启动、release/Tauri构建、锁文件/diff均success。前轮备份压缩选择失败用例在本轮三平台均通过，但保留e99cd2c原Ubuntu709/1。macOS本轮唯一失败为`m7-package-workspace.spec.ts:301`的User Packages来源选择：期待displayText=Local avatar tools，5秒内实际仍为Multiple sources；不把本轮两个710/0与旧macOS710/0拼成三平台通过。原始终态JSON、ci-final-metadata.json、codeql-final-metadata.json和三平台job.log保存在target/m8-push-3752c08-20261116；只读查询一次临时失败后继续读取，未重试workflow。
+
+### 来源选择的本地定向修复
+
+测试点击来源后立即点击选项，未同步Material select的展开/焦点初始化与关闭；同模块的筛选测试已有opened/closed同步。按该模式窄修`56eed3fd9d4cdbd0077d86b3c8bde6cc170277b4`，仅给这一个失败用例增加生命周期等待和句柄清理。保留实际来源/选项点击、显示文本、原Reinstall及批量Plan审阅断言，未改生产组件、超时或重试配置，未跳过真实交互。
+
+| 本地执行 | 真实结果 |
+| --- | --- |
+| 原例首个CPU诊断调用 | npm.cmd转义grep后No tests found，未执行；source-before-cpu6.log保留 |
+| 修正调用后的原例CPU6倍、四次 | 4/0，33.2秒，4 workers；source-before-cpu6-execution.log，未复现远端失败 |
+| 修复后完整m7-package-workspace模块 | 单轮29/0，1.5分钟，1 worker；source-module-fixed.log |
+| 修复后该例CPU6倍、四次 | 4/0，1.4分钟，1 worker；source-after-cpu6.log |
+| 前端check | 通过，Material/1286条三语言边界通过；source-frontend-check.log |
+| locked metadata、cargo xtask check、diff | 通过；无完整Rust/Chromium/release重跑 |
+
+本机没有捕获远端具体事件顺序，生命周期缺口修复属于待远端确认的候选，不把本地通过写成远端失败已消失。临时CPU钩子已恢复并扫描确认不存在；56eed3f及本次结果文档只本地提交，超出已执行的两笔授权，不自动推送。原Core/GUI、数据、Unity与桌面控制未操作；既有原生人工与其他M8未覆盖项不因此变成通过，M8继续IN_PROGRESS。

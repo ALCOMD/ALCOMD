@@ -1145,3 +1145,12 @@ Ubuntu完整Chromium709/1的唯一失败为备份压缩下拉框英文用例，�
 
 
 最终收集使用同SHA、attempt1的实际日志与metadata，未重跑workflow；ci-final-metadata.json、codeql-final-metadata.json及三个平台job.log保存于本轮target证据目录。锁定metadata、cargo xtask check及diff检查通过，未因状态记录重跑完整测试或构建。仅上述四笔已推送，新修复882eb3d及本轮结果记录均留在本地，待所有者另行批准普通快进；M8仍IN_PROGRESS。
+
+
+### 3752c08两笔推送与后续定向收尾（2026-11-16）
+
+所有者另行批准882eb3d99474158a7440dc8050ff3a5c8f64e276、3752c0870574536524d966c975e5c831a656f9ed。真实Windows用户在标准目录/main核对干净工作树、最新origin/main=e99cd2c、精确两笔链及祖先关系后，普通快进至3752c08并以ls-remote确认；未夹带、强推或手动dispatch/rerun。复用既有有效本地证据，不为推送重复完整测试。
+
+自动CI43837500362及CodeQL43837499791均绑定3752c08/attempt1。终态：Ubuntu success/Chromium710/0（12.3分钟），Windows success/710/0（18.4分钟），macOS failure/709/1（26.1分钟）；三平台Check、CLI自动启动、release/Tauri及锁文件/diff通过，CodeQL四语言success。前轮备份压缩选择已在本轮三平台通过；本轮唯一失败为m7-package-workspace.spec.ts:301用户包来源选择后仍显示Multiple sources，不替换或拼接历史失败结果。
+
+核对现有调用和Material生命周期后，测试窄修56eed3fd9d4cdbd0077d86b3c8bde6cc170277b4等待opened/closed，原点击/显示/Plan审阅断言及超时不变，生产代码未改。原例CPU6倍四次4/0未复现远端失败，明确不声称已捕获远端时序；修复后整个相关模块单轮29/0、单worker CPU6倍四次4/0、前端check及locked metadata/xtask/diff通过。初次诊断grep经npm.cmd转义后未发现测试，保留该未执行记录，修正调用后才有4/0；诊断钩子已清理。新修复及结果记录仅本地、需新推送授权，当前远端仍为CI失败，不宣布M8完成。完整日志和终态JSON保留于target/m8-push-3752c08-20261116，原环境、数据和桌面控制未操作。
