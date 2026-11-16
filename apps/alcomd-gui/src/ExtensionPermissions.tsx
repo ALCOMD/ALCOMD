@@ -71,28 +71,30 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     const events = useCoreEvents();
     const readVersion = useRef(0);
-    const acceptedRead = useRef<object | undefined>(undefined);
+    const acceptedRead = useRef<{ client: GuiRpcClient; extensionId: string } | undefined>(undefined);
     const [generation, setGeneration] = useState(0);
     const [value, setValue] = useState<ExtensionPermissionsListResult>();
     const [error, setError] = useState<RpcError>();
     const [loading, setLoading] = useState(true);
     const [writing, setWriting] = useState(false);
     const [writeUnknown, setWriteUnknown] = useState(false);
-    const owner = useRef({ client, extensionId, generation, active: true, pending: false });
-    if (owner.current.client !== client || owner.current.extensionId !== extensionId || owner.current.generation !== generation) {
+    const owner = useRef({ client, extensionId, canRead, generation, active: true, pending: false });
+    if (owner.current.client !== client || owner.current.extensionId !== extensionId || owner.current.canRead !== canRead || owner.current.generation !== generation) {
         owner.current.active = false;
-        owner.current = { client, extensionId, generation, active: true, pending: false };
+        owner.current = { client, extensionId, canRead, generation, active: true, pending: false };
     }
     const scope = owner.current;
-    // A new owner renders before its read effect; never expose its predecessor's grants.
+    // A new owner renders before its read effect; never expose its predecessor's grants as writable.
     const ownsRead = acceptedRead.current === scope;
-    const visibleValue = ownsRead && canRead ? value : undefined;
+    const sameReadIdentity = acceptedRead.current?.client === client && acceptedRead.current.extensionId === extensionId;
+    // Keep same-identity rows in place during readback, disabled until the new owner reads.
+    const visibleValue = sameReadIdentity && canRead ? value : undefined;
     const visibleError = ownsRead ? error : undefined;
     const current = () => scope.active && owner.current === scope;
     const reload = () => { scope.active = false; setGeneration((version) => version + 1); };
     const refreshFeedback = useActionFeedback(loading);
     const manualReload = () => refreshFeedback.run(async () => {
-        setValue(undefined); setError(undefined);
+        setError(undefined);
         setLoading(canRead);
         try {
             await withActionNotification(client, "Refresh", async () => {
@@ -128,7 +130,8 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
 
     useEffect(() => {
         scope.active = true;
-        setValue(undefined); setError(undefined); setLoading(true); setWriting(false); setWriteUnknown(false);
+        if (!sameReadIdentity) setValue(undefined);
+        setError(undefined); setLoading(true); setWriting(false); setWriteUnknown(false);
         if (canRead) void readPermissions().catch(() => {}); else setLoading(false);
         return () => { scope.active = false; readVersion.current += 1; };
     }, [canRead, client, extensionId, scope]);

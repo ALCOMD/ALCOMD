@@ -90,6 +90,46 @@ test("permission reload never exposes old writable switches after a successful g
     await expect(manage).toBeEnabled();
 });
 
+test("permission readback retains disabled rows without moving the next pointer target", async ({ page }) => {
+    await page.goto(route);
+    await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    const manage = dialog.getByRole("switch", { name: "Manage MCP clients", exact: true });
+    await expect(manage).not.toBeChecked();
+    await expect(manage).toBeEnabled();
+    const before = await manage.boundingBox();
+    expect(before).not.toBeNull();
+    await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
+    await manage.click();
+    await expect(manage).toBeDisabled();
+    await page.evaluate(() => {
+        window.h4Management.hold("extensions.permissions.list", true);
+        window.h4Management.hold("extensions.setGrant", false);
+        window.h4Management.release("extensions.setGrant");
+    });
+    try {
+        await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBeGreaterThan(0);
+        await expect(dialog.getByRole("switch")).toHaveCount(3);
+        await expect(manage).toBeDisabled();
+        const pending = await manage.boundingBox();
+        expect(pending).not.toBeNull();
+        expect(Math.abs(pending!.y - before!.y)).toBeLessThanOrEqual(1);
+    } finally {
+        await page.evaluate(() => {
+            window.h4Management.hold("extensions.permissions.list", false);
+            while (window.h4Management.release("extensions.permissions.list")) { /* Deliver existing readbacks only. */ }
+        });
+    }
+    await expect(manage).toBeChecked();
+    await expect(manage).toBeEnabled();
+    const after = await manage.boundingBox();
+    expect(after).not.toBeNull();
+    expect(Math.abs(after!.y - before!.y)).toBeLessThanOrEqual(1);
+    await manage.click();
+    await expect(manage).not.toBeChecked();
+    expect(await page.evaluate(() => window.h4Management.requests.filter((request) => request.method === "extensions.revokeGrant").length)).toBe(1);
+});
+
 test("MCP management permission rows read every grant page and use the exact global scope", async ({ page }) => {
     await page.goto(route);
     await page.evaluate((id) => window.h4Management.setGrants(id, [
