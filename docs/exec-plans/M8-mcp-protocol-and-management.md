@@ -1165,3 +1165,14 @@ Ubuntu完整Chromium709/1的唯一失败为备份压缩下拉框英文用例，�
 已沿harness确认标题先渲染、再void import证据模块，旧expect.poll回调异常不会等待模块。测试窄修6ffde60599087e895cdaec86f5c2bfac9957e416使缺失的全局返回未就绪，仍精确要求ready后暂停时钟，不吞业务异常或放宽超时。新增受控模块延迟回归，在首次读取发生后才释放模块；旧逻辑下单轮1失败、相同TypeError，修复后该模块单轮10/0（9原例+1新例）、前端check及locked metadata/xtask/diff通过。所有缓存/限流/任务等原断言保持，生产代码和harness未改；不重复完整Workspace/Chromium/release。
 
 原始各平台日志、终态metadata与确定性前后回归见target/m8-push-e371d27-20261116；新修复/结果记录仅本地、需新的明确推送授权，不把10/0写成远端通过。原Core/GUI、原数据、Unity及桌面控制均未操作，M8仍IN_PROGRESS，不进入M9。
+
+
+### dd5aa9b两笔推送与仓库刷新焦点（2026-11-16）
+
+所有者批准6ffde60599087e895cdaec86f5c2bfac9957e416、dd5aa9bae0a4b04ff4f3dd51b1433a240f0be7cf，核对真实Windows用户/干净main/最新origin及精确两笔链和祖先关系后，普通快进e371d27→dd5aa9b并ls-remote确认。未夹带、强推、标签/发布或手动dispatch/rerun，不重复既有完整本地验证。
+
+同SHA/attempt1的CI43865931992终态failure：Ubuntu完整Chromium711/0（14.8分钟）、Windows711/0（13.9分钟），两job成功；macOS710/1（20.4分钟）。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均success；CodeQL43865930193四语言success。此前事件初始化/压缩/来源选择用例均在本轮三平台通过，旧失败保留，不拼接成整体通过。
+
+macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。受控挂起既有刷新RPC，先返回并恢复焦点，再释放刷新，旧分页DOM被替换后新按钮失焦：1失败/1通过，确认是真实产品竞态，非仅断言过早。生产窄修d667a012e601b729d220b4527cdc6948f7a0e1a0把局部焦点意图放到Catalog的分页会话外，移除旧列表前只捕获实际focused包名，待新Material控件就绪恢复；用户已转向其他控件则不抢焦点。缺失目标清理意图，不改通用PagedItems、Material、布局或键盘合同，不依赖DOM移除时blur事件差异（[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Element/blur_event)）。无RPC/Schema/权限/依赖变化。
+
+仓库模块单轮35/0、2.8分钟、1 worker，含两新增受控回归和原失败例；前端check/build通过，JS产物90adae98…7c75443、CSS480fdffa…9d4725b，完整输入/产物SHA256见target/m8-push-dd5aa9b-20261116/repository-focus-inputs-and-build.json。locked metadata/xtask/diff通过，不重复全量Rust/Chromium/Tauri release。实际失败日志、受控前后结果与本地headless截图/trace分别保存，不冒充原生桌面证据。新修复和结果记录只本地，远端/原生复验未执行，仍需新的明确推送授权；原环境及桌面控制未操作，M8仍IN_PROGRESS。

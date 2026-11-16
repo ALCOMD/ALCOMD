@@ -2,7 +2,7 @@
 
 代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
-当前远端已推进至e371d27，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
+当前远端已推进至dd5aa9b，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
 
 ## 当前行为
 
@@ -121,3 +121,29 @@ UtilityWorkspaceEvidence.tsx先render标题，再void import("./event-limits-evi
 新增回归仅拦截测试证据JS模块，在助手实际首次读取eventLimits后才释放，真实运行原证据模块及coordinator；不修改生产代码或harness，不增加旁路。旧初始化逻辑下新例单轮1失败，复现相同coordinator未定义异常（event-startup-before.log和before.ts）；修复后整个模块单轮10/0、15.7秒、1 worker，包含9个原缓存/限流/任务/断线用例和新初始化用例（event-startup-module-fixed.log）。原5000行、8MiB、并发/查询上限及任务状态断言全部保留，原超时和零重试配置不变。
 
 前端check（Material及1286条三语言）、locked metadata、cargo xtask check、diff通过；event-startup-frontend-check.log及local-final-metadata.json保留。未重跑完整Rust、浏览器全套或release。6ffde60与本轮文档记录仅本地、无对应远端验证，超出本次已执行两笔授权，不自动推送。原Core/GUI、数据、Unity及桌面控制未操作；其他既有M8人工未覆盖项保持，不宣布M8完成。
+
+
+## dd5aa9b两笔推送与仓库刷新焦点
+
+所有者批准6ffde60、dd5aa9b后，真实Windows用户核对干净main、最新origin/main=e371d27、精确两笔链及祖先关系，普通快进至`dd5aa9bae0a4b04ff4f3dd51b1433a240f0be7cf`并以ls-remote确认。未夹带、强推、标签/发布或手动dispatch/rerun，不因推送重复完整本地测试。
+
+| 检查（均同dd5aa9b、attempt1） | 终态 |
+| --- | --- |
+| [CI43865931992](https://github.com/ALCOMD/ALCOMD/actions/runs/43865931992) / Ubuntu | success，完整Chromium711/0，14.8分钟 |
+| 同CI / Windows | success，完整Chromium711/0，13.9分钟 |
+| 同CI / macOS | failure，完整Chromium710/1，20.4分钟 |
+| [CodeQL43865930193](https://github.com/ALCOMD/ALCOMD/actions/runs/43865930193) | actions、Rust、JavaScript/TypeScript、Python全部success |
+
+三平台Check、CLI自动启动、release/Tauri、锁文件/diff均success，事件初始化的新回归及此前压缩/来源选择用例本轮三平台均通过。macOS唯一失败为m7-repository-list.spec.ts:220返回包列表后的Avatar tools焦点断言，实际inactive。旧运行原结果分别保留，不拼接为整体通过；完整三平台job.log、终态metadata/逐步JSON保存于target/m8-push-dd5aa9b-20261116。
+
+### 实际产品竞态与本地修复
+
+RepositoryRefresh完成后异步重读目录，PagedItems按新first-page引用更换PageSession；CatalogContents的局部origins/returnTo也被重建。若用户在刷新完成前已从详情返回并恢复焦点，后续会话替换会移除已聚焦按钮并丢掉恢复意图。本轮沿真实UI与现有hold-resource-refresh模拟边界控制时序，没有新增生产测试旁路。
+
+旧生产源码+新增两例在本地单轮1失败/1通过、24.9秒，复现与远端一致的inactive；失败场景先确认返回按钮已聚焦，再释放刷新并验证旧DOM确实断开，随后断言新按钮仍应聚焦。对照场景用户把焦点移到现有Close按钮，要求刷新不抢焦点。证据为repository-focus-before.log、repository-focus-before.tsx、repository-focus-regression.spec.ts及repository-focus-before-trace.zip、repository-focus-before-test-failed-1.png、repository-focus-before-error-context.md；这是隔离headless页面，不能称真实桌面截图。
+
+修复代码`d667a012e601b729d220b4527cdc6948f7a0e1a0`仅把焦点意图/元素引用置于既有Catalog会话外，在旧列表移除前捕获实际焦点、等待新Material更新完成后恢复，清理不存在目标；主动移到其他控件不恢复到包名。原焦点断言、分页/版本/原Plan审阅、超时与零重试保持；未更改通用分页/Material、布局、RPC、权限、State/Config、Core或依赖。前端指导只用于本次焦点管理核对，未扩展为界面重设计。
+
+修复后整个仓库模块单轮35/0、2.8分钟、1 worker（repository-focus-module-fixed.log），包含两新增受控例及原CI失败例；前端check/build通过，372模块、1286条三语言边界通过（repository-focus-frontend-build.log）。JS index-CFilgX92.js的SHA256为90adae98a0ef0cc6e3a3c68535647d2fd18748392759ce62e276c3c9b7c75443，CSS index-8F20k4yu.css为480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b；输入/产物汇总与代码SHA绑定于repository-focus-inputs-and-build.json。locked metadata、cargo xtask check及diff通过，未重复完整Rust/Chromium/Tauri release；构建的既有大chunk提示保留，不放宽门禁或改依赖。
+
+本地d667a01及结果文档超出本次已执行的两笔推送授权，尚未推送，新增代码无对应远端/原生桌面复验，不使用dd5aa9b旧结果替代。未操作原Core/GUI、数据或Unity，未恢复桌面控制；既有未覆盖项与M8 IN_PROGRESS保持，不进入M9。
