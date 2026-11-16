@@ -302,9 +302,20 @@ test("User Packages are a visible source choice and reinstall uses one plan revi
     await openHarness(page, "package-user-source");
     const source = page.getByRole("combobox", { name: "Source for Avatar tools" });
     await expect(source).toBeVisible();
-    await source.click();
-    await page.getByRole("option", { name: "Local avatar tools", exact: true }).click();
-    await expect(page.locator(".package-source-picker").filter({ has: source })).toHaveJSProperty("displayText", "Local avatar tools");
+    const sourceControl = page.locator(".package-source-picker").filter({ has: source });
+    const lifecycle = await sourceControl.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await source.click();
+        await lifecycle.evaluate((events) => events.opened);
+        await page.getByRole("option", { name: "Local avatar tools", exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
+    await expect(sourceControl).toHaveJSProperty("displayText", "Local avatar tools");
     await selectActionMenuItem(page.getByRole("button", { name: "More actions for Avatar tools" }), page.getByRole("menuitem", { name: "Reinstall", exact: true }));
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
