@@ -4,9 +4,38 @@ async function open(page: Page) {
     await page.clock.install();
     await page.goto("/tests/browser/utility-workspace.html?eventLimits=1");
     await expect(page.getByRole("heading", { name: "Event coordinator limits evidence", exact: true })).toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.eventLimits.coordinator.getSnapshot().kind)).toBe("ready");
+    // The heading renders before the lazy evidence module initializes its global.
+    await expect.poll(() => page.evaluate(() => window.eventLimits?.coordinator.getSnapshot().kind)).toBe("ready");
     await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
 }
+
+test("event limits startup waits for the lazy evidence module after the heading is visible", async ({ page }) => {
+    await page.addInitScript(() => {
+        let evidence: Window["eventLimits"] | undefined;
+        Object.defineProperty(window, "eventLimits", {
+            configurable: true,
+            get() {
+                document.documentElement.dataset.eventEvidenceRead = "true";
+                return evidence;
+            },
+            set(value: Window["eventLimits"]) { evidence = value; }
+        });
+    });
+    let releaseModule!: () => void;
+    const moduleReleased = new Promise<void>((resolve) => { releaseModule = resolve; });
+    await page.route("**/event-limits-evidence-*.js", async (route) => {
+        await moduleReleased;
+        await route.continue();
+    });
+    const opening = open(page).then(() => ({ kind: "ready" }), (error: unknown) => ({ kind: "failed", message: String(error) }));
+    try {
+        await expect(page.getByRole("heading", { name: "Event coordinator limits evidence", exact: true })).toBeVisible();
+        await expect(page.locator("html")).toHaveAttribute("data-event-evidence-read", "true");
+    } finally {
+        releaseModule();
+    }
+    expect(await opening).toEqual({ kind: "ready" });
+});
 
 test("the shared RPC limiter reserves the fourth read for a terminal change while ordinary reads remain bounded to three", async ({ page }) => {
     await open(page);
