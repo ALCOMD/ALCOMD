@@ -1176,3 +1176,14 @@ Ubuntu完整Chromium709/1的唯一失败为备份压缩下拉框英文用例，�
 macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。受控挂起既有刷新RPC，先返回并恢复焦点，再释放刷新，旧分页DOM被替换后新按钮失焦：1失败/1通过，确认是真实产品竞态，非仅断言过早。生产窄修d667a012e601b729d220b4527cdc6948f7a0e1a0把局部焦点意图放到Catalog的分页会话外，移除旧列表前只捕获实际focused包名，待新Material控件就绪恢复；用户已转向其他控件则不抢焦点。缺失目标清理意图，不改通用PagedItems、Material、布局或键盘合同，不依赖DOM移除时blur事件差异（[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Element/blur_event)）。无RPC/Schema/权限/依赖变化。
 
 仓库模块单轮35/0、2.8分钟、1 worker，含两新增受控回归和原失败例；前端check/build通过，JS产物90adae98…7c75443、CSS480fdffa…9d4725b，完整输入/产物SHA256见target/m8-push-dd5aa9b-20261116/repository-focus-inputs-and-build.json。locked metadata/xtask/diff通过，不重复全量Rust/Chromium/Tauri release。实际失败日志、受控前后结果与本地headless截图/trace分别保存，不冒充原生桌面证据。新修复和结果记录只本地，远端/原生复验未执行，仍需新的明确推送授权；原环境及桌面控制未操作，M8仍IN_PROGRESS。
+
+
+### e10bce7远端结果与权限读回、动画诊断（2026-11-17）
+
+所有者批准d667a012e601b729d220b4527cdc6948f7a0e1a0、e10bce7b67e77ef76e2f7db9a7dce2b41f22c4fe两笔后，已核对真实Windows用户、干净main、最新origin及精确链/祖先关系，普通快进dd5aa9b→e10bce7并以ls-remote确认，无夹带、强推、标签/发布或手动dispatch/rerun，复用既有本地有效验证。
+
+同SHA/attempt1：CI43885504578终态failure，Ubuntu完整Chromium713/0（17.3分钟）、macOS712/1（26.5分钟）、Windows710/3（15.3分钟）；三平台Check、CLI自动启动、release/Tauri及锁文件/diff均success。CodeQL43885504395四语言success。仓库焦点原例和两新增回归三平台通过，但不拼成整套通过；Mac失败为权限开关错误提示未出现，Windows同例、项目读取开关连续操作及动画系统偏好传播失败，原日志分别保留。gh run view端点EOF后直接官方API核验同SHA/attempt并继续读取，未重跑workflow。
+
+权限本地修复f1f1027819b78558d9ddc8e82863a1ccf99a8473：ExtensionPermissions把快照绑定到当前owner/generation，新的归属读取完成前不展示旧授权为可编辑；保留当前Core与readVersion检查、未知写结果冻结、所有分页/revision/权限与声明规则。受控旧行为暴露可编辑窗口，单例1失败；新回归在最终四模块中通过。原测试把Material原生乐观checked当成Core提交完成，请求诊断失败时仅记录两次setGrant、没有revoke；成功操作现在控制现有模拟写入和读回边界，仍由真实键盘/点击驱动，不删原状态/错误/精确RPC/revision断言，不添加生产旁路或通用框架。测试辅助的初版挂起时机与一处RPC参数错误均留存为实施失败，不能算Core失败或通过。
+
+动画088710612a7bb37fdaac7a759c3b626a87bdc586只给现有live-OS测试增加原生matchMedia状态和change事件输入见证及7字段有界失败记录，原quick/页面状态/写入断言、超时与零重试不变；生产motion.ts及依赖未改。原Windows失败本机CPU6倍四次4/0未复现，**真实原因仍未知，不标记修复或豁免**。新本地输入四相关模块单轮37/0（1.1分钟）、前端check/build、metadata/xtask/diff通过，不重复完整Rust/Chromium/Tauri release。JS829aca43…414b25df、CSS480fdffa…9d4725b与源码摘要绑定于target/m8-push-e10bce7-20261116/permissions-motion-inputs-and-build.json。新候选需远端核对权限修复并取得原生输入证据；未新增RPC/Schema/权限/依赖或修改workflow，未自动推送，原环境与桌面控制未操作，M8仍IN_PROGRESS。

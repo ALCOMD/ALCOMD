@@ -1,14 +1,18 @@
 # 项目状态
 
-最后更新：2026-11-16
+最后更新：2026-11-17
 
 ## 当前阶段
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
-2026-11-16 最新远端候选：所有者批准6ffde60、dd5aa9b后，核对真实Windows用户、干净main、最新origin/main及精确两笔链，普通快进e371d27→`dd5aa9bae0a4b04ff4f3dd51b1433a240f0be7cf`并ls-remote确认。自动[CI43865931992](https://github.com/ALCOMD/ALCOMD/actions/runs/43865931992)、[CodeQL43865930193](https://github.com/ALCOMD/ALCOMD/actions/runs/43865930193)均同SHA/attempt1，终态已收齐：Ubuntu、Windows完整Chromium各711/0并整个job成功；macOS710/1，CI整体failure；CodeQL四语言全部success。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均通过，事件初始化回归及前两轮选择用例本轮三平台通过，历史失败保留；未dispatch/rerun。
+2026-11-17 收齐当前远端：所有者批准d667a01、e10bce7后，已由真实Windows用户核对干净main、最新origin/main、精确两笔链与祖先关系，普通快进dd5aa9b→`e10bce7b67e77ef76e2f7db9a7dce2b41f22c4fe`并ls-remote确认。自动[CI43885504578](https://github.com/ALCOMD/ALCOMD/actions/runs/43885504578)、[CodeQL43885504395](https://github.com/ALCOMD/ALCOMD/actions/runs/43885504395)均同SHA/attempt1、终态已收齐：Ubuntu完整Chromium713/0并整个job成功；macOS712/1，Windows710/3，CI整体failure；CodeQL四语言全部success。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均通过，仓库焦点原失败例与两新增回归本轮三平台通过。历史原结果独立保留，未dispatch/rerun；只读状态端点EOF后用官方直接API继续收集同一run。
 
-macOS唯一失败为仓库包浏览刷新后返回列表时的焦点丢失，已受控复现实际产品竞态：分页会话换代重建列表，旧组件局部焦点记录随之丢失。本地窄修`d667a012e601b729d220b4527cdc6948f7a0e1a0`仅在RepositoryPackageCatalog保留恢复意图，旧列表移除前捕获其实际焦点，不在用户已转向其他控件时抢焦点；不改通用分页/提醒框、RPC、State/Config或权限。受控旧行为1失败/1通过，修复后仓库模块单轮35/0（含两新增回归及原失败例）、前端check/build及locked metadata/xtask/diff通过。输入/构建摘要和本轮终态见[现有记录](testing/m8-publisher-confirmation-20261116.md#dd5aa9b两笔推送与仓库刷新焦点)。新修复仅本地，尚无远端/原生桌面复验；未恢复桌面控制，未操作原Core/GUI、数据或Unity。M8仍IN_PROGRESS，不进入M9。
+本地权限修复`f1f1027819b78558d9ddc8e82863a1ccf99a8473`绑定授权快照到当前读归属，防止换代读取前暴露旧授权可编辑窗口；测试等待实际写入与Core读回，不把原生开关的乐观选中当成提交完成，原错误/权限/revision断言保持。动画诊断`088710612a7bb37fdaac7a759c3b626a87bdc586`仅核对原生媒体输入/事件并记录有界失败状态，**原Windows动画失败仍未复现、原因未定位，不记已修复**，生产动画逻辑未改。稳定本地输入的四相关模块单轮37/0、前端check/build及locked metadata/xtask/diff通过；旧失败、诊断与辅助测试设置失败分别保留，详见[当前记录](testing/m8-publisher-confirmation-20261116.md#e10bce7远端收集与权限读回2026-11-17)。新代码未推送，无对应远端/原生桌面复验，不用旧结果替代；未操作原Core/GUI、数据、Unity或桌面控制。M8仍IN_PROGRESS，不进入M9。
+
+2026-11-16 上轮远端候选：所有者批准6ffde60、dd5aa9b后，核对真实Windows用户、干净main、最新origin/main及精确两笔链，普通快进e371d27→`dd5aa9bae0a4b04ff4f3dd51b1433a240f0be7cf`并ls-remote确认。自动[CI43865931992](https://github.com/ALCOMD/ALCOMD/actions/runs/43865931992)、[CodeQL43865930193](https://github.com/ALCOMD/ALCOMD/actions/runs/43865930193)均同SHA/attempt1，终态已收齐：Ubuntu、Windows完整Chromium各711/0并整个job成功；macOS710/1，CI整体failure；CodeQL四语言全部success。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均通过，事件初始化回归及前两轮选择用例本轮三平台通过，历史失败保留；未dispatch/rerun。
+
+上轮推送前定向记录：macOS唯一失败为仓库包浏览刷新后返回列表时的焦点丢失，已受控复现实际产品竞态：分页会话换代重建列表，旧组件局部焦点记录随之丢失。本地窄修`d667a012e601b729d220b4527cdc6948f7a0e1a0`仅在RepositoryPackageCatalog保留恢复意图，旧列表移除前捕获其实际焦点，不在用户已转向其他控件时抢焦点；不改通用分页/提醒框、RPC、State/Config或权限。受控旧行为1失败/1通过，修复后仓库模块单轮35/0（含两新增回归及原失败例）、前端check/build及locked metadata/xtask/diff通过。输入/构建摘要和本轮终态见[现有记录](testing/m8-publisher-confirmation-20261116.md#dd5aa9b两笔推送与仓库刷新焦点)。新修复仅本地，尚无远端/原生桌面复验；未恢复桌面控制，未操作原Core/GUI、数据或Unity。M8仍IN_PROGRESS，不进入M9。
 
 2026-11-16 上轮远端候选：所有者批准56eed3f、e371d27两笔后，核对干净main、真实Windows用户、最新origin/main及精确两笔链，普通快进3752c08→`e371d27f961404a6606700ed87e4c01a8cfb6c6c`并ls-remote确认。自动[CI43851129715](https://github.com/ALCOMD/ALCOMD/actions/runs/43851129715)、[CodeQL43851129372](https://github.com/ALCOMD/ALCOMD/actions/runs/43851129372)均同SHA/attempt1、终态已收齐：Ubuntu710/0、macOS710/0并整个job成功；Windows709/1，CI整体failure；CodeQL四语言全部success。三平台Check、CLI自动启动、release/Tauri及锁文件/diff均通过，前两轮的压缩/来源选择用例本轮三平台均通过。Windows唯一失败是事件证据模块异步加载尚未完成时，初始化轮询直接读取window.eventLimits.coordinator而抛TypeError；不拼接旧平台结果或掩盖本轮失败，未dispatch/rerun。
 

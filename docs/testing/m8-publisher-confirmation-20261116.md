@@ -2,7 +2,7 @@
 
 代码候选 `de8ead33f789c1264df574c69ecae0fb5bf155bd`，标准目录/main、真实Windows用户本地提交。所有者已批准行为变更、公共字段删除及State39两列删除清单。随后明确批准完整四笔链并已普通快进推送至记录提交 `e99cd2c9d9254025eb8926c23ea2976f599e99fd`，同SHA自动CI43816630421终态failure（Ubuntu709/1，Windows与macOS各710/0）、CodeQL43816630482四语言success；不是全部通过。M8仍IN_PROGRESS，不进入M9。
 
-当前远端已推进至dd5aa9b，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
+当前远端已推进至e10bce7，最新结果见文末；下述e99cd2c与“未推送”均保留各轮历史，不代表当前远端状态。
 
 ## 当前行为
 
@@ -147,3 +147,44 @@ RepositoryRefresh完成后异步重读目录，PagedItems按新first-page引用�
 修复后整个仓库模块单轮35/0、2.8分钟、1 worker（repository-focus-module-fixed.log），包含两新增受控例及原CI失败例；前端check/build通过，372模块、1286条三语言边界通过（repository-focus-frontend-build.log）。JS index-CFilgX92.js的SHA256为90adae98a0ef0cc6e3a3c68535647d2fd18748392759ce62e276c3c9b7c75443，CSS index-8F20k4yu.css为480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b；输入/产物汇总与代码SHA绑定于repository-focus-inputs-and-build.json。locked metadata、cargo xtask check及diff通过，未重复完整Rust/Chromium/Tauri release；构建的既有大chunk提示保留，不放宽门禁或改依赖。
 
 本地d667a01及结果文档超出本次已执行的两笔推送授权，尚未推送，新增代码无对应远端/原生桌面复验，不使用dd5aa9b旧结果替代。未操作原Core/GUI、数据或Unity，未恢复桌面控制；既有未覆盖项与M8 IN_PROGRESS保持，不进入M9。
+
+
+## e10bce7远端收集与权限读回（2026-11-17）
+
+所有者批准d667a01、e10bce7后，真实Windows用户核对干净main、最新origin/main=dd5aa9b、精确两笔链与祖先关系，普通快进至`e10bce7b67e77ef76e2f7db9a7dce2b41f22c4fe`并以ls-remote确认。未夹带、强推、标签/发布或手动dispatch/rerun，未因推送重复完整本地测试。
+
+| 本轮检查（同e10bce7、attempt1） | 实际终态 |
+| --- | --- |
+| [CI43885504578](https://github.com/ALCOMD/ALCOMD/actions/runs/43885504578) / Ubuntu | success，完整Chromium713/0，17.3分钟 |
+| 同CI / macOS | failure，完整Chromium712/1，26.5分钟 |
+| 同CI / Windows | failure，完整Chromium710/3，15.3分钟 |
+| [CodeQL43885504395](https://github.com/ALCOMD/ALCOMD/actions/runs/43885504395) | Python、JavaScript/TypeScript、Rust、Actions全部success |
+
+三平台Check、CLI自动启动、release/Tauri、锁文件/diff均success，仓库焦点原例与两新增回归本轮三平台通过。Mac唯一失败为m8-management-permissions.spec.ts:35未出现预设撤销失败提示。Windows三项为该同例、m7-h4-management.spec.ts:241项目读取连续开关未撤销、m7-motion.spec.ts:46系统减少动画后quick仍false。不得用其他轮次部分通过替代本轮failure。全量job.log、最终API metadata/jobs、逐步JSON保存在target/m8-push-e10bce7-20261116。状态查询端点多次EOF后官方直接API仍能读取原run，核验同SHA/attempt后继续收集；未重启CI。
+
+### 权限快照与原生乐观状态
+
+受控挂起写成功后的权限读取，并观测DOM：旧ExtensionPermissions换代在effect执行前暴露旧授权可编辑窗口，新回归单例1失败（permissions-reload-before.log）。修复f1f1027819b78558d9ddc8e82863a1ccf99a8473只接受当前owner/generation的读结果作为可显示、可写快照，保持Core检查、所有分页与revision规则、未知写结果冻结和失败后恢复权威状态。
+
+原开关用例本机CPU6倍四次4/0未复现；加入请求诊断的实施轮次2通过/2失败，失败时只有预期两次setGrant而没有revoke（permissions-request-diagnostic.log），说明最后点击未提交撤销，不能归咎于错误翻译或Core错误码丢失。Material的原生checked会先乐观变化，成功操作用例现控制已有模拟写请求及Core读回，验证读取前没有可写旧开关，再保留原checked/错误/权限/精确请求与expectedGrantRevision断言。此辅助只在浏览器模拟客户端中挂起/释放现有请求，不增加生产测试旁路。
+
+| 本地记录 | 真实结果与范围 |
+| --- | --- |
+| permissions-before-cpu6.log | 原例CPU6倍四次4/0，51.9秒；不是复现或修复证明 |
+| permissions-reload-before.log | 受控旧行为1失败，确认旧快照可写窗口 |
+| permissions-modules-fixed.log | 初版归属修复27/1，原连续操作问题仍失败 |
+| permissions-request-diagnostic.log | 2/2，请求序列缺少撤销；不记整轮通过 |
+| permissions-modules-readback-fixed.log | 27/1，辅助先挂起读导致下一动作等待；测试设置问题 |
+| permissions-modules-owned-read-final.log | 27/1，辅助一处set/revoke方法参数错误；测试设置问题 |
+| permissions-modules-verified.log | 修正后相关三模块单轮28/0，47.7秒 |
+| motion-before-cpu6.log | 原动画例CPU6倍四次4/0，1.5分钟；未复现Windows原失败 |
+| motion-input-witness-module.log | 增加输入见证后的完整motion模块9/0，21.8秒 |
+| candidate-targeted-regression.log | 最终四相关模块同输入单轮37/0，1.1分钟，1 worker |
+
+### 动画仍待定位
+
+088710612a7bb37fdaac7a759c3b626a87bdc586未修改生产动画逻辑，只验证原生媒体查询状态/原生change事件已送达，再保留原quick传播断言，并在失败时记录7个非秘密状态字段。原远端失败缺少这些输入证据，本机未复现，尚不能区分浏览器仿真投递与应用传播；这是待验证的诊断改进，**不标记原失败已修复/豁免**。未放宽现有超时、添加重试或替换真实输入，未增加依赖或改workflow。
+
+前端check/build通过（permissions-frontend-build.log），Material/1286条三语言、372模块通过；原有大chunk提示保留。JS index-C_kTntgB.js SHA256为829aca43ad66d692fe9c0fafa6ae1003680fcf9b33170a286ce759a2414b25df；CSS index-8F20k4yu.css为480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b。源码/输入/产物摘要和两笔代码SHA保存于permissions-motion-inputs-and-build.json，locked metadata/xtask/diff通过。未重跑完整Rust、浏览器全套或Tauri release。
+
+新权限修复与动画诊断及结果文档仅本地，无对应远端或原生桌面复验；远端当前仍e10bce7失败。下一批如获新推送授权，应确认权限修复并收集动画输入证据，不能先写成全绿。原Core/GUI、数据与Unity未操作，未恢复桌面控制；其余既有未覆盖项保持，M8仍IN_PROGRESS，不进入M9。
