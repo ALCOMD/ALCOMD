@@ -1196,3 +1196,27 @@ macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。�
 沿唯一代码失败定向定位：CPU6倍四次4/0未复现；原速带有界输入诊断6通过/2失败，第二次只有pointerdown、没有pointerup/change或撤销RPC。读回时移除授权行使弹窗收缩/重排，trace中点击目标纵坐标由359.5变为458；受控读回布局回归在旧代码1失败。225726bc4ebb13156688d6b58588f19cadc29d1a在同Core/同扩展重读时保留禁用行及位置，仍以当前归属读回为写前提，不将上一代数据当成可写权威；不同身份不可见旧快照，读取能力变更也使旧归属失效。未知写结果、错误、分页/revision与精确RPC断言保持；测试辅助由行移除断言改为相同行数全部禁用，并新增位置稳定/一次撤销断言，不屏蔽后台事件、不重复点击、不加重试或延长超时。未修改共享Material、Core/RPC/Schema/权限/依赖/workflow。
 
 相关三模块单轮29/0、45.5秒，原失败例原速8/0、21.8秒；前端check/build（372模块、1286条三语言）、xtask/diff通过，locked metadata复用同依赖输入；不重跑完整Rust/Chromium/Tauri release。最终仅澄清一行注释，无执行逻辑差异。JS8e8752d3…6f7c19f1、CSS480fdffa…9d4725b，完整输入/构建摘要见target/m8-push-6bbf876-20261117/permission-layout-inputs-and-build.json，原失败日志/trace及各轮结果分别保留。新代码和记录仅本地，需新的明确推送授权，无对应远端/原生桌面证据；原环境与桌面控制未操作，M8仍IN_PROGRESS。
+
+
+### 下一批：实时 Core 观测最小合同（2026-11-17，待批准）
+
+本轮让717d3e0的自动CI44019052791/CodeQL44019052564继续运行，独立审计M8剩余能力，不重开身份/OAuth/工具或M7，不进入M9。当前`apps/alcomd/src/lib.rs::ConnectionState/serve_connection`已有权威connectionId、认证后MCP Principal及逐次dispatch；`apps/alcomd-mcp/src/lib.rs`的STDIO保持Core连接，`http.rs`每个认证请求独立连接Core。没有实时注册表/读取RPC，客户端list只是持久登记；Host仅有clients/grants等管理投影。架构16节列出的观测权限目前也未进入可授权枚举/State39约束。不得把未撤销客户端称为在线，也不能从这条Core链推断HTTP空闲TCP、SDK等待队列或协议订阅。
+
+推荐先完成真实、只读的**Core接入/调用观测**，明确与完整MCP传输遥测区分；首片不新增适配器自报、内部凭据或第二套通信，也不增加可取消/关闭连接的管理写接口。
+
+| 公共差异 | 准确范围 |
+| --- | --- |
+| 新RPC `mcp.runtime.snapshot({clientId?,limit?})` / capability `mcp.runtime.read.v1` | 返回Core instanceId、observedAtMs、canReadConnections/canReadRequests及分别获准的连接/在途Core调用投影。无任一读取权限则既有permission_denied。limit默认25、1–100，分别限制两组；只读当前快照，不新增持久查询会话/历史。连接行含connectionId、已认证clientId、connectedAtMs、activeCallCount；调用行含Core生成callId、connectionId、clientId、固定RPC method、startedAtMs。无请求参数、响应、原始JSON-RPC id、token/hash、headers、路径或外部URL。Core方法名来自真实dispatcher的静态方法集合，非客户端文本。 |
+| 两项权限 `mcp.connections.read` / `mcp.requests.read` | 从架构既有分类落实到当前公开枚举及Global/*授权；默认不授予，不隐含mcp.clients.read/manage。只供本机管理Client/扩展路径使用，本轮不加入外部MCP八项业务grant或OAuth scope，不扩大身份或业务访问。读行中的clientId不返回名称；名称只有另经已有clients.read读取后在视图中匹配。 |
+| 独立Host接口 `alcomd:mcp-runtime/observations@1.0.0` | 仅snapshot只读投影，字段/64KiB预算与Core一致；现有clients接口和extension-v1 ABI不改，新增world组合现有接口。复用交互Client＋Extension双权限、当前lease/UI/声明和撤销校验，返回canRead标记只控制展示，查询仍逐次权威检查。 |
+| State39→40最小增量 | 仅单事务重建extension_grants的CHECK，增加上述两项Global/*组合；保留所有旧列、主键/外键、记录、revision及触发器语义。旧迁移不改，其他表/Config13不变，不建观测数据库表，不删除/扩大旧授权，不升级原运行数据。 |
+
+**真实语义与边界**：Core在认证完成后登记，在dispatch进入/退出和连接销毁时维护RAII在内存中的投影。认证失败或OAuth端点专用身份不计入MCP业务连接，clientInfo不能提供clientId。连接行只表示该已认证Core IPC仍存在，不证明凭据/授权现在仍有效；当前业务鉴权照常逐请求复查，撤销不被观测替代。HTTP以当前请求的Core桥计数，不声称协议session或空闲HTTP连接在线。已接受Operation继续按原规则运行；Core调用结束、断线或观测关闭不取消它。暂不记录完成历史，不把持续Operation显示为持续RPC。
+
+实时表最多跟踪4096条连接及其在途调用，超过跟踪预算只标记coverageIncomplete并给出明确的不完整状态，不拒绝既有业务、不静默假装全量；每组返回totalTracked与truncated，按连接/调用开始时间及Core生成ID稳定排序。每次查询产生独立当前快照；不把跨刷新结果拼成同一快照或制造revision游标。Core重启清空并更换instanceId，GUI据此丢弃旧行；观测错误显示不可用，不能显示为0活动。未实现的MCP subscription-streams继续不广告，页面明确不支持，不返回伪造空订阅表或新增session模型。
+
+**界面**：现有管理扩展页内增加简洁“活动”分段，使用现有Portable UI list/status和刷新动作，无一级导航/常驻技术卡。权限各一个可选能力开关，管理功能仍零授权可打开；不开启观测读取不展示活动。请求表标注“Core调用”，不冒称全部MCP请求；无权限的一组不显示。加载/失败/重试沿用共享反馈和当前会话失效规则。正式MCP请求/HTTP socket/SDK队列的完整传输层遥测仍是未覆盖项，不以本片宣布M8完成。
+
+**定向验证**：两个真实MCP Principal的Core连接/调用正确归属、在途/完成/异常断开/重启清理；认证失败及伪clientInfo不产生他人行；无授权/单项授权/双方任一撤销/lease失效拒绝；RPC参数/秘密不进入投影、日志或Portable UI；超限完整性标记；Operation接受后断线仍继续；旧guest/new Host兼容；State40保全/外键/回滚；扩展页加载失败/刷新/迟到响应、两项权限开关。复用既有身份/OAuth/Operation证据，不重跑完整套件。
+
+批准前只完成本节审计与人工入口准备；尚未更改上述RPC、权限、Schema、WIT或数据库。此为真正新增合同/Schema/Host能力的集中审批，不重复审批既有身份、HTTP/OAuth或扩展工具。
