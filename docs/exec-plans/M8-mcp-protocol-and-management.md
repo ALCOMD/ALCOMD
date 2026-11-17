@@ -1475,3 +1475,11 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 本地`7b1a4f0efaf8ee0d8db0a376656f57af45e36432`只把旧直接引用断言同步为完整oneOf精确形状：原OAuth引用必须保留，新增受限观测身份必须要求kind及空credential、禁止额外字段；没有删除OAuth角色/方法/页大小/秘密排除断言。生产代码、Schema、权限、迁移、依赖、工作流不变。本机先复现原单项0/1，再独立执行整个受影响Schema合同模块52/0；窄严格Clippy、fmt、xtask、diff通过，不重复全量。日志、完整job日志及终态JSON保留在target/m8-push-337f4972-20261118/，与前轮分开。
 
 这项验证不占Core端点，未暂停/替换验收窗口或原程序、修改原数据/系统信任、操作Unity或恢复桌面控制。新修复的远端结果尚未取得；M8仍IN_PROGRESS，未覆盖项和延期的扩展人工保持，不进入M9。
+
+### 2026-11-18 Store安装同意数量断言续修
+
+已按本轮持续收束授权普通快进推送7b1a4f0e和记录223e8ce4，准确候选`223e8ce48cd7ebda747b3d01121166a07465c739`。同SHA、attempt1的[CodeQL44156608097](https://github.com/ALCOMD/ALCOMD/actions/runs/44156608097)四语言success；[CI44156608608](https://github.com/ALCOMD/ALCOMD/actions/runs/44156608608)三平台均failure：此前OAuth Schema模块各52/0，随后Store m6_runtime各15/1。失败为install_consent_rejects_missing_or_changed_evidence_before_acceptance_and_grants_all_required仍期待12项，实际已批准13项；后续阶段未执行，不拼接作完整通过。
+
+本地`80ebb2643543b4d801330d37e670727e536c025d`仅将这一行预期同步为13；原逐项确认全部必需权限、缺少同意/指纹不符时权威状态和Operation不变、安装后原Plan幂等重放断言保持。集中核对Core、Store、Host、合同及GUI相关的权限目录/数量引用，未发现其他旧12项断言；128项边界、SQLite列序号/时刻及历史记录不误改。生产代码、Schema、迁移、权限、依赖和工作流不变。
+
+本机先复现原单项0/1，再独立执行受影响Store模块16/0（8.95秒）；窄严格Clippy、fmt、xtask、diff通过，没有重复Workspace/浏览器/release。三个完整job日志、ci-final.json、codeql-final.json、经stdout/stderr交错核对的module-summaries.json和源码/实际测试二进制摘要store-consent-fix-evidence.json在target/m8-push-223e8ce4-20261118/。新修复尚待远端验证，不占原Core端点或操作窗口/原数据/Unity；扩展人工延期和原未覆盖项继续保留，M8仍进行中、不进入M9。
