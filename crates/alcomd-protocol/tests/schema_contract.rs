@@ -173,8 +173,21 @@ fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
         3
     );
     assert_eq!(
-        schema("system-hello.request")["properties"]["params"]["properties"]["authentication"]["$ref"],
-        "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
+        schema("system-hello.request")["properties"]["params"]["properties"]["authentication"],
+        json!({
+            "oneOf": [
+                {"$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"},
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["kind", "credential"],
+                    "properties": {
+                        "kind": {"const": "mcp-transport-observer"},
+                        "credential": {"const": ""}
+                    }
+                }
+            ]
+        })
     );
     assert_eq!(
         defs["PageParams"]["properties"]["limit"]["anyOf"][0]["minimum"],
