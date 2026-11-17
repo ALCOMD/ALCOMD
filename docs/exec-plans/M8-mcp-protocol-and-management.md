@@ -1493,3 +1493,13 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 本地`0c73bf4b4aed9bb8b5e88efa36b81952e2738769`将诊断收回既有test_support模块，三个调用仍逐个受原test-kill-gates限制，模块自身仍由相同feature限制；函数为pub(crate)，不新增公共RPC/Extension API、日志政策或生产日志入口。原禁日志安全测试逐字节保持，没有白名单、扫描排除或删断言。既有诊断文本和Host超时/终止/错误逻辑保持，历史resource_limit根因仍未定位，不能宣称修复该历史问题。
 
 本机原单项0/1，修复后原安全合同模块独立3/0；生产Core的--no-default-features检查、启用test-kill-gates的Core库严格Clippy、fmt、xtask、diff通过。不重复Workspace、浏览器或release，不占Core端点或操作原窗口/数据/Unity。三个完整job日志、终态JSON、逐平台模块摘要及源码/原安全检查不变证据ui-log-fix-evidence.json位于target/m8-push-3fa1b3b1-20261118/。新候选仍待远端结果；按所有者本轮持续授权直接收束，M8仍进行中，不进入M9。
+
+### 2026-11-18 扩展工具旧目录快照续修
+
+按本轮授权已推送0c73bf4b和记录9461c76f，候选`9461c76f199b1261835ad51dae51d02e059614d2`。同SHA、attempt1的[CodeQL44167329975](https://github.com/ALCOMD/ALCOMD/actions/runs/44167329975)四语言success；[CI44167330779](https://github.com/ALCOMD/ALCOMD/actions/runs/44167330779)三平台均failure：原m7_security_conformance各3/0，后续provider_abi_is_additive_and_core_controls_write_targets仍期待10项权限、实际13项，m8_extension_tools_contract各1/1；后续阶段未执行，不能记完整通过。
+
+前次同类检索仅覆盖旧12项，遗漏更早10项快照；本轮明确扩大到同一扩展/权限合同的静态检查，不误改无关数量/SQL列/历史记录。新本地`2818f97845f70eb4a4fc654cbb3b03fccb9606d2`仅将旧数量断言替换为完整13项精确枚举，保留原mcp.tools.provide包含断言、固定7个ABI函数、无WASI/凭据/万能RPC、旧WIT字节和真实Component来源摘要断言，不修改Schema或生产行为。
+
+新增候选的首次组合提交/推送命令被自动审批在执行前拒绝，理由为其认为本轮授权未明确覆盖这两笔新增提交；该命令未执行提交或推送。已独立核对只有上述合同测试与三份真实记录，并引用所有者本轮“无需再反复请求审批。直接推进到ci没有问题”的授权申请复核；不更换入口，未以工具拒绝代替CI结论。本地文档提交属于此前已有授权，独立完成。
+
+本机先复现原单项0/1；修复后同一次命令的m6_contract、m7_contract、m8_extension_tools_contract、m8_management_contract分别5/0、7/0、2/0、4/0，属于本轮关联静态合同验证，不是重开M7人工验收。窄严格Clippy、fmt、xtask、diff通过，不重复完整Rust、浏览器或release；不占Core端点或操作原环境。终态JSON、三个完整job日志、逐平台模块摘要和四模块实际二进制/输入摘要provider-fix-evidence.json位于target/m8-push-9461c76f-20261118/。Windows未完成时取日志曾返回BlobNotFound，未将该404当产品失败或完成日志，最终已取得归档日志。新修复尚待远端验证；M8仍进行中，延期人工及原缺口保留，不进M9。
