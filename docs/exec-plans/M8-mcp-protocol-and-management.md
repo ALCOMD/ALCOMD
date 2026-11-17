@@ -1452,3 +1452,16 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 五组公开状态在测试前后实际一致；恢复旧GUI105140/Core105036，仍为fb72f0aa/3d6c2a1b、State42，非新桌面构建。原data36/profile346、上一review10/303份集合及摘要保持，五份旧程序摘要保持；原开发环境仍按原先关闭状态保留。未恢复桌面输入、未操作Unity、未迁移原数据。
 
 原始用例日志、二进制SHA256和五组前后状态在target/m8-oauth-subscriptions-20261118/，输入及保全摘要为evidence.json；编译/Clippy日志位于原target/m8-prepush-contract-audit-20261117/的oauth-subscription-*-20261118.log。新增提交未推送，远端仍e6d0b44b（CI failure / CodeQL success），不作为新代码通过；本次“继续”没有扩大推送授权。M8仍IN_PROGRESS，不进入M9。
+
+### 2026-11-18 六笔推送与权限目录断言窄修
+
+所有者明确批准准确六笔后，真实Windows用户在main核对远端e6d0b44b、干净工作树、完整线性链和969份验证输入，普通快进推至`a94428b3bfd86e7c8911b15c48168234ac69a6a6`并ls-remote确认。顺序为bba8b905、f8ad8f60、71a1ffe9、7ebda512、04a7fbec、a94428b3；不含额外提交，没有强推、发布、标签或手动工作流。
+
+- 同SHA、attempt1的[CodeQL44146171781](https://github.com/ALCOMD/ALCOMD/actions/runs/44146171781)已success，Rust、JavaScript/TypeScript、Python、Actions四语言全部通过。
+- 同SHA、attempt1的[CI44146171369](https://github.com/ALCOMD/ALCOMD/actions/runs/44146171369)已终态failure：Windows、macOS、Ubuntu均为同一旧权限数量断言失败，m6_lifecycle各自单轮10通过/1失败/1原有ignored；后续测试/构建/浏览器阶段未执行，不拼接成本轮完整通过。此前必需授权前置修复用例及新增只读Host用例在三平台该轮均通过，不代表整个套件通过。
+- 具体失败是install_consent_and_undeclared_permissions_use_real_core_and_signed_package的旧数量断言：available_permissions实际13，仍期待12。已批准的新mcp.subscription-streams.read使目录增加，Core返回符合现行合同；这是遗漏的测试同步，不是CI平台故障。
+- 本地修复`b9948171f236c15b465c2e71329a2c7d54e583fe`仅把旧数量改为独立写明的完整13项精确目录，不能遗漏、重复或夹带未知权限。保留原安装条款/必需权限拒绝、成功只授必需项、撤销阻止启用/旧UI失效、明确授予未声明权限及幂等重放断言；生产代码、合同、权限、迁移、依赖、工作流不变。
+- 真实Windows/Core/签名包单项1/0（2.79秒），受影响集成测试严格Clippy、fmt、xtask、diff通过，不重复Workspace、浏览器、release。日志、二进制及源码摘要在target/m8-push-a94428b3-20261118/consent-fix-evidence.json；自动运行JSON和完整失败job日志同目录保存，不拼接原失败和本地单项成完整通过。
+- 仅暂停归属已核实且0活动任务的本轮自有review，测试后恢复原GUI84872/Core98828，可见/响应及5条自身IPC管道。五组公开状态完全一致，原36/346/10/303份文件集合及摘要、五程序摘要保持；依然是fb72f0aa/3d6c2a1b、State42的旧验收窗口。原开发环境保持此前关闭状态，无桌面控制、Unity操作或原数据升级。
+
+三个完整job日志及ci-final.json、codeql-final.json均保留在target/m8-push-a94428b3-20261118/；与旧e6d0b44b的运行分开。未使用工作流重跑、未修改CI环境或放宽检查。本次六笔推送授权已执行完；新增本地窄修尚未推送、没有对应远端结果。仍保留自然到期/长时压力、实际Codex订阅通知消费、延期的扩展人工/普通可信HTTPS安装、正式默认分发、其余业务映射及历史Host resource_limit未定位等缺口。M8仍IN_PROGRESS，不进入M9。
