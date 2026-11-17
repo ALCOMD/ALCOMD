@@ -1,6 +1,6 @@
 # M8：MCP 协议与管理扩展
 
-状态：IN_PROGRESS，2026-11-15。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
+状态：IN_PROGRESS，2026-11-17。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
 
 ## 既有范围与复用核对
 
@@ -1292,3 +1292,24 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 
 
 2026-11-17 后续用户文案纠正：输入网址后的动作从“读取清单”改为“继续”，获取扩展信息保留为内部实现；后续选择版本与安装确认不变，没有新增步骤或公共合同。移除旧三语言用户文案，现有来源模块单轮8/0及前端check/build、仅GUI debug构建通过。实际GUI85304自身5条管道连接原Core47824，保活已关闭，原data/profile、五组公开状态及安装/授权摘要保持；不恢复桌面控制，不推送，不把旧通过当作这次远端验证。
+
+### 2026-11-17 候选续查与剩余接线边界
+
+所有者批准按既定顺序继续。只读ls-remote确认origin/main仍为`717d3e085b6ce29649633e24c08e732c2e172855`；至代码/测试候选`7aed2b368ad8f5e470afe46dfbb03b50020452d8`共17笔线性本地提交，涵盖先前已批准的观测、安装同意、在线源、GUI整改和相关测试/文档。完整SHA/标题链、程序与测试输入摘要在`target/m8-candidate-audit-20261117/candidate-audit.json`。Cargo.lock相对远端只增加真实HTTPS测试使用的既有alcomd-vpm包依赖边，没有包版本升级。未推送或手动触发workflow；旧CI44019052791失败及CodeQL44019052564成功均只属于717d3e0。
+
+本轮发现一项过时回归：`m7-extension-workspace.spec.ts`仍点击主按钮进入本地安装，并期待已撤销的Create install plan/Publisher/Discard plan审阅。原模块实跑3通过/1失败。7aed2b36只更新该用例，沿用既有右箭头本地入口，核对冻结扩展ID/版本、请求权限、原始路径、拒绝/取消及全程零Apply，不恢复旧信任步骤、不改生产代码或放宽断言。修复后该模块与在线源模块独立单轮12/0；前端check通过。原3/1、历史30/1和其他轮次分别保留，不拼成完整浏览器通过。fmt、xtask、diff通过；本轮没有完整Rust/Chromium、release或三平台重跑。原始输出`target/m8-candidate-browser-{before,final}.log`及`target/m8-candidate-frontend-check.log`。
+
+**resource_limit诊断**：沿真实Core→Host管道→Wasmtime链核对，Host先Ready再编译Component，Core分别约束启动/activate及UI读取；Guest另有fuel/epoch/内存/栈限额。当前application已经在Host准备后签发新的2秒render authority，并继续受原会话上限约束，不能重复实现这个修复。仅凭旧公开错误无法确定失败属于哪一层；冷编译/调度等待只能列为待验证假设。本轮不占Core端点的真实Host旧管理Component具名用例1/0（2.54秒，日志`target/m8-candidate-host-baseline.log`），不是完整Core复验。原96c5322的2/2、后续诊断单项1/0及组合4/0继续分别保留；本轮未复现原失败，不记已修复或豁免，不调整任何限额。既有2c4f2a1a有界失败阶段/预算/trap/fuel诊断保留，后续出现失败时先按这些证据区分来源，不盲目重跑。
+
+| 剩余项 | 已有能力及真实缺口 | 下一步边界 |
+| --- | --- | --- |
+| 普通可信HTTPS原生在线安装 | 真实TLS/Core自动用例、GUI来源流程和签名包均已通过；没有公开托管且普通候选信任的测试源 | 等待实际源网址；不发布外部资产、不安装测试CA，不用本地安装冒充在线安装 |
+| 真实OAuth客户端接入 | 预登记、S256、授权码、刷新/撤销及真实Core/SDK已实现；尚无目标客户端及受信任localhost证书/PKCS8密钥输入 | 使用原serve-oauth和registration/request CLI，明确无daemon自动启动；不猜测任意旧协议客户端兼容、不重做认证 |
+| 完整传输观测 | http.rs知道真实TCP/TLS和协议请求；Core snapshot只知道认证IPC/在途RPC，两个集合不能互相替代 | 需另审适配器到Core的有界观测通道及身份/可信度边界，再扩展现有只读投影和Host；不能把clientInfo或自报统计作为认证事实 |
+| 订阅流 | lib.rs未实现或广告subscriptions/listen；HTTP当前只接受discover/tools/list/tools/call | 需先确定实际订阅过滤器/通知来源、取消及撤销语义，再审批协议/Host/观测差异；不新增session或假空订阅表 |
+| 正式默认分发 | 已有普通签名包、安装Plan/Apply及启停流程；manifest指纹占位，没有受控默认安装接线。外部planInstall还会拒绝冒充first_party_packaged | 复用原安装权威；正式签名身份、包交付和默认安装后的用户停用/卸载保留策略须明确，不能使用公开测试密钥或每次启动重装 |
+| 其余业务映射 | 六工具及扩展提供工具已经接通；M-1其他用例/输入审批恢复等不是已部署合同，Core也无通用input/approve/reject/resume RPC | 按实际可用用例另列最小合同；不把旧Draft当授权，不夹入这轮安装/接入验证 |
+
+本轮修正管理扩展README的过时“尚无实时连接/请求”和“两项可选权限”描述，使其符合已实现的Core观测及四项可选声明；不改接口或manifest。上述新增合同仍需具体审批，未直接实施或广告。真实接入缺少外部输入已单独询问，不因此停止独立审计。
+
+只读再次核对当前GUI85304可见/响应，以自身5条管道连Core47824，review/data和profile不变，五程序摘要均匹配原candidate.json。原data/profile及旧review的36/346/10/303份文件摘要与既有快照完全一致。本轮没有暂停或替换Core/GUI、写真实项目、修改系统信任或恢复桌面输入。程序仍为Core3d6c2a1b/GUI fb72f0aa，7aed2b36仅测试变化，不为此重建程序。M8继续IN_PROGRESS，未宣称人工/远端验收通过，不进入M9。
