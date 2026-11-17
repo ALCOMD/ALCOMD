@@ -1723,7 +1723,7 @@ async fn install_consent_rejects_missing_or_changed_evidence_before_acceptance_a
         .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
         .await
         .expect("isolated extension consent fixture");
-    assert_eq!(permissions.grants.len(), 12);
+    assert_eq!(permissions.grants.len(), 13);
     for permission in &package.required_permissions {
         assert!(
             permissions
