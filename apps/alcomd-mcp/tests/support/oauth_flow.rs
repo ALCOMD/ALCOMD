@@ -338,6 +338,286 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
+    use rmcp::model::{ServerNotification, SubscriptionFilter};
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-oauth-subscription-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(root.join("data")).expect("owned disposable data");
+    let root = root.canonicalize().expect("normalized isolation");
+    let core = CoreConfiguration::new();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        core.ipc.clone(),
+        DataConfig::isolated(root.join("data")),
+        std::future::pending(),
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let mut owner = AlcomdClient::connect(core.client.clone())
+        .await
+        .expect("native test owner");
+    let read = vec![grant("projects.read", "global", "*")];
+    let mut client = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "OAuth subscription fixture".into(),
+            grants: read.clone(),
+            idempotency_key: "oauth-stream-client".into(),
+        })
+        .await
+        .expect("explicit initial read grant");
+    let initial_credential = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: client.client_id.clone(),
+            expected_revision: client.revision,
+            idempotency_key: "oauth-stream-initial-credential".into(),
+        })
+        .await
+        .expect("initial credential generation");
+    client.revision = initial_credential.revision;
+    let http = Https::start(&root, core.client.clone()).await;
+    let reg = registration(&mut owner, &http, &client, false)
+        .await
+        .registration;
+    let code = http.code(&mut owner, &reg, &read).await;
+    let issued = http.exchange(&reg, &code, None).await;
+    let access = issued["access_token"].as_str().expect("one-time access");
+    let refresh = issued["refresh_token"].as_str().expect("one-time refresh");
+    let a = http.sdk(access).await;
+    let mut stream_a = a
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("authenticated HTTPS subscription ack");
+    assert_eq!(a.list_all_tools().await.expect("read tools").len(), 2);
+    tokio::time::timeout(Duration::from_secs(7), async {
+        loop {
+            let snapshot = owner
+                .mcp_transport_snapshot(Default::default())
+                .await
+                .expect("actual TLS observations");
+            if snapshot
+                .observers
+                .iter()
+                .any(|o| o.transport == McpTransportKind::HttpsOauth)
+                && snapshot
+                    .subscription_streams
+                    .as_ref()
+                    .expect("read group")
+                    .items
+                    .iter()
+                    .any(|s| s.client_id.as_deref() == Some(client.client_id.as_str()))
+            {
+                let public = serde_json::to_string(&snapshot).expect("bounded public projection");
+                assert!(!public.contains(access) && !public.contains(refresh));
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("OAuth identity bound through the actual TLS adapter");
+    client = update(&mut owner, &client, vec![], "oauth-stream-remove-read").await;
+    let changed = tokio::time::timeout(Duration::from_secs(4), stream_a.next())
+        .await
+        .expect("grant removal notification deadline")
+        .expect("valid notification")
+        .expect("change");
+    assert!(matches!(
+        changed,
+        ServerNotification::ToolListChangedNotification(_)
+    ));
+    assert!(
+        a.list_all_tools()
+            .await
+            .expect("current zero authority")
+            .is_empty()
+    );
+    let mut broader = read.clone();
+    broader.push(grant("operations.read", "global", "*"));
+    client = update(&mut owner, &client, broader, "oauth-stream-restore-read").await;
+    let changed = tokio::time::timeout(Duration::from_secs(4), stream_a.next())
+        .await
+        .expect("restore notification deadline")
+        .expect("valid notification")
+        .expect("change");
+    assert!(matches!(
+        changed,
+        ServerNotification::ToolListChangedNotification(_)
+    ));
+    let names: Vec<_> = a
+        .list_all_tools()
+        .await
+        .expect("frozen token ceiling")
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    assert_eq!(names, ["alcomd_get_project", "alcomd_list_projects"]);
+
+    let response = http
+        .token(
+            &reg,
+            &[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh),
+                ("resource", &reg.resource),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(response.status(), 200);
+    let rotated: Value = response.json().await.expect("one-time rotated tokens");
+    let rotated_access = rotated["access_token"].as_str().expect("new access");
+    let rotated_refresh = rotated["refresh_token"].as_str().expect("new refresh");
+    assert!(
+        rotated_access != access,
+        "refresh must issue a distinct access token"
+    );
+    assert!(rotated_refresh != refresh, "refresh secret must rotate");
+    let b = http.sdk(rotated_access).await;
+    let mut stream_b = b
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("new token creates its own stream");
+    assert_eq!(
+        b.list_all_tools()
+            .await
+            .expect("refresh cannot widen ceiling")
+            .len(),
+        2
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(1200), stream_a.next())
+            .await
+            .is_err(),
+        "normal refresh does not revoke an unexpired old access token"
+    );
+    let replay = http
+        .token(
+            &reg,
+            &[
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh),
+                ("resource", &reg.resource),
+            ],
+            None,
+        )
+        .await;
+    assert_eq!(replay.status(), 400);
+    for stream in [&mut stream_a, &mut stream_b] {
+        let end = tokio::time::timeout(Duration::from_secs(4), stream.next())
+            .await
+            .expect("family revocation deadline");
+        assert!(
+            !matches!(end, Ok(Some(_))),
+            "revocation must end the stream, not publish a false empty catalogue"
+        );
+    }
+    assert_eq!(
+        raw_tool(&http, rotated_access, "alcomd_list_projects", json!({}))
+            .await
+            .status(),
+        401
+    );
+    stop(a).await;
+    stop(b).await;
+
+    let code = http.code(&mut owner, &reg, &read).await;
+    let issued = http.exchange(&reg, &code, None).await;
+    let c = http
+        .sdk(issued["access_token"].as_str().expect("new family access"))
+        .await;
+    let mut stream_c = c
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("new family after revocation");
+    owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: client.client_id.clone(),
+            expected_revision: client.revision,
+            idempotency_key: "oauth-stream-rotate-core-credential".into(),
+        })
+        .await
+        .expect("explicit Core credential rotation");
+    let end = tokio::time::timeout(Duration::from_secs(4), stream_c.next())
+        .await
+        .expect("credential generation change deadline");
+    assert!(
+        !matches!(end, Ok(Some(_))),
+        "old generation cannot keep an OAuth stream alive"
+    );
+    stop(c).await;
+
+    let code = http.code(&mut owner, &reg, &read).await;
+    let issued = http.exchange(&reg, &code, None).await;
+    let d = http
+        .sdk(
+            issued["access_token"]
+                .as_str()
+                .expect("current generation access"),
+        )
+        .await;
+    let mut stream_d = d
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("current generation");
+    let rotated_reg = owner
+        .oauth_registration_set(McpOAuthRegistrationSetParams {
+            client_id: client.client_id,
+            issuer: reg.issuer.clone(),
+            resource: reg.resource.clone(),
+            redirect_uris: reg.redirect_uris.clone(),
+            confidential: false,
+            allow_refresh: true,
+            expected_revision: reg.revision,
+            idempotency_key: "oauth-stream-rotate-registration".into(),
+        })
+        .await
+        .expect("explicit registration rotation")
+        .registration;
+    let end = tokio::time::timeout(Duration::from_secs(4), stream_d.next())
+        .await
+        .expect("registration revision deadline");
+    assert!(
+        !matches!(end, Ok(Some(_))),
+        "old registration revision cannot keep a stream alive"
+    );
+    stop(d).await;
+    let code = http.code(&mut owner, &rotated_reg, &read).await;
+    let issued = http.exchange(&rotated_reg, &code, None).await;
+    let e = http
+        .sdk(
+            issued["access_token"]
+                .as_str()
+                .expect("rotated registration access"),
+        )
+        .await;
+    let mut stream_e = e
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("rotated registration");
+    owner
+        .oauth_registration_revoke(McpOAuthRegistrationRevokeParams {
+            oauth_client_id: rotated_reg.oauth_client_id,
+            expected_revision: rotated_reg.revision,
+            idempotency_key: "oauth-stream-revoke-registration".into(),
+        })
+        .await
+        .expect("explicit final registration revocation");
+    let end = tokio::time::timeout(Duration::from_secs(4), stream_e.next())
+        .await
+        .expect("registration revoke deadline");
+    assert!(
+        !matches!(end, Ok(Some(_))),
+        "revoked registration cannot keep a stream alive"
+    );
+    stop(e).await;
+    http.finish_server().await;
+    drop(owner);
+    daemon.abort();
+    let _ = daemon.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
