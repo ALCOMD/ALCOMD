@@ -202,6 +202,8 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
     ) -> Result<Option<Vec<u8>>, M6Error> {
         let remaining_ms = authority.deadline_ms.saturating_sub(now_ms()?);
         if remaining_ms == 0 {
+            #[cfg(feature = "test-kill-gates")]
+            eprintln!("test Host UI dispatch limit: remaining_ms=0");
             return Err(error(M6ErrorCode::ResourceLimit));
         }
         let timeout = Duration::from_millis(remaining_ms.min(2_000));
@@ -404,7 +406,11 @@ fn spawn_host_process(
         .env_clear()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(if cfg!(feature = "test-kill-gates") {
+            Stdio::inherit()
+        } else {
+            Stdio::null()
+        })
         .spawn()
         .map_err(|source| {
             error(M6ErrorCode::Crashed)
@@ -527,6 +533,11 @@ fn invoke(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
+            #[cfg(feature = "test-kill-gates")]
+            eprintln!(
+                "test Host invocation deadline: export={export} budget_ms={}",
+                timeout.as_millis()
+            );
             terminate(&mut process.child);
             return Err(error(M6ErrorCode::ResourceLimit));
         }
@@ -879,6 +890,11 @@ fn read_with_timeout(
             Err(error(M6ErrorCode::Crashed).with_source(source))
         }
         Err(source) => {
+            #[cfg(feature = "test-kill-gates")]
+            eprintln!(
+                "test Host read limit: budget_ms={} reason={source}",
+                timeout.as_millis()
+            );
             terminate(child);
             Err(error(M6ErrorCode::ResourceLimit).with_source(source))
         }

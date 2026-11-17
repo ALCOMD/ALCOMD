@@ -217,6 +217,8 @@ async fn event_loop(
                 store.data_mut().protocol.current_invocation_context_id =
                     Some(invocation_context_id);
                 prepare_call(store, limits, export.as_str())?;
+                #[cfg(debug_assertions)]
+                let diagnostic_started = Instant::now();
                 let result = match export.as_str() {
                     "mcp.invoke" => mcp_tools::invoke(instance, store, input).await,
                     "activate" => invoke_activate(bindings, store, &input).await,
@@ -227,6 +229,19 @@ async fn event_loop(
                     "ui.close" => invoke_ui_close(bindings, store, &input).await,
                     _ => bail!("protocol"),
                 };
+                #[cfg(debug_assertions)]
+                if result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|failure| failure.code == "extension_resource_limit")
+                {
+                    eprintln!(
+                        "Host export limit: export={} elapsed_ms={} fuel_remaining={}",
+                        export,
+                        diagnostic_started.elapsed().as_millis(),
+                        store.get_fuel().unwrap_or(0)
+                    );
+                }
                 if store.data().protocol.failed {
                     bail!("protocol");
                 }
@@ -944,6 +959,10 @@ fn crashed_error() -> HostStableError {
 }
 
 fn trap_error(error: &wasmtime::Error) -> HostStableError {
+    #[cfg(debug_assertions)]
+    if let Some(trap) = error.downcast_ref::<wasmtime::Trap>() {
+        eprintln!("Host trap category: {trap:?}");
+    }
     if error.downcast_ref::<wasmtime::Trap>().is_some_and(|trap| {
         matches!(
             trap,
