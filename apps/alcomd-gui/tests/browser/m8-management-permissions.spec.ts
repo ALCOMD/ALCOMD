@@ -97,11 +97,12 @@ test("permission readback retains disabled rows without moving the next pointer 
     const manage = dialog.getByRole("switch", { name: "Manage MCP clients", exact: true });
     await expect(manage).not.toBeChecked();
     await expect(manage).toBeEnabled();
-    const before = await manage.boundingBox();
-    expect(before).not.toBeNull();
     await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));
     await manage.click();
     await expect(manage).toBeDisabled();
+    // Measure readback from the accepted, held write after the opening click has settled.
+    const before = await manage.boundingBox();
+    expect(before).not.toBeNull();
     await page.evaluate(() => {
         window.h4Management.hold("extensions.permissions.list", true);
         window.h4Management.hold("extensions.setGrant", false);
