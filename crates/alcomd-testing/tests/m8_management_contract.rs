@@ -2,6 +2,85 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 #[test]
+fn transport_observation_interface_is_independent_and_has_no_report_or_secret_api() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let new = root.join("specs/extensions/wit/mcp-transport-v1");
+    for name in [
+        "types.wit",
+        "world.wit",
+        "host-data.wit",
+        "host-projects.wit",
+        "guest-lifecycle.wit",
+        "guest-ui.wit",
+    ] {
+        assert_eq!(
+            std::fs::read(root.join("specs/extensions/wit/extension-v1").join(name))
+                .expect("frozen original"),
+            std::fs::read(new.join("deps/extension").join(name)).expect("unchanged dependency")
+        );
+    }
+    assert_eq!(
+        std::fs::read(root.join("specs/extensions/wit/mcp-management-v1/management.wit"))
+            .expect("old WIT"),
+        std::fs::read(new.join("deps/mcp-management/management.wit")).expect("frozen dependency")
+    );
+    let wit = std::fs::read_to_string(new.join("transport.wit")).expect("new WIT");
+    assert_eq!(wit.matches(": func(").count(), 1);
+    assert!(wit.contains("snapshot: func("));
+    for forbidden in [
+        "ticket",
+        "credential",
+        "report: func(",
+        "bind-request: func(",
+        "wasi:",
+    ] {
+        assert!(!wit.contains(forbidden));
+    }
+    let rpc: Value = serde_json::from_str(include_str!(
+        "../../../specs/rpc/m8-mcp-transport-v1.schema.json"
+    ))
+    .expect("public RPC schema");
+    let host: Value = serde_json::from_str(include_str!(
+        "../../../specs/extensions/mcp-transport-v1.schema.json"
+    ))
+    .expect("public Host schema");
+    for key in [
+        "snapshot",
+        "connection",
+        "request",
+        "stream",
+        "observer",
+        "query",
+    ] {
+        assert_eq!(rpc["$defs"][key], host["$defs"][key]);
+    }
+    for row in ["connection", "request", "stream"] {
+        assert_eq!(rpc["$defs"][row]["additionalProperties"], false);
+        assert_eq!(
+            rpc["$defs"][row]["properties"]["source"]["const"],
+            "adapterReported"
+        );
+        for forbidden in [
+            "ticket",
+            "credential",
+            "params",
+            "arguments",
+            "url",
+            "headers",
+            "principal",
+        ] {
+            assert!(rpc["$defs"][row]["properties"].get(forbidden).is_none());
+        }
+    }
+    assert!(
+        rpc["$defs"]["connection"]["properties"]
+            .get("clientId")
+            .is_none(),
+        "TCP socket cannot have a client owner"
+    );
+}
+
+#[test]
 fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bounded_metadata() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let new = root.join("specs/extensions/wit/mcp-runtime-v1");
@@ -60,7 +139,7 @@ fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bound
         }
         assert_eq!(rpc["$defs"][row]["additionalProperties"], false);
     }
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 40);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 43);
 }
 
 #[test]
@@ -134,6 +213,7 @@ fn management_interface_is_additive_and_schema_preserves_bounded_secret_free_sha
             "mcp.clients.manage",
             "mcp.connections.read",
             "mcp.requests.read",
+            "mcp.subscription-streams.read",
             "mcp.tools.provide",
             "repositories.read",
             "packages.read",
@@ -165,6 +245,7 @@ fn actual_component_fixture_matches_its_build_inputs() {
     for source in [
         include_str!("../fixtures/m8/mcp-management-v1.provenance.json"),
         include_str!("../fixtures/m8/mcp-runtime-v1.provenance.json"),
+        include_str!("../fixtures/m8/mcp-transport-v1.provenance.json"),
     ] {
         let record: Value = serde_json::from_str(source).expect("provenance");
         for (path, expected) in record["inputs"].as_object().expect("build inputs") {

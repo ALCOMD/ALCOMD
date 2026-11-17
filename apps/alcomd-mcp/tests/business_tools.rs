@@ -20,6 +20,9 @@ mod oauth_flow;
 #[path = "support/extension_sources_flow.rs"]
 mod extension_sources_flow;
 
+#[path = "support/subscriptions_transport_flow.rs"]
+mod subscriptions_transport_flow;
+
 struct HttpFixture {
     url: String,
     stop: Option<tokio::sync::oneshot::Sender<()>>,

@@ -16,6 +16,7 @@ mod m8_mcp;
 mod m8_oauth;
 mod m8_runtime;
 mod m8_tools;
+mod m8_transport;
 mod operation_logs;
 mod project_create;
 mod repository_list;
@@ -27,6 +28,7 @@ pub use m8_mcp::*;
 pub use m8_oauth::*;
 pub use m8_runtime::*;
 pub use m8_tools::*;
+pub use m8_transport::*;
 pub use operation_logs::*;
 pub use project_create::*;
 pub use repository_list::*;
@@ -715,6 +717,7 @@ impl HelloParams {
                         && auth.credential.bytes().all(|b| b.is_ascii_graphic())
                 }
                 "mcp-oauth-endpoint" => auth.credential.is_empty() && auth.resource.is_none(),
+                "mcp-transport-observer" => auth.credential.is_empty() && auth.resource.is_none(),
                 "mcp-oauth-access" => {
                     auth.credential.starts_with("oa1_")
                         && auth.credential.len() == 68

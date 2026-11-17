@@ -49,3 +49,10 @@ host.discord-presence.*
 ```
 
 raw socket、arbitrary filesystem、shell/process control 永久不由本合同暗示。
+
+## Independent transport observations (approved A/B)
+
+`alcomd:mcp-transport/observations@1.0.0` offers only snapshot(client-id?, limit?).
+It keeps existing Core IPC observations unchanged and uses current Client + Extension
+authority. See [contract](mcp-transport-v1.md) and the independent closed Schema/WIT.
+No write, report, bind, credential or background capability is exposed to guests.

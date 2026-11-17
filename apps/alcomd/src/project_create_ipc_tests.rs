@@ -129,6 +129,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         let mut state = ConnectionState {
             mcp_hash: None,
             oauth_endpoint: false,
+            transport_observer: false,
             oauth_resource: None,
             connection_id: "private-create-test".to_owned(),
             client_instance_id: None,

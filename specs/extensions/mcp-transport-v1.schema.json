@@ -1,0 +1,422 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/extensions/mcp-transport-v1.json",
+    "title": "M8 bounded transient transport observations",
+    "$defs": {
+        "query": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "clientId": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "limit": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100
+                }
+            },
+            "required": []
+        },
+        "observer": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "observerId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "transport": {
+                    "enum": [
+                        "stdio",
+                        "http",
+                        "https-oauth"
+                    ]
+                },
+                "lastReportAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "status": {
+                    "enum": [
+                        "available",
+                        "stale",
+                        "unavailable"
+                    ]
+                }
+            },
+            "required": [
+                "observerId",
+                "transport",
+                "lastReportAtMs",
+                "status"
+            ]
+        },
+        "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "connectionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observerId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "firstObservedAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "stage": {
+                    "enum": [
+                        "accepted",
+                        "tls",
+                        "idle",
+                        "active"
+                    ]
+                }
+            },
+            "required": [
+                "connectionId",
+                "observerId",
+                "source",
+                "firstObservedAtMs",
+                "stage"
+            ]
+        },
+        "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "connectionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observerId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "firstObservedAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "method": {
+                    "enum": [
+                        "server/discover",
+                        "tools/list",
+                        "tools/call",
+                        "subscriptions/listen"
+                    ]
+                },
+                "stage": {
+                    "enum": [
+                        "receiving",
+                        "executing",
+                        "streaming"
+                    ]
+                },
+                "clientId": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                }
+            },
+            "required": [
+                "requestId",
+                "connectionId",
+                "observerId",
+                "source",
+                "firstObservedAtMs",
+                "method",
+                "stage",
+                "clientId"
+            ]
+        },
+        "stream": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "streamId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "requestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observerId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "source": {
+                    "const": "adapterReported"
+                },
+                "firstObservedAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "toolsListChanged": {
+                    "const": true
+                },
+                "clientId": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "format": "uuid",
+                    "maxLength": 36
+                }
+            },
+            "required": [
+                "streamId",
+                "requestId",
+                "observerId",
+                "source",
+                "firstObservedAtMs",
+                "toolsListChanged",
+                "clientId"
+            ]
+        },
+        "connectionPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/connection"
+                    }
+                },
+                "totalTracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "totalTracked",
+                "truncated"
+            ]
+        },
+        "requestPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/request"
+                    }
+                },
+                "totalTracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "totalTracked",
+                "truncated"
+            ]
+        },
+        "streamPage": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/stream"
+                    }
+                },
+                "totalTracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "totalTracked",
+                "truncated"
+            ]
+        },
+        "snapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "instanceId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "maxLength": 36
+                },
+                "observedAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                },
+                "status": {
+                    "enum": [
+                        "available",
+                        "stale",
+                        "unavailable"
+                    ]
+                },
+                "canReadConnections": {
+                    "type": "boolean"
+                },
+                "canReadRequests": {
+                    "type": "boolean"
+                },
+                "canReadSubscriptionStreams": {
+                    "type": "boolean"
+                },
+                "coverageIncomplete": {
+                    "type": "boolean"
+                },
+                "observers": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "$ref": "#/$defs/observer"
+                    }
+                },
+                "connections": {
+                    "$ref": "#/$defs/connectionPage"
+                },
+                "requests": {
+                    "$ref": "#/$defs/requestPage"
+                },
+                "subscriptionStreams": {
+                    "$ref": "#/$defs/streamPage"
+                }
+            },
+            "required": [
+                "instanceId",
+                "observedAtMs",
+                "status",
+                "canReadConnections",
+                "canReadRequests",
+                "canReadSubscriptionStreams",
+                "coverageIncomplete",
+                "observers"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "canReadConnections": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "connections"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "connections"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "canReadRequests": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "requests"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "requests"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "canReadSubscriptionStreams": {
+                                "const": false
+                            }
+                        }
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "subscriptionStreams"
+                            ]
+                        }
+                    },
+                    "else": {
+                        "required": [
+                            "subscriptionStreams"
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "x-interface": "alcomd:mcp-transport/observations@1.0.0",
+    "$ref": "#/$defs/snapshot"
+}

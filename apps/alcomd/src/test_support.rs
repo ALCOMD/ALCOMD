@@ -93,8 +93,8 @@ impl TestDaemon {
         gate
     }
     /// A one-shot reply-loss gate after real OAuth commit. It retains no token payload.
-    pub async fn hold_next_oauth_token_response(&self) -> Arc<OAuthTokenResponseGate> {
-        let gate = Arc::new(OAuthTokenResponseGate {
+    pub async fn hold_next_oauth_token_response(&self) -> Arc<OneTimeResponseGate> {
+        let gate = Arc::new(OneTimeResponseGate {
             accepted: std::sync::atomic::AtomicBool::new(false),
             released: std::sync::atomic::AtomicBool::new(false),
             ready: tokio::sync::Notify::new(),
@@ -102,6 +102,23 @@ impl TestDaemon {
         });
         let mut slot = self.applications.oauth_token_response_gate.lock().await;
         assert!(slot.is_none(), "only one OAuth reply fault may be armed");
+        *slot = Some(Arc::clone(&gate));
+        gate
+    }
+    /// Lose one real ticket-bearing observer reply; no ticket payload is captured.
+    pub async fn hold_next_transport_binding_response(&self) -> Arc<OneTimeResponseGate> {
+        let gate = Arc::new(OneTimeResponseGate {
+            accepted: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+            ready: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+        });
+        let mut slot = self
+            .applications
+            .transport_binding_response_gate
+            .lock()
+            .await;
+        assert!(slot.is_none(), "one observer response fault at a time");
         *slot = Some(Arc::clone(&gate));
         gate
     }
@@ -178,13 +195,13 @@ impl Drop for RuntimeCallGate {
     }
 }
 
-pub struct OAuthTokenResponseGate {
+pub struct OneTimeResponseGate {
     accepted: std::sync::atomic::AtomicBool,
     released: std::sync::atomic::AtomicBool,
     ready: tokio::sync::Notify,
     release: tokio::sync::Notify,
 }
-impl OAuthTokenResponseGate {
+impl OneTimeResponseGate {
     pub(super) async fn intercept(&self) {
         self.accepted.store(true, Ordering::Release);
         self.ready.notify_waiters();

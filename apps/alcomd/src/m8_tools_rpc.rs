@@ -161,6 +161,7 @@ fn catalog(
                 .map(|e| e.descriptor)
                 .collect(),
             next_cursor: None,
+            catalog_fingerprint: fingerprint,
         });
     }
     let limit = request.limit.unwrap_or(16);
@@ -202,7 +203,11 @@ fn catalog(
         let text = format!("{after}.{fingerprint}");
         format!("{text}.{}", app::tool_cursor_mac(key, text.as_bytes()))
     });
-    Ok(app::ToolCatalogPage { tools, next_cursor })
+    Ok(app::ToolCatalogPage {
+        tools,
+        next_cursor,
+        catalog_fingerprint: fingerprint,
+    })
 }
 struct CancelOnDrop(Arc<AtomicBool>);
 impl Drop for CancelOnDrop {

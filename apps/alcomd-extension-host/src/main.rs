@@ -26,6 +26,7 @@ use crate::exports::alcomd::extension::guest_ui;
 mod mcp_management;
 mod mcp_runtime;
 mod mcp_tools;
+mod mcp_transport;
 mod resource_limits;
 
 #[derive(Debug, Parser)]
@@ -176,6 +177,7 @@ async fn run() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("link"))?;
     mcp_management::add_to_linker(&mut linker)?;
     mcp_runtime::add_to_linker(&mut linker)?;
+    mcp_transport::add_to_linker(&mut linker)?;
     mcp_tools::add_to_linker(&mut linker)?;
     let instance = linker
         .instantiate_async(&mut store, &component)

@@ -39,15 +39,19 @@ async fn main() -> anyhow::Result<()> {
     match arguments.command.unwrap_or(Command::Stdio) {
         Command::Stdio => {
             let (input, output) = rmcp::transport::stdio_pipes();
-            let core = match std::env::var("ALCOMD_MCP_CLIENT_CREDENTIAL") {
-                Ok(secret) => Some(
-                    alcomd_mcp::connect_core(alcomd_client::ClientConfig::default(), secret)
-                        .await?,
-                ),
-                Err(std::env::VarError::NotPresent) => None,
+            let (core, configuration) = match std::env::var("ALCOMD_MCP_CLIENT_CREDENTIAL") {
+                Ok(secret) => {
+                    let config =
+                        alcomd_client::ClientConfig::default().with_mcp_credential(secret.clone());
+                    let core =
+                        alcomd_mcp::connect_core(alcomd_client::ClientConfig::default(), secret)
+                            .await?;
+                    (Some(core), Some(config))
+                }
+                Err(std::env::VarError::NotPresent) => (None, None),
                 Err(_) => anyhow::bail!("MCP startup credential is invalid"),
             };
-            alcomd_mcp::serve_stdio_with_client(input, output, core).await?;
+            alcomd_mcp::serve_stdio_with_client(input, output, core, configuration).await?;
         }
         Command::Serve { port } => {
             let server =

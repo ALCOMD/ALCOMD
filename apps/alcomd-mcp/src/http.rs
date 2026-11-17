@@ -1,5 +1,6 @@
 //! Approved loopback-only, preconfigured Bearer HTTP binding. Core owns identity.
 use super::{MCP_PROTOCOL_VERSION, ProtocolService, tools};
+use super::{observations, subscriptions};
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use http_body_util::{BodyExt, Full, Limited, combinators::BoxBody};
 use hyper::{
@@ -18,6 +19,7 @@ use rmcp::{
     },
 };
 use serde_json::{Value, json};
+use std::hash::BuildHasher;
 use std::{
     borrow::Cow,
     convert::Infallible,
@@ -44,6 +46,7 @@ const CORE_TIME: Duration = Duration::from_secs(60);
 const OUTPUT_TIME: Duration = Duration::from_secs(10);
 type Sdk = StreamableHttpService<HttpHandler, NeverSessionManager>;
 mod oauth;
+mod write_bound;
 
 pub struct HttpServer {
     listener: TcpListener,
@@ -104,13 +107,24 @@ impl HttpServer {
         let mut config = config;
         config.max_request_body_bytes = BODY_LIMIT;
         let sdk_shutdown = config.cancellation_token.clone();
+        let observations = observations::Tracker::start(
+            if self.tls.is_some() {
+                alcomd_protocol::McpTransportKind::HttpsOauth
+            } else {
+                alcomd_protocol::McpTransportKind::Http
+            },
+            self.config.clone(),
+        );
         let state = Arc::new(State {
+            observations,
             authority,
             config: self.config,
             requests: Arc::new(Semaphore::new(16)),
             http_config: config,
             oauth_issuer,
             oauth_rate: Mutex::new(oauth::Rate::default()),
+            subscription_limits: Default::default(),
+            authentication_keys: std::collections::hash_map::RandomState::new(),
         });
         let connections = Arc::new(Semaphore::new(32));
         let (stop, _) = watch::channel(false);
@@ -125,16 +139,18 @@ impl HttpServer {
                     let Ok(permit) = connections.clone().try_acquire_owned() else { drop(stream); continue; };
                     let state = Arc::clone(&state);
                     let tls=tls.clone();
+                    let observed = state.observations.connection(alcomd_protocol::McpTransportConnectionStage::Accepted).map(Arc::new);
                     let mut stopping = stop.subscribe();
                     tasks.spawn(async move {
                         let _connection_permit = permit;
                         if let Some(tls)=tls {
+                            if let Some(c)=&observed {c.stage(alcomd_protocol::McpTransportConnectionStage::Tls);}
                             let accepted=tokio::select! {
                                 result=tokio::time::timeout(HEADER_TIME,tokio_rustls::TlsAcceptor::from(tls).accept(stream))=>result,
                                 _=stopping.changed()=>return,
                             };
-                            if let Ok(Ok(stream))=accepted { serve_stream(stream,state,stopping).await }
-                        } else { serve_stream(stream,state,stopping).await }
+                            if let Ok(Ok(stream))=accepted { serve_stream(stream,state,stopping,observed).await }
+                        } else { serve_stream(stream,state,stopping,observed).await }
                     });
                 }
                 _ = tasks.join_next(), if !tasks.is_empty() => {},
@@ -158,10 +174,15 @@ async fn serve_stream<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 
     stream: S,
     state: Arc<State>,
     mut stopping: watch::Receiver<bool>,
+    observed: Option<Arc<observations::Connection>>,
 ) {
+    if let Some(c) = &observed {
+        c.stage(alcomd_protocol::McpTransportConnectionStage::Idle);
+    }
     let handler = service_fn(move |request| {
+        let observed = observed.clone();
         let state = Arc::clone(&state);
-        Box::pin(async move { Ok::<_, Infallible>(state.handle(request).await) })
+        Box::pin(async move { Ok::<_, Infallible>(state.handle(request, observed).await) })
     });
     let mut builder = hyper::server::conn::http1::Builder::new();
     builder
@@ -169,6 +190,7 @@ async fn serve_stream<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + 
         .max_buf_size(HEAD_LIMIT)
         .header_read_timeout(HEADER_TIME)
         .timer(TokioTimer::new());
+    let stream = write_bound::WriteBound::new(stream, OUTPUT_TIME);
     let mut connection = builder.serve_connection(TokioIo::new(stream), handler);
     let completed = tokio::select! { result=std::future::poll_fn(|cx|connection.poll_without_shutdown(cx))=>Some(result),_=stopping.changed()=>None };
     if let Some(completed) = completed {
@@ -206,21 +228,31 @@ async fn finish_stream<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
 }
 
 struct State {
+    observations: observations::Tracker,
     authority: String,
     config: ClientConfig,
     requests: Arc<Semaphore>,
     http_config: StreamableHttpServerConfig,
     oauth_issuer: Option<String>,
     oauth_rate: Mutex<oauth::Rate>,
+    subscription_limits: subscriptions::Limits,
+    authentication_keys: std::collections::hash_map::RandomState,
 }
 #[derive(Clone)]
 struct BoundRequest {
     service: Arc<ProtocolService>,
     deadline: Instant,
+    notifications: bool,
+    subscription: Arc<Mutex<Option<subscriptions::Prepared>>>,
+    observed_request: Option<Arc<observations::Request>>,
 }
 
 impl State {
-    async fn handle(&self, request: HttpRequest<Incoming>) -> Response<GuardedBody> {
+    async fn handle(
+        &self,
+        request: HttpRequest<Incoming>,
+        observed: Option<Arc<observations::Connection>>,
+    ) -> Response<GuardedBody> {
         let (mut parts, body) = request.into_parts();
         if parts.version != hyper::Version::HTTP_11 {
             return rejected(StatusCode::BAD_REQUEST);
@@ -319,7 +351,15 @@ impl State {
         let Ok(permit) = self.requests.clone().try_acquire_owned() else {
             return rejected(StatusCode::TOO_MANY_REQUESTS);
         };
-        let deadline = Instant::now() + CORE_TIME;
+        let is_listen_hint =
+            unique(headers, "mcp-method").ok().flatten() == Some("subscriptions/listen");
+        let deadline = Instant::now()
+            + if is_listen_hint {
+                subscriptions::ESTABLISH_TIME
+            } else {
+                CORE_TIME
+            };
+        let authentication_context = self.authentication_keys.hash_one(&credential);
         // A request never borrows STDIO's startup identity and never retries as owner.
         let config = if let Some(issuer) = &self.oauth_issuer {
             self.config
@@ -332,21 +372,22 @@ impl State {
                 .with_client_name("alcomd-mcp")
                 .with_mcp_credential(credential)
         };
-        let core = match tokio::time::timeout_at(deadline, AlcomdClient::connect(config)).await {
-            Ok(Ok(core)) => core,
-            Ok(Err(ClientError::Remote(e)))
-                if matches!(
-                    e.code.as_str(),
-                    "permission_denied"
-                        | "authorization_required"
-                        | "mcp_oauth_invalid_grant"
-                        | "mcp_oauth_expired"
-                ) =>
-            {
-                return self.unauthorized(true);
-            }
-            _ => return rejected(StatusCode::SERVICE_UNAVAILABLE),
-        };
+        let mut core =
+            match tokio::time::timeout_at(deadline, AlcomdClient::connect(config.clone())).await {
+                Ok(Ok(core)) => core,
+                Ok(Err(ClientError::Remote(e)))
+                    if matches!(
+                        e.code.as_str(),
+                        "permission_denied"
+                            | "authorization_required"
+                            | "mcp_oauth_invalid_grant"
+                            | "mcp_oauth_expired"
+                    ) =>
+                {
+                    return self.unauthorized(true);
+                }
+                _ => return rejected(StatusCode::SERVICE_UNAVAILABLE),
+            };
         // Remove secrets before SDK request Parts can enter any context or tracing.
         parts.headers.remove(header::AUTHORIZATION);
         parts.headers.remove(header::COOKIE);
@@ -371,16 +412,72 @@ impl State {
         let id = value["id"].clone();
         let required_scopes = oauth::tool_scopes(value["params"]["name"].as_str());
         let method = value["method"].as_str().unwrap_or_default();
-        if !matches!(method, "server/discover" | "tools/list" | "tools/call") {
+        if !matches!(
+            method,
+            "server/discover" | "tools/list" | "tools/call" | "subscriptions/listen"
+        ) {
             return protocol_rejected(StatusCode::NOT_FOUND, id, -32601);
         }
+        let observed_request = observed
+            .as_ref()
+            .and_then(|c| observations::method(method).and_then(|m| c.request(m, Some(config))))
+            .map(Arc::new);
+        let notifications =
+            core.supports_capability(alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1);
+        let is_listen = method == "subscriptions/listen";
+        let (core, subscription) =
+            if is_listen {
+                if !is_listen_hint {
+                    return protocol_rejected(StatusCode::BAD_REQUEST, id, -32020);
+                }
+                if !notifications {
+                    return protocol_rejected(StatusCode::NOT_FOUND, id, -32601);
+                }
+                let requested: SubscriptionFilter =
+                    match serde_json::from_value(value["params"]["notifications"].clone()) {
+                        Ok(value) => value,
+                        Err(_) => return protocol_rejected(StatusCode::BAD_REQUEST, id, -32602),
+                    };
+                if subscriptions::accepted(&requested).is_none() {
+                    return protocol_rejected(StatusCode::BAD_REQUEST, id, -32602);
+                }
+                let permit = match self.subscription_limits.acquire(authentication_context) {
+                    Ok(permit) => permit,
+                    Err(_) => return rejected(StatusCode::TOO_MANY_REQUESTS),
+                };
+                let initial =
+                    match tokio::time::timeout_at(deadline, subscriptions::fingerprint(&mut core))
+                        .await
+                    {
+                        Ok(Ok(value)) => value,
+                        _ => {
+                            if core.take_oauth_rejection().is_some() {
+                                return self.unauthorized(true);
+                            }
+                            return rejected(StatusCode::SERVICE_UNAVAILABLE);
+                        }
+                    };
+                (
+                    None,
+                    Some(subscriptions::Prepared::new(core, initial, permit)),
+                )
+            } else {
+                (Some(core), None)
+            };
         let service = Arc::new(ProtocolService {
-            core: Mutex::new(Some(core)),
+            core: Mutex::new(core),
             bound: true,
+            configuration: None,
+            observed_connection: None,
+            notifications,
+            subscription_limits: Default::default(),
         });
         let binding = BoundRequest {
             service: Arc::clone(&service),
             deadline,
+            notifications,
+            subscription: Arc::new(Mutex::new(subscription)),
+            observed_request: observed_request.clone(),
         };
         let request = HttpRequest::from_parts(parts, Full::new(bytes));
         let sdk: Sdk = StreamableHttpService::new(
@@ -392,7 +489,14 @@ impl State {
             Arc::new(NeverSessionManager::default()),
             self.http_config.clone(),
         );
-        let response = sdk.handle(request).await;
+        let response = if is_listen {
+            match tokio::time::timeout_at(deadline, sdk.handle(request)).await {
+                Ok(response) => response,
+                Err(_) => return rejected(StatusCode::SERVICE_UNAVAILABLE),
+            }
+        } else {
+            sdk.handle(request).await
+        };
         if let Some(issuer) = &self.oauth_issuer {
             let rejection = service
                 .core
@@ -441,7 +545,12 @@ impl State {
         // These handlers return complete results only. The SDK awaits their
         // first terminal message before returning this response, so output time
         // starts here, separately from the handler's Core deadline.
-        Response::from_parts(parts, GuardedBody::new(body, Some(permit), Some(service)))
+        let mut body = GuardedBody::new(body, Some(permit), Some(service));
+        body.observed_request = observed_request;
+        if is_listen {
+            body.deadline = Box::pin(tokio::time::sleep(subscriptions::MAX_AGE));
+        }
+        Response::from_parts(parts, body)
     }
     fn unauthorized(&self, invalid: bool) -> Response<GuardedBody> {
         match &self.oauth_issuer {
@@ -564,6 +673,7 @@ struct GuardedBody {
     permit: Option<OwnedSemaphorePermit>,
     core: Option<Arc<ProtocolService>>,
     ended: bool,
+    observed_request: Option<Arc<observations::Request>>,
 }
 impl GuardedBody {
     fn new(
@@ -578,12 +688,14 @@ impl GuardedBody {
             permit,
             core,
             ended: false,
+            observed_request: None,
         }
     }
     fn finish(&mut self) {
         self.ended = true;
         self.permit.take();
         self.core.take();
+        self.observed_request.take();
     }
 }
 impl Body for GuardedBody {
@@ -638,11 +750,31 @@ impl ServerHandler for HttpHandler {
         Cow::Owned(vec![MCP_PROTOCOL_VERSION])
     }
     fn get_info(&self) -> ServerConfig {
-        super::ProtocolService {
-            core: Mutex::new(None),
-            bound: true,
+        super::server_info(true, self.binding.notifications)
+    }
+    fn accepted_subscription_filter(
+        &self,
+        requested: &SubscriptionFilter,
+    ) -> Option<SubscriptionFilter> {
+        if !self.binding.notifications {
+            return None;
         }
-        .get_info()
+        subscriptions::accepted(requested)
+    }
+    async fn listen(&self, context: rmcp::service::SubscriptionContext) -> Result<(), ErrorData> {
+        let prepared = self
+            .binding
+            .subscription
+            .lock()
+            .await
+            .take()
+            .ok_or_else(super::unsupported_method)?;
+        let _stream = self
+            .binding
+            .observed_request
+            .as_ref()
+            .and_then(|r| r.stream());
+        prepared.run(context).await
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
         tools::definitions()

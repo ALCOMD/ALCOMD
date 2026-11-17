@@ -54,6 +54,7 @@ mcp.clients.read
 mcp.clients.manage
 mcp.connections.read
 mcp.requests.read
+mcp.subscription-streams.read
 mcp.configuration.read
 mcp.configuration.manage
 ```
@@ -226,6 +227,17 @@ grants or OAuth scopes. They grant no connection termination or Operation contro
 
 ## State41：完整扩展授权目录与安装同意
 
-当前可授予扩展的完整目录为background.run、projects.read、mcp.clients.read、mcp.clients.manage、mcp.connections.read、mcp.requests.read、mcp.tools.provide、repositories.read、packages.read、packages.manage、operations.read、operations.cancel。所有项目均可声明required或optional；required仅决定安装集中确认与后续运行前置，不自动扩大交互Client权限。
+当前可授予扩展的完整目录为background.run、projects.read、mcp.clients.read、mcp.clients.manage、mcp.connections.read、mcp.requests.read、mcp.subscription-streams.read、mcp.tools.provide、repositories.read、packages.read、packages.manage、operations.read、operations.cancel。所有项目均可声明required或optional；required仅决定安装集中确认与后续运行前置，不自动扩大交互Client权限。
 
 permissions.list返回Core的availablePermissions及当前包声明/实际grants。管理页按必需权限、可选权限、其他权限三类显示；其他权限指当前可授权但未声明的项，三类均允许显式授权；仅限上述目录，原local-owner专属或planned能力不因此开放。background.run保持Extension/<ExtensionId>，其余保持Global/*，无逐项目授权。安装需extensions.manage；涉及初始required授权另需extensions.permissions.manage。撤销仍使旧lease/UI失效，不因幂等重放或恢复补回授权。
+
+### Adapter-reported subscription streams (State43)
+
+`mcp.subscription-streams.read` allows the subscription-stream group of
+`mcp.transport.snapshot` and `alcomd:mcp-transport/observations@1.0.0`, exactly
+`Global/*`. It can be declared required or optional and is never granted implicitly.
+Connection and request groups keep their independent existing read permissions.
+All transport rows are `adapterReported`; only an actual Core-authenticated
+request can bind a client identity. External MCP business grants do not include
+these administrative read permissions. No parameters, credentials or tool results
+are exposed. Existing Client + Extension, lease, lifecycle and UI checks apply.

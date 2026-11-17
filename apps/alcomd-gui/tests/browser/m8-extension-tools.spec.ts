@@ -7,7 +7,7 @@ test("provider publication is optional, global, keyboard accessible and failed w
     await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     const publish = dialog.getByRole("switch", { name: "Publish MCP tools", exact: true });
-    await expect(dialog.getByRole("switch")).toHaveCount(12);
+    await expect(dialog.getByRole("switch")).toHaveCount(13);
     await expect(publish).not.toBeChecked();
     await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
     await page.evaluate(() => window.h4Management.hold("extensions.setGrant", true));

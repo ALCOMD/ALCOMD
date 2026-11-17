@@ -298,6 +298,7 @@ pub struct ToolCatalogRequest {
 pub struct ToolCatalogPage {
     pub tools: Vec<ToolDescriptor>,
     pub next_cursor: Option<String>,
+    pub catalog_fingerprint: String,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

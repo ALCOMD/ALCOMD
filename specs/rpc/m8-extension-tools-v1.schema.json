@@ -43,7 +43,8 @@
             "additionalProperties": false,
             "required": [
                 "tools",
-                "nextCursor"
+                "nextCursor",
+                "catalogFingerprint"
             ],
             "properties": {
                 "tools": {
@@ -153,6 +154,10 @@
                             "type": "null"
                         }
                     ]
+                },
+                "catalogFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
                 }
             }
         },

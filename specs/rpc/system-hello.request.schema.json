@@ -69,7 +69,27 @@
                     "uniqueItems": true
                 },
                 "authentication": {
-                    "$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
+                    "oneOf": [
+                        {
+                            "$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
+                        },
+                        {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "kind",
+                                "credential"
+                            ],
+                            "properties": {
+                                "kind": {
+                                    "const": "mcp-transport-observer"
+                                },
+                                "credential": {
+                                    "const": ""
+                                }
+                            }
+                        }
+                    ]
                 }
             }
         }

@@ -5,6 +5,174 @@ use alcomd_protocol::{
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lease() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("fresh data");
+    let package = fixture.path().join("transport.alcomdextension");
+    create_signed_package_with_interfaces(
+        &package,
+        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-transport-v1.wasm"),
+        "Transport read fixture",
+        "[permissions]\nrequired = []\noptional = [\"mcp.connections.read\",\"mcp.requests.read\",\"mcp.subscription-streams.read\"]\n[ui]\nprotocol = \"portable-v1\"\n",
+        &["alcomd:mcp-transport/observations@1.0.0"],
+        "AGPL-3.0-only",
+    );
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("isolated Core");
+    let mut owner = connect_with_retry(config).await;
+    let plan = owner
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+        })
+        .await
+        .expect("real signed plan")
+        .plan;
+    let installed = owner
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: false,
+                required_permissions_accepted: false,
+            },
+            plan_id: plan.plan_id,
+            idempotency_key: "transport-install".into(),
+        })
+        .await
+        .expect("explicit install");
+    assert_eq!(
+        wait_for_terminal(&mut owner, &installed.operation_id).await,
+        OperationState::Succeeded
+    );
+    let extension = owner
+        .extension_get("dev.alcomd.fixture".into())
+        .await
+        .expect("installed")
+        .extension;
+    let permissions = owner
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: extension.extension_id.clone(),
+            cursor: None,
+            limit: Some(64),
+        })
+        .await
+        .expect("current catalog");
+    assert_eq!(permissions.available_permissions.len(), 13);
+    assert!(
+        permissions
+            .available_permissions
+            .iter()
+            .any(|p| p == "mcp.subscription-streams.read")
+    );
+    assert!(permissions.grants.is_empty());
+    owner
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: extension.extension_id.clone(),
+            expected_revision: extension.revision,
+            idempotency_key: "transport-enable".into(),
+        })
+        .await
+        .expect("optional permissions do not block startup");
+    let opened = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "en-US".into(),
+        })
+        .await
+        .expect("real new-WIT Host render");
+    assert!(
+        serde_json::to_string(&opened.snapshot.document)
+            .expect("document")
+            .contains("transport_error=permission_denied")
+    );
+    let grant = owner
+        .extension_set_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.subscription-streams.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: permissions.grant_revision,
+            idempotency_key: "transport-stream-read".into(),
+        })
+        .await
+        .expect("exact independent stream permission");
+    assert!(
+        owner
+            .extension_ui_refresh(ExtensionUiRefreshParams {
+                session_id: opened.session.session_id,
+                expected_snapshot_revision: opened.snapshot.snapshot_revision
+            })
+            .await
+            .is_err(),
+        "grant revision invalidates old UI authority"
+    );
+    let page = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "en-US".into(),
+        })
+        .await
+        .expect("new lease");
+    assert!(
+        serde_json::to_string(&page.snapshot.document)
+            .expect("document")
+            .contains("connections=false requests=false streams=true coverageIncomplete=true")
+    );
+    owner
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.subscription-streams.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: grant.grant_revision,
+            idempotency_key: "transport-revoke-read".into(),
+        })
+        .await
+        .expect("revoke");
+    assert!(
+        owner
+            .extension_ui_refresh(ExtensionUiRefreshParams {
+                session_id: page.session.session_id,
+                expected_snapshot_revision: page.snapshot.snapshot_revision
+            })
+            .await
+            .is_err(),
+        "revoked lease cannot read"
+    );
+    let page = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id,
+            locale: "en-US".into(),
+        })
+        .await
+        .expect("revoked optional page stays usable");
+    assert!(
+        serde_json::to_string(&page.snapshot.document)
+            .expect("document")
+            .contains("transport_error=permission_denied")
+    );
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    tokio::time::timeout(Duration::from_secs(5), daemon)
+        .await
+        .expect("stop deadline")
+        .expect("Core join")
+        .expect("Core stop");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn runtime_snapshot_rpc_tracks_authoritative_ids_disconnect_revocation_and_restart() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();

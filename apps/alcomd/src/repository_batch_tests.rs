@@ -181,6 +181,7 @@ async fn repository_register_reuses_only_its_own_remote_preview() {
     let connection = |id: &str| ConnectionState {
         mcp_hash: None,
         oauth_endpoint: false,
+        transport_observer: false,
         oauth_resource: None,
         connection_id: id.to_owned(),
         client_instance_id: None,

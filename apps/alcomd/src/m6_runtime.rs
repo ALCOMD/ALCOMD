@@ -656,6 +656,44 @@ fn route_capability(
         ));
     }
     match capability {
+        "host-mcp-transport.snapshot" => {
+            use alcomd_application::{
+                ManagementError, ManagementErrorCode as E, McpTransportAuthorityStore,
+            };
+            let invalid = || json!({"error":ManagementError::from(E::InvalidArgument)});
+            let ui = invocation
+                .ui_authority
+                .as_ref()
+                .ok_or_else(|| error(M6ErrorCode::ScopeDenied))?;
+            if invocation_cancelled(invocation) {
+                return Ok(json!({"error":ManagementError::from(E::Cancelled)}));
+            }
+            let Ok(query) = serde_json::from_value::<alcomd_application::McpTransportQuery>(input)
+            else {
+                return Ok(invalid());
+            };
+            let apps = inner
+                .applications
+                .lock()
+                .map_err(|_| internal())?
+                .upgrade()
+                .ok_or_else(internal)?;
+            let access = runtime.block_on(inner.store.mcp_transport_access(
+                lease,
+                ui.clone(),
+                now_ms()?,
+            ));
+            let result = access.and_then(|access| {
+                let now =
+                    super::current_time_ms().map_err(|_| ManagementError::from(E::Unavailable))?;
+                apps.mcp_transport
+                    .snapshot(query, access, now, std::time::Instant::now())
+            });
+            Ok(match result {
+                Ok(value) => json!({"ok":value}),
+                Err(failure) => json!({"error":failure}),
+            })
+        }
         "host-mcp-runtime.snapshot" => {
             use alcomd_application::{
                 ManagementError, ManagementErrorCode as E, McpRuntimeAuthorityStore,
@@ -823,6 +861,7 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
                 "host-projects.get-summary"
                     | "host-data.get"
                     | "host-mcp-runtime.snapshot"
+                    | "host-mcp-transport.snapshot"
                     | "host-mcp-clients.list"
                     | "host-mcp-clients.grants"
                     | "host-mcp-clients.projects"
@@ -835,6 +874,7 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
                 | "host-data.set"
                 | "host-data.delete"
                 | "host-mcp-runtime.snapshot"
+                | "host-mcp-transport.snapshot"
                 | "host-mcp-clients.list"
                 | "host-mcp-clients.grants"
                 | "host-mcp-clients.projects"

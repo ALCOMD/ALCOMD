@@ -1,0 +1,24 @@
+{
+    "artifact": "crates/alcomd-testing/fixtures/m8/mcp-transport-v1.wasm",
+    "sha256": "25714b35576442cc675ca72aac1a9e47377f0e38a8d63b5482815f314b2effeb",
+    "toolchain": "1.97.1",
+    "target": "wasm32-unknown-unknown",
+    "profile": "release",
+    "bindings": "wit-bindgen 0.57.1; existing frozen build-only dependency",
+    "encoder": "wit-component 0.254.2 via existing cargo xtask component",
+    "inputs": {
+        "crates/alcomd-testing/fixtures/m8/transport-guest-source/Cargo.lock": "6d1dd54e992d3f5c7ec432ca987dc84e427f3ac87d185ad7f2ae17aefc833805",
+        "crates/alcomd-testing/fixtures/m8/transport-guest-source/Cargo.toml": "120c942d7ed2bc649b357b07aa98fabd5b5bd89417a66dfb10dbbc582ebec0d5",
+        "crates/alcomd-testing/fixtures/m8/transport-guest-source/src/lib.rs": "69f1a819796b2fc0cb8046effe13b40fa12186eea211028b5379e23a07b3161f",
+        "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/host-data.wit": "2f70a251ae30d1d463faab2dee9e6baa08b277ab87d6efa4e65761ba914d7347",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
+        "specs/extensions/wit/mcp-transport-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
+        "specs/extensions/wit/mcp-transport-v1/deps/mcp-management/management.wit": "c4ca610647aa3dff0430cc2132cfb16b7c42a12104bc052fcae640a51c6fbf0f",
+        "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
+    },
+    "sourceCandidate": "approved A/B; minimal test-only transport read guest"
+}

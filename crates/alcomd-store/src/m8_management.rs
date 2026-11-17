@@ -457,6 +457,45 @@ impl alcomd_application::McpRuntimeAuthorityStore for StateStoreHandle {
     }
 }
 
+impl alcomd_application::McpTransportAuthorityStore for StateStoreHandle {
+    async fn mcp_transport_access(
+        &self,
+        lease: ExtensionInstanceLease,
+        authority: ExtensionUiInvocationAuthority,
+        now_ms: u64,
+    ) -> Result<alcomd_application::TransportReadAccess, ManagementError> {
+        let queued_at = std::time::Instant::now();
+        self.request_worker(
+            move |db| {
+                let now = now_ms.saturating_add(
+                    u64::try_from(queued_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                );
+                let tx = db
+                    .transaction_with_behavior(TransactionBehavior::Deferred)
+                    .map_err(unavailable)?;
+                authorize_permission(&tx, &lease, &authority, None, false, now)?;
+                let client =
+                    alcomd_application::TransportReadAccess::from_client(&authority.client_access);
+                let access = alcomd_application::TransportReadAccess {
+                    connections: client.connections
+                        && management_granted(&tx, &lease, Permission::McpConnectionsRead)?,
+                    streams: client.streams
+                        && management_granted(&tx, &lease, Permission::McpSubscriptionStreamsRead)?,
+                    requests: client.requests
+                        && management_granted(&tx, &lease, Permission::McpRequestsRead)?,
+                };
+                if !access.connections && !access.requests && !access.streams {
+                    return Err(E::PermissionDenied.into());
+                }
+                tx.commit().map_err(unavailable)?;
+                Ok(access)
+            },
+            || E::Unavailable.into(),
+        )
+        .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

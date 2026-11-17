@@ -588,6 +588,8 @@ pub enum Permission {
     McpConnectionsRead,
     #[serde(rename = "mcp.requests.read")]
     McpRequestsRead,
+    #[serde(rename = "mcp.subscription-streams.read")]
+    McpSubscriptionStreamsRead,
     /// Permit a verified extension Component to run in its Host.
     #[serde(rename = "background.run")]
     BackgroundRun,
@@ -628,6 +630,7 @@ impl Permission {
             Self::McpClientsManage => "mcp.clients.manage",
             Self::McpConnectionsRead => "mcp.connections.read",
             Self::McpRequestsRead => "mcp.requests.read",
+            Self::McpSubscriptionStreamsRead => "mcp.subscription-streams.read",
             Self::BackgroundRun => "background.run",
         }
     }

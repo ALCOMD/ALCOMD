@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 pub const CAPABILITY_MCP_EXTENSION_TOOLS_V1: &str = "mcp.extension-tools.v1";
+pub const CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1: &str = "mcp.tools.notifications.v1";
 pub const METHOD_MCP_TOOLS_CATALOG: &str = "mcp.tools.catalog";
 pub const METHOD_EXTENSION_MCP_TOOLS_CALL: &str = "extensions.mcpTools.call";
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -19,6 +20,7 @@ pub struct McpToolsCatalogParams {
 pub struct McpToolsCatalogResult {
     pub tools: Vec<McpToolDescriptor>,
     pub next_cursor: Option<String>,
+    pub catalog_fingerprint: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

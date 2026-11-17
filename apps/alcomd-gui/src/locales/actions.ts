@@ -2,6 +2,8 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Read MCP subscription streams": { "zh-CN": "读取 MCP 订阅流", "ja-JP": "MCP サブスクリプションの読み取り" },
+    "View adapter-reported MCP notification streams.": { "zh-CN": "查看适配器上报的 MCP 通知订阅流。", "ja-JP": "アダプターが報告する MCP 通知ストリームを表示します。" },
     "Declared MCP tools": {"zh-CN":"声明的 MCP 工具","ja-JP":"宣言された MCP ツール"},
     "Read or compute": {"zh-CN":"读取或计算","ja-JP":"読み取りまたは計算"},
     "Creates a review plan": {"zh-CN":"生成待审阅计划","ja-JP":"確認用の計画を作成"},

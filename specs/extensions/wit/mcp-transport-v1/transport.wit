@@ -1,0 +1,38 @@
+package alcomd:mcp-transport@1.0.0;
+
+interface observations {
+    use alcomd:mcp-management/clients@1.0.0.{management-error};
+    enum availability { available, stale, unavailable }
+    enum transport-kind { stdio, http, https-oauth }
+    enum report-source { adapter-reported }
+    enum connection-stage { accepted, tls, idle, active }
+    enum request-stage { receiving, executing, streaming }
+    enum request-method { discover, list-tools, call-tool, listen }
+    record observer-status { observer-id: string, transport: transport-kind, last-report-at-ms: u64, status: availability }
+    record connection-row {
+        connection-id: string, observer-id: string, source: report-source,
+        first-observed-at-ms: u64, stage: connection-stage,
+    }
+    record request-row {
+        request-id: string, connection-id: string, observer-id: string, source: report-source,
+        first-observed-at-ms: u64, method: request-method, stage: request-stage, client-id: option<string>,
+    }
+    record stream-row {
+        stream-id: string, request-id: string, observer-id: string, source: report-source,
+        first-observed-at-ms: u64, tools-list-changed: bool, client-id: option<string>,
+    }
+    record connection-page { items: list<connection-row>, total-tracked: u32, truncated: bool }
+    record request-page { items: list<request-row>, total-tracked: u32, truncated: bool }
+    record stream-page { items: list<stream-row>, total-tracked: u32, truncated: bool }
+    record transport-snapshot {
+        instance-id: string, observed-at-ms: u64, status: availability,
+        can-read-connections: bool, can-read-requests: bool, can-read-subscription-streams: bool,
+        coverage-incomplete: bool, observers: list<observer-status>,
+        connections: option<connection-page>, requests: option<request-page>, subscription-streams: option<stream-page>,
+    }
+    snapshot: func(client-id: option<string>, limit: option<u32>) -> result<transport-snapshot, management-error>;
+}
+world transport-v1 {
+    include alcomd:mcp-management/management-v1@1.0.0;
+    import observations;
+}

@@ -53,6 +53,7 @@ mod m8_mcp_rpc;
 mod m8_oauth_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
+mod m8_transport_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -118,6 +119,7 @@ struct Applications {
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
     mcp_runtime: alcomd_application::McpRuntimeObservations,
+    mcp_transport: alcomd_application::McpTransportObservations,
     #[cfg(feature = "test-kill-gates")]
     runtime_call_gate: tokio::sync::Mutex<Option<Arc<test_support::RuntimeCallGate>>>,
     extension_runtime: m6_runtime::PlatformExtensionRuntime,
@@ -125,8 +127,10 @@ struct Applications {
     #[cfg(feature = "test-kill-gates")]
     mcp_apply_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpApplyResponseGate>>>,
     #[cfg(feature = "test-kill-gates")]
-    oauth_token_response_gate:
-        tokio::sync::Mutex<Option<Arc<test_support::OAuthTokenResponseGate>>>,
+    oauth_token_response_gate: tokio::sync::Mutex<Option<Arc<test_support::OneTimeResponseGate>>>,
+    #[cfg(feature = "test-kill-gates")]
+    transport_binding_response_gate:
+        tokio::sync::Mutex<Option<Arc<test_support::OneTimeResponseGate>>>,
     #[cfg(feature = "test-kill-gates")]
     mcp_apply_request_count: std::sync::atomic::AtomicU64,
     store: StateStoreHandle,
@@ -394,6 +398,7 @@ async fn initialize_daemon_with_adapters(
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
         mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
+        mcp_transport: alcomd_application::McpTransportObservations::new(),
         #[cfg(feature = "test-kill-gates")]
         runtime_call_gate: tokio::sync::Mutex::new(None),
         extension_runtime,
@@ -402,6 +407,8 @@ async fn initialize_daemon_with_adapters(
         mcp_apply_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
         oauth_token_response_gate: tokio::sync::Mutex::new(None),
+        #[cfg(feature = "test-kill-gates")]
+        transport_binding_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
         mcp_apply_request_count: std::sync::atomic::AtomicU64::new(0),
         store: store.clone(),
@@ -569,6 +576,7 @@ fn bind_as_io(error: BindError) -> io::Error {
 #[derive(Clone)]
 struct ConnectionState {
     oauth_endpoint: bool,
+    transport_observer: bool,
     oauth_resource: Option<String>,
     mcp_hash: Option<[u8; 32]>,
     connection_id: String,
@@ -585,6 +593,7 @@ async fn serve_connection(
     let mut state = ConnectionState {
         mcp_hash: None,
         oauth_endpoint: false,
+        transport_observer: false,
         oauth_resource: None,
         connection_id: OperationId::new().to_string(),
         client_instance_id: None,
@@ -619,6 +628,16 @@ async fn serve_connection(
                     closed=tokio::io::AsyncReadExt::read(&mut stream,&mut probe)=>{closed?;return Ok(());}
                 }
             }else{Box::pin(dispatch_payload(&payload,&state,&applications)).await};
+            #[cfg(feature = "test-kill-gates")]
+            if state.transport_observer
+                && action.response["result"]["requestBindings"].as_array().is_some_and(|v|!v.is_empty())
+                && serde_json::from_slice::<Value>(&payload).is_ok_and(|v|v["method"]==alcomd_protocol::METHOD_MCP_TRANSPORT_REPORT)
+                && let Some(gate)=applications.transport_binding_response_gate.lock().await.take() {
+                // Genuine in-memory acceptance, then lose only this one-time
+                // metadata reply. The gate never captures a ticket or payload.
+                gate.intercept().await;
+                return Ok(());
+            }
             #[cfg(feature = "test-kill-gates")]
             if state.oauth_endpoint
                 && action.response["result"]["accessToken"].is_string()
@@ -658,6 +677,7 @@ async fn serve_connection(
             if let Some(capabilities) = action.complete_handshake {
                 state.mcp_hash = action.mcp_hash;
                 state.oauth_endpoint = action.oauth_endpoint;
+                state.transport_observer = action.transport_observer;
                 state.oauth_resource = action.oauth_resource;
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
@@ -676,6 +696,7 @@ async fn serve_connection(
     }
     .await;
     drop(observed_connection);
+    applications.mcp_transport.forget(&state.connection_id);
     applications
         .m3
         .forget_repository_preview(&state.connection_id)
@@ -690,6 +711,7 @@ async fn serve_connection(
 struct DispatchAction {
     authenticated_mcp_client: Option<alcomd_application::McpClientId>,
     oauth_endpoint: bool,
+    transport_observer: bool,
     oauth_resource: Option<String>,
     mcp_hash: Option<[u8; 32]>,
     response: Value,
@@ -727,6 +749,14 @@ async fn dispatch_payload(
     }
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
+    }
+    if state.transport_observer {
+        let access = AccessContext::new(
+            alcomd_application::PrincipalId::parse("transport:mcp-transport-observer")
+                .expect("fixed Principal"),
+            [],
+        );
+        return m8_transport_rpc::dispatch(request, state, applications, &access);
     }
     if state.oauth_endpoint {
         let access = AccessContext::new(
@@ -785,6 +815,9 @@ async fn dispatch_payload(
         if let Some(gate) = gate {
             gate.intercept().await;
         }
+    }
+    if request.method.starts_with("mcp.transport.") {
+        return m8_transport_rpc::dispatch(request, state, applications, &access);
     }
     if request.method == alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT {
         return m8_runtime_rpc::dispatch(request, state, applications, &access);
@@ -862,6 +895,10 @@ async fn dispatch_hello(
             true,
         );
     }
+    let transport_observer = hello
+        .authentication
+        .as_ref()
+        .is_some_and(|auth| auth.kind == "mcp-transport-observer");
     let oauth_endpoint = hello
         .authentication
         .as_ref()
@@ -874,7 +911,7 @@ async fn dispatch_hello(
     let mcp_hash = hello
         .authentication
         .as_ref()
-        .filter(|auth| auth.kind != "mcp-oauth-endpoint")
+        .filter(|auth| auth.kind != "mcp-oauth-endpoint" && auth.kind != "mcp-transport-observer")
         .map(|auth| alcomd_application::mcp_credential_hash(&auth.credential));
     let authenticated_mcp_client =
         if let (Some(hash), Some(resource)) = (mcp_hash, oauth_resource.as_ref()) {
@@ -917,6 +954,9 @@ async fn dispatch_hello(
     let supported = [
         alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
+        alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
+        alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
+        alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
         CAPABILITY_MCP_CLIENTS_V1,
         CAPABILITY_STATE_CHECK_V1,
@@ -965,7 +1005,14 @@ async fn dispatch_hello(
     let capabilities = hello
         .capabilities
         .into_iter()
-        .filter(|capability| supported.contains(&capability.as_str()))
+        .filter(|capability| {
+            supported.contains(&capability.as_str())
+                && (!transport_observer
+                    || capability == alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1)
+                && (transport_observer
+                    || capability != alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1
+                    || mcp_hash.is_some())
+        })
         .collect::<HashSet<_>>();
     let mut result_capabilities = capabilities.iter().cloned().collect::<Vec<_>>();
     result_capabilities.sort();
@@ -978,6 +1025,7 @@ async fn dispatch_hello(
     action.mcp_hash = mcp_hash;
     action.authenticated_mcp_client = authenticated_mcp_client;
     action.oauth_endpoint = oauth_endpoint;
+    action.transport_observer = transport_observer;
     action.oauth_resource = oauth_resource;
     action.actor = Some(if mcp_hash.is_some() {
         "MCP".into()
@@ -1468,6 +1516,7 @@ fn success_action<T: serde::Serialize>(
         authenticated_mcp_client: None,
         mcp_hash: None,
         oauth_endpoint: false,
+        transport_observer: false,
         oauth_resource: None,
         response,
         complete_handshake: handshake,
@@ -1485,6 +1534,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         authenticated_mcp_client: None,
         mcp_hash: None,
         oauth_endpoint: false,
+        transport_observer: false,
         oauth_resource: None,
         response,
         complete_handshake: None,
@@ -1529,6 +1579,7 @@ mod tests {
         let state = ConnectionState {
             mcp_hash: None,
             oauth_endpoint: false,
+            transport_observer: false,
             oauth_resource: None,
             connection_id: "negative-auth".into(),
             client_instance_id: None,
@@ -1562,6 +1613,7 @@ mod tests {
         let state = ConnectionState {
             mcp_hash: None,
             oauth_endpoint: false,
+            transport_observer: false,
             oauth_resource: None,
             connection_id: "schema-handshake-test".to_owned(),
             client_instance_id: None,

@@ -13,7 +13,9 @@ use rmcp::{
 use tokio::io::{AsyncRead, AsyncWrite};
 
 mod http;
+mod observations;
 mod stdio_transport;
+mod subscriptions;
 mod tools;
 pub use http::HttpServer;
 
@@ -26,7 +28,7 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    serve_stdio_with_client(input, output, None).await
+    serve_stdio_with_client(input, output, None, None).await
 }
 
 /// Connect through the existing typed client; authentication failure never retries as owner.
@@ -53,12 +55,25 @@ pub async fn serve_stdio_with_client<R, W>(
     input: R,
     output: W,
     client: Option<alcomd_client::AlcomdClient>,
+    configuration: Option<alcomd_client::ClientConfig>,
 ) -> anyhow::Result<()>
 where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
     let bound = client.is_some();
+    let notifications = configuration.is_some()
+        && client.as_ref().is_some_and(|core| {
+            core.supports_capability(alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1)
+        });
+    let observations = configuration.as_ref().map(|config| {
+        observations::Tracker::start(alcomd_protocol::McpTransportKind::Stdio, config.clone())
+    });
+    let observed_connection = observations
+        .and_then(|tracker| {
+            tracker.connection(alcomd_protocol::McpTransportConnectionStage::Active)
+        })
+        .map(std::sync::Arc::new);
     let transport = stdio_transport::StdioTransport::new(input, output);
     // SDK's handshake entry also accepts legacy pre-init ping. Start its normal
     // dispatcher directly and validate every request here, without session state.
@@ -66,6 +81,10 @@ where
         ProtocolService {
             core: tokio::sync::Mutex::new(client),
             bound,
+            configuration,
+            notifications,
+            subscription_limits: Default::default(),
+            observed_connection,
         },
         transport,
         None,
@@ -78,6 +97,10 @@ where
 struct ProtocolService {
     core: tokio::sync::Mutex<Option<alcomd_client::AlcomdClient>>,
     bound: bool,
+    configuration: Option<alcomd_client::ClientConfig>,
+    notifications: bool,
+    subscription_limits: subscriptions::Limits,
+    observed_connection: Option<std::sync::Arc<observations::Connection>>,
 }
 
 impl ProtocolService {
@@ -130,6 +153,50 @@ impl Service<RoleServer> for ProtocolService {
                 requested,
                 &[MCP_PROTOCOL_VERSION],
             ));
+        }
+        let observed_method = match &request {
+            ClientRequest::DiscoverRequest(_) => {
+                Some(alcomd_protocol::McpTransportMethod::Discover)
+            }
+            ClientRequest::ListToolsRequest(_) => {
+                Some(alcomd_protocol::McpTransportMethod::ListTools)
+            }
+            ClientRequest::CallToolRequest(_) => {
+                Some(alcomd_protocol::McpTransportMethod::CallTool)
+            }
+            ClientRequest::SubscriptionsListenRequest(_) => {
+                Some(alcomd_protocol::McpTransportMethod::Listen)
+            }
+            _ => None,
+        };
+        let observed_request = self
+            .observed_connection
+            .as_ref()
+            .and_then(|c| observed_method.and_then(|m| c.request(m, self.configuration.clone())))
+            .map(std::sync::Arc::new);
+        if let ClientRequest::SubscriptionsListenRequest(request) = request {
+            if !self.notifications {
+                return Err(unsupported_method());
+            }
+            if subscriptions::accepted(&request.params.notifications).is_none() {
+                return Err(ErrorData::invalid_params(
+                    "No supported notification filter was requested",
+                    None,
+                ));
+            }
+            let permit = self.subscription_limits.acquire(0)?;
+            let config = self.configuration.clone().ok_or_else(unsupported_method)?;
+            let prepared = tokio::select! {
+                biased;
+                () = context.ct.cancelled() => return Err(ErrorData::internal_error("MCP request cancelled",None)),
+                result = subscriptions::Prepared::connect(config, permit) => result?,
+            };
+            return Service::handle_request(
+                &subscriptions::StdioHandler(prepared, observed_request),
+                ClientRequest::SubscriptionsListenRequest(request),
+                context,
+            )
+            .await;
         }
         if let ClientRequest::CallToolRequest(request) = request {
             if !self.bound {
@@ -193,22 +260,31 @@ impl Service<RoleServer> for ProtocolService {
     }
 
     fn get_info(&self) -> ServerConfig {
-        let capabilities = if self.bound {
-            ServerCapabilities::builder().enable_tools().build()
-        } else {
-            ServerCapabilities::default()
-        };
-        ServerConfig::new(capabilities)
-            .with_protocol_version(MCP_PROTOCOL_VERSION)
-            .with_server_info(Implementation::new(
-                env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION"),
-            ))
+        server_info(self.bound, self.notifications)
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
         Cow::Owned(vec![MCP_PROTOCOL_VERSION])
     }
+}
+
+fn server_info(bound: bool, notifications: bool) -> ServerConfig {
+    let capabilities = if bound && notifications {
+        ServerCapabilities::builder()
+            .enable_tools()
+            .enable_tool_list_changed()
+            .build()
+    } else if bound {
+        ServerCapabilities::builder().enable_tools().build()
+    } else {
+        ServerCapabilities::default()
+    };
+    ServerConfig::new(capabilities)
+        .with_protocol_version(MCP_PROTOCOL_VERSION)
+        .with_server_info(Implementation::new(
+            env!("CARGO_PKG_NAME"),
+            env!("CARGO_PKG_VERSION"),
+        ))
 }
 
 fn unsupported_method() -> ErrorData {

@@ -33,3 +33,27 @@
 - 核心重新验证所有路径。
 - 敏感日志脱敏。
 - 审计写操作与授权变化。
+
+## M8 transport observer and tools-list subscriptions (approved A/B)
+
+The protected local reporting role is untrusted telemetry, not an authentication
+shortcut. Core restricts it to report only, derives all public row IDs/times and
+rejects supplied identity/body fields. Core authenticates every correlation through
+a separate actual MCP credential/OAuth connection, consumes a random short-lived
+256-bit ticket once, and stores only the ticket digest in memory. Tickets never
+enter logs, event payloads, persistent idempotency or read projections. An HTTP
+socket has no Principal owner. Report loss/failure does not retry or cancel business.
+
+64 reporters / 4096 rows, per-channel cardinality/64-KiB/rate limits and bounded
+adapter binding work bound memory and overhead. Expired/disconnected reports are
+unavailable/incomplete, not an assertion of zero activity. A local user able to
+report can fabricate activity, so all rows retain adapterReported source. Reports
+never grant any permission or establish Plan/Operation ownership.
+
+Tool subscriptions require the current authenticated Core catalogue, including
+OAuth binding, grant revision and provider lifecycle. Pre/post-ack comparison closes
+establishment races; failures terminate rather than publish an empty catalogue.
+Four streams/auth context, 600-second lifetime, one pending invalidation and bounded
+blocked writes prevent notification backlog. Normal HTTP limits and no-session
+authentication remain. Cancelling a protocol stream does not cancel accepted Core
+Operations. No session recovery, automatic business retry or credential logging.

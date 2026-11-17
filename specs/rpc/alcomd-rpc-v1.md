@@ -1188,3 +1188,12 @@ HTTPS/发现/授权码/刷新/撤销与错误边界见 [HTTP OAuth](../mcp/http-
 ## M8 单扩展源在线安装补充
 
 新增 `extensions.inspectSource`、`extensions.planInstallFromSource`，以 `extensions.remote-install.v1` 协商；仅认证 local-owner＋extensions.manage，不开放Host或MCP委托。字段见 [M6 runtime Schema](m6-extension-runtime.schema.json)，来源JSON及安全边界见 [单扩展源 v1](../extensions/source-v1.md)。只创建新安装Plan，沿用原两步同意及Apply，变化即revision_conflict，不静默重规划。Plan sourceKind新增remote_extension_source，Plan/extension详情增加可选installationSource（url/version）；来源完整证据冻结于State42，不从可变远端补装详情。新增extension_source_invalid/extension_source_unavailable，摘要及大小沿用已有package错误。Config、权限名称、WIT和原本地入口不变。
+
+## M8 directory subscriptions and transport observations
+
+The approved additive contracts are [tools-list invalidation](m8-mcp-notifications-v1.md)
+and [transient adapter reports](m8-mcp-transport-v1.md). Existing catalogue responses
+now include a required catalogFingerprint. Observer hello is an explicit restricted
+protected-local-IPC role; it is never local-owner or a business MCP Principal.
+Transport reads use separate negotiated capabilities and existing/approved group
+permissions. Config13 and existing business tool/identity contracts are unchanged.

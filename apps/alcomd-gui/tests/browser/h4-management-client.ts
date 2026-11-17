@@ -172,7 +172,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const offset = parts === undefined ? 0 : Number(parts[2]);
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
-            return response("extensions.permissions.list", { availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as ManagementGrant["permission"][], extensionId, grantRevision: extension.grantRevision,
+            return response("extensions.permissions.list", { availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as ManagementGrant["permission"][], extensionId, grantRevision: extension.grantRevision,
                 requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },

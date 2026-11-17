@@ -56,6 +56,16 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    /// Dedicated protected-IPC reporting role; never native owner or business authority.
+    #[must_use]
+    pub fn with_transport_observer(mut self) -> Self {
+        self.authentication = Some(alcomd_protocol::McpAuthentication {
+            kind: "mcp-transport-observer".into(),
+            credential: String::new(),
+            resource: None,
+        });
+        self
+    }
     pub fn with_mcp_credential(mut self, credential: String) -> Self {
         self.authentication = Some(alcomd_protocol::McpAuthentication {
             kind: "mcp-client".into(),
@@ -110,6 +120,7 @@ impl ClientConfig {
 
 /// A connection to the per-user `alcomd` process.
 pub struct AlcomdClient {
+    capabilities: std::collections::HashSet<String>,
     oauth_rejection: Option<OAuthRejection>,
     stream: IpcStream,
     next_request_id: u64,
@@ -117,6 +128,30 @@ pub struct AlcomdClient {
 }
 
 impl AlcomdClient {
+    pub async fn mcp_transport_report(
+        &mut self,
+        params: alcomd_protocol::McpTransportReport,
+    ) -> Result<alcomd_protocol::McpTransportReportResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_TRANSPORT_REPORT, params)
+            .await
+    }
+    pub async fn mcp_transport_bind_request(
+        &mut self,
+        params: alcomd_protocol::McpTransportBindParams,
+    ) -> Result<alcomd_protocol::McpTransportBindResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_TRANSPORT_BIND_REQUEST, params)
+            .await
+    }
+    pub async fn mcp_transport_snapshot(
+        &mut self,
+        params: alcomd_protocol::McpTransportQuery,
+    ) -> Result<alcomd_protocol::McpTransportSnapshot, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_TRANSPORT_SNAPSHOT, params)
+            .await
+    }
+    pub fn supports_capability(&self, capability: &str) -> bool {
+        self.capabilities.contains(capability)
+    }
     pub async fn mcp_tools_catalog(
         &mut self,
         params: alcomd_protocol::McpToolsCatalogParams,
@@ -143,14 +178,16 @@ impl AlcomdClient {
     pub async fn connect(config: ClientConfig) -> Result<Self, ClientError> {
         let stream = connect_with_policy(&config).await?;
         let mut client = Self {
+            capabilities: Default::default(),
             oauth_rejection: None,
             stream,
             next_request_id: 1,
             usable: true,
         };
-        let _ = client
+        let hello = client
             .hello(&config.client_name, config.authentication.clone())
             .await?;
+        client.capabilities = hello.capabilities.into_iter().collect();
         Ok(client)
     }
 
@@ -215,6 +252,9 @@ impl AlcomdClient {
             },
             capabilities: vec![
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1.to_owned(),
@@ -1513,6 +1553,7 @@ mod connection_reuse_tests {
 
     fn client(stream: IpcStream) -> AlcomdClient {
         AlcomdClient {
+            capabilities: Default::default(),
             oauth_rejection: None,
             stream,
             next_request_id: 1,

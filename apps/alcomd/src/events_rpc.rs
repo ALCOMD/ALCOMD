@@ -346,6 +346,7 @@ mod tests {
         let state = ConnectionState {
             mcp_hash: None,
             oauth_endpoint: false,
+            transport_observer: false,
             oauth_resource: None,
             connection_id: "permission-test".into(),
             client_instance_id: Some("test".into()),

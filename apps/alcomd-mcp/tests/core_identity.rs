@@ -391,6 +391,11 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
         server_input,
         server_output,
         Some(bridge_client),
+        Some(
+            config
+                .clone()
+                .with_mcp_credential(issued_a.credential.clone()),
+        ),
     ));
     // Exercise the actual Windows executable and controlled startup environment,
     // using the same isolated per-user Core endpoint already bound above.

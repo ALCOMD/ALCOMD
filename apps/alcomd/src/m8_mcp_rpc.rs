@@ -142,7 +142,8 @@ pub(super) async fn dispatch(
 pub(super) fn allowed_client_method(method: &str) -> bool {
     matches!(
         method,
-        "mcp.tools.catalog"
+        METHOD_MCP_TRANSPORT_BIND_REQUEST
+            | "mcp.tools.catalog"
             | "extensions.mcpTools.call"
             | "system.status"
             | "projects.get"
@@ -172,6 +173,7 @@ mod tests {
         let mut state = ConnectionState {
             mcp_hash: None,
             oauth_endpoint: false,
+            transport_observer: false,
             oauth_resource: None,
             connection_id: "m8-management-gate".into(),
             client_instance_id: None,

@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/m8-mcp-notifications-v1.json",
+    "title": "Approved authorized tool catalogue change evidence",
+    "x-capability": "mcp.tools.notifications.v1",
+    "x-methods": {
+        "mcp.tools.catalog": {
+            "params": "catalogParams",
+            "result": "catalogResult"
+        }
+    },
+    "$defs": {
+        "catalogParams": {
+            "$ref": "m8-extension-tools-v1.schema.json#/$defs/catalogParams"
+        },
+        "catalogResult": {
+            "$ref": "m8-extension-tools-v1.schema.json#/$defs/catalogResult"
+        }
+    }
+}

@@ -284,6 +284,7 @@ impl HostMessage {
                             | "host-data.set"
                             | "host-data.delete"
                             | "host-mcp-runtime.snapshot"
+                            | "host-mcp-transport.snapshot"
                             | "host-mcp-clients.list"
                             | "host-mcp-clients.grants"
                             | "host-mcp-clients.projects"
@@ -302,6 +303,7 @@ impl HostMessage {
                 }
                 validate_value(input)?;
                 if (capability == "host-mcp-runtime.snapshot"
+                    || capability == "host-mcp-transport.snapshot"
                     || capability.starts_with("host-mcp-clients.")
                     || capability.starts_with("host-mcp-tools."))
                     && serde_json::to_vec(input).map_or(true, |bytes| bytes.len() > 65_536)
