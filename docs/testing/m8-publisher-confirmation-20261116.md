@@ -220,3 +220,15 @@ Windows和Ubuntu的Check、CLI自动启动、release/Tauri、锁文件/diff均su
 前端check/build通过（permission-layout-frontend-build.log，372模块、1286条三语言、3.79秒），既有大chunk提示保留；xtask/diff通过，locked metadata复用未变依赖输入的有效结果。最终源文件仅在测试/构建后澄清一行注释，无执行逻辑变化。JS index-CuCXm1Lf.js SHA256为8e8752d38bdd077adc3e88ef2488dc358e2aeeb06ff5edcbf0bd32dc6f7c19f1，CSS480fdffa0cfec078febc523085c35610c913cd63195fb771c44a5339a9d4725b；完整代码SHA/输入/产物摘要见permission-layout-inputs-and-build.json。不把29/0与8/0拼为完整套件通过，未重复完整Rust/Chromium/Tauri release。
 
 当前远端仍6bbf876，CI失败且macOS未覆盖；225726b及本地记录未推送、无对应远端/原生桌面验证，新增推送需另获明确授权。原Core/GUI、数据、Unity和桌面控制未操作；既有人工未覆盖项保留，M8仍IN_PROGRESS，不进入M9。
+
+
+## 717d3e0 两笔推送终态与布局测试基准（2026-11-17）
+
+225726b、717d3e0按明确授权由真实Windows用户普通快进推送；远端为717d3e085b6ce29649633e24c08e732c2e172855。[CI44019052791](https://github.com/ALCOMD/ALCOMD/actions/runs/44019052791)同SHA/attempt1三平台均failure，完整Chromium各714通过/1失败；三平台Check、CLI自动启动、release/Tauri、锁文件/diff均通过。[CodeQL44019052564](https://github.com/ALCOMD/ALCOMD/actions/runs/44019052564)四语言全部success。未dispatch/rerun，不拼平台或旧轮次。
+
+三平台唯一失败均为新增m8-management-permissions布局用例初始y基准，Ubuntu12.7177px、Windows17.819px、macOS17.643px；原阈值1px保持。测量原在打开点击之前，而点击本身等待弹窗动画稳定。cd9d009只将基准移到点击完成、写入已挂起之后，未改生产代码、超时、输入或断言。用真实Element.animate的24px受控动画复现旧逻辑1失败，修复后同诊断1/0、无注入模块6/0。此为测试基准错误，不称CI服务故障；本机受控证据不冒称捕获远端帧。原日志及trace见target/m8-push-717d3e0-20261117。
+
+cd9d009与其后获批Core观测实现均未推送，无对应远端证据。观测新权限浏览器单轮6/1的空白页Target crashed另行保留，根因未定，不替换本轮Hosted结果。M8仍进行中。
+
+
+本地后续补充：Core观测96c5322的同提交组合2/2及两个旧guest资源限制失败另存，诊断单项1/0、组合4/0不冒称根因修复。浏览器空白页失败精确行号单项复验1/0（11.7秒），原模块6/1及一次正则未命中仍保留。诊断代码2c4f2a1未推送，均不能替代717的Hosted/CodeQL结果。

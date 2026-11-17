@@ -1,5 +1,29 @@
 # M8 管理扩展人工查看准备
 
+## 2026-11-17 当前隔离窗口
+
+代码候选2c4f2a1a9c124296caa5d3e1e6a29f598c3bbc51（观测功能96c5322＋有界失败诊断），未推送、无新增代码远端验证。**窗口已打开并保留，GUI88248可见且响应，5条管道实际连接隔离Core83476；人工尚未签收M8。** 两个有界启动保活助手已自然退出，最终被动核对仍为5条GUI管道；不把保活存在当成GUI连接证据。 全程只有进程/管道被动核对，没有恢复桌面控制、输入自动化或原生截图。
+
+- 程序、全新data和WebView profile均在`C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-runtime-observations-20261117\`；实际State40，两个既有可丢弃样例经正式Core登记，包经正式Plan/Apply安装、启用并打开真实Host页面。包位置位于本次data内，未复制旧数据库或改写路径。
+- 可复制签名参考包：`C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-runtime-observations-20261117\management-runtime-verified.alcomdextension`，129500字节，SHA256 `b921e7847ae4adbe5df6de855e714e68588f53ba332ac91a83a2bb132a154419`。这是已批准参考代码的隔离样例，不是正式默认分发包。
+- 准备时扩展`Core activity fixture`已启用，四项可选权限全部未授予，required为空。公开五组状态为ready、2项目、1次成功安装/0活动任务、0 MCP客户端、0 OAuth注册。Operations的nextCursor是续读位置，不代表有活动任务；初次脚本误判已保留，未重复安装。
+- 原data36/profile346、旧review data10/profile303份集合/摘要均保持。原环境此前关闭并保持原状，无需替换或启动原程序；Unity未操作。
+
+只查看本轮内容，不重验M7：
+
+1. **扩展 → Core activity fixture → 管理权限**：四项各一个可选开关，默认关闭；先按需开启“读取MCP客户端”，打开同窗口页面应显示空客户端列表。需要体验写入时再开“管理MCP客户端”，可在此隔离数据里创建测试客户端，默认八项业务能力仍全关。
+2. 按需开启“读取MCP的Core连接”或“读取MCP的Core调用”后，**打开扩展页面 → 活动 → 刷新活动**：只显示获准组，名称准确为Core连接/调用。当前没有MCP身份连接，0是正常真实结果；两个身份及在途行已在真实Core测试验证，无需人工证明整个权限系统。
+3. 撤销读取权限后旧页面应失效；重开按新权限呈现。检查错误/受限反馈和返回客户端、刷新即可，不要求重新验证全部历史流程。
+
+窗口当前已打开，无需再次启动。`Open-Review.ps1`的新封装GUI分支仍只做语法检查；本轮实际成功路径是已验证Core-only启动＋`Complete-Prepared-Review.ps1`只读续接后的GUI分段启动，不把两者混写成完整入口已验证。全部程序/包摘要见该目录candidate.json，公开状态与真实连接见records/。查看结束后先核对0活动任务，再关闭本轮自有窗口；不关闭或恢复归属不明的程序。
+
+保留未覆盖与风险：96c5322一轮真实组合2/2，两个旧guest首开resource_limit的具体原因仍未知；后续分类诊断单项1/0、组合4/0，不能记为已修复/豁免。浏览器原模块6/1的空白页Target crashed保留，精确单项复验1/0，不拼为完整通过。当前迁移3/0、来源合同3/0、其他定向和严格检查见ExecPlan。所有完整MCP协议请求/HTTP空闲连接/队列/订阅仍未覆盖；本片只观测Core。真实外部OAuth客户端人工接入、正式默认分发及M9业务继续留既有阶段，M8仍进行中。
+
+## 历史准备记录（下列State37与717窗口均已关闭）
+
+
+> 2026-11-17更新：下文485eddb/State37窗口是历史记录，现已关闭，勿使用旧入口作为当前验收。已准备独立717d3e0程序组和数据副本；五组公开读取、2样例、0活动任务及State39已核对，Core-only启动后正常空闲退出。GUI程序已debug构建但此新窗口分支尚未执行，不宣称已打开或体验通过。新入口：`C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-push-717d3e0-20261117\Open-Review.ps1`。后续只读核对发现复制登记仍包含旧review的绝对包位置，故717新入口已禁止GUI启动，仅保留Core-only只读证据；将用全新隔离数据和正式Core登记/安装重建可查看候选，不直接改数据库路径。新版Core不要求发布者额外确认；原签名校验仍有效。获批State40观测正在接线，以上717d3e0程序不含新观测功能。
+
 更新于2026-11-16。本页验收程序对应代码`485eddb2548f122037585667b19c383b729d48e6`，**新版真实GUI已连接新版隔离Core并保留窗口，等待人工查看，未签收M8**。未推送，无此代码远端验证；36a782c的CI/CodeQL只是此前基线。此前5884d5e的按钮/逐项目选择及三项声明已被本轮整改替代，历史证据保留在[M8 ExecPlan](../exec-plans/M8-mcp-protocol-and-management.md)。不恢复桌面控制。本地源码已推进至`465f82386ba530b35cf883c7fe1370cea19cb6c6`，包含严格读取和内部逐项目模型删除；本轮未重建部署下列验收程序，不能把源码定向通过算作该窗口或远端通过。
 
 ## 当前可安装样例
@@ -24,7 +48,7 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-zero-grant-20261115\management-c
 
 新建/授权仅用于上述可丢弃数据，不操作用户实际工程。系统仍只允许Core支持且扩展清单申请的权限；required/optional是扩展的申请，不等于已授予。其他扩展真正声明必需权限但未获授权时，原启用拒绝合同保持。
 
-## 当前环境及启动入口
+## 历史State37环境及启动入口（已关闭）
 
 - 程序组：`target/m8-review-36a782c/capabilities-37/core/`与`capabilities-37/gui/`，GUI无同目录Core。
 - 明确数据：`target/m8-review-36a782c/data/`，实际State37；此前State36备份`backup-before-state37/`保留。原开发数据未升级。
@@ -42,7 +66,7 @@ C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m8-zero-grant-20261115\management-c
 
 原环境本来关闭并保持关闭，原36份data/346份profile摘要一致、Unity未干扰。没有替换原程序或迁移原运行数据。隔离包升级第一次误传不存在的包路径，Core正确拒绝；核对已接受卸载终态后继续真实包安装，未重复删除。启动期Core退出、脚本检查失败及修正细节均保留在ExecPlan，不把失败记录抹掉。
 
-## 实际证据和未覆盖项
+## 历史证据与当时未覆盖项
 
 浏览器相关最终单轮15/0，guest5/0、doc-test1/0、Host ABI1/0、两项真实Core/Host各1/0、真实双客户端身份复验1/0、Store关联13/0与14/0、State37 4/0、CLI OAuth2/0、合同5/0＋9/0＋2/0。真实六工具首轮4/2，两个旧格式断言修正后各定向1/0；没有重跑整模块，不拼成6/0。早先浏览器12/2（焦点环溢出）及5884d5e的6/8等原始轮次均保留。协议范围样例另以仅测试提交768022a补齐，具名1/0，运行程序输入未变。前端/匹配五程序debug构建、受影响严格Clippy、fmt/metadata/xtask/diff通过，未重跑完整Workspace/Chromium/release/三平台。
 

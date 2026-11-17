@@ -1198,9 +1198,9 @@ macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。�
 相关三模块单轮29/0、45.5秒，原失败例原速8/0、21.8秒；前端check/build（372模块、1286条三语言）、xtask/diff通过，locked metadata复用同依赖输入；不重跑完整Rust/Chromium/Tauri release。最终仅澄清一行注释，无执行逻辑差异。JS8e8752d3…6f7c19f1、CSS480fdffa…9d4725b，完整输入/构建摘要见target/m8-push-6bbf876-20261117/permission-layout-inputs-and-build.json，原失败日志/trace及各轮结果分别保留。新代码和记录仅本地，需新的明确推送授权，无对应远端/原生桌面证据；原环境与桌面控制未操作，M8仍IN_PROGRESS。
 
 
-### 下一批：实时 Core 观测最小合同（2026-11-17，待批准）
+### 下一批：实时 Core 观测最小合同（2026-11-17，已批准、实施中）
 
-本轮让717d3e0的自动CI44019052791/CodeQL44019052564继续运行，独立审计M8剩余能力，不重开身份/OAuth/工具或M7，不进入M9。当前`apps/alcomd/src/lib.rs::ConnectionState/serve_connection`已有权威connectionId、认证后MCP Principal及逐次dispatch；`apps/alcomd-mcp/src/lib.rs`的STDIO保持Core连接，`http.rs`每个认证请求独立连接Core。没有实时注册表/读取RPC，客户端list只是持久登记；Host仅有clients/grants等管理投影。架构16节列出的观测权限目前也未进入可授权枚举/State39约束。不得把未撤销客户端称为在线，也不能从这条Core链推断HTTP空闲TCP、SDK等待队列或协议订阅。
+本轮最初让717d3e0的自动CI44019052791/CodeQL44019052564继续运行，现已收齐：CI三平台各714/1（同一新增布局测试基准），CodeQL四语言通过；本地cd9d009修复测试基准，尚无远端验证。独立审计M8剩余能力，不重开身份/OAuth/工具或M7，不进入M9。实施前审计：`apps/alcomd/src/lib.rs::ConnectionState/serve_connection`已有权威connectionId、认证后MCP Principal及逐次dispatch；`apps/alcomd-mcp/src/lib.rs`的STDIO保持Core连接，`http.rs`每个认证请求独立连接Core。没有实时注册表/读取RPC，客户端list只是持久登记；Host仅有clients/grants等管理投影。架构16节列出的观测权限目前也未进入可授权枚举/State39约束。不得把未撤销客户端称为在线，也不能从这条Core链推断HTTP空闲TCP、SDK等待队列或协议订阅。
 
 推荐先完成真实、只读的**Core接入/调用观测**，明确与完整MCP传输遥测区分；首片不新增适配器自报、内部凭据或第二套通信，也不增加可取消/关闭连接的管理写接口。
 
@@ -1219,4 +1219,26 @@ macOS唯一失败位于仓库详情返回包列表后的原toBeFocused断言。�
 
 **定向验证**：两个真实MCP Principal的Core连接/调用正确归属、在途/完成/异常断开/重启清理；认证失败及伪clientInfo不产生他人行；无授权/单项授权/双方任一撤销/lease失效拒绝；RPC参数/秘密不进入投影、日志或Portable UI；超限完整性标记；Operation接受后断线仍继续；旧guest/new Host兼容；State40保全/外键/回滚；扩展页加载失败/刷新/迟到响应、两项权限开关。复用既有身份/OAuth/Operation证据，不重跑完整套件。
 
-批准前只完成本节审计与人工入口准备；尚未更改上述RPC、权限、Schema、WIT或数据库。此为真正新增合同/Schema/Host能力的集中审批，不重复审批既有身份、HTTP/OAuth或扩展工具。
+所有者于2026-11-17明确批准“Core只读观测首片”，直接实施上述RPC/权限/Host/State40及定向验证，不再次审批同一范围。批准前仅完成审计和人工入口准备；不重复审批既有身份、HTTP/OAuth或扩展工具，不授权推送。
+
+
+#### 本地实现与定向证据（2026-11-17）
+
+Core内存注册表已接真实认证完成、dispatcher及RAII清理；公开RPC、typed client、SDK、双权限Store检查、独立Host/WIT、可选权限开关和现有扩展“活动”分段接通。真实Core/签名组件通过后才开放capability。State40只放宽获批两项Global/*的CHECK；Config13、依赖锁、旧迁移、MCP八项业务grant及OAuth scope不变。
+
+两客户端实际IPC/静态Core调用归属、伪clientInfo、错误凭据、零业务授权拒绝、Extension/Client分别缺权限、独立读组、授权撤销/旧UI失效、查询过滤/截断、断线清理与重启持久身份/空观测已验证。新2项与旧guest兼容2项单轮4/0，日志runtime-real-core-final-outputs-separated.log。之前两轮单项0/1分别为测试清单权限未排序、受限测试调用者漏配既有extensions.read，修正夹具后单项1/0；合并首轮3/1的唯一失败为旧样例共用create-new导出路径，正确拒绝已有文件，改独立输出后4/0。原记录不改写。
+
+模型4/0、DTO1/0、State40保全/外键/回滚/重开3/0、Store管理关联4/0、Host实际投影与两份Schema1/0、调用种类矩阵1/0、冻结ABI/双组件来源合同3/0、当前Schema关联9/0分别通过。guest7/0及doc-test1/0、严格Clippy通过；GUI前端检查/构建通过（1290条三语言）。权限浏览器模块单轮6/1：1项在browserContext.newPage空白页创建时Target crashed，尚未进入业务用例，根因未定，原trace保留；精确行号单项复验1/0，不拼成模块通过。一次带首锚正则未匹配完整Playwright标题，记未执行，未修改用例或断言。
+
+其后仅做trait impl移至测试模块前、测试expect_err上下文及仓库LF规范化；旧组件字节不改，新WIT规范化后真实重建的组件也逐字节不变（e6d80999cb6da6984953317d292c29b1c115e46127a4e1a9ba7b56acc1dad46c）。旧来源两个文件以原摘要冻结在测试夹具，原来源断言未删除；新组件另记当前来源。严格检查曾发现嵌套条件/测试模块排布/unwrap_err，按原门禁修正，不增加allow。匹配程序debug构建和受影响严格Clippy已通过；最终LF迁移/来源合同各3/0。代码96c5322与诊断2c4f2a1均仅本地，不以此声明远端或人工验收通过。
+
+证据目录target/m8-push-717d3e0-20261117，真实129500字节新样例位于target/m8-runtime-observations-20261117/management-runtime-verified.alcomdextension，已核对组件、排序声明、签名及Core安装/启用/读取。复制旧review数据库的717入口保留Core-only历史证据并禁止GUI；新入口使用全新数据经正式Core登记/安装，不直接改数据库路径。新窗口现已实际打开并保留，GUI88248的5条真实管道指向隔离Core83476；State40、全新数据内实际包位置及零授权已只读核对，原数据36份、profile346份及旧review10/303份最终集合/摘要全部保持。
+
+本片覆盖Core IPC/在途Core RPC，不覆盖全部MCP协议请求、HTTP空闲连接、SDK队列或订阅。已接受Operation的调度/取消代码未改变，沿用既有真实业务闭环证据；本片未新增任务取消或关闭连接能力。OAuth实际客户端人工接入、正式默认分发等既有未完成项继续保留，M8仍进行中、不进入M9，不自动推送。
+
+
+96c5322最终同提交四项复验为2通过/2失败：两个旧guest在extension_ui_open返回extension_resource_limit，两项新观测用例通过。新增固定字段分类诊断后，旧单项1/0（UI打开1–2ms、约2s余量、fuel充足），原组合单轮4/0（63.76秒）；**原失败未复现，具体超限阶段/根因未知，不记修复、不标豁免**。2c4f2a1只保留失败时静态导出名/耗时/fuel和固定trap分类，测试特性转发Host stderr；生产Core仍关闭该私有stderr，不记录输入、响应或秘密。全部RuntimeLimits、原断言和超时不变，两个受影响包严格Clippy通过。日志runtime-96c5322-real-core.log、runtime-old-component-limit-diagnostic.log、runtime-combined-limit-diagnostic.log和runtime-failure-diagnostics-clippy.log独立保留。该问题是未解决的验证风险，不能由后一次通过抹去。
+
+匹配四程序正常debug构建、诊断增量构建及GUI debug构建分别保留日志，GUI/CLI/MCP未变输入与已有结果复用；最终非docs候选922份输入与程序摘要记录于runtime-final-build-inputs.json、review/candidate.json。新包SHA256 b921e7847ae4adbe5df6de855e714e68588f53ba332ac91a83a2bb132a154419，组件仍e6d80999…1dad46c。当前准备初次停在脚本错误的Operations游标判断：唯一install已succeeded、activeCount0，nextCursor是续读位置而非hasMore或活动任务；修正脚本后仅只读续接、未重复登记/安装。准备Core正常空闲退出后，以原已批准流程重开同一隔离数据，随后GUI成功连接，已实际验证分段启动；新Open-Review封装的GUI分支仍仅语法检查，不冒称完整入口已执行。当前窗口供人工查看，不重新验收M7，不自行签收M8。
+
+最终保全记录review/final-preservation-and-window.json确认922份非docs输入未变、四组原数据/旧review摘要保持；两个启动保活助手已自然退出，真实GUI仍可见/响应并保留5条Core管道。未使用桌面控制，未推送，本片不宣告M8完成。
