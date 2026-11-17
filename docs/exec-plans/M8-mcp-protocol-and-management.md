@@ -1465,3 +1465,13 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 - 仅暂停归属已核实且0活动任务的本轮自有review，测试后恢复原GUI84872/Core98828，可见/响应及5条自身IPC管道。五组公开状态完全一致，原36/346/10/303份文件集合及摘要、五程序摘要保持；依然是fb72f0aa/3d6c2a1b、State42的旧验收窗口。原开发环境保持此前关闭状态，无桌面控制、Unity操作或原数据升级。
 
 三个完整job日志及ci-final.json、codeql-final.json均保留在target/m8-push-a94428b3-20261118/；与旧e6d0b44b的运行分开。未使用工作流重跑、未修改CI环境或放宽检查。本次六笔推送授权已执行完；新增本地窄修尚未推送、没有对应远端结果。仍保留自然到期/长时压力、实际Codex订阅通知消费、延期的扩展人工/普通可信HTTPS安装、正式默认分发、其余业务映射及历史Host resource_limit未定位等缺口。M8仍IN_PROGRESS，不进入M9。
+
+### 2026-11-18 本轮持续CI收束授权与OAuth合同测试同步
+
+所有者明确批准b9948171、337f4972后，已核对真实Windows用户、main、干净工作树、准确两笔及测试输入、远端a94428b3，普通快进至`337f49724a61c0c5af22a9eac294543bfc808318`并ls-remote确认。随后所有者明确“本轮无需再反复请求审批。直接推进到ci没有问题”：本轮范围内必要CI窄修、定向验证、提交及普通快进推送沿用此授权，不再逐笔确认；不授权强推、发布、标签、修改GitHub设置或无关功能，不以手动dispatch/rerun代替修复。
+
+同SHA自动[CodeQL44151487149](https://github.com/ALCOMD/ALCOMD/actions/runs/44151487149)已终态success，四语言全部通过；[CI44151487184](https://github.com/ALCOMD/ALCOMD/actions/runs/44151487184)已终态failure，三平台同一失败。新失败是oauth_schema_exposes_only_approved_roles_methods_and_bounded_review：旧测试读取hello.authentication根上的$ref，已批准的受限观测身份使这里实际为oneOf组合；不是认证实现或CI平台故障。三个平台的Schema模块各51通过/1失败，后续阶段未执行。三个平台分别有生命周期11/0/1原有ignored、实际MCP业务12/0、STDIO12/0，分别按该模块原始结果保留，不拼作完整套件通过。
+
+本地`7b1a4f0efaf8ee0d8db0a376656f57af45e36432`只把旧直接引用断言同步为完整oneOf精确形状：原OAuth引用必须保留，新增受限观测身份必须要求kind及空credential、禁止额外字段；没有删除OAuth角色/方法/页大小/秘密排除断言。生产代码、Schema、权限、迁移、依赖、工作流不变。本机先复现原单项0/1，再独立执行整个受影响Schema合同模块52/0；窄严格Clippy、fmt、xtask、diff通过，不重复全量。日志、完整job日志及终态JSON保留在target/m8-push-337f4972-20261118/，与前轮分开。
+
+这项验证不占Core端点，未暂停/替换验收窗口或原程序、修改原数据/系统信任、操作Unity或恢复桌面控制。新修复的远端结果尚未取得；M8仍IN_PROGRESS，未覆盖项和延期的扩展人工保持，不进入M9。
