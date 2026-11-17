@@ -38,7 +38,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 客户端身份最小合同和State34快照增量均已批准。application、Store、daemon dispatcher、typed client及受控STDIO已实际接通，真实Core闭环及最终capability协商候选复验通过，`mcp.clients.v1`已按真实实现协商。当前接线与后续边界（各候选证据分别见下文）：
 
 - 获批回环预配Bearer及预登记客户端HTTPS/OAuth均已实现，含发现/resource绑定、到期、PKCE、审批、刷新轮换、撤销及逐请求Core授权；不取自clientInfo、不回退owner。OAuth普通浏览器/目标客户端人工接入待验证，CIMD/DCR/外部授权服务器尚不支持；本候选远端门禁见末节，不能据实现存在宣布整个M8完成。
-- MCP管理扩展的客户端及授权管理、独立Host/WIT、真实Core/Host/Component闭环已实现，隔离人工查看入口已准备、人工查看未执行。实时请求、连接、订阅读取及正式默认分发仍未完成；沿用既定权限分类及扩展所有权/范围规则，不将未撤销记录当作在线。
+- MCP管理扩展的客户端及授权管理、独立Host/WIT、真实Core/Host/Component闭环已实现，已有真实窗口查看与多轮反馈整改，尚无M8最终人工签收。已批准的Core IPC连接/在途Core RPC只读观测首片也已实现，不能等同于全部MCP请求、HTTP空闲连接或订阅。完整传输观测/订阅及正式默认分发仍有缺口；沿用当前按能力授权与扩展所有权规则，不将未撤销记录当作在线。
 - 本次六工具之外的业务映射及来源委托；正式Schema已覆盖获批卸载切片，旧Draft未提供已部署ABI。现有Operation仅get/list/cancel，不能伪造尚无公开合同的input/approve/reject/resume。
 
 本批身份合同不再等待审批。其余真正新增的公共合同仍先提交具体差异，不暂停独立实现。

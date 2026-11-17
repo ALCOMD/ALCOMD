@@ -12,8 +12,7 @@
 
 当前GUI `953ce174614b382762d0c0c0551d911efbcdb5fe`，Core仍用 `3d6c2a1b80a124e1c16794b4a303ac0d534791c7`，不改RPC/State42/权限或安装校验。
 
-实际窗口已更新：GUI91416可见/响应，5条管道连接原Core47824；沿用本页下方State42的data/profile。GUI位于 `C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
-eviewgui-953ce174alcomd-gui.exe`。原入口Open-Review.ps1复用更新后的candidate.json，各程序分别记录真实来源与摘要，已有实例时拒绝，不自动连接其他Core。
+实际窗口已更新：GUI91416可见/响应，5条管道连接原Core47824；沿用本页下方State42的data/profile。GUI位于 `C:/Users/M2922/MyProjects/Rust/ALCOMD/target/m8-remote-source-20261117/review/gui-953ce174/alcomd-gui.exe`。原入口Open-Review.ps1复用更新后的candidate.json，各程序分别记录真实来源与摘要，已有实例时拒绝，不自动连接其他Core。
 
 查看两项即可：
 
@@ -30,14 +29,12 @@ eviewgui-953ce174alcomd-gui.exe`。原入口Open-Review.ps1复用更新后的can
 
 代码 `3d6c2a1b80a124e1c16794b4a303ac0d534791c7`，只在本地。一个HTTPS地址对应一个扩展及多个版本，从直链下载现有签名 `.alcomdextension`，没有升级、自动更新或扩展市场。GUI保留本地入口，在线准备后继续原条款、必需权限和安装任务流程。
 
-**当前实际窗口：GUI95592可见/响应，5条管道指向候选Core47824，启动助手退出后已再次核对。** 两者及CLI/MCP/Host均为匹配debug程序，独立State42 data/profile位于 `C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
-eview`；自动发现关闭，项目和备份路径只在该目录。开始查看时0安装/0授权/0活动任务；这只是窗口初始状态，不冒称已完成原生在线安装。
+**当前实际窗口：GUI95592可见/响应，5条管道指向候选Core47824，启动助手退出后已再次核对。** 两者及CLI/MCP/Host均为匹配debug程序，独立State42 data/profile位于 `C:/Users/M2922/MyProjects/Rust/ALCOMD/target/m8-remote-source-20261117/review`；自动发现关闭，项目和备份路径只在该目录。开始查看时0安装/0授权/0活动任务；这只是窗口初始状态，不冒称已完成原生在线安装。
 
 真实存在且经HTTPS/Core安装验证的签名测试包，可直接复制完整路径：
 
 ```text
-C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
-eviewsource-demo.alcomdextension
+C:/Users/M2922/MyProjects/Rust/ALCOMD/target/m8-remote-source-20261117/review/source-demo.alcomdextension
 ```
 
 SHA256 `7efc24ce73236421f413fbb7067a67e4a0d473fd3ea02fa1f9b5ce6f0b6731af`。包为dev.alcomd.tools-fixture / 1.0.0，公开测试签名，含“仅使用可丢弃测试数据”条款及必需projects.read；仅用于本隔离环境，不要求安装到原环境。
@@ -53,8 +50,7 @@ SHA256 `7efc24ce73236421f413fbb7067a67e4a0d473fd3ea02fa1f9b5ce6f0b6731af`。包�
 如窗口已关闭，可手动运行下方入口；已实际执行GUI分支并核对管道，已有实例时它拒绝，不自动停止或连接其他Core：
 
 ```powershell
-& 'C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
-eviewOpen-Review.ps1'
+& 'C:/Users/M2922/MyProjects/Rust/ALCOMD/target/m8-remote-source-20261117/review/Open-Review.ps1'
 ```
 
 本地证据均绑定上述代码及937份输入摘要 `221deb5697ab1c2b8bf3d9ab4a9a700cc8310b1cdbf2b32c78a54017b3794eef`：新HTTPS/Core最终1/0、原本地生命周期1/0、解析5/0、Schema1/0、M6合同5/0、State42最终3/0、重开6/0、包/签名9/0、缓存10/0与3 ignored、URL1/0；两浏览器模块独立单轮26/0，初轮新来源6/0单独保留。受影响严格Clippy、前端check/build、五程序debug及fmt/metadata/xtask/diff通过，无完整Workspace/Chromium/release或三平台重跑。State42首轮1/2及具体修复、开发检查失败保留于ExecPlan，不改写失败。既有外部代理/认证夹具三项未执行，未宣称本轮真实代理场景全部覆盖。
