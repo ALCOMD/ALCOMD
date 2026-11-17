@@ -73,6 +73,7 @@ export function requestErrorMessage(code: string): string {
         case "extension_scope_denied":
             return "This action is outside the extension's allowed permissions or scope. Review its access to the selected resource.";
         case "extension_api_unsupported":
+            return "This extension requires an API or permission that this app does not support. Use a compatible extension and app.";
         case "extension_ui_protocol_unsupported":
             return "This extension uses an unsupported API or interface version. Use a compatible extension and app.";
         case "extension_instance_stale":

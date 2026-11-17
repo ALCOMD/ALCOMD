@@ -491,6 +491,7 @@ fn package_evidence(
         manifest_digest: package.manifest_digest,
         component_digest: package.component_digest,
         publisher_fingerprint: package.publisher_fingerprint,
+        installation_terms: package.manifest.installation_terms,
         required_permissions: package.manifest.permissions.required,
         optional_permissions: package.manifest.permissions.optional,
         required_interfaces: package.manifest.interfaces.required,
@@ -525,6 +526,7 @@ fn verify_plan(
         || evidence.manifest_digest != package.manifest_digest
         || evidence.component_digest != package.component_digest
         || evidence.publisher_fingerprint != package.publisher_fingerprint
+        || evidence.installation_terms != package.manifest.installation_terms
         || evidence.required_permissions != package.manifest.permissions.required
         || evidence.optional_permissions != package.manifest.permissions.optional
         || evidence.required_interfaces != package.manifest.interfaces.required

@@ -436,6 +436,7 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
         "*"
     );
     let result = alcomd_protocol::ExtensionPermissionsListResult {
+        available_permissions: vec!["projects.read".to_owned()],
         extension_id: "dev.example.fixture".to_owned(),
         grant_revision: 3,
         required_permissions: vec!["background.run".to_owned()],
@@ -450,7 +451,7 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
     let value = serde_json::to_value(result).expect("typed permissions result");
     assert_eq!(
         value,
-        json!({"extensionId":"dev.example.fixture","grantRevision":3,"requiredPermissions":["background.run"],"optionalPermissions":["projects.read"],"grants":[{"permission":"projects.read","resourceKind":"Global","resourceId":"*"}]})
+        json!({"availablePermissions":["projects.read"],"extensionId":"dev.example.fixture","grantRevision":3,"requiredPermissions":["background.run"],"optionalPermissions":["projects.read"],"grants":[{"permission":"projects.read","resourceKind":"Global","resourceId":"*"}]})
     );
     let required = contract["$defs"]["planRecord"]["required"]
         .as_array()
@@ -2496,5 +2497,28 @@ fn config10_fullscreen_is_required_in_snapshots_and_optional_nonnullable_in_narr
         historical["$defs"]["windowSettings"]["properties"]
             .get("fullscreen")
             .is_none()
+    );
+}
+
+#[test]
+fn install_apply_requires_explicit_bounded_plan_consent_and_does_not_change_uninstall() {
+    let base = json!({"planId":"00000000-0000-4000-8000-000000000001","idempotencyKey":"install"});
+    assert!(
+        serde_json::from_value::<alcomd_protocol::ExtensionInstallApplyParams>(base.clone())
+            .is_err()
+    );
+    assert!(serde_json::from_value::<alcomd_protocol::ExtensionApplyParams>(base.clone()).is_ok());
+    let mut request = base;
+    request["consent"] = json!({"planFingerprint":"a".repeat(64),"installationTermsAccepted":true,"requiredPermissionsAccepted":true});
+    assert!(
+        serde_json::from_value::<alcomd_protocol::ExtensionInstallApplyParams>(request.clone())
+            .is_ok()
+    );
+    assert!(
+        serde_json::from_value::<alcomd_protocol::ExtensionApplyParams>(request.clone()).is_err()
+    );
+    request["consent"]["grantAll"] = json!(true);
+    assert!(
+        serde_json::from_value::<alcomd_protocol::ExtensionInstallApplyParams>(request).is_err()
     );
 }

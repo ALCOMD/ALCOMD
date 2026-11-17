@@ -32,10 +32,16 @@ async fn beginning_a_real_uninstall_publishes_extensions_invalidation_only_for_i
         )
         .await
         .expect("uninstall plan");
-        let accepted =
-            M6Store::accept_plan(&store, owner.clone(), plan.plan_id, key("uninstall"), 11)
-                .await
-                .expect("accept uninstall");
+        let accepted = M6Store::accept_plan(
+            &store,
+            owner.clone(),
+            plan.plan_id,
+            None,
+            key("uninstall"),
+            11,
+        )
+        .await
+        .expect("accept uninstall");
         StateStore::list_events(&store, owner.clone(), 0, 100)
             .await
             .expect("commit fence");
@@ -1012,6 +1018,7 @@ async fn extension_worker_failure_keeps_task_diagnostic_and_replay_is_quiet() {
         &store,
         owner.clone(),
         plan.plan_id,
+        None,
         key("failed-uninstall"),
         11,
     )

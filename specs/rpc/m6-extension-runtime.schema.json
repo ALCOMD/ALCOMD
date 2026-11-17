@@ -52,7 +52,77 @@
         "invalidCursorError": "invalid_request",
         "scope": "current extension owner; active grants only; no implicit authorization or persistent query session"
     },
+    "x-alcomd-method-params": {
+        "extensions.applyInstall": "#/$defs/installApplyParams",
+        "extensions.applyUninstall": "#/$defs/applyPlanParams"
+    },
+    "x-alcomd-install-consent": {
+        "binding": "same frozen Plan fingerprint and signed installation terms/required permissions",
+        "permissions": "extensions.manage plus extensions.permissions.manage if requiredPermissions is non-empty",
+        "refusal": "no Apply request and no grant or install",
+        "initialGrants": "required permissions only, in state commit transaction; recovery does not restore revoked grants"
+    },
     "$defs": {
+        "installationTerms": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "title",
+                "text"
+            ],
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384
+                }
+            }
+        },
+        "installConsent": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "planFingerprint",
+                "installationTermsAccepted",
+                "requiredPermissionsAccepted"
+            ],
+            "properties": {
+                "planFingerprint": {
+                    "$ref": "#/$defs/sha256"
+                },
+                "installationTermsAccepted": {
+                    "type": "boolean"
+                },
+                "requiredPermissionsAccepted": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "installApplyParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "planId",
+                "idempotencyKey",
+                "consent"
+            ],
+            "properties": {
+                "planId": {
+                    "$ref": "#/$defs/uuid"
+                },
+                "idempotencyKey": {
+                    "$ref": "#/$defs/idempotencyKey"
+                },
+                "consent": {
+                    "$ref": "#/$defs/installConsent"
+                }
+            }
+        },
         "toolPreview": {"type": "object", "additionalProperties": false, "required": ["name", "title", "description", "requiredPermissions", "effect"], "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 64}, "title": {"type": "string", "minLength": 1, "maxLength": 256}, "description": {"type": "string", "maxLength": 2048}, "requiredPermissions": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}}, "effect": {"enum": ["pure", "read", "plan", "apply", "cancel"]}}},
         "methodName": {
             "enum": [
@@ -151,6 +221,7 @@
                 "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions", "mcpTools"
             ],
             "properties": {
+                "installationTerms": {"$ref": "#/$defs/installationTerms"},
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "planId": {"$ref": "#/$defs/uuid"},
                 "action": {"enum": ["install", "uninstall"]},
@@ -261,8 +332,9 @@
         },
         "permissionsListResult": {
             "type": "object", "additionalProperties": true,
-            "required": ["extensionId", "grantRevision", "requiredPermissions", "optionalPermissions", "grants"],
+            "required": ["extensionId", "grantRevision", "requiredPermissions", "optionalPermissions", "grants", "availablePermissions"],
             "properties": {
+                "availablePermissions": {"$ref": "#/$defs/permissionDeclarations"},
                 "extensionId": {"$ref": "#/$defs/extensionId"},
                 "grantRevision": {"$ref": "#/$defs/revision"},
                 "requiredPermissions": {"$ref": "#/$defs/permissionDeclarations"},

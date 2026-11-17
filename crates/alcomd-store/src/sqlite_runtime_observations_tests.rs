@@ -81,6 +81,14 @@ fn state40_ddl_failure_rolls_back_every_row_table_and_version() {
 fn state40_real_initializer_preserves_data_and_does_not_regrant_on_reopen() {
     let db = fixture();
     let before = publisher_trust_removal_tests::snapshot(&db);
+    let mut before = before;
+    for (table, rows) in &mut before {
+        if table == "extension_plans" {
+            for row in rows {
+                row.push(rusqlite::types::Value::Null);
+            }
+        }
+    }
     let path = std::env::temp_dir().join(format!("alcomd-state40-{}.db", Uuid::new_v4()));
     db.execute("VACUUM INTO ?1", [path.to_str().expect("State40 fixture")])
         .expect("State40 fixture");

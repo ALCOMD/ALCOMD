@@ -115,7 +115,8 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             state: "unapplied", sourceKind: action === "install" ? "local_owner_selected" : "not_applicable", extensionId,
             version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: hash, publisherFingerprint: `ed25519-sha256:${hash}`,
             dataDisposition, planFingerprint: hash, uiProtocol: "portable-v1",
-            requiredPermissions: query.has("m8-tool-provider") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : ["background.run"] };
+            requiredPermissions: query.has("h4-no-required") ? [] : query.has("m8-tool-provider") ? ["mcp.tools.provide"] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions.filter((p) => p !== "mcp.tools.provide") : ["background.run"],
+            ...(query.has("h4-terms") ? { installationTerms: { title: "Fixture usage terms", text: "Use this extension only with disposable test data.\n".repeat(query.has("h4-long-terms") ? 400 : 1) } } : {}) };
         plans.set(result.planId, result);
         return structuredClone(result);
     }
@@ -171,7 +172,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const offset = parts === undefined ? 0 : Number(parts[2]);
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
-            return response("extensions.permissions.list", { extensionId, grantRevision: extension.grantRevision,
+            return response("extensions.permissions.list", { availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as ManagementGrant["permission"][], extensionId, grantRevision: extension.grantRevision,
                 requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
@@ -181,8 +182,11 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             if (extensions.has(H4_ADDED)) throw { code: "extension_already_installed" };
             return response("extensions.planInstall", { plan: plan("install", H4_ADDED, "not_applicable") });
         },
-        async extensionApplyInstall(planId) {
-            log("extensions.applyInstall", { planId });
+        async extensionApplyInstall(planId, consent) {
+            log("extensions.applyInstall", { planId, consent });
+            const reviewed = plans.get(planId)!;
+            if (consent.planFingerprint !== reviewed.planFingerprint) throw { code: "extension_plan_stale" };
+            if ((reviewed.installationTerms !== undefined && !consent.installationTermsAccepted) || (reviewed.requiredPermissions.length > 0 && !consent.requiredPermissionsAccepted)) throw { code: "permission_denied" };
             // A lost reply can follow actual acceptance; the UI must not retry it.
             return response("extensions.applyInstall", accept(planId, "install"));
         },

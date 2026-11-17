@@ -1,3 +1,46 @@
+pub const EXTENSION_PERMISSIONS: &[&str] = &[
+    "background.run",
+    "projects.read",
+    "mcp.clients.read",
+    "mcp.clients.manage",
+    "mcp.connections.read",
+    "mcp.requests.read",
+    "mcp.tools.provide",
+    "repositories.read",
+    "packages.read",
+    "packages.manage",
+    "operations.read",
+    "operations.cancel",
+];
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallationTerms {
+    pub title: String,
+    pub text: String,
+}
+impl ExtensionInstallationTerms {
+    pub fn valid(&self) -> bool {
+        !self.title.trim().is_empty()
+            && self.title.chars().count() <= 128
+            && !self.title.chars().any(char::is_control)
+            && !self.text.trim().is_empty()
+            && self.text.len() <= 16_384
+            && !self
+                .text
+                .chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallConsent {
+    pub plan_fingerprint: String,
+    pub installation_terms_accepted: bool,
+    pub required_permissions_accepted: bool,
+}
+
 pub const EXTENSION_GLOBAL_PERMISSIONS: &[&str] = &[
     "projects.read",
     "mcp.clients.read",
@@ -93,6 +136,7 @@ pub struct ExtensionPackageEvidence {
     pub publisher_fingerprint: String,
     pub required_permissions: Vec<String>,
     pub optional_permissions: Vec<String>,
+    pub installation_terms: Option<ExtensionInstallationTerms>,
     pub required_interfaces: Vec<String>,
     pub optional_interfaces: Vec<String>,
     pub ui_protocol: Option<ExtensionUiProtocol>,
@@ -597,6 +641,7 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
         plan_id: PlanId,
+        consent: Option<ExtensionInstallConsent>,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<ExtensionApplyOutcome, M6Error>> + Send;
@@ -1088,18 +1133,25 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         Ok(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn apply(
         &self,
         access: &AccessContext,
         plan_id: PlanId,
         key: IdempotencyKey,
         expected_action: &str,
+        consent: Option<ExtensionInstallConsent>,
         now_ms: u64,
     ) -> Result<ExtensionApplyOutcome, M6Error> {
         access
             .require(Permission::ExtensionsManage)
             .map_err(map_access)?;
         let plan = self.store.get_plan(plan_id).await?;
+        if expected_action == "install" && !plan.evidence.required_permissions.is_empty() {
+            access
+                .require(Permission::ExtensionsPermissionsManage)
+                .map_err(map_access)?;
+        }
         if plan.action != expected_action {
             return Err(M6Error::new(M6ErrorCode::InvalidInput));
         }
@@ -1111,7 +1163,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .await;
         let outcome = self
             .store
-            .accept_plan(access.principal().clone(), plan_id, key, now_ms)
+            .accept_plan(access.principal().clone(), plan_id, consent, key, now_ms)
             .await?;
         if outcome.schedule {
             self.schedule(outcome.operation_id);

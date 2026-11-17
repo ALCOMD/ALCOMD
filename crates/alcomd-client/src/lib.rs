@@ -397,7 +397,7 @@ impl AlcomdClient {
 
     pub async fn extension_apply_install(
         &mut self,
-        params: alcomd_protocol::ExtensionApplyParams,
+        params: alcomd_protocol::ExtensionInstallApplyParams,
     ) -> Result<alcomd_protocol::ExtensionOperationResult, ClientError> {
         self.call(alcomd_protocol::METHOD_EXTENSIONS_APPLY_INSTALL, params)
             .await

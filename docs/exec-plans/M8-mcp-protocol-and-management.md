@@ -1242,3 +1242,9 @@ Core内存注册表已接真实认证完成、dispatcher及RAII清理；公开RP
 匹配四程序正常debug构建、诊断增量构建及GUI debug构建分别保留日志，GUI/CLI/MCP未变输入与已有结果复用；最终非docs候选922份输入与程序摘要记录于runtime-final-build-inputs.json、review/candidate.json。新包SHA256 b921e7847ae4adbe5df6de855e714e68588f53ba332ac91a83a2bb132a154419，组件仍e6d80999…1dad46c。当前准备初次停在脚本错误的Operations游标判断：唯一install已succeeded、activeCount0，nextCursor是续读位置而非hasMore或活动任务；修正脚本后仅只读续接、未重复登记/安装。准备Core正常空闲退出后，以原已批准流程重开同一隔离数据，随后GUI成功连接，已实际验证分段启动；新Open-Review封装的GUI分支仍仅语法检查，不冒称完整入口已执行。当前窗口供人工查看，不重新验收M7，不自行签收M8。
 
 最终保全记录review/final-preservation-and-window.json确认922份非docs输入未变、四组原数据/旧review摘要保持；两个启动保活助手已自然退出，真实GUI仍可见/响应并保留5条Core管道。未使用桌面控制，未推送，本片不宣告M8完成。
+
+## 扩展权限目录与安装同意（2026-11-17，已批准实施中）
+
+所有者已批准本轮完整方案：全部12项扩展可授权权限均可声明为必需或可选；管理页按已声明/未声明两组显示并允许授权。移除mcp.tools.provide仅可选特例，不新增权限，不恢复逐项目授权。包可附带签名的纯文本installation_terms（title最多128字符，text最多16KiB）；同一冻结Plan先确认条款，再集中确认必需权限，空步骤跳过，拒绝不提交安装。Apply安装使用独立参数和绑定planFingerprint的consent（installationTermsAccepted/requiredPermissionsAccepted），必需权限额外要求extensions.permissions.manage，在安装状态提交事务中登记；可选/未声明默认关闭，恢复重放不重新授予撤销权限。extensions.permissions.list增加availablePermissions；State41仅扩展冻结Plan条款证据与不可变触发器，同意复用原Operation请求和幂等证据，不删除历史/补旧授权。旧未提交计划不能沿用旧Apply参数，须按新合同审阅确认。同步Manifest/RPC/SDK/威胁模型与定向回归；不升级原运行数据，不自动推送，不恢复桌面控制。此项改变原安装及声明约束，是发布前公共合同破坏性调整；未保留旧安装参数旁路。
+
+本轮接线与定向验证已完成：真实签名包→Core→Host同意闭环1/0、原生命周期1/0；Core调用者授权/读回1/0；Store扩展模块最终16/0（首轮6/7为旧前置与新授权语义冲突，保留），State41三项3/0、受影响State39四项4/0与State40三项3/0、扩展事件四项4/0；扩展包/签名模块18/0，RPC对应两项各1/0。浏览器受影响三模块首轮26/4（四项旧开关数断言），数量按完整12项目录修正后的权限模块7/0；最后稳定输入三模块独立单轮30/0、零重试，不拼接轮次。前端check/build、受影响全部targets严格Clippy及新增Store测试Clippy、fmt/metadata/xtask/diff通过；未重跑完整Workspace、Chromium、release或远端。新增代码未推送、无对应Hosted/CodeQL结果，M8人工待验。匹配程序与新隔离入口正在准备，不将旧窗口当作本轮GUI已部署。

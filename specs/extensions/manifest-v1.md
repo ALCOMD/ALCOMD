@@ -36,7 +36,7 @@ optional = ["background.run"]
 ```
 
 `publisher_name` 仅用于显示，不是身份。`publisher_key_fingerprint` 必须与签名 envelope 中的公钥相符；
-可信与 first-party 状态由 daemon policy 决定，Manifest 不允许 `first_party`、trust 或 grant 字段。
+Manifest 不允许 `first_party`、trust 或 grant 字段；不要求额外发布者信任确认，签名与身份校验保持。
 
 ## Identity 与版本
 
@@ -60,7 +60,8 @@ optional = ["background.run"]
 ## 权限
 
 - Manifest 只声明 permission name，不包含 scope 或 grant。scope 由 daemon grant authority 保存。
-- required permission 未授予时不能 enable；optional 未授予时 Host 不链接对应 optional interface。
+- 全部当前可授权扩展权限均可放入required或optional，二者互斥；包括mcp.tools.provide。required未授予时不能enable/打开UI；optional未授予时对应Host调用拒绝，不自动授权。
+- 声明用于说明安装需求，不再是用户显式授权的上限；未声明但可授权的权限也可在管理页开启。接口、工具声明及调用者自身权限仍独立验证。
 - `background.run` 不由 `[ui]` 隐式添加。UI-only extension 可不请求该权限，并由 interactive UI session按需启动。
   Project read grant 使用 `Global/*`，覆盖当前及以后登记项目的安全摘要，不逐ProjectId授权；
   它不允许 guest 读取项目路径、项目文件或 `state.db`。
@@ -72,3 +73,9 @@ optional = ["background.run"]
 - required/optional permission 各最多 64 项、去重且 lexicographic canonical order。
 - required/optional interface 各最多 32 项、去重且 lexicographic canonical order。
 - 同一 ExtensionId + version + publisher fingerprint 但 package digest 不同是供应链冲突，不得静默覆盖。
+
+## 安装条款与明确同意（State41）
+
+可选`[installation_terms]`只有`title`与`text`：title非空、最多128 Unicode字符、禁止控制字符；text非空、UTF-8最多16384字节，仅允许换行/回车/制表控制字符。它属于原签名Manifest，不读取远端文本，不执行HTML/Markdown/脚本。不存在时跳过条款步骤。
+
+Plan冻结条款与权限声明。GUI先确认作者条款，再集中确认required权限；最后一次确认才调用带consent的applyInstall。拒绝不提交，不产生安装/授权Operation。Core以相同Plan fingerprint验证同意；安装登记与初始required grants同事务提交；optional/未声明默认关闭。条款同意不构成包安全认证，不替代签名、沙箱及双Principal检查。原安装后installed_disabled状态不变。

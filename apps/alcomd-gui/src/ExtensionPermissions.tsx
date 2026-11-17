@@ -14,7 +14,7 @@ export function hasPermissionRequests(value: { requiredPermissions?: unknown; op
         && items.length <= 64 && items.every((item: unknown) => typeof item === "string" && item.length > 0 && item.length <= 128));
 }
 
-function permissionName(permission: string, t: Translate): string {
+export function permissionName(permission: string, t: Translate): string {
     if (permission === "background.run") return t("Run in background");
     if (permission === "projects.read") return t("Read projects");
     if (permission === "mcp.clients.read") return t("Read MCP clients");
@@ -57,7 +57,7 @@ export function ExtensionPermissionRequests({ required, optional }: { required: 
     return <section aria-label={t("Requested permissions")}>
         <h3>{t("Requested permissions")}</h3>
         {required.length === 0 && optional.length === 0 ? <p>{t("No permissions requested")}</p> : <dl className="dialog-summary">
-            {required.length === 0 ? null : <div><dt>{t("Required permissions")}</dt><dd>{required.map((permission) => permissionName(permission, t)).join(" · ")}</dd></div>}
+            {required.length === 0 ? null : <div><dt>{t("Required permissions")}</dt><dd>{<ul className="extension-requested-permissions">{required.map((permission) => <li key={permission}><strong>{permissionName(permission, t)}</strong><p>{permissionDescription(permission, t)}</p></li>)}</ul>}</dd></div>}
             {optional.length === 0 ? null : <div><dt>{t("Optional permissions")}</dt><dd>{optional.map((permission) => permissionName(permission, t)).join(" · ")}</dd></div>}
         </dl>}
     </section>;
@@ -114,11 +114,11 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
         try {
             const load = async () => {
                 let result = await client.extensionPermissionsList(extensionId);
-                if (result.extensionId !== extensionId || !hasPermissionRequests(result)) throw { code: "internal_error" };
+                if (result.extensionId !== extensionId || !hasPermissionRequests(result) || !Array.isArray(result.availablePermissions) || result.availablePermissions.length > 64 || result.availablePermissions.some((p) => !editablePermission(p))) throw { code: "internal_error" };
                 while (result.nextCursor !== undefined) {
                     if (!current() || version !== readVersion.current) break;
                     const page = await client.extensionPermissionsList(extensionId, result.nextCursor);
-                    if (page.extensionId !== extensionId || page.grantRevision !== result.grantRevision) throw { code: "revision_conflict" };
+                    if (page.extensionId !== extensionId || page.grantRevision !== result.grantRevision || JSON.stringify(page.availablePermissions) !== JSON.stringify(result.availablePermissions)) throw { code: "revision_conflict" };
                     result = { ...page, grants: [...result.grants, ...page.grants] };
                 }
                 return result;
@@ -160,12 +160,18 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
         } finally { scope.pending = false; if (owner.current === scope) setWriting(false); onBusyChange(false); }
     };
     const requested = visibleValue === undefined ? [] : [...new Set([...visibleValue.requiredPermissions, ...visibleValue.optionalPermissions])];
+    const groups = [
+        { title: t("Declared permissions"), permissions: requested },
+        { title: t("Undeclared permissions"), permissions: visibleValue?.availablePermissions.filter((p) => !requested.includes(p)) ?? [] }
+    ];
     const blocked = !canWrite || !ownsRead || writing || loading || writeUnknown;
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
         {!canRead ? <div>{t("Permission details are unavailable from this Core.")}</div> : (loading || !ownsRead) && visibleValue === undefined ? <LoadingState title={t("Loading…")} /> : null}
         {visibleError === undefined ? null : <div role="alert" data-notification-error={visibleError.code}><p>{t(requestErrorMessage(visibleError.code))}</p><code>{visibleError.code}</code>{visibleError.diagnosticId === undefined ? null : <p><code>{visibleError.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
-        {visibleValue === undefined ? null : requested.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
-            {requested.map((permission) => {
+        {visibleValue === undefined ? null : groups.map((group) => <section className="extension-permission-group" aria-label={group.title} key={group.title}>
+            <h3>{group.title}</h3>
+            {group.permissions.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
+            {group.permissions.map((permission) => {
                 const name = permissionName(permission, t);
                 const grants = visibleValue.grants.filter((grant) => grant.permission === permission);
                 const known = editablePermission(permission);
@@ -180,11 +186,12 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                         </div>
                     </div>
                     <p className="extension-permission-description">{permissionDescription(permission, t)}</p>
-                    {!visibleValue.requiredPermissions.includes(permission) ? null : <p className="extension-permission-required">{t("Required to enable")}</p>}
+                    {!requested.includes(permission) ? null : <p className="extension-permission-required">{t(visibleValue.requiredPermissions.includes(permission) ? "Required" : "Optional")}</p>}
 
                 </section>;
             })}
         </div>}
+        </section>)}
         <div className="dialog-actions"><DialogCloseButton disabled={writing} variant="text">{t("Close")}</DialogCloseButton>{!canRead ? null : <LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton>}</div>
     </section>;
 

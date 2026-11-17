@@ -74,6 +74,7 @@ impl PackageError {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionManifest {
+    pub installation_terms: Option<alcomd_application::ExtensionInstallationTerms>,
     pub schema: u32,
     pub id: String,
     pub name: String,
@@ -735,6 +736,10 @@ fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
             .ui
             .as_ref()
             .is_some_and(|ui| ui.protocol != "portable-v1")
+        || manifest
+            .installation_terms
+            .as_ref()
+            .is_some_and(|terms| !terms.valid())
         || !valid_fingerprint(&manifest.publisher_key_fingerprint)
         || !valid_requirements(&manifest.interfaces, 32, valid_interface)
         || !valid_requirements(&manifest.permissions, 64, valid_permission)
@@ -869,15 +874,11 @@ fn tools(
         .mcp
         .as_ref()
         .is_none_or(|m| m.tools != alcomd_application::MCP_TOOLS_PATH)
-        || manifest
+        || !manifest
             .permissions
             .required
             .iter()
-            .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
-        || !manifest
-            .permissions
-            .optional
-            .iter()
+            .chain(&manifest.permissions.optional)
             .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
     {
         return Err(invalid());
@@ -941,6 +942,14 @@ mod tests {
     }
 
     fn signed_package(extra: &[(&str, &[u8])], fingerprint_override: Option<&str>) -> PathBuf {
+        signed_package_with_manifest(extra, fingerprint_override, |value| value)
+    }
+
+    fn signed_package_with_manifest(
+        extra: &[(&str, &[u8])],
+        fingerprint_override: Option<&str>,
+        change: impl FnOnce(String) -> String,
+    ) -> PathBuf {
         let signing = SigningKey::from_bytes(&[7_u8; 32]);
         let public_key = signing.verifying_key().to_bytes();
         let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
@@ -948,6 +957,7 @@ mod tests {
             "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture Publisher\"\npublisher_key_fingerprint = \"{}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = [\"alcomd:extension/host-data@1.0.0\", \"alcomd:extension/host-projects@1.0.0\"]\noptional = []\n\n[permissions]\nrequired = [\"background.run\", \"projects.read\"]\noptional = []\n",
             fingerprint_override.unwrap_or(&fingerprint)
         );
+        let manifest = change(manifest);
         let component = b"\0asm\x0d\0\x01\0";
         let mut content_entries = vec![
             (MANIFEST_PATH, manifest.as_bytes()),
@@ -1175,5 +1185,149 @@ mod tests {
             PackageErrorCode::UnsupportedEntry
         );
         std::fs::remove_file(link).expect("remove link package");
+    }
+    #[test]
+    fn signed_installation_terms_round_trip_and_tampering_breaks_signature() {
+        let path = signed_package_with_manifest(&[], None, |manifest| {
+            format!(
+                "{manifest}\n[installation_terms]\ntitle = \"Use conditions\"\ntext = \"Disposable data only.\"\n"
+            )
+        });
+        let verified = inspect_extension_package(&path).expect("signed installation terms fixture");
+        assert_eq!(
+            verified
+                .manifest
+                .installation_terms
+                .as_ref()
+                .expect("signed installation terms fixture")
+                .text,
+            "Disposable data only."
+        );
+        let file = File::open(&path).expect("signed installation terms fixture");
+        let mut archive = zip::ZipArchive::new(file).expect("signed installation terms fixture");
+        let mut manifest = Vec::new();
+        archive
+            .by_name(MANIFEST_PATH)
+            .expect("signed installation terms fixture")
+            .read_to_end(&mut manifest)
+            .expect("signed installation terms fixture");
+        let mut envelope = Vec::new();
+        archive
+            .by_name(SIGNATURE_PATH)
+            .expect("signed installation terms fixture")
+            .read_to_end(&mut envelope)
+            .expect("signed installation terms fixture");
+        drop(archive);
+        let changed = String::from_utf8(manifest)
+            .expect("signed installation terms fixture")
+            .replace("Disposable data only.", "Different conditions.");
+        let file = File::create(&path).expect("signed installation terms fixture");
+        let mut zip = zip::ZipWriter::new(file);
+        for (name, bytes) in [
+            (MANIFEST_PATH, changed.as_bytes()),
+            (COMPONENT_PATH, verified.component_bytes.as_slice()),
+            (SIGNATURE_PATH, envelope.as_slice()),
+        ] {
+            zip.start_file(
+                name,
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .expect("signed installation terms fixture");
+            zip.write_all(bytes)
+                .expect("signed installation terms fixture");
+        }
+        zip.finish().expect("signed installation terms fixture");
+        assert_eq!(
+            inspect_extension_package(&path)
+                .expect_err("signed installation terms fixture must reject")
+                .code(),
+            PackageErrorCode::SignatureInvalid
+        );
+        std::fs::remove_file(path).expect("signed installation terms fixture");
+    }
+
+    #[test]
+    fn every_supported_permission_can_be_required_or_optional_and_terms_are_bounded() {
+        let path = signed_package(&[], None);
+        let fixture = inspect_extension_package(&path).expect("signed installation terms fixture");
+        std::fs::remove_file(path).expect("signed installation terms fixture");
+        for permission in alcomd_application::EXTENSION_PERMISSIONS {
+            for required in [false, true] {
+                let declarations = if required {
+                    format!("required = [\"{permission}\"]\noptional = []")
+                } else {
+                    format!("required = []\noptional = [\"{permission}\"]")
+                };
+                let mut manifest = format!(
+                    "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture\"\npublisher_key_fingerprint = \"{}\"\nlicense = \"MIT\"\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n[interfaces]\nrequired = []\noptional = []\n[permissions]\n{declarations}\n",
+                    fixture.publisher_fingerprint
+                );
+                assert!(parse_manifest(manifest.as_bytes()).is_ok(), "{permission}");
+                manifest.push_str("\n[installation_terms]\ntitle = \"Terms\"\ntext = \"Acknowledge before installing.\"\n");
+                assert!(parse_manifest(manifest.as_bytes()).is_ok());
+            }
+        }
+        let valid = alcomd_application::ExtensionInstallationTerms {
+            title: "条".repeat(128),
+            text: "a".repeat(16384),
+        };
+        assert!(valid.valid());
+        assert!(
+            !alcomd_application::ExtensionInstallationTerms {
+                title: "条".repeat(129),
+                ..valid.clone()
+            }
+            .valid()
+        );
+        assert!(
+            !alcomd_application::ExtensionInstallationTerms {
+                text: "条".repeat(5462),
+                ..valid.clone()
+            }
+            .valid()
+        );
+        assert!(
+            !alcomd_application::ExtensionInstallationTerms {
+                text: "bad\u{0000}text".into(),
+                ..valid
+            }
+            .valid()
+        );
+    }
+    #[test]
+    fn signed_tool_provider_accepts_required_or_optional_publication_without_inventing_tools() {
+        let catalogue=br#"{"version":1,"tools":[{"name":"echo","title":"Echo","description":"Pure echo","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"outputSchema":{"type":"object","properties":{},"additionalProperties":false},"uses":[]}]}"#;
+        for required in [true, false] {
+            let path = signed_package_with_manifest(
+                &[(alcomd_application::MCP_TOOLS_PATH, catalogue)],
+                None,
+                |manifest| {
+                    let permissions = if required {
+                        "[permissions]\nrequired = [\"mcp.tools.provide\"]\noptional = []\n"
+                    } else {
+                        "[permissions]\nrequired = []\noptional = [\"mcp.tools.provide\"]\n"
+                    };
+                    manifest.replace("[permissions]\nrequired = [\"background.run\", \"projects.read\"]\noptional = []\n",permissions)+"\n[mcp]\ntools = \"component/mcp-tools.json\"\n"
+                },
+            );
+            assert_eq!(
+                inspect_extension_package(&path)
+                    .expect("signed installation terms fixture")
+                    .mcp_tools
+                    .len(),
+                1
+            );
+            std::fs::remove_file(path).expect("signed installation terms fixture");
+        }
+        let missing = signed_package_with_manifest(&[], None, |manifest| {
+            manifest.replace("background.run", "mcp.tools.provide")
+        });
+        assert_eq!(
+            inspect_extension_package(&missing)
+                .expect_err("signed installation terms fixture must reject")
+                .code(),
+            PackageErrorCode::ManifestInvalid
+        );
+        std::fs::remove_file(missing).expect("signed installation terms fixture");
     }
 }

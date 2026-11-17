@@ -1086,5 +1086,15 @@ export const actionMessages: TranslationTable = {
     "VPM packages require a separate resolve after restoration.": {
         "zh-CN": "恢复后需要单独解析 VPM 软件包依赖。",
         "ja-JP": "復元後にVPMパッケージの依存関係を別途解決する必要があります。"
-    }
+    },
+    "Optional": { "zh-CN": "可选", "ja-JP": "任意" },
+    "Declared permissions": { "zh-CN": "扩展已声明", "ja-JP": "拡張機能が宣言した権限" },
+    "Undeclared permissions": { "zh-CN": "扩展未声明", "ja-JP": "拡張機能が宣言していない権限" },
+    "Extension terms": { "zh-CN": "扩展使用条款", "ja-JP": "拡張機能の利用条件" },
+    "Decline": { "zh-CN": "拒绝", "ja-JP": "拒否" },
+    "Agree and continue": { "zh-CN": "同意并继续", "ja-JP": "同意して次へ" },
+    "Agree and install": { "zh-CN": "同意并安装", "ja-JP": "同意してインストール" },
+    "Installation not completed: the terms were declined.": { "zh-CN": "安装未完成：已拒绝使用条款。", "ja-JP": "利用条件が拒否されたため、インストールは完了していません。" },
+    "Installation not completed: the required permissions were declined.": { "zh-CN": "安装未完成：已拒绝必需权限。", "ja-JP": "必須の権限が拒否されたため、インストールは完了していません。" },
+    "You cannot approve extension permissions with this connection.": { "zh-CN": "当前连接无权批准扩展权限。", "ja-JP": "この接続では拡張機能の権限を承認できません。" },
 };

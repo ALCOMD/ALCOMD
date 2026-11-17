@@ -3350,6 +3350,7 @@ pub struct ExtensionPermissionGrant {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPermissionsListResult {
+    pub available_permissions: Vec<String>,
     pub extension_id: String,
     pub grant_revision: u64,
     pub required_permissions: Vec<String>,
@@ -3387,6 +3388,29 @@ pub struct ExtensionPlanUninstallParams {
     pub extension_id: String,
     pub expected_revision: u64,
     pub data_disposition: ExtensionDataDisposition,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallApplyParams {
+    pub plan_id: String,
+    pub idempotency_key: String,
+    pub consent: ExtensionInstallConsent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallConsent {
+    pub plan_fingerprint: String,
+    pub installation_terms_accepted: bool,
+    pub required_permissions_accepted: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallationTerms {
+    pub title: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3461,6 +3485,8 @@ pub struct ExtensionRecord {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPlan {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_terms: Option<ExtensionInstallationTerms>,
     pub mcp_tools: Vec<McpToolPreview>,
     pub plan_id: String,
     pub action: String,

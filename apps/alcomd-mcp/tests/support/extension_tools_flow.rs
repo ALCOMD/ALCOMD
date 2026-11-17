@@ -229,7 +229,12 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     assert_eq!(plan.mcp_tools.len(), 13);
     assert!(plan.required_permissions.is_empty());
     let install = owner
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "install-provider".into(),
         })

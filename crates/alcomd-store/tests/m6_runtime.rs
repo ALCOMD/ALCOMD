@@ -34,6 +34,7 @@ fn evidence() -> ExtensionPackageEvidence {
         manifest_digest: [2; 32],
         component_digest: [3; 32],
         publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
+        installation_terms: None,
         required_permissions: vec!["background.run".to_owned()],
         optional_permissions: vec!["projects.read".to_owned()],
         required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
@@ -83,6 +84,7 @@ async fn permissions_fixture_with_package(
         .accept_plan(
             owner,
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse("permissions-install").expect("key"),
             1_002,
         )
@@ -104,6 +106,39 @@ async fn permissions_fixture_with_package(
         .complete_operation(accepted.operation_id, 1_005)
         .await
         .expect("complete install");
+    // These fixtures exercise missing-grant states. New installs initially grant
+    // required permissions only after explicit consent; revoke them deliberately.
+    for (index, permission) in package.required_permissions.iter().enumerate() {
+        let record = store
+            .get_extension(PrincipalId::local_owner(), package.extension_id.clone())
+            .await
+            .expect("installed grants");
+        store
+            .set_grant(
+                PrincipalId::local_owner(),
+                ExtensionGrantMutation {
+                    extension_id: package.extension_id.clone(),
+                    permission: permission.clone(),
+                    resource_kind: if permission == "background.run" {
+                        "Extension"
+                    } else {
+                        "Global"
+                    }
+                    .into(),
+                    resource_id: if permission == "background.run" {
+                        package.extension_id.clone()
+                    } else {
+                        "*".into()
+                    },
+                    expected_revision: record.grant_revision,
+                    grant: false,
+                },
+                IdempotencyKey::parse(format!("fixture-revoke-{index}")).expect("key"),
+                1_006,
+            )
+            .await
+            .expect("explicit fixture revocation");
+    }
     (store, path, package)
 }
 
@@ -427,7 +462,8 @@ async fn required_project_permission_needs_an_active_explicit_global_grant() {
 }
 
 #[tokio::test]
-async fn required_current_package_permission_grant_rejects_historical_declarations() {
+async fn current_declarations_do_not_inherit_historical_grants_and_undeclared_grants_require_explicit_action()
+ {
     let (store, path, old_package) = permissions_fixture("required-current-package").await;
     let owner = PrincipalId::local_owner();
     permission_mutation(
@@ -458,6 +494,7 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
         .accept_plan(
             owner.clone(),
             uninstall.plan_id,
+            install_consent(&uninstall),
             IdempotencyKey::parse("historical-uninstall").expect("key"),
             2_001,
         )
@@ -497,6 +534,7 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
         .accept_plan(
             owner.clone(),
             install.plan_id,
+            install_consent(&install),
             IdempotencyKey::parse("current-package-install").expect("key"),
             2_006,
         )
@@ -522,52 +560,48 @@ async fn required_current_package_permission_grant_rejects_historical_declaratio
         .get_extension(owner.clone(), package.extension_id.clone())
         .await
         .expect("new installed record");
-    let snapshot = enable_state(&path);
-    let key = IdempotencyKey::parse("current-package-grant-key").expect("grant key");
-    let refused = store
+    let permissions = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+        .await
+        .expect("current declarations");
+    assert!(permissions.required_permissions.is_empty());
+    assert_eq!(permissions.optional_permissions, vec!["projects.read"]);
+    assert!(
+        permissions.grants.is_empty(),
+        "historical background consent must not survive reinstall"
+    );
+    let granted = store
         .set_grant(
             owner.clone(),
             ExtensionGrantMutation {
                 extension_id: package.extension_id.clone(),
-                permission: "background.run".to_owned(),
-                resource_kind: "Extension".to_owned(),
+                permission: "background.run".into(),
+                resource_kind: "Extension".into(),
                 resource_id: package.extension_id.clone(),
                 expected_revision: current.grant_revision,
                 grant: true,
             },
-            key.clone(),
+            IdempotencyKey::parse("explicit-undeclared-grant")
+                .expect("isolated extension consent fixture"),
             2_010,
         )
         .await
-        .expect_err(
-            "old applied Plan must not authorize an undeclared permission on the current package",
-        );
-    assert_eq!(refused.code(), M6ErrorCode::PermissionDenied);
-    assert_eq!(
-        enable_state(&path),
-        snapshot,
-        "refusal must preserve grants, revisions, instances and idempotency"
-    );
-    let granted = store.set_grant(owner.clone(), ExtensionGrantMutation {
-        extension_id: package.extension_id.clone(), permission: "projects.read".to_owned(), resource_kind: "Global".to_owned(),
-        resource_id: "*".to_owned(), expected_revision: current.grant_revision, grant: true,
-    }, key, 2_011).await.expect("rejected permission did not consume key; current declared project-read capability can be explicitly granted");
-    assert_eq!(granted.permission, "projects.read");
+        .expect("user can explicitly grant undeclared supported permission");
     let permissions = store
-        .list_permissions(owner, package.extension_id, None, 100)
+        .list_permissions(owner, package.extension_id.clone(), None, 100)
         .await
-        .expect("current permission evidence");
+        .expect("isolated extension consent fixture");
     assert!(permissions.required_permissions.is_empty());
+    assert_eq!(permissions.optional_permissions, vec!["projects.read"]);
+    assert_eq!(permissions.grants.len(), 1);
+    assert_eq!(permissions.grants[0].permission, "background.run");
     assert_eq!(
-        permissions.optional_permissions,
-        vec!["projects.read".to_owned()]
+        granted.grant_revision,
+        current
+            .grant_revision
+            .checked_next()
+            .expect("isolated extension consent fixture")
     );
-    assert_eq!(
-        permissions.grants.len(),
-        1,
-        "old background grant must not survive reinstall or be recreated"
-    );
-    assert_eq!(permissions.grants[0].resource_id, "*");
     drop(store);
     cleanup(&path);
 }
@@ -842,6 +876,7 @@ async fn plan_authority_round_trips_and_install_recovery_is_idempotent() {
         .accept_plan(
             owner.clone(),
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse("install-fixture").expect("idempotency key"),
             11,
         )
@@ -923,6 +958,7 @@ async fn uninstall_begin_durably_revokes_grants_before_filesystem_mutation() {
         .accept_plan(
             owner.clone(),
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse("install-before-uninstall").expect("key"),
             21,
         )
@@ -964,6 +1000,7 @@ async fn uninstall_begin_durably_revokes_grants_before_filesystem_mutation() {
         .accept_plan(
             owner,
             uninstall.plan_id,
+            install_consent(&uninstall),
             IdempotencyKey::parse("uninstall-fixture").expect("key"),
             26,
         )
@@ -1028,6 +1065,7 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
         .accept_plan(
             owner.clone(),
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse("install-before-crashes").expect("key"),
             101,
         )
@@ -1057,15 +1095,7 @@ async fn leases_renew_and_three_crashes_quarantine_without_losing_enabled_intent
             [&package.extension_id],
         )
         .expect("enable fixture");
-    connection
-        .execute(
-            "INSERT INTO extension_grants
-             (extension_id, permission_name, resource_kind, resource_id, state,
-              grant_revision, updated_at_ms)
-             VALUES (?1, 'background.run', 'Extension', ?1, 'granted', 1, 105)",
-            [&package.extension_id],
-        )
-        .expect("grant background permission");
+    assert!(connection.query_row("SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1 AND permission_name='background.run' AND state='granted')", [&package.extension_id], |row| row.get::<_, bool>(0)).expect("consented install grant"));
     drop(connection);
 
     let mut context = store
@@ -1168,6 +1198,7 @@ async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call
         .accept_plan(
             owner.clone(),
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse("capability-install").expect("key"),
             401,
         )
@@ -1217,15 +1248,7 @@ async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call
             [&package.extension_id],
         )
         .expect("enable");
-    connection
-        .execute(
-            "INSERT INTO extension_grants
-             (extension_id, permission_name, resource_kind, resource_id, state,
-              grant_revision, updated_at_ms)
-             VALUES (?1, 'background.run', 'Extension', ?1, 'granted', 1, 406)",
-            [&package.extension_id],
-        )
-        .expect("background grant");
+    assert!(connection.query_row("SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1 AND permission_name='background.run' AND state='granted')", [&package.extension_id], |row| row.get::<_, bool>(0)).expect("consented install grant"));
     drop(connection);
     let project_grant = store
         .set_grant(
@@ -1377,6 +1400,7 @@ async fn extension_list_uses_exclusive_extension_id_keyset_order() {
             .accept_plan(
                 owner.clone(),
                 plan.plan_id,
+                install_consent(&plan),
                 IdempotencyKey::parse(format!("pagination-{index}")).expect("pagination key"),
                 610 + u64::try_from(index).expect("timestamp"),
             )
@@ -1462,6 +1486,7 @@ async fn policy_capability_outcome(
         .accept_plan(
             owner.clone(),
             plan.plan_id,
+            install_consent(&plan),
             IdempotencyKey::parse(format!("policy-{name}")).expect("policy key"),
             501,
         )
@@ -1511,15 +1536,7 @@ async fn policy_capability_outcome(
             [&package.extension_id],
         )
         .expect("enable policy extension");
-    connection
-        .execute(
-            "INSERT INTO extension_grants
-             (extension_id, permission_name, resource_kind, resource_id, state,
-              grant_revision, updated_at_ms)
-             VALUES (?1, 'background.run', 'Extension', ?1, 'granted', 1, 506)",
-            [&package.extension_id],
-        )
-        .expect("policy background grant");
+    assert!(connection.query_row("SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1 AND permission_name='background.run' AND state='granted')", [&package.extension_id], |row| row.get::<_, bool>(0)).expect("consented install grant"));
     drop(connection);
     store
         .set_grant(
@@ -1579,4 +1596,308 @@ async fn policy_capability_outcome(
     drop(store);
     cleanup(&path);
     outcome
+}
+
+fn install_consent(
+    plan: &alcomd_application::ExtensionPlanRecord,
+) -> Option<alcomd_application::ExtensionInstallConsent> {
+    (plan.action == "install").then(|| alcomd_application::ExtensionInstallConsent {
+        plan_fingerprint: plan
+            .plan_fingerprint
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+        installation_terms_accepted: plan.evidence.installation_terms.is_some(),
+        required_permissions_accepted: !plan.evidence.required_permissions.is_empty(),
+    })
+}
+
+#[tokio::test]
+async fn install_consent_rejects_missing_or_changed_evidence_before_acceptance_and_grants_all_required()
+ {
+    let path = database_path("install-consent");
+    let store = StateStoreHandle::open(path.clone()).expect("isolated extension consent fixture");
+    let owner = PrincipalId::local_owner();
+    let mut package = evidence();
+    package.installation_terms = Some(alcomd_application::ExtensionInstallationTerms {
+        title: "Fixture terms".into(),
+        text: "Disposable data only.\nNo production projects.".into(),
+    });
+    package.required_permissions = alcomd_application::EXTENSION_PERMISSIONS
+        .iter()
+        .map(|p| (*p).to_owned())
+        .collect();
+    package.required_permissions.sort();
+    package.optional_permissions.clear();
+    let plan = store
+        .create_install_plan(
+            owner.clone(),
+            ExtensionInstallPlanDraft {
+                evidence: package.clone(),
+                expected_revision: None,
+                plan_fingerprint: [42; 32],
+            },
+            10,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    assert_eq!(
+        store
+            .get_plan(plan.plan_id)
+            .await
+            .expect("isolated extension consent fixture")
+            .evidence,
+        package
+    );
+    let key =
+        IdempotencyKey::parse("confirm-exact-plan").expect("isolated extension consent fixture");
+    for consent in [
+        None,
+        Some(alcomd_application::ExtensionInstallConsent {
+            installation_terms_accepted: false,
+            ..install_consent(&plan).expect("isolated extension consent fixture")
+        }),
+        Some(alcomd_application::ExtensionInstallConsent {
+            required_permissions_accepted: false,
+            ..install_consent(&plan).expect("isolated extension consent fixture")
+        }),
+        Some(alcomd_application::ExtensionInstallConsent {
+            plan_fingerprint: "00".repeat(32),
+            ..install_consent(&plan).expect("isolated extension consent fixture")
+        }),
+    ] {
+        let before = enable_state(&path);
+        let failure = store
+            .accept_plan(owner.clone(), plan.plan_id, consent, key.clone(), 11)
+            .await
+            .expect_err("isolated extension consent fixture must reject");
+        assert!(matches!(
+            failure.code(),
+            M6ErrorCode::InvalidInput | M6ErrorCode::PermissionDenied | M6ErrorCode::PlanStale
+        ));
+        assert_eq!(enable_state(&path), before);
+        let db = Connection::open(&path).expect("isolated extension consent fixture");
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM operations", [], |r| r
+                .get::<_, i64>(0))
+                .expect("isolated extension consent fixture"),
+            0
+        );
+        assert_eq!(
+            store
+                .get_plan(plan.plan_id)
+                .await
+                .expect("isolated extension consent fixture")
+                .state,
+            "unapplied"
+        );
+    }
+    let accepted = store
+        .accept_plan(
+            owner.clone(),
+            plan.plan_id,
+            install_consent(&plan),
+            key.clone(),
+            12,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .begin_apply(accepted.operation_id, 13)
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .finish_install(
+            accepted.operation_id,
+            "<EXTENSION_ROOT>/confirmed".into(),
+            14,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .complete_operation(accepted.operation_id, 15)
+        .await
+        .expect("isolated extension consent fixture");
+    let permissions = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+        .await
+        .expect("isolated extension consent fixture");
+    assert_eq!(permissions.grants.len(), 12);
+    for permission in &package.required_permissions {
+        assert!(
+            permissions
+                .grants
+                .iter()
+                .any(|g| &g.permission == permission)
+        );
+    }
+    let replay = store
+        .accept_plan(owner, plan.plan_id, install_consent(&plan), key, 16)
+        .await
+        .expect("isolated extension consent fixture");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn install_grants_only_required_permissions_and_recovery_never_restores_revocation() {
+    let path = database_path("consent-recovery");
+    let store = StateStoreHandle::open(path.clone()).expect("isolated extension consent fixture");
+    let owner = PrincipalId::local_owner();
+    let mut package = evidence();
+    package.required_permissions = vec!["projects.read".into()];
+    package.optional_permissions = vec!["background.run".into()];
+    let plan = store
+        .create_install_plan(
+            owner.clone(),
+            ExtensionInstallPlanDraft {
+                evidence: package.clone(),
+                expected_revision: None,
+                plan_fingerprint: [9; 32],
+            },
+            1,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    let key = IdempotencyKey::parse("required-only").expect("isolated extension consent fixture");
+    let accepted = store
+        .accept_plan(
+            owner.clone(),
+            plan.plan_id,
+            install_consent(&plan),
+            key.clone(),
+            2,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .begin_apply(accepted.operation_id, 3)
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .finish_install(accepted.operation_id, "<EXTENSION_ROOT>/required".into(), 4)
+        .await
+        .expect("isolated extension consent fixture");
+    let initial = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+        .await
+        .expect("isolated extension consent fixture");
+    assert_eq!(initial.grants.len(), 1);
+    assert_eq!(initial.grants[0].permission, "projects.read");
+    store
+        .set_grant(
+            owner.clone(),
+            ExtensionGrantMutation {
+                extension_id: package.extension_id.clone(),
+                permission: "projects.read".into(),
+                resource_kind: "Global".into(),
+                resource_id: "*".into(),
+                expected_revision: initial.grant_revision,
+                grant: false,
+            },
+            IdempotencyKey::parse("revoke-required").expect("isolated extension consent fixture"),
+            5,
+        )
+        .await
+        .expect("isolated extension consent fixture");
+    drop(store);
+    let store = StateStoreHandle::open(path.clone()).expect("isolated extension consent fixture");
+    store
+        .finish_install(accepted.operation_id, "<EXTENSION_ROOT>/required".into(), 6)
+        .await
+        .expect("isolated extension consent fixture");
+    store
+        .complete_operation(accepted.operation_id, 7)
+        .await
+        .expect("isolated extension consent fixture");
+    assert!(
+        store
+            .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+            .await
+            .expect("isolated extension consent fixture")
+            .grants
+            .is_empty()
+    );
+    let replay = store
+        .accept_plan(owner.clone(), plan.plan_id, install_consent(&plan), key, 8)
+        .await
+        .expect("isolated extension consent fixture");
+    assert!(replay.replayed);
+    let revision = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("isolated extension consent fixture")
+        .revision;
+    assert_eq!(
+        store
+            .enable(
+                owner,
+                package.extension_id,
+                revision,
+                IdempotencyKey::parse("missing-required")
+                    .expect("isolated extension consent fixture"),
+                9
+            )
+            .await
+            .expect_err("isolated extension consent fixture must reject")
+            .code(),
+        M6ErrorCode::PermissionDenied
+    );
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn unsupported_required_permissions_and_invalid_terms_do_not_create_install_plans() {
+    let path = database_path("unsupported-install");
+    let store = StateStoreHandle::open(path.clone()).expect("isolated install fixture");
+    for invalid_terms in [false, true] {
+        let mut package = evidence();
+        if invalid_terms {
+            package.installation_terms = Some(alcomd_application::ExtensionInstallationTerms {
+                title: "".into(),
+                text: "conditions".into(),
+            });
+        } else {
+            package.required_permissions = vec!["network.request".into()];
+        }
+        let failure = store
+            .create_install_plan(
+                PrincipalId::local_owner(),
+                ExtensionInstallPlanDraft {
+                    evidence: package,
+                    expected_revision: None,
+                    plan_fingerprint: [1; 32],
+                },
+                1,
+            )
+            .await
+            .expect_err("unsupported install must fail before plan");
+        assert_eq!(
+            failure.code(),
+            if invalid_terms {
+                M6ErrorCode::ManifestInvalid
+            } else {
+                M6ErrorCode::ApiUnsupported
+            }
+        );
+        let db = Connection::open(&path).expect("isolated result");
+        for table in [
+            "extension_plans",
+            "extensions",
+            "extension_grants",
+            "operations",
+        ] {
+            assert_eq!(
+                db.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                    .expect("fixed fixture table"),
+                0
+            );
+        }
+    }
+    drop(store);
+    cleanup(&path);
 }

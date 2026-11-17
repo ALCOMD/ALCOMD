@@ -84,7 +84,12 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
         .expect("plan install")
         .plan;
     let accepted = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "m6-install".to_owned(),
         })
@@ -269,7 +274,12 @@ async fn portable_ui_runs_through_real_rpc_daemon_and_host() {
         .expect("plan UI install")
         .plan;
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "m7-ui-install".to_owned(),
         })
@@ -483,7 +493,12 @@ async fn malformed_portable_ui_document_terminates_and_quarantines_the_guest() {
         .expect("plan malformed UI fixture")
         .plan;
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "m7-malformed-ui-install".to_owned(),
         })
@@ -591,7 +606,12 @@ async fn repeated_real_host_crashes_quarantine_only_that_enabled_extension() {
         .expect("plan crash fixture")
         .plan;
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "m6-crash-fixture-install".to_owned(),
         })
@@ -699,7 +719,12 @@ async fn subprocess_extension_apply_until_killed() {
         .expect("plan install")
         .plan;
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: install_plan.plan_fingerprint.clone(),
+                installation_terms_accepted: install_plan.installation_terms.is_some(),
+                required_permissions_accepted: !install_plan.required_permissions.is_empty(),
+            },
             plan_id: install_plan.plan_id.clone(),
             idempotency_key: "m6-crash-install".to_owned(),
         })
@@ -734,6 +759,7 @@ async fn subprocess_extension_apply_until_killed() {
             .expect("apply uninstall");
         CrashMetadata {
             action: "uninstall".to_owned(),
+            install_consent: None,
             operation_id: apply.operation_id,
             plan_id: plan.plan_id,
             idempotency_key: "m6-crash-uninstall".to_owned(),
@@ -741,6 +767,11 @@ async fn subprocess_extension_apply_until_killed() {
     } else {
         CrashMetadata {
             action: "install".to_owned(),
+            install_consent: Some(alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: install_plan.plan_fingerprint.clone(),
+                installation_terms_accepted: install_plan.installation_terms.is_some(),
+                required_permissions_accepted: !install_plan.required_permissions.is_empty(),
+            }),
             operation_id: install.operation_id,
             plan_id: install_plan.plan_id,
             idempotency_key: "m6-crash-install".to_owned(),
@@ -830,7 +861,11 @@ async fn run_kill_restart_case(checkpoint: &str) {
     }
     let replayed = if metadata.action == "install" {
         client
-            .extension_apply_install(ExtensionApplyParams {
+            .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+                consent: metadata
+                    .install_consent
+                    .clone()
+                    .expect("recorded install consent"),
                 plan_id: metadata.plan_id.clone(),
                 idempotency_key: metadata.idempotency_key.clone(),
             })
@@ -868,6 +903,7 @@ async fn run_kill_restart_case(checkpoint: &str) {
 #[serde(rename_all = "camelCase")]
 struct CrashMetadata {
     action: String,
+    install_consent: Option<alcomd_protocol::ExtensionInstallConsent>,
     operation_id: String,
     plan_id: String,
     idempotency_key: String,
@@ -1169,4 +1205,179 @@ impl Drop for TestDirectory {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn install_consent_and_undeclared_permissions_use_real_core_and_signed_package() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("real Core installation consent flow");
+    fs::create_dir(&data).expect("real Core installation consent flow");
+    let package = fixture.path().join("consent.alcomdextension");
+    create_signed_package_with_profile(
+        &package,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m7/portable-ui-extension-v1.wasm"),
+        "Install consent fixture",
+        "[permissions]\nrequired = [\"projects.read\"]\noptional = [\"mcp.clients.read\"]\n[ui]\nprotocol = \"portable-v1\"\n[installation_terms]\ntitle = \"Fixture conditions\"\ntext = \"Use disposable data only.\"\n",
+    );
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("real Core installation consent flow");
+    let mut client = connect_with_retry(config).await;
+    let plan = client
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+        })
+        .await
+        .expect("real Core installation consent flow")
+        .plan;
+    assert_eq!(
+        plan.installation_terms
+            .as_ref()
+            .expect("real Core installation consent flow")
+            .text,
+        "Use disposable data only."
+    );
+    let consent = alcomd_protocol::ExtensionInstallConsent {
+        plan_fingerprint: plan.plan_fingerprint.clone(),
+        installation_terms_accepted: true,
+        required_permissions_accepted: true,
+    };
+    for missing_terms in [true, false] {
+        let mut refused = consent.clone();
+        if missing_terms {
+            refused.installation_terms_accepted = false;
+        } else {
+            refused.required_permissions_accepted = false;
+        }
+        assert!(
+            matches!(client.extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {plan_id:plan.plan_id.clone(),idempotency_key:"confirmed-install".into(),consent:refused}).await,Err(ClientError::Remote(error)) if error.code == "permission_denied")
+        );
+    }
+    let accepted = client
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            plan_id: plan.plan_id.clone(),
+            idempotency_key: "confirmed-install".into(),
+            consent: consent.clone(),
+        })
+        .await
+        .expect("real Core installation consent flow");
+    assert_eq!(
+        wait_for_terminal(&mut client, &accepted.operation_id).await,
+        OperationState::Succeeded
+    );
+    let grants = client
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: plan.extension_id.clone(),
+            cursor: None,
+            limit: None,
+        })
+        .await
+        .expect("real Core installation consent flow");
+    assert_eq!(grants.available_permissions.len(), 12);
+    assert_eq!(grants.grants.len(), 1);
+    assert_eq!(grants.grants[0].permission, "projects.read");
+    let record = client
+        .extension_get(plan.extension_id.clone())
+        .await
+        .expect("real Core installation consent flow")
+        .extension;
+    client
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: plan.extension_id.clone(),
+            expected_revision: record.revision,
+            idempotency_key: "enable-confirmed".into(),
+        })
+        .await
+        .expect("real Core installation consent flow");
+    let opened = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: plan.extension_id.clone(),
+            locale: "en-US".into(),
+        })
+        .await
+        .expect("real Core installation consent flow");
+    let current = client
+        .extension_get(plan.extension_id.clone())
+        .await
+        .expect("real Core installation consent flow")
+        .extension;
+    client
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: plan.extension_id.clone(),
+            permission: "projects.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: current.grant_revision,
+            idempotency_key: "revoke-required".into(),
+        })
+        .await
+        .expect("real Core installation consent flow");
+    assert!(
+        client
+            .extension_ui_refresh(ExtensionUiRefreshParams {
+                session_id: opened.session.session_id,
+                expected_snapshot_revision: opened.snapshot.snapshot_revision,
+            })
+            .await
+            .is_err()
+    );
+    let current = client
+        .extension_get(plan.extension_id.clone())
+        .await
+        .expect("real Core installation consent flow")
+        .extension;
+    assert_eq!(current.runtime_state, ExtensionRuntimeState::Stopped);
+    assert!(
+        matches!(client.extension_enable(ExtensionLifecycleParams {extension_id:plan.extension_id.clone(),expected_revision:current.revision,idempotency_key:"missing-required".into()}).await,Err(ClientError::Remote(error)) if error.code == "permission_denied")
+    );
+    client
+        .extension_set_grant(ExtensionGrantParams {
+            extension_id: plan.extension_id.clone(),
+            permission: "mcp.requests.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: current.grant_revision,
+            idempotency_key: "explicit-undeclared".into(),
+        })
+        .await
+        .expect("real Core installation consent flow");
+    let replay = client
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "confirmed-install".into(),
+            consent,
+        })
+        .await
+        .expect("real Core installation consent flow");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    let grants = client
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: plan.extension_id,
+            cursor: None,
+            limit: None,
+        })
+        .await
+        .expect("real Core installation consent flow");
+    assert_eq!(grants.grants.len(), 1);
+    assert_eq!(grants.grants[0].permission, "mcp.requests.read");
+    shutdown.store(true, Ordering::Release);
+    assert!(
+        daemon
+            .await
+            .expect("real Core installation consent flow")
+            .is_ok()
+    );
 }

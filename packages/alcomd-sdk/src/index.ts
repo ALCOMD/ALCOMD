@@ -60,7 +60,15 @@ export interface ExtensionPermissionsListParams {
     limit?: number;
 }
 
+export interface ExtensionInstallationTerms { title: string; text: string }
+export interface ExtensionInstallConsent {
+    planFingerprint: string;
+    installationTermsAccepted: boolean;
+    requiredPermissionsAccepted: boolean;
+}
+
 export interface ExtensionPermissionsListResult {
+    availablePermissions: ExtensionPermissionGrant["permission"][];
     extensionId: string;
     grantRevision: number;
     requiredPermissions: string[];

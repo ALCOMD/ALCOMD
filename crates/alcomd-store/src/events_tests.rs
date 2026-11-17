@@ -67,6 +67,7 @@ pub(super) async fn installed_extension_for(
                 manifest_digest: [2; 32],
                 component_digest: [3; 32],
                 publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
+                installation_terms: None,
                 required_permissions: vec!["background.run".to_owned()],
                 optional_permissions: vec![],
                 required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
@@ -80,9 +81,28 @@ pub(super) async fn installed_extension_for(
     )
     .await
     .expect("frozen extension fixture");
-    let accepted = M6Store::accept_plan(store, owner.clone(), plan.plan_id, key("install"), 2)
-        .await
-        .expect("accept extension install");
+    let accepted = M6Store::accept_plan(
+        store,
+        owner.clone(),
+        plan.plan_id,
+        if plan.action == "install" {
+            Some(alcomd_application::ExtensionInstallConsent {
+                plan_fingerprint: plan
+                    .plan_fingerprint
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect(),
+                installation_terms_accepted: plan.evidence.installation_terms.is_some(),
+                required_permissions_accepted: !plan.evidence.required_permissions.is_empty(),
+            })
+        } else {
+            None
+        },
+        key("install"),
+        2,
+    )
+    .await
+    .expect("accept extension install");
     M6Store::begin_apply(store, accepted.operation_id, 3)
         .await
         .expect("begin");

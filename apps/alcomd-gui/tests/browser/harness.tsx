@@ -1581,7 +1581,7 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
     extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> {
         if (this.permissionReadFailing) return Promise.reject({ code: "store_unavailable" });
-        return this.value({ extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
+        return this.value({ availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as import("@alcomd/sdk").ExtensionPermissionGrant["permission"][], extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
     }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
     extensionPlanInstall(): ReturnType<GuiRpcClient["extensionPlanInstall"]> { return this.value({ plan: extensionPlan("install") }); }

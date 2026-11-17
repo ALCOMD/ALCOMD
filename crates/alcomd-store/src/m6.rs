@@ -350,6 +350,34 @@ pub(super) fn create_install_plan(
         optional: draft.evidence.optional_interfaces.clone(),
     })
     .map_err(|_| internal())?;
+    if draft
+        .evidence
+        .installation_terms
+        .as_ref()
+        .is_some_and(|terms| !terms.valid())
+    {
+        return Err(error(M6ErrorCode::ManifestInvalid));
+    }
+    let unsupported: Vec<_> = draft
+        .evidence
+        .required_permissions
+        .iter()
+        .filter(|p| !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str()))
+        .collect();
+    if !unsupported.is_empty() {
+        return Err(
+            error(M6ErrorCode::ApiUnsupported).with_source(std::io::Error::other(format!(
+                "unsupported required extension permissions: {unsupported:?}"
+            ))),
+        );
+    }
+    let terms = draft
+        .evidence
+        .installation_terms
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| internal())?;
     let transaction = transaction(connection)?;
     reject_tool_namespace_collision(&transaction, &draft.evidence)?;
     let current = extension_revision(&transaction, owner, &draft.evidence.extension_id)?;
@@ -368,9 +396,9 @@ pub(super) fn create_install_plan(
                 source_kind, source_locator, source_identity, package_digest, manifest_digest,
                 component_digest, publisher_fingerprint,
                 requested_permissions_json, requested_interfaces_json, data_disposition,
-                plan_fingerprint, created_at_ms, ui_protocol
+                plan_fingerprint, created_at_ms, ui_protocol, installation_terms_json
              ) VALUES (?1, ?2, 'install', 'unapplied', ?3, ?4, ?5, ?6, ?7, ?8, ?9,
-                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, 'not_applicable', ?17, ?18, ?19)",
+                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, 'not_applicable', ?17, ?18, ?19, ?20)",
             params![
                 plan_id.to_string(),
                 owner.as_str(),
@@ -390,7 +418,8 @@ pub(super) fn create_install_plan(
                 interfaces,
                 draft.plan_fingerprint.as_slice(),
                 sqlite_integer(now_ms)?,
-                draft.evidence.ui_protocol.map(ExtensionUiProtocol::as_str)
+                draft.evidence.ui_protocol.map(ExtensionUiProtocol::as_str),
+                terms
             ],
         )
         .map_err(store_error)?;
@@ -680,10 +709,40 @@ pub(super) fn recover_operations(
     Ok(recovered)
 }
 
+fn validate_install_consent(
+    plan: &ExtensionPlanRecord,
+    consent: &alcomd_application::ExtensionInstallConsent,
+) -> Result<(), M6Error> {
+    let fingerprint: String = plan
+        .plan_fingerprint
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if consent.plan_fingerprint != fingerprint {
+        return Err(error(M6ErrorCode::PlanStale));
+    }
+    if (plan.evidence.installation_terms.is_some() && !consent.installation_terms_accepted)
+        || (!plan.evidence.required_permissions.is_empty()
+            && !consent.required_permissions_accepted)
+    {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    if plan
+        .evidence
+        .required_permissions
+        .iter()
+        .any(|p| !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str()))
+    {
+        return Err(error(M6ErrorCode::ApiUnsupported));
+    }
+    Ok(())
+}
+
 pub(super) fn accept_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
     plan_id: PlanId,
+    consent: Option<alcomd_application::ExtensionInstallConsent>,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<ExtensionApplyOutcome, M6Error> {
@@ -697,7 +756,21 @@ pub(super) fn accept_plan(
     } else {
         "extensions.applyUninstall"
     };
-    let fingerprint = format!("{{\"planId\":\"{plan_id}\",\"version\":1}}");
+    let fingerprint = if plan.action == "install" {
+        let consent = consent
+            .as_ref()
+            .ok_or_else(|| error(M6ErrorCode::InvalidInput))?;
+        validate_install_consent(&plan, consent)?;
+        serde_json::to_string(
+            &serde_json::json!({"planId": plan_id.to_string(), "version": 2, "consent": consent}),
+        )
+        .map_err(|_| internal())?
+    } else {
+        if consent.is_some() {
+            return Err(error(M6ErrorCode::InvalidInput));
+        }
+        format!("{{\"planId\":\"{plan_id}\",\"version\":1}}")
+    };
     if let Some((saved, response)) = transaction
         .query_row(
             "SELECT request_fingerprint, response_json FROM idempotency_records
@@ -882,6 +955,33 @@ pub(super) fn finish_install(
             )
             .map_err(store_error)?;
     }
+    // The install's initial grants are committed with its registry row. A replay
+    // after state_committed must never restore grants the user has since revoked.
+    let committed: bool = transaction.query_row("SELECT EXISTS(SELECT 1 FROM extension_filesystem_journal WHERE operation_id=?1 AND phase='state_committed' AND state='completed')", [operation_id.to_string()], |row| row.get(0)).map_err(store_error)?;
+    if !committed {
+        let request: String = transaction
+            .query_row(
+                "SELECT request_json FROM operations WHERE operation_id=?1",
+                [operation_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(store_error)?;
+        let request: serde_json::Value = serde_json::from_str(&request).map_err(|_| internal())?;
+        // Pre-State41 accepted work retains its original zero-initial-grant result.
+        if let Some(consent) = request.get("consent") {
+            let consent: alcomd_application::ExtensionInstallConsent =
+                serde_json::from_value(consent.clone()).map_err(|_| internal())?;
+            validate_install_consent(&plan, &consent)?;
+            for permission in &p.required_permissions {
+                let (kind, resource) = if permission == "background.run" {
+                    ("Extension", p.extension_id.as_str())
+                } else {
+                    ("Global", "*")
+                };
+                transaction.execute("INSERT INTO extension_grants (extension_id, permission_name, resource_kind, resource_id, state, grant_revision, updated_at_ms) VALUES (?1,?2,?3,?4,'granted',1,?5)", params![p.extension_id, permission, kind, resource, now]).map_err(store_error)?;
+            }
+        }
+    }
     transaction
         .execute(
             "INSERT INTO extension_data_namespaces
@@ -1035,15 +1135,7 @@ pub(super) fn set_grant(
         return Ok((result, false));
     }
     let extension = get_extension(&transaction, owner, extension_id)?;
-    let (_, declarations) = installed_permission_evidence(&transaction, owner, extension_id)?;
-    let requested = declarations
-        .required
-        .iter()
-        .chain(&declarations.optional)
-        .any(|declared| declared == permission);
-    if !requested {
-        return Err(error(M6ErrorCode::PermissionDenied));
-    }
+    let _ = installed_permission_evidence(&transaction, owner, extension_id)?;
     if extension.grant_revision != expected {
         return Err(error(M6ErrorCode::RevisionConflict));
     }
@@ -1790,7 +1882,7 @@ fn get_plan_on(connection: &Connection, plan_id: PlanId) -> Result<ExtensionPlan
                     COALESCE(source_identity, X''), package_digest, manifest_digest,
                     component_digest, publisher_fingerprint,
                     requested_permissions_json, requested_interfaces_json, data_disposition,
-                    plan_fingerprint, apply_operation_id, created_at_ms, ui_protocol
+                    plan_fingerprint, apply_operation_id, created_at_ms, ui_protocol, installation_terms_json
              FROM extension_plans WHERE plan_id=?1",
             [plan_id.to_string()],
             load_plan_row,
@@ -1825,6 +1917,10 @@ fn load_plan_row(row: &Row<'_>) -> rusqlite::Result<ExtensionPlanRecord> {
             required_interfaces: interfaces.required,
             optional_interfaces: interfaces.optional,
             ui_protocol: parse_ui_protocol(row.get(22)?)?,
+            installation_terms: row
+                .get::<_, Option<String>>(23)?
+                .map(|value| serde_json::from_str(&value).map_err(|_| invalid_query()))
+                .transpose()?,
         },
         expected_revision: optional_revision(row.get(8)?)?,
         data_disposition: parse_disposition(&row.get::<_, String>(18)?)?,
@@ -2298,8 +2394,9 @@ fn reject_tool_namespace_collision(
     evidence: &ExtensionPackageEvidence,
 ) -> Result<(), M6Error> {
     if !evidence
-        .optional_permissions
+        .required_permissions
         .iter()
+        .chain(&evidence.optional_permissions)
         .any(|p| p == alcomd_application::MCP_TOOLS_PROVIDE)
     {
         return Ok(());

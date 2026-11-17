@@ -130,6 +130,10 @@ pub(super) async fn dispatch(
                 Ok(page) => success_action(
                     request.id,
                     rpc::ExtensionPermissionsListResult {
+                        available_permissions: app::EXTENSION_PERMISSIONS
+                            .iter()
+                            .map(|p| (*p).to_owned())
+                            .collect(),
                         extension_id: page.extension_id,
                         grant_revision: page.grant_revision.get(),
                         required_permissions: page.required_permissions,
@@ -263,13 +267,33 @@ pub(super) async fn dispatch(
             }
         }
         rpc::METHOD_EXTENSIONS_APPLY_INSTALL | rpc::METHOD_EXTENSIONS_APPLY_UNINSTALL => {
-            let params: rpc::ExtensionApplyParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
+            let (plan_id, key, consent) = if request.method == rpc::METHOD_EXTENSIONS_APPLY_INSTALL
+            {
+                let params: rpc::ExtensionInstallApplyParams =
+                    match serde_json::from_value(request.params) {
+                        Ok(value) => value,
+                        Err(_) => return invalid(request.id),
+                    };
+                (
+                    params.plan_id,
+                    params.idempotency_key,
+                    Some(app::ExtensionInstallConsent {
+                        plan_fingerprint: params.consent.plan_fingerprint,
+                        installation_terms_accepted: params.consent.installation_terms_accepted,
+                        required_permissions_accepted: params.consent.required_permissions_accepted,
+                    }),
+                )
+            } else {
+                let params: rpc::ExtensionApplyParams = match serde_json::from_value(request.params)
+                {
+                    Ok(value) => value,
+                    Err(_) => return invalid(request.id),
+                };
+                (params.plan_id, params.idempotency_key, None)
             };
-            let parsed = app::PlanId::parse(&params.plan_id)
+            let parsed = app::PlanId::parse(&plan_id)
                 .ok()
-                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
+                .zip(IdempotencyKey::parse(key).ok());
             let Some((plan_id, key)) = parsed else {
                 return invalid(request.id);
             };
@@ -279,7 +303,7 @@ pub(super) async fn dispatch(
                 "uninstall"
             };
             match application
-                .apply(access, plan_id, key, expected_action, now_ms())
+                .apply(access, plan_id, key, expected_action, consent, now_ms())
                 .await
             {
                 Ok(value) => success_action(
@@ -451,6 +475,12 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
 
 fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
     rpc::ExtensionPlan {
+        installation_terms: value.evidence.installation_terms.map(|terms| {
+            rpc::ExtensionInstallationTerms {
+                title: terms.title,
+                text: terms.text,
+            }
+        }),
         mcp_tools: Vec::new(),
         plan_id: value.plan_id.to_string(),
         action: value.action,
@@ -645,6 +675,7 @@ mod tests {
             manifest_digest: [2; 32],
             component_digest: [3; 32],
             publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
+            installation_terms: None,
             required_permissions: vec!["background.run".to_owned()],
             optional_permissions: vec!["projects.read".to_owned()],
             required_interfaces: vec![],
@@ -687,6 +718,22 @@ mod tests {
             .accept_plan(
                 app::PrincipalId::local_owner(),
                 install.plan_id,
+                if install.action == "install" {
+                    Some(alcomd_application::ExtensionInstallConsent {
+                        plan_fingerprint: install
+                            .plan_fingerprint
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect(),
+                        installation_terms_accepted: install.evidence.installation_terms.is_some(),
+                        required_permissions_accepted: !install
+                            .evidence
+                            .required_permissions
+                            .is_empty(),
+                    })
+                } else {
+                    None
+                },
                 IdempotencyKey::parse("permissions-read-install").expect("key"),
                 2,
             )
@@ -743,9 +790,22 @@ mod tests {
         .await;
         let typed: rpc::SuccessResponse<rpc::ExtensionPermissionsListResult> =
             serde_json::from_value(result.response).expect("typed current permission read");
-        assert!(
-            typed.result.grants.is_empty(),
-            "declarations do not auto-grant"
+        assert_eq!(
+            typed.result.available_permissions,
+            app::EXTENSION_PERMISSIONS
+                .iter()
+                .map(|p| (*p).to_owned())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            typed
+                .result
+                .grants
+                .iter()
+                .map(|g| g.permission.clone())
+                .collect::<Vec<_>>(),
+            evidence.required_permissions,
+            "only explicitly confirmed required permissions are granted during install"
         );
         assert_eq!(
             typed.result.required_permissions,
@@ -804,6 +864,49 @@ mod tests {
         assert!(
             result.response.get("error").is_some(),
             "no read capability means no query"
+        );
+        let mut pending_evidence = evidence.clone();
+        pending_evidence.extension_id = "dev.example.consent-authority".into();
+        let pending = store
+            .create_install_plan(
+                app::PrincipalId::local_owner(),
+                app::ExtensionInstallPlanDraft {
+                    evidence: pending_evidence,
+                    expected_revision: None,
+                    plan_fingerprint: [4; 32],
+                },
+                20,
+            )
+            .await
+            .expect("consent caller authority fixture");
+        let installer_without_grants = AccessContext::new(
+            app::PrincipalId::local_owner(),
+            [app::Permission::ExtensionsManage],
+        );
+        let refusal = application
+            .apply(
+                &installer_without_grants,
+                pending.plan_id,
+                IdempotencyKey::parse("no-grant-authority")
+                    .expect("consent caller authority fixture"),
+                "install",
+                Some(app::ExtensionInstallConsent {
+                    plan_fingerprint: "04".repeat(32),
+                    installation_terms_accepted: false,
+                    required_permissions_accepted: true,
+                }),
+                21,
+            )
+            .await
+            .expect_err("consent caller authority fixture must reject");
+        assert_eq!(refusal.code(), app::M6ErrorCode::PermissionDenied);
+        assert_eq!(
+            store
+                .get_plan(pending.plan_id)
+                .await
+                .expect("consent caller authority fixture")
+                .state,
+            "unapplied"
         );
         drop(application);
         drop(store);

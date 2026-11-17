@@ -110,7 +110,7 @@ test("permission readback retains disabled rows without moving the next pointer 
     });
     try {
         await expect.poll(() => page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBeGreaterThan(0);
-        await expect(dialog.getByRole("switch")).toHaveCount(3);
+        await expect(dialog.getByRole("switch")).toHaveCount(12);
         await expect(manage).toBeDisabled();
         const pending = await manage.boundingBox();
         expect(pending).not.toBeNull();
@@ -147,7 +147,7 @@ test("MCP management permission rows read every grant page and use the exact glo
     await expect(projects.getByRole("switch", { name: "Read projects", exact: true })).toBeChecked();
     await expect(dialog.getByRole("combobox", { name: "Permission", exact: true })).toHaveCount(0);
     await expect(dialog.getByRole("region", { name: "Requested permissions", exact: true })).toHaveCount(0);
-    await expect(dialog.getByText("Required to enable", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Required", { exact: true })).toHaveCount(0);
     await expect(manage).toContainText("Create MCP clients, change their grants, and permanently revoke them.");
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(0);
     await confirmPermissionChange(page, "extensions.setGrant", () => manage.getByRole("switch", { name: "Manage MCP clients", exact: true }).click());
@@ -172,7 +172,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         const dialog = page.locator("md-dialog[open]");
         const projects = dialog.getByRole("switch", { name: "Read projects", exact: true });
         await expect(projects).not.toBeChecked();
-        await expect(dialog.getByRole("switch")).toHaveCount(3);
+        await expect(dialog.getByRole("switch")).toHaveCount(12);
         await expect(dialog.getByRole("combobox")).toHaveCount(0);
         await confirmPermissionChange(page, "extensions.setGrant", async () => {
             await projects.focus();
@@ -206,9 +206,9 @@ test("Core observation permissions are optional global switches and never grant 
     const dialog=page.locator("md-dialog[open]");
     const connections=dialog.getByRole("switch",{name:"Read MCP Core connections",exact:true});
     const calls=dialog.getByRole("switch",{name:"Read MCP Core calls",exact:true});
-    await expect(dialog.getByRole("switch")).toHaveCount(2);
+    await expect(dialog.getByRole("switch")).toHaveCount(12);
     await expect(connections).not.toBeChecked();await expect(calls).not.toBeChecked();
-    await expect(dialog.getByText("Required to enable",{exact:true})).toHaveCount(0);
+    await expect(dialog.getByText("Required",{exact:true})).toHaveCount(0);
     await confirmPermissionChange(page,"extensions.setGrant",()=>connections.click());
     await expect(connections).toBeChecked();await expect(calls).not.toBeChecked();
     await page.evaluate(()=>window.h4Management.failNext("extensions.setGrant","extension_permission_denied"));

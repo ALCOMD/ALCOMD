@@ -1496,7 +1496,7 @@ async fn gui_extension_plan_install(
 #[tauri::command]
 async fn gui_extension_apply_install(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::ExtensionApplyParams,
+    params: alcomd_protocol::ExtensionInstallApplyParams,
 ) -> Result<alcomd_protocol::ExtensionOperationResult, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;

@@ -68,7 +68,7 @@ production replacement；M6 backend runtime 已验收的 sandbox、lease、data 
 ## Extension MCP tools (owner-approved 2026-11-16)
 
 - A signed provider catalogue is untrusted data. Host-only JSON Schema validation rejects external/dynamic/circular references and header mappings; a deny retriever prevents network/file resolution. Preflight type-checks the provider ABI without guest execution. Native schema work, compilation and guest calls run in the supervised Host process with existing quotas and deadlines.
-- Core alone canonicalizes public names and derives business permissions/effect from the closed typed Host operations. Publication is optional `mcp.tools.provide`, default off. MCP clients retain existing global business capabilities; no project or per-extension client whitelists exist.
+- Core alone canonicalizes public names and derives business permissions/effect from the closed typed Host operations. Publication uses `mcp.tools.provide`; it may be required (explicit install consent) or optional (default off). MCP clients retain existing global business capabilities; no project or per-extension client whitelists exist.
 - Every Host call reauthenticates current MCP credentials/OAuth and extension grants, package and lease. Writes check again inside acceptance transactions. Guest receives neither client credential nor an owner context. It cannot invent an RPC method, alter the captured Apply/cancel target or confirm for the caller.
 - Core-owned effect evidence cannot be forged by guest data. One persistent action is recorded atomically with business acceptance; lost replies, traps and protocol cancellation do not cancel or repeat accepted Operations. Explicit same-key recovery checks current caller/business authority and restores original evidence only; it never invokes a removed or revoked provider.
 - Catalogue continuations bind current authentication, client revision, provider packages/grant revisions and position. HTTP resolves Core effect metadata before calling; reserved write controls conservatively preserve unknown-write semantics across source changes. No new listener/session or credential forwarding to Wasm is introduced.
@@ -98,3 +98,9 @@ A displayed IPC connection is not a current-authorization or online assertion;
 HTTP sockets, adapter queues and protocol subscriptions remain unobserved.
 Observation cleanup and request cancellation never cancel accepted Operations.
 State40 preserves all old rows/constraints and grants nothing automatically.
+
+## State41 install consent and complete permission catalogue
+
+Manifest declarations are disclosure and startup requirements, not a grant ceiling. Explicit owner-controlled grants may include any currently grantable undeclared extension permission. No owner-only permission, missing WIT interface or tool declaration is synthesized. Each Host request still checks the calling Client, Extension, lease, lifecycle and current grant revision. Required tool publication is allowed only with valid signed tool declarations; it does not grant invoking MCP clients business authority.
+
+Author terms are bounded signed plain text, frozen with the Plan and shown as untrusted text. GUI consent order has no separate persisted workflow; Core validates one final consent against the exact Plan fingerprint and caller grant authority. Denial cannot submit Apply. Durable consent is part of the existing idempotent Operation request, not a publisher trust decision. Install registry and initial required grants commit together; crash recovery uses the accepted evidence and must not restore grants revoked after state_committed. Missing, false or changed consent is rejected before Operation acceptance. Existing installations receive no implicit new authority.

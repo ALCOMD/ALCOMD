@@ -56,6 +56,7 @@ const MIGRATION_V36: &str = include_str!("../migrations/0036_mcp_oauth.sql");
 const MIGRATION_V37: &str = include_str!("../migrations/0037_capability_permission_switches.sql");
 const MIGRATION_V38: &str = include_str!("../migrations/0038_extension_mcp_tools.sql");
 const MIGRATION_V39: &str = include_str!("../migrations/0039_remove_publisher_trust.sql");
+const MIGRATION_V41: &str = include_str!("../migrations/0041_extension_install_consent.sql");
 const MIGRATION_V40: &str = include_str!("../migrations/0040_mcp_runtime_observations.sql");
 
 #[cfg(test)]
@@ -296,6 +297,11 @@ pub(super) fn initialize_connection_with_report(
     if version <= 39 {
         connection
             .execute_batch(MIGRATION_V40)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 40 {
+        connection
+            .execute_batch(MIGRATION_V41)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -1835,3 +1841,7 @@ mod publisher_trust_removal_tests;
 #[cfg(test)]
 #[path = "sqlite_runtime_observations_tests.rs"]
 mod runtime_observations_tests;
+
+#[cfg(test)]
+#[path = "sqlite_install_consent_tests.rs"]
+mod install_consent_tests;

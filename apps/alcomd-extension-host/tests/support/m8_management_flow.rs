@@ -297,7 +297,12 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
     assert!(plan.required_permissions.is_empty());
     assert_eq!(plan.optional_permissions.len(), 4);
     let install = owner
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "runtime-install".into(),
         })
@@ -597,7 +602,12 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
             .any(|p| p == "mcp.clients.read")
     );
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "optional-management-install".into(),
         })
@@ -791,7 +801,12 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .plan;
     assert_eq!(plan.required_permissions, vec!["mcp.clients.read"]);
     let install = client
-        .extension_apply_install(ExtensionApplyParams {
+        .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
+            consent: alcomd_protocol::ExtensionInstallConsent {
+                plan_fingerprint: plan.plan_fingerprint.clone(),
+                installation_terms_accepted: plan.installation_terms.is_some(),
+                required_permissions_accepted: !plan.required_permissions.is_empty(),
+            },
             plan_id: plan.plan_id,
             idempotency_key: "management-install".into(),
         })

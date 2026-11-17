@@ -863,69 +863,95 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
+    const canGrant = useCapability(capabilities.extensionsPermissions);
     const [path, setPath] = useState("");
     const [plan, setPlan] = useState<ExtensionPlan>();
+    const [termsAccepted, setTermsAccepted] = useState(false);
+    const [refusal, setRefusal] = useState<"terms" | "permissions">();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [submitted, setSubmitted] = useState(false);
     useUtilityDialogBusy(feedback.busy);
     const current = useActionScope(client);
     const pending = useRef(false);
-    const run = async (apply: boolean) => {
-        if (!available || pending.current || submitted || (apply ? plan === undefined || !hasPermissionRequests(plan) : path.trim().length === 0)) return;
+    const reviewingTerms = plan?.installationTerms !== undefined && !termsAccepted;
+    const reviewingPermissions = !reviewingTerms && (plan?.requiredPermissions.length ?? 0) > 0;
+    const apply = async (reviewed: ExtensionPlan, acceptedTerms: boolean) => {
+        setSubmitted(true);
+        const result = await client.extensionApplyInstall(reviewed.planId, {
+            planFingerprint: reviewed.planFingerprint,
+            installationTermsAccepted: acceptedTerms,
+            requiredPermissionsAccepted: reviewed.requiredPermissions.length > 0
+        });
+        if (!current()) return;
+        setFeedback({ busy: false, operationId: result.operationId });
+        onAccepted?.(result.operationId);
+        completeDialog?.();
+    };
+    const run = async () => {
+        if (!available || pending.current || submitted || (plan === undefined && path.trim().length === 0)) return;
         pending.current = true;
         setFeedback({ busy: true });
-
+        setRefusal(undefined);
         try {
-            if (apply && plan !== undefined) {
-                setSubmitted(true);
-                const result = await client.extensionApplyInstall(plan.planId);
+            if (plan === undefined) {
+                const { plan: reviewed } = await client.extensionPlanInstall(path, 0);
                 if (!current()) return;
-                setFeedback({ busy: false, operationId: result.operationId });
-                onAccepted?.(result.operationId);
-                completeDialog?.();
+                if (!hasPermissionRequests(reviewed)) throw { code: "internal_error" };
+                setTermsAccepted(false);
+                setPlan(reviewed);
+                if (reviewed.installationTerms === undefined && reviewed.requiredPermissions.length === 0) {
+                    await apply(reviewed, false);
+                } else setFeedback({ busy: false });
+            } else if (reviewingTerms) {
+                setTermsAccepted(true);
+                if (plan.requiredPermissions.length === 0) await apply(plan, true);
+                else setFeedback({ busy: false });
             } else {
-                // Core accepts new installs only; zero binds the plan to expected absence.
-                const result = await client.extensionPlanInstall(path, 0);
-                if (!current()) return;
-                setPlan(result.plan);
-                setFeedback({ busy: false });
+                await apply(plan, termsAccepted);
             }
         } catch (caught: unknown) {
             if (!current()) return;
             const error = safeError(caught);
             if (!operationRequestOutcomeUnknown(error)) setSubmitted(false);
             setFeedback({ busy: false, error });
-        }
-        finally { pending.current = false; }
+        } finally { pending.current = false; }
+    };
+    const decline = () => {
+        if (pending.current) return;
+        setRefusal(reviewingTerms ? "terms" : "permissions");
+        setPlan(undefined); setTermsAccepted(false); setSubmitted(false); setFeedback(INITIAL_FEEDBACK);
     };
     const chooseFile = async () => {
         if (pending.current) return;
-        pending.current = true;
-        setFeedback({ busy: true });
+        pending.current = true; setFeedback({ busy: true });
         try {
             const selected = await client.selectFile("extensionPackage", path);
             if (current()) {
-                if (selected !== undefined) setPath(selected);
+                if (selected !== undefined) { setPath(selected); setRefusal(undefined); }
                 setFeedback(INITIAL_FEEDBACK);
             }
         } catch (caught) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
-        {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
+        {refusal === undefined ? null : <p role="status">{t(refusal === "terms" ? "Installation not completed: the terms were declined." : "Installation not completed: the required permissions were declined.")}</p>}
+        {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(); }}>
             <div className="project-target-picker">
-                <PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+                <PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                 <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
             </div>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><LoadingButton disabled={!available || submitted || path.trim().length === 0} loading={feedback.busy} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Install extension")}</LoadingButton></div>
         </form> : <>
-            <h2>{t("Review extension install")}</h2>
-            <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
-            <ExtensionToolPreview tools={plan.mcpTools} />
-            {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <div>{t("Permission details are unavailable from this Core.")}</div>}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
+            <h2>{t(reviewingTerms ? "Extension terms" : reviewingPermissions ? "Required permissions" : "Install extension")}</h2>
+            <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div></dl>
+            {reviewingTerms ? <section className="extension-install-terms" aria-label={t("Extension terms")}><h3>{plan.installationTerms!.title}</h3><div className="extension-install-terms-text" tabIndex={0}>{plan.installationTerms!.text}</div></section> : !reviewingPermissions ? null : <>
+                <ExtensionPermissionRequests required={plan.requiredPermissions} optional={[]} />
+                <ExtensionToolPreview tools={plan.mcpTools} />
+                {canGrant ? null : <p role="alert">{t("You cannot approve extension permissions with this connection.")}</p>}
+            </>}
+            {reviewingTerms || reviewingPermissions ? <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={decline} type="button" variant="text">{t("Decline")}</Button><LoadingButton disabled={!available || submitted || (reviewingPermissions && !canGrant)} loading={feedback.busy} onClick={() => void run()} type="button">{t(reviewingTerms && plan.requiredPermissions.length > 0 ? "Agree and continue" : "Agree and install")}</LoadingButton></div> : feedback.error === undefined || submitted ? null : <div className="dialog-actions"><LoadingButton disabled={!available} loading={feedback.busy} onClick={() => void run()} type="button">{t("Retry")}</LoadingButton></div>}
         </>}
-        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage((feedback.error!).code))}</p><code>{(feedback.error!).code}</code>{feedback.error!.diagnosticId === undefined ? null : <p><code>{feedback.error!.diagnosticId}</code></p>}{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
+        {submitted && operationRequestOutcomeUnknown(feedback.error) ? <div role="alert" data-notification-error={feedback.error!.code}><p>{t(requestErrorMessage(feedback.error!.code))}</p>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</div> : feedback.operationId !== undefined ? null : <MutationFeedback client={client} feedback={feedback} onOperationTerminal={onAccepted === undefined ? () => onChanged?.() : undefined} />}
     </section>;
 }
 

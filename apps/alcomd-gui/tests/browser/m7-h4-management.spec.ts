@@ -21,11 +21,11 @@ async function installReview(page: Page) {
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
     await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
     await expect(modal(page).getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
-    await modal(page).getByRole("button", { name: "Create install plan", exact: true }).click();
-    await expect(modal(page).getByRole("heading", { name: "Review extension install", exact: true })).toBeVisible();
+    await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(modal(page).getByRole("heading", { name: "Required permissions", exact: true })).toBeVisible();
     const requested = modal(page).getByRole("region", { name: "Requested permissions", exact: true });
     await expect(requested.getByText("Read projects", { exact: true })).toBeVisible();
-    await expect(requested.getByText("Run in background", { exact: true })).toBeVisible();
+    await expect(requested.getByText("Run in background", { exact: true })).toHaveCount(0);
     await expect(modal(page).getByRole("region", { name: "Allowed permissions", exact: true })).toHaveCount(0);
 }
 async function uninstallReview(page: Page, deleteData = false) {
@@ -92,10 +92,10 @@ test("H4 install preserves its raw path, reviews expected absence, and follows o
     await installReview(page);
     expect((await requests(page, "extensions.planInstall"))[0]!.params).toEqual({ packagePath, expectedRevision: 0 });
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
-    await modal(page).getByRole("button", { name: "Discard plan", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Decline", exact: true }).click();
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue(displayPath(packagePath));
-    await modal(page).getByRole("button", { name: "Create install plan", exact: true }).click();
-    await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Agree and install", exact: true }).click();
     await expect(modal(page).locator(".operation-follow")).toContainText(/running/i);
     await expect(page.getByRole("main").locator(".operation-follow")).toHaveCount(0);
     await expect(page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Install extension", exact: true, includeHidden: true })).toBeDisabled();
@@ -115,12 +115,12 @@ test("H4 install keeps an unknown Apply result visible and never repeats the wri
     await open(page);
     await installReview(page);
     await page.evaluate(() => window.h4Management.failNext("extensions.applyInstall", "daemon_unavailable"));
-    await modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Agree and install", exact: true }).click();
     await expect(modal(page).getByRole("alert")).toContainText("The result of this request is unknown");
-    await expect(modal(page).getByRole("button", { name: "Apply reviewed plan", exact: true })).toBeDisabled();
+    await expect(modal(page).getByRole("button", { name: "Agree and install", exact: true })).toBeDisabled();
     await expect(page.locator(".operation-follow")).toHaveCount(0);
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
-    await modal(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue("");
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
@@ -212,7 +212,7 @@ test("H4 permission declarations remain separate from empty and partial actual g
     await openPermissions(page);
     await expect(projects(page).getByRole("heading", { name: "Read projects", exact: true })).toBeVisible();
     await expect(background(page).getByRole("heading", { name: "Run in background", exact: true })).toBeVisible();
-    await expect(projects(page).getByText("Required to enable", { exact: true })).toBeVisible();
+    await expect(projects(page).getByText("Required", { exact: true })).toBeVisible();
     await expect(projects(page).getByRole("switch", { name: "Read projects", exact: true })).not.toBeChecked();
     await expect(background(page).getByRole("switch", { name: "Run in background", exact: true })).not.toBeChecked();
     await expect(projects(page).getByRole("combobox")).toHaveCount(0);
@@ -344,4 +344,72 @@ test("H4 project permission does not depend on loading a project list", async ({
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "projects.list")).toHaveLength(0);
     expect((await requests(page, "extensions.revokeGrant"))[0]!.params).toMatchObject({permission:"projects.read",resourceKind:"Global",resourceId:"*"});
+});
+
+
+test("Install confirms signed terms before required permissions and sends one frozen consent", async ({ page }) => {
+    await open(page, false, "&h4-terms=1&h4-long-terms=1");
+    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
+    await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(modal(page).getByRole("heading", { name: "Extension terms", exact: true })).toBeVisible();
+    const terms = modal(page).locator(".extension-install-terms-text");
+    await expect(terms).toContainText("Use this extension only with disposable test data.");
+    expect(await terms.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    expect(await terms.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
+    await modal(page).getByRole("button", { name: "Agree and continue", exact: true }).click();
+    await expect(modal(page).getByRole("heading", { name: "Required permissions", exact: true })).toBeVisible();
+    await expect(modal(page).getByText("Read projects", { exact: true })).toBeVisible();
+    expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
+    await modal(page).getByRole("button", { name: "Agree and install", exact: true }).click();
+    await expect.poll(async () => (await requests(page, "extensions.applyInstall")).length).toBe(1);
+    expect((await requests(page, "extensions.applyInstall"))[0]!.params.consent).toEqual({ planFingerprint: "a".repeat(64), installationTermsAccepted: true, requiredPermissionsAccepted: true });
+    expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
+});
+
+for (const stage of ["terms", "permissions"] as const) {
+    test(`Declining installation ${stage} makes no install or permission write`, async ({ page }) => {
+        await open(page, false, "&h4-terms=1");
+        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
+        await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+        if (stage === "permissions") await modal(page).getByRole("button", { name: "Agree and continue", exact: true }).click();
+        await modal(page).getByRole("button", { name: "Decline", exact: true }).click();
+        await expect(modal(page).getByRole("status")).toContainText("Installation not completed:");
+        expect(await requests(page, "extensions.applyInstall")).toHaveLength(0);
+        expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
+        await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+        await expect(modal(page).getByRole("heading", { name: "Extension terms", exact: true })).toBeVisible();
+        expect(await requests(page, "extensions.planInstall")).toHaveLength(2);
+    });
+}
+
+for (const hasTerms of [false, true]) {
+    test(`Installation skips empty required permissions with terms=${hasTerms}`, async ({ page }) => {
+        await open(page, false, "&h4-no-required=1" + (hasTerms ? "&h4-terms=1" : ""));
+        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
+        await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
+        if (hasTerms) await modal(page).getByRole("button", { name: "Agree and install", exact: true }).click();
+        await expect.poll(async () => (await requests(page, "extensions.applyInstall")).length).toBe(1);
+        expect((await requests(page, "extensions.applyInstall"))[0]!.params.consent).toEqual({ planFingerprint: "a".repeat(64), installationTermsAccepted: hasTerms, requiredPermissionsAccepted: false });
+        expect(await requests(page, "extensions.setGrant")).toHaveLength(0);
+    });
+}
+
+test("Permission management shows both groups and grants an undeclared capability", async ({ page }) => {
+    await open(page, true);
+    await openPermissions(page);
+    const declared = modal(page).getByRole("region", { name: "Declared permissions", exact: true });
+    const undeclared = modal(page).getByRole("region", { name: "Undeclared permissions", exact: true });
+    await expect(declared.getByRole("switch")).toHaveCount(2);
+    await expect(undeclared.getByRole("switch")).toHaveCount(10);
+    const toggle = undeclared.getByRole("switch", { name: "Read MCP clients", exact: true });
+    await expect(toggle).not.toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    expect((await requests(page, "extensions.setGrant"))[0]!.params).toMatchObject({ permission: "mcp.clients.read", resourceKind: "Global", resourceId: "*" });
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
 });

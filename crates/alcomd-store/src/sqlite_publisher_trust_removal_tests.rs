@@ -203,6 +203,14 @@ fn state39_each_drop_failure_rolls_back_columns_trigger_rows_and_version() {
 fn state39_real_initializer_upgrades_and_reopens_without_any_trust_model() {
     let db = fixture();
     let expected = expected_state39(snapshot(&db));
+    let mut expected = expected;
+    for (table, rows) in &mut expected {
+        if table == "extension_plans" {
+            for row in rows {
+                row.push(Value::Null);
+            }
+        }
+    }
     let path = std::env::temp_dir().join(format!("alcomd-state39-{}.db", Uuid::new_v4()));
     db.execute("VACUUM INTO ?1", [path.to_str().expect("fixture path")])
         .expect("durable fixture");

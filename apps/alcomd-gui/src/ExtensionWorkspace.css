@@ -121,3 +121,7 @@
         grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
     }
 }
+
+.extension-install-terms { min-width: 0; overflow-wrap: anywhere; }
+.extension-install-terms-text { max-height: min(42vh, 360px); overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; }
+.extension-permission-group + .extension-permission-group { margin-top: 20px; }

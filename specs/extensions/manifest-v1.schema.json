@@ -9,6 +9,27 @@
         "publisher_key_fingerprint", "license", "entrypoints", "interfaces", "permissions"
     ],
     "properties": {
+        "installation_terms": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "title",
+                "text"
+            ],
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 16384,
+                    "description": "UTF-8 encoded text additionally limited to 16384 bytes; no control characters except CR/LF/TAB."
+                }
+            }
+        },
         "schema": {"const": 1},
         "mcp": {"type":"object","additionalProperties":false,"required":["tools"],"properties":{"tools":{"const":"component/mcp-tools.json"}}},
         "id": {
