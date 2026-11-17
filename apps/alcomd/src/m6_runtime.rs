@@ -203,7 +203,7 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
         let remaining_ms = authority.deadline_ms.saturating_sub(now_ms()?);
         if remaining_ms == 0 {
             #[cfg(feature = "test-kill-gates")]
-            eprintln!("test Host UI dispatch limit: remaining_ms=0");
+            crate::test_support::trace_host_ui_dispatch_expired();
             return Err(error(M6ErrorCode::ResourceLimit));
         }
         let timeout = Duration::from_millis(remaining_ms.min(2_000));
@@ -534,10 +534,7 @@ fn invoke(
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             #[cfg(feature = "test-kill-gates")]
-            eprintln!(
-                "test Host invocation deadline: export={export} budget_ms={}",
-                timeout.as_millis()
-            );
+            crate::test_support::trace_host_invocation_deadline(export, timeout);
             terminate(&mut process.child);
             return Err(error(M6ErrorCode::ResourceLimit));
         }
@@ -931,10 +928,7 @@ fn read_with_timeout(
         }
         Err(source) => {
             #[cfg(feature = "test-kill-gates")]
-            eprintln!(
-                "test Host read limit: budget_ms={} reason={source}",
-                timeout.as_millis()
-            );
+            crate::test_support::trace_host_read_limit(timeout, &source);
             terminate(child);
             Err(error(M6ErrorCode::ResourceLimit).with_source(source))
         }

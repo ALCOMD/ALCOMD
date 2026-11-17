@@ -13,6 +13,29 @@ use tokio::task::{JoinError, JoinHandle};
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+// This module is compiled only with test-kill-gates. Keep the existing bounded
+// timeout diagnostics here; Portable UI runtime code has no logging sink.
+pub(crate) fn trace_host_ui_dispatch_expired() {
+    eprintln!("test Host UI dispatch limit: remaining_ms=0");
+}
+
+pub(crate) fn trace_host_invocation_deadline(export: &str, timeout: std::time::Duration) {
+    eprintln!(
+        "test Host invocation deadline: export={export} budget_ms={}",
+        timeout.as_millis()
+    );
+}
+
+pub(crate) fn trace_host_read_limit(
+    timeout: std::time::Duration,
+    reason: &std::sync::mpsc::RecvTimeoutError,
+) {
+    eprintln!(
+        "test Host read limit: budget_ms={} reason={reason}",
+        timeout.as_millis()
+    );
+}
+
 /// A ready test daemon that retains endpoint ownership until the handle drops.
 ///
 /// Keeping the listener separate from the serving task prevents a failed task
