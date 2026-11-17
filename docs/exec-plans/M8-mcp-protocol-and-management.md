@@ -1313,3 +1313,20 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 本轮修正管理扩展README的过时“尚无实时连接/请求”和“两项可选权限”描述，使其符合已实现的Core观测及四项可选声明；不改接口或manifest。上述新增合同仍需具体审批，未直接实施或广告。真实接入缺少外部输入已单独询问，不因此停止独立审计。
 
 只读再次核对当前GUI85304可见/响应，以自身5条管道连Core47824，review/data和profile不变，五程序摘要均匹配原candidate.json。原data/profile及旧review的36/346/10/303份文件摘要与既有快照完全一致。本轮没有暂停或替换Core/GUI、写真实项目、修改系统信任或恢复桌面输入。程序仍为Core3d6c2a1b/GUI fb72f0aa，7aed2b36仅测试变化，不为此重建程序。M8继续IN_PROGRESS，未宣称人工/远端验收通过，不进入M9。
+
+### 2026-11-17 实际Codex客户端接入与扩展测试顺序调整
+
+所有者明确先测MCP，扩展相关人工测试留到后续实际开发扩展时；保留未覆盖项，不记通过/豁免，不将“后续”自行归入M9或M12。扩展源网址不再作为本轮MCP验证的前置要求。原用户localhost开发证书存在但Windows仍报UntrustedRoot，未导出其私钥、安装系统信任或修改日常配置。
+
+复用本机Codex CLI0.153.4（exe SHA256 `444a3f0008050605cae73cd9b7a2dcac61294062dfaab56dd20430fd6498518b`），在target下新建一次性CODEX_HOME，analytics关闭、模型端点仅指未监听的回环地址且未发出推理请求。通过其实际app-server MCP工具入口调用，不是假SDK或模拟结果；ALCOMD身份/审批/登记仍走原alcomd-client typed方法，私有驱动不做任意RPC透传。凭据只经匿名管道/内存传递；OAuth明确使用一次性home内的file store，未写系统keyring。没有新增生产依赖/合同/权限或Core修复。Core/MCP程序来源3d6c2a1b，至本轮父提交611436c4的相关Core/client/protocol/store/MCP运行代码完全无差异，沿用现有程序及输入证据。
+
+| 独立实际场景 | 真实结果与边界 | 原始记录（target/m8-codex-client-20261117下） |
+| --- | --- | --- |
+| Codex现代回环HTTP Bearer | 最终场景13项检查通过：0授权连接/空目录；明确授权后新线程发现六工具，项目和实际包快照读取、缺包真实失败、原卸载Plan无文件修改、显式Apply、同Operation成功/实际包移除、同键幂等重放、撤权后原线程旧工具调用permission_denied。按客户端缓存行为新开线程刷新授权后的目录，未宣称自动推送目录更新；cancel_operation本轮未调用 | run-2fb96d14bc0e4ee2b68edae4a3617ff3/result.json |
+| Codex预登记HTTPS/OAuth | 独立场景9项检查通过：真实TLS校验、精确预登记ID/回调/resource、Codex S256、本机Core审阅/显式批准、实际Codex授权码交换、OAuth状态及仅两项读工具、真实Core读取。复用已冻结公开测试证书，只给本轮子进程设CODEX_CA_CERTIFICATE；保留证书/主机校验，没有修改系统信任、普通HTTP回退或owner回退 | run-065067eea8ef43b7b972ec22266e6062/result.json |
+
+真实接入还揭示客户端边界：静态exe含现代协议并不表示默认启用。Codex features list显示mcp_2026_07_28默认false/under development；仅在本轮隔离配置开启后现代HTTP可用。其STDIO即使启用仍发送initialize，透明原字节诊断记录唯一方法initialize及-32601；当前不能作为这个版本的可用STDIO客户端，不改ALCOMD冻结协议迎合它。未带flag的STDIO、带flag的STDIO及具名trace失败分别保留于run-d3f1ded18a7544fcb53d5ca4fae28931、run-bac504bbf7744304a2e70151bf7502fd、run-db6279168c4e48c580b7795acfc99074。不是Core STDIO功能已失效，既有真实冻结SDK STDIO结果仍按原输入保留。
+
+准备失败同样保留：run-2493410710574b13934a6f4be7232a5e的私有rustc驱动误混不同feature的Tokio产物导致无reactor，尚未创建客户端；按Cargo指纹精确匹配现有依赖后才继续，不归因Core。首个HTTP run-05981706a73d4eb9a437ef3e198dbcd7已连接但因新驱动错误期待零授权返回六工具而失败；真实合同要求授权过滤，修正本轮新测试为零授权空目录、明确授权后六工具，没有放宽任何原仓库断言或权限。HTTP业务成功后的清理曾误取project_get外层revision；独立cleanup-follow-up.json记录按精确项目ID、文件目录身份及0活动任务补取消登记成功，原错误不覆盖、不重跑业务。私有HTTP runner也只复用生产库并明确without_daemon_start，未新增持久验证框架或公共工具。
+
+收尾确认：所有本轮临时MCP身份、OAuth注册已撤销；OAuth自有.credentials.json已删除，测试监听/私有驱动退出，样例仅取消登记、文件保留，最终0项目/0活动Operation。原Core47824和GUI85304保持5条自身管道，五程序摘要及原四组36/346/10/303份文件摘要保持；没有替换原程序、升级原数据、操作Unity或恢复桌面控制。普通浏览器人工TLS/授权体验、实际Codex刷新/到期及取消场景尚未本轮覆盖，复用既有SDK证据而不改记为Codex覆盖；完整传输/订阅观测、默认分发及其余既有缺口仍保留。仅更新文档和适用metadata/diff，不重复Workspace/Chromium/release/三平台，无新增远端结果或推送，M8仍IN_PROGRESS。

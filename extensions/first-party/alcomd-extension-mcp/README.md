@@ -13,7 +13,7 @@
 
 M8 当前实现位于 `backend/`，使用获批独立 Host/WIT 和原 Portable UI 组件承载客户端与授权管理。
 当前技术验证及尚未覆盖内容以 `docs/exec-plans/M8-mcp-protocol-and-management.md` 为准；不能由代码存在宣称已验收。
-“活动”分段已通过独立只读Host/WIT读取Core确认的IPC连接和在途Core RPC；这不等于HTTP空闲连接、全部MCP协议请求或订阅，后面三项尚未接通。界面不把未撤销客户端记录显示为在线。预登记客户端HTTPS/OAuth已实现并有隔离Core/SDK证据；普通浏览器及目标客户端人工接入仍待验证，CIMD/DCR尚不支持，不据此宣称所有客户端均可自动接入或M8完成。
+“活动”分段已通过独立只读Host/WIT读取Core确认的IPC连接和在途Core RPC；这不等于HTTP空闲连接、全部MCP协议请求或订阅，后面三项尚未接通。界面不把未撤销客户端记录显示为在线。预登记客户端HTTPS/OAuth已有隔离Core/SDK证据，并于2026-11-17通过实际Codex CLI0.153.4的隔离OAuth登录/读取；仅本轮子进程信任公开测试证书，不等同普通浏览器人工TLS接入。扩展相关后续人工测试按所有者要求延后，未覆盖项仍保留；CIMD/DCR尚不支持，不据此宣称任意客户端均兼容或M8完成。
 
 构建（标准仓库根目录，Rust 1.97.1）：
 
