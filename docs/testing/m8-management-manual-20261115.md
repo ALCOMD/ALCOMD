@@ -1,5 +1,42 @@
 # M8 管理扩展人工查看准备
 
+## 2026-11-17 单扩展源在线安装候选
+
+代码 `3d6c2a1b80a124e1c16794b4a303ac0d534791c7`，只在本地。一个HTTPS地址对应一个扩展及多个版本，从直链下载现有签名 `.alcomdextension`，没有升级、自动更新或扩展市场。GUI保留本地入口，在线准备后继续原条款、必需权限和安装任务流程。
+
+**当前实际窗口：GUI95592可见/响应，5条管道指向候选Core47824，启动助手退出后已再次核对。** 两者及CLI/MCP/Host均为匹配debug程序，独立State42 data/profile位于 `C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
+eview`；自动发现关闭，项目和备份路径只在该目录。开始查看时0安装/0授权/0活动任务；这只是窗口初始状态，不冒称已完成原生在线安装。
+
+真实存在且经HTTPS/Core安装验证的签名测试包，可直接复制完整路径：
+
+```text
+C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
+eviewsource-demo.alcomdextension
+```
+
+SHA256 `7efc24ce73236421f413fbb7067a67e4a0d473fd3ea02fa1f9b5ce6f0b6731af`。包为dev.alcomd.tools-fixture / 1.0.0，公开测试签名，含“仅使用可丢弃测试数据”条款及必需projects.read；仅用于本隔离环境，不要求安装到原环境。
+
+最短查看步骤：
+
+1. 侧栏“扩展”→“安装扩展”：本地文件可直接粘贴上方路径；应先显示作者条款，再显示必需权限，同意后才提交安装。无需发布者信任确认。
+2. 同一弹窗切“在线来源”：输入你要安装的普通受信任HTTPS清单地址→“读取清单”→选版本→“安装扩展”。应显示名称、版本/API，默认最高受支持正式版；条款/权限仍取自下载后的签名包。清单变化要求重读，不自动换版本。
+3. 准备时取消或Esc、重新打开，旧结果不得带回或自动安装；失败保留可重试反馈，长文本不能挤坏操作区。不要求重验既有M7页面。
+
+**原生在线成功安装仍待人工查看，当前没有可公开分发的在线测试源。** 真正HTTPS传输/下载/安装已由隔离Core用例验证，浏览器夹具覆盖交互；一次性HTTPS测试服务已关闭。测试证书只注入私有测试进程，未写系统信任，普通候选不会信任该证书。不要把已停止的localhost测试地址当可用下载地址，也不把本地文件安装当在线桌面成功。源文件合同及示例见 `specs/extensions/source-v1.md`，不能将示例example.invalid地址当可用服务。
+
+如窗口已关闭，可手动运行下方入口；已实际执行GUI分支并核对管道，已有实例时它拒绝，不自动停止或连接其他Core：
+
+```powershell
+& 'C:UsersM2922MyProjectsRustALCOMD	argetm8-remote-source-20261117
+eviewOpen-Review.ps1'
+```
+
+本地证据均绑定上述代码及937份输入摘要 `221deb5697ab1c2b8bf3d9ab4a9a700cc8310b1cdbf2b32c78a54017b3794eef`：新HTTPS/Core最终1/0、原本地生命周期1/0、解析5/0、Schema1/0、M6合同5/0、State42最终3/0、重开6/0、包/签名9/0、缓存10/0与3 ignored、URL1/0；两浏览器模块独立单轮26/0，初轮新来源6/0单独保留。受影响严格Clippy、前端check/build、五程序debug及fmt/metadata/xtask/diff通过，无完整Workspace/Chromium/release或三平台重跑。State42首轮1/2及具体修复、开发检查失败保留于ExecPlan，不改写失败。既有外部代理/认证夹具三项未执行，未宣称本轮真实代理场景全部覆盖。
+
+记录位于 `target/m8-remote-source-20261117` 及 `target/m8-source-*.log`；程序摘要在review/candidate.json，最终真实测试在source-real-core-final.log/local-lifecycle-final.log，窗口证据在review/records/window-connection.json。每轮占端点前确认旧自有窗口0任务和精确归属，结束后先恢复旧程序/data/profile、五组公开状态一致。最后才切至新的可丢弃环境，旧State41数据/授权/程序保留，没有迁移原运行数据。原四组data/profile集合及摘要36/346/10/303份保持，原开发环境原本关闭并保持，Unity未干扰，不恢复桌面控制，未拍摄或伪造原生截图。
+
+未推送、无这批代码的Hosted CI/CodeQL。717d3e0的CI失败和CodeQL成功仍为旧轮次；旧resource_limit根因未定风险、普通浏览器/实际客户端OAuth、正式默认分发及其他M8未覆盖项继续保留，不由本片宣称通过。M8仍进行中；下方e58窗口和更早PID均为历史检查点。
+
 ## 2026-11-17 权限三分类更新
 
 当前GUI代码`e58c0d58bdc259a70482c7f8bc22fc1a0c7b5a38`，Core程序继续使用`1c47a1793e92394bcc35fcfb01754fe6167447d6`；本轮只改呈现，没有RPC/State41/授权语义变化。管理权限按“必需权限”“可选权限”“其他权限”显示；其他指扩展未声明的可授权项。三组均保留，空组“无”，每项仍一个开关，不再逐行重复类型标签。
