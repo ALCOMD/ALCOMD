@@ -48,7 +48,24 @@ fn provider_abi_is_additive_and_core_controls_write_targets() {
     ))
     .expect("extension grants");
     let permissions = &m6["$defs"]["permissionGrant"]["properties"]["permission"]["enum"];
-    assert_eq!(permissions.as_array().expect("permissions").len(), 10);
+    assert_eq!(
+        permissions,
+        &json!([
+            "background.run",
+            "projects.read",
+            "mcp.clients.read",
+            "mcp.clients.manage",
+            "mcp.connections.read",
+            "mcp.requests.read",
+            "mcp.subscription-streams.read",
+            "mcp.tools.provide",
+            "repositories.read",
+            "packages.read",
+            "packages.manage",
+            "operations.read",
+            "operations.cancel"
+        ])
+    );
     assert!(
         permissions
             .as_array()
