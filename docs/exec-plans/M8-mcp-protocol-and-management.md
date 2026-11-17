@@ -81,9 +81,9 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 这是可提交远端技术验证的材料，不是宣称完整本地门禁、M8人工或整体已通过。仍有已披露未定位Host失败风险；扩展相关人工测试按所有者延期，不写豁免/通过。原环境、运行程序、Unity、系统信任和桌面控制均未操作。按当前明确授权仅推进本地准备；普通快进推送须另获所有者对具体候选的确认，获准后只收集自动push的CI/CodeQL，不dispatch/rerun。下一批草案只修改现有计划，公共接口/Schema/权限尚不改。
 
-### 下一批最小合同：目录变化订阅与传输观测（2026-11-17，待审批）
+### 下一批最小合同：目录变化订阅与传输观测（2026-11-17，已批准实施中）
 
-现有实现的拟推送前缀冻结为`e6d0b44b953bbd0d3e404555d3e6875e94e2e9a3`，相对origin/main为20笔提交；本节是其后的独立草案，不在此前缀内，不表示新公共合同已获批准。所有者本轮“批准继续”覆盖审计、推送准备和具体差异整理，尚未授权推送或本节接口实施。不重审已批准身份、六工具、Bearer/OAuth、扩展提供工具及State40–42。
+现有实现的拟推送前缀冻结为`e6d0b44b953bbd0d3e404555d3e6875e94e2e9a3`，相对origin/main为20笔提交；本节在bba8b905提交时是独立草案，不在此前缀内。其后所有者已分别明确批准推送这20笔、以及“批准A和B，按草案实施”；A/B不再等待审批。不重审已批准身份、六工具、Bearer/OAuth、扩展提供工具及State40–42。
 
 **审计依据**：再次取得冻结commit `4df2d6b6e3588efb46e7542d98498e5c630a0a86`的[2026-07-28最终Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)，SHA256严格匹配`742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd`，只读副本在target/m8-prepush-contract-audit-20261117/frozen-mcp-schema.ts。已锁rmcp3.10.0有SubscriptionContext、过滤/ack/取消及无session HTTP路径，不需升级SDK。其SubscriptionContext::establish是SDK内部方法：STDIO原Service外壳须保留严格分帧/元数据/旧握手拒绝，只将已验证listen委托给SDK ServerHandler默认分发来建立上下文，不复制SDK实现或转回握手入口。当前lib.rs拒绝listen，http.rs只容许三个方法且GuardedBody有10秒总输出限制；Core mcp.tools.catalog已计算完整、带调用者授权和包证据的HMAC指纹但未返回字段。Core观察注册表只含真实IPC/RPC；适配器才知道TCP/TLS、协议请求和订阅，不能换名冒充同一数据。
 
@@ -122,7 +122,7 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 其余业务审计已确认：当前外部MCP Core allowlist只有原六用例及相关status/state/events/catalog；M-1的项目创建/登记/复制/备份恢复、模板、仓库/包搜索与安装重装、日志诊断及Operation输入/审批/恢复均不等于已开放。Core已有这些GUI用例也不能由adapter代持owner调用；activity.read/diagnostics.read等旧草案词不能直接恢复。下一批业务合同需对照当前RPC/能力授权另作紧凑工具映射，优先包搜索→安装/重装所需来源委托及原Plan/Apply，不为凑33用例新增无效工具；不夹在本节A/B审批中，不进入M9。
 
-本节只是一组具体差异供集中审批，代码/Schema/State43/权限/Host接口均尚未实施；A、B可独立批准。扩展默认分发、正式签名材料和普通浏览器人工TLS不在本批，不创建第二套身份/任务系统。新增公共合同仍遵守AGENTS.md人工审批边界，现有推送前缀的验证及授权独立处理。
+本节A/B已获集中批准，直接同步合同、实现与定向测试；不再追加纯文档审批。尚未完成的接线和真实验证不计为功能通过。扩展默认分发、正式签名材料和普通浏览器人工TLS不在本批，不创建第二套身份/任务系统。新增公共合同仍遵守AGENTS.md人工审批边界，现有推送前缀的验证及授权独立处理。
 
 ### 2026-11-13 协议基础实际结果
 
@@ -1391,3 +1391,47 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 准备失败同样保留：run-2493410710574b13934a6f4be7232a5e的私有rustc驱动误混不同feature的Tokio产物导致无reactor，尚未创建客户端；按Cargo指纹精确匹配现有依赖后才继续，不归因Core。首个HTTP run-05981706a73d4eb9a437ef3e198dbcd7已连接但因新驱动错误期待零授权返回六工具而失败；真实合同要求授权过滤，修正本轮新测试为零授权空目录、明确授权后六工具，没有放宽任何原仓库断言或权限。HTTP业务成功后的清理曾误取project_get外层revision；独立cleanup-follow-up.json记录按精确项目ID、文件目录身份及0活动任务补取消登记成功，原错误不覆盖、不重跑业务。私有HTTP runner也只复用生产库并明确without_daemon_start，未新增持久验证框架或公共工具。
 
 收尾确认：所有本轮临时MCP身份、OAuth注册已撤销；OAuth自有.credentials.json已删除，测试监听/私有驱动退出，样例仅取消登记、文件保留，最终0项目/0活动Operation。原Core47824和GUI85304保持5条自身管道，五程序摘要及原四组36/346/10/303份文件摘要保持；没有替换原程序、升级原数据、操作Unity或恢复桌面控制。普通浏览器人工TLS/授权体验、实际Codex刷新/到期及取消场景尚未本轮覆盖，复用既有SDK证据而不改记为Codex覆盖；完整传输/订阅观测、默认分发及其余既有缺口仍保留。仅更新文档和适用metadata/diff，不重复Workspace/Chromium/release/三平台，无新增远端结果或推送，M8仍IN_PROGRESS。
+
+### 2026-11-18 已授权推送的真实远端结果
+
+- 仅将此前核对的20笔717d3e0→e6d0b44b953bbd0d3e404555d3e6875e94e2e9a3普通快进推送并核对远端。bba8b905及A/B后续代码不在授权推送范围；没有dispatch、rerun、强推、tag或release。
+- [CI44117137295](https://github.com/ALCOMD/ALCOMD/actions/runs/44117137295)：同SHA、attempt1，Windows/macOS/Ubuntu均failure，各m6_lifecycle为9通过/1失败/1原有ignored；后续阶段未执行，不能记完整本地或远端门禁通过。
+- [CodeQL44117136645](https://github.com/ALCOMD/ALCOMD/actions/runs/44117136645)：同SHA、attempt1，Rust/JavaScript-TypeScript/Actions/Python四语言success。
+- 三平台共同失败在management_component_uses_real_core_grants_and_loses_access_after_revocation：State41已按安装必需权限同意授予read，旧用例却直接断言无read启用应拒绝。窄修保留拒绝及权威状态/版本断言，先核对真实安装授权、显式撤销，再测试拒绝；不放宽权限/断言、不重试工作流。修复的实际定向结果另记，尚无修复后的远端结果。
+- gh日志端点返回403（凭据非admin），改用现有GitHub连接器只读取得三个完整job日志；未变更凭据或设置。终态JSON和原始连接器日志存于target/m8-push-e6d0b44b-20261117/。原gh失败输出保留，不当作完整日志。
+- 本轮未报出历史Host resource_limit不等于根因已修复；仍保留该风险及扩展人工延期、正式分发、普通TLS人工接入等既有未覆盖项。M8继续进行中，不进入M9。
+
+### 2026-11-18 A/B 本地候选与定向结果
+
+本轮代码候选为 `71a1ffe9a77d4fd109fe844c41b55461bcbd1ba6`，另有CI前置窄修 `f8ad8f60d0e93ab78ec86b24d6092fa3044f1d46`。均只本地提交，未推送。远端仍是e6d0b44b，不能用其CodeQL成功替代本轮代码验证，也不能把其CI失败改记通过。M8仍IN_PROGRESS，不进入M9。
+
+实际接线：
+
+- A已把Core既有全目录HMAC返回为catalogFingerprint，STDIO/HTTP协商支持后才广告toolsListChanged；仅接受该过滤器，SDK先ack，再独立认证连接按秒比较。失败/撤权结束流，不把不可用当空目录。建立10秒、总寿命600秒，读取/发送也受绝对期限约束；HTTP心跳15秒，保留原普通请求和32 TCP/16请求或流限额、每认证上下文4流、一项待发失效及10秒写阻塞预算。没有session或业务自动取消/重试。
+- B已接通受限本机observer hello、report/bindRequest/snapshot、typed Rust client、Core内存注册表与真实STDIO/TCP/TLS/请求/订阅守卫。所有行均adapterReported，只有Core当前认证的MCP连接能消费一次性票据关联clientId；socket无client owner，不含URL/外部请求ID/参数/结果/秘密。快照分别按连接、请求和订阅权限省略组，并保留来源、不可用/陈旧、覆盖不足、计数及截断。
+- 已建立上报通道失去响应后停止观测，直到adapter重启；不通过重连为同一请求重新取票据。Core忘记该通道后显示不可用，业务及既有订阅独立继续。复用原非生产test-kill-gates一次性回包故障门；仅共享原门类型并增加固定ticket-bearing report注入点，不新增生产入口/依赖、公共RPC或认证旁路，不保留票据正文。
+- State43仅扩extension_grants的CHECK，新增mcp.subscription-streams.read的精确Global/*，保全旧数据且不自动授权；目录12→13。独立只读WIT/Host沿用Client+Extension/所有权/lease/生命周期/UI校验；旧WIT、Portable UI协议、Config13、八项MCP业务授权和身份系统不变。只给原权限开关补名称/描述，不重做扩展页。
+- 目录结果新字段对旧严格DTO读者是破坏性变化，应匹配升级Core/client/MCP，不添加旧结果兼容回退。State43不升级原环境或当前旧review数据；旧Core继续拒绝更高Schema。无新生产依赖、版本/feature升级或根Cargo.lock变更；62,233字节测试专用Component复用已冻结wit-bindgen0.57.1/现有组件编码器，附完整源码/WIT/锁文件/产物摘要，不是正式管理扩展的新业务版本。
+
+各轮结果独立保留，不相加为全套通过：
+
+| 检查 | 实际结果与边界 |
+| --- | --- |
+| CI共同阻塞的真实Core管理用例 | 修正安装授权前置后单项1/0；原拒绝/状态/revision断言保留，未重跑整个生命周期模块 |
+| 新Core观测注册表 | 4/0，含不同身份/同socket、票据单次/过期、乱序/无副作用、陈旧/断线/重启及组省略 |
+| 公共DTO / Host投影Schema | 分别1/0、1/0，拒绝身份/秘密额外字段、禁止暴露未授权组 |
+| State43迁移 | 最终单轮3/0，全旧记录、精确作用域、回滚及初始化重开；Clippy曾指出新测试单元素循环，按诊断简化，未放宽断言 |
+| M8合同及测试Component来源 | 首轮3/1（精确权限目录仍为12项）；同步批准的第13项后独立单轮4/0。相关现行State43/M7静态合同另为9/0，不是H2–H7重新人工验收 |
+| 新真实Core/Wasm/Host只读链 | 首轮0/1为夹具假定WIT枚举Debug格式，改为显式PermissionDenied匹配后单项1/0；验证零授权、只授订阅组、授权变化和撤销后旧UI租约失效 |
+| 冻结SDK真实STDIO/HTTP与上报 | 首轮0/2为夹具含../非规范路径，Core正确拒绝；第二轮0/2为误用多权限helper而得到5工具，改成仅projects.read，保留2工具精确断言。之后独立2/0，绝对期限收紧后另一次2/0；最终加入真实票据回包丢失后**单轮3/0**，不拼成7/0 |
+| SDK最终3/0具体覆盖 | ack首帧/接受过滤器/通知subscriptionId、空目录→明确授权→通知→2工具、B不被A变化误通知、HTTP空闲跨旧10秒界限、取消后重建、撤销终止、实际上报及两客户端Core关联。故障注入在Core已接受带票据的上报后丢回包，确认超过两个报告周期仍不重连重签，投影不可用，原订阅及实际授权读取继续 |
+| 原请求取消/Apply写响应丢失 | 关联独立2/0；已接受Operation继续、Apply不重复及原未知结果/幂等恢复语义有效。日志与当时二进制摘要独立保留，不称所有风险或完整套件均已覆盖 |
+| MCP受影响单元 / 既有STDIO协议 | 分别单轮15/0、12/0；保留冻结版本、元数据、严格分帧、旧握手/Tasks拒绝及限额，不以新增支持放松旧断言 |
+| 前端 | check通过；两个权限相关Chromium模块同轮10/0。另一个原三分类用例首轮0/1（其他组仍按10项），按1必需+1可选+11其他同步并新增可读标签断言，独立1/0；不拼成浏览器全套通过。稳定候选前端build通过，保留既有chunk大小警告 |
+| 严格/一致性 | 受影响九包all-targets严格Clippy通过；末轮回包故障门/生产Core无test-kill-gates检查和最终窄Clippy均通过、分别记录。fmt、xtask、locked metadata、diff适用检查通过；没有Workspace全量、完整浏览器或Tauri release重复构建 |
+
+证据统一在target/m8-prepush-contract-audit-20261117/：最终SDK为sdk-subscriptions-and-observer-loss-final.log、directed-5-results.json（实际二进制摘要）；原生Host为new-transport-host-fixed.log；CI前置为ci-required-revocation.log；正常与失败的分轮日志、scoped-results.json及后续定向纠正日志均保留。969份非docs/非归档输入聚合SHA-256为90dea8208cb16ec3240655f7865e8c616e3a58eaa9617ca31bcd039f0430a8f6，逐文件/分轮日志摘要在final-candidate-evidence.json；它绑定本轮实际代码，不把旧远端或不同轮局部结果拼接成完整通过。
+
+当前人工窗口仍是此前已验证的GUI fb72f0aa/Core3d6c2a1b/State42，不是本轮A/B的新桌面构建。本轮仅按既有授权短暂关闭自己的隔离窗口，测试用独立State43数据，结束后恢复原程序/数据/profile并实际核对五组公开状态。最后GUI97464/Core97292，可见/响应、5条GUI自身管道；原data36/profile346、上一review10/303份集合和摘要保持，五份旧程序摘要保持。未恢复桌面输入、未启动或干扰Unity、未升级原数据。保全与恢复证据在final-environment-preservation.json及directed-5-*-before/after.json、directed-5-restored-window.json。
+
+保留未覆盖项：新增代码尚无远端验证；没有10分钟自然终止实测、长时/最大规模压测或实际网络慢读压测；OAuth订阅的到期/轮换/刷新及实际Codex通知消费未单独实测，既有OAuth/Core逐请求鉴权证据仅按原输入保留。扩展人工/普通可信HTTPS安装按所有者要求留待后续实际扩展开发，不能记通过或豁免；正式默认分发仍未完成。历史Host resource_limit根因未定位，保留风险；M7既有签收和非阻塞体验待办不重开，不擅自给未明确归属事项指定M12。
