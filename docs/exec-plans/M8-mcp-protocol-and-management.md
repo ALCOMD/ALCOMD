@@ -1483,3 +1483,13 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 本地`80ebb2643543b4d801330d37e670727e536c025d`仅将这一行预期同步为13；原逐项确认全部必需权限、缺少同意/指纹不符时权威状态和Operation不变、安装后原Plan幂等重放断言保持。集中核对Core、Store、Host、合同及GUI相关的权限目录/数量引用，未发现其他旧12项断言；128项边界、SQLite列序号/时刻及历史记录不误改。生产代码、Schema、迁移、权限、依赖和工作流不变。
 
 本机先复现原单项0/1，再独立执行受影响Store模块16/0（8.95秒）；窄严格Clippy、fmt、xtask、diff通过，没有重复Workspace/浏览器/release。三个完整job日志、ci-final.json、codeql-final.json、经stdout/stderr交错核对的module-summaries.json和源码/实际测试二进制摘要store-consent-fix-evidence.json在target/m8-push-223e8ce4-20261118/。新修复尚待远端验证，不占原Core端点或操作窗口/原数据/Unity；扩展人工延期和原未覆盖项继续保留，M8仍进行中、不进入M9。
+
+### 2026-11-18 测试诊断与生产禁日志边界续修
+
+已普通快进推送80ebb264和记录3fa1b3b1，候选`3fa1b3b15dfe57244b89d2c150d719a95f2c7807`。同SHA、attempt1的[CodeQL44162172266](https://github.com/ALCOMD/ALCOMD/actions/runs/44162172266)四语言success；[CI44162172455](https://github.com/ALCOMD/ALCOMD/actions/runs/44162172455)三平台均failure，Store安装同意模块各16/0，随后m7_security_conformance各2/1；后续阶段未执行，不记全套通过。
+
+具体为sensitive_ui_payload_has_no_production_logging_sink整文件扫描m6_runtime.rs时命中三处test-kill-gates条件下的eprintln诊断。核对内容只有派发到期、Host export名称/时间预算、接收超时枚举；不含UI内容、RPC参数或秘密，且该feature不是生产默认入口。没有发现这三处诊断在关闭测试feature时产生生产输出，不将静态命中误报成已证实秘密泄漏。
+
+本地`0c73bf4b4aed9bb8b5e88efa36b81952e2738769`将诊断收回既有test_support模块，三个调用仍逐个受原test-kill-gates限制，模块自身仍由相同feature限制；函数为pub(crate)，不新增公共RPC/Extension API、日志政策或生产日志入口。原禁日志安全测试逐字节保持，没有白名单、扫描排除或删断言。既有诊断文本和Host超时/终止/错误逻辑保持，历史resource_limit根因仍未定位，不能宣称修复该历史问题。
+
+本机原单项0/1，修复后原安全合同模块独立3/0；生产Core的--no-default-features检查、启用test-kill-gates的Core库严格Clippy、fmt、xtask、diff通过。不重复Workspace、浏览器或release，不占Core端点或操作原窗口/数据/Unity。三个完整job日志、终态JSON、逐平台模块摘要及源码/原安全检查不变证据ui-log-fix-evidence.json位于target/m8-push-3fa1b3b1-20261118/。新候选仍待远端结果；按所有者本轮持续授权直接收束，M8仍进行中，不进入M9。
