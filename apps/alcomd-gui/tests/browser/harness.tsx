@@ -157,6 +157,7 @@ window.releasedInitialSettingsReads = 0;
 type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "package-filter-conflict" | "package-filter-denied" | "capabilities-missing";
 
 const SUPPORTED_CAPABILITIES = [
+    RPC_CAPABILITIES.extensionsRemoteInstall,
     RPC_CAPABILITIES.logsRead,
     "backups.create.v1",
     "backups.read.v1",

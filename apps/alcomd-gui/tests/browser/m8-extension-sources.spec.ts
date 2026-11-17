@@ -5,7 +5,6 @@ const modal = (page: Page) => page.locator("md-dialog[open]");
 async function open(page: Page, extra = "") {
     await page.goto(`/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1${extra}`);
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
-    await modal(page).getByRole("button", { name: "Online source", exact: true }).click();
     await modal(page).getByLabel("Extension source URL", { exact: true }).fill(sourceUrl);
 }
 async function count(page: Page, method: string) {
@@ -38,7 +37,7 @@ test("Cancel metadata loading discards its late preview and a reopened dialog st
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.evaluate(() => window.h4Management.release("extensions.inspectSource"));
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
-    await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue("");
+    await expect(modal(page).getByLabel("Extension source URL", { exact: true })).toHaveValue("");
     expect(await count(page, "extensions.planInstallFromSource")).toBe(0);
     expect(await count(page, "extensions.applyInstall")).toBe(0);
 });
@@ -61,7 +60,8 @@ test("Changed source requires rereading instead of silently replanning; failure 
     await page.evaluate(() => window.h4Management.failNext("extensions.planInstallFromSource", "revision_conflict"));
     await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(modal(page).getByRole("alert")).toContainText("The data changed");
-    await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toBeDisabled();
+    await expect(modal(page).getByRole("button", { name: "Read source", exact: true })).toBeEnabled();
+    await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toHaveCount(0);
     expect(await count(page, "extensions.applyInstall")).toBe(0);
     await read(page);
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
@@ -75,5 +75,45 @@ test("Long metadata, loading and download failure remain inside a narrow dialog 
     await expect(modal(page).getByRole("alert")).toContainText("The extension source could not be downloaded");
     await modal(page).getByLabel("Extension source URL", { exact: true }).fill(sourceUrl + "&new=1");
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
-    await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toBeDisabled();
+    await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toHaveCount(0);
+});
+
+test("Online input has one compact footer action and Enter reads the source before installing", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&motion=reduced&theme-mode=dark");
+    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(modal(page).getByLabel("Extension source URL", { exact: true })).toBeVisible();
+    await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveCount(0);
+    await expect(modal(page).getByRole("button", { name: "Online source", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: test.info().outputPath("online-empty-window.png") });
+    const readButton = modal(page).getByRole("button", { name: "Read source", exact: true });
+    await expect(readButton).toBeDisabled();
+    await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toHaveCount(0);
+    const actions = modal(page).locator(".dialog-actions");
+    await expect(actions.getByRole("button", { name: "Read source", exact: true })).toHaveCount(1);
+    const actionBounds = await actions.boundingBox(); const buttonBounds = await readButton.boundingBox();
+    expect(buttonBounds!.width).toBeLessThan(actionBounds!.width / 2);
+    await modal(page).getByLabel("Extension source URL", { exact: true }).fill(sourceUrl);
+    await modal(page).getByLabel("Extension source URL", { exact: true }).press("Enter");
+    await expect(modal(page).getByRole("heading", { name: "Online example", exact: true })).toBeVisible();
+    expect(await count(page, "extensions.inspectSource")).toBe(1);
+    expect(await count(page, "extensions.planInstallFromSource")).toBe(0);
+    expect(await count(page, "extensions.applyInstall")).toBe(0);
+    await expect(readButton).toHaveCount(0);
+    await expect(actions.getByRole("button", { name: "Install extension", exact: true })).toBeEnabled();
+    await page.screenshot({ path: test.info().outputPath("online-preview-window.png") });
+});
+
+test("Local file installation is only in the arrow menu and closing returns focus to that arrow", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&motion=reduced");
+    const arrow = page.getByRole("button", { name: "More extension installation options", exact: true });
+    await expect(page.getByRole("menuitem", { name: "Local file", exact: true })).not.toBeVisible();
+    await arrow.focus(); await page.keyboard.press("ArrowDown");
+    await page.getByRole("menuitem", { name: "Local file", exact: true }).click();
+    await expect(modal(page).getByLabel("Extension package", { exact: true })).toBeVisible();
+    await expect(modal(page).getByLabel("Extension source URL", { exact: true })).toHaveCount(0);
+    await modal(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(arrow).toBeFocused();
+    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(modal(page).getByLabel("Extension source URL", { exact: true })).toHaveValue("");
 });

@@ -2205,6 +2205,26 @@ function OperationResultLinks({ navigate, operation }: { navigate(path: string):
     </div>;
 }
 
+function ExtensionInstallToolbar({ client, disabled, onAccepted }: { client: GuiRpcClient; disabled: boolean; onAccepted(operationId: string): void }) {
+    const { t } = useTranslation();
+    const canManage = useCapability(capabilities.extensionsLifecycle);
+    const canReadSource = useCapability(capabilities.extensionsRemoteInstall);
+    const [source, setSource] = useState<"online" | "local">();
+    const primary = useRef<HTMLElement | null>(null);
+    const menu = useRef<HTMLElement | null>(null);
+    const previous = useRef<typeof source>(undefined);
+    useEffect(() => {
+        if (previous.current !== undefined && source === undefined) (previous.current === "online" ? primary : menu).current?.focus();
+        previous.current = source;
+    }, [source]);
+    return <>
+        <SplitButton label={t("Install extension")} menuLabel={t("More extension installation options")} primaryRef={primary} menuButtonRef={menu} disabled={disabled || !canManage || !canReadSource} onClick={() => setSource("online")} title={capabilityUnavailableTitle(canReadSource, capabilities.extensionsRemoteInstall, t)}>
+            <MenuItem disabled={disabled || !canManage} label={t("Local file")} onClick={() => setSource("local")} />
+        </SplitButton>
+        {source === undefined ? null : <UtilityActionDialog title={t("Install extension")} onClose={() => setSource(undefined)}><ExtensionInstallPanel client={client} sourceKind={source} onAccepted={onAccepted} /></UtilityActionDialog>}
+    </>;
+}
+
 export function ExtensionsPage({ client, navigate }: PageProps) {
     const { t } = useTranslation();
     const load = useCallback(() => client.extensionsList(), [client]);
@@ -2229,7 +2249,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
             if (current()) setBusy(false);
         }
     };
-    return <><UtilityWorkspace loading={<LoadingState title={t("Loading")} variant="bar" />} changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
+    return <><UtilityWorkspace loading={<LoadingState title={t("Loading")} variant="bar" />} changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} tools={() => <ExtensionInstallToolbar client={client} disabled={operationId !== undefined && !operationTerminal} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} />}>{(value, refresh) => <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} background />}
         <PagedItems initialItems={value.extensions} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.extensionsList(cursor); return { items: page.extensions, nextCursor: page.nextCursor }; }}>{(extensions) => (
         <section className="extension-management" aria-labelledby="extension-management-title">

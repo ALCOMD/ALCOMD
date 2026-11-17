@@ -1,3 +1,4 @@
+import { openLocalExtensionInstall } from "./extension-install-entry";
 import { expect, test } from "@playwright/test";
 import { createTranslator } from "../../src/i18n";
 import { normalizeRequestError, requestErrorMessage } from "../../src/request-errors";
@@ -6,11 +7,11 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
     test(`readable execution errors preserve context and hide private messages in ${locale}`, async ({ page }) => {
         const t = createTranslator(locale);
         await page.goto(`/browser-harness.html?route=/extensions&h4-management=1&locale=${locale}`);
-        await page.getByRole("button", { name: t("Install extension"), exact: true }).click();
+        await openLocalExtensionInstall(page, t);
         const dialog = page.locator("md-dialog[open]");
         await dialog.getByLabel(t("Extension package"), { exact: true }).fill("C:\\Fixture\\sample.alcomdextension");
         await page.evaluate(() => window.h4Management.failNext("extensions.planInstall", "extension_signature_invalid"));
-        await dialog.getByRole("button", { name: t("Create install plan"), exact: true }).click();
+        await dialog.getByRole("button", { name: t("Install extension"), exact: true }).click();
         const alert = dialog.getByRole("alert");
         await expect(alert).toContainText(t(requestErrorMessage("extension_signature_invalid")));
         await expect(alert).toContainText("extension_signature_invalid");
@@ -32,16 +33,16 @@ test("request error normalization retains only bounded identifiers and never tru
 
 test("install has no publisher approval and a failed package check can be retried without automatic apply", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1");
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await openLocalExtensionInstall(page);
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\sample.alcomdextension");
     await expect(dialog.getByRole("checkbox")).toHaveCount(0);
     await page.evaluate(() => window.h4Management.failNext("extensions.planInstall", "extension_signature_invalid"));
-    await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
+    await dialog.getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText(requestErrorMessage("extension_signature_invalid"));
     expect(await page.evaluate(() => window.h4Management.requests.filter((value) => value.method === "extensions.applyInstall"))).toHaveLength(0);
-    await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
-    await expect(dialog.getByRole("heading", { name: "Review extension install", exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(dialog.getByRole("heading", { name: "Required permissions", exact: true })).toBeVisible();
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.h4Management.requests.filter((value) => value.method === "extensions.planInstall").map((value) => value.params))).toEqual([
         { packagePath: "C:\\Fixture\\sample.alcomdextension", expectedRevision: 0 },

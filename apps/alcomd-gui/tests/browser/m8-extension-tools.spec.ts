@@ -1,3 +1,4 @@
+import { openLocalExtensionInstall } from "./extension-install-entry";
 import { expect, test } from "@playwright/test";
 const route = "/browser-harness.html?route=%2Fextensions%2Fcom.example.alpha&state=ready&h4-management=1&m8-tool-provider=1";
 test("provider publication is optional, global, keyboard accessible and failed writes keep authority", async ({ page }) => {
@@ -32,7 +33,7 @@ for (const colorScheme of ["light", "dark"] as const) {
         expect(await tools.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
         await page.screenshot({ path: `target/m8-extension-tools/provider-details-${colorScheme}.png`, fullPage: true });
         await page.goto("http://127.0.0.1:4173/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1&m8-tool-provider=1");
-        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        await openLocalExtensionInstall(page);
         const dialog = page.locator("md-dialog[open]");
         await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\provider.alcomdextension");
         await dialog.getByRole("button", { name: "Install extension", exact: true }).click();

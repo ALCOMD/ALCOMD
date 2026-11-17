@@ -1,3 +1,4 @@
+import { openLocalExtensionInstall } from "./extension-install-entry";
 import { confirmPermissionChange } from "./permission-switch-actions";
 import { expectRequestError } from "./request-error-assertions";
 import { requestErrorMessage } from "../../src/request-errors";
@@ -18,7 +19,7 @@ async function requests(page: Page, method: string) {
     return page.evaluate((name) => window.h4Management.requests.filter((request) => request.method === name), method);
 }
 async function installReview(page: Page) {
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await openLocalExtensionInstall(page);
     await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
     await expect(modal(page).getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
     await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
@@ -121,7 +122,7 @@ test("H4 install keeps an unknown Apply result visible and never repeats the wri
     await expect(page.locator(".operation-follow")).toHaveCount(0);
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
     await page.keyboard.press("Escape");
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await openLocalExtensionInstall(page);
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveValue("");
     await expect(modal(page).getByRole("alert")).toHaveCount(0);
     expect(await requests(page, "extensions.applyInstall")).toHaveLength(1);
@@ -349,7 +350,7 @@ test("H4 project permission does not depend on loading a project list", async ({
 
 test("Install confirms signed terms before required permissions and sends one frozen consent", async ({ page }) => {
     await open(page, false, "&h4-terms=1&h4-long-terms=1");
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+    await openLocalExtensionInstall(page);
     await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
     await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(modal(page).getByRole("heading", { name: "Extension terms", exact: true })).toBeVisible();
@@ -371,7 +372,7 @@ test("Install confirms signed terms before required permissions and sends one fr
 for (const stage of ["terms", "permissions"] as const) {
     test(`Declining installation ${stage} makes no install or permission write`, async ({ page }) => {
         await open(page, false, "&h4-terms=1");
-        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        await openLocalExtensionInstall(page);
         await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
         await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
         if (stage === "permissions") await modal(page).getByRole("button", { name: "Agree and continue", exact: true }).click();
@@ -388,7 +389,7 @@ for (const stage of ["terms", "permissions"] as const) {
 for (const hasTerms of [false, true]) {
     test(`Installation skips empty required permissions with terms=${hasTerms}`, async ({ page }) => {
         await open(page, false, "&h4-no-required=1" + (hasTerms ? "&h4-terms=1" : ""));
-        await page.getByRole("button", { name: "Install extension", exact: true }).click();
+        await openLocalExtensionInstall(page);
         await modal(page).getByLabel("Extension package", { exact: true }).fill(packagePath);
         await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
         if (hasTerms) await modal(page).getByRole("button", { name: "Agree and install", exact: true }).click();

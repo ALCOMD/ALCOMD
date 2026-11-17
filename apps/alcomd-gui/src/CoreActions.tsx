@@ -23,7 +23,7 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, SegmentedButtons, Select, TextField, useDialogActive, type DialogOrigin } from "./Material";
+import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, Select, TextField, useDialogActive, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
@@ -859,14 +859,14 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
     </ActionSection>;
 }
 
-export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionProps & { onAccepted?(operationId: string): void }) {
+export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKind = "online" }: ActionProps & { sourceKind?: "online" | "local"; onAccepted?(operationId: string): void }) {
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
     const remoteAvailable = useCapability(capabilities.extensionsRemoteInstall);
     const canGrant = useCapability(capabilities.extensionsPermissions);
     const [path, setPath] = useState("");
-    const [mode, setMode] = useState("local");
+    const mode = sourceKind;
     const [url, setUrl] = useState("");
     const [source, setSource] = useState<import("@alcomd/sdk").ExtensionSourcePreview>();
     const [version, setVersion] = useState("");
@@ -963,20 +963,18 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
         {refusal === undefined ? null : <p role="status">{t(refusal === "terms" ? "Installation not completed: the terms were declined." : "Installation not completed: the required permissions were declined.")}</p>}
-        {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(); }}>
-            <SegmentedButtons label={t("Installation source")} value={mode} options={[{ value: "local", label: t("Local file"), disabled: feedback.busy }, { value: "online", label: t("Online source"), disabled: feedback.busy || !remoteAvailable }]} onChange={(next) => { setMode(next); setSource(undefined); setVersion(""); setFeedback(INITIAL_FEEDBACK); setRefusal(undefined); }} />
+        {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void (mode === "online" && source === undefined ? inspectSource() : run()); }}>
             {mode === "local" ? <div className="project-target-picker">
                 <PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                 <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
             </div> : <>
-                <TextField disabled={feedback.busy} id="extension-source-url" label={t("Extension source URL")} maxLength={8192} value={url} onInput={(value) => { setUrl(value); setSource(undefined); setVersion(""); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required type="url" />
-                <LoadingButton disabled={feedback.busy || !remoteAvailable || !url.trim()} loading={feedback.busy && source === undefined} onClick={() => void inspectSource()} type="button" variant="tonal">{t("Read source")}</LoadingButton>
+                <TextField disabled={feedback.busy} id="extension-source-url" label={t("Extension source URL")} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void (source === undefined ? inspectSource() : run()); } }} maxLength={8192} value={url} onInput={(value) => { setUrl(value); setSource(undefined); setVersion(""); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required type="url" />
                 {source === undefined ? null : <section className="extension-source-preview" aria-label={t("Extension source preview")}>
                     <h3>{source.displayName}</h3><p>{source.extensionId}</p>{source.description === undefined ? null : <p>{source.description}</p>}
                     <Select disabled={feedback.busy} id="extension-source-version" label={t("Version")} options={[{ value: "", label: t("Choose a version") }, ...source.versions.map((item) => ({ value: item.version, label: item.version + (item.apiMajor === 1 ? "" : " · " + t("Unsupported API")), disabled: item.apiMajor !== 1 }))]} value={version} onChange={setVersion} />
                 </section>}
             </>}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={applying} /><LoadingButton disabled={feedback.busy || !available || submitted || (mode === "local" ? !path.trim() : source === undefined || !version)} loading={feedback.busy && (mode === "local" || source !== undefined)} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Install extension")}</LoadingButton></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={applying} /><LoadingButton disabled={feedback.busy || !available || submitted || (mode === "local" ? !path.trim() : !remoteAvailable || (source === undefined ? !url.trim() : !version))} loading={feedback.busy} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t(mode === "online" && source === undefined ? "Read source" : "Install extension")}</LoadingButton></div>
         </form> : <>
             <h2>{t(reviewingTerms ? "Extension terms" : reviewingPermissions ? "Required permissions" : "Install extension")}</h2>
             <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div></dl>

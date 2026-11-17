@@ -437,6 +437,7 @@ export const formMessages: TranslationTable = {
         "zh-CN": "选择主题颜色",
         "ja-JP": "テーマカラーを選択"
     },
+    "More extension installation options": { "zh-CN": "更多扩展安装选项", "ja-JP": "その他の拡張インストール方法" },
     "Installation source": {"zh-CN": "安装来源", "ja-JP": "インストール元"},
     "Local file": {"zh-CN": "本地文件", "ja-JP": "ローカルファイル"},
     "Online source": {"zh-CN": "在线来源", "ja-JP": "オンラインソース"},
