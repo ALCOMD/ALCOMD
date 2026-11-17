@@ -38,6 +38,7 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_oauth_types;
+mod m8_runtime;
 mod m8_tools;
 mod operation_logs;
 mod project_authority;
@@ -65,6 +66,7 @@ pub use m8_management::*;
 pub use m8_mcp::*;
 pub use m8_oauth::*;
 pub use m8_oauth_types::*;
+pub use m8_runtime::*;
 pub use m8_tools::*;
 pub use operation_logs::*;
 pub use project_authority::*;
@@ -1113,6 +1115,8 @@ impl AccessContext {
             [
                 Permission::McpClientsRead,
                 Permission::McpClientsManage,
+                Permission::McpConnectionsRead,
+                Permission::McpRequestsRead,
                 Permission::StateCheck,
                 Permission::OperationsRead,
                 Permission::OperationsCancel,

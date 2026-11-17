@@ -3,8 +3,8 @@
 // Handwritten application code is kept in a module with unsafe_code forbidden.
 mod bindings {
     wit_bindgen::generate!({
-        path: "../../../../specs/extensions/wit/mcp-management-v1",
-        world: "management-v1",
+        path: "../../../../specs/extensions/wit/mcp-runtime-v1",
+        world: "runtime-v1",
         generate_all,
     });
     #[cfg(target_arch = "wasm32")]

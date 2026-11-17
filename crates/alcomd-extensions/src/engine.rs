@@ -505,6 +505,7 @@ fn required_interfaces_supported(interfaces: &[String]) -> bool {
             interface.as_str(),
             "alcomd:extension/host-data@1.0.0"
                 | "alcomd:extension/host-projects@1.0.0"
+                | "alcomd:mcp-runtime/observations@1.0.0"
                 | "alcomd:mcp-management/clients@1.0.0"
                 | "alcomd:mcp-tools/core@1.0.0"
         )

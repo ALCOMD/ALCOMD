@@ -198,3 +198,31 @@ for (const colorScheme of ["light", "dark"] as const) {
         await context.close();
     });
 }
+
+
+test("Core observation permissions are optional global switches and never grant client management", async ({ page }) => {
+    await page.goto(route + "&m8-runtime-permissions=1");
+    await page.getByRole("button", {name:"Manage permissions",exact:true}).click();
+    const dialog=page.locator("md-dialog[open]");
+    const connections=dialog.getByRole("switch",{name:"Read MCP Core connections",exact:true});
+    const calls=dialog.getByRole("switch",{name:"Read MCP Core calls",exact:true});
+    await expect(dialog.getByRole("switch")).toHaveCount(2);
+    await expect(connections).not.toBeChecked();await expect(calls).not.toBeChecked();
+    await expect(dialog.getByText("Required to enable",{exact:true})).toHaveCount(0);
+    await confirmPermissionChange(page,"extensions.setGrant",()=>connections.click());
+    await expect(connections).toBeChecked();await expect(calls).not.toBeChecked();
+    await page.evaluate(()=>window.h4Management.failNext("extensions.setGrant","extension_permission_denied"));
+    await calls.click();
+    await expect(dialog.getByRole("alert")).toContainText("This action is outside the extension's allowed permissions or scope.");
+    await expect(calls).not.toBeChecked();await expect(connections).toBeChecked();
+    await confirmPermissionChange(page,"extensions.setGrant",()=>calls.click());
+    await expect(calls).toBeChecked();await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await confirmPermissionChange(page,"extensions.revokeGrant",()=>connections.click());
+    await expect(connections).not.toBeChecked();await expect(calls).toBeChecked();
+    const writes=await page.evaluate(()=>window.h4Management.requests.filter(r=>["extensions.setGrant","extensions.revokeGrant"].includes(r.method)).map(r=>r.params));
+    expect(writes.map(p=>[p.permission,p.resourceKind,p.resourceId,p.expectedGrantRevision])).toEqual([
+        ["mcp.connections.read","Global","*",3],["mcp.requests.read","Global","*",4],
+        ["mcp.requests.read","Global","*",4],["mcp.connections.read","Global","*",5]
+    ]);
+    expect(await page.evaluate(()=>window.h4Management.requests.filter(r=>r.method==="projects.list"||r.method==="mcp.clients.create").length)).toBe(0);
+});

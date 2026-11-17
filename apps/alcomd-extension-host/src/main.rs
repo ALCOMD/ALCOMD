@@ -24,6 +24,7 @@ wasmtime::component::bindgen!({
 use crate::alcomd::extension::{host_data, host_projects, types};
 use crate::exports::alcomd::extension::guest_ui;
 mod mcp_management;
+mod mcp_runtime;
 mod mcp_tools;
 mod resource_limits;
 
@@ -174,6 +175,7 @@ async fn run() -> Result<()> {
     ExtensionV1::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|_| anyhow::anyhow!("link"))?;
     mcp_management::add_to_linker(&mut linker)?;
+    mcp_runtime::add_to_linker(&mut linker)?;
     mcp_tools::add_to_linker(&mut linker)?;
     let instance = linker
         .instantiate_async(&mut store, &component)

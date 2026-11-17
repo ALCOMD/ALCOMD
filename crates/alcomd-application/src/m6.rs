@@ -1,3 +1,17 @@
+pub const EXTENSION_GLOBAL_PERMISSIONS: &[&str] = &[
+    "projects.read",
+    "mcp.clients.read",
+    "mcp.clients.manage",
+    "mcp.connections.read",
+    "mcp.requests.read",
+    "mcp.tools.provide",
+    "repositories.read",
+    "packages.read",
+    "packages.manage",
+    "operations.read",
+    "operations.cancel",
+];
+
 use std::future::Future;
 use std::sync::Arc;
 
@@ -155,7 +169,7 @@ impl ExtensionPermissionsCursor {
             self.after.resource_kind.as_str(),
         ) {
             ("background.run", "Extension") => self.after.resource_id == self.extension_id,
-            (permission, "Global") if crate::EXTENSION_TOOL_PERMISSIONS.contains(&permission) => {
+            (permission, "Global") if crate::EXTENSION_GLOBAL_PERMISSIONS.contains(&permission) => {
                 self.after.resource_id == "*"
             }
             _ => false,

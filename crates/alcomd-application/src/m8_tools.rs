@@ -13,17 +13,6 @@ pub const MCP_TOOLS_PATH: &str = "component/mcp-tools.json";
 pub const MCP_TOOLS_PROVIDE: &str = "mcp.tools.provide";
 pub const MCP_TOOLS_PROVIDER: &str = "alcomd:mcp-tools/provider@1.0.0";
 pub const MCP_TOOLS_CORE: &str = "alcomd:mcp-tools/core@1.0.0";
-pub const EXTENSION_TOOL_PERMISSIONS: &[&str] = &[
-    "projects.read",
-    "mcp.clients.read",
-    "mcp.clients.manage",
-    "mcp.tools.provide",
-    "repositories.read",
-    "packages.read",
-    "packages.manage",
-    "operations.read",
-    "operations.cancel",
-];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ToolOperation {

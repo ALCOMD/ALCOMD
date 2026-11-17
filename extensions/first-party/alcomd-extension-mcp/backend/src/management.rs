@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 use crate::bindings::alcomd::extension::types;
 use crate::bindings::alcomd::mcp_management::clients as host;
+use crate::bindings::alcomd::mcp_runtime::observations as runtime;
 use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as ui};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -30,6 +31,9 @@ struct View {
     message: Option<(String, ui::Tone)>,
     unknown_write: bool,
     can_manage: bool,
+    activity: bool,
+    runtime: Option<runtime::RuntimeSnapshot>,
+    runtime_message: Option<String>,
     counter: u64,
 }
 enum Confirmation {
@@ -58,6 +62,7 @@ impl ui::Guest for Management {
             }
             let mut view = View::default();
             view.load_clients();
+            view.load_runtime();
             let document = view.document();
             sessions.insert(session_id, view);
             document
@@ -67,6 +72,10 @@ impl ui::Guest for Management {
         with_view(&session_id, |view| {
             view.confirmation = None;
             view.message = None;
+            if view.activity && !view.unknown_write {
+                view.load_runtime();
+                return;
+            }
             // Refresh authoritative metadata first, including the selected client's revision.
             view.client_cursor = None;
             if view.load_clients() {
@@ -75,6 +84,7 @@ impl ui::Guest for Management {
                     view.load_grants();
                 }
             }
+            view.load_runtime();
         })
     }
     fn dispatch(session_id: String, action: ui::UiAction) -> ui::UiDocument {
@@ -110,6 +120,103 @@ impl View {
         if matches!(error.code, host::ErrorCode::PermissionDenied) {
             self.can_manage = false;
         }
+    }
+    fn load_runtime(&mut self) {
+        self.runtime = None;
+        self.runtime_message = None;
+        match runtime::snapshot(None, Some(25)) {
+            Ok(snapshot) => self.runtime = Some(snapshot),
+            Err(error) if matches!(error.code, host::ErrorCode::PermissionDenied) => {}
+            Err(error) => self.runtime_message = Some(error_text(error.code).into()),
+        }
+    }
+    fn runtime_document(&self, doc: &mut Document) {
+        doc.button("返回客户端", "clients", false);
+        if let Some(error) = &self.runtime_message {
+            doc.status(error, ui::Tone::Danger);
+        }
+        if let Some(snapshot) = &self.runtime {
+            if snapshot.coverage_incomplete {
+                doc.status("部分连接未被跟踪，活动列表不完整。", ui::Tone::Warning);
+            }
+            if snapshot.can_read_connections
+                && let Some(page) = &snapshot.connections
+            {
+                let list = doc.node(
+                    None,
+                    ui::NodePayload::List(ui::ListNode {
+                        label: Some(format!("Core 连接 · {}", page.total_tracked)),
+                    }),
+                );
+                for row in &page.items {
+                    let label = format!(
+                        "{} · {}",
+                        self.runtime_client(&row.client_id),
+                        if row.active_call_count > 0 {
+                            "正在调用"
+                        } else {
+                            "Core 连接存在"
+                        }
+                    );
+                    doc.node(
+                        Some(&list),
+                        ui::NodePayload::ListItem(ui::ListItemNode { label: Some(label) }),
+                    );
+                }
+                if page.items.is_empty() {
+                    doc.status("当前没有已跟踪的 Core 连接。", ui::Tone::Neutral);
+                }
+                if page.truncated {
+                    doc.status(
+                        "仅显示部分 Core 连接，可刷新查看当前快照。",
+                        ui::Tone::Warning,
+                    );
+                }
+            }
+            if snapshot.can_read_requests
+                && let Some(page) = &snapshot.requests
+            {
+                let list = doc.node(
+                    None,
+                    ui::NodePayload::List(ui::ListNode {
+                        label: Some(format!("Core 调用 · {}", page.total_tracked)),
+                    }),
+                );
+                for row in &page.items {
+                    let elapsed = snapshot.observed_at_ms.saturating_sub(row.started_at_ms) / 1000;
+                    let label = format!(
+                        "{} · {} · {} 秒",
+                        self.runtime_client(&row.client_id),
+                        runtime_method_label(&row.method),
+                        elapsed
+                    );
+                    doc.node(
+                        Some(&list),
+                        ui::NodePayload::ListItem(ui::ListItemNode { label: Some(label) }),
+                    );
+                }
+                if page.items.is_empty() {
+                    doc.status("当前没有已跟踪的 Core 调用。", ui::Tone::Neutral);
+                }
+                if page.truncated {
+                    doc.status(
+                        "仅显示部分 Core 调用，可刷新查看当前快照。",
+                        ui::Tone::Warning,
+                    );
+                }
+            }
+        } else if self.runtime_message.is_none() {
+            doc.status("尚未授权查看 Core 活动。", ui::Tone::Neutral);
+        }
+        doc.key("订阅流", "当前未支持");
+        doc.button("刷新活动", "runtime-refresh", false);
+    }
+    fn runtime_client(&self, id: &str) -> String {
+        self.clients
+            .iter()
+            .find(|client| client.client_id == id)
+            .map(|client| client.display_name.clone())
+            .unwrap_or_else(|| format!("客户端 {}", id.chars().take(8).collect::<String>()))
     }
     fn load_clients(&mut self) -> bool {
         self.can_manage = false;
@@ -214,13 +321,26 @@ impl View {
             ui::UiAction::Activate(id) => (id, vec![]),
             ui::UiAction::SubmitForm(form) => (form.action_id, form.values),
         };
-        if self.unknown_write && !matches!(id.as_str(), "back" | "cancel") {
+        if self.unknown_write
+            && !matches!(
+                id.as_str(),
+                "back" | "cancel" | "activity" | "clients" | "runtime-refresh"
+            )
+        {
             return; // Only the host's explicit Refresh clears an unknown result.
         }
         if !self.unknown_write {
             self.message = None;
         }
         match id.as_str() {
+            "activity" => {
+                self.activity = true;
+                self.load_runtime();
+            }
+            "clients" => {
+                self.activity = false;
+            }
+            "runtime-refresh" => self.load_runtime(),
             "back" => {
                 self.selected = None;
                 self.confirmation = None;
@@ -300,6 +420,13 @@ impl View {
         let mut doc = Document::new();
         if let Some((message, tone)) = &self.message {
             doc.status(message, *tone);
+        }
+        if self.activity {
+            self.runtime_document(&mut doc);
+            return doc.finish();
+        }
+        if self.selected.is_none() && (self.runtime.is_some() || self.runtime_message.is_some()) {
+            doc.button("活动", "activity", false);
         }
         if let Some(client) = &self.selected {
             doc.button("返回客户端列表", "back", false);
@@ -753,5 +880,112 @@ mod tests {
                 .any(|node| matches!(&node.payload, ui::NodePayload::Form(_)))
         );
         assert!(!doc.nodes.iter().any(|node|matches!(&node.payload,ui::NodePayload::Button(button) if button.action_id=="revoke")));
+    }
+}
+
+fn runtime_method_label(method: &str) -> &'static str {
+    match method {
+        "mcp.tools.catalog" => "读取工具目录",
+        "extensions.mcpTools.call" => "调用扩展工具",
+        "system.status" => "读取 Core 状态",
+        "projects.get" => "读取项目",
+        "projects.list" => "读取项目列表",
+        "state.check" => "检查状态",
+        "operations.get" => "读取任务",
+        "operations.list" => "读取任务列表",
+        "operations.cancel" => "请求取消任务",
+        "events.list" => "读取事件",
+        "packages.planRemove" => "生成卸载计划",
+        "packages.applyPlan" => "应用包变更计划",
+        _ => "Core 调用",
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+    #[test]
+    fn activity_masks_ungranted_groups_and_uses_core_call_labels() {
+        let view = View {
+            activity: true,
+            runtime: Some(runtime::RuntimeSnapshot {
+                instance_id: "core".into(),
+                observed_at_ms: 5000,
+                can_read_connections: false,
+                can_read_requests: true,
+                coverage_incomplete: false,
+                connections: Some(runtime::ConnectionPage {
+                    items: vec![runtime::ConnectionRow {
+                        connection_id: "ungranted-connection".into(),
+                        client_id: "ungranted-client".into(),
+                        connected_at_ms: 1,
+                        active_call_count: 0,
+                    }],
+                    total_tracked: 1,
+                    truncated: false,
+                }),
+                requests: Some(runtime::RequestPage {
+                    items: vec![runtime::RequestRow {
+                        call_id: "call".into(),
+                        connection_id: "connection".into(),
+                        client_id: "00000000-0000-4000-8000-000000000001".into(),
+                        method: "projects.list".into(),
+                        started_at_ms: 1000,
+                    }],
+                    total_tracked: 1,
+                    truncated: false,
+                }),
+            }),
+            ..Default::default()
+        };
+        let document = view.document();
+        let labels: Vec<_> = document
+            .nodes
+            .iter()
+            .filter_map(|node| match &node.payload {
+                ui::NodePayload::List(node) => node.label.clone(),
+                ui::NodePayload::ListItem(node) => node.label.clone(),
+                _ => None,
+            })
+            .collect();
+        assert!(labels.iter().any(|label| label.contains("Core 调用 · 1")));
+        assert!(
+            labels
+                .iter()
+                .any(|label| label.contains("读取项目列表") && label.contains("4 秒"))
+        );
+        assert!(
+            !labels
+                .iter()
+                .any(|label| label.contains("Core 连接") || label.contains("ungranted"))
+        );
+    }
+    #[test]
+    fn activity_read_failure_is_not_reported_as_zero_and_keeps_unknown_write_risk() {
+        let view = View {
+            activity: true,
+            runtime_message: Some("活动读取失败".into()),
+            unknown_write: true,
+            message: Some(("之前写入结果未知".into(), ui::Tone::Warning)),
+            ..Default::default()
+        };
+        let document = view.document();
+        let labels: Vec<_> = document
+            .nodes
+            .iter()
+            .filter_map(|node| match &node.payload {
+                ui::NodePayload::Status(node) => Some(node.label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(labels.contains(&"活动读取失败"));
+        assert!(labels.contains(&"之前写入结果未知"));
+        assert!(!labels.iter().any(|text| text.contains("当前没有")));
+        assert!(
+            !document
+                .nodes
+                .iter()
+                .any(|node| matches!(&node.payload, ui::NodePayload::Form(_)))
+        );
     }
 }

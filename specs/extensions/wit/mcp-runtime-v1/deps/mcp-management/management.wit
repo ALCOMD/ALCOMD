@@ -1,0 +1,45 @@
+package alcomd:mcp-management@1.0.0;
+
+interface clients {
+    enum error-code {
+        invalid-argument, permission-denied, scope-denied, lease-expired, lease-revoked,
+        revision-conflict, idempotency-conflict, resource-limit, cancelled, unavailable,
+        write-outcome-unknown, internal-error,
+    }
+    record management-error {
+        code: error-code,
+        diagnostic-id: option<string>,
+    }
+    record client-summary {
+        client-id: string,
+        display-name: string,
+        revision: u64,
+        created-at-ms: u64,
+        revoked-at-ms: option<u64>,
+        grant-count: u32,
+    }
+    record grant {
+        permission: string,
+        resource-kind: string,
+        resource-id: string,
+    }
+    record project-summary {
+        project-id: string,
+        name: string,
+    }
+    record client-page { items: list<client-summary>, next-cursor: option<string>, can-manage: bool }
+    record grant-page { revision: u64, items: list<grant>, next-cursor: option<string> }
+    record project-page { items: list<project-summary>, next-cursor: option<string> }
+
+    %list: func(cursor: option<string>, limit: option<u32>) -> result<client-page, management-error>;
+    grants: func(client-id: string, expected-revision: u64, cursor: option<string>, limit: option<u32>) -> result<grant-page, management-error>;
+    projects: func(cursor: option<string>, limit: option<u32>) -> result<project-page, management-error>;
+    create: func(display-name: string, idempotency-key: string) -> result<client-summary, management-error>;
+    change-grants: func(client-id: string, expected-revision: u64, add: list<grant>, remove: list<grant>, idempotency-key: string) -> result<client-summary, management-error>;
+    revoke: func(client-id: string, expected-revision: u64, idempotency-key: string) -> result<client-summary, management-error>;
+}
+
+world management-v1 {
+    include alcomd:extension/extension-v1@1.0.0;
+    import clients;
+}

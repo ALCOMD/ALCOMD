@@ -52,6 +52,8 @@ external-config.manage
 integrations.discord.presence
 mcp.clients.read
 mcp.clients.manage
+mcp.connections.read
+mcp.requests.read
 mcp.configuration.read
 mcp.configuration.manage
 ```
@@ -211,3 +213,13 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 ### MCP tool providers
 
 Optional `mcp.tools.provide` publishes signed tool declarations and does not enable an extension or grant business authority. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution intersects declared closed operations, current extension grants/lease and the actual MCP client's current capabilities/OAuth ceiling. `projects.read` retains safe project projections, with no path/filesystem authority. See `../mcp/extension-tools-v1.md` and State38. MCP client capability names remain the existing eight.
+
+
+## M8 Core observation reads
+
+`mcp.connections.read` and `mcp.requests.read` independently allow the bounded
+Core IPC / in-flight Core RPC projection via mcp.runtime.snapshot and the readonly
+observations@1.0.0 Host interface. Extension scopes are exactly Global/* (State40),
+optional and off by default; both interactive Client and Extension must permit each
+group. These are administrative observation permissions, not external MCP business
+grants or OAuth scopes. They grant no connection termination or Operation control.

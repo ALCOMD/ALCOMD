@@ -2112,7 +2112,7 @@ fn save_idempotent<T: Serialize>(
 
 fn valid_scope(extension_id: &str, permission: &str, kind: &str, id: &str) -> bool {
     (permission == "background.run" && kind == "Extension" && id == extension_id)
-        || (alcomd_application::EXTENSION_TOOL_PERMISSIONS.contains(&permission)
+        || (alcomd_application::EXTENSION_GLOBAL_PERMISSIONS.contains(&permission)
             && kind == "Global"
             && id == "*")
 }

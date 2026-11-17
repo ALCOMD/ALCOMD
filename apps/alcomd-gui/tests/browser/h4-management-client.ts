@@ -28,6 +28,7 @@ declare global { interface Window { h4Management: ManagementFixture } }
 /** Opt-in public DTO fixture. It never reads or writes the native Core environment. */
 export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParams): GuiRpcClient {
     const hash = "a".repeat(64);
+    const runtimePermissions: ManagementGrant["permission"][] = ["mcp.connections.read", "mcp.requests.read"];
     const providerPermissions: ManagementGrant["permission"][] = ["mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "projects.read"];
     const toolPreviews: import("@alcomd/sdk").McpToolPreview[] = query.has("m8-tool-provider") ? [
         { name: "alcomd_ext_aaaaaaaaaaaaaaaaaaaa_echo", title: "Echo text", description: "Compute a result without Core business access.", requiredPermissions: [], effect: "pure" },
@@ -171,7 +172,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
             return response("extensions.permissions.list", { extensionId, grantRevision: extension.grantRevision,
-                requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
+                requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
         async extensionPlanInstall(packagePath, expectedRevision) {
@@ -222,9 +223,9 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             await response("extensions.setGrant", undefined);
             const extension = installed(extensionId);
             if (extension.grantRevision !== expectedGrantRevision) throw { code: "revision_conflict" };
-            const known = (value: string): value is ManagementGrant["permission"] => ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", ...providerPermissions].some((item) => item === value);
+            const known = (value: string): value is ManagementGrant["permission"] => ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", ...runtimePermissions, ...providerPermissions].some((item) => item === value);
             if (!known(permission) || (resourceKind !== "Global" && resourceKind !== "Extension")) throw { code: "invalid_request" };
-            const global = ["projects.read", "mcp.clients.read", "mcp.clients.manage", ...providerPermissions].includes(permission);
+            const global = ["projects.read", "mcp.clients.read", "mcp.clients.manage", ...runtimePermissions, ...providerPermissions].includes(permission);
             if (!global && permission !== "background.run") throw { code: "invalid_request" };
             if (global ? resourceKind !== "Global" || resourceId !== "*" : resourceKind !== "Extension" || resourceId !== extensionId) throw { code: "extension_scope_denied" };
             const current = grants.get(extensionId) ?? [];

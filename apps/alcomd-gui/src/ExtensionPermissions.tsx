@@ -19,6 +19,8 @@ function permissionName(permission: string, t: Translate): string {
     if (permission === "projects.read") return t("Read projects");
     if (permission === "mcp.clients.read") return t("Read MCP clients");
     if (permission === "mcp.clients.manage") return t("Manage MCP clients");
+    if (permission === "mcp.connections.read") return t("Read MCP Core connections");
+    if (permission === "mcp.requests.read") return t("Read MCP Core calls");
     if (permission === "mcp.tools.provide") return t("Publish MCP tools");
     if (permission === "repositories.read") return t("Read repositories");
     if (permission === "packages.read") return t("Read package information");
@@ -32,6 +34,8 @@ function permissionDescription(permission: string, t: Translate): string {
     switch (permission) {
         case "background.run": return t("Run background tasks when this extension's page is closed.");
         case "projects.read": return t("View basic information about all current and future projects.");
+        case "mcp.connections.read": return t("View all MCP clients’ connections to Core.");
+        case "mcp.requests.read": return t("View Core calls currently executing for all MCP clients.");
         case "mcp.clients.read": return t("View all registered MCP clients and their grants.");
         case "mcp.clients.manage": return t("Create MCP clients, change their grants, and permanently revoke them.");
         case "mcp.tools.provide": return t("Make declared tools available to MCP clients with matching business permissions.");
@@ -45,7 +49,7 @@ function permissionDescription(permission: string, t: Translate): string {
 }
 
 function editablePermission(permission: string): permission is ExtensionPermissionGrant["permission"] {
-    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel";
+    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.connections.read" || permission === "mcp.requests.read" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel";
 }
 
 export function ExtensionPermissionRequests({ required, optional }: { required: string[]; optional: string[] }) {

@@ -283,6 +283,7 @@ impl HostMessage {
                             | "host-data.get"
                             | "host-data.set"
                             | "host-data.delete"
+                            | "host-mcp-runtime.snapshot"
                             | "host-mcp-clients.list"
                             | "host-mcp-clients.grants"
                             | "host-mcp-clients.projects"
@@ -300,7 +301,8 @@ impl HostMessage {
                     return Err(HostProtocolError::InvalidEnvelope);
                 }
                 validate_value(input)?;
-                if (capability.starts_with("host-mcp-clients.")
+                if (capability == "host-mcp-runtime.snapshot"
+                    || capability.starts_with("host-mcp-clients.")
                     || capability.starts_with("host-mcp-tools."))
                     && serde_json::to_vec(input).map_or(true, |bytes| bytes.len() > 65_536)
                 {

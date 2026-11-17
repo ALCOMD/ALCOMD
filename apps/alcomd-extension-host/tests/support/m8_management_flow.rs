@@ -5,6 +5,541 @@ use alcomd_protocol::{
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn runtime_snapshot_rpc_tracks_authoritative_ids_disconnect_revocation_and_restart() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime directory");
+    fs::create_dir(&data).expect("isolated data directory");
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc.clone(),
+        DataConfig::isolated(data.clone()),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("isolated Core");
+    let mut owner = connect_with_retry(config.clone()).await;
+    let initial = owner
+        .mcp_runtime_snapshot(Default::default())
+        .await
+        .expect("negotiated real capability");
+    assert_eq!(
+        initial
+            .connections
+            .expect("owner connections")
+            .total_tracked,
+        0
+    );
+    let mut connections = Vec::new();
+    let mut ids = Vec::new();
+    let mut revisions = Vec::new();
+    for index in 0..2 {
+        let record = owner
+            .mcp_client_create(McpClientsCreateParams {
+                display_name: format!("Observed client {index}"),
+                idempotency_key: format!("observe-create-{index}"),
+                grants: vec![],
+            })
+            .await
+            .expect("create client");
+        let issued = owner
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: record.client_id.clone(),
+                expected_revision: record.revision,
+                idempotency_key: format!("observe-issue-{index}"),
+            })
+            .await
+            .expect("one-time credential");
+        ids.push(record.client_id);
+        revisions.push(issued.revision);
+        connections.push(
+            AlcomdClient::connect(
+                config
+                    .clone()
+                    .with_client_name(&ids[0])
+                    .with_mcp_credential(issued.credential),
+            )
+            .await
+            .expect("real credential identity"),
+        );
+    }
+    let current = wait_runtime_connections(&mut owner, 2).await;
+    let mut actual: Vec<_> = current
+        .connections
+        .expect("connections")
+        .items
+        .into_iter()
+        .map(|row| row.client_id)
+        .collect();
+    actual.sort();
+    let mut expected = ids.clone();
+    expected.sort();
+    assert_eq!(
+        actual, expected,
+        "clientInfo cannot supply connection identity"
+    );
+    assert_eq!(current.requests.expect("requests").total_tracked, 0);
+    let filtered = owner
+        .mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {
+            client_id: Some(ids[0].clone()),
+            limit: Some(1),
+        })
+        .await
+        .expect("scoped filter");
+    let rows = filtered.connections.expect("filtered connections");
+    assert_eq!(rows.total_tracked, 1);
+    assert_eq!(rows.items[0].client_id, ids[0]);
+    assert!(!rows.truncated);
+    let limited = owner
+        .mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {
+            client_id: None,
+            limit: Some(1),
+        })
+        .await
+        .expect("bounded group");
+    let rows = limited.connections.expect("limited connections");
+    assert_eq!(rows.total_tracked, 2);
+    assert_eq!(rows.items.len(), 1);
+    assert!(rows.truncated);
+    assert!(
+        matches!(owner.mcp_runtime_snapshot(alcomd_protocol::McpRuntimeSnapshotParams {client_id:None,limit:Some(0)}).await,Err(ClientError::Remote(error)) if error.code=="invalid_request")
+    );
+    assert!(
+        matches!(connections[0].mcp_runtime_snapshot(Default::default()).await,Err(ClientError::Remote(error)) if error.code=="permission_denied"),
+        "business identity cannot read administrative observations"
+    );
+    drop(connections.pop());
+    wait_runtime_connections(&mut owner, 1).await;
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: ids[0].clone(),
+            expected_revision: revisions[0],
+            idempotency_key: "observe-revoke".into(),
+        })
+        .await
+        .expect("authoritative revocation");
+    assert_eq!(
+        owner
+            .mcp_runtime_snapshot(Default::default())
+            .await
+            .expect("physical presence is not authorization")
+            .connections
+            .expect("connection group")
+            .total_tracked,
+        1
+    );
+    assert!(
+        connections[0].system_status().await.is_err(),
+        "revoked connected identity cannot fall back to owner"
+    );
+    wait_runtime_connections(&mut owner, 0).await;
+    drop(connections);
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("shutdown");
+    let restart = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&restart)),
+    )
+    .await
+    .expect("same isolated data restart");
+    let mut owner = connect_with_retry(config).await;
+    let fresh = owner
+        .mcp_runtime_snapshot(Default::default())
+        .await
+        .expect("fresh observations");
+    assert_ne!(initial.instance_id, fresh.instance_id);
+    assert_eq!(
+        fresh.connections.expect("fresh connections").total_tracked,
+        0
+    );
+    assert_eq!(fresh.requests.expect("fresh calls").total_tracked, 0);
+    let persisted = owner
+        .mcp_clients_list(Default::default())
+        .await
+        .expect("durable client records");
+    assert_eq!(persisted.items.len(), 2);
+    assert!(
+        persisted
+            .items
+            .iter()
+            .find(|row| row.client_id == ids[0])
+            .expect("revoked client persisted")
+            .revoked_at_ms
+            .is_some()
+    );
+    restart.store(true, Ordering::Release);
+    daemon
+        .await
+        .expect("restarted task")
+        .expect("restart shutdown");
+}
+
+async fn wait_runtime_connections(
+    owner: &mut AlcomdClient,
+    expected: u32,
+) -> alcomd_protocol::McpRuntimeSnapshotResult {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let snapshot = owner
+            .mcp_runtime_snapshot(Default::default())
+            .await
+            .expect("real snapshot");
+        if snapshot
+            .connections
+            .as_ref()
+            .expect("owner connection group")
+            .total_tracked
+            == expected
+        {
+            return snapshot;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "physical connection cleanup did not converge"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn runtime_observations_use_real_authenticated_connections_and_revocable_host_grants() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("real runtime observation fixture");
+    fs::create_dir(&data).expect("real runtime observation fixture");
+    let package = fixture.path().join("runtime.alcomdextension");
+    let declarations = include_str!(
+        "../../../../extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml"
+    )
+    .split_once("[permissions]")
+    .expect("current management permission declarations")
+    .1;
+    let profile = format!("[permissions]{declarations}\n[ui]\nprotocol = \"portable-v1\"\n");
+    create_signed_package_with_interfaces(
+        &package,
+        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        "Core activity fixture",
+        &profile,
+        &[
+            "alcomd:mcp-management/clients@1.0.0",
+            "alcomd:mcp-runtime/observations@1.0.0",
+        ],
+        "AGPL-3.0-only",
+    );
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("real runtime observation fixture");
+    let mut owner = connect_with_retry(config.clone()).await;
+    let mut connections = Vec::new();
+    let mut ids = Vec::new();
+    for index in 0..2 {
+        let record = owner
+            .mcp_client_create(McpClientsCreateParams {
+                display_name: format!("Isolated runtime {index}"),
+                idempotency_key: format!("runtime-create-{index}"),
+                grants: vec![],
+            })
+            .await
+            .expect("real runtime observation fixture");
+        let issued = owner
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: record.client_id.clone(),
+                expected_revision: record.revision,
+                idempotency_key: format!("runtime-issue-{index}"),
+            })
+            .await
+            .expect("real runtime observation fixture");
+        ids.push(record.client_id);
+        if index == 0 {
+            let mut wrong = issued.credential.clone();
+            let last = wrong.pop().expect("real runtime observation fixture");
+            wrong.push(if last == '0' { '1' } else { '0' });
+            assert!(
+                AlcomdClient::connect(config.clone().with_mcp_credential(wrong))
+                    .await
+                    .is_err()
+            );
+        }
+        connections.push(
+            AlcomdClient::connect(
+                config
+                    .clone()
+                    .with_client_name(&ids[0])
+                    .with_mcp_credential(issued.credential),
+            )
+            .await
+            .expect("real runtime observation fixture"),
+        );
+    }
+    let plan = owner
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+        })
+        .await
+        .expect("real runtime observation fixture")
+        .plan;
+    assert!(plan.required_permissions.is_empty());
+    assert_eq!(plan.optional_permissions.len(), 4);
+    let install = owner
+        .extension_apply_install(ExtensionApplyParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "runtime-install".into(),
+        })
+        .await
+        .expect("real runtime observation fixture");
+    assert_eq!(
+        wait_for_terminal(&mut owner, &install.operation_id).await,
+        OperationState::Succeeded
+    );
+    let extension = owner
+        .extension_get("dev.alcomd.fixture".into())
+        .await
+        .expect("real runtime observation fixture")
+        .extension;
+    owner
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: extension.extension_id.clone(),
+            expected_revision: extension.revision,
+            idempotency_key: "runtime-enable".into(),
+        })
+        .await
+        .expect("real runtime observation fixture");
+    let page = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("real runtime observation fixture");
+    let document =
+        serde_json::to_string(&page.snapshot.document).expect("real runtime observation fixture");
+    assert!(!document.contains("\"actionId\":\"activity\""));
+    assert!(!document.contains(&ids[0]));
+    assert!(!document.contains("Core 连接 ·"));
+    let mut revision = owner
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: extension.extension_id.clone(),
+            cursor: None,
+            limit: Some(64),
+        })
+        .await
+        .expect("real runtime observation fixture")
+        .grant_revision;
+    for permission in ["mcp.connections.read", "mcp.requests.read"] {
+        if permission == "mcp.requests.read" {
+            revision = owner
+                .extension_set_grant(ExtensionGrantParams {
+                    extension_id: extension.extension_id.clone(),
+                    permission: permission.into(),
+                    resource_kind: "Global".into(),
+                    resource_id: "*".into(),
+                    expected_grant_revision: revision,
+                    idempotency_key: "runtime-grant-requests".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .grant_revision;
+            let mut page = owner
+                .extension_ui_open(ExtensionUiOpenParams {
+                    extension_id: extension.extension_id.clone(),
+                    locale: "zh-CN".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .snapshot;
+            // A real authenticated call stays in flight through Core. No mock RPC response or public testing bypass.
+            let gate = daemon.hold_next_runtime_project_list().await;
+            let mut mcp = connections.pop().expect("real runtime observation fixture");
+            let call = tokio::spawn(async move {
+                let result = mcp.projects_list(None, Some(10)).await;
+                (mcp, result)
+            });
+            tokio::time::timeout(Duration::from_secs(10), gate.entered())
+                .await
+                .expect("real runtime observation fixture");
+            let mut sequence = 0;
+            dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
+            let document =
+                serde_json::to_string(&page.document).expect("real runtime observation fixture");
+            assert!(document.contains("Core 连接 · 2"), "{document}");
+            assert!(document.contains("Core 调用 · 1"), "{document}");
+            assert!(document.contains("读取项目列表"));
+            assert!(document.contains(&ids[1][..8]));
+            assert!(!document.contains("credential"));
+            assert!(!document.contains("idempotency"));
+            gate.release();
+            let (mcp, result) = call.await.expect("real runtime observation fixture");
+            assert!(
+                matches!(result,Err(ClientError::Remote(error)) if error.code=="permission_denied"),
+                "zero grants still reject the actual use case"
+            );
+            connections.push(mcp);
+            let narrowed = |permissions: Vec<alcomd_application::Permission>| {
+                alcomd_application::AccessContext::new(
+                    alcomd_application::PrincipalId::local_owner(),
+                    permissions,
+                )
+                .with_extension_ui_scopes([extension.extension_id.clone()])
+            };
+            let denied = daemon
+                .extension_activity_with_access(
+                    narrowed(vec![
+                        alcomd_application::Permission::ExtensionsRead,
+                        alcomd_application::Permission::ExtensionsUiUse,
+                    ]),
+                    extension.extension_id.clone(),
+                )
+                .await
+                .expect("real runtime observation fixture");
+            let denied = String::from_utf8(denied).expect("real runtime observation fixture");
+            assert!(!denied.contains("Core 连接 ·"));
+            assert!(!denied.contains("Core 调用 ·"));
+            let partial = daemon
+                .extension_activity_with_access(
+                    narrowed(vec![
+                        alcomd_application::Permission::ExtensionsRead,
+                        alcomd_application::Permission::ExtensionsUiUse,
+                        alcomd_application::Permission::McpConnectionsRead,
+                    ]),
+                    extension.extension_id.clone(),
+                )
+                .await
+                .expect("real runtime observation fixture");
+            let partial = String::from_utf8(partial).expect("real runtime observation fixture");
+            assert!(partial.contains("Core 连接 · 2"), "{partial}");
+            assert!(!partial.contains("Core 调用 ·"));
+            dispatch(
+                &mut owner,
+                &mut page,
+                &mut sequence,
+                activate("runtime-refresh"),
+            )
+            .await;
+            assert!(
+                serde_json::to_string(&page.document)
+                    .expect("real runtime observation fixture")
+                    .contains("Core 调用 · 0")
+            );
+            revision = owner
+                .extension_revoke_grant(ExtensionGrantParams {
+                    extension_id: extension.extension_id.clone(),
+                    permission: "mcp.connections.read".into(),
+                    resource_kind: "Global".into(),
+                    resource_id: "*".into(),
+                    expected_grant_revision: revision,
+                    idempotency_key: "runtime-revoke-connections".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .grant_revision;
+            assert!(
+                owner
+                    .extension_ui_refresh(ExtensionUiRefreshParams {
+                        session_id: page.session_id,
+                        expected_snapshot_revision: page.snapshot_revision
+                    })
+                    .await
+                    .is_err(),
+                "old lease must not survive revocation"
+            );
+            let mut page = owner
+                .extension_ui_open(ExtensionUiOpenParams {
+                    extension_id: extension.extension_id.clone(),
+                    locale: "zh-CN".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .snapshot;
+            let mut sequence = 0;
+            dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
+            let document =
+                serde_json::to_string(&page.document).expect("real runtime observation fixture");
+            assert!(!document.contains("Core 连接 ·"));
+            assert!(document.contains("Core 调用 · 0"));
+        } else {
+            revision = owner
+                .extension_set_grant(ExtensionGrantParams {
+                    extension_id: extension.extension_id.clone(),
+                    permission: permission.into(),
+                    resource_kind: "Global".into(),
+                    resource_id: "*".into(),
+                    expected_grant_revision: revision,
+                    idempotency_key: "runtime-grant-connections".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .grant_revision;
+            let mut page = owner
+                .extension_ui_open(ExtensionUiOpenParams {
+                    extension_id: extension.extension_id.clone(),
+                    locale: "zh-CN".into(),
+                })
+                .await
+                .expect("real runtime observation fixture")
+                .snapshot;
+            let mut sequence = 0;
+            dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
+            let document =
+                serde_json::to_string(&page.document).expect("real runtime observation fixture");
+            assert!(document.contains("Core 连接 · 2"), "{document}");
+            assert!(!document.contains("Core 调用 ·"));
+        }
+    }
+    owner
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.requests.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: revision,
+            idempotency_key: "runtime-revoke-requests".into(),
+        })
+        .await
+        .expect("real runtime observation fixture");
+    let page = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("real runtime observation fixture");
+    assert!(
+        !serde_json::to_string(&page.snapshot.document)
+            .expect("real runtime observation fixture")
+            .contains("Core 调用 ·")
+    );
+    drop(connections);
+    owner
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: page.session.session_id,
+        })
+        .await
+        .expect("real runtime observation fixture");
+    export_package(&package, "ALCOMD_TEST_MCP_RUNTIME_PACKAGE_OUTPUT");
+    shutdown.store(true, Ordering::Release);
+    daemon
+        .await
+        .expect("real runtime observation fixture")
+        .expect("real runtime observation fixture");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn optional_management_permissions_allow_zero_grant_start_and_restrict_data() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
@@ -652,7 +1187,10 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
 }
 
 fn export_development_package(package: &Path) {
-    if let Some(destination) = std::env::var_os("ALCOMD_TEST_MCP_MANAGEMENT_PACKAGE_OUTPUT") {
+    export_package(package, "ALCOMD_TEST_MCP_MANAGEMENT_PACKAGE_OUTPUT");
+}
+fn export_package(package: &Path, output_environment: &str) {
+    if let Some(destination) = std::env::var_os(output_environment) {
         let destination = PathBuf::from(destination);
         let target = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target")

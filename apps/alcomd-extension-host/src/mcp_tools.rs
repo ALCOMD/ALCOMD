@@ -198,6 +198,7 @@ pub(super) fn preflight(engine: &Engine, component: &Component, bytes: &[u8]) ->
     super::ExtensionV1::add_to_linker::<_, wasmtime::component::HasSelf<_>>(&mut linker, |s| s)
         .map_err(|_| anyhow::anyhow!("link"))?;
     super::mcp_management::add_to_linker(&mut linker)?;
+    super::mcp_runtime::add_to_linker(&mut linker)?;
     add_to_linker(&mut linker)?;
     bindings::ProviderV1Pre::new(
         linker

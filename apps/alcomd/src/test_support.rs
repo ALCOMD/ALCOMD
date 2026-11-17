@@ -25,6 +25,73 @@ pub struct TestDaemon {
 }
 
 impl TestDaemon {
+    /// Exercises the existing application/real Host path with a deliberately narrowed UI caller.
+    /// Native owner IPC has full authority; this is only a test-context constructor, not an authentication branch.
+    pub async fn extension_activity_with_access(
+        &self,
+        access: alcomd_application::AccessContext,
+        extension_id: String,
+    ) -> Result<Vec<u8>, alcomd_application::M7Error> {
+        let connection = alcomd_application::OperationId::new().to_string();
+        let instance = alcomd_application::OperationId::new().to_string();
+        let now = super::current_time_ms().expect("test clock");
+        let opened = self
+            .applications
+            .m7
+            .open(
+                &access,
+                connection.clone(),
+                instance,
+                extension_id,
+                "zh-CN".into(),
+                now,
+            )
+            .await?;
+        let mut document = opened.snapshot.document;
+        if String::from_utf8_lossy(&document).contains("\"actionId\":\"activity\"") {
+            let action = br#"{"kind":"activate","actionId":"activity"}"#.to_vec();
+            let fingerprint = alcomd_extensions::portable_ui_action_fingerprint(&action);
+            let result = self
+                .applications
+                .m7
+                .dispatch(
+                    &access,
+                    &connection,
+                    &opened.session.session_id,
+                    opened.snapshot.snapshot_revision,
+                    1,
+                    alcomd_application::OperationId::new().to_string(),
+                    action,
+                    fingerprint,
+                    super::current_time_ms().expect("test clock"),
+                )
+                .await;
+            self.applications
+                .m7
+                .close_connection(&connection, super::current_time_ms().expect("test clock"))
+                .await;
+            document = result?.snapshot.document;
+        } else {
+            self.applications
+                .m7
+                .close_connection(&connection, super::current_time_ms().expect("test clock"))
+                .await;
+        }
+        Ok(document)
+    }
+    /// Holds one authenticated Core projects.list before its use case. No production RPC or cancellation semantics change.
+    pub async fn hold_next_runtime_project_list(&self) -> Arc<RuntimeCallGate> {
+        let gate = Arc::new(RuntimeCallGate {
+            entered: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+            ready: tokio::sync::Notify::new(),
+            release: tokio::sync::Notify::new(),
+        });
+        let mut slot = self.applications.runtime_call_gate.lock().await;
+        assert!(slot.is_none(), "one observation call gate at a time");
+        *slot = Some(Arc::clone(&gate));
+        gate
+    }
     /// A one-shot reply-loss gate after real OAuth commit. It retains no token payload.
     pub async fn hold_next_oauth_token_response(&self) -> Arc<OAuthTokenResponseGate> {
         let gate = Arc::new(OAuthTokenResponseGate {
@@ -70,6 +137,44 @@ impl TestDaemon {
     /// Reports whether the serving task has finished.
     pub fn is_finished(&self) -> bool {
         self.task.is_finished()
+    }
+}
+
+pub struct RuntimeCallGate {
+    entered: std::sync::atomic::AtomicBool,
+    released: std::sync::atomic::AtomicBool,
+    ready: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+impl RuntimeCallGate {
+    pub(super) async fn intercept(&self) {
+        self.entered.store(true, Ordering::Release);
+        self.ready.notify_waiters();
+        loop {
+            let notified = self.release.notified();
+            if self.released.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+    pub async fn entered(&self) {
+        loop {
+            let notified = self.ready.notified();
+            if self.entered.load(Ordering::Acquire) {
+                return;
+            }
+            notified.await;
+        }
+    }
+    pub fn release(&self) {
+        self.released.store(true, Ordering::Release);
+        self.release.notify_waiters();
+    }
+}
+impl Drop for RuntimeCallGate {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 

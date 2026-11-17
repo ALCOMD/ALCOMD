@@ -73,3 +73,28 @@ production replacement；M6 backend runtime 已验收的 sandbox、lease、data 
 - Core-owned effect evidence cannot be forged by guest data. One persistent action is recorded atomically with business acceptance; lost replies, traps and protocol cancellation do not cancel or repeat accepted Operations. Explicit same-key recovery checks current caller/business authority and restores original evidence only; it never invokes a removed or revoked provider.
 - Catalogue continuations bind current authentication, client revision, provider packages/grant revisions and position. HTTP resolves Core effect metadata before calling; reserved write controls conservatively preserve unknown-write semantics across source changes. No new listener/session or credential forwarding to Wasm is introduced.
 - Native schema dependencies include third-party SIMD/unsafe code. Disabling default resolver features is not a claim of zero unsafe; dependency and feature evidence is recorded in M8.
+
+
+## M8 Core observation read boundary (approved 2026-11-17)
+
+The additive observations@1.0.0 Host interface exposes only the Core-generated
+connection/call projection. The authoritative registry is in Core memory and is
+populated after real MCP authentication; clientInfo, adapter text and guest input
+cannot select a Principal or create a row. Method names come from the static Core
+allowlist. Parameters, responses, credentials/hashes, headers, request IDs, paths
+and URLs are excluded by construction, including diagnostic/Portable UI output.
+
+The two optional Global/* read permissions reveal cross-client activity metadata
+and must be explicitly granted. Native MCP business credentials and OAuth scopes
+do not include these administration permissions. Each Host read validates both
+interactive Client and Extension authority plus declaration, scope, current lease,
+grant/lifecycle state, UI state and deadline; canRead flags are presentation only.
+Grant revocation must invalidate the previous UI result, never preserve it as live.
+
+The4096-connection tracking budget and64KiB projections cannot reject business.
+Overflow/truncation is explicit; read errors cannot masquerade as zero activity.
+Drop/restart clears ephemeral records and changes the Core instance binding.
+A displayed IPC connection is not a current-authorization or online assertion;
+HTTP sockets, adapter queues and protocol subscriptions remain unobserved.
+Observation cleanup and request cancellation never cancel accepted Operations.
+State40 preserves all old rows/constraints and grants nothing automatically.

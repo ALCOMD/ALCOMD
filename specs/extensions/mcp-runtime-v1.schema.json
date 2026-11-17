@@ -1,0 +1,265 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/extensions/mcp-runtime-v1.json",
+    "title": "Approved MCP Core observation Host projection",
+    "x-max-serialized-bytes": 65536,
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "time": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807
+        },
+        "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "clientId": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/id"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "type": [
+                        "integer",
+                        "null"
+                    ],
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 25
+                }
+            },
+            "required": []
+        },
+        "connection": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "connectionId": {
+                    "$ref": "#/$defs/id"
+                },
+                "clientId": {
+                    "$ref": "#/$defs/id"
+                },
+                "connectedAtMs": {
+                    "$ref": "#/$defs/time"
+                },
+                "activeCallCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1
+                }
+            },
+            "required": [
+                "connectionId",
+                "clientId",
+                "connectedAtMs",
+                "activeCallCount"
+            ]
+        },
+        "call": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "callId": {
+                    "$ref": "#/$defs/id"
+                },
+                "connectionId": {
+                    "$ref": "#/$defs/id"
+                },
+                "clientId": {
+                    "$ref": "#/$defs/id"
+                },
+                "method": {
+                    "enum": [
+                        "mcp.tools.catalog",
+                        "extensions.mcpTools.call",
+                        "system.status",
+                        "projects.get",
+                        "projects.list",
+                        "state.check",
+                        "operations.get",
+                        "operations.list",
+                        "operations.cancel",
+                        "events.list",
+                        "packages.planRemove",
+                        "packages.applyPlan"
+                    ]
+                },
+                "startedAtMs": {
+                    "$ref": "#/$defs/time"
+                }
+            },
+            "required": [
+                "callId",
+                "connectionId",
+                "clientId",
+                "method",
+                "startedAtMs"
+            ]
+        },
+        "connectionRows": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/connection"
+                    }
+                },
+                "totalTracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "totalTracked",
+                "truncated"
+            ]
+        },
+        "callRows": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                        "$ref": "#/$defs/call"
+                    }
+                },
+                "totalTracked": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4096
+                },
+                "truncated": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "items",
+                "totalTracked",
+                "truncated"
+            ]
+        },
+        "snapshot": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "instanceId": {
+                    "$ref": "#/$defs/id"
+                },
+                "observedAtMs": {
+                    "$ref": "#/$defs/time"
+                },
+                "canReadConnections": {
+                    "type": "boolean"
+                },
+                "canReadRequests": {
+                    "type": "boolean"
+                },
+                "coverageIncomplete": {
+                    "type": "boolean"
+                },
+                "connections": {
+                    "$ref": "#/$defs/connectionRows"
+                },
+                "requests": {
+                    "$ref": "#/$defs/callRows"
+                }
+            },
+            "required": [
+                "instanceId",
+                "observedAtMs",
+                "canReadConnections",
+                "canReadRequests",
+                "coverageIncomplete"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "canReadConnections": {
+                                "const": true
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "connections"
+                        ]
+                    },
+                    "else": {
+                        "not": {
+                            "required": [
+                                "connections"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "canReadRequests": {
+                                "const": true
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "requests"
+                        ]
+                    },
+                    "else": {
+                        "not": {
+                            "required": [
+                                "requests"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "anyOf": [
+                {
+                    "properties": {
+                        "canReadConnections": {
+                            "const": true
+                        }
+                    }
+                },
+                {
+                    "properties": {
+                        "canReadRequests": {
+                            "const": true
+                        }
+                    }
+                }
+            ]
+        }
+    },
+    "x-interface": "alcomd:mcp-runtime/observations@1.0.0",
+    "oneOf": [
+        {
+            "$ref": "#/$defs/params"
+        },
+        {
+            "$ref": "#/$defs/snapshot"
+        }
+    ]
+}

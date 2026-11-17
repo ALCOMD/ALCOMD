@@ -286,6 +286,29 @@ fn authorize(
     request: &Q,
     now: u64,
 ) -> Result<(), ManagementError> {
+    let permission = match request {
+        Q::Projects { .. } => Permission::ProjectsRead,
+        request if request.is_write() => Permission::McpClientsManage,
+        _ => Permission::McpClientsRead,
+    };
+    authorize_permission(
+        db,
+        lease,
+        authority,
+        Some(permission),
+        request.is_write(),
+        now,
+    )
+}
+
+fn authorize_permission(
+    db: &Connection,
+    lease: &ExtensionInstanceLease,
+    authority: &ExtensionUiInvocationAuthority,
+    permission: Option<Permission>,
+    is_write: bool,
+    now: u64,
+) -> Result<(), ManagementError> {
     if now >= lease.expires_at_ms {
         return Err(E::LeaseExpired.into());
     }
@@ -295,7 +318,7 @@ fn authorize(
     if !matches!(
         authority.kind,
         ExtensionInvocationKind::InteractiveUiRender | ExtensionInvocationKind::InteractiveUiAction
-    ) || (request.is_write() && authority.kind != ExtensionInvocationKind::InteractiveUiAction)
+    ) || (is_write && authority.kind != ExtensionInvocationKind::InteractiveUiAction)
     {
         return Err(E::PermissionDenied.into());
     }
@@ -303,15 +326,12 @@ fn authorize(
         .client_access
         .require_extension_ui_scope(&lease.extension_id)
         .map_err(|_| ManagementError::from(E::ScopeDenied))?;
-    let permission = match request {
-        Q::Projects { .. } => Permission::ProjectsRead,
-        r if r.is_write() => Permission::McpClientsManage,
-        _ => Permission::McpClientsRead,
-    };
-    authority
-        .client_access
-        .require(permission)
-        .map_err(|_| ManagementError::from(E::PermissionDenied))?;
+    if let Some(permission) = permission {
+        authority
+            .client_access
+            .require(permission)
+            .map_err(|_| ManagementError::from(E::PermissionDenied))?;
+    }
     // MCP clients cannot possess administration/UI authority. Never reinterpret them as owner.
     if authority.client_access.is_mcp_client() {
         return Err(E::PermissionDenied.into());
@@ -328,7 +348,9 @@ fn authorize(
     {
         return Err(E::LeaseRevoked.into());
     }
-    if !management_granted(db, lease, permission)? {
+    if let Some(permission) = permission
+        && !management_granted(db, lease, permission)?
+    {
         return Err(E::PermissionDenied.into());
     }
     Ok(())
@@ -396,6 +418,43 @@ fn page<T: Clone + Serialize>(
         items: result,
         next_cursor: (end < items.len()).then(|| format!("{fingerprint}:{end}")),
     })
+}
+
+impl alcomd_application::McpRuntimeAuthorityStore for StateStoreHandle {
+    async fn mcp_runtime_access(
+        &self,
+        lease: ExtensionInstanceLease,
+        authority: ExtensionUiInvocationAuthority,
+        now_ms: u64,
+    ) -> Result<alcomd_application::RuntimeReadAccess, ManagementError> {
+        let queued_at = std::time::Instant::now();
+        self.request_worker(
+            move |db| {
+                let now = now_ms.saturating_add(
+                    u64::try_from(queued_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                );
+                let tx = db
+                    .transaction_with_behavior(TransactionBehavior::Deferred)
+                    .map_err(unavailable)?;
+                authorize_permission(&tx, &lease, &authority, None, false, now)?;
+                let client =
+                    alcomd_application::RuntimeReadAccess::from_client(&authority.client_access);
+                let access = alcomd_application::RuntimeReadAccess {
+                    connections: client.connections
+                        && management_granted(&tx, &lease, Permission::McpConnectionsRead)?,
+                    requests: client.requests
+                        && management_granted(&tx, &lease, Permission::McpRequestsRead)?,
+                };
+                if !access.connections && !access.requests {
+                    return Err(E::PermissionDenied.into());
+                }
+                tx.commit().map_err(unavailable)?;
+                Ok(access)
+            },
+            || E::Unavailable.into(),
+        )
+        .await
+    }
 }
 
 #[cfg(test)]

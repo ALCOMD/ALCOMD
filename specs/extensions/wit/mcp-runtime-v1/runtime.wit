@@ -1,0 +1,35 @@
+package alcomd:mcp-runtime@1.0.0;
+
+interface observations {
+    use alcomd:mcp-management/clients@1.0.0.{management-error};
+    record connection-row {
+        connection-id: string,
+        client-id: string,
+        connected-at-ms: u64,
+        active-call-count: u32,
+    }
+    record request-row {
+        call-id: string,
+        connection-id: string,
+        client-id: string,
+        method: string,
+        started-at-ms: u64,
+    }
+    record connection-page { items: list<connection-row>, total-tracked: u32, truncated: bool }
+    record request-page { items: list<request-row>, total-tracked: u32, truncated: bool }
+    record runtime-snapshot {
+        instance-id: string,
+        observed-at-ms: u64,
+        can-read-connections: bool,
+        can-read-requests: bool,
+        coverage-incomplete: bool,
+        connections: option<connection-page>,
+        requests: option<request-page>,
+    }
+    snapshot: func(client-id: option<string>, limit: option<u32>) -> result<runtime-snapshot, management-error>;
+}
+
+world runtime-v1 {
+    include alcomd:mcp-management/management-v1@1.0.0;
+    import observations;
+}

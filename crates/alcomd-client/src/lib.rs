@@ -154,6 +154,14 @@ impl AlcomdClient {
         Ok(client)
     }
 
+    pub async fn mcp_runtime_snapshot(
+        &mut self,
+        params: alcomd_protocol::McpRuntimeSnapshotParams,
+    ) -> Result<alcomd_protocol::McpRuntimeSnapshotResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT, params)
+            .await
+    }
+
     pub async fn mcp_clients_list(
         &mut self,
         params: alcomd_protocol::McpClientsListParams,
@@ -209,6 +217,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
@@ -1278,6 +1287,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_OPERATIONS_LIST
             | METHOD_MCP_TOOLS_CATALOG
             | METHOD_MCP_CLIENTS_LIST
+            | METHOD_MCP_RUNTIME_SNAPSHOT
             | METHOD_LOGS_READ
             | METHOD_EVENTS_LIST
             | METHOD_PROJECTS_LIST

@@ -29,10 +29,12 @@ export const RPC_CAPABILITIES = {
     packagesCandidates: "packages.candidates.v2",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1",
-    extensionsPermissionsRead: "extensions.permissions.read.v1"
+    extensionsPermissionsRead: "extensions.permissions.read.v1",
+    mcpRuntimeRead: "mcp.runtime.read.v1"
 } as const;
 
 export * from "./portable-ui";
+export * from "./mcp-runtime";
 export * from "./events";
 export * from "./operation-logs";
 export * from "./package-candidates";
@@ -47,7 +49,7 @@ export interface ClientInfo {
 }
 
 export interface ExtensionPermissionGrant {
-    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage" | "mcp.tools.provide" | "repositories.read" | "packages.read" | "packages.manage" | "operations.read" | "operations.cancel";
+    permission: "background.run" | "projects.read" | "mcp.clients.read" | "mcp.clients.manage" | "mcp.connections.read" | "mcp.requests.read" | "mcp.tools.provide" | "repositories.read" | "packages.read" | "packages.manage" | "operations.read" | "operations.cancel";
     resourceKind: "Extension" | "Global";
     resourceId: string;
 }

@@ -51,6 +51,7 @@ mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
 mod m8_oauth_rpc;
+mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
@@ -116,6 +117,9 @@ type UnityMigrationApplication = UnityMigrationService<
 struct Applications {
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
+    mcp_runtime: alcomd_application::McpRuntimeObservations,
+    #[cfg(feature = "test-kill-gates")]
+    runtime_call_gate: tokio::sync::Mutex<Option<Arc<test_support::RuntimeCallGate>>>,
     extension_runtime: m6_runtime::PlatformExtensionRuntime,
     oauth: alcomd_application::OAuthApplication<StateStoreHandle>,
     #[cfg(feature = "test-kill-gates")]
@@ -368,6 +372,9 @@ async fn initialize_daemon_with_directories(
     let applications = Arc::new(Applications {
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
+        mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
+        #[cfg(feature = "test-kill-gates")]
+        runtime_call_gate: tokio::sync::Mutex::new(None),
         extension_runtime,
         oauth: alcomd_application::OAuthApplication::new(store.clone(), oauth_cursor_key),
         #[cfg(feature = "test-kill-gates")]
@@ -564,6 +571,7 @@ async fn serve_connection(
         handshake_complete: false,
         capabilities: HashSet::new(),
     };
+    let mut observed_connection = None;
     let result = async {
         loop {
             let payload = match read_frame(&mut stream).await? {
@@ -622,6 +630,10 @@ async fn serve_connection(
             } else {
                 write_json_frame(&mut stream, &action.response).await?;
             }
+            if let Some(client_id) = action.authenticated_mcp_client {
+                observed_connection = Some(applications.mcp_runtime.connect(
+                    state.connection_id.clone(), client_id, current_time_ms().unwrap_or(0)));
+            }
             if let Some(capabilities) = action.complete_handshake {
                 state.mcp_hash = action.mcp_hash;
                 state.oauth_endpoint = action.oauth_endpoint;
@@ -642,6 +654,7 @@ async fn serve_connection(
         }
     }
     .await;
+    drop(observed_connection);
     applications
         .m3
         .forget_repository_preview(&state.connection_id)
@@ -654,6 +667,7 @@ async fn serve_connection(
 }
 
 struct DispatchAction {
+    authenticated_mcp_client: Option<alcomd_application::McpClientId>,
     oauth_endpoint: bool,
     oauth_resource: Option<String>,
     mcp_hash: Option<[u8; 32]>,
@@ -732,6 +746,27 @@ async fn dispatch_payload(
         let mut error = RpcError::permission_denied();
         error.data = Some(serde_json::json!({"oauthError":"insufficient_scope"}));
         return error_action(Some(request.id), error, false);
+    }
+    let _observed_call = if access.is_mcp_client() {
+        alcomd_application::ObservedCoreMethod::parse_static(&request.method).map(|method| {
+            applications.mcp_runtime.begin_call(
+                &state.connection_id,
+                method,
+                current_time_ms().unwrap_or(0),
+            )
+        })
+    } else {
+        None
+    };
+    #[cfg(feature = "test-kill-gates")]
+    if access.is_mcp_client() && request.method == alcomd_protocol::METHOD_PROJECTS_LIST {
+        let gate = applications.runtime_call_gate.lock().await.take();
+        if let Some(gate) = gate {
+            gate.intercept().await;
+        }
+    }
+    if request.method == alcomd_protocol::METHOD_MCP_RUNTIME_SNAPSHOT {
+        return m8_runtime_rpc::dispatch(request, state, applications, &access);
     }
     if matches!(
         request.method.as_str(),
@@ -820,25 +855,46 @@ async fn dispatch_hello(
         .as_ref()
         .filter(|auth| auth.kind != "mcp-oauth-endpoint")
         .map(|auth| alcomd_application::mcp_credential_hash(&auth.credential));
-    if let (Some(hash), Some(resource)) = (mcp_hash, oauth_resource.as_ref()) {
-        use alcomd_application::OAuthStore;
-        if let Err(e) = store
-            .oauth_authenticate(
-                alcomd_application::OAuthAccessGuard::new(hash, resource.clone()),
-                current_time_ms().unwrap_or(u64::MAX),
-            )
-            .await
-        {
-            return m8_oauth_rpc::error(request.id, e, true);
-        }
-    } else if let Some(hash) = mcp_hash
-        && let Err(e) = alcomd_application::McpIdentityApplication::new(store.clone())
-            .authenticate(hash)
-            .await
-    {
-        return m8_mcp_rpc::error(request.id, e, true);
-    }
+    let authenticated_mcp_client =
+        if let (Some(hash), Some(resource)) = (mcp_hash, oauth_resource.as_ref()) {
+            use alcomd_application::OAuthStore;
+            match store
+                .oauth_authenticate(
+                    alcomd_application::OAuthAccessGuard::new(hash, resource.clone()),
+                    current_time_ms().unwrap_or(u64::MAX),
+                )
+                .await
+            {
+                Ok(authenticated) => Some(authenticated.client.client_id),
+                Err(error) => return m8_oauth_rpc::error(request.id, error, true),
+            }
+        } else if let Some(hash) = mcp_hash {
+            match alcomd_application::McpIdentityApplication::new(store.clone())
+                .authenticate(hash)
+                .await
+            {
+                Ok(access) => match access
+                    .principal()
+                    .as_str()
+                    .strip_prefix("mcp:")
+                    .and_then(|id| alcomd_application::McpClientId::parse(id).ok())
+                {
+                    Some(id) => Some(id),
+                    None => {
+                        return error_action(
+                            Some(request.id),
+                            RpcError::internal(OperationId::new().to_string()),
+                            true,
+                        );
+                    }
+                },
+                Err(error) => return m8_mcp_rpc::error(request.id, error, true),
+            }
+        } else {
+            None
+        };
     let supported = [
+        alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
         CAPABILITY_MCP_CLIENTS_V1,
@@ -898,6 +954,7 @@ async fn dispatch_hello(
     );
     action.client_instance_id = Some(client_instance_id);
     action.mcp_hash = mcp_hash;
+    action.authenticated_mcp_client = authenticated_mcp_client;
     action.oauth_endpoint = oauth_endpoint;
     action.oauth_resource = oauth_resource;
     action.actor = Some(if mcp_hash.is_some() {
@@ -1386,6 +1443,7 @@ fn success_action<T: serde::Serialize>(
     let response = serde_json::to_value(SuccessResponse { id, result })
         .expect("approved response DTOs must serialize");
     DispatchAction {
+        authenticated_mcp_client: None,
         mcp_hash: None,
         oauth_endpoint: false,
         oauth_resource: None,
@@ -1402,6 +1460,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
     let response = serde_json::to_value(ErrorResponse { id, error })
         .expect("approved error DTO must serialize");
     DispatchAction {
+        authenticated_mcp_client: None,
         mcp_hash: None,
         oauth_endpoint: false,
         oauth_resource: None,

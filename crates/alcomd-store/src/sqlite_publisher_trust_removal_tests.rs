@@ -3,7 +3,7 @@ use rusqlite::types::Value;
 
 pub(super) type Rows = Vec<(String, Vec<Vec<Value>>)>;
 
-fn fixture() -> Connection {
+pub(super) fn fixture() -> Connection {
     let db = extension_mcp_grants_migration_tests::fixture();
     for migration in [MIGRATION_V35, MIGRATION_V36, MIGRATION_V37, MIGRATION_V38] {
         db.execute_batch(migration).expect("historical State38");
@@ -13,7 +13,7 @@ fn fixture() -> Connection {
     db
 }
 
-fn snapshot(db: &Connection) -> Rows {
+pub(super) fn snapshot(db: &Connection) -> Rows {
     let mut names = db
         .prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name")
         .expect("tables");
