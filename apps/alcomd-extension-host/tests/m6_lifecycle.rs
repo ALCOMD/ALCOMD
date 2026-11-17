@@ -1285,7 +1285,24 @@ async fn install_consent_and_undeclared_permissions_use_real_core_and_signed_pac
         })
         .await
         .expect("real Core installation consent flow");
-    assert_eq!(grants.available_permissions.len(), 12);
+    assert_eq!(
+        grants.available_permissions,
+        [
+            "background.run",
+            "projects.read",
+            "mcp.clients.read",
+            "mcp.clients.manage",
+            "mcp.connections.read",
+            "mcp.requests.read",
+            "mcp.subscription-streams.read",
+            "mcp.tools.provide",
+            "repositories.read",
+            "packages.read",
+            "packages.manage",
+            "operations.read",
+            "operations.cancel",
+        ]
+    );
     assert_eq!(grants.grants.len(), 1);
     assert_eq!(grants.grants[0].permission, "projects.read");
     let record = client
