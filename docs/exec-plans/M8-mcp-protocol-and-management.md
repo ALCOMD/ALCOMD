@@ -1,6 +1,6 @@
 # M8：MCP 协议与管理扩展
 
-状态：IN_PROGRESS，2026-11-17。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
+状态：IN_PROGRESS，2026-11-18。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
 
 ## 既有范围与复用核对
 
@@ -31,14 +31,14 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 上游核对：[冻结 Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)、[官方 Rust SDK](https://github.com/modelcontextprotocol/rust-sdk)、[当前传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports)。
 
-当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。只广告已接通的tools，不广告resources/subscriptions，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通，取得本地定向/真实隔离及9fea7b6同SHA三平台完整CI与四项CodeQL技术通过（含5行测试同步）；历史失败/取消及后续只读审计见末节，不宣称管理扩展、完整OAuth或整个M8完成。
+当前受控STDIO已接通获批身份与六个包卸载工具；无凭据入口仍仅协议发现，不连接Core或提供业务。已接通tools及获批的toolsListChanged订阅；不广告resources，不接受旧initialize/ping或Tasks。HTTP回环预配Bearer已接通，取得本地定向/真实隔离及9fea7b6同SHA三平台完整CI与四项CodeQL技术通过（含5行测试同步）；历史失败/取消及后续只读审计见末节，不宣称管理扩展、完整OAuth或整个M8完成。
 
 ## 公共合同与接线状态
 
 客户端身份最小合同和State34快照增量均已批准。application、Store、daemon dispatcher、typed client及受控STDIO已实际接通，真实Core闭环及最终capability协商候选复验通过，`mcp.clients.v1`已按真实实现协商。当前接线与后续边界（各候选证据分别见下文）：
 
 - 获批回环预配Bearer及预登记客户端HTTPS/OAuth均已实现，含发现/resource绑定、到期、PKCE、审批、刷新轮换、撤销及逐请求Core授权；不取自clientInfo、不回退owner。OAuth普通浏览器/目标客户端人工接入待验证，CIMD/DCR/外部授权服务器尚不支持；本候选远端门禁见末节，不能据实现存在宣布整个M8完成。
-- MCP管理扩展的客户端及授权管理、独立Host/WIT、真实Core/Host/Component闭环已实现，已有真实窗口查看与多轮反馈整改，尚无M8最终人工签收。已批准的Core IPC连接/在途Core RPC只读观测首片也已实现，不能等同于全部MCP请求、HTTP空闲连接或订阅。完整传输观测/订阅及正式默认分发仍有缺口；沿用当前按能力授权与扩展所有权规则，不将未撤销记录当作在线。
+- MCP管理扩展的客户端及授权管理、独立Host/WIT、真实Core/Host/Component闭环已实现，已有真实窗口查看与多轮反馈整改，尚无M8最终人工签收。已批准的Core IPC连接/在途Core RPC只读观测首片也已实现，不能等同于全部MCP请求、HTTP空闲连接或订阅。A/B本地候选已补传输观测及toolsListChanged订阅，当前新增代码远端待验证、正式默认分发仍未完成；沿用当前按能力授权与扩展所有权规则，不将未撤销记录当作在线。
 - 本次六工具之外的业务映射及来源委托；正式Schema已覆盖获批卸载切片，旧Draft未提供已部署ABI。现有Operation仅get/list/cancel，不能伪造尚无公开合同的input/approve/reject/resume。
 
 本批身份合同不再等待审批。其余真正新增的公共合同仍先提交具体差异，不暂停独立实现。
@@ -1435,3 +1435,20 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 当前人工窗口仍是此前已验证的GUI fb72f0aa/Core3d6c2a1b/State42，不是本轮A/B的新桌面构建。本轮仅按既有授权短暂关闭自己的隔离窗口，测试用独立State43数据，结束后恢复原程序/数据/profile并实际核对五组公开状态。最后GUI97464/Core97292，可见/响应、5条GUI自身管道；原data36/profile346、上一review10/303份集合和摘要保持，五份旧程序摘要保持。未恢复桌面输入、未启动或干扰Unity、未升级原数据。保全与恢复证据在final-environment-preservation.json及directed-5-*-before/after.json、directed-5-restored-window.json。
 
 保留未覆盖项：新增代码尚无远端验证；没有10分钟自然终止实测、长时/最大规模压测或实际网络慢读压测；OAuth订阅的到期/轮换/刷新及实际Codex通知消费未单独实测，既有OAuth/Core逐请求鉴权证据仅按原输入保留。扩展人工/普通可信HTTPS安装按所有者要求留待后续实际扩展开发，不能记通过或豁免；正式默认分发仍未完成。历史Host resource_limit根因未定位，保留风险；M7既有签收和非阻塞体验待办不重开，不擅自给未明确归属事项指定M12。
+
+### 2026-11-18 OAuth订阅续验（仅测试与记录）
+
+测试提交为`04a7fbec8bb6eff92217e53f4f25e00ff1b6adca`，生产代码仍对应71a1ffe9，唯一源码差异是现有oauth_flow.rs新增一个具名用例，未修改认证实现、公共合同、依赖、State43、Config13或权限。以下为上节未覆盖项的增量，历史检查点与失败保持，不将它与之前SDK3/0合并为完整套件。
+
+`oauth_flow::oauth_live_subscriptions_follow_grants_refresh_and_revocation`真实HTTPS/冻结SDK/Core首轮**1通过/0失败**（7.11秒），只使用已有公开localhost测试证书及测试进程的显式信任、不修改系统信任，不访问用户工程。复用既有S256、预登记、Core明确审批及Token端点，没有测试专用生产旁路。
+
+- 已建立订阅能收到Core授权删除/恢复的目录通知；删除后目录为空，恢复并额外给Core客户端operations.read后，原token仍严格只有两个项目读取工具，不能超出原审批上限。
+- 实际TLS适配器上报为https-oauth，订阅clientId经Core认证关联；公共投影未包含本次access/refresh秘密。
+- 正常refresh返回新access与refresh，继承原能力上限；旧未到期access的既有订阅继续有效，不能错误地将正常refresh视为旧access撤销。重放已消费refresh后，同一family的新旧两个订阅都终止，旧access的真实HTTP调用401。
+- Core凭据轮换、OAuth注册revision轮换、注册显式撤销分别使已建立的旧订阅终止，不能用虚假的空目录通知代替拒绝；新generation/新注册revision经重新明确审批可建立新流。
+
+定向严格Clippy、最终编译、fmt、xtask、diff通过。没有重跑Rust/浏览器全套或release。生产输入未变，所以之前A/B的SDK3/0、Host1/0、迁移3/0及其他有效证据按原输入继续适用，本轮不冒称重新执行。自然10分钟到期仍未实测，原Store中到期边界的受控时间用例仅保留为组件证据；没有修改系统时钟、伪造到期结果或增加新时钟机制。长时/最大规模压力、实际Codex通知消费、延期的扩展人工/普通可信HTTPS安装、正式默认分发及历史resource_limit仍未收束。
+
+五组公开状态在测试前后实际一致；恢复旧GUI105140/Core105036，仍为fb72f0aa/3d6c2a1b、State42，非新桌面构建。原data36/profile346、上一review10/303份集合及摘要保持，五份旧程序摘要保持；原开发环境仍按原先关闭状态保留。未恢复桌面输入、未操作Unity、未迁移原数据。
+
+原始用例日志、二进制SHA256和五组前后状态在target/m8-oauth-subscriptions-20261118/，输入及保全摘要为evidence.json；编译/Clippy日志位于原target/m8-prepush-contract-audit-20261117/的oauth-subscription-*-20261118.log。新增提交未推送，远端仍e6d0b44b（CI failure / CodeQL success），不作为新代码通过；本次“继续”没有扩大推送授权。M8仍IN_PROGRESS，不进入M9。
