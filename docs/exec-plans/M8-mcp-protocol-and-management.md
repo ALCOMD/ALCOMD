@@ -81,6 +81,49 @@ M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；�
 
 这是可提交远端技术验证的材料，不是宣称完整本地门禁、M8人工或整体已通过。仍有已披露未定位Host失败风险；扩展相关人工测试按所有者延期，不写豁免/通过。原环境、运行程序、Unity、系统信任和桌面控制均未操作。按当前明确授权仅推进本地准备；普通快进推送须另获所有者对具体候选的确认，获准后只收集自动push的CI/CodeQL，不dispatch/rerun。下一批草案只修改现有计划，公共接口/Schema/权限尚不改。
 
+### 下一批最小合同：目录变化订阅与传输观测（2026-11-17，待审批）
+
+现有实现的拟推送前缀冻结为`e6d0b44b953bbd0d3e404555d3e6875e94e2e9a3`，相对origin/main为20笔提交；本节是其后的独立草案，不在此前缀内，不表示新公共合同已获批准。所有者本轮“批准继续”覆盖审计、推送准备和具体差异整理，尚未授权推送或本节接口实施。不重审已批准身份、六工具、Bearer/OAuth、扩展提供工具及State40–42。
+
+**审计依据**：再次取得冻结commit `4df2d6b6e3588efb46e7542d98498e5c630a0a86`的[2026-07-28最终Schema](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/4df2d6b6e3588efb46e7542d98498e5c630a0a86/schema/2026-07-28/schema.ts)，SHA256严格匹配`742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd`，只读副本在target/m8-prepush-contract-audit-20261117/frozen-mcp-schema.ts。已锁rmcp3.10.0有SubscriptionContext、过滤/ack/取消及无session HTTP路径，不需升级SDK。其SubscriptionContext::establish是SDK内部方法：STDIO原Service外壳须保留严格分帧/元数据/旧握手拒绝，只将已验证listen委托给SDK ServerHandler默认分发来建立上下文，不复制SDK实现或转回握手入口。当前lib.rs拒绝listen，http.rs只容许三个方法且GuardedBody有10秒总输出限制；Core mcp.tools.catalog已计算完整、带调用者授权和包证据的HMAC指纹但未返回字段。Core观察注册表只含真实IPC/RPC；适配器才知道TCP/TLS、协议请求和订阅，不能换名冒充同一数据。
+
+#### A. 有真实通知源的最小订阅
+
+| 差异 | 推荐合同 |
+| --- | --- |
+| Core目录结果 | 在既有mcp.tools.catalog结果增加catalogFingerprint：64位小写hex，取自同一次全量授权目录计算，覆盖当前身份/授权、OAuth上限、provider包/生命周期/授权及完整工具描述。所有页同一证据对应同一指纹，Core重启或证据变化可改变；它不是凭据、授权或可恢复session。协商capability mcp.tools.notifications.v1，仅在接线/真实测试后开放 |
+| MCP方法及能力 | STDIO和HTTP增加冻结subscriptions/listen，仅接受notifications.toolsListChanged=true这一有效类型，其他类型不接受/不广告；接受集合必须是请求与已实现能力的交集。交集为空用既有-32602拒绝，ack前不发通知；先发notifications/subscriptions/acknowledged，再仅发notifications/tools/list_changed。每条均用原listen请求ID作为subscriptionId，优雅结束按冻结SubscriptionsListenResult，不携带请求进度/日志或业务结果 |
+| 真实变化来源 | 每个listen使用独立的已认证Core连接，至多每秒查询既有目录、比较Core指纹，变化才通知；首次ack前取得基线，ack后立即再查以覆盖建立竞态。每次查询继续真实认证、OAuth到期/当前上限及授权复查，失败/撤销即结束流，不能将不可用当成空目录。指纹未变不发消息，不根据adapter自报变化或旧本地目录判定。首次实现复用原目录计算；若成本不合适，可内部用有界变更唤醒优化，不改变此合同或增加持久订阅表 |
+| HTTP生命周期增量 | 仍是独立POST/逐请求Bearer、精确Host/Origin、无session/GET/DELETE/Last-Event-ID。只给listen增加长流分支：建立/首ack至多10秒，总寿命至多10分钟，15秒SSE注释心跳；单帧输出或通知队列阻塞最多10秒即关闭，正常等待通知不套旧10秒总输出或业务60秒限额。原32 TCP/16活跃请求或流保持；每适配器/认证上下文至多4个listen（不是跨全部进程的全局客户端配额），待发通知队列至多1项且只合并同类目录失效，慢客户端不积累历史 |
+| 取消与身份 | HTTP断流、STDIO notifications/cancelled、EOF、过期/轮换/撤销和停机只结束该订阅/协议请求。先有的Core Operation仍归原Principal、照常执行和可恢复；无自动业务取消或写重试。客户端换token须新请求，旧流不切换身份。没有MCP Tasks、订阅持久恢复或服务端主动JSON-RPC Request |
+
+本块只新增目录结果字段、协商capability及真实MCP订阅行为，不增加业务工具、State/Config、权限名称或依赖。HTTP原有普通请求的大小/认证/60秒预算及写响应未知合同不变；不能全局放宽超时来实现长流。Core接口/Schema及STDIO、HTTP、OAuth协议合同在获批后同步。
+
+#### B. 传输观测的权威边界与最小接线
+
+推荐与既有Core观测分开保留来源，扩展仍只走公开Core读取，不直连各adapter，不查询私有数据库。保留mcp.runtime.snapshot和旧WIT的IPC/RPC语义，新增以下窄接口；没有新监听、身份凭据表或通用遥测框架。
+
+| 新增公共差异 | 具体边界 |
+| --- | --- |
+| 受限hello分支 | authentication={kind:"mcp-transport-observer",credential:""}，resource省略，仅经过原受保护本机IPC；Core绑定固定transport:mcp-transport-observer，绝不构造local-owner或MCP客户身份。只准mcp.transport.report，无业务、目录读取、状态查询、客户端/授权/凭据管理或任意RPC。显式kind非法则失败关闭，不回退owner。复用现有OAuth endpoint受限连接的实现模式；上报不是业务认证，不能由clientInfo或可执行文件名获得此身份 |
+| mcp.transport.report | 该受限连接每秒最多一次完整快照：{sequence,transport,connections,requests,subscriptionStreams,coverageIncomplete}。sequence正安全整数且严格递增，旧/乱序用revision_conflict；整批验证失败不部分应用。transport固定stdio/http/https-oauth；输入只含本adapter内部UUID localRef及关联、固定方法枚举、阶段和已接受toolsListChanged过滤器，不含clientId、Principal、Core连接ID、外部JSON-RPC ID、URL/端口、头、参数、正文、工具结果或secret。对外行ID和接收/首次看到时间由Core生成；去掉的行及旧关联票据在同一应用中失效，不能用新快照更新旧请求的身份 |
+| 观测关联票据与mcp.transport.bindRequest | report在第一次看到请求时可经该连接一次返回短时随机256位票据（10秒、仅内存、每行一次，不进入日志/事件/通用幂等/投影）。真实业务Core连接经既有MCP凭据/OAuth认证后，调用bindRequest({ticket})，Core用本次权威AccessContext关联实际MCP Principal；不得提交或信任clientId。仅MCP认证连接可绑定，票据须属于仍在上报的未绑定请求、未过期且未消费。绑定仅是观测关联，不能授予能力或证明Operation归属，不替代后续调用检查；单个票据不能换身份/请求复用。丢失report响应时不重新签票据/重试业务，允许该行身份未知；观察通道失败不使已接受业务Operation取消 |
+| 来源可信度 | report只证明受保护本机上报通道及其所有权，不能证明上报内容来自获信任程序，不能据此认证网络客户端。所有传输行固定source=adapterReported；只有成功bind的请求才带Core确认的clientId，其余为未知。一个HTTP TCP连接可承载多个Principal，不能把第一次身份变成socket owner。clientId筛选只匹配当前已绑定请求/流及其关联连接，未归属的空闲socket不冒充该客户端活动 |
+| mcp.transport.snapshot | 参数{clientId?,limit?}，capability mcp.transport.read.v1。返回Core instanceId/observedAt、每个observer的lastReportAt和available/stale/unavailable、coverageIncomplete，以及独立可读的connections/requests/subscriptionStreams分组。每组含items/totalTracked/truncated；limit默认25、1–100，响应总量64KiB。请求/连接各沿用mcp.requests.read、mcp.connections.read；订阅使用下述独立权限。未授权组省略，全部无权为permission_denied；外部MCP八项业务授权不能读管理投影。无reporter或其断线/超时应显示不可用/覆盖不足，不能宣称MCP零活动 |
+| 只读Host/WIT | 新独立alcomd:mcp-transport/observations@1.0.0的snapshot与上项同字段/预算，复用原交互Client＋Extension双重权限、所有权、lease、生命周期和UI调用检查；旧接口不改名/换语义。扩展相关人工测试继续延期，本批不重做界面或新增导航；先完成Core/MCP及只读桥的定向证据 |
+
+上报限额：每IPC observer至多128连接、128请求、32订阅行，输入64KiB；Core最多64个observer、全局三类行合计4096，容量不足明确coverageIncomplete。采样状态不是完整历史，已完成请求不留档；每个快照注明接收时间。报告延迟超过2秒即stale、不算新鲜活动；5秒无报告或通道断开移除其活动行，覆盖不足/不可用信息保留在当前响应，不保留持久历史。Core重启清空全部、变更instanceId、废弃关联票据；adapter可重新上报，但不得自动重放业务。报告通道使用without_daemon_start，随adapter停止关闭；不为观测启动/切换Core。它会在adapter运行时持有本机连接，按既有Core连接生命周期正常释放。
+
+本块新增mcp.transport.report.v1 / mcp.transport.read.v1两项协商capability；report仅受限分支，bindRequest仅当前MCP身份且仍逐次重验；均不增加MCP业务授权。新增mcp.subscription-streams.read，仅扩展Global/*可选能力（所有扩展也可声明为必需，仍须原安装明确同意），不自动授权。拟新增State43：只扩展extension_grants现有CHECK允许此组合，保全旧列/记录/主外键/索引、事件高水位和其他表，不改旧迁移、不改Config、不加观测持久表。扩展可授权目录12→13，同步Manifest/RPC/WIT/Schema及威胁模型；不升级原运行数据。标准库/Tokio、已锁rmcp、getrandom和sha2足够，没有新增包或feature/版本计划。
+
+#### 验证与后续业务范围
+
+获批后先做定向验证：实际冻结SDK的STDIO/HTTP ack顺序和过滤、两token并发订阅隔离、实际授权/撤销/provider变化通知、无变化不通知、建立时变更不漏、慢读/队列/断流/时限、OAuth到期/轮换后结束旧流、关闭订阅后已接受Operation仍终态及写未知恢复保持；能用本机Codex现代HTTP订阅则补真实客户端证据，不用其不兼容STDIO冒充。观测覆盖零授权/未知身份、乱序/超限/过期/重复票据、伪造clientId拒绝、HTTP同socket多身份、旧role越权、断线/陈旧/Core重启、双重Host权限及大集合；State43做旧数据保全/失败回滚/重开。保护字段不得进入投影、日志、普通错误或幂等。形成稳定候选后集中门禁，不每次小改重跑全套或恢复桌面控制。
+
+其余业务审计已确认：当前外部MCP Core allowlist只有原六用例及相关status/state/events/catalog；M-1的项目创建/登记/复制/备份恢复、模板、仓库/包搜索与安装重装、日志诊断及Operation输入/审批/恢复均不等于已开放。Core已有这些GUI用例也不能由adapter代持owner调用；activity.read/diagnostics.read等旧草案词不能直接恢复。下一批业务合同需对照当前RPC/能力授权另作紧凑工具映射，优先包搜索→安装/重装所需来源委托及原Plan/Apply，不为凑33用例新增无效工具；不夹在本节A/B审批中，不进入M9。
+
+本节只是一组具体差异供集中审批，代码/Schema/State43/权限/Host接口均尚未实施；A、B可独立批准。扩展默认分发、正式签名材料和普通浏览器人工TLS不在本批，不创建第二套身份/任务系统。新增公共合同仍遵守AGENTS.md人工审批边界，现有推送前缀的验证及授权独立处理。
+
 ### 2026-11-13 协议基础实际结果
 
 - 独立 STDIO 子进程：最终单轮 **12 通过 / 0 失败**，无重试。覆盖发现结果及不广告未实现能力、逐请求元数据、版本拒绝、旧生命周期/Tasks/未知方法拒绝、损坏 JSON/UTF-8、4 MiB 正好边界及超限恢复、分片/并发成功错误写入、EOF、未实现 HTTP 明确失败退出。无 Core 连接、数据库或真实项目操作。
