@@ -35,6 +35,27 @@ async function expectHostErrorsCleared(page: Page) {
     await expect(page.getByLabel("Custom detail", { exact: true })).toHaveAccessibleDescription(/The host rejected the previous value\./);
 }
 
+test("H4 Portable UI opens with the whole-page progress bar at the canvas edge", async ({ page }) => {
+    await openUi(page, discord, "&h4-hold=open");
+    await pending(page, "open");
+    const loading = page.locator(".page-loading-state");
+    await expect(loading.getByRole("progressbar")).toBeVisible();
+    await expect(loading).toHaveAccessibleName("Opening extension UI");
+    await expect(page.locator(".extension-body .loading-state")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Opening extension UI", exact: true })).toHaveCount(0);
+    const canvas = (await page.locator("#main-content").boundingBox())!;
+    const progress = (await loading.getByRole("progressbar").boundingBox())!;
+    expect(Math.abs(progress.x - canvas.x)).toBeLessThan(1);
+    expect(Math.abs(progress.y - canvas.y)).toBeLessThan(1);
+    expect(Math.abs(progress.width - canvas.width)).toBeLessThan(1);
+    expect(progress.height).toBe(4);
+    const heading = (await page.locator("#extension-ui-title").boundingBox())!;
+    await page.evaluate(() => window.h4Portable.release("open"));
+    await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
+    await expect(loading).toHaveCount(0);
+    expect((await page.locator("#extension-ui-title").boundingBox())!.y).toBe(heading.y);
+});
+
 test("H4 Portable UI closes an open result that arrives after its route has been left", async ({ page }) => {
     await openUi(page, discord, "&h4-hold=open");
     await pending(page, "open");

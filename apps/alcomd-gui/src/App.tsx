@@ -39,7 +39,7 @@ import { CoreEventsProvider, useCoreEvents, useCoreInvalidation } from "./core-e
 import { AboutPage, BackupDetailPage, ExtensionDetailPage, ExtensionsPage, OperationDetailPage, OperationsPage, ProjectBackupsPage, ProjectDetailPage, ProjectPackagesPage, primePackageWorkspaceRead, routePreloadRead, ProjectsPage, ProjectUnityPage, RepositoriesPage, RepositoryDetailPage, RouteState, SettingsPage, TemplatesPage, UnityPage, UserPackagesPage } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
-import { LoadingState, PageLoadingState } from "./LoadingState";
+import { PageLoadingState } from "./LoadingState";
 import { createPageRead, PageReadContext, primePageRead } from "./PageRead";
 import { PreloadContext, RoutePreloadContext, useRoutePreload } from "./Preload";
 import { PreloadCache, isPreloadClaimed, preloadWork } from "./preload-cache";
@@ -754,6 +754,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 
     return (
         <section className="extension-surface" aria-labelledby="extension-ui-title">
+            {busy && snapshot === undefined ? <PageLoadingState title={t("Opening extension UI")} /> : null}
             <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef} />
             <ScrollArea className="extension-body">
                 <div className="extension-context">
@@ -761,9 +762,6 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
                 {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
-                {busy && snapshot === undefined ? (
-                    <LoadingState title={t("Opening extension UI")} />
-                ) : null}
                 {error === undefined || snapshot !== undefined ? null : (
                     <div role="alert"><strong>{t(errorTitle(error.code))}</strong><p>{t(requestErrorMessage((error).code))}</p><code>{(error).code}</code>{error.diagnosticId === undefined ? null : <p><code>{error.diagnosticId}</code></p>}
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
