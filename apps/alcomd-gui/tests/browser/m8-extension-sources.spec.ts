@@ -11,7 +11,7 @@ async function count(page: Page, method: string) {
     return page.evaluate((method) => window.h4Management.requests.filter((r) => r.method === method).length, method);
 }
 async function read(page: Page) {
-    await modal(page).getByRole("button", { name: "Read source", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Continue", exact: true }).click();
     await expect(modal(page).getByRole("heading", { name: "Online example", exact: true })).toBeVisible();
 }
 test("Online source chooses highest supported stable version and preserves the exact source through consent", async ({ page }) => {
@@ -31,7 +31,7 @@ test("Online source chooses highest supported stable version and preserves the e
 });
 test("Cancel metadata loading discards its late preview and a reopened dialog starts clean", async ({ page }) => {
     await open(page); await page.evaluate(() => window.h4Management.hold("extensions.inspectSource", true));
-    await modal(page).getByRole("button", { name: "Read source", exact: true }).click();
+    await modal(page).getByRole("button", { name: "Continue", exact: true }).click();
     await expect.poll(() => count(page, "extensions.inspectSource")).toBe(1);
     await modal(page).getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -60,7 +60,7 @@ test("Changed source requires rereading instead of silently replanning; failure 
     await page.evaluate(() => window.h4Management.failNext("extensions.planInstallFromSource", "revision_conflict"));
     await modal(page).getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(modal(page).getByRole("alert")).toContainText("The data changed");
-    await expect(modal(page).getByRole("button", { name: "Read source", exact: true })).toBeEnabled();
+    await expect(modal(page).getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
     await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toHaveCount(0);
     expect(await count(page, "extensions.applyInstall")).toBe(0);
     await read(page);
@@ -86,11 +86,11 @@ test("Online input has one compact footer action and Enter reads the source befo
     await expect(modal(page).getByLabel("Extension package", { exact: true })).toHaveCount(0);
     await expect(modal(page).getByRole("button", { name: "Online source", exact: true })).toHaveCount(0);
     await page.screenshot({ path: test.info().outputPath("online-empty-window.png") });
-    const readButton = modal(page).getByRole("button", { name: "Read source", exact: true });
+    const readButton = modal(page).getByRole("button", { name: "Continue", exact: true });
     await expect(readButton).toBeDisabled();
     await expect(modal(page).getByRole("button", { name: "Install extension", exact: true })).toHaveCount(0);
     const actions = modal(page).locator(".dialog-actions");
-    await expect(actions.getByRole("button", { name: "Read source", exact: true })).toHaveCount(1);
+    await expect(actions.getByRole("button", { name: "Continue", exact: true })).toHaveCount(1);
     const actionBounds = await actions.boundingBox(); const buttonBounds = await readButton.boundingBox();
     expect(buttonBounds!.width).toBeLessThan(actionBounds!.width / 2);
     await modal(page).getByLabel("Extension source URL", { exact: true }).fill(sourceUrl);
