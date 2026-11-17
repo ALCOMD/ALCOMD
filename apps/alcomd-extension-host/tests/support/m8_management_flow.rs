@@ -821,6 +821,39 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .await
         .expect("extension")
         .extension;
+    let permissions = client
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: extension.extension_id.clone(),
+            cursor: None,
+            limit: Some(64),
+        })
+        .await
+        .expect("installed required consent is authoritative");
+    assert_eq!(permissions.grant_revision, extension.grant_revision);
+    assert!(
+        permissions
+            .grants
+            .iter()
+            .any(|grant| grant.permission == "mcp.clients.read"
+                && grant.resource_kind == "Global"
+                && grant.resource_id == "*")
+    );
+    client
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.clients.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: permissions.grant_revision,
+            idempotency_key: "management-remove-installed-read".into(),
+        })
+        .await
+        .expect("explicitly remove the required permission before testing refusal");
+    let extension = client
+        .extension_get(extension.extension_id)
+        .await
+        .expect("authority after required permission revocation")
+        .extension;
     assert!(
         matches!(client.extension_enable(ExtensionLifecycleParams{extension_id:extension.extension_id.clone(),expected_revision:extension.revision,idempotency_key:"management-no-read".into()}).await,Err(ClientError::Remote(error)) if error.code=="permission_denied" || error.code=="extension_permission_denied")
     );
