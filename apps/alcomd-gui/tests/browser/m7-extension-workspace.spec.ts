@@ -1,3 +1,5 @@
+import { openLocalExtensionInstall } from "./extension-install-entry";
+import { H4_ADDED } from "./h4-management-client";
 import { expect, test } from "@playwright/test";
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -20,23 +22,30 @@ test("Extensions open only their declared Portable UI through the card", async (
     await expect(page.getByRole("heading", { name: "Extension UI", exact: true })).toBeVisible();
 });
 
-test("Extension install input and real Plan review share one modal and can be discarded", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready");
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
+test("Extension install review shares its input modal and declining retains the path without Apply", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fextensions&state=ready&h4-management=1");
+    await openLocalExtensionInstall(page);
     await expect(page.getByRole("dialog", { name: "Install extension", exact: true })).toBeVisible();
-    // The native shadow dialog owns the accessible name, while form controls
-    // are slotted light-DOM children of md-dialog, not DOM descendants of it.
-    const dialog = page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Install extension", exact: true }) });
-    await dialog.getByLabel("Extension package", { exact: true }).fill("C:\\Fixture\\extension.alcomdextension");
+    // Material's named native dialog owns the slotted light-DOM form.
+    const dialog = page.locator("md-dialog[open]");
+    const packagePath = "C:\\Fixture\\extension.alcomdextension";
+    await dialog.getByLabel("Extension package", { exact: true }).fill(packagePath);
     await expect(dialog.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
-    await dialog.getByRole("button", { name: "Create install plan", exact: true }).click();
+    await dialog.getByRole("button", { name: "Install extension", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(1);
-    await expect(dialog.getByRole("heading", { name: "Review extension install", exact: true })).toBeVisible();
-    await expect(dialog.getByText("Publisher", { exact: true })).toBeVisible();
-    await dialog.getByRole("button", { name: "Discard plan", exact: true }).click();
-    await expect(dialog.getByLabel("Extension package", { exact: true })).toHaveValue("C:\\Fixture\\extension.alcomdextension");
+    await expect(dialog.getByRole("heading", { name: "Required permissions", exact: true })).toBeVisible();
+    await expect(dialog.getByText(H4_ADDED, { exact: true })).toBeVisible();
+    await expect(dialog.getByText("1.0.0", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("region", { name: "Requested permissions", exact: true }).getByText("Read projects", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.applyInstall"))).toHaveLength(0);
+    await dialog.getByRole("button", { name: "Decline", exact: true }).click();
+    await expect(dialog.getByLabel("Extension package", { exact: true })).toHaveValue(packagePath);
+    await expect(dialog.getByRole("status")).toContainText("required permissions were declined");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    const requests = await page.evaluate(() => window.h4Management.requests);
+    expect(requests.filter((r) => r.method === "extensions.planInstall").map((r) => r.params)).toEqual([{ packagePath, expectedRevision: 0 }]);
+    expect(requests.filter((r) => r.method === "extensions.applyInstall")).toHaveLength(0);
 });
 
 test("Extension permission and uninstall workflows open named modals with cancel", async ({ page }) => {
