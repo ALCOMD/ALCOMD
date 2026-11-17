@@ -53,6 +53,8 @@ pub use m4::*;
 pub use m5::*;
 pub use m5_backup::*;
 pub use m6::*;
+mod m6_sources;
+pub use m6_sources::*;
 pub use m7::*;
 pub use m7_candidates::*;
 pub use m7_candidates_types::*;

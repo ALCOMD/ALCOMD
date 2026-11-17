@@ -749,7 +749,7 @@ fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
     Ok(manifest)
 }
 
-fn valid_extension_id(value: &str) -> bool {
+pub(crate) fn valid_extension_id(value: &str) -> bool {
     value.len() <= 255
         && value.split('.').count() >= 2
         && value.split('.').all(|part| {
@@ -826,7 +826,7 @@ fn verify_signature(
         .map_err(|cause| error(PackageErrorCode::SignatureInvalid).with_source(cause))
 }
 
-fn valid_fingerprint(value: &str) -> bool {
+pub(crate) fn valid_fingerprint(value: &str) -> bool {
     value.len() == 79
         && value.strip_prefix("ed25519-sha256:").is_some_and(|hex| {
             hex.bytes()

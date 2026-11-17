@@ -16,6 +16,7 @@ pub struct ExtensionEngine<S: M6Store> {
     store: S,
     root: PathBuf,
     tools_validator: Option<PathBuf>,
+    source_fetcher: Option<std::sync::Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
 }
 
 impl<S: M6Store> ExtensionEngine<S> {
@@ -33,7 +34,16 @@ impl<S: M6Store> ExtensionEngine<S> {
             store,
             root,
             tools_validator: None,
+            source_fetcher: None,
         })
+    }
+
+    pub fn with_source_fetcher(
+        mut self,
+        fetcher: std::sync::Arc<dyn alcomd_application::ExtensionSourceFetcher>,
+    ) -> Self {
+        self.source_fetcher = Some(fetcher);
+        self
     }
 
     /// A trusted sibling Host validates schemas and the provider ABI without guest execution.
@@ -171,6 +181,72 @@ impl<S: M6Store> ExtensionEngine<S> {
 }
 
 impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
+    async fn inspect_source(
+        &self,
+        url: String,
+    ) -> Result<alcomd_application::ExtensionSourcePreview, M6Error> {
+        let fetcher = self
+            .source_fetcher
+            .as_ref()
+            .ok_or_else(|| error(M6ErrorCode::ApiUnsupported))?;
+        Ok(crate::remote::read(fetcher.as_ref(), &url).await?.preview)
+    }
+    async fn prepare_source(
+        &self,
+        url: String,
+        version: String,
+        fingerprint: String,
+    ) -> Result<alcomd_application::ExtensionPreparedSource, M6Error> {
+        let fetcher = self
+            .source_fetcher
+            .as_ref()
+            .ok_or_else(|| error(M6ErrorCode::ApiUnsupported))?;
+        crate::remote::decode_digest(&fingerprint)?;
+        semver::Version::parse(&version).map_err(|_| error(M6ErrorCode::SourceInvalid))?;
+        let source = crate::remote::read(fetcher.as_ref(), &url).await?;
+        if source.preview.source_fingerprint != fingerprint {
+            return Err(error(M6ErrorCode::RevisionConflict));
+        }
+        let selected = source.selected(&version)?;
+        if selected.api_major != 1 {
+            return Err(error(M6ErrorCode::ApiUnsupported));
+        }
+        let archive = fetcher
+            .archive(
+                &selected.url,
+                crate::remote::decode_digest(&selected.zip_sha256)?,
+            )
+            .await?;
+        let mut evidence = self
+            .inspect(
+                ExtensionSourceKind::RemoteExtensionSource,
+                archive
+                    .to_str()
+                    .ok_or_else(|| error(M6ErrorCode::PackageInvalid))?
+                    .to_owned(),
+            )
+            .await?;
+        if evidence.extension_id != source.preview.extension_id
+            || evidence.version != version
+            || evidence.publisher_fingerprint != source.preview.publisher_fingerprint
+        {
+            return Err(error(M6ErrorCode::SourceInvalid));
+        }
+        let remote = alcomd_application::ExtensionRemoteSourceEvidence {
+            url: source.preview.url.clone(),
+            version,
+            source_fingerprint: fingerprint,
+            artifact_url: selected.url.clone(),
+            artifact_sha256: selected.zip_sha256.clone(),
+        };
+        let plan_fingerprint = crate::remote::plan_fingerprint(&evidence.package_digest, &remote)?;
+        evidence.remote_source = Some(remote);
+        Ok(alcomd_application::ExtensionPreparedSource {
+            evidence,
+            plan_fingerprint,
+        })
+    }
+
     async fn inspect(
         &self,
         source_kind: ExtensionSourceKind,
@@ -279,6 +355,39 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
             ExtensionJournalState::Completed,
         )
         .await?;
+        if let Some(remote) = &plan.evidence.remote_source {
+            let pinned = crate::remote::decode_digest(&remote.artifact_sha256)?;
+            let archive = source.clone();
+            tokio::task::spawn_blocking(move || {
+                use sha2::{Digest, Sha256};
+                use std::io::Read;
+                let mut file = std::fs::File::open(&archive)
+                    .map_err(|e| error(M6ErrorCode::PlanStale).with_source(e))?;
+                let mut hash = Sha256::new();
+                let mut buffer = [0u8; 65536];
+                let mut total = 0u64;
+                loop {
+                    let n = file
+                        .read(&mut buffer)
+                        .map_err(|e| error(M6ErrorCode::PlanStale).with_source(e))?;
+                    if n == 0 {
+                        break;
+                    }
+                    total += n as u64;
+                    if total > 67_108_864 {
+                        return Err(error(M6ErrorCode::DownloadTooLarge));
+                    }
+                    hash.update(&buffer[..n]);
+                }
+                let actual: [u8; 32] = hash.finalize().into();
+                if actual != pinned {
+                    return Err(error(M6ErrorCode::IntegrityMismatch));
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|_| error(M6ErrorCode::Internal))??;
+        }
         let inspect_source = source.clone();
         let verified =
             tokio::task::spawn_blocking(move || inspect_extension_package(&inspect_source))
@@ -492,6 +601,7 @@ fn package_evidence(
         component_digest: package.component_digest,
         publisher_fingerprint: package.publisher_fingerprint,
         installation_terms: package.manifest.installation_terms,
+        remote_source: None,
         required_permissions: package.manifest.permissions.required,
         optional_permissions: package.manifest.permissions.optional,
         required_interfaces: package.manifest.interfaces.required,

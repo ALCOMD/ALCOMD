@@ -106,6 +106,7 @@ impl std::error::Error for CacheError {
 pub struct PackageCache {
     root: PathBuf,
     http: HttpClients,
+    max_archive_bytes: u64,
 }
 
 impl PackageCache {
@@ -140,9 +141,26 @@ impl PackageCache {
         .map_err(|cause| {
             cache_error(CacheErrorCode::DownloadFailed).with_source(cause.without_url())
         })?;
-        Ok(Self { root, http })
+        Ok(Self {
+            root,
+            http,
+            max_archive_bytes: MAX_ARCHIVE_BYTES,
+        })
     }
 
+    pub(crate) fn for_extension_source(
+        root: PathBuf,
+        http: HttpClients,
+    ) -> Result<Self, CacheError> {
+        if !root.is_absolute() {
+            return Err(cache_error(CacheErrorCode::Io));
+        }
+        Ok(Self {
+            root,
+            http,
+            max_archive_bytes: 67_108_864,
+        })
+    }
     #[must_use]
     pub fn object_path(&self, digest: &[u8; 32]) -> PathBuf {
         let hex = digest_hex(digest);
@@ -194,7 +212,7 @@ impl PackageCache {
             .acquire(vec![ResourceKey::PackageCache(digest)])
             .await;
         let object = self.object_path(&digest);
-        match verify_object(&object, &digest).await {
+        match verify_object(&object, &digest, self.max_archive_bytes).await {
             Ok(true) => return Ok(object),
             Ok(false) => {}
             Err(error) if offline || !repair_corrupt => return Err(error),
@@ -279,11 +297,11 @@ impl PackageCache {
         {
             return Err(cache_error(CacheErrorCode::QuotaExceeded));
         }
-        if !verify_object(source, &digest).await? {
+        if !verify_object(source, &digest, self.max_archive_bytes).await? {
             return Err(cache_error(CacheErrorCode::IntegrityMismatch));
         }
         let object = self.object_path(&digest);
-        match verify_object(&object, &digest).await {
+        match verify_object(&object, &digest, self.max_archive_bytes).await {
             Ok(true) => {
                 tokio::fs::remove_file(source).await.map_err(|cause| {
                     cache_error(CacheErrorCode::Io)
@@ -320,7 +338,7 @@ impl PackageCache {
                     .with_source(cause)
                     .with_path(source.display().to_string())
             })?;
-        if verify_object(&object, &digest).await? {
+        if verify_object(&object, &digest, self.max_archive_bytes).await? {
             Ok(object)
         } else {
             Err(cache_error(CacheErrorCode::Corrupt))
@@ -346,7 +364,7 @@ impl PackageCache {
         }
         guard.sync().await?;
         if tokio::fs::symlink_metadata(object).await.is_ok() {
-            if verify_object(object, expected_digest).await? {
+            if verify_object(object, expected_digest, self.max_archive_bytes).await? {
                 return Ok(());
             }
             return Err(cache_error(CacheErrorCode::Corrupt));
@@ -373,7 +391,7 @@ impl PackageCache {
                     .with_source(cause)
                     .with_path(object.display().to_string())
             })?;
-        if verify_object(object, expected_digest).await? {
+        if verify_object(object, expected_digest, self.max_archive_bytes).await? {
             Ok(())
         } else {
             Err(cache_error(CacheErrorCode::Corrupt))
@@ -413,7 +431,7 @@ impl PackageCache {
             .get(CONTENT_LENGTH)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.parse::<u64>().ok())
-            .is_some_and(|size| size > MAX_ARCHIVE_BYTES)
+            .is_some_and(|size| size > self.max_archive_bytes)
         {
             return Err(cache_error(CacheErrorCode::DownloadTooLarge));
         }
@@ -428,7 +446,7 @@ impl PackageCache {
         })? {
             received = received
                 .checked_add(chunk.len() as u64)
-                .filter(|size| *size <= MAX_ARCHIVE_BYTES)
+                .filter(|size| *size <= self.max_archive_bytes)
                 .ok_or_else(|| cache_error(CacheErrorCode::DownloadTooLarge))?;
             if existing.saturating_add(received) > MAX_CACHE_BYTES {
                 return Err(cache_error(CacheErrorCode::QuotaExceeded));
@@ -528,13 +546,13 @@ impl Drop for PartialDownload {
     }
 }
 
-async fn verify_object(path: &Path, expected: &[u8; 32]) -> Result<bool, CacheError> {
+async fn verify_object(path: &Path, expected: &[u8; 32], maximum: u64) -> Result<bool, CacheError> {
     let metadata = match tokio::fs::symlink_metadata(path).await {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(_) => return Err(cache_error(CacheErrorCode::Io)),
     };
-    if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > MAX_ARCHIVE_BYTES {
+    if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > maximum {
         return Err(cache_error(CacheErrorCode::Corrupt));
     }
     let mut file = tokio::fs::File::open(path).await.map_err(|cause| {
@@ -558,7 +576,7 @@ async fn verify_object(path: &Path, expected: &[u8; 32]) -> Result<bool, CacheEr
         }
         total = total
             .checked_add(read as u64)
-            .filter(|size| *size <= MAX_ARCHIVE_BYTES)
+            .filter(|size| *size <= maximum)
             .ok_or_else(|| cache_error(CacheErrorCode::Corrupt))?;
         hasher.update(&buffer[..read]);
     }
@@ -769,6 +787,35 @@ mod tests {
             archive.write_all(b"fixture").expect("entry contents");
         }
         archive.finish().expect("archive").into_inner()
+    }
+
+    #[tokio::test]
+    async fn cached_object_is_rejected_before_reading_beyond_its_source_limit() {
+        let root = std::env::temp_dir().join(format!(
+            "alcomd-extension-cache-limit-{}",
+            std::process::id()
+        ));
+        tokio::fs::create_dir_all(&root)
+            .await
+            .expect("owned cache test");
+        let path = root.join("bounded-object");
+        let bytes = b"four";
+        tokio::fs::write(&path, bytes).await.expect("owned object");
+        let digest: [u8; 32] = Sha256::digest(bytes).into();
+        assert!(verify_object(&path, &digest, 4).await.expect("exact bound"));
+        assert_eq!(
+            verify_object(&path, &digest, 3)
+                .await
+                .expect_err("oversized cache")
+                .code(),
+            CacheErrorCode::Corrupt
+        );
+        tokio::fs::remove_file(path)
+            .await
+            .expect("remove owned object");
+        tokio::fs::remove_dir(root)
+            .await
+            .expect("remove empty owned directory");
     }
 
     #[tokio::test]

@@ -6,7 +6,7 @@
 
 1. package content identity：`alcomd-extension-content-sha256-v1` digest；
 2. publisher cryptographic identity：Ed25519 public key 的稳定 SHA-256 fingerprint；
-3. installation choice：用户选择有效的本地包并请求安装，无独立发布者批准或信任设置；
+3. installation choice：用户选择有效的本地包或单扩展源版本并请求安装，无独立发布者批准或信任设置；
 4. first-party source policy：仅由受控发行来源决定，不接受调用者自报的官方身份。
 
 Manifest 的 publisher display name、`first_party` 或任意自报 metadata 都不能改变 2-4。第一方和第三方使用
@@ -42,13 +42,11 @@ for each entry:
 - 未知或自行签名的发布者不需要额外确认；签名、摘要、指纹与包格式有效即可进入原安装流程。不存在全局或逐扩展的“可信发布者”设置，也不自动填写已批准字段。
 - 签名只证明内容完整性和密钥身份，不证明扩展安全或发布者经过认证。Manifest display name 不能冒充受控来源。
 - Plan/Apply 仍冻结和复查 ExtensionId、签名/摘要、实际来源身份、版本与权限声明；包被替换时拒绝，不静默重新规划。
-- Manifest 申请权限不等于实际授权。安装不自动授予后台运行、项目读取、MCP 工具发布或任何其他业务能力；原必需权限门禁和沙箱保持。
+- Manifest 申请权限不等于实际授权。安装仅在用户明确同意冻结 Plan 的必需权限后，于同一状态提交事务授予这些权限；可选及未声明能力默认不授予。原必需权限门禁和沙箱保持。
 - 留存数据仍绑定 ExtensionId 和发布者指纹，另一发布者不能继承该数据。删除发布者确认不等于删除密码学身份隔离。
 - `publisherApproval`、`trustDecision` 和 `extension_publisher_confirmation_required` 已从当前公共合同移除；旧输入按既有严格解析拒绝，不提供兼容字段。历史数据库两列由 State39 精确删除，旧迁移不改。
 - 长期 private/signing key 不进入 ALCOMD state；package、data、log、Event 不保存 bearer credential。
 
 ## M6 install source
 
-M6 只接受 owner-selected local package 或明确 first-party packaged source，wire name 分别为
-`local_owner_selected`、`first_party_packaged`。不提供 URL、registry、marketplace、remote catalog 或 extension
-store/download service；验证过程不执行网络请求。
+当前接受 owner-selected local package（`local_owner_selected`）及已批准的单扩展源（`remote_extension_source`），受控 first-party 来源不接受调用者自报。在线清单只提供一个扩展的多个版本与既有 `.alcomdextension` 下载地址，不提供市场、仓库管理或自动更新。匿名 HTTPS、快照绑定、摘要/身份验证及限额见 [source-v1](source-v1.md)。下载完成后仍走本合同的签名、内容树和包校验，清单不代替包内权限或作者条款。

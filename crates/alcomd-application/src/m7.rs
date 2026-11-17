@@ -1626,6 +1626,10 @@ fn map_m6(error: M6Error) -> M7Error {
         | M6ErrorCode::AlreadyInstalled
         | M6ErrorCode::ProjectNotFound
         | M6ErrorCode::ApiUnsupported
+        | M6ErrorCode::SourceInvalid
+        | M6ErrorCode::SourceUnavailable
+        | M6ErrorCode::IntegrityMismatch
+        | M6ErrorCode::DownloadTooLarge
         | M6ErrorCode::PlanStale
         | M6ErrorCode::DataOwnerMismatch
         | M6ErrorCode::RecoveryRequired

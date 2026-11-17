@@ -35,6 +35,7 @@ fn evidence() -> ExtensionPackageEvidence {
         component_digest: [3; 32],
         publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
         installation_terms: None,
+        remote_source: None,
         required_permissions: vec!["background.run".to_owned()],
         optional_permissions: vec!["projects.read".to_owned()],
         required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],

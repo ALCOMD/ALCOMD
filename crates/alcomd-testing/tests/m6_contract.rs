@@ -305,6 +305,7 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
         rpc["$defs"]["capability"]["enum"],
         json!([
             "extensions.lifecycle.v1",
+            "extensions.remote-install.v1",
             "extensions.permissions.v1",
             "extensions.permissions.read.v1"
         ])
@@ -314,7 +315,7 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
             .as_array()
             .expect("methods")
             .len(),
-        11
+        13
     );
     for (method, result) in [
         ("extensions.list", "#/$defs/listResult"),
@@ -324,6 +325,8 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
             "#/$defs/permissionsListResult",
         ),
         ("extensions.planInstall", "#/$defs/planResult"),
+        ("extensions.inspectSource", "#/$defs/sourcePreview"),
+        ("extensions.planInstallFromSource", "#/$defs/planResult"),
         ("extensions.applyInstall", "#/$defs/operationResult"),
         ("extensions.enable", "#/$defs/extensionResult"),
         ("extensions.disable", "#/$defs/extensionResult"),

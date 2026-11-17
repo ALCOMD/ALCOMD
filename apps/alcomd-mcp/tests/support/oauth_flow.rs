@@ -12,14 +12,14 @@ const KEY: &[u8] =
     include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/oauth-localhost.test-key.pkcs8");
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-struct CoreConfiguration {
-    ipc: IpcConfig,
-    client: ClientConfig,
+pub(super) struct CoreConfiguration {
+    pub(super) ipc: IpcConfig,
+    pub(super) client: ClientConfig,
     #[cfg(unix)]
     runtime: std::path::PathBuf,
 }
 impl CoreConfiguration {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         #[cfg(unix)]
         {
             // Reuse the CLI fixture's private, short Unix endpoint convention.

@@ -3,6 +3,8 @@
 mod archive;
 mod backup;
 mod cache;
+mod extension_sources;
+pub use extension_sources::ExtensionSourceHttp;
 mod candidates;
 mod engine;
 mod http_clients;

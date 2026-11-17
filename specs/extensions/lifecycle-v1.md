@@ -48,8 +48,7 @@ termination 不自动回滚它，也不授予任何新的后续 capability autho
 
 ## Plan/Apply 与 recovery
 
-Install source kind 只允许 `local_owner_selected` 或 `first_party_packaged`；没有 URL、registry、marketplace、remote
-catalog 或任意网络 fetch。Install Plan immutable 固定 source kind/identity、ExtensionId/version/API、package/Manifest/component digest、publisher key/
+Install source kind 为本地 `local_owner_selected`、受控 `first_party_packaged` 或在线 `remote_extension_source`。在线准备只允许认证 local-owner，经 [单扩展源合同](source-v1.md) 下载并冻结证据；不自动更新或替换已安装扩展。Install Plan immutable 固定 source kind/identity、ExtensionId/version/API、package/Manifest/component digest、publisher key/
 fingerprint、permissions/interfaces、archive profile v1、expected absence/revision。无额外发布者确认或信任决策；Apply 不重新 Plan。
 
 Install phases：`accepted -> source_verified -> archive_verified -> staging_complete -> publish_intent ->

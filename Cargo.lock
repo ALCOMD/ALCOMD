@@ -199,6 +199,7 @@ dependencies = [
  "alcomd-platform",
  "alcomd-protocol",
  "alcomd-store",
+ "alcomd-vpm",
  "anyhow",
  "clap",
  "ed25519-dalek",

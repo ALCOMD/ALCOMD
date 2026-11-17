@@ -57,7 +57,14 @@ type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
 export const DialogOpenContext = createContext<boolean | undefined>(undefined);
 const DialogCloseContext = createContext<{
     requestClose(afterClose?: () => void): void;
+    isActive(): boolean;
 } | undefined>(undefined);
+
+/** Check synchronously, including the native closing animation before unmount. */
+export function useDialogActive() {
+    const dialog = useContext(DialogCloseContext);
+    return () => dialog?.isActive() ?? true;
+}
 
 export interface DialogOrigin {
     readonly current: HTMLElement | null;
@@ -1060,7 +1067,7 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
         return () => { active = false; };
     }, [open, restoreFocus, returnFocus, returnFocusReady]);
     return createPortal(
-        <DialogCloseContext.Provider value={{ requestClose }}>{createElement(
+        <DialogCloseContext.Provider value={{ requestClose, isActive: () => ref.current?.open === true && !closing.current && closeRequest.current === undefined }}>{createElement(
             materialElements.dialog,
             { ariaLabel: visible.title, quick, ref, style: visible.wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline", className: visible.headlineActions === undefined ? undefined : "material-dialog-headline",

@@ -208,6 +208,7 @@ fn state39_real_initializer_upgrades_and_reopens_without_any_trust_model() {
         if table == "extension_plans" {
             for row in rows {
                 row.push(Value::Null);
+                row.push(Value::Null);
             }
         }
     }

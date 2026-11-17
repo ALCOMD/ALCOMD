@@ -200,6 +200,15 @@ async fn initialize_daemon_with_directories(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
+    initialize_daemon_with_adapters(ipc, data, directory_platform, None).await
+}
+
+async fn initialize_daemon_with_adapters(
+    ipc: IpcConfig,
+    data: DataConfig,
+    directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
+    source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
@@ -317,7 +326,19 @@ async fn initialize_daemon_with_directories(
     let extension_engine =
         alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
             .map_err(|_| BindError::Io(io::Error::other("Extension engine initialization failed")))?
-            .with_tools_validator(extension_runtime.host_executable());
+            .with_tools_validator(extension_runtime.host_executable())
+            .with_source_fetcher(match source {
+                Some(source) => source,
+                None => Arc::new(
+                    alcomd_vpm::ExtensionSourceHttp::new(
+                        data_root.join("extensions/source-cache"),
+                        Some(official_gui.clone()),
+                    )
+                    .map_err(|_| {
+                        BindError::Io(io::Error::other("Extension source initialization failed"))
+                    })?,
+                ),
+            });
     let m6 = M6Application::new(
         store.clone(),
         extension_engine,
@@ -927,6 +948,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
+        alcomd_protocol::CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1,

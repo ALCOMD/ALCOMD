@@ -92,4 +92,7 @@ export const errorMessages: TranslationTable = {
     "A Unity Hub launch is already being processed. Check its current state before launching again.": { "zh-CN": "已有 Unity Hub 启动请求正在处理，请核对状态，避免重复启动。", "ja-JP": "Unity Hubの起動リクエストを処理中です。状態を確認し、重複起動を避けてください。" },
     "The request did not complete for an unrecognized reason.": { "zh-CN": "操作未完成，暂时无法识别具体原因。", "ja-JP": "操作が完了しませんでした。具体的な原因はまだ特定できません。" },
     "This extension requires an API or permission that this app does not support. Use a compatible extension and app.": { "zh-CN": "此扩展需要当前应用不支持的接口或权限，请使用兼容的扩展和应用。", "ja-JP": "この拡張機能には、このアプリで未対応のAPIまたは権限が必要です。対応する拡張機能とアプリを使用してください。" },
+    "This extension source is invalid or unsupported. Check the source URL and format.": {"zh-CN": "扩展源无效或不受支持，请检查地址和清单格式。", "ja-JP": "拡張ソースが無効か未対応です。URL と形式を確認してください。"},
+    "The extension source could not be downloaded. Check the connection and try again.": {"zh-CN": "无法下载扩展源，请检查连接后重试。", "ja-JP": "拡張ソースをダウンロードできません。接続を確認して再試行してください。"},
+    "The download exceeds the allowed size.": {"zh-CN": "下载超过允许大小。", "ja-JP": "ダウンロードがサイズ制限を超えています。"}
 };

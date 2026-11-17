@@ -5,6 +5,7 @@
 mod engine;
 mod host_protocol;
 mod package;
+mod remote;
 
 pub use engine::ExtensionEngine;
 pub use host_protocol::*;

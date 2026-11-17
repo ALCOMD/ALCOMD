@@ -24,6 +24,7 @@ serde_json.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
+alcomd-vpm = { workspace = true, features = ["test-kill-gates"] }
 ed25519-dalek.workspace = true
 sha2.workspace = true
 zip.workspace = true

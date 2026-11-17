@@ -111,7 +111,7 @@ fn state41_real_initializer_reopens_without_rewriting_data_or_grants() {
         let db = initialize_connection(&path).expect("State41 preservation fixture");
         assert_eq!(
             publisher_trust_removal_tests::snapshot(&db),
-            expected(before.clone())
+            expected(expected(before.clone()))
         );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))

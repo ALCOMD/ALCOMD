@@ -436,5 +436,14 @@ export const formMessages: TranslationTable = {
     "Choose theme color": {
         "zh-CN": "选择主题颜色",
         "ja-JP": "テーマカラーを選択"
-    }
+    },
+    "Installation source": {"zh-CN": "安装来源", "ja-JP": "インストール元"},
+    "Local file": {"zh-CN": "本地文件", "ja-JP": "ローカルファイル"},
+    "Online source": {"zh-CN": "在线来源", "ja-JP": "オンラインソース"},
+    "Extension source URL": {"zh-CN": "扩展源地址", "ja-JP": "拡張ソースの URL"},
+    "Read source": {"zh-CN": "读取清单", "ja-JP": "ソースを読み込む"},
+    "Extension source preview": {"zh-CN": "扩展源预览", "ja-JP": "拡張ソースのプレビュー"},
+    "Choose a version": {"zh-CN": "选择版本", "ja-JP": "バージョンを選択"},
+    "Unsupported API": {"zh-CN": "不支持的接口版本", "ja-JP": "未対応の API"},
+    "Source version": {"zh-CN": "来源版本", "ja-JP": "ソースのバージョン"}
 };

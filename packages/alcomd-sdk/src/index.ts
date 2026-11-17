@@ -27,6 +27,7 @@ export const RPC_CAPABILITIES = {
     repositoriesListImport: "repositories.list-import.v1",
     unityHubOpen: "unity.hub.open.v1",
     packagesCandidates: "packages.candidates.v2",
+    extensionsRemoteInstall: "extensions.remote-install.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1",
     extensionsPermissionsRead: "extensions.permissions.read.v1",
@@ -94,3 +95,5 @@ export interface HelloResponse {
         world: string;
     };
 }
+
+export * from "./extension-sources";

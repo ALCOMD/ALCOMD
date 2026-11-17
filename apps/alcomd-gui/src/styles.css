@@ -1814,3 +1814,5 @@ code {
 }
 
 .extension-tool-preview dt { min-width: 0; overflow-wrap: anywhere; }
+
+.extension-source-preview { overflow-wrap: anywhere; min-width: 0; }

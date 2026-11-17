@@ -23,7 +23,7 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { cancelIcon, closeIcon, editIcon, moreVertIcon } from "@alcomd/ui/icons";
-import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, Select, TextField, type DialogOrigin } from "./Material";
+import { DialogCloseButton, LoadingButton, Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, PathField, Progress, SegmentedButtons, Select, TextField, useDialogActive, type DialogOrigin } from "./Material";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch, useUnityWindowAction, type ProjectUnityLaunchAction } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
@@ -863,38 +863,50 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
+    const remoteAvailable = useCapability(capabilities.extensionsRemoteInstall);
     const canGrant = useCapability(capabilities.extensionsPermissions);
     const [path, setPath] = useState("");
+    const [mode, setMode] = useState("local");
+    const [url, setUrl] = useState("");
+    const [source, setSource] = useState<import("@alcomd/sdk").ExtensionSourcePreview>();
+    const [version, setVersion] = useState("");
+    const [applying, setApplying] = useState(false);
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [refusal, setRefusal] = useState<"terms" | "permissions">();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [submitted, setSubmitted] = useState(false);
-    useUtilityDialogBusy(feedback.busy);
-    const current = useActionScope(client);
+    useUtilityDialogBusy(applying);
+    const scopeCurrent = useActionScope(client);
+    const dialogActive = useDialogActive();
+    const current = () => scopeCurrent() && dialogActive();
     const pending = useRef(false);
     const reviewingTerms = plan?.installationTerms !== undefined && !termsAccepted;
     const reviewingPermissions = !reviewingTerms && (plan?.requiredPermissions.length ?? 0) > 0;
     const apply = async (reviewed: ExtensionPlan, acceptedTerms: boolean) => {
         setSubmitted(true);
+        setApplying(true);
         const result = await client.extensionApplyInstall(reviewed.planId, {
             planFingerprint: reviewed.planFingerprint,
             installationTermsAccepted: acceptedTerms,
             requiredPermissionsAccepted: reviewed.requiredPermissions.length > 0
         });
         if (!current()) return;
+        setApplying(false);
         setFeedback({ busy: false, operationId: result.operationId });
         onAccepted?.(result.operationId);
         completeDialog?.();
     };
     const run = async () => {
-        if (!available || pending.current || submitted || (plan === undefined && path.trim().length === 0)) return;
+        if (!available || pending.current || submitted || (plan === undefined && (mode === "local" ? path.trim().length === 0 : !remoteAvailable || source === undefined || version.length === 0))) return;
         pending.current = true;
         setFeedback({ busy: true });
         setRefusal(undefined);
         try {
             if (plan === undefined) {
-                const { plan: reviewed } = await client.extensionPlanInstall(path, 0);
+                const { plan: reviewed } = mode === "local"
+                    ? await client.extensionPlanInstall(path, 0)
+                    : await client.extensionPlanInstallFromSource(source!.url, version, source!.sourceFingerprint);
                 if (!current()) return;
                 if (!hasPermissionRequests(reviewed)) throw { code: "internal_error" };
                 setTermsAccepted(false);
@@ -911,7 +923,9 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
             }
         } catch (caught: unknown) {
             if (!current()) return;
+            setApplying(false);
             const error = safeError(caught);
+            if (mode === "online" && plan === undefined && error.code === "revision_conflict") { setSource(undefined); setVersion(""); }
             if (!operationRequestOutcomeUnknown(error)) setSubmitted(false);
             setFeedback({ busy: false, error });
         } finally { pending.current = false; }
@@ -933,14 +947,36 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionP
         } catch (caught) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
+    const inspectSource = async () => {
+        if (!remoteAvailable || pending.current || !url.trim()) return;
+        pending.current = true;
+        setSource(undefined); setVersion(""); setFeedback({ busy: true }); setRefusal(undefined);
+        try {
+            const preview = await client.extensionInspectSource(url);
+            if (!current()) return;
+            setSource(preview);
+            // Core returns SemVer-descending versions; prereleases require an explicit selection.
+            setVersion(preview.versions.find((item) => item.apiMajor === 1 && !item.version.split("+")[0]!.includes("-"))?.version ?? "");
+            setFeedback(INITIAL_FEEDBACK);
+        } catch (caught) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
         {refusal === undefined ? null : <p role="status">{t(refusal === "terms" ? "Installation not completed: the terms were declined." : "Installation not completed: the required permissions were declined.")}</p>}
         {feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(); }}>
-            <div className="project-target-picker">
+            <SegmentedButtons label={t("Installation source")} value={mode} options={[{ value: "local", label: t("Local file"), disabled: feedback.busy }, { value: "online", label: t("Online source"), disabled: feedback.busy || !remoteAvailable }]} onChange={(next) => { setMode(next); setSource(undefined); setVersion(""); setFeedback(INITIAL_FEEDBACK); setRefusal(undefined); }} />
+            {mode === "local" ? <div className="project-target-picker">
                 <PathField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
                 <Button disabled={feedback.busy} onClick={() => void chooseFile()} type="button" variant="tonal">{t("Select")}</Button>
-            </div>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><LoadingButton disabled={!available || submitted || path.trim().length === 0} loading={feedback.busy} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Install extension")}</LoadingButton></div>
+            </div> : <>
+                <TextField disabled={feedback.busy} id="extension-source-url" label={t("Extension source URL")} maxLength={8192} value={url} onInput={(value) => { setUrl(value); setSource(undefined); setVersion(""); setRefusal(undefined); setFeedback(INITIAL_FEEDBACK); }} required type="url" />
+                <LoadingButton disabled={feedback.busy || !remoteAvailable || !url.trim()} loading={feedback.busy && source === undefined} onClick={() => void inspectSource()} type="button" variant="tonal">{t("Read source")}</LoadingButton>
+                {source === undefined ? null : <section className="extension-source-preview" aria-label={t("Extension source preview")}>
+                    <h3>{source.displayName}</h3><p>{source.extensionId}</p>{source.description === undefined ? null : <p>{source.description}</p>}
+                    <Select disabled={feedback.busy} id="extension-source-version" label={t("Version")} options={[{ value: "", label: t("Choose a version") }, ...source.versions.map((item) => ({ value: item.version, label: item.version + (item.apiMajor === 1 ? "" : " · " + t("Unsupported API")), disabled: item.apiMajor !== 1 }))]} value={version} onChange={setVersion} />
+                </section>}
+            </>}
+            <div className="dialog-actions"><UtilityDialogCancel disabled={applying} /><LoadingButton disabled={feedback.busy || !available || submitted || (mode === "local" ? !path.trim() : source === undefined || !version)} loading={feedback.busy && (mode === "local" || source !== undefined)} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Install extension")}</LoadingButton></div>
         </form> : <>
             <h2>{t(reviewingTerms ? "Extension terms" : reviewingPermissions ? "Required permissions" : "Install extension")}</h2>
             <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div></dl>

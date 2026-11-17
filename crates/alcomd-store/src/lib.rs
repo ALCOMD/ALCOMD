@@ -77,7 +77,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 41;
+pub const CURRENT_DATA_SCHEMA: u32 = 42;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -1084,6 +1084,17 @@ impl M6Store for StateStoreHandle {
         .await
     }
 
+    async fn installation_source(
+        &self,
+        owner: PrincipalId,
+        expected: ExtensionRecord,
+    ) -> Result<Option<alcomd_application::ExtensionInstallationSource>, M6Error> {
+        self.request_worker(
+            move |connection| m6::installation_source(connection, &owner, &expected),
+            m6::unavailable,
+        )
+        .await
+    }
     async fn get_plan(&self, plan_id: PlanId) -> Result<ExtensionPlanRecord, M6Error> {
         self.request_worker(
             move |connection| m6::get_plan(connection, plan_id),

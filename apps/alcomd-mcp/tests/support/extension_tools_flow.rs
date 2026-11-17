@@ -58,12 +58,24 @@ fn hex(value: &[u8]) -> String {
     value.iter().map(|b| format!("{b:02x}")).collect()
 }
 fn package(path: &Path) {
+    package_with_install_requirements(path, false);
+}
+pub(super) fn package_with_install_requirements(path: &Path, consent: bool) {
     let signing = SigningKey::from_bytes(&[23; 32]);
     let key = signing.verifying_key().to_bytes();
     let publisher = format!("ed25519-sha256:{}", hex(&Sha256::digest(key)));
-    let manifest = format!(
+    let mut manifest = format!(
         "schema=1\nid=\"{ID}\"\nname=\"Disposable tool provider\"\nversion=\"1.0.0\"\napi=1\npublisher_name=\"ALCOMD test\"\npublisher_key_fingerprint=\"{publisher}\"\nlicense=\"AGPL-3.0-only\"\n[entrypoints]\ncomponent=\"component/extension.wasm\"\n[mcp]\ntools=\"component/mcp-tools.json\"\n[interfaces]\nrequired=[\"alcomd:mcp-tools/core@1.0.0\"]\noptional=[]\n[permissions]\nrequired=[]\noptional=[\"mcp.tools.provide\",\"operations.cancel\",\"operations.read\",\"packages.manage\",\"packages.read\",\"projects.read\",\"repositories.read\"]\n"
     );
+    if consent {
+        manifest = manifest
+            .replace(
+                "[permissions]\nrequired=[]",
+                "[permissions]\nrequired=[\"projects.read\"]",
+            )
+            .replace(",\"projects.read\"", "");
+        manifest.push_str("[installation_terms]\ntitle=\"Fixture terms\"\ntext=\"Use only disposable test data.\"\n");
+    }
     let catalogue = serde_json::to_vec(&declarations()).expect("valid isolated Provider fixture");
     let component =
         include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-tools-provider-v1.wasm");

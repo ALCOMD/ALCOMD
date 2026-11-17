@@ -20,6 +20,7 @@ struct GuiClientState {
     control: rpc_clients::ClientPool,
     repository: rpc_clients::ClientPool,
     extension_ui: rpc_clients::ClientPool,
+    extension_sources: rpc_clients::ClientPool,
 }
 
 impl Default for GuiClientState {
@@ -32,6 +33,7 @@ impl Default for GuiClientState {
             // their affinity without serializing unrelated GUI commands.
             repository: rpc_clients::ClientPool::new(1),
             extension_ui: rpc_clients::ClientPool::new(1),
+            extension_sources: rpc_clients::ClientPool::new(2),
         }
     }
 }
@@ -1479,6 +1481,35 @@ async fn gui_extension_permissions_list(
     finish_call(&mut client, result)
 }
 
+// Preparation uses a separate bounded pool so ordinary reads/control stay available.
+#[tauri::command]
+async fn gui_extension_inspect_source(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ExtensionInspectSourceParams,
+) -> Result<alcomd_protocol::ExtensionSourcePreview, RpcError> {
+    let mut client = state.extension_sources.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.extension_inspect_source(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_extension_plan_install_from_source(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ExtensionPlanInstallFromSourceParams,
+) -> Result<alcomd_protocol::ExtensionPlanResult, RpcError> {
+    let mut client = state.extension_sources.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.extension_plan_install_from_source(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
 #[tauri::command]
 async fn gui_extension_plan_install(
     state: State<'_, GuiClientState>,
@@ -1820,6 +1851,8 @@ pub fn run() {
             gui_extension_get,
             gui_extension_permissions_list,
             gui_extension_plan_install,
+            gui_extension_inspect_source,
+            gui_extension_plan_install_from_source,
             gui_extension_apply_install,
             gui_extension_enable,
             gui_extension_disable,

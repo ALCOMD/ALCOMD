@@ -30,6 +30,7 @@ export interface ExtensionRecord {
 }
 
 export interface ExtensionResult {
+    installationSource?: import("./extension-sources").ExtensionInstallationSource;
     mcpTools?: McpToolPreview[];
     extension: ExtensionRecord;
 }

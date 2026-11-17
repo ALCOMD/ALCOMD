@@ -150,6 +150,8 @@ pub const METHOD_PROJECTS_APPLY_UNITY_MIGRATION: &str = "projects.applyUnityMigr
 pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
 pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
 pub const METHOD_EXTENSIONS_PERMISSIONS_LIST: &str = "extensions.permissions.list";
+pub const METHOD_EXTENSIONS_INSPECT_SOURCE: &str = "extensions.inspectSource";
+pub const METHOD_EXTENSIONS_PLAN_INSTALL_FROM_SOURCE: &str = "extensions.planInstallFromSource";
 pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
 pub const METHOD_EXTENSIONS_APPLY_INSTALL: &str = "extensions.applyInstall";
 pub const METHOD_EXTENSIONS_ENABLE: &str = "extensions.enable";
@@ -194,6 +196,7 @@ pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
 pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
+pub const CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1: &str = "extensions.remote-install.v1";
 pub const CAPABILITY_EXTENSIONS_LIFECYCLE_V1: &str = "extensions.lifecycle.v1";
 pub const CAPABILITY_EXTENSIONS_PERMISSIONS_V1: &str = "extensions.permissions.v1";
 pub const CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1: &str = "extensions.permissions.read.v1";
@@ -227,6 +230,8 @@ pub mod error_code {
     /// The current Principal lacks the required permission or visibility.
     pub const PERMISSION_DENIED: &str = "permission_denied";
     /// The supplied expected revision is stale.
+    pub const EXTENSION_SOURCE_INVALID: &str = "extension_source_invalid";
+    pub const EXTENSION_SOURCE_UNAVAILABLE: &str = "extension_source_unavailable";
     pub const REVISION_CONFLICT: &str = "revision_conflict";
     /// An idempotency key was reused with a different canonical fingerprint.
     pub const IDEMPOTENCY_CONFLICT: &str = "idempotency_conflict";
@@ -3365,6 +3370,44 @@ pub struct ExtensionPermissionsListResult {
 pub enum ExtensionSourceKind {
     LocalOwnerSelected,
     FirstPartyPackaged,
+    RemoteExtensionSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInspectSourceParams {
+    pub url: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPlanInstallFromSourceParams {
+    pub url: String,
+    pub version: String,
+    pub expected_source_fingerprint: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionInstallationSource {
+    pub url: String,
+    pub version: String,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionSourceVersion {
+    pub version: String,
+    pub api_major: u32,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionSourcePreview {
+    pub url: String,
+    pub extension_id: String,
+    pub display_name: String,
+    pub publisher_fingerprint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub versions: Vec<ExtensionSourceVersion>,
+    pub source_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3486,6 +3529,8 @@ pub struct ExtensionRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPlan {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_source: Option<ExtensionInstallationSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub installation_terms: Option<ExtensionInstallationTerms>,
     pub mcp_tools: Vec<McpToolPreview>,
     pub plan_id: String,
@@ -3517,6 +3562,8 @@ pub struct ExtensionsListResult {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installation_source: Option<ExtensionInstallationSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tools: Option<Vec<McpToolPreview>>,
     pub extension: ExtensionRecord,

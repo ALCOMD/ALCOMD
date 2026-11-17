@@ -31,6 +31,21 @@ impl HttpClients {
         })
     }
 
+    #[cfg(feature = "test-kill-gates")]
+    pub(crate) fn fixed_for_test(client: Client) -> Self {
+        Self {
+            settings: None,
+            current: Arc::new(Mutex::new((
+                ConfigProxy::Direct,
+                ClientPair {
+                    anonymous: client.clone(),
+                    authenticated: client,
+                },
+            ))),
+            build: |_| unreachable!("fixed test transport cannot change proxy configuration"),
+        }
+    }
+
     pub fn settings(&self) -> Option<M7OfficialApplication> {
         self.settings.clone()
     }

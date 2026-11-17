@@ -146,7 +146,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         },
         async systemStatus() {
             const status = await base.systemStatus();
-            return { ...status, capabilities: [...new Set([...status.capabilities, "extensions.permissions.read.v1"])] };
+            return { ...status, capabilities: [...new Set([...status.capabilities, "extensions.permissions.read.v1", "extensions.remote-install.v1"])] };
         },
         async projectsList(cursor) {
             log("projects.list", cursor === undefined ? {} : { cursor });
@@ -175,6 +175,16 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             return response("extensions.permissions.list", { availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as ManagementGrant["permission"][], extensionId, grantRevision: extension.grantRevision,
                 requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
+        },
+        async extensionInspectSource(url) {
+            log("extensions.inspectSource", { url });
+            return response("extensions.inspectSource", { url, extensionId: H4_ADDED, displayName: "Online example", publisherFingerprint: `ed25519-sha256:${hash}`, description: "SourceDescription".repeat(100), sourceFingerprint: hash, versions: [{ version: "9.0.0", apiMajor: 2 }, { version: "2.0.0-beta.1", apiMajor: 1 }, { version: "1.10.0", apiMajor: 1 }, { version: "1.2.0", apiMajor: 1 }] });
+        },
+        async extensionPlanInstallFromSource(url, version, expectedSourceFingerprint) {
+            log("extensions.planInstallFromSource", { url, version, expectedSourceFingerprint });
+            const reviewed = plan("install", H4_ADDED, "not_applicable");
+            reviewed.sourceKind = "remote_extension_source"; reviewed.version = version; reviewed.installationSource = { url, version };
+            return response("extensions.planInstallFromSource", { plan: reviewed });
         },
         async extensionPlanInstall(packagePath, expectedRevision) {
             log("extensions.planInstall", { packagePath, expectedRevision });

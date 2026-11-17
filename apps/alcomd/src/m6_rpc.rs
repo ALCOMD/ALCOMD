@@ -13,7 +13,12 @@ pub(super) async fn dispatch(
     access: &AccessContext,
     store: &alcomd_store::StateStoreHandle,
 ) -> DispatchAction {
-    let capability = if request.method == rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST {
+    let capability = if matches!(
+        request.method.as_str(),
+        rpc::METHOD_EXTENSIONS_INSPECT_SOURCE | rpc::METHOD_EXTENSIONS_PLAN_INSTALL_FROM_SOURCE
+    ) {
+        rpc::CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1
+    } else if request.method == rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST {
         rpc::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1
     } else if matches!(
         request.method.as_str(),
@@ -27,6 +32,59 @@ pub(super) async fn dispatch(
         return action;
     }
     match request.method.as_str() {
+        rpc::METHOD_EXTENSIONS_INSPECT_SOURCE => {
+            let params: rpc::ExtensionInspectSourceParams =
+                match serde_json::from_value(request.params) {
+                    Ok(v) => v,
+                    Err(_) => return invalid(request.id),
+                };
+            match application.inspect_source(access, params.url).await {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::ExtensionSourcePreview {
+                        url: value.url,
+                        extension_id: value.extension_id,
+                        display_name: value.display_name,
+                        publisher_fingerprint: value.publisher_fingerprint,
+                        description: value.description,
+                        versions: value
+                            .versions
+                            .into_iter()
+                            .map(|v| rpc::ExtensionSourceVersion {
+                                version: v.version,
+                                api_major: v.api_major,
+                            })
+                            .collect(),
+                        source_fingerprint: value.source_fingerprint,
+                    },
+                    None,
+                ),
+                Err(e) => extension_error(request.id, e),
+            }
+        }
+        rpc::METHOD_EXTENSIONS_PLAN_INSTALL_FROM_SOURCE => {
+            let params: rpc::ExtensionPlanInstallFromSourceParams =
+                match serde_json::from_value(request.params) {
+                    Ok(v) => v,
+                    Err(_) => return invalid(request.id),
+                };
+            match application
+                .plan_install_from_source(
+                    access,
+                    params.url,
+                    params.version,
+                    params.expected_source_fingerprint,
+                    now_ms(),
+                )
+                .await
+            {
+                Ok(value) => match plan_with_tools(value).await {
+                    Ok(plan) => success_action(request.id, rpc::ExtensionPlanResult { plan }, None),
+                    Err(e) => extension_error(request.id, e),
+                },
+                Err(e) => extension_error(request.id, e),
+            }
+        }
         rpc::METHOD_EXTENSIONS_LIST => {
             let params: rpc::ExtensionsListParams = match serde_json::from_value(request.params) {
                 Ok(value) => value,
@@ -90,13 +148,22 @@ pub(super) async fn dispatch(
                         {
                             return Err(app::M6Error::new(app::M6ErrorCode::RevisionConflict));
                         }
-                        Ok((current, tools))
+                        let source = store
+                            .installation_source(access.principal().clone(), current.clone())
+                            .await?;
+                        Ok((current, tools, source))
                     }
                     .await;
                     match preview {
-                        Ok((current, tools)) => success_action(
+                        Ok((current, tools, source)) => success_action(
                             request.id,
                             rpc::ExtensionResult {
+                                installation_source: source.map(|s| {
+                                    rpc::ExtensionInstallationSource {
+                                        url: s.url,
+                                        version: s.version,
+                                    }
+                                }),
                                 extension: record(current),
                                 mcp_tools: Some(tools),
                             },
@@ -160,6 +227,9 @@ pub(super) async fn dispatch(
                     Ok(value) => value,
                     Err(_) => return invalid(request.id),
                 };
+            if params.source_kind == rpc::ExtensionSourceKind::RemoteExtensionSource {
+                return invalid(request.id);
+            }
             let source_kind = match params.source_kind {
                 rpc::ExtensionSourceKind::LocalOwnerSelected => {
                     app::ExtensionSourceKind::LocalOwnerSelected
@@ -167,6 +237,7 @@ pub(super) async fn dispatch(
                 rpc::ExtensionSourceKind::FirstPartyPackaged => {
                     app::ExtensionSourceKind::FirstPartyPackaged
                 }
+                rpc::ExtensionSourceKind::RemoteExtensionSource => return invalid(request.id),
             };
             let evidence = match application
                 .inspect_install(access, source_kind, params.package_path)
@@ -341,6 +412,7 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::ExtensionResult {
+                        installation_source: None,
                         mcp_tools: None,
                         extension: record(value),
                     },
@@ -475,6 +547,12 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
 
 fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
     rpc::ExtensionPlan {
+        installation_source: value.evidence.remote_source.as_ref().map(|source| {
+            rpc::ExtensionInstallationSource {
+                url: source.url.clone(),
+                version: source.version.clone(),
+            }
+        }),
         installation_terms: value.evidence.installation_terms.map(|terms| {
             rpc::ExtensionInstallationTerms {
                 title: terms.title,
@@ -489,6 +567,7 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
             app::ExtensionSourceKind::NotApplicable => "not_applicable",
             app::ExtensionSourceKind::LocalOwnerSelected => "local_owner_selected",
             app::ExtensionSourceKind::FirstPartyPackaged => "first_party_packaged",
+            app::ExtensionSourceKind::RemoteExtensionSource => "remote_extension_source",
         }
         .to_owned(),
         extension_id: value.evidence.extension_id,
@@ -540,6 +619,10 @@ fn error_name(code: app::M6ErrorCode) -> &'static str {
         app::M6ErrorCode::ProjectNotFound => rpc::error_code::PROJECT_NOT_FOUND,
         app::M6ErrorCode::ScopeDenied => rpc::error_code::EXTENSION_SCOPE_DENIED,
         app::M6ErrorCode::ApiUnsupported => rpc::error_code::EXTENSION_API_UNSUPPORTED,
+        app::M6ErrorCode::SourceInvalid => rpc::error_code::EXTENSION_SOURCE_INVALID,
+        app::M6ErrorCode::SourceUnavailable => rpc::error_code::EXTENSION_SOURCE_UNAVAILABLE,
+        app::M6ErrorCode::IntegrityMismatch => rpc::error_code::PACKAGE_INTEGRITY_MISMATCH,
+        app::M6ErrorCode::DownloadTooLarge => rpc::error_code::PACKAGE_DOWNLOAD_TOO_LARGE,
         app::M6ErrorCode::InstanceStale => rpc::error_code::EXTENSION_INSTANCE_STALE,
         app::M6ErrorCode::ResourceLimit => rpc::error_code::EXTENSION_RESOURCE_LIMIT,
         app::M6ErrorCode::Crashed => rpc::error_code::EXTENSION_CRASHED,
@@ -590,6 +673,29 @@ fn previews(
             })
         })
         .collect()
+}
+
+async fn plan_with_tools(
+    value: app::ExtensionPlanRecord,
+) -> Result<rpc::ExtensionPlan, app::M6Error> {
+    let evidence = value.evidence.clone();
+    let tools = tokio::task::spawn_blocking(move || {
+        let verified = alcomd_extensions::inspect_extension_package(std::path::Path::new(
+            &evidence.source_locator,
+        ))
+        .map_err(|_| app::M6Error::new(app::M6ErrorCode::PlanStale))?;
+        if verified.package_digest != evidence.package_digest
+            || verified.publisher_fingerprint != evidence.publisher_fingerprint
+        {
+            return Err(app::M6Error::new(app::M6ErrorCode::PlanStale));
+        }
+        previews(&verified.manifest.id, verified.mcp_tools)
+    })
+    .await
+    .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
+    let mut result = plan(value);
+    result.mcp_tools = tools;
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -676,6 +782,7 @@ mod tests {
             component_digest: [3; 32],
             publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
             installation_terms: None,
+            remote_source: None,
             required_permissions: vec!["background.run".to_owned()],
             optional_permissions: vec!["projects.read".to_owned()],
             required_interfaces: vec![],

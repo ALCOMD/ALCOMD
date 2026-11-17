@@ -101,6 +101,8 @@ export interface GuiRpcClient {
     extensionsList(cursor?: string): Promise<ExtensionsListResult>;
     extensionGet(extensionId: string): Promise<ExtensionResult>;
     extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult>;
+    extensionInspectSource(url: string): Promise<import("@alcomd/sdk").ExtensionSourcePreview>;
+    extensionPlanInstallFromSource(url: string, version: string, expectedSourceFingerprint: string): Promise<ExtensionPlanResult>;
     extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult>;
     extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent): Promise<ExtensionOperationResult>;
     extensionEnable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
@@ -477,6 +479,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult> {
         return invokeTyped("gui_extension_permissions_list", { params: { extensionId, limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
+    }
+
+    extensionInspectSource(url: string): Promise<import("@alcomd/sdk").ExtensionSourcePreview> {
+        return invokeTyped("gui_extension_inspect_source", { params: { url } });
+    }
+
+    extensionPlanInstallFromSource(url: string, version: string, expectedSourceFingerprint: string): Promise<ExtensionPlanResult> {
+        return invokeTyped("gui_extension_plan_install_from_source", { params: { url, version, expectedSourceFingerprint } });
     }
 
     extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult> {

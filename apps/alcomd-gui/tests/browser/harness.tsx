@@ -1584,6 +1584,10 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
         return this.value({ availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as import("@alcomd/sdk").ExtensionPermissionGrant["permission"][], extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] });
     }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
+    extensionInspectSource(url: string): ReturnType<GuiRpcClient["extensionInspectSource"]> {
+        return this.value({ url, extensionId: "com.example.source", displayName: "Source extension", publisherFingerprint: `ed25519-sha256:${"a".repeat(64)}`, sourceFingerprint: "a".repeat(64), versions: [{ version: "1.0.0", apiMajor: 1 }] });
+    }
+    extensionPlanInstallFromSource(): ReturnType<GuiRpcClient["extensionPlanInstallFromSource"]> { return this.value({ plan: extensionPlan("install") }); }
     extensionPlanInstall(): ReturnType<GuiRpcClient["extensionPlanInstall"]> { return this.value({ plan: extensionPlan("install") }); }
     extensionApplyInstall(): ReturnType<GuiRpcClient["extensionApplyInstall"]> { return this.value({ operationId: this.beginOperation("extensions.install"), replayed: false }); }
     extensionEnable(extensionId: string): ReturnType<GuiRpcClient["extensionEnable"]> { return this.value({ extension: { ...extension(extensionId), desiredState: "enabled" } }); }

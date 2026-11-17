@@ -86,6 +86,7 @@ fn state40_real_initializer_preserves_data_and_does_not_regrant_on_reopen() {
         if table == "extension_plans" {
             for row in rows {
                 row.push(rusqlite::types::Value::Null);
+                row.push(rusqlite::types::Value::Null);
             }
         }
     }

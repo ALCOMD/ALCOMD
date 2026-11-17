@@ -6,6 +6,7 @@ export const capabilities = {
     backupsCreate: "backups.create.v1",
     backupsRead: "backups.read.v1",
     backupsRestore: "backups.restore.v1",
+    extensionsRemoteInstall: RPC_CAPABILITIES.extensionsRemoteInstall,
     extensionsLifecycle: RPC_CAPABILITIES.extensionsLifecycle,
     extensionsPermissions: RPC_CAPABILITIES.extensionsPermissions,
     extensionsPermissionsRead: RPC_CAPABILITIES.extensionsPermissionsRead,

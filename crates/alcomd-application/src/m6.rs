@@ -71,6 +71,7 @@ pub enum ExtensionSourceKind {
     NotApplicable,
     LocalOwnerSelected,
     FirstPartyPackaged,
+    RemoteExtensionSource,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -137,6 +138,7 @@ pub struct ExtensionPackageEvidence {
     pub required_permissions: Vec<String>,
     pub optional_permissions: Vec<String>,
     pub installation_terms: Option<ExtensionInstallationTerms>,
+    pub remote_source: Option<crate::ExtensionRemoteSourceEvidence>,
     pub required_interfaces: Vec<String>,
     pub optional_interfaces: Vec<String>,
     pub ui_protocol: Option<ExtensionUiProtocol>,
@@ -458,6 +460,10 @@ pub enum M6ErrorCode {
     ProjectNotFound,
     ScopeDenied,
     ApiUnsupported,
+    SourceInvalid,
+    SourceUnavailable,
+    IntegrityMismatch,
+    DownloadTooLarge,
     InstanceStale,
     ResourceLimit,
     Crashed,
@@ -546,6 +552,16 @@ impl std::error::Error for M6Error {
 }
 
 pub trait M6PackageAdapter: Clone + Send + Sync + 'static {
+    fn inspect_source(
+        &self,
+        url: String,
+    ) -> impl Future<Output = Result<crate::ExtensionSourcePreview, M6Error>> + Send;
+    fn prepare_source(
+        &self,
+        url: String,
+        version: String,
+        fingerprint: String,
+    ) -> impl Future<Output = Result<crate::ExtensionPreparedSource, M6Error>> + Send;
     fn inspect(
         &self,
         source_kind: ExtensionSourceKind,
@@ -645,6 +661,11 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<ExtensionApplyOutcome, M6Error>> + Send;
+    fn installation_source(
+        &self,
+        owner: PrincipalId,
+        expected: ExtensionRecord,
+    ) -> impl Future<Output = Result<Option<crate::ExtensionInstallationSource>, M6Error>> + Send;
     fn get_plan(
         &self,
         plan_id: PlanId,
@@ -944,6 +965,36 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .await
     }
 
+    pub async fn inspect_source(
+        &self,
+        access: &AccessContext,
+        url: String,
+    ) -> Result<crate::ExtensionSourcePreview, M6Error> {
+        require_remote_owner(access)?;
+        self.packages.inspect_source(url).await
+    }
+    pub async fn plan_install_from_source(
+        &self,
+        access: &AccessContext,
+        url: String,
+        version: String,
+        fingerprint: String,
+        now_ms: u64,
+    ) -> Result<ExtensionPlanRecord, M6Error> {
+        require_remote_owner(access)?;
+        let prepared = self
+            .packages
+            .prepare_source(url, version, fingerprint)
+            .await?;
+        self.plan_install(
+            access,
+            prepared.evidence,
+            None,
+            prepared.plan_fingerprint,
+            now_ms,
+        )
+        .await
+    }
     pub async fn plan_install(
         &self,
         access: &AccessContext,
@@ -1394,4 +1445,13 @@ fn m6_test_kill_gate(checkpoint: &str) -> Result<(), M6Error> {
 #[cfg(not(feature = "test-kill-gates"))]
 fn m6_test_kill_gate(_checkpoint: &str) -> Result<(), M6Error> {
     Ok(())
+}
+
+fn require_remote_owner(access: &AccessContext) -> Result<(), M6Error> {
+    if access.principal() != &PrincipalId::local_owner() {
+        return Err(M6Error::new(M6ErrorCode::PermissionDenied));
+    }
+    access
+        .require(Permission::ExtensionsManage)
+        .map_err(map_access)
 }

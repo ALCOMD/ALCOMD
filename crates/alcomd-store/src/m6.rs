@@ -371,6 +371,18 @@ pub(super) fn create_install_plan(
             ))),
         );
     }
+    if (draft.evidence.source_kind == ExtensionSourceKind::RemoteExtensionSource)
+        != draft.evidence.remote_source.is_some()
+    {
+        return Err(error(M6ErrorCode::InvalidInput));
+    }
+    let remote = draft
+        .evidence
+        .remote_source
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|_| internal())?;
     let terms = draft
         .evidence
         .installation_terms
@@ -396,9 +408,9 @@ pub(super) fn create_install_plan(
                 source_kind, source_locator, source_identity, package_digest, manifest_digest,
                 component_digest, publisher_fingerprint,
                 requested_permissions_json, requested_interfaces_json, data_disposition,
-                plan_fingerprint, created_at_ms, ui_protocol, installation_terms_json
+                plan_fingerprint, created_at_ms, ui_protocol, installation_terms_json, remote_source_json
              ) VALUES (?1, ?2, 'install', 'unapplied', ?3, ?4, ?5, ?6, ?7, ?8, ?9,
-                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, 'not_applicable', ?17, ?18, ?19, ?20)",
+                       ?10, ?11, ?12, ?13, ?14, ?15, ?16, 'not_applicable', ?17, ?18, ?19, ?20, ?21)",
             params![
                 plan_id.to_string(),
                 owner.as_str(),
@@ -419,7 +431,8 @@ pub(super) fn create_install_plan(
                 draft.plan_fingerprint.as_slice(),
                 sqlite_integer(now_ms)?,
                 draft.evidence.ui_protocol.map(ExtensionUiProtocol::as_str),
-                terms
+                terms,
+                remote
             ],
         )
         .map_err(store_error)?;
@@ -1882,7 +1895,7 @@ fn get_plan_on(connection: &Connection, plan_id: PlanId) -> Result<ExtensionPlan
                     COALESCE(source_identity, X''), package_digest, manifest_digest,
                     component_digest, publisher_fingerprint,
                     requested_permissions_json, requested_interfaces_json, data_disposition,
-                    plan_fingerprint, apply_operation_id, created_at_ms, ui_protocol, installation_terms_json
+                    plan_fingerprint, apply_operation_id, created_at_ms, ui_protocol, installation_terms_json, remote_source_json
              FROM extension_plans WHERE plan_id=?1",
             [plan_id.to_string()],
             load_plan_row,
@@ -1917,6 +1930,10 @@ fn load_plan_row(row: &Row<'_>) -> rusqlite::Result<ExtensionPlanRecord> {
             required_interfaces: interfaces.required,
             optional_interfaces: interfaces.optional,
             ui_protocol: parse_ui_protocol(row.get(22)?)?,
+            remote_source: row
+                .get::<_, Option<String>>(24)?
+                .map(|v| serde_json::from_str(&v).map_err(|_| invalid_query()))
+                .transpose()?,
             installation_terms: row
                 .get::<_, Option<String>>(23)?
                 .map(|value| serde_json::from_str(&value).map_err(|_| invalid_query()))
@@ -2268,6 +2285,7 @@ fn source_kind(value: ExtensionSourceKind) -> &'static str {
         ExtensionSourceKind::NotApplicable => "not_applicable",
         ExtensionSourceKind::LocalOwnerSelected => "local_owner_selected",
         ExtensionSourceKind::FirstPartyPackaged => "first_party_packaged",
+        ExtensionSourceKind::RemoteExtensionSource => "remote_extension_source",
     }
 }
 
@@ -2276,6 +2294,7 @@ fn parse_source_kind(value: &str) -> rusqlite::Result<ExtensionSourceKind> {
         "not_applicable" => Ok(ExtensionSourceKind::NotApplicable),
         "local_owner_selected" => Ok(ExtensionSourceKind::LocalOwnerSelected),
         "first_party_packaged" => Ok(ExtensionSourceKind::FirstPartyPackaged),
+        "remote_extension_source" => Ok(ExtensionSourceKind::RemoteExtensionSource),
         _ => Err(invalid_query()),
     }
 }
@@ -2374,6 +2393,10 @@ fn error_code(code: M6ErrorCode) -> &'static str {
         M6ErrorCode::ProjectNotFound => "project_not_found",
         M6ErrorCode::ScopeDenied => "extension_scope_denied",
         M6ErrorCode::ApiUnsupported => "extension_api_unsupported",
+        M6ErrorCode::SourceInvalid => "extension_source_invalid",
+        M6ErrorCode::SourceUnavailable => "extension_source_unavailable",
+        M6ErrorCode::IntegrityMismatch => "package_integrity_mismatch",
+        M6ErrorCode::DownloadTooLarge => "package_download_too_large",
         M6ErrorCode::InstanceStale => "extension_instance_stale",
         M6ErrorCode::ResourceLimit => "extension_resource_limit",
         M6ErrorCode::Crashed => "extension_crashed",
@@ -2414,4 +2437,24 @@ fn reject_tool_namespace_collision(
         }
     }
     Ok(())
+}
+
+pub(super) fn installation_source(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    expected: &ExtensionRecord,
+) -> Result<Option<alcomd_application::ExtensionInstallationSource>, M6Error> {
+    let tx = transaction(connection)?;
+    let current = get_extension(&tx, owner, &expected.extension_id)?;
+    if current.package_digest != expected.package_digest
+        || current.publisher_fingerprint != expected.publisher_fingerprint
+        || current.version != expected.version
+    {
+        return Err(error(M6ErrorCode::RevisionConflict));
+    }
+    let (id, _) = installed_permission_evidence(&tx, owner, &expected.extension_id)?;
+    let plan = get_plan_on(&tx, id)?;
+    let result = plan.evidence.remote_source.map(|v| v.summary());
+    tx.commit().map_err(store_error)?;
+    Ok(result)
 }

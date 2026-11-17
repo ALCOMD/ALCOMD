@@ -449,6 +449,7 @@ export interface BackupApplyRestoreResult { operationId: string; projectId: stri
 export interface ExtensionsListResult { extensions: ExtensionRecord[]; nextCursor?: string }
 
 export interface ExtensionPlan {
+    installationSource?: import("@alcomd/sdk").ExtensionInstallationSource;
     installationTerms?: import("@alcomd/sdk").ExtensionInstallationTerms;
     mcpTools: import("@alcomd/sdk").McpToolPreview[];
     requiredPermissions: string[];

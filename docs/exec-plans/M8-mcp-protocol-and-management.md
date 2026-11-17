@@ -1254,3 +1254,24 @@ Core内存注册表已接真实认证完成、dispatcher及RAII清理；公开RP
 2026-11-17 所有者纠正权限管理分组：用“必需权限”“可选权限”“其他权限”三类替代先前已声明/未声明两组，其他权限指当前可授权目录中未声明的项。仅GUI呈现调整，去除逐行重复类型标记，空组显示“无”；安装同意、授权、RPC/State41/WIT均不变。相关浏览器单轮19/0、前端check通过，原Core验证继续按1c47a17及原输入复用，GUI候选更新中，不以旧二分类窗口冒充新版。
 
 三分类GUI已以e58c0d58bdc259a70482c7f8bc22fc1a0c7b5a38本地提交并完成前端check/build及仅GUI的嵌入资源debug构建。新窗口GUI84624实际连接隔离Core83680（仍用1c47a17程序/同一data/profile），5条管道、可见/响应；前后安装和授权完整行摘要相同。旧GUI覆盖文件锁失败、保活结束导致原隔离Core空闲退出的过程保留，现已按原程序/数据恢复，不改写为未重启。无新远端或人工签收，不重跑Core/迁移或全量门禁。
+
+## 单扩展源在线安装（2026-11-17，完整方案已批准实施）
+
+一个匿名HTTPS地址返回alcomd-extension-source-v1 JSON：packages恰好一个扩展ID，其下最多256版本（索引实际读取最多1MiB），每版本声明apiMajor/url/zipSHA256。Core下载现有签名.alcomdextension文件（64MiB），复验文件摘要、包签名、ID/版本/发布者及原权限接口；不把清单声明当授权或条款。新增extensions.inspectSource({url})与extensions.planInstallFromSource({url,version,expectedSourceFingerprint})、extensions.remote-install.v1、remote_extension_source来源及State42冻结来源证据；只允许认证local-owner＋extensions.manage，不新增权限或WIT。元数据变化revision_conflict，不静默换版本/重规划。安装同意、Apply、Operation/幂等/恢复及三类权限沿用，只有最后确认后安装；取消准备忽略迟到结果，不自动Apply或声称回滚。
+
+复用既有VPM适配代码中的HTTP、代理、限额和原子缓存，通过内部接口注入扩展引擎；扩展请求使用独立匿名HTTPS重定向策略，禁降级/userinfo/Referer/认证headers，查询参数保留且不记录敏感URL，不增加生产依赖。GUI同一安装入口本地/在线分段，不加仓库管理、未安装条目、更新或云服务。State42重建Plan来源CHECK并保全全部列/记录/外键/不可变条件，旧迁移和原运行数据不变。范围内本地提交获准，不推送、不进入M9、不恢复桌面控制。定向验证、HTTPS真实Core闭环及当前文档同步完成后交付。
+
+
+### 在线来源本地接线与证据（2026-11-17）
+
+已实现匿名HTTPS适配器→扩展引擎→application→Store/daemon→typed client/SDK→同一GUI安装弹窗。只支持单扩展多版本的新安装，来源变化先拒绝，再由用户重读；签名条款、必需权限、Plan/Apply及Operation沿用，不自动升级/启用或恢复发布者信任。State42仅重建计划来源CHECK并保存不可变来源，签名及权限声明仍取自包。
+
+没有新增生产依赖或包版本。为复用已实现的HTTPS客户端与缓存，在MCP既有真实Core测试模块新增一条alcomd-vpm测试依赖边；Cargo.lock只多这一条边。TLS夹具复用原365天公开测试证书，显式CA只在test-kill-gates测试构造器，不写系统信任，不放宽TLS，不新增生产参数或环境变量。新SDK对外类型与Schema同步，普通错误不显示原始响应或敏感URL。
+
+来源解析最终5/0，含严格重复键/未知字段/单ID/数量/字节/哈希/SemVer/空可选描述及完整query指纹；Schema/DTO1/0，既有M6合同5/0；State42首轮1/2定位SQLite重命名时外部日志触发器短暂缺表，修正连接局部legacy rename后3/0，最终新增重命名模式恢复断言的3/0；六项真实initializer升级/重开6/0。所有历史迁移保留。包/签名共用模块本轮9/0；缓存模块10/0、3项既有外部代理/认证夹具ignored，不能记全部覆盖。独立HTTPS URL规则1/0。
+
+新来源浏览器模块首轮6/0；稳定前端两相关模块单轮26/0、零重试，覆盖原本地路径、条款/必需权限、拒绝/空步骤、未知Apply不重试、权限变更，以及在线版本、清单变化、下载失败重试、长文本窄窗、取消/关闭动画/Esc迟到Plan不Apply。前端check/build和native桥检查通过；没有完整Chromium或release构建。
+
+真实HTTPS→typed RPC→Core→签名包→安装→幂等重放/重启来源的初轮1/0；后补精确十次重定向边界、真实外部Principal拒绝、无Authorization/Referer读回后需按最终测试日志记录，不能用初轮替代。测试在全新State42数据中执行。原State41自有窗口先确认0活动任务及精确归属才暂停；首轮结束以原程序/数据/profile恢复，五组公开状态完全一致，真实5条管道已核对。原四组数据/profile（36/346/10/303份）摘要保持，Unity及原开发程序未操作，不恢复桌面输入。
+
+前端最初翻译表逗号、确定性假客户端未同步的类型错误和新增Schema用例误放无校验依赖的包均保留为开发检查失败，修正后通过；Schema验证移至已有jsonschema依赖的Host测试入口，没有为测试增加新包。严格Clippy最初指出测试宏连续if及辅助函数置于测试模块后，按原门禁调整，无allow/断言/超时放宽。最终候选SHA、匹配程序摘要、最终真实用例和人工入口同步在现有状态/人工记录；未推送，没有本批Hosted CI/CodeQL，不以717d3e0的失败CI及成功CodeQL替代，M8仍进行中。

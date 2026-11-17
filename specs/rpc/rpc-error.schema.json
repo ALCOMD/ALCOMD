@@ -118,6 +118,8 @@
                 "extension_permission_denied",
                 "extension_scope_denied",
                 "extension_api_unsupported",
+                "extension_source_invalid",
+                "extension_source_unavailable",
                 "extension_instance_stale",
                 "extension_resource_limit",
                 "extension_crashed",

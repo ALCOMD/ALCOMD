@@ -1,0 +1,88 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schemas.alcomd.dev/extensions/source-v1.schema.json",
+    "title": "Single extension source v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "format",
+        "packages"
+    ],
+    "properties": {
+        "format": {
+            "const": "alcomd-extension-source-v1"
+        },
+        "packages": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 1,
+            "propertyNames": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 255,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+            },
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "displayName",
+                    "publisherFingerprint",
+                    "versions"
+                ],
+                "properties": {
+                    "displayName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                    },
+                    "publisherFingerprint": {
+                        "type": "string",
+                        "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 2048
+                    },
+                    "versions": {
+                        "type": "object",
+                        "minProperties": 1,
+                        "maxProperties": 256,
+                        "propertyNames": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        },
+                        "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "apiMajor",
+                                "url",
+                                "zipSHA256"
+                            ],
+                            "properties": {
+                                "apiMajor": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 4294967295
+                                },
+                                "url": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 8192,
+                                    "pattern": "^https://"
+                                },
+                                "zipSHA256": {
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{64}$"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "$comment": "Core additionally rejects duplicate JSON keys and validates strict SemVer, identity, anonymous HTTPS URLs and UTF-8 byte limits. Index <=1 MiB; optional description <=2048 UTF-8 bytes."
+}

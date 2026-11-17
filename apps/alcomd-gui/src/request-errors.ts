@@ -56,6 +56,12 @@ export function requestErrorMessage(code: string): string {
         case "directory_selection_failed":
             return "The selected location could not be used. Check the path and access permissions, or choose another location.";
 
+        case "extension_source_invalid":
+            return "This extension source is invalid or unsupported. Check the source URL and format.";
+        case "extension_source_unavailable":
+            return "The extension source could not be downloaded. Check the connection and try again.";
+        case "package_download_too_large":
+            return "The download exceeds the allowed size.";
         case "extension_manifest_invalid":
         case "extension_package_invalid":
             return "The extension package or manifest is invalid. Choose a valid extension package.";

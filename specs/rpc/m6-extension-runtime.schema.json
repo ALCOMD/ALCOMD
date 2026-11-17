@@ -8,6 +8,8 @@
         "extensions.get": ["extensions.read"],
         "extensions.permissions.list": ["extensions.read"],
         "extensions.planInstall": ["extensions.manage"],
+        "extensions.inspectSource": ["extensions.manage"],
+        "extensions.planInstallFromSource": ["extensions.manage"],
         "extensions.applyInstall": ["extensions.manage"],
         "extensions.enable": ["extensions.manage"],
         "extensions.disable": ["extensions.manage"],
@@ -21,6 +23,8 @@
         "extensions.get": "#/$defs/extensionResult",
         "extensions.permissions.list": "#/$defs/permissionsListResult",
         "extensions.planInstall": "#/$defs/planResult",
+        "extensions.inspectSource": "#/$defs/sourcePreview",
+        "extensions.planInstallFromSource": "#/$defs/planResult",
         "extensions.applyInstall": "#/$defs/operationResult",
         "extensions.enable": "#/$defs/extensionResult",
         "extensions.disable": "#/$defs/extensionResult",
@@ -53,6 +57,8 @@
         "scope": "current extension owner; active grants only; no implicit authorization or persistent query session"
     },
     "x-alcomd-method-params": {
+        "extensions.inspectSource": "#/$defs/inspectSourceParams",
+        "extensions.planInstallFromSource": "#/$defs/planInstallFromSourceParams",
         "extensions.applyInstall": "#/$defs/installApplyParams",
         "extensions.applyUninstall": "#/$defs/applyPlanParams"
     },
@@ -127,12 +133,13 @@
         "methodName": {
             "enum": [
                 "extensions.list", "extensions.get", "extensions.permissions.list", "extensions.planInstall",
+                "extensions.inspectSource", "extensions.planInstallFromSource",
                 "extensions.applyInstall", "extensions.enable", "extensions.disable",
                 "extensions.planUninstall", "extensions.applyUninstall",
                 "extensions.setGrant", "extensions.revokeGrant"
             ]
         },
-        "capability": {"enum": ["extensions.lifecycle.v1", "extensions.permissions.v1", "extensions.permissions.read.v1"]},
+        "capability": {"enum": ["extensions.lifecycle.v1", "extensions.remote-install.v1", "extensions.permissions.v1", "extensions.permissions.read.v1"]},
         "extensionId": {
             "type": "string", "minLength": 3, "maxLength": 255,
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
@@ -195,6 +202,126 @@
             "type": "array", "maxItems": 64,
             "items": {"type": "string", "minLength": 1, "maxLength": 128}
         },
+        "sourceUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192,
+            "pattern": "^https://",
+            "description": "Anonymous HTTPS; no userinfo or fragment; legal query preserved."
+        },
+        "inspectSourceParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/sourceUrl"
+                }
+            }
+        },
+        "planInstallFromSourceParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url",
+                "version",
+                "expectedSourceFingerprint"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/sourceUrl"
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "expectedSourceFingerprint": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
+        "installationSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url",
+                "version"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/sourceUrl"
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            }
+        },
+        "sourcePreview": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "url",
+                "extensionId",
+                "displayName",
+                "publisherFingerprint",
+                "versions",
+                "sourceFingerprint"
+            ],
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/sourceUrl"
+                },
+                "extensionId": {
+                    "$ref": "#/$defs/extensionId"
+                },
+                "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                },
+                "publisherFingerprint": {
+                    "type": "string",
+                    "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 2048
+                },
+                "versions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                            "version",
+                            "apiMajor"
+                        ],
+                        "properties": {
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "apiMajor": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 4294967295
+                            }
+                        }
+                    }
+                },
+                "sourceFingerprint": {
+                    "$ref": "#/$defs/sha256"
+                }
+            }
+        },
         "planInstallParams": {
             "type": "object", "additionalProperties": false,
             "required": ["sourceKind", "packagePath", "expectedRevision"],
@@ -222,11 +349,12 @@
             ],
             "properties": {
                 "installationTerms": {"$ref": "#/$defs/installationTerms"},
+                "installationSource": {"$ref": "#/$defs/installationSource"},
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}},
                 "planId": {"$ref": "#/$defs/uuid"},
                 "action": {"enum": ["install", "uninstall"]},
                 "state": {"enum": ["unapplied", "applied"]},
-                "sourceKind": {"enum": ["not_applicable", "local_owner_selected", "first_party_packaged"]},
+                "sourceKind": {"enum": ["not_applicable", "local_owner_selected", "first_party_packaged", "remote_extension_source"]},
                 "extensionId": {"$ref": "#/$defs/extensionId"},
                 "version": {"type": "string", "minLength": 1, "maxLength": 128},
                 "apiMajor": {"const": 1},
@@ -280,6 +408,7 @@
             "required": ["extension"],
             "properties": {
                 "extension": {"$ref": "#/$defs/extensionRecord"},
+                "installationSource": {"$ref": "#/$defs/installationSource"},
                 "mcpTools": {"type":"array","maxItems":32,"items":{"$ref":"#/$defs/toolPreview"}}
             }
         },

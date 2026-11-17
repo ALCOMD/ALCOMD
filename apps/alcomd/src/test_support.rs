@@ -237,7 +237,20 @@ pub async fn start_with_data_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None).await
+    start(ipc, data, shutdown, None, None).await
+}
+
+/// Injects only a transport with an explicitly trusted test CA; real RPC/install validation remains unchanged.
+pub async fn start_with_extension_source_until<F>(
+    ipc: IpcConfig,
+    data: DataConfig,
+    source: Arc<dyn alcomd_application::ExtensionSourceFetcher>,
+    shutdown: F,
+) -> Result<TestDaemon, BindError>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    start(ipc, data, shutdown, None, Some(source)).await
 }
 
 /// Starts the M1/M2 fixtures with an automatically cleaned temporary data root.
@@ -247,7 +260,7 @@ where
 {
     let directory = TemporaryDataDirectory::new();
     let data = DataConfig::isolated(directory.0.clone());
-    start(ipc, data, shutdown, Some(directory)).await
+    start(ipc, data, shutdown, Some(directory), None).await
 }
 
 async fn start<F>(
@@ -255,6 +268,7 @@ async fn start<F>(
     data: DataConfig,
     shutdown: F,
     temporary_data: Option<TemporaryDataDirectory>,
+    source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
 ) -> Result<TestDaemon, BindError>
 where
     F: Future<Output = ()> + Send + 'static,
@@ -263,10 +277,11 @@ where
         .data_directory()
         .ok_or_else(|| BindError::Io(std::io::Error::other("test daemon requires isolated data")))?
         .join("test-user-directories");
-    let (listener, applications) = super::initialize_daemon_with_directories(
+    let (listener, applications) = super::initialize_daemon_with_adapters(
         ipc,
         data,
         Arc::new(TestStorageDirectories(storage_root)),
+        source,
     )
     .await?;
     let listener = Arc::new(Mutex::new(listener));
