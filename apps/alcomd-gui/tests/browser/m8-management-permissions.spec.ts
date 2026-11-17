@@ -147,6 +147,9 @@ test("MCP management permission rows read every grant page and use the exact glo
     await expect(projects.getByRole("switch", { name: "Read projects", exact: true })).toBeChecked();
     await expect(dialog.getByRole("combobox", { name: "Permission", exact: true })).toHaveCount(0);
     await expect(dialog.getByRole("region", { name: "Requested permissions", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("region", { name: "Required permissions", exact: true }).getByText("None", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("region", { name: "Optional permissions", exact: true }).getByRole("switch")).toHaveCount(3);
+    await expect(dialog.getByRole("region", { name: "Other permissions", exact: true }).getByRole("switch")).toHaveCount(9);
     await expect(dialog.getByText("Required", { exact: true })).toHaveCount(0);
     await expect(manage).toContainText("Create MCP clients, change their grants, and permanently revoke them.");
     expect(await page.evaluate(() => window.h4Management.requests.filter((r) => r.method === "extensions.setGrant").length)).toBe(0);

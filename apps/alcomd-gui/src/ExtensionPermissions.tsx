@@ -161,8 +161,9 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     };
     const requested = visibleValue === undefined ? [] : [...new Set([...visibleValue.requiredPermissions, ...visibleValue.optionalPermissions])];
     const groups = [
-        { title: t("Declared permissions"), permissions: requested },
-        { title: t("Undeclared permissions"), permissions: visibleValue?.availablePermissions.filter((p) => !requested.includes(p)) ?? [] }
+        { title: t("Required permissions"), permissions: visibleValue?.requiredPermissions ?? [] },
+        { title: t("Optional permissions"), permissions: visibleValue?.optionalPermissions ?? [] },
+        { title: t("Other permissions"), permissions: visibleValue?.availablePermissions.filter((p) => !requested.includes(p)) ?? [] }
     ];
     const blocked = !canWrite || !ownsRead || writing || loading || writeUnknown;
     return <section className="extension-permissions" aria-label={t("Extension permissions")}>
@@ -170,7 +171,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
         {visibleError === undefined ? null : <div role="alert" data-notification-error={visibleError.code}><p>{t(requestErrorMessage(visibleError.code))}</p><code>{visibleError.code}</code>{visibleError.diagnosticId === undefined ? null : <p><code>{visibleError.diagnosticId}</code></p>}{!writeUnknown ? null : <p>{t("The permission change may have completed. Refresh permissions before trying again.")}</p>}<LoadingButton disabled={writing} loading={refreshFeedback.busy} onClick={manualReload} type="button" variant="text">{t("Refresh")}</LoadingButton></div>}
         {visibleValue === undefined ? null : groups.map((group) => <section className="extension-permission-group" aria-label={group.title} key={group.title}>
             <h3>{group.title}</h3>
-            {group.permissions.length === 0 ? <p>{t("No permissions requested")}</p> : <div className="extension-permission-options">
+            {group.permissions.length === 0 ? <p>{t("None")}</p> : <div className="extension-permission-options">
             {group.permissions.map((permission) => {
                 const name = permissionName(permission, t);
                 const grants = visibleValue.grants.filter((grant) => grant.permission === permission);
@@ -186,7 +187,6 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                         </div>
                     </div>
                     <p className="extension-permission-description">{permissionDescription(permission, t)}</p>
-                    {!requested.includes(permission) ? null : <p className="extension-permission-required">{t(visibleValue.requiredPermissions.includes(permission) ? "Required" : "Optional")}</p>}
 
                 </section>;
             })}

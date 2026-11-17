@@ -1087,9 +1087,7 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "恢复后需要单独解析 VPM 软件包依赖。",
         "ja-JP": "復元後にVPMパッケージの依存関係を別途解決する必要があります。"
     },
-    "Optional": { "zh-CN": "可选", "ja-JP": "任意" },
-    "Declared permissions": { "zh-CN": "扩展已声明", "ja-JP": "拡張機能が宣言した権限" },
-    "Undeclared permissions": { "zh-CN": "扩展未声明", "ja-JP": "拡張機能が宣言していない権限" },
+    "Other permissions": { "zh-CN": "其他权限", "ja-JP": "その他の権限" },
     "Extension terms": { "zh-CN": "扩展使用条款", "ja-JP": "拡張機能の利用条件" },
     "Decline": { "zh-CN": "拒绝", "ja-JP": "拒否" },
     "Agree and continue": { "zh-CN": "同意并继续", "ja-JP": "同意して次へ" },

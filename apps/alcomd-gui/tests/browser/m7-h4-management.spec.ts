@@ -212,7 +212,7 @@ test("H4 permission declarations remain separate from empty and partial actual g
     await openPermissions(page);
     await expect(projects(page).getByRole("heading", { name: "Read projects", exact: true })).toBeVisible();
     await expect(background(page).getByRole("heading", { name: "Run in background", exact: true })).toBeVisible();
-    await expect(projects(page).getByText("Required", { exact: true })).toBeVisible();
+    await expect(modal(page).getByRole("region", { name: "Required permissions", exact: true }).getByRole("group", { name: "Read projects", exact: true })).toBeVisible();
     await expect(projects(page).getByRole("switch", { name: "Read projects", exact: true })).not.toBeChecked();
     await expect(background(page).getByRole("switch", { name: "Run in background", exact: true })).not.toBeChecked();
     await expect(projects(page).getByRole("combobox")).toHaveCount(0);
@@ -398,14 +398,20 @@ for (const hasTerms of [false, true]) {
     });
 }
 
-test("Permission management shows both groups and grants an undeclared capability", async ({ page }) => {
+test("Permission management separates required optional and other permissions and grants an undeclared capability", async ({ page }) => {
     await open(page, true);
     await openPermissions(page);
-    const declared = modal(page).getByRole("region", { name: "Declared permissions", exact: true });
-    const undeclared = modal(page).getByRole("region", { name: "Undeclared permissions", exact: true });
-    await expect(declared.getByRole("switch")).toHaveCount(2);
-    await expect(undeclared.getByRole("switch")).toHaveCount(10);
-    const toggle = undeclared.getByRole("switch", { name: "Read MCP clients", exact: true });
+    const required = modal(page).getByRole("region", { name: "Required permissions", exact: true });
+    const optional = modal(page).getByRole("region", { name: "Optional permissions", exact: true });
+    const other = modal(page).getByRole("region", { name: "Other permissions", exact: true });
+    await expect(modal(page).locator(".extension-permission-group > h3")).toHaveText(["Required permissions", "Optional permissions", "Other permissions"]);
+    await expect(required.getByRole("switch")).toHaveCount(1);
+    await expect(required.getByRole("switch", { name: "Read projects", exact: true })).toBeVisible();
+    await expect(optional.getByRole("switch")).toHaveCount(1);
+    await expect(optional.getByRole("switch", { name: "Run in background", exact: true })).toBeVisible();
+    await expect(other.getByRole("switch")).toHaveCount(10);
+    await expect(modal(page).getByRole("switch")).toHaveCount(12);
+    const toggle = other.getByRole("switch", { name: "Read MCP clients", exact: true });
     await expect(toggle).not.toBeChecked();
     await toggle.click();
     await expect(toggle).toBeChecked();
