@@ -137,7 +137,7 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 4. 查看当前可用工具并运行一项已授权的读取。清理时用 `codex mcp remove alcomd` 移除该配置，并在 Core 中撤销专用客户端。配置名若不同，使用实际配置名。
 
-该版本在隔离配置开启 `mcp_2026_07_28` 后已实测 HTTP Bearer 和预登记 OAuth。STDIO 实测仍发送旧握手，不能接入冻结协议。ALCOMD 自动写入客户端配置、Cursor 和真实通知消费仍待验证。 [接入证据](../../docs/testing/m8-management-manual-20261115.md)
+该版本在隔离配置开启 `mcp_2026_07_28` 后已实测 HTTP Bearer 和预登记 OAuth。STDIO 实测仍发送旧握手，不能接入冻结协议。ALCOMD 自动写入客户端配置和真实通知消费仍待验证。 [接入证据](../../docs/testing/m8-management-manual-20261115.md)
 
 ### Claude Code 2.1.327 的回环 HTTP 接入
 
@@ -165,3 +165,7 @@ try {
 ```
 
 清理时运行 `claude mcp remove alcomd --scope user`，并在 Core 中撤销该专用客户端。Windows 独立配置已实测添加、拒绝同名覆盖、真实回环 HTTP 连接和移除。Claude Code 的 STDIO、OAuth、模型发起的工具调用及通知消费未在此次检查中执行。 [Claude Code MCP 配置](https://code.claude.com/docs/en/mcp) · [协议支持记录](https://code.claude.com/docs/en/changelog)
+
+### Cursor CLI 2026.11.17-f532c45
+
+Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25` 的 `initialize`，无法接入当前冻结的 `2026-07-28` 服务。其他版本和 OAuth 未验证。 [实测记录](../../docs/exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-cursor-具名版本核对)

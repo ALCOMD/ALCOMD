@@ -1607,7 +1607,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 按所有者确认，M8 以冻结 v3.4.0 的实际用户能力为下限，按用户能否在现行授权下完成同等流程并取得所需结果验收。允许一个 V4 工具覆盖多个旧用例，也允许一个流程复用多个现有入口。工具数量、名称、字段组织和交互顺序由 V4 的实际需要决定。
 
-对照 `4aa98ae4f18d42c10137278997180dbede991e88` 的工具参考、`vrc-get-gui/src/mcp/tools.rs` 注册目录和 `vrc-get-gui/src/backend/mcp_capabilities.rs`，确认实际注册 33 个工具。既有 [M-1 逐项映射](../baselines/mcp-tool-contract.md#33-个冻结用例的-v4-映射) 用作查漏索引，下表按当前 Core 与适配器复核用户流程。旧协议、共享凭据及已撤销日志能力继续按现行决定处理。
+对照 `4aa98ae4f18d42c10137278997180dbede991e88` 的工具参考、`vrc-get-gui/src/mcp/tools.rs` 注册目录和 `vrc-get-gui/src/backend/mcp_capabilities.rs`，确认实际注册 33 个工具。既有 [M-1 逐项映射](../baselines/mcp-tool-contract.md#33-个冻结用例的-v4-映射) 用作查漏索引。下表保留首批实施前的审计。当前结果见[能力与证据清单](#2026-11-19-当前能力与证据清单)。
 
 | v3 用例 | 当前 V4 MCP 状态及具体缺口 |
 | --- | --- |
@@ -1779,10 +1779,11 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 | 能力 | 建议公开差异与验收证据 |
 | --- | --- |
-| 项目内实际包 | 在共享 Core 包读取用例中提供实际安装视图，使用项目 ID、预期修订、cursor、limit，供 GUI、CLI 与 MCP 复用。工具拟为 `alcomd_list_installed_packages`。要求 `projects.read` 和 `packages.read`。Core 复用项目本地清单、锁和实际包目录观察，返回包 ID、声明/锁定/观察版本、观察状态以及可核实的公开包字段。来源只在现有证据能绑定实际安装时出现。解析检查返回 `needed`、`no_issue_observed` 或 `unknown` 及具体原因，分页绑定当前授权、项目修订与观察指纹。以目录缺失、版本不符和观察失败分别验证。 |
-| 现行模板定义与原生内容 | 提供共享 `projectTemplates.get`、`projectTemplates.edit`。编辑以 ID、预期修订、明确的名称和依赖差异、原生附件增删以及幂等键复用保存 Operation，避免完整重建而遗失未改字段。MCP 创建手动模板和移除复用现有保存、移除用例。提议 `templates.read` 和 `templates.manage` 两项独立 `global/*` 能力，创建项目选材沿用 `projects.create`。归档内 `Assets/` 的附件使用相对名。文件输入、确认和校验由同一 Core 用例根据已认证调用者及其文件授权执行。复制校验内容摘要，已有 `.meta` 在未明确修改时保留，移除成对内容走原模板归档提交。按锁定模板、未获准文件、过期修订、其余依赖及附件保全验证。旧格式及 UnityPackage 导入留 M11。 |
+| 项目内实际包 | 新增共享只读 `packages.projectInventory({projectId,expectedRevision,cursor?,limit?})` 与同结果 MCP 工具 `alcomd_list_installed_packages`。沿用 `projects.read + packages.read`，查询仅使用项目本地数据。输出包 ID、可用的声明/锁定/观察版本、`matched/missing/version_mismatch/unknown` 及已有的可核实元数据。解析检查返回 `needed/no_issue_observed/unknown` 与原因。分页按包 ID，默认 50、最多 200 项，游标绑定授权、项目修订、实际观察指纹。来源只在本地证据可验证时返回。 |
+| 现行模板定义与原生内容 | 新增共享 `projectTemplates.get({id,cursor?,limit?})` 与 `projectTemplates.edit({id,expectedRevision,changes,idempotencyKey})`。详情返回记录、直接依赖及按路径分页的附件名，编辑接受可省略的名称、依赖增删及附件增删差异，返回原模板保存 Operation。模板读写由两项能力 `templates.read` 和 `templates.manage` 按实际调用者授予，`global/*`，默认关闭；创建项目选择模板仍沿用 `projects.create`。复用现有手动保存/移除，保留锁定模板保护、修订与幂等。 |
+| 附件文件输入 | 三端使用同一 Core 策略。在归档 `Assets/` 下，以规范化相对名定位一个原生文件，保留未修改的 `.meta`，删除时按现有资产配对规则处理。由本机所有者通过共享 `projectTemplates.approveAttachment({clientId,id,expectedRevision,targetPath,sourceFile})` 给受委托调用者批准一个常规文件；句柄绑定调用者、模板修订、确切目标、文件身份与 SHA-256。使用已有的有界短时审批与内容寻址归档机制。获权的本机所有者可直接选择文件，受委托身份传审批句柄。Core 在接受写入任务前校验并冻结材料，防止审批后换文件或重启后读取新内容。验证另一个调用者、过期或过时审批、改名冲突及未选内容保全。旧格式及 UnityPackage 导入留 M11。 |
 
-模板能力名和共享附件输入属于下一组待审合同。建议采用既有 State、Config、认证、复制和保存运行机制，扩展 Host/WIT 保持原合同。实际需要附带的迁移或新依赖另列证据后决定。
+以上是本批待审的新增共享合同。复用既有 State、Config、认证、复制和保存运行机制，保持当前 WIT。接受记录绑定实际调用者，模板目录保持原资源所有者。新增接口建议共用 capability `packages.project-inventory.v1` 与 `projectTemplates.edit.v1`。现有调用者继续协商原能力，已有 RPC 请求及回复形状保持。若既有模板任务无法持久保全已接受材料，则确认准确存储差异后再实施受影响部分。
 
 #### 环境读取按三端权限对齐
 
@@ -1816,3 +1817,26 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 测试在独立的 Claude 配置中登记回环 HTTP，使用仅注入子进程的独立 Core 凭据，验证 `mcp get` 报告 Connected。同名登记被拒绝，无关配置保留，移除后目标条目消失。配置只含环境变量引用。没有登录 Claude 账户、修改系统信任或改动用户配置。原隔离窗口恢复，五组公开状态一致。具名结果位于 `target/m8-claude-code-compat-20261119/`。STDIO、OAuth、模型工具调用、自动配置及 Cursor 的实际接入仍未验证。 [实测接入步骤](../../specs/mcp/toolset-v1.md#claude-code-21327-的回环-http-接入)
 
 本机整仓 `cargo xtask check` 失败，18 条路径均属于已存在的嵌套 Git worktree `.local/worktrees/alcomd-deep-links`。检查器扫描该独立工作树后用主仓路径比较 unsafe 白名单。保持该工作树、扫描规则和原断言。本批无新增远端结果。
+
+### 2026-11-19 Cursor 具名版本核对
+
+本轮从 Cursor 官方 Windows 安装端点取得其指定的 x64 CLI 版本 `2026.11.17-f532c45`。包 SHA-256 为 `74c2bc22d0f1b8e424fa8bc5cf8ffc756ebc0e89706be5cdbfd56c57e4b9eaf8`。仅解包到 `target/m8-cursor-compat-20261119/`，调用包内 Node 和 CLI 入口，配置、项目和缓存均在一次性目录。没有运行安装脚本、登录或改写用户配置。 [官方安装入口](https://cursor.com/docs/cli/installation)
+
+首次 `mcp list-tools` 未找到夹具配置，没有发请求。配置放入隔离用户目录的 `.cursor/mcp.json` 后，实际 CLI 找到条目。HTTP 的 `mcp list-tools` 和 `mcp list` 共观察到三次没有协议头的 `initialize`，请求版本都是 `2025-11-25`，随后退到 GET。独立 STDIO 夹具又观察到同版本的两次 `initialize`。具名版本的这两种传输均无法按 ALCOMD 冻结的 `2026-07-28` 协议完成握手。探针只记录协商，未连接真实 Core；OAuth 与其他 Cursor 版本未验证。结果和运行脚本保存在该目录。HTTP 结果与厂商此前说明的版本行为一致。 [Cursor 协议说明](https://forum.cursor.com/t/mcp-client-cannot-connect-to-modern-only-2026-07-28-streamable-http-servers-legacy-initialize-rejected/172536/5)
+
+### 2026-11-19 当前能力与证据清单
+
+| 用户能力 | 现行入口与证据 | 仍需处理 |
+| --- | --- | --- |
+| 查看项目、查包、选来源、安装和包变更 | `alcomd_list_projects` 与 `alcomd_get_project` 返回 Core 登记与路径。查包、来源、安装、升级、降级、重装、卸载、解析与合并 Plan 由同一 Core 负责。真实包与仓库定向候选 `c3e7912a`，项目路径和原卸载回归 `24c4f36d`。 | 三端共用的实际安装观察和解析状态仍待接通。 |
+| 查看、登记、刷新和移除仓库 | `mcp.repositories.v1` 与关联工具，真实 HTTPS/OAuth 仓库用例 1/0。Core 按登记来源使用原凭据规则，内置仓库继续受保护。候选 `c3e7912a`。 | 既有登记能力可以使用，来源地址和凭据管理仍遵循各自已接受的合同。 |
+| 登记、创建和复制项目、备份与恢复 | `mcp.project-workflows.v1` 共用 Core 业务和 Operation。`aa3a8c5f` 的原生与冻结 SDK 定向各 1/0，OAuth 撤权、同键恢复与在途取消分别见 `ec99aa05`、`78ef488`。 | 最终需按同一候选汇总适用门禁。 |
+| 模板定义、依赖及附件 | 创建项目可以读取模板并选用。原生已有模板保存、导入导出及移除。 | 三端共同的详情、现行格式的模板编辑、附件与对应写入流程待接通。旧模板、UnityPackage 和旧备份格式按既定 M11 边界。 |
+| 设置、已登记 Unity 和有效启动参数 | `3ec540fe` 复用既有设置、安装和项目启动参数读接口。真实隔离 Core 验证权限和结果一致、OAuth 上限与撤权。 | 已有桌面验收继续有效。 |
+| 任务状态、取消、恢复及观测 | `alcomd_list_operations`、`alcomd_get_operation`、`alcomd_cancel_operation` 已接通。项目与备份已有真实身份归属、回包丢失及在途取消证据。工具目录订阅、只读连接和请求观测有既有冻结 SDK 与 Host 证据。 | 当前已接通流程的确认在接受任务前完成。若后续真实业务需要任务在途输入，再为该业务核对继续入口。真实 Codex 推送消费、持续满载和 TCP 发送缓冲耗尽未验证。 |
+| 客户端快速接入 | Codex 0.153.4 具名回环 HTTP Bearer 和预登记 OAuth，Claude Code 2.1.327 具名回环 HTTP，均有独立配置证据。 | Cursor 本轮具名构建的 HTTP 和 STDIO 握手不兼容，自动配置、普通浏览器受信任 TLS 仍未验证。 |
+| 管理扩展、分发及撤销能力 | 管理、权限开关、活动查看及签名测试组件具备定向证据。A-026 的旧日志入口处于已撤销状态。 | 扩展人工体验和普通在线来源按原安排延期，正式签名和装配归 M12。历史 Host `resource_limit` 仍未定位。 |
+
+`06dd8b03` 修正仓库检查沿 `.local/worktrees` 进入独立 Git 工作树的误报。检查器只排除 Git 实际登记且仍存在的该位置子工作树，主仓路径和安全断言保持。实际主仓 `cargo xtask check` 通过，在同一父目录放置普通未登记的测试 Rust 文件时能识别违规，撤回该临时文件后同一检查再次通过。xtask 严格 Clippy、fmt 和 diff 通过。原 18 项失败属于改动前，历史记录保留。
+
+完整同 SHA 本地与远端最终验收仍待稳定候选。现有 `2735119f` 的 macOS 作业未执行，原 CodeQL 与 Windows、Ubuntu 结果仅对应该 SHA。M8 保持进行中。
