@@ -1616,7 +1616,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 | 列出、添加和移除仓库（3） | Core 有 `repositories.list/inspect/register/unregister`，外部 MCP 未开放。首批目录提供查包所需的仓库索引与可用性，完整来源显示策略、登记和移除另批。仓库管理须对 URL、凭据和来源变更定义独立边界。 |
 | 创建、登记、复制项目、创建备份、从备份恢复（5） | Core 有 `projects.create/register/planCopy/applyCopy` 和 `backups.create/planRestore/applyRestore`。MCP 调用身份、导入及目标目录边界、备份授权和对应 Operation 投影待审。 |
 | 模板列表、详情、创建、编辑、设置和移除包、设置和移除 UnityPackage 附件、移除模板（9） | Core 使用 v4 模板模型及 `projectTemplates.list/save/remove`，外部 MCP 未开放。优先复用同一模板读取和编辑流程覆盖包及附件的增删，验证只改变用户指定的内容，保留内置模板保护；现模型无法完成的操作单列。 |
-| 环境设置（1） | Unity 安装读取和 `settings.get` 已存在，外部 MCP 未开放。需定义仅包含已登记 Unity、有效启动参数及项目/备份目录的授权视图，目录等敏感值须明确授权。 |
+| 环境设置（1） | Unity 安装、有效启动参数和默认位置通过同一 Core 读入口提供。三端使用相同权限和原值，见下方环境读取对齐记录。 |
 | 活动搜索、详情、统计、上下文及技术日志搜索、详情、统计（7） | A-026 后续决定明确撤销原活动/技术日志产品入口及相关权限。列为已撤销能力，当前 M8 的 Operation、事件和传输观测各按自身合同记验收。若要恢复这七项，需先明确修订 A-026。 |
 
 工具外仍有两项对照。v3 七个长任务可轮询、取消，个别流程可等待输入和审批。V4 使用 A-021 的 `OperationId`；目前工具只覆盖包任务查询及取消，需随各流程核对真实确认、继续和结果能力，Core 尚无通用 input/approve/reject/resume RPC。v3 Windows 上还有 Codex、Claude Code、Cursor 快速配置与覆盖确认。V4 当前有连接配置说明、受控凭据及真实 Codex HTTP/OAuth 证据，便捷配置仍有缺口，需按各客户端的冻结协议支持和独立凭据边界处理。管理扩展人工验证仍按所有者要求延期。
@@ -1650,7 +1650,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 | --- | --- |
 | 仓库查看、添加、移除 | 使用已登记来源按同一 Core 规则。登记和移除仍需准备现有 `repositories.inspect/register/unregister` 的调用者、资源 owner、确认和凭据管理差异。来源可用权限与仓库管理权限各按既有业务范围校验。 |
 | 项目登记、创建、复制、备份与恢复 | 核对 `projects.register/create/planCopy/applyCopy`、`backups.create/planRestore/applyRestore` 的本机或 owner 限制。开放相关现有能力时，将授权的默认项目、备份根与资源身份作为 Core 执行条件。根外的外部输入须以本机审批绑定精确目标和请求调用者，不能借用 owner。注册备份和新项目发布沿用现有持久任务及原 Plan。旧 v3 zip 仍归 M11。路径审批只服务实际需要根外输入的流程，接口与持久化差异须另经集中审批。 |
-| 模板与环境 | 当前 `projectTemplates.*` 明限本机所有者，列表只提供摘要，`save` 接受完整模板来源。建议使用窄详情与带预期修订的合并编辑复用保存，写入仍保护内置记录。首次实现只涵盖现行原生模板格式；UnityPackage 与旧模板归 M11。环境以现有 `settings.read`、`unity.read` 能力提供独立安全投影，限 Unity 版本、有效启动参数及获准路径，不开放 Settings 整体读取。 |
+| 模板与环境 | 模板列表提供摘要，`save` 接受完整模板来源。建议使用详情与带预期修订的合并编辑复用保存，写入仍保护内置记录。首次实现只涵盖现行原生模板格式，UnityPackage 与旧模板归 M11。环境复用现有设置及 Unity 读入口。 |
 | 长任务和接入 | `operations.get/cancel` 适合继续共用，当前适配器把结果限制为 `packages.apply`。各业务增加明确结果投影；只有真实需要等待的工作才增加绑定任务/修订的 typed input、approve、reject、resume。客户端配置优先交付显式本机引导，隔离校验后仅更新用户确认的目标配置项。需要的 Host/WIT 接口集中评估，扩展仍不持有明文秘密或任意配置写权限。 |
 
 批准前不扩展这些接口、权限或数据库状态。扩展人工延期、普通浏览器受信任 TLS、实际 Codex 订阅消费、持续满载与历史 Host `resource_limit` 按现有责任单独记结果。
@@ -1769,7 +1769,7 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 | 用户流程 | 可复用的 Core 行为 | 后续公共合同须明确的最小差异 |
 | --- | --- | --- |
-| 读取实际安装的包及判断是否需要解析 | 候选页已经用项目内 `Packages/<id>/package.json` 与锁定 ID、版本核对展示信息。包计划检查器可识别锁定包的实际缺失，目录查询可以返回同版本的可用来源。 | 建议为 `mcp.packages.query` 增加带项目 ID、修订及现有不透明游标的 `installed` 查询，工具名为 `alcomd_list_installed_packages`。继续要求 `projects.read`、`packages.read`，此查询无需查仓库。返回锁定版本、实际观察状态及已核实的包信息，具备来源证据时才提供来源。解析状态只基于锁定包缺失、直接依赖缺少匹配锁或 Core 已知的其他解析条件。不完整或变化的观察标出 `unknown`，不把同版本目录候选当作安装来源。 |
+| 读取实际安装的包及判断是否需要解析 | 候选页已经用项目内 `Packages/<id>/package.json` 与锁定 ID、版本核对展示信息。包计划检查器可识别锁定包的实际缺失，目录查询可以返回同版本的可用来源。 | 建议三端共用项目包读取能力，沿用 `projects.read` 和 `packages.read`。返回锁定版本、实际观察状态及已核实的包信息，具备来源证据时才提供来源。解析状态基于已观察的目录、声明和锁记录。不完整或变化的观察标为 `unknown`。 |
 | 查看和修改项目模板 | `projectTemplates.list` 只给摘要。`save` 可从文件、项目或手动定义保存。用原模板作基础时保留资产树、UPM 清单和 VPM 锁，直接依赖只追加或覆盖，无法精确移除。归档已校验并按摘要冻结。 | 建议新增共享 `projectTemplates.get(id)` 与 `projectTemplates.edit(id, expectedRevision, changes, idempotencyKey)`。详情返回标识、修订、可编辑性、名称、Unity 版本、直接依赖和原生附件目录。编辑以明确增删改修改现有归档，复用原保存任务、归档校验、发布及登记事务。锁定模板拒绝修改、移除。现有原生附件是归档里的内容，没有独立附件登记；编辑只限模板归档 `Assets/` 中显式选择的原生资产及其关联 `.meta`，新增输入使用本机所有者批准的文件，不接受任意路径。UnityPackage 导入行为及旧模板格式仍属 M11。模板浏览与编辑需要各自的默认关闭能力，创建项目所需的模板选择权保持独立。 |
 | 读取有效环境 | Unity 安装列表已有真实登记及基于 Core 的检查。有效启动参数由 `unity.projectLaunchConfig.get` 对应的 application 用例按项目设置或默认值取用。项目和备份目录共用已解析的设置与平台默认值。 | 所有者要求按 Core 权限对齐三个入口。MCP 直接调用已有 `settings.get`、`unity.installations.list`、`unity.projectLaunchConfig.get`，获得对应的原有结果，包括 Unity 安装位置和完整有效启动参数。 |
 
@@ -1779,7 +1779,7 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 | 能力 | 建议公开差异与验收证据 |
 | --- | --- |
-| 项目内实际包 | 在 `mcp.packages.query` 的 `view.kind` 增加 `installed`，使用既有 `project: {projectId,expectedRevision}`、cursor、limit。工具为 `alcomd_list_installed_packages`。仅此视图要求 `projects.read` 和 `packages.read`。Core 复用项目本地清单、锁和实际包目录观察，返回包 ID、声明/锁定/观察版本、观察状态以及可核实的公开包字段。来源只在现有证据能绑定实际安装时出现。解析检查返回 `needed`、`no_issue_observed` 或 `unknown` 及具体原因，分页绑定当前授权、项目修订与观察指纹。以目录缺失、版本不符和观察失败分别验证。 |
+| 项目内实际包 | 在共享 Core 包读取用例中提供实际安装视图，使用项目 ID、预期修订、cursor、limit，供 GUI、CLI 与 MCP 复用。工具拟为 `alcomd_list_installed_packages`。要求 `projects.read` 和 `packages.read`。Core 复用项目本地清单、锁和实际包目录观察，返回包 ID、声明/锁定/观察版本、观察状态以及可核实的公开包字段。来源只在现有证据能绑定实际安装时出现。解析检查返回 `needed`、`no_issue_observed` 或 `unknown` 及具体原因，分页绑定当前授权、项目修订与观察指纹。以目录缺失、版本不符和观察失败分别验证。 |
 | 现行模板定义与原生内容 | 提供共享 `projectTemplates.get`、`projectTemplates.edit`。编辑以 ID、预期修订、明确的名称和依赖差异、原生附件增删以及幂等键复用保存 Operation，避免完整重建而遗失未改字段。MCP 创建手动模板和移除复用现有保存、移除用例。提议 `templates.read` 和 `templates.manage` 两项独立 `global/*` 能力，创建项目选材沿用 `projects.create`。归档内 `Assets/` 的附件使用相对名。文件输入、确认和校验由同一 Core 用例根据已认证调用者及其文件授权执行。复制校验内容摘要，已有 `.meta` 在未明确修改时保留，移除成对内容走原模板归档提交。按锁定模板、未获准文件、过期修订、其余依赖及附件保全验证。旧格式及 UnityPackage 导入留 M11。 |
 
 模板能力名和共享附件输入属于下一组待审合同。建议采用既有 State、Config、认证、复制和保存运行机制，扩展 Host/WIT 保持原合同。实际需要附带的迁移或新依赖另列证据后决定。
@@ -1787,6 +1787,12 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 #### 环境读取按三端权限对齐
 
 所有者明确要求 MCP、GUI、CLI 对齐能力范围。Core 依据身份及授予的能力决定结果。复用原三个 RPC、原请求和结果类型。把现有 `settings.read`、`unity.read` 接入 MCP 显式授权与 OAuth 同意。项目启动参数继续用原 `projects.read + unity.read` 拿到完整默认、覆盖和有效值。已登记安装查同一资源，调用身份保持原 Principal。GUI、CLI 原有设置或 Unity 写入走既有授权。 [工具映射](../../specs/mcp/toolset-v1.md#读取设置和-unity-环境)
+
+`3ec540fe` 的 Windows 真实隔离 Core 与冻结协议 SDK 定向用例 1/0。原生所有者、受授权的本机 typed client 和 HTTPS/OAuth MCP 读取同一设置、目录与完整启动参数。用两条隔离的预校验安装记录核对路径、按页读取及版本选项。零授权被拒绝，OAuth 同意缺少 Unity 读取能力时返回 403。撤回 Unity 授权后，存续客户端读取启动配置被拒绝，设置读取保持有效。测试二进制 SHA-256 `b18282f1fbbc7f6e81738e90168bf7606eeb8d48ef062aeea6e891bb3e24900d`。MCP 单元 16/0，管理扩展单元 9/0、doc-test 1/0，Core、CLI、MCP 和扩展严格 Clippy、扩展 Wasm、fmt、锁定 metadata、关联 JSON 引用及授权枚举、diff 检查通过。原隔离窗口恢复，五组公开状态一致。证据位于 `target/m8-environment-parity-20261119/`。本轮覆盖读取合同，实际 Unity 自动发现和桌面交互沿用先前独立验收。
+
+`24c4f36d` 对齐 `projects.read` 返回值。项目列表及详情带同一 Core 登记的 `root_path`，保持已有权限、资源所有权、Plan 和 Operation 归属。严格解析旧输出的客户端需使用新 Schema。真实 Windows HTTP 业务用例首轮 0/1，聚合断言仍禁止在任何响应中出现路径字段。更新为只在授权成功的项目读取数据中允许路径，同时保留所有凭据与其他工具的路径断言，复验 1/0。分别将列表和详情路径与本机原生登记比对，并保留零授权、撤权和任务归属检查。最终测试二进制 SHA-256 `e25e11bec793d8b1891e1fbc93ee8d37b8240c83fa023eb2714ca273db0d6fcb`。两轮证据在 `target/m8-project-path-parity-20261119/`，原隔离窗口恢复，五组公开状态一致。
+
+协议 Schema 套件 52/0。管理扩展合同首轮 3/1，旧测试组件的源码摘要与当前授权页面源码不符。`9204a352` 用现有构建与编码入口重建测试组件，核对其余冻结输入，更新当前组件及两个摘要，合同复验 4/0。新组件 SHA-256 `bbc87a71fc804e42ef74416ab305637ba0b933a2d1eb7b79afcc1a3fec4f5dfe`，保留其余旧组件及来源。真实 Windows Core/Host 加载重建的签名测试组件并验证观测授权，具名用例 1/0，二进制 SHA-256 `12aaf7e4a7d0956fe6611f6574f64ba4ade1b5ca99d4f3bbc9d27f22b8bc2f68`。原隔离窗口与五组公开状态已恢复。以上候选尚无对应远端结果。
 
 ### 2026-11-19 Codex 快速接入核对
 
