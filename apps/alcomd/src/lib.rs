@@ -129,7 +129,7 @@ struct Applications {
     extension_runtime: m6_runtime::PlatformExtensionRuntime,
     oauth: alcomd_application::OAuthApplication<StateStoreHandle>,
     #[cfg(feature = "test-kill-gates")]
-    mcp_apply_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpApplyResponseGate>>>,
+    mcp_write_response_gate: tokio::sync::Mutex<Option<Arc<test_support::McpWriteResponseGate>>>,
     #[cfg(feature = "test-kill-gates")]
     oauth_token_response_gate: tokio::sync::Mutex<Option<Arc<test_support::OneTimeResponseGate>>>,
     #[cfg(feature = "test-kill-gates")]
@@ -435,7 +435,7 @@ async fn initialize_daemon_with_adapters(
         extension_runtime,
         oauth: alcomd_application::OAuthApplication::new(store.clone(), oauth_cursor_key),
         #[cfg(feature = "test-kill-gates")]
-        mcp_apply_response_gate: tokio::sync::Mutex::new(None),
+        mcp_write_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
         oauth_token_response_gate: tokio::sync::Mutex::new(None),
         #[cfg(feature = "test-kill-gates")]
@@ -640,11 +640,15 @@ async fn serve_connection(
                 None => return Ok(()),
             };
             #[cfg(feature = "test-kill-gates")]
-            let is_mcp_apply = state.mcp_hash.is_some()
-                && serde_json::from_slice::<Value>(&payload)
-                    .is_ok_and(|v| v["method"] == alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN);
+            let mcp_request = if state.mcp_hash.is_some() {
+                serde_json::from_slice::<Value>(&payload).ok()
+            } else {
+                None
+            };
             #[cfg(feature = "test-kill-gates")]
-            if is_mcp_apply {
+            let mcp_method = mcp_request.as_ref().and_then(|v| v["method"].as_str());
+            #[cfg(feature = "test-kill-gates")]
+            if mcp_method == Some(alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN) {
                 applications
                     .mcp_apply_request_count
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -681,8 +685,29 @@ async fn serve_connection(
                 return Ok(());
             }
             #[cfg(feature = "test-kill-gates")]
-            if (is_mcp_apply && action.response["result"]["operationId"].is_string()) || (state.mcp_hash.is_some() && is_tool_call && action.response["result"]["coreEffect"]["kind"]=="apply" && action.response["result"]["coreEffect"]["operationId"].is_string()) {
-                let gate = applications.mcp_apply_response_gate.lock().await.take();
+            let held_write = match mcp_method {
+                Some(alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN)
+                    if action.response["result"]["operationId"].is_string() =>
+                    Some(test_support::McpWriteResponseKind::Apply),
+                Some(alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL)
+                    if action.response["result"]["coreEffect"]["kind"] == "apply"
+                        && action.response["result"]["coreEffect"]["operationId"].is_string() =>
+                    Some(test_support::McpWriteResponseKind::Apply),
+                Some(alcomd_protocol::METHOD_BACKUPS_CREATE)
+                    if action.response["result"]["operationId"].is_string() =>
+                    Some(test_support::McpWriteResponseKind::Backup),
+                _ => None,
+            };
+            #[cfg(feature = "test-kill-gates")]
+            if let Some(kind) = held_write {
+                let gate = {
+                    let mut slot = applications.mcp_write_response_gate.lock().await;
+                    if slot.as_ref().is_some_and(|gate| gate.kind == kind) {
+                        slot.take()
+                    } else {
+                        None
+                    }
+                };
                 if let Some(gate) = gate
                     && gate.intercept(&mut stream, &action.response).await?
                 {

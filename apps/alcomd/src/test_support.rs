@@ -156,14 +156,30 @@ impl TestDaemon {
     pub async fn hold_next_mcp_apply_response(
         &self,
         truncate_on_release: bool,
-    ) -> Arc<McpApplyResponseGate> {
-        let gate = Arc::new(McpApplyResponseGate {
+    ) -> Arc<McpWriteResponseGate> {
+        self.hold_next_mcp_write_response(McpWriteResponseKind::Apply, truncate_on_release)
+            .await
+    }
+
+    /// Holds one successful MCP backup response after Core accepts the task.
+    pub async fn hold_next_mcp_backup_response(&self) -> Arc<McpWriteResponseGate> {
+        self.hold_next_mcp_write_response(McpWriteResponseKind::Backup, false)
+            .await
+    }
+
+    async fn hold_next_mcp_write_response(
+        &self,
+        kind: McpWriteResponseKind,
+        truncate_on_release: bool,
+    ) -> Arc<McpWriteResponseGate> {
+        let gate = Arc::new(McpWriteResponseGate {
+            kind,
             accepted: Mutex::new(None),
             ready: tokio::sync::Notify::new(),
             release: tokio::sync::Notify::new(),
             truncate_on_release,
         });
-        let mut slot = self.applications.mcp_apply_response_gate.lock().await;
+        let mut slot = self.applications.mcp_write_response_gate.lock().await;
         assert!(slot.is_none(), "only one response fault may be armed");
         *slot = Some(Arc::clone(&gate));
         gate
@@ -383,16 +399,30 @@ where
     })
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(crate) enum McpWriteResponseKind {
+    Apply,
+    Backup,
+}
+
 /// Test-only transport fault; never changes a request, its identity or its result.
-pub struct McpApplyResponseGate {
-    accepted: Mutex<Option<alcomd_protocol::PackageApplyPlanResult>>,
+pub struct McpWriteResponseGate {
+    pub(crate) kind: McpWriteResponseKind,
+    accepted: Mutex<Option<McpWriteReceipt>>,
     ready: tokio::sync::Notify,
     release: tokio::sync::Notify,
     truncate_on_release: bool,
 }
 
-impl McpApplyResponseGate {
-    pub async fn accepted(&self) -> alcomd_protocol::PackageApplyPlanResult {
+#[derive(Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpWriteReceipt {
+    pub operation_id: String,
+    pub replayed: bool,
+}
+
+impl McpWriteResponseGate {
+    pub async fn accepted(&self) -> McpWriteReceipt {
         loop {
             let ready = self.ready.notified();
             if let Some(accepted) = self.accepted.lock().await.as_ref() {

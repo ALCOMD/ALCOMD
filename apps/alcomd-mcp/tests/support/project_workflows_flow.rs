@@ -140,6 +140,9 @@ async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
+    use rmcp::model::{ClientRequest, Request};
+    use rmcp::service::PeerRequestOptions;
+
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/m8-business-tests")
@@ -246,11 +249,55 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         "project_copy_target_exists",
     );
     let backup = json!({"project_id":project_id,"expected_revision":registered["project"]["revision"],"idempotency_key":"workflow-backup"});
+    let held_backup = daemon.hold_next_mcp_backup_response().await;
+    let mut pending = sdk
+        .send_cancellable_request(
+            ClientRequest::CallToolRequest(Request::new(
+                CallToolRequestParams::new("alcomd_create_backup")
+                    .with_arguments(backup.as_object().expect("backup arguments").clone()),
+            )),
+            PeerRequestOptions::no_options(),
+        )
+        .await
+        .expect("actual SDK backup request");
+    let original = tokio::time::timeout(Duration::from_secs(10), held_backup.accepted())
+        .await
+        .expect("backup accepted while its reply is held");
+    assert!(!original.replayed);
+    let (_unused, replacement) = tokio::sync::oneshot::channel();
+    let response = std::mem::replace(&mut pending.rx, replacement);
+    pending
+        .cancel(Some("isolated backup request cancellation".into()))
+        .await
+        .expect("cancel the SDK request");
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(5), response)
+            .await
+            .expect("protocol request cancellation deadline")
+            .expect("SDK result"),
+        Err(ServiceError::Cancelled { .. })
+    ));
+    let visible_project = tokio::time::timeout(
+        Duration::from_secs(5),
+        call(
+            &sdk,
+            &mut trace,
+            "get_project",
+            json!({"project_id": project_id}),
+        ),
+    )
+    .await
+    .expect("cancelled request releases the adapter before the Core reply")
+    .expect("same SDK can issue another request");
+    assert_eq!(data(visible_project)["project_id"], project_id);
+    held_backup.release();
     let accepted = data(
         call(&sdk, &mut trace, "create_backup", backup.clone())
             .await
-            .expect("backup tool"),
+            .expect("recover the accepted backup with the original key"),
     );
+    assert_eq!(accepted["operation_id"], original.operation_id);
+    assert_eq!(accepted["replayed"], true);
     let receipt = terminal(
         &sdk,
         &mut trace,
