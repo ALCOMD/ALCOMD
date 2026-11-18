@@ -1561,4 +1561,8 @@ Store 定向模块单轮 4/0，含上述安装证据用例和三项 State42 迁�
 
 Guest 单元 8/0、文档测试 1/0、合同 4/0，原生和 Wasm 定向严格 Clippy、Wasm 发布构建及 Component 编码通过。组件 SHA-256 `0a80303d846e0e24d0161054f3d18477a17aca7bf0313bb316603577cd868c5f`。实际 Windows Host 加载该组件并完成三个 Host 接口的调用，使用模拟 Core 结果验证仅订阅流授权、刷新后隐藏与普通 Portable UI 输出。该探针初次以错误文件名启动，被现有路径校验拒绝，使用规定的 `extension.wasm` 后通过。
 
-真实 Core/Host 回归已编译。Windows 隔离窗口正常退出两次超时，端点未释放，因此本轮没有执行该用例。原隔离窗口仍可见、响应并连接同一 Core。扩展人工继续延期，本地证据位于 target/m8-management-streams-20261118/。新增代码尚无远端结果。
+真实 Core/Host 回归已编译。首次准备时，Windows 隔离窗口正常退出两次超时，端点未释放，用例当时未启动。
+
+所有者随后关闭隔离窗口，确认原隔离进程均退出后补跑 `runtime_observations_use_real_authenticated_connections_and_revocable_host_grants`，单次 1/0、22.10 秒，使用 `dccf953f` 的组件和定向二进制 SHA-256 `468428fc5074a2fc129c9eceb73bc238fb29b771da3bdbbfc7add070f3d00e13`。真实签名测试包经 Core 安装和启用，独立授予订阅流读取后，活动页通过 Host 读取真实 Core 接受的受限观测夹具报告。报告缺失时不显示零条，报告到达后显示一条订阅流，仍隐藏未授权的 Core 连接与调用。撤销权限后旧 UI 会话不能刷新。该用例验证管理扩展接线，报告由测试夹具提交，实际 MCP adapter 的观察链见前述独立证据。
+
+原隔离窗口使用同一程序、数据目录和 WebView 配置恢复，GUI 117348 可见且响应，五条 GUI 管道均连接隔离 Core 116016。系统、项目、Operation、MCP 客户端和 OAuth 注册五组公开状态均与使用前相同。未恢复桌面控制。证据位于 target/m8-management-streams-20261118/。扩展人工继续延期，新增代码尚无远端结果。
