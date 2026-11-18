@@ -722,6 +722,7 @@ mod tests {
             "operations.cancel",
             "events.read",
             "repositories.read",
+            "repositories.manage",
             "packages.read",
         ]
         .map(global)
@@ -751,7 +752,7 @@ mod tests {
             }
         }
         assert_eq!(seen, snapshot);
-        assert_eq!(seen.len(), 8);
+        assert_eq!(seen.len(), 9);
         assert!(
             seen.iter()
                 .all(|g| g.resource_kind == "global" && g.resource_id == "*")

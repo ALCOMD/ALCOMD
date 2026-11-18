@@ -69,6 +69,11 @@ pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
         "packages.planRemove" => &["projects.read", "repositories.read", "packages.read"],
         METHOD_MCP_PACKAGES_QUERY => &["repositories.read", "packages.read"],
         METHOD_MCP_PACKAGES_PLAN => &["projects.read", "repositories.read", "packages.read"],
+        alcomd_protocol::METHOD_MCP_REPOSITORIES_LIST
+        | alcomd_protocol::METHOD_MCP_REPOSITORIES_INSPECT => &["repositories.read"],
+        alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
+        | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
+        | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE => &["repositories.manage"],
         "packages.applyPlan" => &[
             "projects.read",
             "repositories.read",

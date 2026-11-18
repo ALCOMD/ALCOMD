@@ -32,6 +32,10 @@ impl Drop for HttpsSource {
     }
 }
 impl HttpsSource {
+    pub(super) fn set_changed(&self, changed: bool) {
+        self.changed.store(changed, Ordering::SeqCst);
+    }
+
     async fn start(archive: Vec<u8>) -> Self {
         Self::start_with_archive(archive, SourceFixture::Extension).await
     }
@@ -123,7 +127,8 @@ impl HttpsSource {
                                     p if p == index_path => {
                                         let mut entry = json!({"name":"com.example.m8.https", "displayName":"HTTPS fixture", "version":"1.0.0", "url":format!("{origin}{archive_path}"), "zipSHA256":hex(&Sha256::digest(archive.as_slice()))});
                                         if matches!(fixture, SourceFixture::ProtectedVpm) { entry["headers"] = json!({"Authorization":PACKAGE_AUTHORIZATION}); }
-                                        serde_json::to_vec(&json!({"id":"com.example.m8.fixture", "name":"M8 VPM fixture", "url":format!("{origin}{index_path}"), "packages":{"com.example.m8.https":{"versions":{"1.0.0":entry}}}})).expect("VPM fixture index")
+                                        let name = if updated.load(Ordering::SeqCst) { "Updated M8 VPM fixture" } else { "M8 VPM fixture" };
+                                        serde_json::to_vec(&json!({"id":"com.example.m8.fixture", "name":name, "url":format!("{origin}{index_path}"), "packages":{"com.example.m8.https":{"versions":{"1.0.0":entry}}}})).expect("VPM fixture index")
                                     }
                                     _ => {let _=stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;return;}
                                 }

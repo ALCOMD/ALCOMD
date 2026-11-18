@@ -145,6 +145,11 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
         METHOD_MCP_TRANSPORT_BIND_REQUEST
             | alcomd_protocol::METHOD_MCP_PACKAGES_QUERY
             | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
+            | alcomd_protocol::METHOD_MCP_REPOSITORIES_LIST
+            | alcomd_protocol::METHOD_MCP_REPOSITORIES_INSPECT
+            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
+            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
+            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE
             | "mcp.tools.catalog"
             | "extensions.mcpTools.call"
             | "system.status"

@@ -343,9 +343,7 @@ pub(super) fn create_package_plan_inner(
     )
     .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
     if let Some(authentication) = authentication {
-        if tool_guard.is_some()
-            || !matches!(draft.action, PlanAction::Install | PlanAction::Reinstall)
-        {
+        if tool_guard.is_some() || !draft.action.uses_delegated_catalog() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, false)?;
@@ -495,9 +493,7 @@ pub(super) fn accept_package_plan_inner(
     }
     let delegated_revision = if let Some(authentication) = authentication {
         let plan = load_plan(&transaction, owner, plan_id)?;
-        if tool_guard.is_some()
-            || !matches!(plan.action, PlanAction::Install | PlanAction::Reinstall)
-        {
+        if tool_guard.is_some() || !plan.action.uses_delegated_catalog() {
             return Err(denied());
         }
         require_delegated_access(&transaction, owner, authentication, true)?;
@@ -784,7 +780,7 @@ fn accepted_resource_owner(
          AND (target.owner_principal_id=o.owner_principal_id OR
              (EXISTS(SELECT 1 FROM mcp_clients c WHERE c.principal_id=o.owner_principal_id)
               AND ((plan.action='remove' AND plan.source_set_json='[]')
-                   OR (plan.action IN ('install','reinstall') AND target.owner_principal_id=?2))))",
+                   OR (plan.action IN ('install','upgrade','downgrade','resolve','reinstall','bulk') AND target.owner_principal_id=?2))))",
         params![operation_id.to_string(), PrincipalId::LOCAL_OWNER],|r|Ok((r.get(0)?,r.get(1)?))
     ).optional().map_err(store_error)?;
     let (id, owner) = target.ok_or_else(|| M4Error::new(M4ErrorCode::PermissionDenied))?;

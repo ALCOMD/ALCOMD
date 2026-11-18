@@ -346,6 +346,7 @@ pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -
                 "packages.manage" => "Manage packages in all projects",
                 "packages.read" => "Read packages",
                 "repositories.read" => "Read repositories",
+                "repositories.manage" => "Register, refresh and remove repositories",
                 "operations.read" => "Read own operations",
                 "operations.cancel" => "Cancel own operations",
                 "state.check" => "Check state",

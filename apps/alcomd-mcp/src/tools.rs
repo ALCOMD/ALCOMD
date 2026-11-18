@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.schema.json");
 const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
+const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
 mod packages;
+mod repositories;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
@@ -20,6 +22,8 @@ static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
     let source = if packages::recognized(name) {
         PACKAGE_CONTRACT
+    } else if repositories::recognized(name) {
+        REPOSITORY_CONTRACT
     } else {
         CONTRACT
     };
@@ -37,11 +41,11 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
     if let Some(effect) = entry.remove("effect") {
         let read_only = match effect.as_str() {
             Some("read") => true,
-            Some("plan") => false,
+            Some("plan" | "apply") => false,
             _ => return Err(internal_protocol()),
         };
         entry.remove("requiredPermissions");
-        entry.insert("annotations".into(), json!({
+        entry.entry("annotations").or_insert_with(|| json!({
             "readOnlyHint":read_only,"destructiveHint":false,"idempotentHint":read_only,"openWorldHint":false,
         }));
     }
@@ -115,6 +119,20 @@ struct Operation {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct OperationsCursor {
+    created_at_ms: u64,
+    operation_id: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OperationsList {
+    cursor: Option<OperationsCursor>,
+    limit: Option<u32>,
+    #[serde(default)]
+    active_only: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Cancel {
     operation_id: String,
     expected_revision: u64,
@@ -126,6 +144,7 @@ enum Input {
     Plan(Plan),
     Apply(Apply),
     Operation(Operation),
+    OperationsList(OperationsList),
     Cancel(Cancel),
 }
 fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
@@ -136,6 +155,7 @@ fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
             | "alcomd_plan_package_uninstall"
             | "alcomd_apply_package_changes"
             | "alcomd_get_operation"
+            | "alcomd_list_operations"
             | "alcomd_cancel_operation"
     ) {
         return Err(super::unsupported_method());
@@ -167,6 +187,16 @@ fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
         "alcomd_get_operation" => {
             Input::Operation(serde_json::from_value(value).map_err(|_| invalid())?)
         }
+        "alcomd_list_operations" => {
+            if value.get("cursor").is_some_and(|cursor| {
+                cursor
+                    .as_object()
+                    .is_some_and(|fields| fields.values().any(Value::is_null))
+            }) {
+                return Err(invalid());
+            }
+            Input::OperationsList(serde_json::from_value(value).map_err(|_| invalid())?)
+        }
         "alcomd_cancel_operation" => {
             Input::Cancel(serde_json::from_value(value).map_err(|_| invalid())?)
         }
@@ -193,6 +223,12 @@ fn parse(params: CallToolRequestParams) -> Result<Input, ErrorData> {
                 && p.confirm
         }
         Input::Operation(p) => canonical_id(&p.operation_id),
+        Input::OperationsList(p) => {
+            p.limit.is_none_or(|v| (1..=1000).contains(&v))
+                && p.cursor
+                    .as_ref()
+                    .is_none_or(|c| c.created_at_ms <= MAX_SAFE && canonical_id(&c.operation_id))
+        }
         Input::Cancel(p) => {
             canonical_id(&p.operation_id)
                 && revision(p.expected_revision)
@@ -231,6 +267,43 @@ fn snake_name(value: &str) -> String {
     out
 }
 /// Only called on explicitly typed public DTOs, never on arbitrary Core results.
+// The tool accepts snake_case fields, while the same closed DTO uses camelCase on IPC.
+fn ipc_fields(value: Value) -> Result<Value, ErrorData> {
+    Ok(match value {
+        Value::Object(fields) => {
+            let mut mapped = serde_json::Map::new();
+            for (name, value) in fields {
+                if name.is_empty()
+                    || !name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+                {
+                    return Err(invalid());
+                }
+                let mut parts = name.split('_');
+                let mut key = parts.next().ok_or_else(invalid)?.to_owned();
+                for part in parts {
+                    let mut letters = part.chars();
+                    key.push(letters.next().ok_or_else(invalid)?.to_ascii_uppercase());
+                    key.extend(letters);
+                }
+                if mapped.insert(key, ipc_fields(value)?).is_some() {
+                    return Err(invalid());
+                }
+            }
+            Value::Object(mapped)
+        }
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(ipc_fields)
+                .collect::<Result<_, _>>()?,
+        ),
+        Value::Null => return Err(invalid()),
+        other => other,
+    })
+}
+
 fn snake(value: Value) -> Value {
     match value {
         Value::Object(o) => Value::Object(
@@ -557,6 +630,12 @@ pub async fn execute(
         result.structured_content = Some(output);
         return Ok(result);
     }
+    if repositories::recognized(params.name.as_ref()) {
+        if !client.supports_capability(rpc::CAPABILITY_MCP_REPOSITORIES_V1) {
+            return Err(super::unsupported_method());
+        }
+        return repositories::execute(client, params).await;
+    }
     if packages::recognized(params.name.as_ref()) {
         if !client.supports_capability(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {
             return Err(super::unsupported_method());
@@ -600,6 +679,16 @@ async fn execute_builtin(
                 Ok((json!({"operation_id":value.operation_id,"replayed":value.replayed}),"Operation accepted. Query its state to learn whether the package changes succeeded.".into(),false))
             }
             Input::Operation(p) => Ok((operation(client.operation_get(p.operation_id).await.map_err(read)?)?,"Authoritative operation state and available result.".into(),false)),
+            Input::OperationsList(p) => {
+                let cursor = p.cursor.map(|c| rpc::OperationsListCursor { created_at_ms: c.created_at_ms, operation_id: c.operation_id });
+                let page = client.operations_list(cursor, p.limit, p.active_only).await.map_err(read)?;
+                let operations = page.operations.into_iter().map(operation).collect::<Result<Vec<_>, _>>()?;
+                let mut data = json!({"operations": operations, "active_count": page.active_count});
+                if let Some(next) = page.next_cursor {
+                    data["next_cursor"] = json!({"created_at_ms":next.created_at_ms,"operation_id":next.operation_id});
+                }
+                Ok((data,"Authoritative operations owned by this client.".into(),false))
+            }
             Input::Cancel(p) => {
                 let result=client.operation_cancel(p.operation_id,p.expected_revision,p.idempotency_key).await.map_err(write)?;
                 Ok((json!({"operation":operation(result.operation)?,"replayed":result.replayed}),"Cancellation response. Only the returned state determines whether the task is cancelled.".into(),false))
@@ -645,9 +734,18 @@ pub(crate) async fn list(
                 None,
             )
         })?;
-    let tools=page.tools.into_iter().map(|tool|{
-        let writing=descriptor_writes(&tool);
-        serde_json::from_value::<Tool>(json!({"name":tool.name,"title":tool.title,"description":tool.description,"inputSchema":tool.input_schema,"outputSchema":tool.output_schema,"annotations":{"readOnlyHint":!writing,"destructiveHint":writing,"idempotentHint":!writing,"openWorldHint":false}})).map_err(|_|internal_protocol())
+    let tools = page.tools.into_iter().map(|tool| {
+        let writing = descriptor_writes(&tool);
+        let annotations = if tool.origin.is_none() {
+            builtin_definition(&tool.name)?.and_then(|definition| definition.annotations)
+        } else {
+            None
+        };
+        let annotations = annotations.map_or_else(
+            || json!({"readOnlyHint":!writing,"destructiveHint":writing,"idempotentHint":!writing,"openWorldHint":false}),
+            |value| json!(value),
+        );
+        serde_json::from_value::<Tool>(json!({"name":tool.name,"title":tool.title,"description":tool.description,"inputSchema":tool.input_schema,"outputSchema":tool.output_schema,"annotations":annotations})).map_err(|_|internal_protocol())
     }).collect::<Result<Vec<_>,_>>()?;
     let mut result = rmcp::model::ListToolsResult::with_all_items(tools)
         .with_ttl_ms(0)
@@ -698,6 +796,8 @@ mod tests {
             "alcomd_get_package",
             "alcomd_plan_package_install",
             "alcomd_plan_package_reinstall",
+            "alcomd_plan_package_changes",
+            "alcomd_list_operations",
         ];
         for name in names {
             let tool = builtin_definition(name)

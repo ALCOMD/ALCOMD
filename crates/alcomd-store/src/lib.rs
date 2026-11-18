@@ -65,6 +65,7 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_packages;
+mod m8_repositories;
 mod m8_tools;
 pub use m8_packages::{
     DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,

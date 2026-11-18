@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CandidateEligibility, CandidateReason, CandidateUnity, PackagePlan, PackageSourceSelector,
+    CandidateEligibility, CandidateReason, CandidateUnity, PackageBulkIntent, PackagePlan,
+    PackageReinstallSelection, PackageReinstallSource, PackageSourceSelector,
 };
 
 pub const METHOD_MCP_PACKAGES_QUERY: &str = "mcp.packages.query";
@@ -49,6 +50,7 @@ pub struct McpPackageQuery {
 pub enum McpPackageVersionSelector {
     LatestCompatible,
     Exact { version: String },
+    Range { range: String },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,15 +63,50 @@ pub enum McpPackageVersionSelector {
 pub enum McpPackageIntent {
     Install {
         version_selector: McpPackageVersionSelector,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        allow_unity_incompatible: bool,
     },
-    Reinstall,
+    Upgrade {
+        version_selector: McpPackageVersionSelector,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        allow_unity_incompatible: bool,
+    },
+    Downgrade {
+        version: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        allow_unity_incompatible: bool,
+    },
+    Remove,
+    Resolve {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
+    },
+    Reinstall {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        selection: Option<PackageReinstallSelection>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sources: Vec<PackageReinstallSource>,
+    },
+    Bulk {
+        intents: Vec<PackageBulkIntent>,
+    },
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpPackagePlanRequest {
     pub project: McpPackageProject,
-    pub package_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<PackageSourceSelector>,
     pub intent: McpPackageIntent,
 }

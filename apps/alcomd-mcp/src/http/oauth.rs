@@ -89,6 +89,7 @@ pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
         Some(
             "alcomd_plan_package_uninstall"
             | "alcomd_plan_package_install"
+            | "alcomd_plan_package_changes"
             | "alcomd_plan_package_reinstall",
         ) => &["projects.read", "repositories.read", "packages.read"],
         Some("alcomd_apply_package_changes") => &[
@@ -97,8 +98,12 @@ pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
             "packages.read",
             "packages.manage",
         ],
-        Some("alcomd_get_operation") => &["operations.read"],
+        Some("alcomd_get_operation" | "alcomd_list_operations") => &["operations.read"],
         Some("alcomd_cancel_operation") => &["operations.cancel"],
+        Some("alcomd_list_repositories" | "alcomd_inspect_repository") => &["repositories.read"],
+        Some(
+            "alcomd_register_repository" | "alcomd_refresh_repository" | "alcomd_remove_repository",
+        ) => &["repositories.manage"],
         _ => &[],
     }
 }
@@ -433,7 +438,7 @@ pub(super) async fn handle(
         } else {
             json_response(
                 StatusCode::OK,
-                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["projects.read","packages.read","repositories.read","packages.manage","operations.read","operations.cancel","state.check","events.read"]}),
+                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["projects.read","packages.read","repositories.read","repositories.manage","packages.manage","operations.read","operations.cancel","state.check","events.read"]}),
             )
         };
     }

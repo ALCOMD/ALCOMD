@@ -8,7 +8,7 @@
 
 grant 名称、资源种类及 opaque 资源 ID 为有界 ASCII，不能以路径或通配 owner 代替资源授权。分页同时受 RPC 帧字节上限约束，不能因客户端数量最多64就把全部 grant 一次塞入响应；到达字节预算时返回下一游标。Unsupported 的权限/范围组合明确拒绝。
 
-2026-11-15所有者批准统一能力授权：当前八项`projects.read`、`packages.manage`、`state.check`、`operations.read`、`operations.cancel`、`events.read`、`repositories.read`、`packages.read`均只接受`global/*`，不再按ProjectId授权。覆盖当前及未来登记项目；Operation、Plan、事件和幂等记录仍按实际Principal隔离，项目ID只是操作目标。未知权限、重复及其他组合拒绝。
+2026-11-15 所有者批准统一能力授权。`projects.read`、`packages.manage`、`state.check`、`operations.read`、`operations.cancel`、`events.read`、`repositories.read`、`packages.read` 均只接受 `global/*`。覆盖当前及未来登记项目，Operation、Plan 和幂等记录按实际 Principal 隔离，项目 ID 只作操作目标。2026-11-19 接入仓库管理，允许显式授予已有 `repositories.manage` 的 `global/*` 组合。未知权限、重复及其他组合拒绝。
 
 包修改要求显式`packages.manage/global/*`，不能由read推导；接受事务仍复查项目read、仓库/包read及operations.read。只Apply原remove Plan、保持明确确认、原Principal及资源owner，既有接受任务/journal与撤销边界不变。State37为旧逐项目授权建立去除该授权的新当前快照、递增revision；旧不可变快照仅保留历史，不自动扩大为global，须重新明确授予。
 

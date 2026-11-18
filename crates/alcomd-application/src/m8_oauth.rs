@@ -8,10 +8,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-pub const OAUTH_SCOPES: [&str; 8] = [
+pub const OAUTH_SCOPES: [&str; 9] = [
     "projects.read",
     "packages.read",
     "repositories.read",
+    "repositories.manage",
     "packages.manage",
     "operations.read",
     "operations.cancel",

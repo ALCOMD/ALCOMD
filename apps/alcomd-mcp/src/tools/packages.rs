@@ -17,6 +17,7 @@ pub(super) fn recognized(name: &str) -> bool {
             | "alcomd_get_package"
             | "alcomd_plan_package_install"
             | "alcomd_plan_package_reinstall"
+            | "alcomd_plan_package_changes"
     )
 }
 
@@ -148,18 +149,37 @@ fn parse(params: CallToolRequestParams) -> Result<Request, ErrorData> {
                 source,
             })?
         }
-        "alcomd_plan_package_install" | "alcomd_plan_package_reinstall" => {
-            let intent = if params.name == "alcomd_plan_package_install" {
-                rpc::McpPackageIntent::Install {
-                    version_selector: args.required("version_selector")?,
-                }
-            } else {
-                rpc::McpPackageIntent::Reinstall
+        "alcomd_plan_package_install"
+        | "alcomd_plan_package_reinstall"
+        | "alcomd_plan_package_changes" => {
+            let (intent, package_id) = match params.name.as_ref() {
+                "alcomd_plan_package_install" => (
+                    rpc::McpPackageIntent::Install {
+                        version_selector: args.required("version_selector")?,
+                        include_prerelease: args.optional("include_prerelease")?,
+                        allow_unity_incompatible: args
+                            .optional("allow_unity_incompatible")?
+                            .unwrap_or(false),
+                    },
+                    Some(args.package_id()?),
+                ),
+                "alcomd_plan_package_reinstall" => (
+                    rpc::McpPackageIntent::Reinstall {
+                        selection: None,
+                        sources: Vec::new(),
+                    },
+                    Some(args.package_id()?),
+                ),
+                _ => (
+                    serde_json::from_value(super::ipc_fields(args.required("intent")?)?)
+                        .map_err(|_| invalid())?,
+                    args.optional("package_id")?,
+                ),
             };
             Request::Plan(rpc::McpPackagePlanRequest {
                 intent,
                 project: args.project()?.ok_or_else(invalid)?,
-                package_id: args.package_id()?,
+                package_id,
                 source: args.source()?,
             })
         }

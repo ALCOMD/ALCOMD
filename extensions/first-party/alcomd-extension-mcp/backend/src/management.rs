@@ -7,7 +7,7 @@ use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as u
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-const MCP_PERMISSIONS: [&str; 8] = [
+const MCP_PERMISSIONS: [&str; 9] = [
     "projects.read",
     "packages.manage",
     "state.check",
@@ -15,6 +15,7 @@ const MCP_PERMISSIONS: [&str; 8] = [
     "operations.cancel",
     "events.read",
     "repositories.read",
+    "repositories.manage",
     "packages.read",
 ];
 
@@ -721,6 +722,7 @@ fn permission_label(permission: &str) -> &str {
         "operations.cancel" => "取消任务",
         "events.read" => "读取事件",
         "repositories.read" => "读取仓库",
+        "repositories.manage" => "添加、刷新和移除仓库",
         "packages.read" => "读取包信息",
         _ => "不支持的权限",
     }
@@ -824,7 +826,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn permission_form_has_eight_capability_switches_and_no_project_selector() {
+    fn permission_form_includes_repository_management_and_has_no_project_selector() {
         let view = View {
             selected: Some(selected()),
             can_manage: true,
@@ -848,7 +850,7 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(fields.len(), 8);
+        assert_eq!(fields.len(), 9);
         assert!(
             !doc.nodes
                 .iter()
@@ -867,10 +869,17 @@ mod tests {
             .find(|field| field.field_id == "packages.manage")
             .expect("write")
             .value = ui::FieldValue::Boolean(true);
+        let repository = changed
+            .iter_mut()
+            .find(|field| field.field_id == "repositories.manage")
+            .expect("repository management");
+        assert!(matches!(repository.value, ui::FieldValue::Boolean(false)));
+        repository.value = ui::FieldValue::Boolean(true);
         let (add, remove) = permission_changes(&view.grants, &changed).expect("delta");
-        assert_eq!(add.len(), 1);
+        assert_eq!(add.len(), 2);
         assert_eq!(remove.len(), 1);
         assert_eq!(add[0].permission, "packages.manage");
+        assert_eq!(add[1].permission, "repositories.manage");
         assert_eq!(remove[0].permission, "projects.read");
         assert!(
             add.iter()

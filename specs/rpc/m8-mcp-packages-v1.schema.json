@@ -107,6 +107,22 @@
                         "kind",
                         "version"
                     ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "range"
+                        },
+                        "range": {
+                            "$ref": "#/$defs/versionRange"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "range"
+                    ]
                 }
             ]
         },
@@ -552,7 +568,12 @@
                 "action": {
                     "enum": [
                         "install",
-                        "reinstall"
+                        "remove",
+                        "upgrade",
+                        "downgrade",
+                        "resolve",
+                        "reinstall",
+                        "bulk"
                     ]
                 },
                 "state": {
@@ -876,11 +897,137 @@
                         },
                         "versionSelector": {
                             "$ref": "#/$defs/selector"
+                        },
+                        "includePrerelease": {
+                            "type": "boolean"
+                        },
+                        "allowUnityIncompatible": {
+                            "type": "boolean"
                         }
                     },
                     "required": [
                         "kind",
                         "versionSelector"
+                    ],
+                    "allOf": [
+                        {
+                            "if": {
+                                "required": [
+                                    "allowUnityIncompatible"
+                                ],
+                                "properties": {
+                                    "allowUnityIncompatible": {
+                                        "const": true
+                                    }
+                                }
+                            },
+                            "then": {
+                                "properties": {
+                                    "versionSelector": {
+                                        "properties": {
+                                            "kind": {
+                                                "const": "exact"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "upgrade"
+                        },
+                        "versionSelector": {
+                            "$ref": "#/$defs/selector"
+                        },
+                        "includePrerelease": {
+                            "type": "boolean"
+                        },
+                        "allowUnityIncompatible": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "versionSelector"
+                    ],
+                    "allOf": [
+                        {
+                            "if": {
+                                "required": [
+                                    "allowUnityIncompatible"
+                                ],
+                                "properties": {
+                                    "allowUnityIncompatible": {
+                                        "const": true
+                                    }
+                                }
+                            },
+                            "then": {
+                                "properties": {
+                                    "versionSelector": {
+                                        "properties": {
+                                            "kind": {
+                                                "const": "exact"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "downgrade"
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        "allowUnityIncompatible": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "version"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "remove"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "resolve"
+                        },
+                        "includePrerelease": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "kind"
                     ]
                 },
                 {
@@ -889,10 +1036,42 @@
                     "properties": {
                         "kind": {
                             "const": "reinstall"
+                        },
+                        "selection": {
+                            "$ref": "#/$defs/reinstallSelection"
+                        },
+                        "sources": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/reinstallSource"
+                            },
+                            "minItems": 0,
+                            "maxItems": 256
                         }
                     },
                     "required": [
                         "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "bulk"
+                        },
+                        "intents": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/bulkIntent"
+                            },
+                            "minItems": 1,
+                            "maxItems": 256
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "intents"
                     ]
                 }
             ]
@@ -923,8 +1102,99 @@
             },
             "required": [
                 "project",
-                "packageId",
                 "intent"
+            ],
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "intent": {
+                                "properties": {
+                                    "kind": {
+                                        "enum": [
+                                            "install",
+                                            "upgrade",
+                                            "downgrade",
+                                            "remove"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "packageId"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "intent": {
+                                "properties": {
+                                    "kind": {
+                                        "enum": [
+                                            "resolve",
+                                            "bulk"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "packageId": false,
+                            "source": false
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "intent": {
+                                "properties": {
+                                    "kind": {
+                                        "const": "reinstall"
+                                    }
+                                },
+                                "required": [
+                                    "selection"
+                                ]
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "packageId": false,
+                            "source": false
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "intent": {
+                                "properties": {
+                                    "kind": {
+                                        "const": "reinstall"
+                                    }
+                                },
+                                "not": {
+                                    "required": [
+                                        "selection"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "then": {
+                        "required": [
+                            "packageId"
+                        ]
+                    }
+                }
             ]
         },
         "planResult": {
@@ -945,6 +1215,190 @@
             "required": [
                 "plan",
                 "sources"
+            ]
+        },
+        "versionRange": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+        },
+        "reinstallSelection": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "all"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "packages"
+                        },
+                        "packageIds": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "minItems": 1,
+                            "maxItems": 256
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageIds"
+                    ]
+                }
+            ]
+        },
+        "reinstallSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                }
+            },
+            "required": [
+                "packageId",
+                "source"
+            ]
+        },
+        "bulkIntent": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "install"
+                        },
+                        "packageId": {
+                            "$ref": "#/$defs/packageId"
+                        },
+                        "versionRange": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/versionRange"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "source": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/source"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "includePrerelease": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageId",
+                        "includePrerelease"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "upgrade"
+                        },
+                        "packageId": {
+                            "$ref": "#/$defs/packageId"
+                        },
+                        "versionRange": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/versionRange"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "source": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/source"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "includePrerelease": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageId",
+                        "includePrerelease"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "remove"
+                        },
+                        "packageId": {
+                            "$ref": "#/$defs/packageId"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageId"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "reinstall"
+                        },
+                        "packageId": {
+                            "$ref": "#/$defs/packageId"
+                        },
+                        "source": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/source"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageId"
+                    ]
+                }
             ]
         }
     }

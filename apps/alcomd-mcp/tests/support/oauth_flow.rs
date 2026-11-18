@@ -164,7 +164,7 @@ impl Https {
     }
     async fn start_request(&self, reg: &McpOAuthRegistration) -> (String, String) {
         let mut url = reqwest::Url::parse(&format!("{}/authorize", self.issuer)).expect("URL");
-        url.query_pairs_mut().extend_pairs([("client_id",reg.oauth_client_id.as_str()),("response_type","code"),("redirect_uri",reg.redirect_uris[0].as_str()),("code_challenge",CHALLENGE),("code_challenge_method","S256"),("resource",reg.resource.as_str()),("scope","projects.read repositories.read packages.read packages.manage operations.read operations.cancel"),("state","isolated-state")]);
+        url.query_pairs_mut().extend_pairs([("client_id",reg.oauth_client_id.as_str()),("response_type","code"),("redirect_uri",reg.redirect_uris[0].as_str()),("code_challenge",CHALLENGE),("code_challenge_method","S256"),("resource",reg.resource.as_str()),("scope","projects.read repositories.read repositories.manage packages.read packages.manage operations.read operations.cancel"),("state","isolated-state")]);
         let response = self.client.get(url).send().await.expect("authorize HTTP");
         assert_eq!(response.status(), 200);
         assert_eq!(response.headers()["referrer-policy"], "no-referrer");
@@ -346,6 +346,309 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
 async fn oauth_packages_use_parameterized_sources_and_download_authorization_without_extra_grants()
 {
     oauth_package_scope_and_https_download(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-repository-parity-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("disposable evidence root");
+    let root = root.canonicalize().expect("isolated fixture path");
+    let source = super::extension_sources_flow::HttpsSource::protected_vpm(
+        b"unused archive fixture".to_vec(),
+    )
+    .await;
+    let configuration = CoreConfiguration::new();
+    let daemon = alcomd_daemon::test_support::start_with_package_source_until(
+        configuration.ipc.clone(),
+        DataConfig::isolated(root.join("data")),
+        CERT,
+        std::future::pending(),
+    )
+    .await
+    .expect("isolated Core");
+    let mut owner = AlcomdClient::connect(configuration.client.clone())
+        .await
+        .expect("local test owner");
+    let local_index = root.join("local-fixture.json");
+    std::fs::write(
+        &local_index,
+        r#"{"id":"local.fixture","name":"Local fixture","packages":{}}"#,
+    )
+    .expect("disposable local repository");
+    let local = owner
+        .repository_register(
+            RepositorySource::Local {
+                path: local_index.to_string_lossy().into_owned(),
+            },
+            "local-repository-fixture".into(),
+        )
+        .await
+        .expect("same native registry")
+        .repository;
+    let http = Https::start(&root, configuration.client).await;
+    let read_grants = [grant("repositories.read", "global", "*")];
+    let grants = vec![
+        read_grants[0].clone(),
+        grant("repositories.manage", "global", "*"),
+    ];
+    let a = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Repository manager A".into(),
+            grants: grants.clone(),
+            idempotency_key: "repository-manager-a".into(),
+        })
+        .await
+        .expect("client A");
+    let b = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Repository manager B".into(),
+            grants: grants.clone(),
+            idempotency_key: "repository-manager-b".into(),
+        })
+        .await
+        .expect("client B");
+    let reg_a = registration(&mut owner, &http, &a, false)
+        .await
+        .registration;
+    let reg_b = registration(&mut owner, &http, &b, false)
+        .await
+        .registration;
+    let code = http.code(&mut owner, &reg_a, &read_grants).await;
+    let read_token = http.exchange(&reg_a, &code, None).await;
+    let read_token = read_token["access_token"].as_str().expect("read access");
+    let reader = http.sdk(read_token).await;
+    let code = http.code(&mut owner, &reg_a, &grants).await;
+    let write_token = http.exchange(&reg_a, &code, None).await;
+    let writer = http
+        .sdk(write_token["access_token"].as_str().expect("write access"))
+        .await;
+    let code = http.code(&mut owner, &reg_b, &grants).await;
+    let foreign_token = http.exchange(&reg_b, &code, None).await;
+    let foreign = http
+        .sdk(
+            foreign_token["access_token"]
+                .as_str()
+                .expect("other manager"),
+        )
+        .await;
+    let tools = writer
+        .list_tools(None)
+        .await
+        .expect("repository descriptors")
+        .tools;
+    let register_tool = tools
+        .iter()
+        .find(|tool| tool.name == "alcomd_register_repository")
+        .expect("register tool");
+    let annotations = register_tool
+        .annotations
+        .as_ref()
+        .expect("register annotations");
+    assert_eq!(annotations.read_only_hint, Some(false));
+    assert_eq!(annotations.destructive_hint, Some(false));
+    assert_eq!(annotations.idempotent_hint, Some(true));
+    assert_eq!(annotations.open_world_hint, Some(true));
+    let mut trace = Vec::new();
+    let args = json!({"url":format!("{}{}",source.base,source.index_path)});
+    let read_preview = data(
+        call(&reader, &mut trace, "inspect_repository", args.clone())
+            .await
+            .expect("read-only inspect"),
+    );
+    assert!(read_preview.get("preview_id").is_none());
+    let preview = data(
+        call(&writer, &mut trace, "inspect_repository", args.clone())
+            .await
+            .expect("inspect for registration"),
+    );
+    assert_eq!(preview["display_name"], "M8 VPM fixture");
+    assert_eq!(preview["version_count"], 1);
+    assert!(!preview.to_string().contains(&source.base));
+    let register = json!({"preview_id":preview["preview_id"],"confirm":true,"idempotency_key":"register-inspected"});
+    let mut unconfirmed = register.clone();
+    unconfirmed["confirm"] = json!(false);
+    assert!(
+        call(&writer, &mut trace, "register_repository", unconfirmed)
+            .await
+            .is_err()
+    );
+    let denied = raw_tool(
+        &http,
+        read_token,
+        "alcomd_register_repository",
+        register.clone(),
+    )
+    .await;
+    assert_eq!(denied.status(), 403);
+    assert!(
+        denied.headers()["www-authenticate"]
+            .to_str()
+            .expect("scope")
+            .contains("repositories.manage")
+    );
+    error(
+        call(
+            &foreign,
+            &mut trace,
+            "register_repository",
+            register.clone(),
+        )
+        .await
+        .expect("foreign preview"),
+        "revision_conflict",
+    );
+    source.set_changed(true);
+    error(
+        call(&writer, &mut trace, "register_repository", register)
+            .await
+            .expect("stale preview"),
+        "revision_conflict",
+    );
+    let preview = data(
+        call(&writer, &mut trace, "inspect_repository", args)
+            .await
+            .expect("fresh preview"),
+    );
+    let register = json!({"preview_id":preview["preview_id"],"confirm":true,"idempotency_key":"register-inspected"});
+    let registered = data(
+        call(&writer, &mut trace, "register_repository", register.clone())
+            .await
+            .expect("confirm registration"),
+    );
+    let id = registered["repository_id"]
+        .as_str()
+        .expect("registered repository");
+    assert_eq!(
+        registered["repository"]["display_name"],
+        "Updated M8 VPM fixture"
+    );
+    assert_eq!(registered["repository"]["available"], true);
+    assert!(!registered.to_string().contains(&source.base));
+    let native = owner
+        .repository_get(id.to_owned())
+        .await
+        .expect("same registry for native clients");
+    assert_eq!(native.repository.repository_id.as_deref(), Some(id));
+    assert_eq!(
+        data(
+            call(&writer, &mut trace, "register_repository", register.clone())
+                .await
+                .expect("same-key recovery")
+        )["replayed"],
+        true
+    );
+    let first = data(
+        call(&reader, &mut trace, "list_repositories", json!({"limit":1}))
+            .await
+            .expect("read pagination"),
+    );
+    let second = data(
+        call(
+            &reader,
+            &mut trace,
+            "list_repositories",
+            json!({"limit":1,"cursor":first["next_cursor"]}),
+        )
+        .await
+        .expect("next page"),
+    );
+    assert_ne!(
+        first["repositories"][0]["repository_id"],
+        second["repositories"][0]["repository_id"]
+    );
+    let page = data(
+        call(&reader, &mut trace, "list_repositories", json!({}))
+            .await
+            .expect("shared registry list"),
+    );
+    let repositories = page["repositories"].as_array().expect("repositories");
+    assert!(repositories.iter().any(|item| item["repository_id"] == id));
+    assert!(repositories.iter().any(|item| item["repository_id"]
+        == local.repository_id.as_deref().expect("local ID")
+        && item["source_kind"] == "local"));
+    assert!(!page.to_string().contains("local-fixture.json"));
+    let builtin_id = alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID;
+    error(call(&writer,&mut trace,"remove_repository",json!({"repository_id":builtin_id.to_string(),"expected_revision":1,"idempotency_key":"protected-remove","confirm":true})).await.expect("protected built-in ID, even with builtin seeding disabled in the test"),"permission_denied");
+    let refresh = json!({"repository_id":id,"expected_revision":registered["revision"],"idempotency_key":"refresh-registered"});
+    source.set_changed(false);
+    let refreshed = data(
+        call(&writer, &mut trace, "refresh_repository", refresh.clone())
+            .await
+            .expect("refresh existing source"),
+    );
+    assert_eq!(refreshed["repository"]["display_name"], "M8 VPM fixture");
+    assert_eq!(
+        data(
+            call(&writer, &mut trace, "refresh_repository", refresh)
+                .await
+                .expect("refresh recovery")
+        )["replayed"],
+        true
+    );
+    let remove = json!({"repository_id":id,"expected_revision":refreshed["revision"],"idempotency_key":"remove-registered","confirm":true});
+    let removed = data(
+        call(&writer, &mut trace, "remove_repository", remove.clone())
+            .await
+            .expect("remove original registry row"),
+    );
+    assert_eq!(removed["repository_id"], id);
+    assert!(removed.get("repository").is_none());
+    assert_eq!(
+        data(
+            call(&writer, &mut trace, "remove_repository", remove)
+                .await
+                .expect("remove recovery")
+        )["replayed"],
+        true
+    );
+    assert!(owner.repository_get(id.to_owned()).await.is_err());
+    update(
+        &mut owner,
+        &a,
+        read_grants.to_vec(),
+        "withdraw-repository-write",
+    )
+    .await;
+    error(
+        call(&writer, &mut trace, "register_repository", register)
+            .await
+            .expect("withdrawal returns a business denial even for a replay"),
+        "permission_denied",
+    );
+    {
+        let db = rusqlite::Connection::open_with_flags(
+            root.join("data/state.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("inspect only the disposable idempotency database");
+        let mut rows = db.prepare("SELECT principal_id, request_fingerprint, response_json FROM idempotency_records WHERE method LIKE 'mcp.repositories.%'").expect("registry receipts");
+        let snapshots = rows
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .expect("receipt rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("complete receipt evidence");
+        assert_eq!(snapshots.len(), 3);
+        for (principal, input, result) in snapshots {
+            assert_eq!(principal, format!("mcp:{}", a.client_id));
+            assert!(!input.contains(&source.base) && !result.contains(&source.base));
+            assert!(!result.contains("credentialReference") && !result.contains("downloadHeaders"));
+        }
+    }
+    reader.cancel().await.expect("close reader");
+    writer.cancel().await.expect("close writer");
+    foreign.cancel().await.expect("close other manager");
+    http.finish_server().await;
+    drop(owner);
+    drop(daemon);
 }
 
 async fn oauth_package_scope_and_https_download(protected: bool) {
@@ -1576,8 +1879,12 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
             "alcomd_get_operation",
             "alcomd_get_package",
             "alcomd_get_project",
+            "alcomd_inspect_repository",
+            "alcomd_list_operations",
             "alcomd_list_package_sources",
             "alcomd_list_projects",
+            "alcomd_list_repositories",
+            "alcomd_plan_package_changes",
             "alcomd_plan_package_install",
             "alcomd_plan_package_reinstall",
             "alcomd_plan_package_uninstall",

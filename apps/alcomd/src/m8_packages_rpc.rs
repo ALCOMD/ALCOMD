@@ -524,15 +524,19 @@ fn versions(
     rows
 }
 
-async fn plan(
-    apps: &Applications,
-    access: &app::AccessContext,
-    authentication: app::ToolAuthentication,
+fn plan_request(
     input: rpc::McpPackagePlanRequest,
-) -> Result<rpc::McpPackagePlan, app::M4Error> {
+    default_prerelease: bool,
+) -> Result<app::PackagePlanRequest, app::M4Error> {
     let invalid = || app::M4Error::new(app::M4ErrorCode::InvalidInput);
-    if !app::valid_presentation_package_id(&input.package_id)
-        || !valid_revision(input.project.expected_revision)
+    let package_id = || input.package_id.clone().ok_or_else(invalid);
+    let project_id = input.project.project_id;
+    let expected_revision = input.project.expected_revision;
+    if input
+        .package_id
+        .as_deref()
+        .is_some_and(|id| !app::valid_presentation_package_id(id))
+        || !valid_revision(expected_revision)
         || input
             .source
             .as_ref()
@@ -540,58 +544,185 @@ async fn plan(
     {
         return Err(invalid());
     }
-    let settings = apps.m4.package_source_settings().await?;
-    let selected_source = input.source.clone();
+    let is_upgrade = matches!(&input.intent, rpc::McpPackageIntent::Upgrade { .. });
+    let valid_range = |value: &str| {
+        !value.is_empty() && value.len() <= 1024 && !value.chars().any(char::is_control)
+    };
+    let valid_version =
+        |value: &str| value.len() <= 256 && alcomd_vpm::classify_prerelease(value).is_some();
+    let no_target = || input.package_id.is_none() && input.source.is_none();
     let (action, params) = match input.intent {
-        rpc::McpPackageIntent::Install { version_selector } => {
+        rpc::McpPackageIntent::Install {
+            version_selector,
+            include_prerelease,
+            allow_unity_incompatible,
+        }
+        | rpc::McpPackageIntent::Upgrade {
+            version_selector,
+            include_prerelease,
+            allow_unity_incompatible,
+        } => {
+            if allow_unity_incompatible
+                && !matches!(
+                    &version_selector,
+                    rpc::McpPackageVersionSelector::Exact { .. }
+                )
+            {
+                return Err(invalid());
+            }
             let version_range = match version_selector {
                 rpc::McpPackageVersionSelector::LatestCompatible => None,
-                rpc::McpPackageVersionSelector::Exact { version } => {
-                    if version.len() > 256 || alcomd_vpm::classify_prerelease(&version).is_none() {
-                        return Err(invalid());
-                    }
+                rpc::McpPackageVersionSelector::Exact { version } if valid_version(&version) => {
                     Some(format!("={version}"))
                 }
+                rpc::McpPackageVersionSelector::Range { range } if valid_range(&range) => {
+                    Some(range)
+                }
+                _ => return Err(invalid()),
             };
             (
-                app::PlanAction::Install,
+                if is_upgrade {
+                    app::PlanAction::Upgrade
+                } else {
+                    app::PlanAction::Install
+                },
                 serde_json::to_value(rpc::PackagePlanInstallParams {
-                    project_id: input.project.project_id,
-                    expected_revision: input.project.expected_revision,
-                    package_id: input.package_id,
+                    project_id,
+                    expected_revision,
+                    package_id: package_id()?,
                     version_range,
                     repository_id: None,
                     source: input.source,
-                    include_prerelease: settings.show_prerelease,
-                    allow_unity_incompatible: false,
+                    include_prerelease: include_prerelease.unwrap_or(default_prerelease),
+                    allow_unity_incompatible,
                 }),
             )
         }
-        rpc::McpPackageIntent::Reinstall => (
-            app::PlanAction::Reinstall,
-            serde_json::to_value(rpc::PackagePlanReinstallParams {
-                project_id: input.project.project_id,
-                expected_revision: input.project.expected_revision,
-                selection: rpc::PackageReinstallSelection::Packages {
-                    package_ids: vec![input.package_id.clone()],
-                },
-                sources: input
-                    .source
-                    .into_iter()
-                    .map(|source| rpc::PackageReinstallSource {
-                        package_id: input.package_id.clone(),
-                        source,
-                    })
-                    .collect(),
+        rpc::McpPackageIntent::Downgrade {
+            version,
+            allow_unity_incompatible,
+        } if valid_version(&version) => (
+            app::PlanAction::Downgrade,
+            serde_json::to_value(rpc::PackagePlanDowngradeParams {
+                project_id,
+                expected_revision,
+                package_id: package_id()?,
+                version,
+                repository_id: None,
+                source: input.source,
+                allow_unity_incompatible,
             }),
         ),
+        rpc::McpPackageIntent::Remove if input.source.is_none() => (
+            app::PlanAction::Remove,
+            serde_json::to_value(rpc::PackagePlanRemoveParams {
+                project_id,
+                expected_revision,
+                package_id: package_id()?,
+            }),
+        ),
+        rpc::McpPackageIntent::Resolve { include_prerelease } if no_target() => (
+            app::PlanAction::Resolve,
+            serde_json::to_value(rpc::PackagePlanResolveParams {
+                project_id,
+                expected_revision,
+                include_prerelease: include_prerelease.unwrap_or(default_prerelease),
+            }),
+        ),
+        rpc::McpPackageIntent::Reinstall {
+            selection,
+            mut sources,
+        } => {
+            let selection = match selection {
+                Some(selection) if no_target() => selection,
+                None if sources.is_empty() => {
+                    let package_id = package_id()?;
+                    sources.extend(input.source.map(|source| rpc::PackageReinstallSource {
+                        package_id: package_id.clone(),
+                        source,
+                    }));
+                    rpc::PackageReinstallSelection::Packages {
+                        package_ids: vec![package_id],
+                    }
+                }
+                _ => return Err(invalid()),
+            };
+            if matches!(&selection, rpc::PackageReinstallSelection::Packages { package_ids }
+                if package_ids.is_empty() || package_ids.len() > 256 || package_ids.iter().any(|id| !app::valid_presentation_package_id(id)))
+                || sources.len() > 256
+                || sources.iter().any(|item| {
+                    !app::valid_presentation_package_id(&item.package_id)
+                        || !source_is_valid(&item.source)
+                })
+            {
+                return Err(invalid());
+            }
+            (
+                app::PlanAction::Reinstall,
+                serde_json::to_value(rpc::PackagePlanReinstallParams {
+                    project_id,
+                    expected_revision,
+                    selection,
+                    sources,
+                }),
+            )
+        }
+        rpc::McpPackageIntent::Bulk { intents }
+            if no_target() && (1..=256).contains(&intents.len()) =>
+        {
+            for intent in &intents {
+                let (id, range, source) = match intent {
+                    rpc::PackageBulkIntent::Install {
+                        package_id,
+                        version_range,
+                        source,
+                        ..
+                    }
+                    | rpc::PackageBulkIntent::Upgrade {
+                        package_id,
+                        version_range,
+                        source,
+                        ..
+                    } => (package_id, version_range.as_deref(), source.as_ref()),
+                    rpc::PackageBulkIntent::Reinstall { package_id, source } => {
+                        (package_id, None, source.as_ref())
+                    }
+                    rpc::PackageBulkIntent::Remove { package_id } => (package_id, None, None),
+                };
+                if !app::valid_presentation_package_id(id)
+                    || range.is_some_and(|range| !valid_range(range))
+                    || source.is_some_and(|source| !source_is_valid(source))
+                {
+                    return Err(invalid());
+                }
+            }
+            (
+                app::PlanAction::Bulk,
+                serde_json::to_value(rpc::PackagePlanBulkParams {
+                    project_id,
+                    expected_revision,
+                    intents,
+                }),
+            )
+        }
+        _ => return Err(invalid()),
     };
-    let request = super::m4_rpc::plan_request(
+    super::m4_rpc::plan_request(
         action,
         app::PackagePlanVersion::V2,
         params.map_err(|_| invalid())?,
     )
-    .map_err(|_| invalid())?;
+    .map_err(|_| invalid())
+}
+
+async fn plan(
+    apps: &Applications,
+    access: &app::AccessContext,
+    authentication: app::ToolAuthentication,
+    input: rpc::McpPackagePlanRequest,
+) -> Result<rpc::McpPackagePlan, app::M4Error> {
+    let settings = apps.m4.package_source_settings().await?;
+    let request = plan_request(input, settings.show_prerelease)?;
     let sources = apps
         .store
         .delegated_package_catalog(
@@ -610,17 +741,32 @@ async fn plan(
             })
         })?
         .sources;
-    if selected_source
-        .as_ref()
-        .is_some_and(|source| hidden_source(&sources, source))
+    let bulk_sources = request
+        .bulk_intents
+        .iter()
+        .filter_map(|intent| match intent {
+            app::PackageBulkIntent::Install { source, .. }
+            | app::PackageBulkIntent::Upgrade { source, .. }
+            | app::PackageBulkIntent::Reinstall { source, .. } => source.as_ref(),
+            app::PackageBulkIntent::Remove { .. } => None,
+        });
+    if request
+        .source_selector
+        .iter()
+        .chain(request.reinstall_sources.iter().map(|(_, source)| source))
+        .chain(bulk_sources)
+        .any(|source| hidden_source(&sources, &source_selector(source)))
     {
         return Err(app::M4Error::new(app::M4ErrorCode::PermissionDenied));
     }
-    let mut plan = super::m4_rpc::plan_to_rpc(
+    let plan = if request.action.uses_delegated_catalog() {
         apps.m4
             .plan_delegated(access, request, authentication)
-            .await?,
-    );
+            .await?
+    } else {
+        apps.m4.plan(access, request).await?
+    };
+    let mut plan = super::m4_rpc::plan_to_rpc(plan);
     let selected = plan
         .change_set
         .mutations

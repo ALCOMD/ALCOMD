@@ -53,7 +53,7 @@ fn builtin() -> Result<Vec<Entry>, E> {
                 "alcomd_get_project" => O::ProjectsGet,
                 "alcomd_plan_package_uninstall" => O::PlanUninstall,
                 "alcomd_apply_package_changes" => O::ApplyPlan,
-                "alcomd_get_operation" => O::OperationGet,
+                "alcomd_get_operation" | "alcomd_list_operations" => O::OperationGet,
                 "alcomd_cancel_operation" => O::OperationCancel,
                 _ => return Err(E::Unavailable),
             };
@@ -82,16 +82,14 @@ fn builtin() -> Result<Vec<Entry>, E> {
         })
         .collect()
 }
-fn append_package_tools(entries: &mut Vec<Entry>) -> Result<(), E> {
-    let schema: Value = serde_json::from_str(include_str!(
-        "../../../specs/mcp/package-catalog-plan-v1.schema.json"
-    ))
-    .map_err(|_| E::Unavailable)?;
+fn append_builtin_tools(entries: &mut Vec<Entry>, contract: &str) -> Result<(), E> {
+    let schema: Value = serde_json::from_str(contract).map_err(|_| E::Unavailable)?;
     for entry in schema["x-alcomd-tools"].as_array().ok_or(E::Unavailable)? {
         let field = |key: &str| entry[key].as_str().map(str::to_owned).ok_or(E::Unavailable);
         let effect = match field("effect")?.as_str() {
             "read" => app::ToolOperation::ProjectsList.effect(),
             "plan" => app::ToolOperation::PlanUninstall.effect(),
+            "apply" => app::ToolOperation::ApplyPlan.effect(),
             _ => return Err(E::Unavailable),
         };
         let schema_field = |key: &str| {
@@ -115,13 +113,6 @@ fn append_package_tools(entries: &mut Vec<Entry>) -> Result<(), E> {
             declaration: None,
         });
     }
-    for entry in entries
-        .iter_mut()
-        .filter(|entry| entry.descriptor.name == "alcomd_apply_package_changes")
-    {
-        entry.descriptor.title = "Apply a reviewed package plan".into();
-        entry.descriptor.description = "Only call after the operator has reviewed and confirmed the entire original plan. Applies that plan without replanning and returns an operation to check.".into();
-    }
     Ok(())
 }
 
@@ -129,13 +120,30 @@ async fn entries(
     apps: &Applications,
     authentication: app::ToolAuthentication,
     package_tools: bool,
+    repository_tools: bool,
 ) -> Result<(Vec<Entry>, String), E> {
     let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
     let access = authentication.access(snapshot.client.clone())?;
     let mut evidence = json!({"auth":authentication.binding(),"client":snapshot.client.revision,"grants":snapshot.client.grants,"providers":[]});
     let mut entries = builtin()?;
     if package_tools {
-        append_package_tools(&mut entries)?;
+        append_builtin_tools(
+            &mut entries,
+            include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json"),
+        )?;
+        if let Some(entry) = entries
+            .iter_mut()
+            .find(|entry| entry.descriptor.name == "alcomd_apply_package_changes")
+        {
+            entry.descriptor.title = "Apply a reviewed package plan".into();
+            entry.descriptor.description = "Only call after the operator has reviewed and confirmed the entire original plan. Applies that plan without replanning and returns an operation to check.".into();
+        }
+    }
+    if repository_tools {
+        append_builtin_tools(
+            &mut entries,
+            include_str!("../../../specs/mcp/repositories-v1.schema.json"),
+        )?;
     }
     entries.retain(|e| {
         app::require_tool_permissions(&access, &e.descriptor.required_permissions).is_ok()
@@ -297,7 +305,7 @@ async fn call(
             return Ok(saved);
         }
     }
-    let (items, _) = entries(apps, authentication.clone(), false).await?;
+    let (items, _) = entries(apps, authentication.clone(), false, false).await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -467,6 +475,9 @@ pub(super) async fn dispatch(
                     state
                         .capabilities
                         .contains(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1),
+                    state
+                        .capabilities
+                        .contains(rpc::CAPABILITY_MCP_REPOSITORIES_V1),
                 )
                 .await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)

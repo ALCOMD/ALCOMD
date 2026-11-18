@@ -26,6 +26,19 @@ pub enum PlanAction {
 
 impl PlanAction {
     #[must_use]
+    pub const fn uses_delegated_catalog(self) -> bool {
+        matches!(
+            self,
+            Self::Install
+                | Self::Upgrade
+                | Self::Downgrade
+                | Self::Resolve
+                | Self::Reinstall
+                | Self::Bulk
+        )
+    }
+
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Install => "install",
@@ -1084,10 +1097,7 @@ where
         request: PackagePlanRequest,
         authentication: crate::ToolAuthentication,
     ) -> Result<PackagePlanRecord, M4Error> {
-        if !access.is_mcp_client()
-            || !matches!(request.action, PlanAction::Install | PlanAction::Reinstall)
-            || request.allow_unity_incompatible
-        {
+        if !access.is_mcp_client() || !request.action.uses_delegated_catalog() {
             return Err(M4Error::new(M4ErrorCode::PermissionDenied));
         }
         self.plan_inner(access, request, Some(authentication)).await
@@ -1236,8 +1246,7 @@ where
             .store
             .get_package_plan(access.principal().clone(), plan_id)
             .await?;
-        let delegated = access.is_mcp_client()
-            && matches!(plan.action, PlanAction::Install | PlanAction::Reinstall);
+        let delegated = access.is_mcp_client() && plan.action.uses_delegated_catalog();
         if access.is_mcp_client()
             && ((delegated && (authentication.is_none() || crate::tool_invocation().is_some()))
                 || (!delegated

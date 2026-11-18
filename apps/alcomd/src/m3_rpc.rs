@@ -758,7 +758,7 @@ fn package(value: app::RepositoryPackageVersion) -> rpc::RepositoryPackageVersio
     }
 }
 
-fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
+pub(super) fn m3_error(id: String, error: app::M3Error) -> DispatchAction {
     use app::M3ErrorCode as C;
     let rpc_error = match error.code() {
         C::PermissionDenied => rpc::RpcError::permission_denied(),

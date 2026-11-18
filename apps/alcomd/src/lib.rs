@@ -52,6 +52,7 @@ mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
 mod m8_oauth_rpc;
 mod m8_packages_rpc;
+mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
@@ -856,6 +857,9 @@ async fn dispatch_payload(
         return m8_packages_rpc::dispatch(request, state, applications, &access, payload.len())
             .await;
     }
+    if request.method.starts_with("mcp.repositories.") {
+        return m8_repositories_rpc::dispatch(request, state, applications, &access).await;
+    }
     if matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
@@ -990,6 +994,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
+        alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,

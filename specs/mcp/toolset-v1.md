@@ -61,13 +61,21 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 核心权威状态为 ALCOMD Operation。`alcomd_get_operation` 需要 `operations.read`，`alcomd_cancel_operation` 需要 `operations.cancel`。两项按真实调用者读取或取消自身任务，使用 Core 的生命周期和修订规则。包变更和状态检查有明确结果字段，其余任务提供状态、修订、时间和稳定错误字段。4.0.0 不采用或广告 MCP Tasks。协议请求取消及 STDIO EOF 只结束当前请求，只有显式 `alcomd_cancel_operation` 请求 Core 合作式业务取消。
 
+`alcomd_list_operations` 使用同一读取权限和任务视图，接受 `limit`、`cursor` 和 `active_only`，返回当前调用者的任务分页及活动数。
+
 ## 包目录、安装与重装
 
 获批的增量工具见[工具 Schema](package-catalog-plan-v1.schema.json)与 [Core RPC Schema](../rpc/m8-mcp-packages-v1.schema.json)。目录按当前 `repositories.read`、`packages.read` 展示可访问的包和来源，可选项目上下文另需 `projects.read`。`alcomd_search_packages` 可浏览全局包或按仓库筛选，`alcomd_get_package` 可查版本详情，`alcomd_list_package_sources` 提供选源所需的稳定 ID 和可用状态。受保护来源当前无需向客户端透露设置或凭据。
 
 `alcomd_plan_package_install` 可按最新兼容版本或精确版本生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 使用相同读取能力、`packages.manage`、原 Plan、显式确认和既有幂等规则。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称。
 
+`alcomd_plan_package_changes` 复用相同项目与修订输入，支持安装、升级、降级、卸载、重新解析、选定包或全部重装，以及最多 256 项的批量意图。可在安装或升级中指定版本范围及预发布策略。精确安装、升级或降级可明确选择 Unity 兼容性例外，Core 在 Plan 中列出风险并沿用原确认规则。
+
 MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档校验。获得所需业务权限的 MCP 客户端可使用已登记的公开或认证仓库、带查询参数的来源、本地仓库和用户包。Core 在原有范围内处理仓库凭据与下载头，MCP 响应只给安全的来源标识和普通文档链接。MCP 目录在协商 `mcp.packages.catalog-plan.v1` 后按实时权限展示这些工具。
+
+## 仓库管理
+
+`mcp.repositories.v1` 提供 [MCP 工具](repositories-v1.schema.json) 和 [Core RPC](../rpc/m8-mcp-repositories-v1.schema.json)。`alcomd_list_repositories` 用 `repositories.read` 浏览共用登记列表。`alcomd_inspect_repository` 检查远程地址，同时有 `repositories.manage` 时提供 60 秒有效、绑定到当前认证的预览 ID。`alcomd_register_repository` 要求显式确认原预览，Core 在提交前检查来源证据，变动时需要重新检查。`alcomd_refresh_repository` 和 `alcomd_remove_repository` 使用实际仓库 ID 和修订，移除另需显式确认与内置保护。三项写入均要求 `repositories.manage` 和幂等键，以原参数同键恢复。凭据及本地路径由本机入口管理，Core 在原规则下刷新这些已登记来源，安全响应省略来源地址与凭据。
 
 ## 客户端接入速查
 

@@ -16,6 +16,7 @@
                         "operations.cancel",
                         "events.read",
                         "repositories.read",
+                        "repositories.manage",
                         "packages.read"
                     ]
                 },

@@ -112,6 +112,24 @@
                 "idempotentHint": true,
                 "openWorldHint": false
             }
+        },
+        {
+            "name": "alcomd_list_operations",
+            "title": "List owned operations",
+            "description": "Page through your own Core operations, optionally limited to active tasks.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/listOperationsInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/listOperationsOutput"
+            },
+            "annotations": {
+                "readOnlyHint": true,
+                "destructiveHint": false,
+                "idempotentHint": true,
+                "openWorldHint": false
+            }
         }
     ],
     "$defs": {
@@ -1110,8 +1128,12 @@
                 },
                 "result": {
                     "oneOf": [
-                        {"$ref": "#/$defs/packageOperationResult"},
-                        {"$ref": "#/$defs/stateCheckOperationResult"}
+                        {
+                            "$ref": "#/$defs/packageOperationResult"
+                        },
+                        {
+                            "$ref": "#/$defs/stateCheckOperationResult"
+                        }
                     ]
                 },
                 "error_code": {
@@ -1136,22 +1158,40 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "plan_id": {"$ref": "#/$defs/id"},
-                "change_set_fingerprint": {"$ref": "#/$defs/sha256"}
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "change_set_fingerprint": {
+                    "$ref": "#/$defs/sha256"
+                }
             },
-            "required": ["plan_id", "change_set_fingerprint"]
+            "required": [
+                "plan_id",
+                "change_set_fingerprint"
+            ]
         },
         "stateCheckClassification": {
-            "enum": ["ok", "issues_detected", "issues_truncated"]
+            "enum": [
+                "ok",
+                "issues_detected",
+                "issues_truncated"
+            ]
         },
         "stateCheckOperationResult": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "integrity": {"$ref": "#/$defs/stateCheckClassification"},
-                "foreign_keys": {"$ref": "#/$defs/stateCheckClassification"}
+                "integrity": {
+                    "$ref": "#/$defs/stateCheckClassification"
+                },
+                "foreign_keys": {
+                    "$ref": "#/$defs/stateCheckClassification"
+                }
             },
-            "required": ["integrity", "foreign_keys"]
+            "required": [
+                "integrity",
+                "foreign_keys"
+            ]
         },
         "toolError": {
             "type": "object",
@@ -1615,6 +1655,88 @@
                 },
                 {
                     "$ref": "#/$defs/toolFailure"
+                }
+            ]
+        },
+        "operationsCursor": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "created_at_ms": {
+                    "$ref": "#/$defs/time"
+                },
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "created_at_ms",
+                "operation_id"
+            ]
+        },
+        "listOperationsInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "$ref": "#/$defs/operationsCursor"
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                },
+                "active_only": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "listOperationsOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "operations": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/operationView"
+                                    },
+                                    "minItems": 0,
+                                    "maxItems": 1000
+                                },
+                                "active_count": {
+                                    "$ref": "#/$defs/time"
+                                },
+                                "next_cursor": {
+                                    "$ref": "#/$defs/operationsCursor"
+                                }
+                            },
+                            "required": [
+                                "operations",
+                                "active_count"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "error": {
+                            "$ref": "#/$defs/toolError"
+                        }
+                    },
+                    "required": [
+                        "error"
+                    ]
                 }
             ]
         }

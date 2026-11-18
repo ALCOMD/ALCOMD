@@ -24,6 +24,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod events;
 mod m8_oauth;
+mod m8_repositories;
 pub use events::EventSubscription;
 pub use m8_oauth::OAuthRejection;
 
@@ -254,6 +255,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),

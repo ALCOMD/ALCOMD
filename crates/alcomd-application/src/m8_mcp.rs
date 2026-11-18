@@ -106,6 +106,7 @@ pub fn validate_mcp_grants(grants: &[McpGrant]) -> Result<(), McpIdentityError> 
                 | "operations.cancel"
                 | "events.read"
                 | "repositories.read"
+                | "repositories.manage"
                 | "packages.read"
         ) && grant.resource_kind == "global"
             && grant.resource_id == "*";
@@ -154,6 +155,7 @@ pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError>
             "operations.cancel" => Permission::OperationsCancel,
             "events.read" => Permission::EventsRead,
             "repositories.read" => Permission::RepositoriesRead,
+            "repositories.manage" => Permission::RepositoriesManage,
             "packages.read" => Permission::PackagesRead,
             "packages.manage" => Permission::PackagesManage,
             _ => return Err(McpIdentityError::PermissionDenied),

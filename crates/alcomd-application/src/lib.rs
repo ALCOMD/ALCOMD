@@ -38,6 +38,8 @@ mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
 mod m8_oauth_types;
+mod m8_repositories;
+pub use m8_repositories::*;
 mod m8_runtime;
 mod m8_tools;
 mod m8_transport;
@@ -1548,6 +1550,7 @@ pub struct M3Application<S: M3RegistryStore, R: M3ReadAdapter> {
     locks: Arc<ResourceLockCoordinator>,
     repository_import: Arc<Mutex<()>>,
     repository_previews: Arc<Mutex<VecDeque<RepositoryPreview>>>,
+    mcp_repository_previews: Arc<Mutex<VecDeque<McpRepositoryPreview>>>,
 }
 
 const REPOSITORY_PREVIEW_TTL: Duration = Duration::from_secs(60);
@@ -1570,6 +1573,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             locks: Arc::new(ResourceLockCoordinator::default()),
             repository_import: Arc::new(Mutex::new(())),
             repository_previews: Arc::new(Mutex::new(VecDeque::new())),
+            mcp_repository_previews: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -2406,11 +2410,52 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             .store
             .get_repository(access.principal().clone(), id)
             .await?;
+        let current_revision = current.revision;
+        match self
+            .fetch_repository_refresh(access.principal().clone(), id, current)
+            .await?
+        {
+            RepositoryReadOutcome::Fresh(observation) => {
+                self.store
+                    .refresh_repository(
+                        access.principal().clone(),
+                        id,
+                        expected,
+                        observation,
+                        key,
+                        m3_time_ms()?,
+                    )
+                    .await
+            }
+            RepositoryReadOutcome::NotModified(validators) => {
+                if current_revision != expected {
+                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+                }
+                self.store
+                    .update_repository_validators(
+                        access.principal().clone(),
+                        id,
+                        expected,
+                        validators,
+                        key,
+                        m3_time_ms()?,
+                    )
+                    .await
+            }
+        }
+    }
+
+    async fn fetch_repository_refresh(
+        &self,
+        resource_owner: PrincipalId,
+        id: RepositoryId,
+        current: RepositoryRecord,
+    ) -> Result<RepositoryReadOutcome, M3Error> {
         let target = match &current.observation.source {
             RepositorySource::Local { path } => Some(log_path("repository", path.clone())),
             RepositorySource::Remote { .. } => None,
         };
-        match log_execution_step(
+        log_execution_step(
             "repositories.refresh",
             "fetch_repository",
             target,
@@ -2418,7 +2463,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 let credentials = if current.credentials_configured {
                     let reference = self
                         .store
-                        .repository_credential_reference(access.principal().clone(), id)
+                        .repository_credential_reference(resource_owner, id)
                         .await?
                         .ok_or_else(|| M3Error::new(M3ErrorCode::RepositoryUnavailable))?;
                     Some(self.reader.load_repository_credentials(reference).await?)
@@ -2441,38 +2486,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             },
             |error| error.technical_path().map(str::to_owned),
         )
-        .await?
-        {
-            RepositoryReadOutcome::Fresh(observation) => {
-                self.store
-                    .refresh_repository(
-                        access.principal().clone(),
-                        id,
-                        expected,
-                        observation,
-                        key,
-                        m3_time_ms()?,
-                    )
-                    .await
-            }
-            RepositoryReadOutcome::NotModified(validators) => {
-                if current.revision != expected {
-                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
-                }
-                let record = self
-                    .store
-                    .update_repository_validators(
-                        access.principal().clone(),
-                        id,
-                        expected,
-                        validators,
-                        key,
-                        m3_time_ms()?,
-                    )
-                    .await?;
-                Ok(record)
-            }
-        }
+        .await
     }
 
     pub async fn refresh_all_repositories(
