@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { selectActionMenuItem } from "./material-menu-actions";
 import { selectSettingsSection } from "./settings-sections";
+import { openLocalExtensionInstall } from "./extension-install-entry";
 
 const nativePath = "C:/fixture/native.txt";
 const typedPath = "C:/fixture/typed.txt";
@@ -77,13 +78,17 @@ test("Unity Hub uses an inline path field and select button", async ({ page }) =
 
 for (const entry of [
     { route: "/unity", action: "Manage installations", label: "Unity executable", path: "C:/Editors/Unity.exe" },
-    { route: "/extensions", action: "Install extension", label: "Extension package", path: "C:/fixture/test.alcomdextension" },
+    { route: "/extensions", label: "Extension package", path: "C:/fixture/test.alcomdextension" },
     { route: "/repositories", action: "Add repository", label: "Local manifest path", path: "C:/fixture/repository.json" }
 ]) {
     test(`${entry.label} uses only inline controls with a working native chooser`, async ({ page }) => {
         await page.goto(`/browser-harness.html?route=${entry.route}`);
         if (entry.route === "/unity") await selectSettingsSection(page, "unity");
-        await page.getByRole("button", { name: entry.action, exact: true }).click();
+        if (entry.route === "/extensions") {
+            await openLocalExtensionInstall(page);
+        } else {
+            await page.getByRole("button", { name: entry.action, exact: true }).click();
+        }
         const dialog = page.locator("md-dialog[open]");
         if (entry.route === "/repositories") {
             await dialog.getByRole("combobox", { name: "Source type", exact: true }).click();

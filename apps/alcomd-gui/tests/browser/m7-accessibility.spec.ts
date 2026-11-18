@@ -2,6 +2,7 @@ import { selectSettingsSection } from "./settings-sections";
 import { selectActionMenuItem } from "./material-menu-actions";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
+import { openLocalExtensionInstall } from "./extension-install-entry";
 
 test("keyboard navigation moves routes and focuses the destination heading", async ({ page }) => {
     await openHarness(page, "/");
@@ -455,12 +456,18 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await expect(page.locator(".operation-follow")).toContainText("Restore project");
 
     await openHarness(page, "/extensions");
-    await page.getByRole("button", { name: "Install extension", exact: true }).click();
-    await page.getByLabel("Extension package").fill("C:\\Fixture\\extension.alcomdextension");
-    await expect(page.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Create install plan" }).click();
-    await clickDialogAction(page, "Install extension", "Apply reviewed plan");
+    await openLocalExtensionInstall(page);
+    const installDialog = page.locator("md-dialog[open]");
+    const packagePath = "C:\\Fixture\\extension.alcomdextension";
+    await installDialog.getByLabel("Extension package", { exact: true }).fill(packagePath);
+    await expect(installDialog.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
+    await installDialog.getByRole("button", { name: "Install extension", exact: true }).click();
+    await expect(installDialog.getByRole("heading", { name: "Required permissions", exact: true })).toBeVisible();
+    const installRequests = () => page.evaluate(() => window.coreEvents.rpcRequests.filter(({ method }) => method === "extensionPlanInstall" || method === "extensionApplyInstall"));
+    expect(await installRequests()).toEqual([{ method: "extensionPlanInstall", args: [packagePath, 0] }]);
+    await clickDialogAction(page, "Install extension", "Agree and install");
     await expect(page.getByRole("status").filter({ hasText: "Install extension" })).toBeVisible();
+    expect((await installRequests()).map(({ method }) => method)).toEqual(["extensionPlanInstall", "extensionApplyInstall"]);
 
     await page.goto("/browser-harness.html?route=/operations/00000000-0000-4000-8000-000000000105&state=ready&hold-core-operation=1");
     await page.getByRole("button", { name: "Cancel operation" }).click();
