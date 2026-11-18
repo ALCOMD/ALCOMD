@@ -1726,3 +1726,30 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 - 仓库 HTTPS/OAuth 最终定向 1/0（2.55 秒），二进制 SHA-256 `d0b9c0d6667749d63f8d03d448425eeb69f1fcb41946bf3926ee7f2f5b5ac667`。验证原生登记可见、实际分页、无确认、他人预览和来源变化时拒绝写入，覆盖刷新、移除、内置 ID 保护、逐请求撤权和原键恢复。只读检查隔离库确认三条仓库写入回执归实际调用者，输入摘要和响应未留存地址或认证材料。保留此前两项夹具失败。其一默认隔离 Core 未预置内置行，后续直接测试受保护 ID。其二将授权撤回后的结构化 `permission_denied` 当作 HTTP 403，复验检查实际 MCP 错误和持久副作用。
 - 关联 OAuth 综合与签名 Provider 分别 1/0（8.44 秒和 110.02 秒），对应先前集成二进制 `e3dd20bbf1a840cce00269b5756db049c4396b8ab23bab02abb1b290bf38e5ff`。原生仓库 Store 7/0，九项授权分页 1/0，MCP 单元 15/0，管理扩展单元 8/0及 Wasm Component 构建通过。受影响七包及最终 MCP 适配器严格 Clippy、fmt、metadata、xtask、Schema 引用和 diff 通过。
 - 证据在 `target/m8-plan-parity-20261119/`、`target/m8-registry-parity-20261119/`、`target/m8-registry-parity-final-20261119/` 和 `target/m8-registry-revocation-20261119/`。Windows 链接器锁住旧输出文件时改用单独的测试产物名。原隔离 GUI 129908 可见且响应，五条管道连接 Core 86540，恢复前后五组公开状态一致。未推送，暂无同 SHA 远端验证。下一批按既有顺序核对项目、备份、模板和环境能力。
+
+### 2026-11-19 项目与备份集中合同差异（待批准）
+
+Core 已有登记、模板创建、复制、创建备份和恢复。当前登记将登记资源与幂等记录都归到调用者。创建、复制与恢复显式要求本机所有者，Worker 的源资源查询及发布登记也依赖这个身份。备份读取和创建按调用者自己的项目及备份记录查找。外部 MCP 允许列表尚未开放这些入口。原生 RPC 的项目快照、复制及恢复 Plan 带实际本机路径，MCP 沿用安全投影。已核对 `M3Application::{register_project,get_project}`、`ProjectCreateApplication::create`、`M7CopyApplication::{plan_copy,apply_copy}`、`M5BackupApplication::{list,get,create,plan_restore,apply_restore}` 与对应 Store 接受及完成事务。
+
+新增协商 capability `mcp.project-workflows.v1`。现有 SDK 方法、原生请求及结果保留。下表列出 MCP 工具名（均加 `alcomd_`），参数名以工具使用的 snake_case 表达。
+
+| 工具及输入 | Core 方法与结果 | 能力 |
+| --- | --- | --- |
+| `register_project(source, idempotency_key)` | `mcp.projects.register`，复用既有精确项目检查与登记，返回安全项目快照和 `replayed`。`source` 为 `{kind:default,relative_path}` 或 `{kind:approved,approval_id}`。 | `projects.manage` |
+| `list_project_templates(cursor?, limit?)` | 复用 `projectTemplates.list`，返回可选模板 ID、名称、Unity 版本、修订和既有只读标记。 | `projects.create` |
+| `create_project(target, unity_version, template?, idempotency_key)` | `mcp.projects.create`，模板用 `{id,revision}`，返回 `operation_id`、`project_id`、`replayed`。继续冻结模板和原 Unity 版本。 | `projects.create`。模板含包变更时继续需要 `packages.read`、`repositories.read`、`packages.manage`。 |
+| `plan_project_copy(source_project_id, expected_revision, target, idempotency_key)` 和 `apply_project_copy(plan_id, expected_revision, confirm, idempotency_key, path_approval_id?)` | `mcp.projects.planCopy/applyCopy`。计划返回原 `plan_id`、源项目和修订、目标名称、预分配项目 ID、写入者状态、复制范围、到期时间及指纹。Apply 返回原 Operation 与目标项目 ID。 | 两步均为 `projects.read`、`projects.create` |
+| `list_backups(project_id?, cursor?, limit?)`、`get_backup(backup_id)`、`create_backup(project_id, expected_revision, compression_mode?, exclude_vpm_packages?, include_library?, idempotency_key)` | 复用 `backups.list/get/create` 和原有 DTO、默认设置及归档证据。列表及详情返回原安全 `BackupRecord`。创建返回原 `operation_id`、`backup_id`、`replayed`。 | 读取 `backups.read`，创建 `backups.manage` 和 `projects.read` |
+| `plan_backup_restore(backup_id, target)` 和 `apply_backup_restore(plan_id, confirm, idempotency_key, path_approval_id?)` | `mcp.backups.planRestore/applyRestore`。使用已登记 `BackupId` 和原归档验证。计划返回 Plan、备份及预分配项目 ID、目标名称、归档摘要、需要重新解析及排除包证据。Apply 返回原 Operation 与项目 ID。 | 计划为 `backups.read`、`projects.create`，确认恢复另需 `backups.manage` |
+
+只开放已有 `projects.manage`、`projects.create`、`backups.read`、`backups.manage` 的 `global/*` 组合，默认关闭。OAuth、管理扩展和 grant Schema 同步。登记、模板和备份查询先检查真实身份。共享登记项目、模板和备份以 Core 的资源所有者定位。新登记内容和登记变更事件也以该资源所有者写入，同一个 ID 可由 GUI、CLI 和获准 MCP 读取。Plan、Operation、任务事件和幂等仍按实际调用者归属。接受和同键重放时在 Core 权威边界重查当前凭据、业务能力、OAuth 上限和原证据。已接受 Worker 按既有持久任务和资源证据执行与恢复。
+
+新目标 `target` 为 `{kind:default,name}` 或 `{kind:approved,approval_id}`。默认目的地使用 Core 已生效的项目根和单一目标名称，登记使用根下显式相对目录。Core 只在已有默认根和已审批的外部路径上校验规范化目录与文件身份，拒绝绝对输入、越界、链接改指向和既有发布目标。备份创建使用已生效的备份目录，恢复使用 Core 已登记并校验身份与摘要的归档。默认根在未接受的 Apply 时重新核对。目标身份或位置授权失效使用既有计划失效或 `permission_denied`，要求重新检查。已经接受的写入继续使用原冻结证据。
+
+新增一个仅本机所有者可调用的 `mcp.projectPaths.approve(clientId, purpose, path, confirm)`。CLI `alcomd-cli mcp approve-path --client <id> --purpose <register|create|copy|restore> --path <absolute-path>` 展示精确路径、用途和客户身份并显式确认后发送 `confirm:true`。对于发布，审批的是最终绝对路径，Core 绑定其已存在父目录身份及单一目标名。登记绑定现有项目目录身份。返回不透明 `approvalId` 与绝对到期时间，10 分钟且最多 64 条待用审批，Core 重启使未接受的审批失效。句柄仅供所指定的真实 Principal 和用途使用，MCP 不能自签。首次写入将句柄绑定本次参数与幂等键，同键可恢复原结果，换键、换 Plan 或跨 Principal 拒绝。复制和恢复的 Apply 仍要求显式 `confirm:true` 并使用原 Plan。句柄只从本机审批回执取得并通过获准请求提交，原生路径、句柄和凭据均不出现在 MCP 目录、业务响应、公开事件或返回的幂等回执。
+
+现有任务页同时投影 `projects.create/copy` 的新项目 ID、`backups.create` 的安全 `BackupRecord`，以及 `backups.restore` 的备份/项目 ID、目标名、重新解析与排除包结果。进度只给现有阶段。当前失败、取消、未知写结果和同键恢复语义保持。无需新 State、Config、生产依赖或 WIT。旧备份和 v3 模板格式仍在 M11。本轮模板接口只提供创建选材。
+
+定向验收覆盖冻结协议或 typed client 到真实隔离 Core。验证五条实际业务、原生端可读的登记结果、来源和目标变化、根外和假句柄、两个客户端隔离、授予/撤销/OAuth 上限、实际任务归属、同键重放、取消保留、恢复安全及既有原生回归。不安装新依赖、不触发远端工作流。
+
+现行代码 `c3e7912a` 的独立原生验证通过。`alcomd-store --test backup_directories` 2/0，验证默认目的地变化后原接受归档仍按已冻结证据恢复，以及旧请求可读取。`alcomd-testing --test m7_project_copy_rpc project_copy_plan_expiry_and_all_writer_states_are_fail_closed` 1/0（0.64 秒），验证复制 Plan 过期和 Unity 写入者条件。两组都在可丢弃数据上执行，不占用现有 Core 端点。它们用于确认可复用的原生行为。本批 MCP 路径、身份和运行时结果还待实施与验证。
