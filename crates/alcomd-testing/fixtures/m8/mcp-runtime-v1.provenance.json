@@ -1,6 +1,6 @@
 {
   "artifact": "crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm",
-  "sha256": "0a80303d846e0e24d0161054f3d18477a17aca7bf0313bb316603577cd868c5f",
+  "sha256": "bbc87a71fc804e42ef74416ab305637ba0b933a2d1eb7b79afcc1a3fec4f5dfe",
   "toolchain": "1.97.1",
   "target": "wasm32-unknown-unknown",
   "profile": "release",
@@ -10,7 +10,7 @@
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock": "85ae23ec0c5fca1501dbc25fa461e0a334951a6deea0c407805081a1815feb6f",
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml": "7aef145f377ede9a4edf8fa22427b635f18ce6c1a6807193d9b95ba8f66cc798",
     "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "6d32234818bda7b4e688c14c1011531a4431fc749574452018e76ef5ae8e6bd2",
-    "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "f44815bfe69df81cf697638dda67b9de415f8808f27d2b85bf61f50dccae3591",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "413cfbd8d55964cf2f55fcfd927aea08024dcd6919b7323d2e90e687af8bed56",
     "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
