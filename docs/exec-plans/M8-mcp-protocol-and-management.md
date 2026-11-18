@@ -1792,3 +1792,18 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 本机 Codex CLI 0.153.4 在独立 `target/m8-codex-config-d23e782e80a047fd9e3c96ae40e1e4f4` 配置中实测添加、读取、同名替换、移除。其他配置和条目在该夹具中保持原字节，移除恢复整个原文件，同名替换没有内置确认。写入内容只引用凭据的环境变量名。测试使用无监听的回环示例地址和无凭据配置，未重新验证端到端调用；真实发现、调用及撤销仍引用 2026-11-17 的独立记录。Claude Code 和 Cursor 在当前执行环境的命令路径和检查的常见位置未定位到可执行入口，兼容性仍未知。自动配置需要覆盖预览、显式确认、并发变化保护和保持其他配置的独立验证，当前交付手动配置。未连接或替换原 Core、GUI 和配置。
 
 接入提示与说明的候选为 `84a2e53f`。管理扩展单元 9/0，严格 Clippy、Wasm release 构建、fmt 和 `cargo xtask check` 通过。此候选尚无真实桌面人工验收或远端结果。
+
+### 2026-11-19 项目与备份风险复核
+
+- `ec99aa05` 同步项目复制的已有 Core 错误及工具错误 Schema。真实冻结 SDK 调用在目标目录已存在时返回 `project_copy_target_exists`。在 Core 已接受备份后，测试代理截断真实 HTTP 回包。SDK 报传输失败，原生备份列表先观察到已完成归档，再由同一客户端显式使用原键找回同一备份及任务。无重复归档。真实 Windows HTTP 用例 1/0，测试二进制 SHA-256 `946516c7ecccf0586ed507786802ba463a44abbbd6dccc7b85cd46325f9b7a4e`。
+- 同轮 OAuth 首次 0/1。前半段验证只有读权限的 token 直接写入返回 403 且无归档。失败在夹具误将有效 token 撤销当前 Core 写权限后的业务拒绝预期为 HTTP 403。修正该项后单项 1/0，验证具备写 scope 时可接受备份，显式同键返回原回执，随后撤回当前 Core 写权限，同 token 得到结构化 `permission_denied`，归档仍只有一份。最终测试二进制 SHA-256 `e5b271fa0e5cb2cbc7dbb48efd413f194f61c88b38c658b87d4c178812061598`。
+- `78ef488` 复用仅在测试构建启用的 IPC 回包门闩。备份被 Core 接受后暂缓真实回包，由冻结 SDK 取消仍在途的 MCP 请求。原 SDK 在门闩释放前仍可读取项目。释放后以原键找回相同 Operation，任务成功且未重复写归档。同轮复验原 STDIO 包 Apply 取消和截断 IPC 回包，两个用例各 1/0，二进制 SHA-256 `b7a160fd174a040f1b98094df6c01fd16b87b7bd1df07c7989d0019d98e8bd1d`，记录位于 `target/m8-project-backup-cancel-20261119/`。
+- MCP 单元 16/0，受影响严格 Clippy、fmt、锁定 metadata 和 diff 检查通过。日志及各轮二进制摘要分别位于 `target/m8-project-backup-risks-20261119/` 与 `target/m8-project-backup-oauth-recheck-20261119/`。每轮恢复同一隔离 Core、GUI 和 WebView 配置，五组公开状态逐项一致。没有操作原开发数据。
+
+### 2026-11-19 Claude Code 回环接入
+
+`17dc4a65` 加入明确选择才运行的真实 Claude Code 连接用例和手动接入步骤。Windows x64 2.1.327 使用 Anthropic 官方 npm 分发包，包完整性与发布元数据一致。可执行文件 SHA-256 `d6c8075bfb3b87f1c1254e64b6c35dadc628d21e75930ae51e47047b3f05a4a2`。首次用例 0/1，隔离数据路径未经规范化，Core 在启动前拒绝。修正夹具后单项 1/0，测试二进制 SHA-256 `59066769877dc551c42c5c12759e57ed876aa647c56dccbe022e3e050e131295`。
+
+测试在独立的 Claude 配置中登记回环 HTTP，使用仅注入子进程的独立 Core 凭据，验证 `mcp get` 报告 Connected。同名登记被拒绝，无关配置保留，移除后目标条目消失。配置只含环境变量引用。没有登录 Claude 账户、修改系统信任或改动用户配置。原隔离窗口恢复，五组公开状态一致。具名结果位于 `target/m8-claude-code-compat-20261119/`。STDIO、OAuth、模型工具调用、自动配置及 Cursor 的实际接入仍未验证。 [实测接入步骤](../../specs/mcp/toolset-v1.md#claude-code-21327-的回环-http-接入)
+
+本机整仓 `cargo xtask check` 失败，18 条路径均属于已存在的嵌套 Git worktree `.local/worktrees/alcomd-deep-links`。检查器扫描该独立工作树后用主仓路径比较 unsafe 白名单。保持该工作树、扫描规则和原断言。本批无新增远端结果。

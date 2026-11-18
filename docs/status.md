@@ -6,6 +6,8 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
+2026-11-19 [项目与备份风险复核](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-项目与备份风险复核)与 [Claude Code 接入](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-claude-code-回环接入)。`ec99aa05` 修正项目错误映射和 Schema，真实 HTTP 回包截断、OAuth 授权上限与实时撤权分别 1/0。`78ef488` 的在途请求取消保全备份和原 STDIO Apply 风险复验各 1/0。`17dc4a65` 的 Claude Code 2.1.327 隔离配置、真实回环连接和移除用例 1/0。同名拒绝覆盖，无关配置保留，原隔离窗口和五组状态已恢复。早期夹具失败保留。整仓 xtask 因本机嵌套 worktree 路径产生 18 项失败，对应新提交尚无远端结果。
+
 2026-11-19 [项目与备份本地实现和验证](exec-plans/M8-mcp-protocol-and-management.md#项目与备份本地实现和验证)。已批准合同由 `aa3a8c5f` 接通。真实 Windows typed RPC 和冻结 SDK HTTP 各 1/0，MCP 单元 16/0，定向 Store、Core、管理扩展及严格检查通过。恢复了原隔离窗口，五组公开状态一致。新流程的 OAuth、在途取消和真实写响应丢失未再执行。本地候选尚无对应远端结果。后续公共差异见[合并合同草案](exec-plans/M8-mcp-protocol-and-management.md#下一组合并公共合同草案)。
 
 2026-11-19 [项目详情、模板与环境审计和 Codex 接入](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-项目详情模板和环境接口审计)。`84a2e53f` 增加管理扩展只读接入提示。隔离 Codex CLI 配置实测添加、同名替换和移除。扩展单元 9/0、严格检查和 Wasm 构建通过。Claude Code、Cursor 和自动配置仍待验证。
