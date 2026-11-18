@@ -1605,7 +1605,9 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 ### v3 MCP 能力对照与首批包目录合同（待审批）
 
-按所有者要求，M8 以冻结 v3.4.0 的实际用户能力为下限。对照 `4aa98ae4f18d42c10137278997180dbede991e88` 的工具参考、`vrc-get-gui/src/mcp/tools.rs` 注册目录和 `vrc-get-gui/src/backend/mcp_capabilities.rs`，确认实际注册 33 个工具。既有 [M-1 逐项映射](../baselines/mcp-tool-contract.md#33-个冻结用例的-v4-映射) 保留作历史索引，下表按当前 Core 与适配器复核交付状态。旧工具名、协议、共享凭据及日志系统仍受已接受决定约束。
+按所有者确认，M8 以冻结 v3.4.0 的实际用户能力为下限，按用户能否在现行授权下完成同等流程并取得所需结果验收。允许一个 V4 工具覆盖多个旧用例，也允许一个流程复用多个现有入口。工具数量、名称、字段组织和交互顺序由 V4 的实际需要决定。
+
+对照 `4aa98ae4f18d42c10137278997180dbede991e88` 的工具参考、`vrc-get-gui/src/mcp/tools.rs` 注册目录和 `vrc-get-gui/src/backend/mcp_capabilities.rs`，确认实际注册 33 个工具。既有 [M-1 逐项映射](../baselines/mcp-tool-contract.md#33-个冻结用例的-v4-映射) 用作查漏索引，下表按当前 Core 与适配器复核用户流程。旧协议、共享凭据及已撤销日志能力继续按现行决定处理。
 
 | v3 用例 | 当前 V4 MCP 状态及具体缺口 |
 | --- | --- |
@@ -1613,7 +1615,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 | 全局列包、按仓库列包、包详情、安装、卸载、重装（6） | 单包卸载已有真实闭环。其余五项未对外开放。全局目录与仓库目录需要脱离项目读取。安装要支持最新可用兼容版、精确版本和指定来源，重装须保持已安装版本。v3 本地用户包也在聚合目录中，本轮方案考虑已登记本地包。 |
 | 列出、添加和移除仓库（3） | Core 有 `repositories.list/inspect/register/unregister`，外部 MCP 未开放。首批目录提供查包所需的仓库索引与可用性，完整来源显示策略、登记和移除另批。仓库管理须对 URL、凭据和来源变更定义独立边界。 |
 | 创建、登记、复制项目、创建备份、从备份恢复（5） | Core 有 `projects.create/register/planCopy/applyCopy` 和 `backups.create/planRestore/applyRestore`。MCP 调用身份、导入及目标目录边界、备份授权和对应 Operation 投影待审。 |
-| 模板列表、详情、创建、编辑、设置和移除包、设置和移除 UnityPackage 附件、移除模板（9） | Core 使用 v4 模板模型及 `projectTemplates.list/save/remove`，外部 MCP 未开放。逐项核对模板定义、附件及原子修改能否映射现模型，真实缺口单列，保留内置模板保护。 |
+| 模板列表、详情、创建、编辑、设置和移除包、设置和移除 UnityPackage 附件、移除模板（9） | Core 使用 v4 模板模型及 `projectTemplates.list/save/remove`，外部 MCP 未开放。优先复用同一模板读取和编辑流程覆盖包及附件的增删，验证只改变用户指定的内容，保留内置模板保护；现模型无法完成的操作单列。 |
 | 环境设置（1） | Unity 安装读取和 `settings.get` 已存在，外部 MCP 未开放。需定义仅包含已登记 Unity、有效启动参数及项目/备份目录的授权视图，目录等敏感值须明确授权。 |
 | 活动搜索、详情、统计、上下文及技术日志搜索、详情、统计（7） | A-026 后续决定明确撤销原活动/技术日志产品入口及相关权限。列为已撤销能力，当前 M8 的 Operation、事件和传输观测各按自身合同记验收。若要恢复这七项，需先明确修订 A-026。 |
 
@@ -1621,7 +1623,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 #### 首批提交审批的最小外部合同
 
-建议完整交付一个目录到写入的流程。采用两个固定 Core RPC `mcp.packages.query`、`mcp.packages.plan` 和协商 capability `mcp.packages.catalog-plan.v1`。适配器使用 typed client，Core 调用已有目录、项目读取和 M4 Resolver/Plan/Apply。现有 GUI/CLI RPC 形状不动。新投影有必要，现有 `packages.queryProjectCandidates` 强制要求项目和 `settings.read`，`repositories.packages` 是原始单仓库报文，`packages.planInstall/planReinstall` 的 Plan RPC 输出包含内部来源标识和下载地址。
+建议完整交付一个目录到写入的流程。全局查包和按仓库查包由同一查询工具覆盖，安装、重装和已实现的卸载共用现有 Apply 和任务工具。采用两个固定 Core RPC `mcp.packages.query`、`mcp.packages.plan` 和协商 capability `mcp.packages.catalog-plan.v1`。适配器使用 typed client，Core 调用已有目录、项目读取和 M4 Resolver/Plan/Apply。现有 GUI/CLI RPC 形状不动。新投影有必要，现有 `packages.queryProjectCandidates` 强制要求项目和 `settings.read`，`repositories.packages` 是原始单仓库报文，`packages.planInstall/planReinstall` 的 Plan RPC 输出包含内部来源标识和下载地址。
 
 | MCP 工具（名称均加 `alcomd_`） | 输入与返回 | Core 与能力 |
 | --- | --- | --- |
