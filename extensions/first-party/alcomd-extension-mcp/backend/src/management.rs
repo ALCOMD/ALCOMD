@@ -2,6 +2,7 @@
 use crate::bindings::alcomd::extension::types;
 use crate::bindings::alcomd::mcp_management::clients as host;
 use crate::bindings::alcomd::mcp_runtime::observations as runtime;
+use crate::bindings::alcomd::mcp_transport::observations as transport;
 use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as ui};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -34,6 +35,8 @@ struct View {
     activity: bool,
     runtime: Option<runtime::RuntimeSnapshot>,
     runtime_message: Option<String>,
+    stream_snapshot: Option<transport::TransportSnapshot>,
+    stream_message: Option<String>,
     counter: u64,
 }
 enum Confirmation {
@@ -129,6 +132,22 @@ impl View {
             Err(error) if matches!(error.code, host::ErrorCode::PermissionDenied) => {}
             Err(error) => self.runtime_message = Some(error_text(error.code).into()),
         }
+        self.stream_snapshot = None;
+        self.stream_message = None;
+        match transport::snapshot(None, Some(25)) {
+            Ok(snapshot) if snapshot.can_read_subscription_streams => {
+                self.stream_snapshot = Some(snapshot);
+            }
+            Ok(_) => {}
+            Err(error) if matches!(error.code, host::ErrorCode::PermissionDenied) => {}
+            Err(error) => self.stream_message = Some(error_text(error.code).into()),
+        }
+    }
+    fn activity_visible(&self) -> bool {
+        self.runtime.is_some()
+            || self.runtime_message.is_some()
+            || self.stream_snapshot.is_some()
+            || self.stream_message.is_some()
     }
     fn runtime_document(&self, doc: &mut Document) {
         doc.button("返回客户端", "clients", false);
@@ -205,11 +224,72 @@ impl View {
                     );
                 }
             }
-        } else if self.runtime_message.is_none() {
-            doc.status("尚未授权查看 Core 活动。", ui::Tone::Neutral);
         }
-        doc.key("订阅流", "当前未支持");
+        self.stream_document(doc);
+        if !self.activity_visible() {
+            doc.status("尚未授权查看活动。", ui::Tone::Neutral);
+        }
         doc.button("刷新活动", "runtime-refresh", false);
+    }
+    fn stream_document(&self, doc: &mut Document) {
+        if let Some(error) = &self.stream_message {
+            doc.status(&format!("无法读取订阅流。{error}"), ui::Tone::Danger);
+        }
+        let Some(snapshot) = &self.stream_snapshot else {
+            return;
+        };
+        match snapshot.status {
+            transport::Availability::Unavailable => {
+                doc.status("当前没有可用的 MCP 订阅流报告。", ui::Tone::Neutral);
+                return;
+            }
+            transport::Availability::Stale => {
+                doc.status("MCP 订阅流报告已过期，请刷新。", ui::Tone::Warning);
+                return;
+            }
+            transport::Availability::Available => {}
+        }
+        let Some(page) = &snapshot.subscription_streams else {
+            return;
+        };
+        if snapshot.coverage_incomplete {
+            doc.status("部分 MCP 订阅流未被跟踪。", ui::Tone::Warning);
+        }
+        if page.items.is_empty() {
+            if !snapshot.coverage_incomplete {
+                doc.status("当前没有已跟踪的 MCP 订阅流。", ui::Tone::Neutral);
+            }
+            return;
+        }
+        let list = doc.node(
+            None,
+            ui::NodePayload::List(ui::ListNode {
+                label: Some(format!("MCP 订阅流（适配器上报） · {}", page.total_tracked)),
+            }),
+        );
+        for stream in &page.items {
+            let client = stream
+                .client_id
+                .as_deref()
+                .map_or_else(|| "未关联客户端".into(), |id| self.runtime_client(id));
+            let elapsed = snapshot
+                .observed_at_ms
+                .saturating_sub(stream.first_observed_at_ms)
+                / 1000;
+            let kind = if stream.tools_list_changed {
+                "工具列表变更"
+            } else {
+                "订阅"
+            };
+            let label = format!("{client} · {kind} · {elapsed} 秒");
+            doc.node(
+                Some(&list),
+                ui::NodePayload::ListItem(ui::ListItemNode { label: Some(label) }),
+            );
+        }
+        if page.truncated {
+            doc.status("仅显示部分已跟踪的 MCP 订阅流。", ui::Tone::Warning);
+        }
     }
     fn runtime_client(&self, id: &str) -> String {
         self.clients
@@ -425,7 +505,7 @@ impl View {
             self.runtime_document(&mut doc);
             return doc.finish();
         }
-        if self.selected.is_none() && (self.runtime.is_some() || self.runtime_message.is_some()) {
+        if self.selected.is_none() && self.activity_visible() {
             doc.button("活动", "activity", false);
         }
         if let Some(client) = &self.selected {
@@ -904,6 +984,51 @@ fn runtime_method_label(method: &str) -> &'static str {
 #[cfg(test)]
 mod runtime_tests {
     use super::*;
+
+    #[test]
+    fn stream_report_distinguishes_stale_incomplete_and_empty() {
+        let mut snapshot = transport::TransportSnapshot {
+            instance_id: "core".into(),
+            observed_at_ms: 5000,
+            status: transport::Availability::Stale,
+            can_read_connections: false,
+            can_read_requests: false,
+            can_read_subscription_streams: true,
+            coverage_incomplete: true,
+            observers: vec![],
+            connections: None,
+            requests: None,
+            subscription_streams: Some(transport::StreamPage {
+                items: vec![],
+                total_tracked: 0,
+                truncated: false,
+            }),
+        };
+        let document = |snapshot| {
+            View {
+                activity: true,
+                stream_snapshot: Some(snapshot),
+                ..Default::default()
+            }
+            .document()
+        };
+        let has_status = |doc: &ui::UiDocument, text| {
+            doc.nodes.iter().any(|node| {
+            matches!(&node.payload, ui::NodePayload::Status(status) if status.label == text)
+        })
+        };
+        let empty = "当前没有已跟踪的 MCP 订阅流。";
+        let stale = document(snapshot.clone());
+        assert!(has_status(&stale, "MCP 订阅流报告已过期，请刷新。"));
+        assert!(!has_status(&stale, empty));
+        snapshot.status = transport::Availability::Available;
+        let incomplete = document(snapshot.clone());
+        assert!(has_status(&incomplete, "部分 MCP 订阅流未被跟踪。"));
+        assert!(!has_status(&incomplete, empty));
+        snapshot.coverage_incomplete = false;
+        assert!(has_status(&document(snapshot), empty));
+    }
+
     #[test]
     fn activity_masks_ungranted_groups_and_uses_core_call_labels() {
         let view = View {

@@ -1,7 +1,9 @@
 use super::*;
 use alcomd_protocol::{
     McpClientMutationParams, McpClientsCreateParams, McpClientsListParams,
-    McpClientsSetGrantsParams, UiFieldValue, UiSnapshot, UiSubmittedField,
+    McpClientsSetGrantsParams, McpTransportConnectionInput, McpTransportConnectionStage,
+    McpTransportKind, McpTransportMethod, McpTransportReport, McpTransportRequestInput,
+    McpTransportRequestStage, McpTransportStreamInput, UiFieldValue, UiSnapshot, UiSubmittedField,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -399,6 +401,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         &[
             "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
+            "alcomd:mcp-transport/observations@1.0.0",
         ],
         "AGPL-3.0-only",
     );
@@ -463,7 +466,16 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         .expect("real runtime observation fixture")
         .plan;
     assert!(plan.required_permissions.is_empty());
-    assert_eq!(plan.optional_permissions.len(), 4);
+    assert_eq!(
+        plan.optional_permissions,
+        [
+            "mcp.clients.manage",
+            "mcp.clients.read",
+            "mcp.connections.read",
+            "mcp.requests.read",
+            "mcp.subscription-streams.read",
+        ]
+    );
     let install = owner
         .extension_apply_install(alcomd_protocol::ExtensionInstallApplyParams {
             consent: alcomd_protocol::ExtensionInstallConsent {
@@ -674,7 +686,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             assert!(!document.contains("Core 调用 ·"));
         }
     }
-    owner
+    let revision = owner
         .extension_revoke_grant(ExtensionGrantParams {
             extension_id: extension.extension_id.clone(),
             permission: "mcp.requests.read".into(),
@@ -684,7 +696,8 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             idempotency_key: "runtime-revoke-requests".into(),
         })
         .await
-        .expect("real runtime observation fixture");
+        .expect("real runtime observation fixture")
+        .grant_revision;
     let page = owner
         .extension_ui_open(ExtensionUiOpenParams {
             extension_id: extension.extension_id.clone(),
@@ -697,13 +710,108 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             .expect("real runtime observation fixture")
             .contains("Core 调用 ·")
     );
-    drop(connections);
+    assert!(
+        !serde_json::to_string(&page.snapshot.document)
+            .expect("document")
+            .contains("\"actionId\":\"activity\"")
+    );
     owner
         .extension_ui_close(ExtensionUiCloseParams {
             session_id: page.session.session_id,
         })
         .await
-        .expect("real runtime observation fixture");
+        .expect("close the zero-authorization page");
+    let granted = owner
+        .extension_set_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.subscription-streams.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: revision,
+            idempotency_key: "runtime-grant-streams".into(),
+        })
+        .await
+        .expect("only subscription read granted");
+    let mut page = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: extension.extension_id.clone(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("new lease for the first-party guest")
+        .snapshot;
+    let mut sequence = 0;
+    dispatch(&mut owner, &mut page, &mut sequence, activate("activity")).await;
+    let unavailable = serde_json::to_string(&page.document).expect("document");
+    assert!(unavailable.contains("当前没有可用的 MCP 订阅流报告。"));
+    assert!(!unavailable.contains("MCP 订阅流（适配器上报） · 0"));
+
+    let mut reporter = AlcomdClient::connect(config.with_transport_observer())
+        .await
+        .expect("restricted reporter");
+    let connection = uuid::Uuid::new_v4().to_string();
+    let request = uuid::Uuid::new_v4().to_string();
+    reporter
+        .mcp_transport_report(McpTransportReport {
+            sequence: 1,
+            transport: McpTransportKind::Http,
+            connections: vec![McpTransportConnectionInput {
+                local_ref: connection.clone(),
+                stage: McpTransportConnectionStage::Active,
+            }],
+            requests: vec![McpTransportRequestInput {
+                local_ref: request.clone(),
+                connection_ref: connection,
+                method: McpTransportMethod::Listen,
+                stage: McpTransportRequestStage::Streaming,
+            }],
+            subscription_streams: vec![McpTransportStreamInput {
+                local_ref: uuid::Uuid::new_v4().to_string(),
+                request_ref: request,
+                tools_list_changed: true,
+            }],
+            coverage_incomplete: false,
+        })
+        .await
+        .expect("real Core accepts the fixture observer report");
+    dispatch(
+        &mut owner,
+        &mut page,
+        &mut sequence,
+        activate("runtime-refresh"),
+    )
+    .await;
+    let observed = serde_json::to_string(&page.document).expect("document");
+    assert!(
+        observed.contains("MCP 订阅流（适配器上报） · 1"),
+        "{observed}"
+    );
+    assert!(observed.contains("未关联客户端 · 工具列表变更"));
+    assert!(!observed.contains("Core 调用 ·"));
+    assert!(!observed.contains("Core 连接 ·"));
+    owner
+        .extension_revoke_grant(ExtensionGrantParams {
+            extension_id: extension.extension_id.clone(),
+            permission: "mcp.subscription-streams.read".into(),
+            resource_kind: "Global".into(),
+            resource_id: "*".into(),
+            expected_grant_revision: granted.grant_revision,
+            idempotency_key: "runtime-revoke-streams".into(),
+        })
+        .await
+        .expect("revoke stream read");
+    assert!(
+        owner
+            .extension_ui_refresh(ExtensionUiRefreshParams {
+                session_id: page.session_id,
+                expected_snapshot_revision: page.snapshot_revision,
+            })
+            .await
+            .is_err(),
+        "revoked lease cannot refresh subscription streams"
+    );
+    drop(reporter);
+    drop(connections);
     export_package(&package, "ALCOMD_TEST_MCP_RUNTIME_PACKAGE_OUTPUT");
     shutdown.store(true, Ordering::Release);
     daemon

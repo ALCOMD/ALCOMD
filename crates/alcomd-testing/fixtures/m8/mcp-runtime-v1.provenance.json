@@ -1,6 +1,6 @@
 {
   "artifact": "crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm",
-  "sha256": "e6d80999cb6da6984953317d292c29b1c115e46127a4e1a9ba7b56acc1dad46c",
+  "sha256": "0a80303d846e0e24d0161054f3d18477a17aca7bf0313bb316603577cd868c5f",
   "toolchain": "1.97.1",
   "target": "wasm32-unknown-unknown",
   "profile": "release",
@@ -9,8 +9,8 @@
   "inputs": {
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock": "85ae23ec0c5fca1501dbc25fa461e0a334951a6deea0c407805081a1815feb6f",
     "extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml": "7aef145f377ede9a4edf8fa22427b635f18ce6c1a6807193d9b95ba8f66cc798",
-    "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "ca03c2062fb01870a30dbbd19505715533a4505f506c7cfcb901748d2cab48e6",
-    "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "0b21efbe6e29993e3b206d17c9d5ab742da5bd0bee77bf395d934e9d63204ea4",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/lib.rs": "6d32234818bda7b4e688c14c1011531a4431fc749574452018e76ef5ae8e6bd2",
+    "extensions/first-party/alcomd-extension-mcp/backend/src/management.rs": "f44815bfe69df81cf697638dda67b9de415f8808f27d2b85bf61f50dccae3591",
     "rust-toolchain.toml": "8e390d6a0838315f972690f46ef8bae8b7ecc9ee6c1ed70140ef852869c2482e",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-lifecycle.wit": "78b4e7fb822a560c464d24f6e5ef31901a28ad059202ffe711b89b51281577a1",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/guest-ui.wit": "82157011b38f03125ba3ff44a253df6c28b5c50b543882ad5f56898bbd5dbd99",
@@ -19,7 +19,8 @@
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
     "specs/extensions/wit/mcp-runtime-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
     "specs/extensions/wit/mcp-runtime-v1/deps/mcp-management/management.wit": "c4ca610647aa3dff0430cc2132cfb16b7c42a12104bc052fcae640a51c6fbf0f",
-    "specs/extensions/wit/mcp-runtime-v1/runtime.wit": "825a5d0ac1a4fa39da2ea5a5e3a1287fb477c46841fcfd7b152b811bd7b34f8f"
+    "specs/extensions/wit/mcp-runtime-v1/runtime.wit": "825a5d0ac1a4fa39da2ea5a5e3a1287fb477c46841fcfd7b152b811bd7b34f8f",
+    "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
   },
-  "sourceCandidate": "approved Core runtime observations; input hashes below are authoritative"
+  "sourceCandidate": "first-party management guest with Core activity and transport subscription view; input hashes are authoritative"
 }
