@@ -67,7 +67,7 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 `alcomd_plan_package_install` 可按最新兼容版本或精确版本生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 复用既有输入、确认和幂等规则，另需 `packages.manage`、`operations.read`。安装与重装共用已有 `packages.apply` 查询和取消。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称，不传内部下载地址或本机路径。
 
-首批来源是 Core 已登记的匿名 HTTPS 远程仓库和已有归档的本地用户包。包含凭据、认证下载头或 URL 用户信息、查询参数的远程来源留作单独的认证来源委托。普通文档链接只按安全投影返回。登记的来源、用户可见性、解析与归档校验继续由 Core 执行。MCP 目录在协商 `mcp.packages.catalog-plan.v1` 后按实时权限展示这些工具。
+MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档校验。获得所需业务权限的 MCP 客户端可使用已登记的公开或认证仓库、带查询参数的来源、本地仓库和用户包。Core 在原有范围内处理仓库凭据与下载头，MCP 响应只给安全的来源标识和普通文档链接。MCP 目录在协商 `mcp.packages.catalog-plan.v1` 后按实时权限展示这些工具。
 
 ## 客户端接入速查
 

@@ -178,6 +178,14 @@ pub(crate) fn client(
     connect_timeout: Duration,
     proxy: &alcomd_application::ConfigProxy,
 ) -> Result<Client, reqwest::Error> {
+    client_builder(timeout, connect_timeout, proxy)?.build()
+}
+
+pub(crate) fn client_builder(
+    timeout: Duration,
+    connect_timeout: Duration,
+    proxy: &alcomd_application::ConfigProxy,
+) -> Result<reqwest::ClientBuilder, reqwest::Error> {
     crate::http_clients::with_proxy(
         Client::builder()
             .referer(false)
@@ -185,8 +193,7 @@ pub(crate) fn client(
             .connect_timeout(connect_timeout)
             .redirect(reqwest::redirect::Policy::none()),
         proxy,
-    )?
-    .build()
+    )
 }
 
 pub(crate) async fn send(

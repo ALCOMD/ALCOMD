@@ -13,11 +13,14 @@ const CERT: &[u8] = include_bytes!(
 const KEY: &[u8] =
     include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/oauth-localhost.test-key.pkcs8");
 const ID: &str = "dev.alcomd.tools-fixture";
+const PACKAGE_AUTHORIZATION: &str = "Bearer isolated-vpm-package-fixture";
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 pub(super) struct HttpsSource {
     pub(super) base: String,
+    pub(super) index_path: &'static str,
+    pub(super) archive_path: &'static str,
     changed: Arc<AtomicBool>,
     pub(super) requests: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub(super) headers_clean: Arc<AtomicBool>,
@@ -30,14 +33,25 @@ impl Drop for HttpsSource {
 }
 impl HttpsSource {
     async fn start(archive: Vec<u8>) -> Self {
-        Self::start_with_archive(archive, false).await
+        Self::start_with_archive(archive, SourceFixture::Extension).await
     }
 
     pub(super) async fn anonymous_vpm(archive: Vec<u8>) -> Self {
-        Self::start_with_archive(archive, true).await
+        Self::start_with_archive(archive, SourceFixture::AnonymousVpm).await
     }
 
-    async fn start_with_archive(archive: Vec<u8>, vpm: bool) -> Self {
+    pub(super) async fn protected_vpm(archive: Vec<u8>) -> Self {
+        Self::start_with_archive(archive, SourceFixture::ProtectedVpm).await
+    }
+
+    async fn start_with_archive(archive: Vec<u8>, fixture: SourceFixture) -> Self {
+        let (index_path, archive_path) = match fixture {
+            SourceFixture::Extension => ("/index", "/extension.alcomdextension"),
+            SourceFixture::AnonymousVpm => ("/index", "/package.zip"),
+            SourceFixture::ProtectedVpm => {
+                ("/index?edition=fixture", "/package.zip?edition=fixture")
+            }
+        };
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("local TLS source");
@@ -75,8 +89,17 @@ impl HttpsSource {
                                 let Ok(n)=stream.read(&mut buffer).await else{return};if n==0||request.len()+n>16384{return}request.extend_from_slice(&buffer[..n]);
                             }
                             let request=String::from_utf8(request).expect("HTTP ASCII request");
-                            if request.to_ascii_lowercase().contains("authorization:") || request.to_ascii_lowercase().contains("referer:") {header_check.store(false,Ordering::SeqCst);}
                             let path=request.lines().next().and_then(|l|l.split_whitespace().nth(1)).expect("request target");observed.lock().await.push(path.into());
+                            let authorization = request.lines().filter_map(|line| line.split_once(':'))
+                                .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                                .map(|(_, value)| value.trim());
+                            let expected = (matches!(fixture, SourceFixture::ProtectedVpm) && path == archive_path).then_some(PACKAGE_AUTHORIZATION);
+                            if authorization != expected || request.to_ascii_lowercase().contains("referer:") {
+                                header_check.store(false,Ordering::SeqCst);
+                                if matches!(fixture, SourceFixture::ProtectedVpm) {
+                                    let _=stream.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;return;
+                                }
+                            }
                             if path=="/downgrade"||path=="/redirect"||path=="/loop"||path.strip_prefix("/redirects/").and_then(|v|v.parse::<u32>().ok()).is_some_and(|n|n>0) {
                                 let location=if path=="/downgrade" {"http://localhost:1/forbidden".into()} else if path=="/loop" {format!("{origin}/loop")} else if let Some(n)=path.strip_prefix("/redirects/").and_then(|v|v.parse::<u32>().ok()) {format!("{origin}/redirects/{}",n-1)} else {format!("{origin}/index?b=2&a=1&a=3")};
                                 let response=format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");let _=stream.write_all(response.as_bytes()).await;return;
@@ -94,12 +117,14 @@ impl HttpsSource {
                             if path=="/huge-archive" {
                                 let _=stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 67108865\r\nConnection: close\r\n\r\n").await;return;
                             }
-                            let bytes=if vpm {
+                            let bytes=if !matches!(fixture, SourceFixture::Extension) {
                                 match path {
-                                    "/package.zip" => archive.to_vec(),
-                                    "/index" => serde_json::to_vec(&json!({"id":"com.example.m8.fixture", "name":"M8 anonymous fixture", "url":format!("{origin}/index"), "packages":{"com.example.m8.https":{"versions":{"1.0.0":{
-                                        "name":"com.example.m8.https", "displayName":"Anonymous HTTPS fixture", "version":"1.0.0", "url":format!("{origin}/package.zip"), "zipSHA256":hex(&Sha256::digest(archive.as_slice())),
-                                    }}}}})).expect("VPM fixture index"),
+                                    p if p == archive_path => archive.to_vec(),
+                                    p if p == index_path => {
+                                        let mut entry = json!({"name":"com.example.m8.https", "displayName":"HTTPS fixture", "version":"1.0.0", "url":format!("{origin}{archive_path}"), "zipSHA256":hex(&Sha256::digest(archive.as_slice()))});
+                                        if matches!(fixture, SourceFixture::ProtectedVpm) { entry["headers"] = json!({"Authorization":PACKAGE_AUTHORIZATION}); }
+                                        serde_json::to_vec(&json!({"id":"com.example.m8.fixture", "name":"M8 VPM fixture", "url":format!("{origin}{index_path}"), "packages":{"com.example.m8.https":{"versions":{"1.0.0":entry}}}})).expect("VPM fixture index")
+                                    }
                                     _ => {let _=stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;return;}
                                 }
                             } else if path=="/extension.alcomdextension" {archive.to_vec()} else {
@@ -120,12 +145,21 @@ impl HttpsSource {
         });
         Self {
             base,
+            index_path,
+            archive_path,
             changed,
             requests,
             headers_clean,
             task,
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum SourceFixture {
+    Extension,
+    AnonymousVpm,
+    ProtectedVpm,
 }
 async fn rejected<T>(result: Result<T, alcomd_client::ClientError>, code: &str) {
     match result {

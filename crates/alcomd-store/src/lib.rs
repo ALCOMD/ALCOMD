@@ -695,17 +695,6 @@ impl M4Store for StateStoreHandle {
         .await
     }
 
-    async fn delegated_resolver_catalog(
-        &self,
-        settings: alcomd_application::ConfigPackageSettings,
-    ) -> Result<ResolverCatalog, M4Error> {
-        self.request_worker(
-            move |connection| m8_packages::resolver_catalog(connection, settings),
-            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
-        )
-        .await
-    }
-
     async fn create_package_plan(
         &self,
         owner: PrincipalId,

@@ -156,20 +156,31 @@ impl PackageCache {
         if !root.is_absolute() {
             return Err(cache_error(CacheErrorCode::Io));
         }
-        let client = Client::builder()
+        let map = |error: reqwest::Error| {
+            cache_error(CacheErrorCode::DownloadFailed).with_source(error.without_url())
+        };
+        let anonymous = Client::builder()
             .no_proxy()
             .referer(false)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(DOWNLOAD_TIMEOUT)
             .redirect(Policy::custom(validate_redirect))
-            .add_root_certificate(certificate)
+            .add_root_certificate(certificate.clone())
             .build()
-            .map_err(|error| {
-                cache_error(CacheErrorCode::DownloadFailed).with_source(error.without_url())
-            })?;
+            .map_err(map)?;
+        let authenticated = crate::repository_auth::client_builder(
+            DOWNLOAD_TIMEOUT,
+            CONNECT_TIMEOUT,
+            &alcomd_application::ConfigProxy::Direct,
+        )
+        .and_then(|builder| builder.add_root_certificate(certificate).build())
+        .map_err(map)?;
         Ok(Self {
             root,
-            http: HttpClients::fixed_for_test(client),
+            http: HttpClients::fixed_pair_for_test(ClientPair {
+                anonymous,
+                authenticated,
+            }),
             max_archive_bytes: MAX_ARCHIVE_BYTES,
         })
     }

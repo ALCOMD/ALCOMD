@@ -843,13 +843,6 @@ pub trait M4Store: RepositoryArchivePinStore {
         settings: crate::ConfigPackageSettings,
     ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send;
 
-    fn delegated_resolver_catalog(
-        &self,
-        _settings: crate::ConfigPackageSettings,
-    ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send {
-        std::future::ready(Err(M4Error::new(M4ErrorCode::PermissionDenied)))
-    }
-
     fn create_package_plan(
         &self,
         owner: PrincipalId,
@@ -1022,8 +1015,9 @@ pub fn validate_package_source_settings(
     }
 }
 
-/// Only anonymous HTTPS endpoints and enrolled immutable user archives are delegated.
-pub fn delegated_package_url(value: &str) -> bool {
+/// URLs in the external tool projection cannot carry embedded access data.
+/// This check is only for displayed links, never for selecting package sources.
+pub fn mcp_package_documentation_url(value: &str) -> bool {
     url::Url::parse(value).is_ok_and(|url| {
         url.scheme() == "https"
             && url.host_str().is_some()
@@ -1032,26 +1026,6 @@ pub fn delegated_package_url(value: &str) -> bool {
             && url.query().is_none()
             && url.fragment().is_none()
     })
-}
-
-impl ResolverCatalog {
-    pub fn restrict_to_delegated_sources(&mut self) {
-        self.entries.retain(|entry| match &entry.source {
-            ResolverCatalogSource::Repository {
-                repository_locator,
-                artifact_url,
-                credential_reference,
-                download_headers_present,
-                ..
-            } => {
-                credential_reference.is_none()
-                    && !download_headers_present
-                    && delegated_package_url(repository_locator)
-                    && delegated_package_url(artifact_url)
-            }
-            ResolverCatalogSource::UserPackage { .. } => true,
-        });
-    }
 }
 
 #[derive(Clone)]
@@ -1164,14 +1138,14 @@ where
                 entries: Vec::new(),
                 complete: true,
             }
-        } else if authentication.is_some() {
-            self.store
-                .delegated_resolver_catalog(self.adapter.source_settings().await?)
-                .await?
         } else {
             self.store
                 .resolver_catalog(
-                    access.principal().clone(),
+                    if authentication.is_some() {
+                        PrincipalId::local_owner()
+                    } else {
+                        access.principal().clone()
+                    },
                     request.plan_version == PackagePlanVersion::V2,
                     self.adapter.source_settings().await?,
                 )
@@ -1321,14 +1295,14 @@ where
                 entries: Vec::new(),
                 complete: true,
             }
-        } else if delegated {
-            self.store
-                .delegated_resolver_catalog(self.adapter.source_settings().await?)
-                .await?
         } else {
             self.store
                 .resolver_catalog(
-                    access.principal().clone(),
+                    if delegated {
+                        PrincipalId::local_owner()
+                    } else {
+                        access.principal().clone()
+                    },
                     plan.source_set
                         .iter()
                         .any(PackageSourcePin::is_user_package),

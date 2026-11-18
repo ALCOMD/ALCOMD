@@ -339,6 +339,16 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
+    oauth_package_scope_and_https_download(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_packages_use_parameterized_sources_and_download_authorization_without_extra_grants()
+{
+    oauth_package_scope_and_https_download(true).await;
+}
+
+async fn oauth_package_scope_and_https_download(protected: bool) {
     use std::io::{Cursor, Write};
     const PACKAGE: &str = "com.example.m8.https";
 
@@ -366,13 +376,15 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
     archive
         .write_all(b"verified anonymous HTTPS fixture")
         .expect("package payload");
-    let source = super::extension_sources_flow::HttpsSource::anonymous_vpm(
-        archive
-            .finish()
-            .expect("valid package archive")
-            .into_inner(),
-    )
-    .await;
+    let archive = archive
+        .finish()
+        .expect("valid package archive")
+        .into_inner();
+    let source = if protected {
+        super::extension_sources_flow::HttpsSource::protected_vpm(archive).await
+    } else {
+        super::extension_sources_flow::HttpsSource::anonymous_vpm(archive).await
+    };
     let configuration = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_package_source_until(
         configuration.ipc.clone(),
@@ -388,7 +400,7 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
     let registered = owner
         .repository_register(
             RepositorySource::Remote {
-                url: format!("{}/index", source.base),
+                url: format!("{}{}", source.base, source.index_path),
             },
             "register-anonymous-https".into(),
         )
@@ -409,6 +421,21 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
     let project_id = project.project_id.expect("project ID");
     let revision = project.revision.expect("project revision");
     let installed = project_root.join("Packages").join(PACKAGE);
+    let owner_plan = owner
+        .package_plan_install(PackagePlanInstallParams {
+            project_id: project_id.clone(),
+            expected_revision: revision,
+            package_id: PACKAGE.into(),
+            version_range: None,
+            repository_id: None,
+            source: Some(PackageSourceSelector::Repository {
+                repository_id: repository_id.clone(),
+            }),
+            include_prerelease: false,
+            allow_unity_incompatible: false,
+        })
+        .await
+        .expect("same package through the local owner's Core planning API");
 
     let http = Https::start(&root, configuration.client.clone()).await;
     let client = owner
@@ -490,10 +517,15 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
         "1.0.0"
     );
     assert_eq!(plan["sources"][0]["source"]["repository_id"], repository_id);
+    assert_eq!(
+        plan["plan"]["change_set_fingerprint"],
+        owner_plan.change_set_fingerprint
+    );
     assert!(
         !plan.to_string().contains(&source.base),
         "public plan excludes the artifact and repository locator"
     );
+    assert!(!plan.to_string().contains("isolated-vpm-package-fixture"));
     assert!(!installed.exists(), "planning does not publish files");
     let apply = json!({"plan_id":plan["plan"]["plan_id"],"expected_revision":revision,"idempotency_key":"oauth-https-apply","confirm":true});
     let denied = raw_tool(
@@ -539,11 +571,11 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
         b"verified anonymous HTTPS fixture"
     );
     let requests = source.requests.lock().await;
-    assert!(requests.iter().any(|request| request == "/index"));
+    assert!(requests.iter().any(|request| request == source.index_path));
     assert_eq!(
         requests
             .iter()
-            .filter(|request| request.as_str() == "/package.zip")
+            .filter(|request| request.as_str() == source.archive_path)
             .count(),
         1,
         "one verified archive fetch"
@@ -552,7 +584,7 @@ async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
         source
             .headers_clean
             .load(std::sync::atomic::Ordering::SeqCst),
-        "no MCP OAuth credential or referrer reaches the VPM endpoint"
+        "the endpoint receives only its declared repository authorization, with no MCP OAuth credential or referrer"
     );
     drop(requests);
     let replay = data(

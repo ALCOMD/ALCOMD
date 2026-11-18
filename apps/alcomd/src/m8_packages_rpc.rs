@@ -82,18 +82,13 @@ fn source_selector(source: &app::PackageSourceSelector) -> rpc::PackageSourceSel
     }
 }
 
-fn restricted_source(
+fn hidden_source(
     catalog: &[alcomd_store::DelegatedPackageSource],
     source: &rpc::PackageSourceSelector,
 ) -> bool {
     catalog.iter().any(|row| {
         source_selector(&row.source) == *source
-            && matches!(
-                row.availability,
-                DelegatedSourceAvailability::Hidden
-                    | DelegatedSourceAvailability::AuthenticationRequired
-                    | DelegatedSourceAvailability::Unsupported
-            )
+            && matches!(row.availability, DelegatedSourceAvailability::Hidden)
     })
 }
 
@@ -188,7 +183,7 @@ async fn query(
     };
     if selected_source
         .as_ref()
-        .is_some_and(|source| restricted_source(&catalog.sources, source))
+        .is_some_and(|source| hidden_source(&catalog.sources, source))
     {
         return Err(if input.cursor.is_some() {
             QueryError::RevisionConflict
@@ -246,12 +241,6 @@ async fn query(
                         }
                         DelegatedSourceAvailability::Hidden => {
                             rpc::McpPackageSourceAvailability::Hidden
-                        }
-                        DelegatedSourceAvailability::AuthenticationRequired => {
-                            rpc::McpPackageSourceAvailability::AuthenticationRequired
-                        }
-                        DelegatedSourceAvailability::Unsupported => {
-                            rpc::McpPackageSourceAvailability::Unsupported
                         }
                         DelegatedSourceAvailability::RefreshRequired => {
                             rpc::McpPackageSourceAvailability::RefreshRequired
@@ -517,11 +506,11 @@ fn versions(
                 documentation_url: row
                     .links
                     .documentation
-                    .filter(|url| app::delegated_package_url(url)),
+                    .filter(|url| app::mcp_package_documentation_url(url)),
                 changelog_url: row
                     .links
                     .changelog
-                    .filter(|url| app::delegated_package_url(url)),
+                    .filter(|url| app::mcp_package_documentation_url(url)),
                 aliases: metadata.aliases,
                 keywords: metadata.keywords,
                 legacy_packages: metadata.legacy_packages,
@@ -623,7 +612,7 @@ async fn plan(
         .sources;
     if selected_source
         .as_ref()
-        .is_some_and(|source| restricted_source(&sources, source))
+        .is_some_and(|source| hidden_source(&sources, source))
     {
         return Err(app::M4Error::new(app::M4ErrorCode::PermissionDenied));
     }

@@ -715,25 +715,35 @@ fn delegated_project_revision(
     .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))
 }
 
-fn validate_delegated_pins(db: &Connection, pins: &[PackageSourcePin]) -> Result<(), M4Error> {
-    use alcomd_application::delegated_package_url;
+pub(super) fn validate_delegated_pins(
+    db: &Connection,
+    pins: &[PackageSourcePin],
+) -> Result<(), M4Error> {
     for pin in pins {
         let valid = match pin {
-            PackageSourcePin::Repository(pin) => {
-                let locator: Option<String> = db.query_row(
-                    "SELECT r.source_locator FROM repositories r JOIN repository_package_versions p USING(repository_id)
+            PackageSourcePin::Repository(pin) => db.query_row(
+                    "SELECT r.source_kind,r.source_locator,r.source_identity_key,r.credential_reference,
+                            p.download_headers_present,p.zip_sha256,p.local_zip_sha256
+                     FROM repositories r JOIN repository_package_versions p USING(repository_id)
                      WHERE r.owner_principal_id=?1 AND r.repository_id=?2 AND r.revision=?3
-                       AND r.source_kind='remote' AND r.credential_reference IS NULL AND r.resolver_indexed=1
+                       AND r.resolver_indexed=1
                        AND p.package_id=?4 AND p.version_text=?5 AND p.artifact_url=?6
-                       AND p.manifest_fingerprint=?7 AND p.download_headers_present=0 AND p.resolver_ready=1",
+                       AND p.manifest_fingerprint=?7 AND p.resolver_ready=1",
                     params![PrincipalId::LOCAL_OWNER, pin.repository_id, sqlite_integer(pin.repository_revision)?,
                         pin.package_id, pin.version, pin.artifact_url, pin.manifest_fingerprint.as_slice()],
-                    |row| row.get(0),
-                ).optional().map_err(store_error)?;
-                pin.credential_reference.is_none() && pin.download_headers.is_none()
-                    && delegated_package_url(&pin.artifact_url)
-                    && locator.is_some_and(|url| delegated_package_url(&url) && pin.source_identity == format!("remote:{url}"))
-            }
+                    |row| {
+                        let local_path = (row.get::<_, String>(0)? == "local").then(|| row.get::<_, String>(1)).transpose()?;
+                        let reference: Option<String> = row.get(3)?;
+                        let headers: bool = row.get(4)?;
+                        let archive_digest = row.get::<_, Option<String>>(5)?.map(|hex| parse_digest_hex(&hex)).transpose()?
+                            .or(row.get::<_, Option<Vec<u8>>>(6)?.map(digest).transpose()?);
+                        Ok(repository_source_identity(row, 0)? == pin.source_identity
+                            && reference == pin.credential_reference
+                            && headers == pin.download_headers.is_some()
+                            && pin.download_headers.as_ref().is_none_or(|headers| headers.local_path == local_path)
+                            && pin.archive_sha256.is_none_or(|expected| archive_digest == Some(expected)))
+                    },
+                ).optional().map_err(store_error)?.unwrap_or(false),
             PackageSourcePin::UserPackage(pin) => db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM user_package_sources WHERE owner_principal_id=?1 AND user_package_id=?2
                    AND revision=?3 AND package_id=?4 AND version=?5 AND archive_sha256=?6 AND manifest_fingerprint=?7

@@ -175,7 +175,7 @@ impl VpmReader {
             M3Error::new(M3ErrorCode::Internal).with_source(error.without_url())
         };
         let certificate = reqwest::Certificate::from_der(certificate).map_err(map)?;
-        let client = Client::builder()
+        let anonymous = Client::builder()
             .no_proxy()
             .referer(false)
             .timeout(REQUEST_TIMEOUT)
@@ -183,8 +183,18 @@ impl VpmReader {
             .add_root_certificate(certificate.clone())
             .build()
             .map_err(map)?;
+        let authenticated = repository_auth::client_builder(
+            REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+            &alcomd_application::ConfigProxy::Direct,
+        )
+        .and_then(|builder| builder.add_root_certificate(certificate.clone()).build())
+        .map_err(map)?;
         Ok(Self {
-            http: http_clients::HttpClients::fixed_for_test(client),
+            http: http_clients::HttpClients::fixed_pair_for_test(http_clients::ClientPair {
+                anonymous,
+                authenticated,
+            }),
             test_certificate: Some(certificate),
         })
     }
