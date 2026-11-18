@@ -70,6 +70,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         },
         [
             "projects.manage",
+            "projects.create",
             "projects.read",
             "backups.read",
             "backups.manage",
@@ -90,6 +91,22 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .expect("registered ID");
     assert!(owner.project_get(project_id.to_owned()).await.is_ok());
     assert!(registered["project"].get("root_path").is_none());
+    error(
+        call(
+            &sdk,
+            &mut trace,
+            "plan_project_copy",
+            json!({
+                "source_project_id": project_id,
+                "expected_revision": registered["project"]["revision"],
+                "target": {"kind":"default","name":"Source"},
+                "idempotency_key":"copy-existing-target"
+            }),
+        )
+        .await
+        .expect("Core copy rejection"),
+        "project_copy_target_exists",
+    );
     let backup = json!({"project_id":project_id,"expected_revision":registered["project"]["revision"],"idempotency_key":"workflow-backup"});
     let accepted = data(
         call(&sdk, &mut trace, "create_backup", backup.clone())
@@ -125,6 +142,74 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
             .count(),
         1
     );
+    let mut lost_response = backup.clone();
+    lost_response["idempotency_key"] = json!("workflow-backup-lost-response");
+    let (fault_sdk, fault) = HttpResponseFault::start(&credential.credential, &http.url).await;
+    fault.armed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        call(
+            &fault_sdk,
+            &mut trace,
+            "create_backup",
+            lost_response.clone()
+        )
+        .await
+        .is_err(),
+        "an incomplete HTTP reply must be reported by the actual SDK"
+    );
+    assert!(
+        !fault.armed.load(std::sync::atomic::Ordering::SeqCst),
+        "the injector must truncate a real response"
+    );
+    let committed = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let page = owner
+                .backups_list(BackupsListParams {
+                    project_id: Some(project_id.to_owned()),
+                    cursor: None,
+                    limit: None,
+                })
+                .await
+                .expect("authoritative backup list");
+            if page.backups.len() == 2 {
+                break page
+                    .backups
+                    .into_iter()
+                    .find(|record| {
+                        record.backup_id
+                            != accepted["backup_id"].as_str().expect("original backup ID")
+                    })
+                    .expect("backup committed despite lost HTTP response");
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("accepted backup must complete before replay");
+    let recovered = data(
+        call(&sdk, &mut trace, "create_backup", lost_response)
+            .await
+            .expect("explicit same-key recovery"),
+    );
+    assert_eq!(recovered["replayed"], true);
+    assert_eq!(recovered["backup_id"], committed.backup_id);
+    let recovered_task = terminal(
+        &sdk,
+        &mut trace,
+        recovered["operation_id"]
+            .as_str()
+            .expect("recovered operation"),
+    )
+    .await;
+    assert_eq!(recovered_task["state"], "succeeded");
+    assert_eq!(
+        std::fs::read_dir(&archives)
+            .expect("no duplicate archive")
+            .count(),
+        2
+    );
+    stop(fault_sdk).await;
+    drop(fault);
     update(&mut owner, &actor, Vec::new(), "workflow-revoke").await;
     error(
         call(&sdk, &mut trace, "create_backup", backup)

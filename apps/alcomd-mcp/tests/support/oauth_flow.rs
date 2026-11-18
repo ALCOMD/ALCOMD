@@ -163,8 +163,28 @@ impl Https {
         .expect("frozen real SDK over verified TLS")
     }
     async fn start_request(&self, reg: &McpOAuthRegistration) -> (String, String) {
+        self.start_request_for_scopes(
+            reg,
+            "projects.read repositories.read repositories.manage packages.read packages.manage operations.read operations.cancel",
+        )
+        .await
+    }
+    async fn start_request_for_scopes(
+        &self,
+        reg: &McpOAuthRegistration,
+        scopes: &str,
+    ) -> (String, String) {
         let mut url = reqwest::Url::parse(&format!("{}/authorize", self.issuer)).expect("URL");
-        url.query_pairs_mut().extend_pairs([("client_id",reg.oauth_client_id.as_str()),("response_type","code"),("redirect_uri",reg.redirect_uris[0].as_str()),("code_challenge",CHALLENGE),("code_challenge_method","S256"),("resource",reg.resource.as_str()),("scope","projects.read repositories.read repositories.manage packages.read packages.manage operations.read operations.cancel"),("state","isolated-state")]);
+        url.query_pairs_mut().extend_pairs([
+            ("client_id", reg.oauth_client_id.as_str()),
+            ("response_type", "code"),
+            ("redirect_uri", reg.redirect_uris[0].as_str()),
+            ("code_challenge", CHALLENGE),
+            ("code_challenge_method", "S256"),
+            ("resource", reg.resource.as_str()),
+            ("scope", scopes),
+            ("state", "isolated-state"),
+        ]);
         let response = self.client.get(url).send().await.expect("authorize HTTP");
         assert_eq!(response.status(), 200);
         assert_eq!(response.headers()["referrer-policy"], "no-referrer");
@@ -205,6 +225,15 @@ impl Https {
         allowed: &[McpClientGrant],
     ) -> String {
         let (request, cookie) = self.start_request(reg).await;
+        self.approve_code(owner, allowed, request, cookie).await
+    }
+    async fn approve_code(
+        &self,
+        owner: &mut AlcomdClient,
+        allowed: &[McpClientGrant],
+        request: String,
+        cookie: String,
+    ) -> String {
         let first = owner
             .oauth_request_get(McpOAuthRequestGetParams {
                 request_id: request.clone(),
@@ -335,6 +364,165 @@ async fn registration(
 async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest::Response {
     http.client.post(http.resource()).bearer_auth(token).header("Content-Type","application/json").header("Accept","application/json,text/event-stream").header("MCP-Protocol-Version","2026-07-28").header("Mcp-Method","tools/call").header("Mcp-Name",name)
         .json(&json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":name,"arguments":args,"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}})).send().await.expect("raw frozen HTTP tool")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_backup_write_respects_consent_and_current_grants() {
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-backup-oauth-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("isolated fixture");
+    let root = root.canonicalize().expect("canonical fixture");
+    let source = root.join("Source");
+    project(&source, false);
+    let archives = root.join("archives");
+    std::fs::create_dir(&archives).expect("isolated archives");
+    let config = CoreConfiguration::new();
+    let (shutdown, stopped) = tokio::sync::oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        config.ipc.clone(),
+        DataConfig::isolated(root.join("data")),
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("isolated real Core");
+    let mut owner = AlcomdClient::connect(config.client.clone())
+        .await
+        .expect("owner");
+    let settings = owner.settings_get().await.expect("settings");
+    owner
+        .settings_update(
+            serde_json::from_value(json!({
+                "expectedRevision": settings.revision,
+                "update": {
+                    "paths": {"backupDirectory": archives.to_string_lossy()},
+                    "projects": {"autoDiscover": false}
+                }
+            }))
+            .expect("fixture settings"),
+        )
+        .await
+        .expect("isolated backup destination");
+    let registered = owner
+        .project_register(
+            source.to_string_lossy().into_owned(),
+            "oauth-backup-project".into(),
+        )
+        .await
+        .expect("registered project")
+        .project;
+    let read = ["projects.read", "backups.read", "operations.read"]
+        .map(|permission| grant(permission, "global", "*"))
+        .to_vec();
+    let mut write = read.clone();
+    write.push(grant("backups.manage", "global", "*"));
+    let actor = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Backup OAuth fixture".into(),
+            idempotency_key: "oauth-backup-client".into(),
+            grants: write.clone(),
+        })
+        .await
+        .expect("client has write grant");
+    let http = Https::start(&root, config.client.clone()).await;
+    let registration = registration(&mut owner, &http, &actor, false)
+        .await
+        .registration;
+    let args = json!({
+        "project_id": registered.project_id.expect("registered project ID"),
+        "expected_revision": registered.revision.expect("registered revision"),
+        "idempotency_key": "oauth-backup-exact-key"
+    });
+    let (request, cookie) = http
+        .start_request_for_scopes(
+            &registration,
+            "projects.read backups.read backups.manage operations.read",
+        )
+        .await;
+    let code = http.approve_code(&mut owner, &read, request, cookie).await;
+    let read_token = http.exchange(&registration, &code, None).await;
+    let read_token = read_token["access_token"].as_str().expect("read token");
+    let reader = http.sdk(read_token).await;
+    let visible = reader.list_tools(None).await.expect("scoped tools").tools;
+    assert!(
+        visible
+            .iter()
+            .any(|tool| tool.name == "alcomd_list_backups")
+    );
+    assert!(
+        !visible
+            .iter()
+            .any(|tool| tool.name == "alcomd_create_backup")
+    );
+    let denied = raw_tool(&http, read_token, "alcomd_create_backup", args.clone()).await;
+    assert_eq!(denied.status(), 403);
+    assert!(
+        denied.headers()["www-authenticate"]
+            .to_str()
+            .expect("challenge")
+            .contains("insufficient_scope")
+    );
+    assert_eq!(
+        std::fs::read_dir(&archives)
+            .expect("no denied writes")
+            .count(),
+        0
+    );
+    let (request, cookie) = http
+        .start_request_for_scopes(
+            &registration,
+            "projects.read backups.read backups.manage operations.read",
+        )
+        .await;
+    let code = http.approve_code(&mut owner, &write, request, cookie).await;
+    let write_token = http.exchange(&registration, &code, None).await;
+    let write_token = write_token["access_token"].as_str().expect("write token");
+    let writer = http.sdk(write_token).await;
+    let mut trace = Vec::new();
+    let accepted = data(
+        call(&writer, &mut trace, "create_backup", args.clone())
+            .await
+            .expect("authorized SDK write"),
+    );
+    let result = terminal(
+        &writer,
+        &mut trace,
+        accepted["operation_id"].as_str().expect("operation"),
+    )
+    .await;
+    assert_eq!(result["state"], "succeeded");
+    assert_eq!(result["result"]["backup_id"], accepted["backup_id"]);
+    let replay = data(
+        call(&writer, &mut trace, "create_backup", args.clone())
+            .await
+            .expect("same-key replay"),
+    );
+    assert_eq!(replay["operation_id"], accepted["operation_id"]);
+    assert_eq!(replay["replayed"], true);
+    update(&mut owner, &actor, read, "oauth-backup-revoke-write").await;
+    // The token still carries the consented scope. Core denies the business
+    // request because the client's current grant was removed.
+    error(
+        call(&writer, &mut trace, "create_backup", args)
+            .await
+            .expect("revoked live grant gives a Core tool error"),
+        "permission_denied",
+    );
+    assert_eq!(
+        std::fs::read_dir(&archives)
+            .expect("one committed archive")
+            .count(),
+        1
+    );
+    stop(writer).await;
+    stop(reader).await;
+    http.finish_server().await;
+    drop(owner);
+    shutdown.send(()).expect("stop fixture");
+    daemon.await.expect("join").expect("fixture shutdown");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

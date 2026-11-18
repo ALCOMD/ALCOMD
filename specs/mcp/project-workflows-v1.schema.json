@@ -1212,6 +1212,11 @@
                     "minLength": 1,
                     "maxLength": 128
                 },
+                "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
                 "retryable": {
                     "type": "boolean"
                 },
@@ -1219,10 +1224,26 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                },
+                "outcome": {
+                    "const": "unknown"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[a-zA-Z0-9_]*$"
+                        }
+                    },
+                    "required": ["subreason"]
                 }
             },
             "required": [
                 "code",
+                "message",
                 "retryable"
             ]
         }
