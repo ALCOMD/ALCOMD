@@ -204,7 +204,16 @@ async fn initialize_daemon_with_directories(
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_adapters(ipc, data, directory_platform, None, packaged_mcp).await
+    initialize_daemon_with_adapters(
+        ipc,
+        data,
+        directory_platform,
+        None,
+        packaged_mcp,
+        #[cfg(feature = "test-kill-gates")]
+        None,
+    )
+    .await
 }
 
 async fn initialize_daemon_with_adapters(
@@ -213,6 +222,7 @@ async fn initialize_daemon_with_adapters(
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
     packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+    #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
@@ -247,7 +257,13 @@ async fn initialize_daemon_with_adapters(
         .initialize_settings()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
-    let reader = alcomd_vpm::VpmReader::with_settings(official_gui.clone())
+    #[cfg(not(feature = "test-kill-gates"))]
+    let vpm_reader: Option<alcomd_vpm::VpmReader> = None;
+    let reader = vpm_reader
+        .map_or_else(
+            || alcomd_vpm::VpmReader::with_settings(official_gui.clone()),
+            Ok,
+        )
         .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
     let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root.clone())
         .map_err(|_| BindError::Io(io::Error::other("M4 package engine initialization failed")))?;

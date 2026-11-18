@@ -16,11 +16,11 @@ const ID: &str = "dev.alcomd.tools-fixture";
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
-struct HttpsSource {
-    base: String,
+pub(super) struct HttpsSource {
+    pub(super) base: String,
     changed: Arc<AtomicBool>,
-    requests: Arc<tokio::sync::Mutex<Vec<String>>>,
-    headers_clean: Arc<AtomicBool>,
+    pub(super) requests: Arc<tokio::sync::Mutex<Vec<String>>>,
+    pub(super) headers_clean: Arc<AtomicBool>,
     task: tokio::task::JoinHandle<()>,
 }
 impl Drop for HttpsSource {
@@ -30,6 +30,14 @@ impl Drop for HttpsSource {
 }
 impl HttpsSource {
     async fn start(archive: Vec<u8>) -> Self {
+        Self::start_with_archive(archive, false).await
+    }
+
+    pub(super) async fn anonymous_vpm(archive: Vec<u8>) -> Self {
+        Self::start_with_archive(archive, true).await
+    }
+
+    async fn start_with_archive(archive: Vec<u8>, vpm: bool) -> Self {
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .expect("local TLS source");
@@ -86,7 +94,15 @@ impl HttpsSource {
                             if path=="/huge-archive" {
                                 let _=stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 67108865\r\nConnection: close\r\n\r\n").await;return;
                             }
-                            let bytes=if path=="/extension.alcomdextension" {archive.to_vec()} else {
+                            let bytes=if vpm {
+                                match path {
+                                    "/package.zip" => archive.to_vec(),
+                                    "/index" => serde_json::to_vec(&json!({"id":"com.example.m8.fixture", "name":"M8 anonymous fixture", "url":format!("{origin}/index"), "packages":{"com.example.m8.https":{"versions":{"1.0.0":{
+                                        "name":"com.example.m8.https", "displayName":"Anonymous HTTPS fixture", "version":"1.0.0", "url":format!("{origin}/package.zip"), "zipSHA256":hex(&Sha256::digest(archive.as_slice())),
+                                    }}}}})).expect("VPM fixture index"),
+                                    _ => {let _=stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;return;}
+                                }
+                            } else if path=="/extension.alcomdextension" {archive.to_vec()} else {
                                 let key=ed25519_dalek::SigningKey::from_bytes(&[23;32]).verifying_key().to_bytes();
                                 let id=if path=="/wrong-id" {"dev.example.other"}else{ID};
                                 let version=if path=="/wrong-version" {"1.0.1"}else{"1.0.0"};

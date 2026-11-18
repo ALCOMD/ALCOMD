@@ -148,6 +148,32 @@ impl PackageCache {
         })
     }
 
+    #[cfg(feature = "test-kill-gates")]
+    pub(crate) fn with_test_certificate(
+        root: PathBuf,
+        certificate: reqwest::Certificate,
+    ) -> Result<Self, CacheError> {
+        if !root.is_absolute() {
+            return Err(cache_error(CacheErrorCode::Io));
+        }
+        let client = Client::builder()
+            .no_proxy()
+            .referer(false)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(DOWNLOAD_TIMEOUT)
+            .redirect(Policy::custom(validate_redirect))
+            .add_root_certificate(certificate)
+            .build()
+            .map_err(|error| {
+                cache_error(CacheErrorCode::DownloadFailed).with_source(error.without_url())
+            })?;
+        Ok(Self {
+            root,
+            http: HttpClients::fixed_for_test(client),
+            max_archive_bytes: MAX_ARCHIVE_BYTES,
+        })
+    }
+
     pub(crate) fn for_extension_source(
         root: PathBuf,
         http: HttpClients,

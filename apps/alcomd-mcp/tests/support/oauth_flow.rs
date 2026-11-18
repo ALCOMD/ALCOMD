@@ -338,6 +338,244 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
+    use std::io::{Cursor, Write};
+    const PACKAGE: &str = "com.example.m8.https";
+
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-oauth-package-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("owned package evidence root");
+    let root = root.canonicalize().expect("isolated fixture path");
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    archive
+        .start_file("package.json", options)
+        .expect("manifest entry");
+    archive
+        .write_all(
+            json!({"name":PACKAGE,"version":"1.0.0"})
+                .to_string()
+                .as_bytes(),
+        )
+        .expect("manifest");
+    archive
+        .start_file("fixture.txt", options)
+        .expect("package payload entry");
+    archive
+        .write_all(b"verified anonymous HTTPS fixture")
+        .expect("package payload");
+    let source = super::extension_sources_flow::HttpsSource::anonymous_vpm(
+        archive
+            .finish()
+            .expect("valid package archive")
+            .into_inner(),
+    )
+    .await;
+    let configuration = CoreConfiguration::new();
+    let daemon = alcomd_daemon::test_support::start_with_package_source_until(
+        configuration.ipc.clone(),
+        DataConfig::isolated(root.join("data")),
+        CERT,
+        std::future::pending(),
+    )
+    .await
+    .expect("isolated Core with explicit TLS fixture trust");
+    let mut owner = AlcomdClient::connect(configuration.client.clone())
+        .await
+        .expect("isolated owner");
+    let registered = owner
+        .repository_register(
+            RepositorySource::Remote {
+                url: format!("{}/index", source.base),
+            },
+            "register-anonymous-https".into(),
+        )
+        .await
+        .expect("verified HTTPS repository registration")
+        .repository;
+    let repository_id = registered.repository_id.expect("registered repository ID");
+    let project_root = root.join("Project");
+    project(&project_root, false);
+    let project = owner
+        .project_register(
+            project_root.to_string_lossy().into_owned(),
+            "register-oauth-package-project".into(),
+        )
+        .await
+        .expect("register isolated project")
+        .project;
+    let project_id = project.project_id.expect("project ID");
+    let revision = project.revision.expect("project revision");
+    let installed = project_root.join("Packages").join(PACKAGE);
+
+    let http = Https::start(&root, configuration.client.clone()).await;
+    let client = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "OAuth package HTTPS fixture".into(),
+            grants: grants(true),
+            idempotency_key: "oauth-package-client".into(),
+        })
+        .await
+        .expect("create isolated client");
+    let registration = registration(&mut owner, &http, &client, false)
+        .await
+        .registration;
+    let read = [
+        grant("repositories.read", "global", "*"),
+        grant("packages.read", "global", "*"),
+    ];
+    let code = http.code(&mut owner, &registration, &read).await;
+    let token = http.exchange(&registration, &code, None).await;
+    let read_token = token["access_token"].as_str().expect("read token");
+    let reader = http.sdk(read_token).await;
+    let mut trace = Vec::new();
+    let summaries = data(
+        call(
+            &reader,
+            &mut trace,
+            "search_packages",
+            json!({"repository_id":repository_id}),
+        )
+        .await
+        .expect("query authorized anonymous source"),
+    );
+    assert_eq!(summaries["items"][0]["package_id"], PACKAGE);
+    let visible = reader
+        .list_tools(None)
+        .await
+        .expect("read-only authorized directory");
+    assert!(
+        !visible
+            .tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_plan_package_install")
+    );
+    error(call(&reader, &mut trace, "search_packages", json!({
+        "repository_id": repository_id, "project_id": project_id, "expected_revision": revision,
+    })).await.expect("project data requires project consent"), "permission_denied");
+    let arguments = json!({"project_id":project_id,"expected_revision":revision,"package_id":PACKAGE,
+        "version_selector":{"kind":"latest_compatible"},"source":{"kind":"repository","repository_id":repository_id}});
+    let denied = raw_tool(
+        &http,
+        read_token,
+        "alcomd_plan_package_install",
+        arguments.clone(),
+    )
+    .await;
+    assert_eq!(
+        denied.status(),
+        403,
+        "client grants cannot exceed token consent"
+    );
+    assert!(
+        denied.headers()["www-authenticate"]
+            .to_str()
+            .expect("scope challenge")
+            .contains("insufficient_scope")
+    );
+
+    let code = http.code(&mut owner, &registration, &grants(false)).await;
+    let token = http.exchange(&registration, &code, None).await;
+    let plan_token = token["access_token"].as_str().expect("plan-only token");
+    let planner = http.sdk(plan_token).await;
+    let plan = data(
+        call(&planner, &mut trace, "plan_package_install", arguments)
+            .await
+            .expect("real latest-compatible plan"),
+    );
+    assert_eq!(
+        plan["plan"]["change_set"]["mutations"][0]["to_version"],
+        "1.0.0"
+    );
+    assert_eq!(plan["sources"][0]["source"]["repository_id"], repository_id);
+    assert!(
+        !plan.to_string().contains(&source.base),
+        "public plan excludes the artifact and repository locator"
+    );
+    assert!(!installed.exists(), "planning does not publish files");
+    let apply = json!({"plan_id":plan["plan"]["plan_id"],"expected_revision":revision,"idempotency_key":"oauth-https-apply","confirm":true});
+    let denied = raw_tool(
+        &http,
+        plan_token,
+        "alcomd_apply_package_changes",
+        apply.clone(),
+    )
+    .await;
+    assert_eq!(
+        denied.status(),
+        403,
+        "the planning token cannot accept a write"
+    );
+    assert!(
+        denied.headers()["www-authenticate"]
+            .to_str()
+            .expect("apply challenge")
+            .contains("packages.manage")
+    );
+    assert!(
+        !installed.exists(),
+        "rejected apply leaves no package files"
+    );
+
+    let code = http.code(&mut owner, &registration, &grants(true)).await;
+    let token = http.exchange(&registration, &code, None).await;
+    let writer = http
+        .sdk(token["access_token"].as_str().expect("write token"))
+        .await;
+    let accepted = data(
+        call(&writer, &mut trace, "apply_package_changes", apply.clone())
+            .await
+            .expect("authorization for original Plan"),
+    );
+    let operation = accepted["operation_id"]
+        .as_str()
+        .expect("actual operation ID");
+    let result = terminal(&writer, &mut trace, operation).await;
+    assert_eq!(result["state"], "succeeded", "{result}");
+    assert_eq!(
+        std::fs::read(installed.join("fixture.txt")).expect("installed archive payload"),
+        b"verified anonymous HTTPS fixture"
+    );
+    let requests = source.requests.lock().await;
+    assert!(requests.iter().any(|request| request == "/index"));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.as_str() == "/package.zip")
+            .count(),
+        1,
+        "one verified archive fetch"
+    );
+    assert!(
+        source
+            .headers_clean
+            .load(std::sync::atomic::Ordering::SeqCst),
+        "no MCP OAuth credential or referrer reaches the VPM endpoint"
+    );
+    drop(requests);
+    let replay = data(
+        call(&writer, &mut trace, "apply_package_changes", apply)
+            .await
+            .expect("existing idempotent result"),
+    );
+    assert_eq!(replay["operation_id"], operation);
+    assert_eq!(replay["replayed"], true);
+    std::fs::write(
+        root.join("package-flow.json"),
+        serde_json::to_vec_pretty(&trace).expect("redacted tool trace"),
+    )
+    .expect("record package evidence");
+    reader.cancel().await.expect("close read client");
+    planner.cancel().await.expect("close planning client");
+    writer.cancel().await.expect("close applying client");
+    http.finish_server().await;
+    drop(owner);
+    drop(daemon);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     use rmcp::model::{ServerNotification, SubscriptionFilter};
     let _serial = REAL_CORE_LOCK.lock().await;

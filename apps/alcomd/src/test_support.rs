@@ -277,7 +277,25 @@ pub async fn start_with_data_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None, None, None).await
+    start(ipc, data, shutdown, None, None, None, None).await
+}
+
+/// Trusts one explicit fixture certificate for the VPM reader and package cache.
+pub async fn start_with_package_source_until<F>(
+    ipc: IpcConfig,
+    data: DataConfig,
+    certificate: &[u8],
+    shutdown: F,
+) -> Result<TestDaemon, BindError>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    let reader = alcomd_vpm::VpmReader::with_test_certificate(certificate).map_err(|_| {
+        BindError::Io(std::io::Error::other(
+            "VPM fixture trust initialization failed",
+        ))
+    })?;
+    start(ipc, data, shutdown, None, None, None, Some(reader)).await
 }
 
 /// Injects only a transport with an explicitly trusted test CA; real RPC/install validation remains unchanged.
@@ -290,7 +308,7 @@ pub async fn start_with_extension_source_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None, Some(source), None).await
+    start(ipc, data, shutdown, None, Some(source), None, None).await
 }
 
 /// Exercises startup with distribution inputs in an isolated profile.
@@ -303,7 +321,7 @@ pub async fn start_with_packaged_mcp_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None, None, Some(packaged_mcp)).await
+    start(ipc, data, shutdown, None, None, Some(packaged_mcp), None).await
 }
 
 /// Starts the M1/M2 fixtures with an automatically cleaned temporary data root.
@@ -313,7 +331,7 @@ where
 {
     let directory = TemporaryDataDirectory::new();
     let data = DataConfig::isolated(directory.0.clone());
-    start(ipc, data, shutdown, Some(directory), None, None).await
+    start(ipc, data, shutdown, Some(directory), None, None, None).await
 }
 
 async fn start<F>(
@@ -323,6 +341,7 @@ async fn start<F>(
     temporary_data: Option<TemporaryDataDirectory>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
     packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
+    vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<TestDaemon, BindError>
 where
     F: Future<Output = ()> + Send + 'static,
@@ -337,6 +356,7 @@ where
         Arc::new(TestStorageDirectories(storage_root)),
         source,
         packaged_mcp,
+        vpm_reader,
     )
     .await?;
     let listener = Arc::new(Mutex::new(listener));

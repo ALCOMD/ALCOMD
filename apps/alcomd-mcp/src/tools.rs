@@ -1,4 +1,4 @@
-//! The six approved tools. Every business action uses the existing typed Core client.
+//! Built-in MCP tools and extension dispatch through the authenticated typed Core client.
 use alcomd_client::{AlcomdClient, ClientError};
 use alcomd_protocol as rpc;
 use rmcp::{
@@ -10,25 +10,47 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.schema.json");
+const PACKAGE_CONTRACT: &str =
+    include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
 mod packages;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
-pub fn definitions() -> Result<Vec<Tool>, ErrorData> {
-    let contract: Value = serde_json::from_str(CONTRACT).map_err(|_| internal_protocol())?;
-    let entries = contract["x-alcomd-tools"]
+/// Static HTTP admission metadata. Discovery still uses Core's authorized directory.
+pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> {
+    let source = if packages::recognized(name) {
+        PACKAGE_CONTRACT
+    } else {
+        CONTRACT
+    };
+    let contract: Value = serde_json::from_str(source).map_err(|_| internal_protocol())?;
+    let Some(mut entry) = contract["x-alcomd-tools"]
         .as_array()
-        .ok_or_else(internal_protocol)?;
-    entries
+        .ok_or_else(internal_protocol)?
         .iter()
-        .map(|entry| {
-            let mut entry = entry.clone();
-            for schema in ["inputSchema", "outputSchema"] {
-                entry[schema]["$defs"] = contract["$defs"].clone();
-            }
-            serde_json::from_value(entry).map_err(|_| internal_protocol())
-        })
-        .collect()
+        .find(|entry| entry["name"].as_str() == Some(name))
+        .and_then(Value::as_object)
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    if let Some(effect) = entry.remove("effect") {
+        let read_only = match effect.as_str() {
+            Some("read") => true,
+            Some("plan") => false,
+            _ => return Err(internal_protocol()),
+        };
+        entry.remove("requiredPermissions");
+        entry.insert("annotations".into(), json!({
+            "readOnlyHint":read_only,"destructiveHint":false,"idempotentHint":read_only,"openWorldHint":false,
+        }));
+    }
+    for schema in ["inputSchema", "outputSchema"] {
+        entry.get_mut(schema).ok_or_else(internal_protocol)?["$defs"] = contract["$defs"].clone();
+    }
+    serde_json::from_value(Value::Object(entry))
+        .map(Some)
+        .map_err(|_| internal_protocol())
 }
 fn internal_protocol() -> ErrorData {
     ErrorData::internal_error("The tool contract is unavailable.", None)
@@ -643,9 +665,38 @@ mod tests {
     }
     #[test]
     fn definitions_are_exact_and_errors_do_not_turn_unknown_writes_into_failures() {
-        let definitions = definitions().expect("approved contract");
-        assert_eq!(definitions.len(), 6);
-        assert!(!definitions.iter().any(|t| t.name.contains("rpc")));
+        let names = [
+            "alcomd_list_projects",
+            "alcomd_get_project",
+            "alcomd_plan_package_uninstall",
+            "alcomd_apply_package_changes",
+            "alcomd_get_operation",
+            "alcomd_cancel_operation",
+            "alcomd_list_package_sources",
+            "alcomd_search_packages",
+            "alcomd_get_package",
+            "alcomd_plan_package_install",
+            "alcomd_plan_package_reinstall",
+        ];
+        for name in names {
+            let tool = builtin_definition(name)
+                .expect("approved contract")
+                .expect("known builtin");
+            assert_eq!(tool.name, name);
+        }
+        assert!(
+            builtin_definition("alcomd_any_rpc")
+                .expect("static admission")
+                .is_none()
+        );
+        assert_eq!(
+            builtin_definition("alcomd_plan_package_install")
+                .expect("valid contract")
+                .expect("known plan")
+                .annotations
+                .and_then(|value| value.read_only_hint),
+            Some(false)
+        );
         let result = failure(Failure::Remote(
             ClientError::Transport(std::io::Error::new(
                 std::io::ErrorKind::BrokenPipe,

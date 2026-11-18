@@ -785,10 +785,7 @@ impl ServerHandler for HttpHandler {
             .await
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
-        tools::definitions()
-            .ok()?
-            .into_iter()
-            .find(|t| t.name == name)
+        tools::builtin_definition(name).ok().flatten()
     }
     async fn discover(
         &self,
@@ -862,9 +859,7 @@ impl ServerHandler for HttpHandler {
                 true
             }
             None => {
-                let builtin = tools::definitions()?
-                    .into_iter()
-                    .find(|t| t.name == params.name)
+                let builtin = tools::builtin_definition(params.name.as_ref())?
                     .ok_or_else(super::unsupported_method)?;
                 // Builtins retain their existing fixed execution contracts, including denied calls.
                 !builtin

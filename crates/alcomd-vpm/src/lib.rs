@@ -128,6 +128,8 @@ pub fn project_creation_resource(
 #[derive(Clone)]
 pub struct VpmReader {
     http: http_clients::HttpClients,
+    #[cfg(feature = "test-kill-gates")]
+    test_certificate: Option<reqwest::Certificate>,
 }
 
 impl VpmReader {
@@ -160,10 +162,38 @@ impl VpmReader {
             })
         })
         .map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
-        Ok(Self { http })
+        Ok(Self {
+            http,
+            #[cfg(feature = "test-kill-gates")]
+            test_certificate: None,
+        })
+    }
+
+    #[cfg(feature = "test-kill-gates")]
+    pub fn with_test_certificate(certificate: &[u8]) -> Result<Self, M3Error> {
+        let map = |error: reqwest::Error| {
+            M3Error::new(M3ErrorCode::Internal).with_source(error.without_url())
+        };
+        let certificate = reqwest::Certificate::from_der(certificate).map_err(map)?;
+        let client = Client::builder()
+            .no_proxy()
+            .referer(false)
+            .timeout(REQUEST_TIMEOUT)
+            .redirect(Policy::custom(validate_redirect))
+            .add_root_certificate(certificate.clone())
+            .build()
+            .map_err(map)?;
+        Ok(Self {
+            http: http_clients::HttpClients::fixed_for_test(client),
+            test_certificate: Some(certificate),
+        })
     }
 
     fn package_cache(&self, root: PathBuf) -> Result<PackageCache, CacheError> {
+        #[cfg(feature = "test-kill-gates")]
+        if let Some(certificate) = self.test_certificate.clone() {
+            return PackageCache::with_test_certificate(root, certificate);
+        }
         PackageCache::with_proxy_source(root, self.http.settings())
     }
 
