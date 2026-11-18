@@ -1521,3 +1521,26 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 [CI 44254367013](https://github.com/ALCOMD/ALCOMD/actions/runs/44254367013) 同 SHA 的首次自动运行在 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 全部通过。三平台均通过仓库检查、CLI 自动启动集成、发布版构建、Tauri GUI 构建和完整 Chromium 回归。Chromium 每平台 731 通过、0 失败，Windows 18.7 分钟、Ubuntu 14.1 分钟、macOS 25.3 分钟。[CodeQL 44254366154](https://github.com/ALCOMD/ALCOMD/actions/runs/44254366154) 同 SHA 首次自动运行的 Rust、JavaScript/TypeScript、Python 和 Actions 全部通过。
 
 三平台原始任务日志、运行终态与 SHA-256 摘要保存在 target/m8-push-2d6e4bb2-20261118/，汇总为 final-evidence.json。此前失败保留各自候选及运行编号。扩展人工检查仍延期，历史 Host resource_limit 根因仍待定位。M8 保持进行中。
+
+### 2026-11-18 OAuth 订阅自然到期
+
+本地测试提交 `af4ff5f6be3cfac036382eaf46c48c1cbd93f4e4` 新增一个按需运行的十分钟真实用例。Windows 隔离 Core、真实 HTTPS、冻结 SDK 和 S256 授权码交换使用实际时钟。签发后等 25 秒再订阅，流在开始换取 token 后约 600.067 秒关闭，此时订阅仅存续 575.041 秒。到期没有发出虚假的目录变化通知，旧 token 调用返回 HTTP 401，重新授权取得的 token 可读取两个获准工具。具名用例 1/0，耗时 601.65 秒，测试二进制 SHA-256 为 `a3e2c6261b2e179018c55319b1bc111c143ccccbb2814b656012461321bf53a9`。编译、该测试目标的严格 Clippy、fmt、xtask、metadata 和 diff 检查通过。
+
+证据在 target/m8-subscription-expiry-20261118/。本用例覆盖访问 token 到期，订阅流自身十分钟上限、长时并发与慢读仍保留。生产代码相对上面的远端候选未变，新增测试提交没有对应远端运行。
+
+### 2026-11-18 本机 Codex 工具目录续验
+
+用 Windows 上实际安装的 Codex CLI 0.153.4 `app-server` 连接同一候选的隔离 Core 与回环 Bearer MCP，使用独立 Codex 配置和临时线程，无模型调用。只记录协议方法和 HTTP 状态。初始发现两个项目读取工具。Core 撤销一次性样例客户端的读取权限后，7 秒观察内没有自动刷新请求，前后 Core 均为零个绑定订阅流，线上未见 `subscriptions/listen`。主动查询同一线程状态时，Codex 重新发出 `server/discover` 和 `tools/list` 并返回空目录，新线程也返回空目录。本结果覆盖该版本和该配置的回环 Bearer 接入，真实 Codex 的推送消费及其他传输上的行为仍未证实。冻结 SDK 的订阅证据见前述用例。
+
+首次启动在隔离 Core 正常退出等待期内提前停止，探针未运行。核对隔离进程已退出、端点空闲及原有零活动基线后续跑，探针退出 0，临时凭据已撤销。两项验证后均恢复同一隔离 GUI/Core、数据目录和 WebView 配置，系统、项目、Operation、MCP 客户端、OAuth 注册五组公开状态一致。最终 GUI 102556 可见且响应，其五条管道均连接隔离 Core 118452。未恢复桌面控制。前后快照、工具链输入摘要和探针输出保存在同一证据目录。
+
+### 2026-11-18 第一方管理扩展默认分发审计
+
+[A-019](../decisions/accepted.md) 已确定正式产品默认安装并启用 MCP 管理扩展 `com.vrclearn.alcomd.extension.mcp`。扩展当前可以通过普通安装流程运行，清单中只有可选权限。默认启用应沿用零授权启动，外部 MCP 服务仍由用户独立启动。
+
+- 正式清单当前使用占位发布者指纹。现有构建说明产出 Wasm Component，正式扩展包、应用层签名输入和随产品装配入口仍缺失。当前 Tauri 配置关闭 bundle，也未声明随包资源。正式包、安装器装配和发行验证归 [M12](M12-full-product-distribution.md)，此处只核对接口和 Core 生命周期。
+- Core 目前通过正常 Plan/Apply、任务和恢复流程安装，完成落库后为停用状态。卸载删除扩展记录，仅根据记录是否存在补装会在用户卸载后再次安装。公共安装 RPC 也明确拒绝调用者提供 `first_party_packaged` 来源，该检查应保持。
+- 建议由 Core 在首次符合条件的新配置中处理一次默认安装，复用现有包签名、摘要、Plan/Apply、任务恢复及启用规则。包来自正式产品装配清单，Core 核对固定扩展 ID、发布者公钥和包摘要。安装或启用中断时按原任务恢复，后续启动尊重用户停用和卸载。实施前先确定可长期保留的一次性记录及失败恢复方式，若确需新增持久状态或公共合同则单列审批。隔离验证可使用测试签名和可丢弃配置，正式身份和发行验收仍由 M12 完成。
+- 现有扩展 Plan 会保留来源、扩展标识和关联 Operation，且卸载后仍保留。应先验证能否用受控 `first_party_packaged` Plan 和原任务结果识别初始化尝试及安装完成。还须分别验证安装后首次启用中断、用户后来主动停用或卸载、包校验失败和重复启动，避免将这些状态误判为需要重新安装。
+
+管理扩展的活动页当前读取 Core IPC 连接和在途 RPC。A/B 已接通订阅流投影和只读 Host 接口，第一方管理扩展尚未声明或调用这项接口。订阅流在管理扩展内的实际展示和延期的原生人工检查仍待完成。
