@@ -44,6 +44,7 @@ const HEADER_TIME: Duration = Duration::from_secs(10);
 const BODY_TIME: Duration = Duration::from_secs(15);
 const CORE_TIME: Duration = Duration::from_secs(60);
 const OUTPUT_TIME: Duration = Duration::from_secs(10);
+const SUBSCRIPTION_FINAL_FRAME_RESERVE: Duration = Duration::from_secs(1);
 type Sdk = StreamableHttpService<HttpHandler, NeverSessionManager>;
 mod oauth;
 mod write_bound;
@@ -243,7 +244,7 @@ struct BoundRequest {
     service: Arc<ProtocolService>,
     deadline: Instant,
     notifications: bool,
-    subscription: Arc<Mutex<Option<subscriptions::Prepared>>>,
+    subscription: Arc<Mutex<Option<(subscriptions::Prepared, Instant)>>>,
     observed_request: Option<Arc<observations::Request>>,
 }
 
@@ -472,11 +473,14 @@ impl State {
             notifications,
             subscription_limits: Default::default(),
         });
+        let subscription_deadline = subscription
+            .as_ref()
+            .map(|_| Instant::now() + subscriptions::MAX_AGE);
         let binding = BoundRequest {
             service: Arc::clone(&service),
             deadline,
             notifications,
-            subscription: Arc::new(Mutex::new(subscription)),
+            subscription: Arc::new(Mutex::new(subscription.zip(subscription_deadline))),
             observed_request: observed_request.clone(),
         };
         let request = HttpRequest::from_parts(parts, Full::new(bytes));
@@ -547,8 +551,8 @@ impl State {
         // starts here, separately from the handler's Core deadline.
         let mut body = GuardedBody::new(body, Some(permit), Some(service));
         body.observed_request = observed_request;
-        if is_listen {
-            body.deadline = Box::pin(tokio::time::sleep(subscriptions::MAX_AGE));
+        if let Some(deadline) = subscription_deadline {
+            body.deadline = Box::pin(tokio::time::sleep_until(deadline));
         }
         Response::from_parts(parts, body)
     }
@@ -762,7 +766,7 @@ impl ServerHandler for HttpHandler {
         subscriptions::accepted(requested)
     }
     async fn listen(&self, context: rmcp::service::SubscriptionContext) -> Result<(), ErrorData> {
-        let prepared = self
+        let (prepared, deadline) = self
             .binding
             .subscription
             .lock()
@@ -774,7 +778,11 @@ impl ServerHandler for HttpHandler {
             .observed_request
             .as_ref()
             .and_then(|r| r.stream());
-        prepared.run(context).await
+        // Give the SDK time to write the terminal result within the same hard
+        // HTTP deadline, even when the timer and body are polled together.
+        prepared
+            .run(context, deadline - SUBSCRIPTION_FINAL_FRAME_RESERVE)
+            .await
     }
     fn get_tool(&self, name: &str) -> Option<Tool> {
         tools::definitions()

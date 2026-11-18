@@ -1,6 +1,336 @@
 use super::*;
 use rmcp::model::{ServerNotification, SubscriptionFilter};
 
+async fn start_http_subscription_check() -> (
+    alcomd_daemon::test_support::TestDaemon,
+    AlcomdClient,
+    HttpFixture,
+) {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-subscription-limits")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(root.join("data")).expect("owned disposable data");
+    let root = root.canonicalize().expect("normalized isolation");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(root.join("data")),
+        std::future::pending(),
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .expect("test owner");
+    (daemon, owner, HttpFixture::start().await)
+}
+
+async fn subscription_reader(owner: &mut AlcomdClient, name: &str) -> (McpClientRecord, String) {
+    let client = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: name.into(),
+            grants: vec![grant("projects.read", "global", "*")],
+            idempotency_key: format!("create-{name}"),
+        })
+        .await
+        .expect("isolated read client");
+    let credential = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: client.client_id.clone(),
+            expected_revision: client.revision,
+            idempotency_key: format!("issue-{name}"),
+        })
+        .await
+        .expect("real read credential");
+    let client = McpClientRecord {
+        revision: credential.revision,
+        ..client
+    };
+    (client, credential.credential)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "uses the real ten-minute subscription lifetime and an isolated Core endpoint"]
+async fn http_subscription_reaches_stream_limit_with_valid_bearer() {
+    use rmcp::service::SubscriptionEnd;
+    use tokio::time::Instant;
+
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let (daemon, mut owner, http) = start_http_subscription_check().await;
+    let (_, credential) = subscription_reader(&mut owner, "stream-lifetime").await;
+    let client = sdk(&credential, Some(&http.url)).await;
+    let filter = SubscriptionFilter::builder().tools_list_changed().build();
+    let started = Instant::now();
+    let mut stream = client.listen(filter.clone()).await.expect("real SDK ack");
+    let acknowledged = Instant::now();
+    assert_eq!(stream.acknowledged().tools_list_changed, Some(true));
+    assert!(
+        tokio::time::timeout_at(started + Duration::from_secs(595), stream.next())
+            .await
+            .is_err(),
+        "unchanged authorized catalogue stays open near the ten-minute limit"
+    );
+    let mut trace = vec![];
+    assert!(
+        data(
+            call(&client, &mut trace, "list_projects", json!({}))
+                .await
+                .expect("ordinary call near stream deadline")
+        )
+        .is_object()
+    );
+    let end = tokio::time::timeout_at(started + Duration::from_secs(610), stream.next())
+        .await
+        .expect("bounded absolute stream lifetime")
+        .expect("no protocol error at the age limit");
+    assert!(end.is_none(), "no false catalogue notification");
+    assert!(
+        matches!(stream.end(), Some(SubscriptionEnd::Graceful(_))),
+        "age limit must emit the terminal result, got {:?}",
+        stream.end()
+    );
+    let elapsed = started.elapsed();
+    assert!(elapsed >= Duration::from_secs(598));
+    assert!(
+        acknowledged.elapsed() <= Duration::from_secs(601),
+        "the terminal result must arrive within the hard age limit and timer precision"
+    );
+    assert!(
+        data(
+            call(&client, &mut trace, "list_projects", json!({}))
+                .await
+                .expect("same credential still authorizes a real call")
+        )
+        .is_object()
+    );
+    let mut reopened = client
+        .listen(filter)
+        .await
+        .expect("same credential opens a new stream");
+    reopened.cancel().await.expect("explicit cancellation");
+    eprintln!(
+        "Subscription ended gracefully after {} ms with the same still-valid Bearer",
+        elapsed.as_millis()
+    );
+    stop(client).await;
+    http.finish().await;
+    drop(owner);
+    daemon.abort();
+    let _ = daemon.await;
+}
+
+async fn raw_subscription_check_request(
+    client: &reqwest::Client,
+    url: &str,
+    credential: &str,
+    method: &str,
+    mut params: Value,
+) -> Result<reqwest::Response, reqwest::Error> {
+    params["_meta"] = json!({
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities":{}
+    });
+    let mut request = client
+        .post(url)
+        .bearer_auth(credential)
+        .header("Accept", "application/json,text/event-stream")
+        .header("MCP-Protocol-Version", "2026-07-28")
+        .header("Mcp-Method", method)
+        .json(&json!({"jsonrpc":"2.0","id":7,"method":method,"params":params}));
+    if method == "tools/call" {
+        request = request.header("Mcp-Name", "alcomd_list_projects");
+    }
+    request.send().await
+}
+
+async fn read_subscription_notice(response: &mut reqwest::Response, message: &str) {
+    tokio::time::timeout(Duration::from_secs(6), async {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.expect("stream frame") {
+            bytes.extend_from_slice(&chunk);
+            assert!(bytes.len() <= 16_384, "bounded fixture observation");
+            if String::from_utf8_lossy(&bytes).contains(message) {
+                return;
+            }
+        }
+        panic!("stream closed before expected protocol message");
+    })
+    .await
+    .expect("subscription event deadline");
+}
+
+async fn wait_subscription_counts(
+    owner: &mut AlcomdClient,
+    streams: Option<u32>,
+    sockets: Option<u32>,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let snapshot = owner
+                .mcp_transport_snapshot(Default::default())
+                .await
+                .expect("real transport observation");
+            if snapshot.status == McpTransportAvailability::Available
+                && streams.is_none_or(|count| {
+                    snapshot
+                        .subscription_streams
+                        .as_ref()
+                        .is_some_and(|page| page.total_tracked == count)
+                })
+                && sockets.is_none_or(|count| {
+                    snapshot
+                        .connections
+                        .as_ref()
+                        .is_some_and(|page| page.total_tracked == count)
+                })
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("reported stream and connection counts converge");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "holds real local HTTP resources and uses an isolated Core endpoint"]
+async fn http_subscription_capacity_and_paused_reader_isolate_business() {
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let (daemon, mut owner, http) = start_http_subscription_check().await;
+    let mut readers = Vec::new();
+    for i in 0..4 {
+        readers.push(subscription_reader(&mut owner, &format!("capacity-{i}")).await);
+    }
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .pool_max_idle_per_host(0)
+        .connect_timeout(Duration::from_secs(3))
+        .build()
+        .expect("local unpooled HTTP client");
+    let listen = |credential| {
+        raw_subscription_check_request(
+            &client,
+            &http.url,
+            credential,
+            "subscriptions/listen",
+            json!({"notifications":{"toolsListChanged":true}}),
+        )
+    };
+    let tool = |credential| {
+        raw_subscription_check_request(
+            &client,
+            &http.url,
+            credential,
+            "tools/call",
+            json!({"name":"alcomd_list_projects","arguments":{}}),
+        )
+    };
+    let mut paused = Vec::new();
+    for _ in 0..4 {
+        let response = listen(&readers[0].1).await.expect("accepted stream");
+        assert_eq!(response.status(), 200);
+        paused.push(response);
+    }
+    wait_subscription_counts(&mut owner, Some(4), None).await;
+    assert_eq!(
+        listen(&readers[0].1)
+            .await
+            .expect("same credential limit")
+            .status(),
+        429
+    );
+    update(
+        &mut owner,
+        &readers[0].0,
+        vec![],
+        "capacity-restrict-slow-reader",
+    )
+    .await;
+    // The application has not polled any body on these four connections.
+    // Cross one real SSE heartbeat interval while retaining all four slots.
+    tokio::time::sleep(Duration::from_secs(16)).await;
+    wait_subscription_counts(&mut owner, Some(4), None).await;
+    assert_read_tool_success(
+        tool(&readers[1].1)
+            .await
+            .expect("another client can still call"),
+    )
+    .await;
+    read_subscription_notice(&mut paused[0], "notifications/tools/list_changed").await;
+
+    let mut streams = paused;
+    for (_, credential) in &readers[1..] {
+        for _ in 0..4 {
+            let response = listen(credential)
+                .await
+                .expect("independent credential quota");
+            assert_eq!(response.status(), 200);
+            streams.push(response);
+        }
+    }
+    wait_subscription_counts(&mut owner, Some(16), None).await;
+    assert_eq!(
+        tool(&readers[1].1)
+            .await
+            .expect("shared request capacity")
+            .status(),
+        429
+    );
+    drop(streams.pop());
+    wait_subscription_counts(&mut owner, Some(15), None).await;
+    assert_read_tool_success(
+        tool(&readers[1].1)
+            .await
+            .expect("one available request slot"),
+    )
+    .await;
+    let restored = listen(&readers[3].1).await.expect("slot reusable");
+    assert_eq!(restored.status(), 200);
+    drop(restored);
+    drop(streams);
+    wait_subscription_counts(&mut owner, Some(0), Some(0)).await;
+
+    let authority = http
+        .url
+        .trim_start_matches("http://")
+        .trim_end_matches("/mcp");
+    let mut sockets = Vec::new();
+    for _ in 0..32 {
+        sockets.push(
+            tokio::net::TcpStream::connect(authority)
+                .await
+                .expect("owned TCP connection"),
+        );
+    }
+    wait_subscription_counts(&mut owner, Some(0), Some(32)).await;
+    assert!(
+        tool(&readers[1].1).await.is_err(),
+        "33rd TCP connection must not receive a response"
+    );
+    drop(sockets.pop());
+    wait_subscription_counts(&mut owner, Some(0), Some(31)).await;
+    assert_read_tool_success(tool(&readers[1].1).await.expect("one available TCP slot")).await;
+    drop(sockets);
+    eprintln!("Verified four unread streams, 4/16/32 admission and ordinary tool recovery");
+    http.finish().await;
+    drop(owner);
+    daemon.abort();
+    let _ = daemon.await;
+}
+
+async fn assert_read_tool_success(response: reqwest::Response) {
+    assert_eq!(response.status(), 200);
+    let body = response.text().await.expect("ordinary finite tool result");
+    let result: Value = body
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:"))
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|message| message["id"] == 7)
+        .expect("real JSON-RPC result");
+    assert_ne!(result["result"]["isError"], true);
+    assert!(result["result"]["structuredContent"]["data"].is_object());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn lost_observer_ticket_reply_does_not_reconnect_reissue_or_interrupt_business() {
     let _serial = REAL_CORE_LOCK.lock().await;

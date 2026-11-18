@@ -80,16 +80,21 @@ impl Prepared {
         .await
         .map_err(|_| unavailable())?
     }
-    pub async fn run(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
+    pub async fn run(
+        &self,
+        context: SubscriptionContext,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), ErrorData> {
         let mut previous = self.initial.clone();
-        let deadline = tokio::time::Instant::now() + MAX_AGE;
+        let age = tokio::time::sleep_until(deadline);
+        tokio::pin!(age);
         let mut ticks = tokio::time::interval(Duration::from_secs(1));
         ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 biased;
                 () = context.cancelled() => return Ok(()),
-                () = tokio::time::sleep_until(deadline) => return Ok(()),
+                () = &mut age => return Ok(()),
                 _ = ticks.tick() => {},
             }
             // First tick is immediate, closing the pre-ack snapshot race. A failed
@@ -97,7 +102,8 @@ impl Prepared {
             let current = tokio::select! {
                 biased;
                 () = context.cancelled() => return Ok(()),
-                result = tokio::time::timeout_at(deadline.min(tokio::time::Instant::now() + ESTABLISH_TIME), async {
+                () = &mut age => return Ok(()),
+                result = tokio::time::timeout(ESTABLISH_TIME, async {
                     fingerprint(&mut *self.core.lock().await).await
                 }) => result.map_err(|_| unavailable())?.map_err(|_| unavailable())?,
             };
@@ -105,7 +111,8 @@ impl Prepared {
                 let sent = tokio::select! {
                     biased;
                     () = context.cancelled() => return Ok(()),
-                    result = tokio::time::timeout_at(deadline.min(tokio::time::Instant::now() + OUTPUT_TIME), context.sink().notify_tool_list_changed()) => result,
+                    () = &mut age => return Ok(()),
+                    result = tokio::time::timeout(OUTPUT_TIME, context.sink().notify_tool_list_changed()) => result,
                 };
                 if !matches!(sent, Ok(Ok(()))) {
                     context.request_context().ct.cancel();
@@ -130,7 +137,9 @@ impl ServerHandler for StdioHandler {
     }
     async fn listen(&self, context: SubscriptionContext) -> Result<(), ErrorData> {
         let _observed_stream = self.1.as_ref().and_then(|r| r.stream());
-        self.0.run(context).await
+        self.0
+            .run(context, tokio::time::Instant::now() + MAX_AGE)
+            .await
     }
 }
 
