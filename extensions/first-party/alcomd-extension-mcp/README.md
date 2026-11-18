@@ -35,7 +35,8 @@ cargo xtask component extensions/first-party/alcomd-extension-mcp/backend/target
 凭据仅由本机所有者通过正式CLI一次签发：`alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>`。
 每次签发立即作废旧凭据；管道或JSON/NDJSON输出须显式`--secret-stdout`，结果未知不自动重签。
 扩展不会读取、存储或展示凭据，不修改外部配置，不启动MCP子进程。
+已登记客户端的详情提供接入提示。Codex 回环 Bearer 的配置核对、凭据传入与清理步骤见[客户端接入速查](../../../specs/mcp/toolset-v1.md#客户端接入速查)。
 
-客户端的八项能力用开关编辑，不逐项目授权；项目读取和包修改覆盖当前及以后登记项目。
+客户端按能力开关授权，项目读取和包修改覆盖当前及以后登记项目。
 切换只编辑草稿，审阅实际增减并确认后调用原change-grants；不重建协议或授权系统。
 扩展声明只是申请，不产生授权；旧局部授权经State37移除，OAuth旧项目令牌失效，须重新明确授权。

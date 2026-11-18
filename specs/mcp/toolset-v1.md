@@ -87,4 +87,29 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 | STDIO | 将 `alcomd-mcp stdio` 配置为启动命令，并通过子进程环境提供 `ALCOMD_MCP_CLIENT_CREDENTIAL`。 |
 | 回环 HTTPS/OAuth | 预登记客户端和精确回调地址，运行 `alcomd-mcp serve-oauth --port <port> --tls-cert <cert> --tls-key <key>`，客户端使用 `https://localhost:<port>/mcp`。证书须由该客户端信任，OAuth 请求的能力还受注册上限和当前授权约束。 |
 
-已验证的 Codex CLI 0.153.4 在隔离配置启用 `mcp_2026_07_28` 后可用 HTTP Bearer 和预登记 OAuth。该版本的 STDIO 实测仍发送旧握手，需使用现代 HTTP 入口。配置自动写入、其他客户端兼容性及真实通知消费继续按独立验证记录交付。[接入证据](../../docs/testing/m8-management-manual-20261115.md)
+### Codex CLI 0.153.4 的回环 HTTP 接入
+
+1. 在 MCP 管理扩展中创建独立客户端并授予所需能力。用 `alcomd-cli mcp client list` 核对 ID 和当前修订，再运行 `alcomd-cli mcp client issue-credential <id> --expected-revision <n> --idempotency-key <key>` 取得一次性凭据。用 `alcomd-mcp serve --port 0` 启动监听，记下实际报告的地址。
+2. 运行 `codex mcp get alcomd` 查看目标条目。确认该条目不存在时，核对下面的地址和环境变量名后执行添加。已有同名条目时，先确认要修改的字段，再手动合并该条目，或选择新名称。`codex mcp add` 会直接覆盖同名条目，读取配置出错时应先解决错误。
+
+   ```powershell
+   codex mcp add alcomd --url 'http://127.0.0.1:实际端口/mcp' --bearer-token-env-var ALCOMD_CODEX_BEARER
+   ```
+
+3. 在专用终端通过不回显输入把该客户端凭据交给 Codex 进程。配置只保存环境变量名。
+
+   ```powershell
+   if (Test-Path Env:ALCOMD_CODEX_BEARER) { throw '请在尚未设置此变量的专用终端运行' }
+   $env:ALCOMD_CODEX_BEARER = [System.Net.NetworkCredential]::new(
+       '', (Read-Host '输入此客户端的 Bearer 凭据' -AsSecureString)
+   ).Password
+   try {
+       codex --enable mcp_2026_07_28
+   } finally {
+       Remove-Item Env:ALCOMD_CODEX_BEARER
+   }
+   ```
+
+4. 查看当前可用工具并运行一项已授权的读取。清理时用 `codex mcp remove alcomd` 移除该配置，并在 Core 中撤销专用客户端。配置名若不同，使用实际配置名。
+
+该版本在隔离配置开启 `mcp_2026_07_28` 后已实测 HTTP Bearer 和预登记 OAuth。STDIO 实测仍发送旧握手，不能接入冻结协议。ALCOMD 自动写入客户端配置、Claude Code、Cursor 和真实通知消费仍待验证。 [接入证据](../../docs/testing/m8-management-manual-20261115.md)

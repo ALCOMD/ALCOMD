@@ -570,6 +570,15 @@ impl View {
                     self.permissions_form(&mut doc);
                     doc.button("撤销客户端", "revoke", false);
                 }
+                if client.revoked_at_ms.is_none() {
+                    doc.node(
+                        None,
+                        ui::NodePayload::Text(ui::TextNode {
+                            text: "接入客户端时，由本机所有者按上方 ID 在 CLI 签发独立凭据。使用 HTTP Bearer 时，将回环 MCP 地址和凭据分别填入客户端的连接设置。".into(),
+                            tone: ui::Tone::Neutral,
+                        }),
+                    );
+                }
             }
         } else {
             let list = doc.node(
@@ -931,6 +940,24 @@ mod tests {
         );
         assert!(doc.nodes.iter().any(|node| matches!(&node.payload,ui::NodePayload::Button(button) if button.label=="查看权限")));
     }
+
+    #[test]
+    fn active_client_details_show_read_only_connection_guidance() {
+        let doc = View {
+            selected: Some(selected()),
+            ..View::default()
+        }
+        .document();
+        assert!(doc.nodes.iter().any(|node| matches!(
+            &node.payload,
+            ui::NodePayload::Text(text) if text.text.contains("HTTP Bearer")
+        )));
+        assert!(
+            !doc.nodes
+                .iter()
+                .any(|node| matches!(&node.payload, ui::NodePayload::Form(_)))
+        );
+    }
     #[test]
     fn unknown_write_keeps_risk_visible_and_disables_confirmation() {
         let view = View {
@@ -969,6 +996,10 @@ mod tests {
                 .any(|node| matches!(&node.payload, ui::NodePayload::Form(_)))
         );
         assert!(!doc.nodes.iter().any(|node|matches!(&node.payload,ui::NodePayload::Button(button) if button.action_id=="revoke")));
+        assert!(!doc.nodes.iter().any(|node| matches!(
+            &node.payload,
+            ui::NodePayload::Text(text) if text.text.contains("HTTP Bearer")
+        )));
     }
 }
 
