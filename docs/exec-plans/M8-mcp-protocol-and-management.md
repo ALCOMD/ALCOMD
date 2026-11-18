@@ -1727,7 +1727,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 - 关联 OAuth 综合与签名 Provider 分别 1/0（8.44 秒和 110.02 秒），对应先前集成二进制 `e3dd20bbf1a840cce00269b5756db049c4396b8ab23bab02abb1b290bf38e5ff`。原生仓库 Store 7/0，九项授权分页 1/0，MCP 单元 15/0，管理扩展单元 8/0及 Wasm Component 构建通过。受影响七包及最终 MCP 适配器严格 Clippy、fmt、metadata、xtask、Schema 引用和 diff 通过。
 - 证据在 `target/m8-plan-parity-20261119/`、`target/m8-registry-parity-20261119/`、`target/m8-registry-parity-final-20261119/` 和 `target/m8-registry-revocation-20261119/`。Windows 链接器锁住旧输出文件时改用单独的测试产物名。原隔离 GUI 129908 可见且响应，五条管道连接 Core 86540，恢复前后五组公开状态一致。未推送，暂无同 SHA 远端验证。下一批按既有顺序核对项目、备份、模板和环境能力。
 
-### 2026-11-19 项目与备份集中合同差异（待批准）
+### 2026-11-19 项目与备份集中合同差异（已批准）
 
 Core 已有登记、模板创建、复制、创建备份和恢复。当前登记将登记资源与幂等记录都归到调用者。创建、复制与恢复显式要求本机所有者，Worker 的源资源查询及发布登记也依赖这个身份。备份读取和创建按调用者自己的项目及备份记录查找。外部 MCP 允许列表尚未开放这些入口。原生 RPC 的项目快照、复制及恢复 Plan 带实际本机路径，MCP 沿用安全投影。已核对 `M3Application::{register_project,get_project}`、`ProjectCreateApplication::create`、`M7CopyApplication::{plan_copy,apply_copy}`、`M5BackupApplication::{list,get,create,plan_restore,apply_restore}` 与对应 Store 接受及完成事务。
 
@@ -1752,7 +1752,18 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 定向验收覆盖冻结协议或 typed client 到真实隔离 Core。验证五条实际业务、原生端可读的登记结果、来源和目标变化、根外和假句柄、两个客户端隔离、授予/撤销/OAuth 上限、实际任务归属、同键重放、取消保留、恢复安全及既有原生回归。不安装新依赖、不触发远端工作流。
 
-现行代码 `c3e7912a` 的独立原生验证通过。`alcomd-store --test backup_directories` 2/0，验证默认目的地变化后原接受归档仍按已冻结证据恢复，以及旧请求可读取。`alcomd-testing --test m7_project_copy_rpc project_copy_plan_expiry_and_all_writer_states_are_fail_closed` 1/0（0.64 秒），验证复制 Plan 过期和 Unity 写入者条件。两组都在可丢弃数据上执行，不占用现有 Core 端点。它们用于确认可复用的原生行为。本批 MCP 路径、身份和运行时结果还待实施与验证。
+审批前在 `c3e7912a` 取得独立原生验证。`alcomd-store --test backup_directories` 2/0，验证默认目的地变化后原接受归档仍按已冻结证据恢复，以及旧请求可读取。`alcomd-testing --test m7_project_copy_rpc project_copy_plan_expiry_and_all_writer_states_are_fail_closed` 1/0（0.64 秒），验证复制 Plan 过期和 Unity 写入者条件。两组都在可丢弃数据上执行，用于确认可复用的原生行为。
+
+#### 项目与备份本地实现和验证
+
+所有者明确批准了本节合同。代码 `aa3a8c5f7ea86a8be56bbeef7ba27d33b7388387` 接通十个 MCP 工具、typed client、Core 授权与共享登记、路径审批 CLI、已有任务结果及管理扩展开关。公开方法是兼容增加，原生 RPC 的请求、输出和既有任务保留。继续使用现有 State、Config、生产依赖和 WIT。
+
+- 真实 Windows typed RPC 用例 1/0。两名客户端验证默认根登记、外部批准后从内置模板创建、确认原复制 Plan、备份、恢复到新目录、共享资源查读、实际任务归属、跨客户端拒绝、同键恢复和已连接客户端撤权。恢复结果未返回目录路径。
+- 冻结 SDK 经实际 HTTP Bearer 与隔离 Core 的定向用例 1/0。覆盖零授权拒绝、登记工具、备份创建、任务结果和备份详情，以及原连接撤权拒绝。两个已执行的二进制及 SHA-256、终态和运行日志见 `target/m8-project-workflows-20261119/project-workflows-results.json`。新工具在 OAuth 下的完整端到端、作业取消及真实丢包注入未在此轮再跑。已有旧输入证据各自保留。
+- Store 备份目录 3/0、Plan 路径证据单项 1/0，Core 路径审批定向 1/0，MCP 单元 16/0，管理扩展单元 9/0 和 Wasm release 编译通过。受影响严格 Clippy、fmt、锁定 metadata、xtask、Schema 内部引用及 diff 通过。
+- 首次沙箱 RPC 测试 0/1，停在连接受保护管道前置。首次直接复验检查发现唯一真实 Windows 端点正在使用，在启动前停止。之后核验精确进程归属和 0 活动任务，仅暂停上轮隔离验收窗口，执行以上两项后恢复同一程序、数据和 WebView 配置。GUI 138568 可见、响应且经五条管道连接 Core 135320，五组公开状态逐项相同。未操作原开发数据、真实项目或 Unity。
+
+工作树使用本地 `main`。新候选暂无对应 Hosted CI 与 CodeQL。M8 继续进行。
 
 ### 2026-11-19 项目详情、模板和环境接口审计
 
@@ -1764,10 +1775,20 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 上述差异仍是审计草案。模板编辑还需集中定稿权限名称、原生附件是否允许文件树级操作、文件审批输入和编辑的持久任务合同。项目与备份的审批句柄仅覆盖其所列四种用途。环境合同也须在实施前明确参数与位置的披露授权。已接通的包查询、模板原生入口和项目创建选择能力继续使用当前合同。
 
+#### 下一组合并公共合同草案
+
+| 能力 | 建议公开差异与验收证据 |
+| --- | --- |
+| 项目内实际包 | 在 `mcp.packages.query` 的 `view.kind` 增加 `installed`，使用既有 `project: {projectId,expectedRevision}`、cursor、limit。工具为 `alcomd_list_installed_packages`。仅此视图要求 `projects.read` 和 `packages.read`。Core 复用项目本地清单、锁和实际包目录观察，返回包 ID、声明/锁定/观察版本、观察状态以及可核实的公开包字段。来源只在现有证据能绑定实际安装时出现。解析检查返回 `needed`、`no_issue_observed` 或 `unknown` 及具体原因，分页绑定当前授权、项目修订与观察指纹。以目录缺失、版本不符和观察失败分别验证。 |
+| 现行模板定义与原生内容 | 提供共享 `projectTemplates.get`、`projectTemplates.edit`。编辑以 ID、预期修订、明确的名称和依赖差异、原生附件增删以及幂等键复用保存 Operation，避免完整重建而遗失未改字段。MCP 创建手动模板和移除复用现有保存、移除用例。提议 `templates.read` 和 `templates.manage` 两项独立 `global/*` 能力，创建项目选材沿用 `projects.create`。只列归档内 `Assets/` 的原生资源相对名；提议由本机所有者通过独立 `mcp.templateAttachments.approve` 绑定原生常规文件、模板 ID、修订及确切目标名，外部调用只交不透明 ID。复制校验内容摘要，已有 `.meta` 在未明确修改时保留，移除成对内容走原模板归档提交。按锁定模板、未获准文件、过期修订、其余依赖及附件保全验证。旧格式及 UnityPackage 导入留 M11。 |
+| 有效环境 | 提议 `mcp.environment.get({projectId?})`。复用已登记 Unity 和配置观察，`unity.read` 给安装 ID、版本，`settings.read` 给实际项目及备份默认目录。选定项目的完整有效启动参数额外要求现有 `projects.read` 和提议的 `unity.launch-arguments.read`。新增开关明确说明参数可能含用户自行填写的秘密，默认关闭。按未授权字段彻底省略、项目覆盖与默认参数切换验证。安装路径、其余设置及凭据存储保持封闭。 |
+
+新增能力名、参数披露和原生附件审批属于下一组待审合同。建议采用既有 State、Config、认证、复制和保存运行机制，扩展 Host/WIT 保持原合同。实际需要附带的迁移或新依赖另列证据后决定。
+
 ### 2026-11-19 Codex 快速接入核对
 
 管理扩展的已登记客户端详情加入只读接入提示。继续使用原 CLI 签发一次性凭据。扩展既有权限、Host/WIT、配置和写入入口保持原合同。[实际操作](../../specs/mcp/toolset-v1.md#codex-cli-01534-的回环-http-接入)给出 Codex 回环 Bearer 的配置核对、注册、凭据传入和清理步骤。
 
 本机 Codex CLI 0.153.4 在独立 `target/m8-codex-config-d23e782e80a047fd9e3c96ae40e1e4f4` 配置中实测添加、读取、同名替换、移除。其他配置和条目在该夹具中保持原字节，移除恢复整个原文件，同名替换没有内置确认。写入内容只引用凭据的环境变量名。测试使用无监听的回环示例地址和无凭据配置，未重新验证端到端调用；真实发现、调用及撤销仍引用 2026-11-17 的独立记录。Claude Code 和 Cursor 在当前执行环境的命令路径和检查的常见位置未定位到可执行入口，兼容性仍未知。自动配置需要覆盖预览、显式确认、并发变化保护和保持其他配置的独立验证，当前交付手动配置。未连接或替换原 Core、GUI 和配置。
 
-接入提示与说明的候选为 `84a2e53f`。管理扩展单元 9/0，严格 Clippy、Wasm release 构建、fmt 和 `cargo xtask check` 通过。当前扩展提示尚无真实桌面验收或远端结果。项目与备份公共合同继续待所有者确认。
+接入提示与说明的候选为 `84a2e53f`。管理扩展单元 9/0，严格 Clippy、Wasm release 构建、fmt 和 `cargo xtask check` 通过。此候选尚无真实桌面人工验收或远端结果。
