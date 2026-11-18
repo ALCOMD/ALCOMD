@@ -14,6 +14,17 @@ pub const EXTENSION_PERMISSIONS: &[&str] = &[
     "operations.cancel",
 ];
 
+pub const PACKAGED_MCP_EXTENSION_ID: &str = "com.vrclearn.alcomd.extension.mcp";
+
+/// Verified distribution input for an eligible fresh profile. The pins must come
+/// from the product distribution, independently of the extension archive.
+#[derive(Clone, Debug)]
+pub struct PackagedMcpExtension {
+    pub path: String,
+    pub publisher_fingerprint: String,
+    pub package_digest: [u8; 32],
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionInstallationTerms {
@@ -144,6 +155,17 @@ pub struct ExtensionPackageEvidence {
     pub required_interfaces: Vec<String>,
     pub optional_interfaces: Vec<String>,
     pub ui_protocol: Option<ExtensionUiProtocol>,
+}
+
+impl ExtensionPackageEvidence {
+    #[must_use]
+    pub fn is_packaged_mcp_default(&self) -> bool {
+        self.source_kind == ExtensionSourceKind::FirstPartyPackaged
+            && self.extension_id == PACKAGED_MCP_EXTENSION_ID
+            && self.ui_protocol == Some(ExtensionUiProtocol::PortableV1)
+            && self.installation_terms.is_none()
+            && self.required_permissions.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -649,6 +671,12 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         draft: ExtensionInstallPlanDraft,
         now_ms: u64,
     ) -> impl Future<Output = Result<ExtensionPlanRecord, M6Error>> + Send;
+    fn needs_packaged_mcp_install(&self) -> impl Future<Output = Result<bool, M6Error>> + Send;
+    fn accept_packaged_mcp_install(
+        &self,
+        evidence: ExtensionPackageEvidence,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<Option<OperationId>, M6Error>> + Send;
     fn create_uninstall_plan(
         &self,
         owner: PrincipalId,
@@ -909,6 +937,45 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .require(Permission::ExtensionsManage)
             .map_err(map_access)?;
         self.packages.inspect(source_kind, path).await
+    }
+
+    /// Schedules the ordinary install Operation for a verified distribution
+    /// input. Native clients cannot request this source through RPC.
+    pub async fn initialize_packaged_mcp(
+        &self,
+        package: PackagedMcpExtension,
+        now_ms: u64,
+    ) -> Result<Option<OperationId>, M6Error> {
+        if !self.store.needs_packaged_mcp_install().await? {
+            return Ok(None);
+        }
+        let _guard = self
+            .locks
+            .acquire(vec![ResourceKey::Extension(
+                PACKAGED_MCP_EXTENSION_ID.into(),
+            )])
+            .await;
+        let evidence = self
+            .packages
+            .inspect(ExtensionSourceKind::FirstPartyPackaged, package.path)
+            .await?;
+        if evidence.publisher_fingerprint != package.publisher_fingerprint
+            || evidence.package_digest != package.package_digest
+            || evidence.extension_id != PACKAGED_MCP_EXTENSION_ID
+        {
+            return Err(M6Error::new(M6ErrorCode::PackageUntrusted));
+        }
+        if !evidence.is_packaged_mcp_default() {
+            return Err(M6Error::new(M6ErrorCode::ManifestInvalid));
+        }
+        let operation = self
+            .store
+            .accept_packaged_mcp_install(evidence, now_ms)
+            .await?;
+        if let Some(id) = operation {
+            self.schedule(id);
+        }
+        Ok(operation)
     }
 
     pub async fn list(

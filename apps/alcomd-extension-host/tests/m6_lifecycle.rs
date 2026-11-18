@@ -29,6 +29,195 @@ const KILL_SIGNAL_ENV: &str = "ALCOMD_TEST_M6_KILL_SIGNAL";
 mod m8_management_flow;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn packaged_mcp_startup_installs_once_and_preserves_user_removal() {
+    use alcomd_application::{PACKAGED_MCP_EXTENSION_ID, PackagedMcpExtension};
+
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let data = DataConfig::isolated(fixture.path().join("data"));
+    let runtime = fixture.path().join("runtime");
+    fs::create_dir(&runtime).expect("owned runtime");
+    let (ipc, config) = isolated_ipc(runtime);
+    let archive = fixture.path().join("packaged-mcp.alcomdextension");
+    create_signed_package_for_id(
+        &archive,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
+        "Packaged MCP startup fixture",
+        "[permissions]\nrequired = []\noptional = [\"mcp.subscription-streams.read\"]\n[ui]\nprotocol = \"portable-v1\"\n",
+        &[
+            "alcomd:mcp-management/clients@1.0.0",
+            "alcomd:mcp-runtime/observations@1.0.0",
+            "alcomd:mcp-transport/observations@1.0.0",
+        ],
+        "AGPL-3.0-only",
+        PACKAGED_MCP_EXTENSION_ID,
+    );
+    let verified = alcomd_extensions::inspect_extension_package(&archive).expect("signed fixture");
+    let package = PackagedMcpExtension {
+        path: archive.to_str().expect("fixture path").into(),
+        publisher_fingerprint: verified.publisher_fingerprint,
+        package_digest: verified.package_digest,
+    };
+    let start = |package, shutdown| {
+        alcomd_daemon::test_support::start_with_packaged_mcp_until(
+            ipc.clone(),
+            data.clone(),
+            package,
+            wait_for_shutdown(shutdown),
+        )
+    };
+    let startup = |package| {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let daemon = start(package, Arc::clone(&shutdown));
+        async { (daemon.await.expect("isolated Core startup"), shutdown) }
+    };
+
+    let mut mismatched = package.clone();
+    mismatched.package_digest[0] ^= 1;
+    let (daemon, shutdown) = startup(mismatched).await;
+    let mut owner = connect_with_retry(config.clone()).await;
+    assert!(
+        owner
+            .operations_list(None, Some(10), false)
+            .await
+            .expect("list after pin failure")
+            .operations
+            .is_empty()
+    );
+    let attempt = owner
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::FirstPartyPackaged,
+            package_path: package.path.clone(),
+            expected_revision: 0,
+        })
+        .await;
+    assert!(
+        matches!(attempt, Err(ClientError::Remote(error)) if error.code == "extension_package_untrusted")
+    );
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("clean shutdown");
+
+    let (daemon, shutdown) = startup(package.clone()).await;
+    let mut owner = connect_with_retry(config.clone()).await;
+    let operations = owner
+        .operations_list(None, Some(10), false)
+        .await
+        .expect("list install")
+        .operations;
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0].kind, "extensions.install");
+    assert_eq!(
+        wait_for_terminal(&mut owner, &operations[0].operation_id).await,
+        OperationState::Succeeded
+    );
+    let extension = owner
+        .extension_get(PACKAGED_MCP_EXTENSION_ID.into())
+        .await
+        .expect("registered extension")
+        .extension;
+    assert_eq!(extension.desired_state, ExtensionDesiredState::Enabled);
+    assert_eq!(extension.runtime_state, ExtensionRuntimeState::Stopped);
+    let permissions = owner
+        .extension_permissions_list(alcomd_protocol::ExtensionPermissionsListParams {
+            extension_id: PACKAGED_MCP_EXTENSION_ID.into(),
+            cursor: None,
+            limit: Some(64),
+        })
+        .await
+        .expect("zero-grant package");
+    assert!(permissions.grants.is_empty());
+    let opened = owner
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: PACKAGED_MCP_EXTENSION_ID.into(),
+            locale: "zh-CN".into(),
+        })
+        .await
+        .expect("zero-grant Portable UI opens");
+    assert!(
+        serde_json::to_string(&opened.snapshot.document)
+            .expect("document")
+            .contains("尚未授权读取 MCP 客户端")
+    );
+    owner
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: opened.session.session_id,
+        })
+        .await
+        .expect("close fixture UI");
+    let disabled = owner
+        .extension_disable(ExtensionLifecycleParams {
+            extension_id: PACKAGED_MCP_EXTENSION_ID.into(),
+            expected_revision: extension.revision,
+            idempotency_key: "packaged-mcp-disable".into(),
+        })
+        .await
+        .expect("user disables package")
+        .extension;
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("clean shutdown");
+
+    let (daemon, shutdown) = startup(package.clone()).await;
+    let mut owner = connect_with_retry(config.clone()).await;
+    let state = owner
+        .extension_get(PACKAGED_MCP_EXTENSION_ID.into())
+        .await
+        .expect("preserved installed package")
+        .extension;
+    assert_eq!(
+        state.desired_state,
+        ExtensionDesiredState::InstalledDisabled
+    );
+    assert_eq!(state.revision, disabled.revision);
+    let uninstall = owner
+        .extension_plan_uninstall(ExtensionPlanUninstallParams {
+            extension_id: state.extension_id,
+            expected_revision: state.revision,
+            data_disposition: ExtensionDataDisposition::DeleteData,
+        })
+        .await
+        .expect("plan removal")
+        .plan;
+    let removed = owner
+        .extension_apply_uninstall(ExtensionApplyParams {
+            plan_id: uninstall.plan_id,
+            idempotency_key: "packaged-mcp-remove".into(),
+        })
+        .await
+        .expect("apply removal");
+    assert_eq!(
+        wait_for_terminal(&mut owner, &removed.operation_id).await,
+        OperationState::Succeeded
+    );
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("clean shutdown");
+
+    let (daemon, shutdown) = startup(package).await;
+    let mut owner = connect_with_retry(config).await;
+    assert!(
+        matches!(owner.extension_get(PACKAGED_MCP_EXTENSION_ID.into()).await, Err(ClientError::Remote(error)) if error.code == "extension_not_installed")
+    );
+    let operations = owner
+        .operations_list(None, Some(10), false)
+        .await
+        .expect("preserved install and removal history")
+        .operations;
+    assert_eq!(
+        operations
+            .iter()
+            .filter(|operation| operation.kind == "extensions.install")
+            .count(),
+        1
+    );
+    assert_eq!(operations.len(), 2);
+    drop(owner);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("daemon task").expect("clean shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
@@ -1019,6 +1208,26 @@ fn create_signed_package_with_interfaces(
     interfaces: &[&str],
     license: &str,
 ) {
+    create_signed_package_for_id(
+        path,
+        component,
+        name,
+        profile,
+        interfaces,
+        license,
+        "dev.alcomd.fixture",
+    );
+}
+
+fn create_signed_package_for_id(
+    path: &Path,
+    component: &[u8],
+    name: &str,
+    profile: &str,
+    interfaces: &[&str],
+    license: &str,
+    extension_id: &str,
+) {
     const MANIFEST_PATH: &str = "alcomd-extension.toml";
     const COMPONENT_PATH: &str = "component/extension.wasm";
     const SIGNATURE_PATH: &str = "META-INF/alcomd-signature-v1.json";
@@ -1027,7 +1236,7 @@ fn create_signed_package_with_interfaces(
     let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
     let interfaces = serde_json::to_string(interfaces).expect("interface names");
     let manifest = format!(
-        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"{name}\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"{license}\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = {interfaces}\noptional = []\n\n{profile}"
+        "schema = 1\nid = \"{extension_id}\"\nname = \"{name}\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"{license}\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = {interfaces}\noptional = []\n\n{profile}"
     );
     let content = [
         (MANIFEST_PATH, manifest.as_bytes()),

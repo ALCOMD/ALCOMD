@@ -277,7 +277,7 @@ pub async fn start_with_data_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None, None).await
+    start(ipc, data, shutdown, None, None, None).await
 }
 
 /// Injects only a transport with an explicitly trusted test CA; real RPC/install validation remains unchanged.
@@ -290,7 +290,20 @@ pub async fn start_with_extension_source_until<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    start(ipc, data, shutdown, None, Some(source)).await
+    start(ipc, data, shutdown, None, Some(source), None).await
+}
+
+/// Exercises startup with distribution inputs in an isolated profile.
+pub async fn start_with_packaged_mcp_until<F>(
+    ipc: IpcConfig,
+    data: DataConfig,
+    packaged_mcp: alcomd_application::PackagedMcpExtension,
+    shutdown: F,
+) -> Result<TestDaemon, BindError>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    start(ipc, data, shutdown, None, None, Some(packaged_mcp)).await
 }
 
 /// Starts the M1/M2 fixtures with an automatically cleaned temporary data root.
@@ -300,7 +313,7 @@ where
 {
     let directory = TemporaryDataDirectory::new();
     let data = DataConfig::isolated(directory.0.clone());
-    start(ipc, data, shutdown, Some(directory), None).await
+    start(ipc, data, shutdown, Some(directory), None, None).await
 }
 
 async fn start<F>(
@@ -309,6 +322,7 @@ async fn start<F>(
     shutdown: F,
     temporary_data: Option<TemporaryDataDirectory>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
+    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<TestDaemon, BindError>
 where
     F: Future<Output = ()> + Send + 'static,
@@ -322,6 +336,7 @@ where
         data,
         Arc::new(TestStorageDirectories(storage_root)),
         source,
+        packaged_mcp,
     )
     .await?;
     let listener = Arc::new(Mutex::new(listener));
@@ -646,6 +661,7 @@ mod tests {
             fixture.ipc.clone(),
             DataConfig::isolated(fixture.directory.0.join("data")),
             Arc::new(TestStorageDirectories(fixture.directory.0.join("user"))),
+            None,
         )
         .await
         .expect("initialize isolated Core");

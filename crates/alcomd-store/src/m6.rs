@@ -6,7 +6,8 @@ use alcomd_application::{
     ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
     ExtensionSourceKind, ExtensionStartContext, ExtensionUiProtocol, ExtensionUninstallPlanDraft,
-    IdempotencyKey, M6Error, M6ErrorCode, OperationId, PlanId, PrincipalId, Revision,
+    IdempotencyKey, M6Error, M6ErrorCode, OperationId, PACKAGED_MCP_EXTENSION_ID, PlanId,
+    PrincipalId, Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -340,6 +341,18 @@ pub(super) fn create_install_plan(
     draft: ExtensionInstallPlanDraft,
     now_ms: u64,
 ) -> Result<ExtensionPlanRecord, M6Error> {
+    let transaction = transaction(connection)?;
+    let plan = create_install_plan_on(&transaction, owner, draft, now_ms)?;
+    transaction.commit().map_err(store_error)?;
+    Ok(plan)
+}
+
+fn create_install_plan_on(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    draft: ExtensionInstallPlanDraft,
+    now_ms: u64,
+) -> Result<ExtensionPlanRecord, M6Error> {
     let permissions = serde_json::to_string(&PermissionEvidence {
         required: draft.evidence.required_permissions.clone(),
         optional: draft.evidence.optional_permissions.clone(),
@@ -390,9 +403,8 @@ pub(super) fn create_install_plan(
         .map(serde_json::to_string)
         .transpose()
         .map_err(|_| internal())?;
-    let transaction = transaction(connection)?;
-    reject_tool_namespace_collision(&transaction, &draft.evidence)?;
-    let current = extension_revision(&transaction, owner, &draft.evidence.extension_id)?;
+    reject_tool_namespace_collision(transaction, &draft.evidence)?;
+    let current = extension_revision(transaction, owner, &draft.evidence.extension_id)?;
     if current.is_some() {
         return Err(error(M6ErrorCode::AlreadyInstalled));
     }
@@ -436,7 +448,7 @@ pub(super) fn create_install_plan(
             ],
         )
         .map_err(store_error)?;
-    let record = get_plan_on(&transaction, plan_id)?;
+    let record = get_plan_on(transaction, plan_id)?;
     let path = std::path::Path::new(&draft.evidence.source_locator)
         .is_absolute()
         .then(|| draft.evidence.source_locator.clone());
@@ -447,7 +459,7 @@ pub(super) fn create_install_plan(
         path,
     };
     super::operation_logs::plan(
-        &transaction,
+        transaction,
         owner,
         plan_id,
         "extensions.install",
@@ -455,8 +467,78 @@ pub(super) fn create_install_plan(
         now_ms,
     )
     .map_err(|error| unavailable().with_source(error))?;
-    transaction.commit().map_err(store_error)?;
     Ok(record)
+}
+
+pub(super) fn needs_packaged_mcp_install(connection: &Connection) -> Result<bool, M6Error> {
+    connection
+        .query_row(
+            "SELECT NOT (
+                EXISTS (SELECT 1 FROM extensions WHERE extension_id=?1)
+                OR EXISTS (
+                    SELECT 1 FROM extension_plans p
+                    JOIN extension_filesystem_journal j
+                      ON j.plan_id=p.plan_id AND j.operation_id=p.apply_operation_id
+                    JOIN operations o ON o.operation_id=p.apply_operation_id
+                    WHERE p.extension_id=?1 AND p.owner_principal_id=?2
+                      AND j.state='completed' AND (
+                          (p.action='install' AND j.phase='accepted' AND (
+                              p.source_kind='first_party_packaged'
+                              OR o.state NOT IN ('succeeded','failed','cancelled')
+                          ))
+                          OR (p.action='uninstall' AND j.phase='state_committed')
+                      )
+                )
+            )",
+            params![
+                PACKAGED_MCP_EXTENSION_ID,
+                PrincipalId::local_owner().as_str()
+            ],
+            |row| row.get(0),
+        )
+        .map_err(store_error)
+}
+
+pub(super) fn accept_packaged_mcp_install(
+    connection: &mut Connection,
+    evidence: ExtensionPackageEvidence,
+    now_ms: u64,
+) -> Result<Option<OperationId>, M6Error> {
+    if !evidence.is_packaged_mcp_default() {
+        return Err(error(M6ErrorCode::ManifestInvalid));
+    }
+    let transaction = transaction(connection)?;
+    if !needs_packaged_mcp_install(&transaction)? {
+        return Ok(None);
+    }
+    let owner = PrincipalId::local_owner();
+    let plan = create_install_plan_on(
+        &transaction,
+        &owner,
+        ExtensionInstallPlanDraft {
+            plan_fingerprint: evidence.package_digest,
+            evidence,
+            expected_revision: None,
+        },
+        now_ms,
+    )?;
+    let key =
+        IdempotencyKey::parse(format!("packaged-mcp:{}", plan.plan_id)).map_err(|_| internal())?;
+    let consent = alcomd_application::ExtensionInstallConsent {
+        plan_fingerprint: install_plan_fingerprint(&plan),
+        installation_terms_accepted: false,
+        required_permissions_accepted: false,
+    };
+    let accepted = accept_plan_on(
+        &transaction,
+        &owner,
+        plan.plan_id,
+        Some(consent),
+        &key,
+        now_ms,
+    )?;
+    transaction.commit().map_err(store_error)?;
+    Ok(Some(accepted.operation_id))
 }
 
 pub(super) fn create_uninstall_plan(
@@ -722,16 +804,18 @@ pub(super) fn recover_operations(
     Ok(recovered)
 }
 
+fn install_plan_fingerprint(plan: &ExtensionPlanRecord) -> String {
+    plan.plan_fingerprint
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 fn validate_install_consent(
     plan: &ExtensionPlanRecord,
     consent: &alcomd_application::ExtensionInstallConsent,
 ) -> Result<(), M6Error> {
-    let fingerprint: String = plan
-        .plan_fingerprint
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    if consent.plan_fingerprint != fingerprint {
+    if consent.plan_fingerprint != install_plan_fingerprint(plan) {
         return Err(error(M6ErrorCode::PlanStale));
     }
     if (plan.evidence.installation_terms.is_some() && !consent.installation_terms_accepted)
@@ -760,7 +844,20 @@ pub(super) fn accept_plan(
     now_ms: u64,
 ) -> Result<ExtensionApplyOutcome, M6Error> {
     let transaction = transaction(connection)?;
-    let plan = get_plan_on(&transaction, plan_id)?;
+    let accepted = accept_plan_on(&transaction, owner, plan_id, consent, key, now_ms)?;
+    transaction.commit().map_err(store_error)?;
+    Ok(accepted)
+}
+
+fn accept_plan_on(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    plan_id: PlanId,
+    consent: Option<alcomd_application::ExtensionInstallConsent>,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<ExtensionApplyOutcome, M6Error> {
+    let plan = get_plan_on(transaction, plan_id)?;
     if plan.owner != *owner {
         return Err(error(M6ErrorCode::PermissionDenied));
     }
@@ -801,13 +898,12 @@ pub(super) fn accept_plan(
             serde_json::from_str(&response).map_err(|_| internal())?;
         outcome.replayed = true;
         outcome.schedule = false;
-        transaction.commit().map_err(store_error)?;
         return Ok(outcome);
     }
     if plan.state != "unapplied" {
         return Err(error(M6ErrorCode::PlanStale));
     }
-    let current = extension_revision(&transaction, owner, &plan.evidence.extension_id)?;
+    let current = extension_revision(transaction, owner, &plan.evidence.extension_id)?;
     if current != plan.expected_revision {
         return Err(error(M6ErrorCode::PlanStale));
     }
@@ -840,7 +936,7 @@ pub(super) fn accept_plan(
         )
         .map_err(store_error)?;
     insert_operation_event(
-        &transaction,
+        transaction,
         owner,
         operation_id,
         Revision::new(1).ok_or_else(internal)?,
@@ -888,7 +984,6 @@ pub(super) fn accept_plan(
             ],
         )
         .map_err(store_error)?;
-    transaction.commit().map_err(store_error)?;
     Ok(saved)
 }
 
@@ -951,7 +1046,7 @@ pub(super) fn finish_install(
                 live_package_locator, desired_state, quarantine_state, grant_revision,
                 lifecycle_generation, revision, ui_protocol, installed_at_ms, updated_at_ms
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9,
-                       'installed_disabled', 'clear', 1, 1, 1, ?10, ?11, ?11)",
+                       ?10, 'clear', 1, 1, 1, ?11, ?12, ?12)",
                 params![
                     p.extension_id,
                     p.version,
@@ -962,6 +1057,11 @@ pub(super) fn finish_install(
                     p.publisher_fingerprint,
                     plan.owner.as_str(),
                     live_locator,
+                    if p.is_packaged_mcp_default() && plan.owner == PrincipalId::local_owner() {
+                        "enabled"
+                    } else {
+                        "installed_disabled"
+                    },
                     p.ui_protocol.map(ExtensionUiProtocol::as_str),
                     now
                 ],

@@ -156,15 +156,25 @@ struct Applications {
 }
 
 /// Initializes the authoritative store, recovers Operations, then binds IPC.
+///
+/// Pass a packaged MCP extension only when the product bootstrap verified the
+/// distribution pins and established eligibility for this profile.
 pub async fn serve_with_data_until<F>(
     ipc: IpcConfig,
     data: DataConfig,
+    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
     shutdown: F,
 ) -> Result<(), BindError>
 where
     F: Future<Output = ()>,
 {
-    let (mut listener, applications) = initialize_daemon(ipc, data).await?;
+    let (mut listener, applications) = initialize_daemon_with_directories(
+        ipc,
+        data,
+        Arc::new(storage_platform::PlatformStorageDirectories),
+        packaged_mcp,
+    )
+    .await?;
     applications
         .m3
         .recover_repository_credentials()
@@ -187,24 +197,13 @@ where
     result.map_err(BindError::Io)
 }
 
-async fn initialize_daemon(
-    ipc: IpcConfig,
-    data: DataConfig,
-) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_directories(
-        ipc,
-        data,
-        Arc::new(storage_platform::PlatformStorageDirectories),
-    )
-    .await
-}
-
 async fn initialize_daemon_with_directories(
     ipc: IpcConfig,
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
+    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_adapters(ipc, data, directory_platform, None).await
+    initialize_daemon_with_adapters(ipc, data, directory_platform, None, packaged_mcp).await
 }
 
 async fn initialize_daemon_with_adapters(
@@ -212,6 +211,7 @@ async fn initialize_daemon_with_adapters(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     source: Option<Arc<dyn alcomd_application::ExtensionSourceFetcher>>,
+    packaged_mcp: Option<alcomd_application::PackagedMcpExtension>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
@@ -352,6 +352,16 @@ async fn initialize_daemon_with_adapters(
     m6.recover(current_time_ms()?)
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
+    if let Some(package) = packaged_mcp
+        && let Err(error) = m6
+            .initialize_packaged_mcp(package, current_time_ms()?)
+            .await
+    {
+        eprintln!(
+            "Packaged MCP extension initialization failed: {:?}",
+            error.code()
+        );
+    }
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
     if let Ok(defaults) = official_gui
         .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())

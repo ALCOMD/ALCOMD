@@ -136,8 +136,8 @@ fn state42_real_initializer_preserves_data_on_upgrade_and_reopen() {
 fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
     use crate::m6;
     use alcomd_application::{
-        ExtensionDataDisposition, ExtensionInstallConsent, ExtensionInstallPlanDraft,
-        ExtensionSourceKind, ExtensionUninstallPlanDraft, PlanId,
+        ExtensionDataDisposition, ExtensionDesiredState, ExtensionSourceKind, ExtensionUiProtocol,
+        ExtensionUninstallPlanDraft, PACKAGED_MCP_EXTENSION_ID, PlanId,
     };
 
     let mut db = fixture();
@@ -150,43 +150,55 @@ fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
     )
     .expect("disposable evidence")
     .evidence;
-    let extension_id = "dev.example.packaged-default";
+    let extension_id = PACKAGED_MCP_EXTENSION_ID;
     evidence.extension_id = extension_id.into();
     evidence.source_kind = ExtensionSourceKind::FirstPartyPackaged;
-    let install = m6::create_install_plan(
-        &mut db,
-        &owner,
-        ExtensionInstallPlanDraft {
-            evidence,
-            expected_revision: None,
-            plan_fingerprint: [3; 32],
-        },
-        30,
-    )
-    .expect("freeze packaged store fixture");
-    let installed = m6::accept_plan(
-        &mut db,
-        &owner,
-        install.plan_id,
-        Some(ExtensionInstallConsent {
-            plan_fingerprint: "03".repeat(32),
-            installation_terms_accepted: false,
-            required_permissions_accepted: false,
-        }),
-        &IdempotencyKey::parse("packaged-default-install").expect("fixture key"),
-        31,
-    )
-    .expect("accept install")
-    .operation_id;
+    evidence.ui_protocol = Some(ExtensionUiProtocol::PortableV1);
+    evidence
+        .required_permissions
+        .push("mcp.clients.read".into());
+    assert!(m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 30).is_err());
+    assert!(m6::needs_packaged_mcp_install(&db).expect("no accepted install"));
+    evidence.required_permissions.clear();
+    let installed = m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 31)
+        .expect("accept packaged install")
+        .expect("fresh profile");
+    assert!(
+        m6::accept_packaged_mcp_install(&mut db, evidence.clone(), 31)
+            .expect("repeat startup")
+            .is_none()
+    );
     assert!(
         m6::recover_operations(&mut db, 32)
             .expect("recover accepted work")
             .contains(&installed)
     );
-    m6::begin_apply(&mut db, installed, 33).expect("begin install");
+    let (install, _) = m6::begin_apply(&mut db, installed, 33).expect("begin install");
     m6::finish_install(&mut db, installed, "<FIXTURE>/installed", 34).expect("commit install");
-    m6::complete_operation(&mut db, installed, 35).expect("finish install");
     let extension = m6::get_extension(&db, &owner, extension_id).expect("installed extension");
+    assert_eq!(extension.desired_state, ExtensionDesiredState::Enabled);
+    assert!(
+        !m6::has_background_authority(&db, &owner, extension_id).expect("zero initial authority")
+    );
+    let (extension, _) = m6::set_desired(
+        &mut db,
+        &owner,
+        extension_id,
+        extension.revision,
+        &IdempotencyKey::parse("packaged-default-disable").expect("fixture key"),
+        false,
+        35,
+    )
+    .expect("user disables installed extension");
+    m6::finish_install(&mut db, installed, "<FIXTURE>/installed", 36)
+        .expect("recover after commit without setting enabled again");
+    assert_eq!(
+        m6::get_extension(&db, &owner, extension_id)
+            .expect("still installed")
+            .desired_state,
+        ExtensionDesiredState::InstalledDisabled
+    );
+    m6::complete_operation(&mut db, installed, 37).expect("finish install");
     let uninstall = m6::create_uninstall_plan(
         &mut db,
         &owner,
@@ -195,7 +207,7 @@ fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
             data_disposition: ExtensionDataDisposition::DeleteData,
             plan_fingerprint: [4; 32],
         },
-        36,
+        38,
     )
     .expect("uninstall plan");
     let removed = m6::accept_plan(
@@ -204,17 +216,22 @@ fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
         uninstall.plan_id,
         None,
         &IdempotencyKey::parse("packaged-default-uninstall").expect("fixture key"),
-        37,
+        39,
     )
     .expect("accept uninstall")
     .operation_id;
-    m6::begin_apply(&mut db, removed, 38).expect("begin uninstall");
-    m6::finish_uninstall(&mut db, removed, 39).expect("commit uninstall");
-    m6::complete_operation(&mut db, removed, 40).expect("finish uninstall");
+    m6::begin_apply(&mut db, removed, 40).expect("begin uninstall");
+    m6::finish_uninstall(&mut db, removed, 41).expect("commit uninstall");
+    m6::complete_operation(&mut db, removed, 42).expect("finish uninstall");
     assert!(m6::get_extension(&db, &owner, extension_id).is_err());
+    assert!(
+        m6::accept_packaged_mcp_install(&mut db, evidence, 43)
+            .expect("startup after removal")
+            .is_none()
+    );
     assert_eq!(
         db.query_row(
-            "SELECT o.state FROM extension_plans p JOIN operations o
+            "SELECT DISTINCT o.state FROM extension_plans p JOIN operations o
                ON o.operation_id=p.apply_operation_id
              JOIN extension_filesystem_journal j ON j.plan_id=p.plan_id
               AND j.operation_id=o.operation_id AND j.phase='state_committed' AND j.state='completed'
