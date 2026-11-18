@@ -44,6 +44,7 @@ mod m8_runtime;
 mod m8_tools;
 mod m8_transport;
 mod m8_transport_types;
+mod m8_workflows;
 mod operation_logs;
 mod project_authority;
 mod project_create;
@@ -76,6 +77,7 @@ pub use m8_runtime::*;
 pub use m8_tools::*;
 pub use m8_transport::*;
 pub use m8_transport_types::*;
+pub use m8_workflows::*;
 pub use operation_logs::*;
 pub use project_authority::*;
 pub use project_create::*;
@@ -626,6 +628,20 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
+    fn replay_mcp_project_registration(
+        &self,
+        caller: PrincipalId,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<SyncWrite<McpRegisteredProject>>, M3Error>> + Send;
+    fn register_mcp_project(
+        &self,
+        caller: PrincipalId,
+        observation: ProjectObservation,
+        fingerprint: String,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<McpRegisteredProject>, M3Error>> + Send;
     fn get_mcp_project(
         &self,
         _principal: PrincipalId,
@@ -1723,6 +1739,50 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
             ),
         )
         .await
+    }
+
+    pub async fn replay_mcp_project_registration(
+        &self,
+        access: &AccessContext,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<McpRegisteredProject>>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        self.store
+            .replay_mcp_project_registration(access.principal().clone(), fingerprint, key)
+            .await
+    }
+
+    pub async fn register_mcp_project(
+        &self,
+        access: &AccessContext,
+        path: String,
+        expected_identity: Vec<u8>,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<McpRegisteredProject>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        let observation = log_execution_step(
+            "mcp.projects.register",
+            "inspect_project",
+            Some(log_path("project", path.clone())),
+            self.reader
+                .inspect_project(path, ProjectDiscoveryMode::ExactRoot),
+            |error| error.technical_path().map(str::to_owned),
+        )
+        .await?;
+        if observation.path_identity_key != expected_identity {
+            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        }
+        self.store
+            .register_mcp_project(
+                access.principal().clone(),
+                observation,
+                fingerprint,
+                key,
+                m3_time_ms()?,
+            )
+            .await
     }
 
     pub async fn refresh_project(

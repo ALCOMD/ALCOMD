@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use alcomd_application::{
     BackupCompression, BackupCreateOptions, BackupCreateRequest, BackupDestination, IdempotencyKey,
-    M3RegistryStore, M5BackupErrorCode, M5BackupStore, ManifestState, OperationState, PrincipalId,
-    ProjectObservation, ProjectType, Revision, StateStore,
+    M3RegistryStore, M5BackupErrorCode, M5BackupStore, ManifestState, McpGrant, McpIdentityStore,
+    McpIdentityWrite, OperationState, PrincipalId, ProjectObservation, ProjectType, Revision,
+    StateStore, ToolAuthentication, mcp_credential_hash, with_workflow_authentication,
 };
 use alcomd_store::StateStoreHandle;
 use uuid::Uuid;
@@ -40,6 +41,139 @@ impl Drop for TestDirectory {
 
 fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("key")
+}
+
+#[tokio::test]
+async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("isolated store");
+    let owner = PrincipalId::local_owner();
+    let project = store
+        .register_project(
+            owner.clone(),
+            ProjectObservation {
+                root_path: directory
+                    .0
+                    .join("owned project")
+                    .to_string_lossy()
+                    .into_owned(),
+                path_identity_key: vec![7; 24],
+                project_type: ProjectType::VpmStarter,
+                unity_version: "2022.3.22f1".to_owned(),
+                unity_revision: None,
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Valid,
+                direct_dependencies: Vec::new(),
+                locked_dependencies: Vec::new(),
+                issues: Vec::new(),
+            },
+            key("owner-register"),
+            1,
+        )
+        .await
+        .expect("native registration")
+        .value;
+    let grants = ["projects.read", "backups.manage"].map(|permission| McpGrant {
+        permission: permission.to_owned(),
+        resource_kind: "global".to_owned(),
+        resource_id: "*".to_owned(),
+    });
+    let mut clients = Vec::new();
+    for name in ["first", "second"] {
+        let client = store
+            .mcp_write(
+                owner.clone(),
+                format!("create-{name}"),
+                McpIdentityWrite::Create {
+                    name: name.to_owned(),
+                    grants: grants.to_vec(),
+                },
+                2,
+            )
+            .await
+            .expect("client")
+            .client;
+        let hash = mcp_credential_hash(name);
+        let issued = store
+            .mcp_write(
+                owner.clone(),
+                format!("issue-{name}"),
+                McpIdentityWrite::Issue {
+                    id: client.client_id,
+                    expected: client.revision,
+                    hash,
+                },
+                3,
+            )
+            .await
+            .expect("issue")
+            .client;
+        clients.push((issued, ToolAuthentication::Credential(hash)));
+    }
+    let [(first, first_auth), (second, second_auth)] = clients.as_slice() else {
+        panic!("two distinct clients");
+    };
+    let new_backup = || BackupCreateRequest {
+        backup_id: Default::default(),
+        project_id: project.project_id,
+        expected_revision: project.revision,
+        compression_mode: BackupCompression::Fast,
+        exclude_vpm_packages: true,
+        include_library: false,
+        created_at_ms: 4,
+        destination: None,
+    };
+    let accept = |caller: PrincipalId| {
+        let request = new_backup();
+        let options = BackupCreateOptions::from(&request);
+        store.accept_backup_create(caller, request, options, key("same-key"))
+    };
+    for unauthorized in [
+        accept(first.principal_id.clone()).await,
+        with_workflow_authentication(second_auth.clone(), accept(first.principal_id.clone())).await,
+    ] {
+        assert_eq!(
+            unauthorized
+                .expect_err("missing or mismatched authority")
+                .code(),
+            M5BackupErrorCode::PermissionDenied
+        );
+    }
+    let result =
+        with_workflow_authentication(first_auth.clone(), accept(first.principal_id.clone()))
+            .await
+            .expect("authorized write");
+    let replay =
+        with_workflow_authentication(first_auth.clone(), accept(first.principal_id.clone()))
+            .await
+            .expect("authorized replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, result.operation_id);
+    assert_eq!(replay.backup_id, result.backup_id);
+    let independent =
+        with_workflow_authentication(second_auth.clone(), accept(second.principal_id.clone()))
+            .await
+            .expect("independent write");
+    assert_ne!(independent.operation_id, result.operation_id);
+    store
+        .mcp_write(
+            owner,
+            "revoke-backup-write".to_owned(),
+            McpIdentityWrite::SetGrants {
+                id: first.client_id,
+                expected: first.revision,
+                grants: vec![grants[0].clone()],
+            },
+            5,
+        )
+        .await
+        .expect("revoke");
+    let denied =
+        with_workflow_authentication(first_auth.clone(), accept(first.principal_id.clone()))
+            .await
+            .expect_err("live grants apply to existing credentials and replay");
+    assert_eq!(denied.code(), M5BackupErrorCode::PermissionDenied);
+    drop(store);
 }
 
 #[tokio::test]

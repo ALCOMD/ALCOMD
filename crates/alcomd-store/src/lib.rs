@@ -67,6 +67,7 @@ mod m8_oauth;
 mod m8_packages;
 mod m8_repositories;
 mod m8_tools;
+mod m8_workflows;
 pub use m8_packages::{
     DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,
 };
@@ -145,6 +146,42 @@ impl Drop for StoreInner {
 }
 
 impl StateStoreHandle {
+    pub async fn workflow_plan_path_proof(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<alcomd_application::WorkflowPlanPath, alcomd_application::ToolError> {
+        self.request_worker(
+            move |db| m8_workflows::plan_proof(db, &owner, plan_id),
+            || alcomd_application::ToolError::Unavailable,
+        )
+        .await
+    }
+
+    pub async fn mcp_backup_restore_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<BackupRestorePlanRecord, M5BackupError> {
+        self.request_worker(
+            move |db| m5_backup_restore::load_plan(db, &owner, plan_id),
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    pub async fn replay_mcp_backup_restore(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+    ) -> Result<Option<BackupRestoreApplyOutcome>, M5BackupError> {
+        self.request_worker(
+            move |db| m5_backup_restore::replay(db, &owner, plan_id, &key),
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
     /// Opens, migrates, verifies, and starts the single SQLite worker.
     pub fn open(path: PathBuf) -> Result<Self, StoreOpenError> {
         let (commands, receiver) = mpsc::channel(128);
@@ -253,10 +290,14 @@ impl StateStoreHandle {
             .ok_or_else(&unavailable)?;
         let log_context = alcomd_application::log_write_context();
         let tool_context = alcomd_application::tool_invocation();
+        let workflow_context = alcomd_application::workflow_authentication();
+        let workflow_path = alcomd_application::workflow_plan_path();
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _log = operation_logs::ContextGuard::install(log_context);
                 let _tool = m8_tools::ContextGuard::install(tool_context);
+                let _workflow =
+                    m8_workflows::ContextGuard::install(workflow_context, workflow_path);
                 let _ = reply.send(work(connection));
                 false
             })))
@@ -359,6 +400,30 @@ impl M3RegistryStore for StateStoreHandle {
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
             m3::register_project(connection, &owner, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn replay_mcp_project_registration(
+        &self,
+        caller: PrincipalId,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<alcomd_application::McpRegisteredProject>>, M3Error> {
+        self.request_m3(move |db| m3::replay_project_registration(db, &caller, &fingerprint, &key))
+            .await
+    }
+
+    async fn register_mcp_project(
+        &self,
+        caller: PrincipalId,
+        observation: ProjectObservation,
+        fingerprint: String,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<alcomd_application::McpRegisteredProject>, M3Error> {
+        self.request_m3(move |db| {
+            m3::register_mcp_project(db, &caller, observation, &fingerprint, &key, now_ms)
         })
         .await
     }

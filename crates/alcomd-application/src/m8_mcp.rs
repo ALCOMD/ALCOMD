@@ -108,6 +108,10 @@ pub fn validate_mcp_grants(grants: &[McpGrant]) -> Result<(), McpIdentityError> 
                 | "repositories.read"
                 | "repositories.manage"
                 | "packages.read"
+                | "backups.read"
+                | "backups.manage"
+                | "projects.manage"
+                | "projects.create"
         ) && grant.resource_kind == "global"
             && grant.resource_id == "*";
         if !valid || !keys.insert((&grant.permission, &grant.resource_kind, &grant.resource_id)) {
@@ -158,6 +162,10 @@ pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError>
             "repositories.manage" => Permission::RepositoriesManage,
             "packages.read" => Permission::PackagesRead,
             "packages.manage" => Permission::PackagesManage,
+            "backups.read" => Permission::BackupsRead,
+            "backups.manage" => Permission::BackupsManage,
+            "projects.manage" => Permission::ProjectsManage,
+            "projects.create" => Permission::ProjectsCreate,
             _ => return Err(McpIdentityError::PermissionDenied),
         });
     }

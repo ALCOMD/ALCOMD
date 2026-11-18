@@ -825,13 +825,29 @@
                 "phase": {
                     "enum": [
                         "accepted",
+                        "preflight_complete",
+                        "quarantine_intent",
+                        "root_quarantined",
+                        "registry_commit_intent",
+                        "inventory_ready",
+                        "archiving",
                         "archive_ready",
+                        "publish_intent",
+                        "archive_published",
+                        "archive_verified",
+                        "extracting",
+                        "staging",
+                        "staging_complete",
+                        "target_published",
+                        "project_registry_commit_intent",
                         "extracted",
                         "prepared",
                         "packages_replaced",
                         "vpm_manifest_committed",
                         "filesystem_committed",
                         "state_committed",
+                        "deleting",
+                        "cleanup_complete",
                         "rolling_back",
                         "rolled_back",
                         "recovery_required"
@@ -1081,6 +1097,60 @@
                 "change_set"
             ]
         },
+        "createdProjectResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {"$ref": "#/$defs/id"},
+                "revision": {"$ref": "#/$defs/revision"}
+            },
+            "required": ["project_id", "revision"]
+        },
+        "copiedProjectResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"target_project_id": {"$ref": "#/$defs/id"}},
+            "required": ["target_project_id"]
+        },
+        "createdBackupResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backup_id": {"$ref": "#/$defs/id"},
+                "source_project_id": {"$ref": "#/$defs/id"},
+                "archive_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+                "archive_bytes": {"$ref": "#/$defs/time"},
+                "format_version": {"$ref": "#/$defs/revision"},
+                "created_at_ms": {"$ref": "#/$defs/time"},
+                "compression_mode": {"enum": ["store", "fast", "level3", "level5", "level7", "maximum"]},
+                "exclude_vpm_packages": {"type": "boolean"}
+            },
+            "required": ["backup_id", "source_project_id", "archive_sha256", "archive_bytes", "format_version", "created_at_ms", "compression_mode", "exclude_vpm_packages"]
+        },
+        "restoredProjectResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backup_id": {"$ref": "#/$defs/id"},
+                "project_id": {"$ref": "#/$defs/id"},
+                "target_name": {"type": "string", "minLength": 1, "maxLength": 255},
+                "packages_require_resolve": {"type": "boolean"},
+                "excluded_packages": {
+                    "type": "array",
+                    "maxItems": 4096,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {"$ref": "#/$defs/packageId"},
+                            "version": {"type": "string", "minLength": 1, "maxLength": 128}
+                        },
+                        "required": ["package_id", "version"]
+                    }
+                }
+            },
+            "required": ["backup_id", "project_id", "target_name", "packages_require_resolve", "excluded_packages"]
+        },
         "operationView": {
             "type": "object",
             "additionalProperties": false,
@@ -1133,6 +1203,18 @@
                         },
                         {
                             "$ref": "#/$defs/stateCheckOperationResult"
+                        },
+                        {
+                            "$ref": "#/$defs/createdProjectResult"
+                        },
+                        {
+                            "$ref": "#/$defs/copiedProjectResult"
+                        },
+                        {
+                            "$ref": "#/$defs/createdBackupResult"
+                        },
+                        {
+                            "$ref": "#/$defs/restoredProjectResult"
                         }
                     ]
                 },

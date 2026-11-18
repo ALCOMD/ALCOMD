@@ -200,6 +200,62 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn mcp_project_path_approve(
+        &mut self,
+        params: alcomd_protocol::McpProjectPathApproveParams,
+    ) -> Result<alcomd_protocol::McpProjectPathApproveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE, params)
+            .await
+    }
+
+    pub async fn mcp_project_create(
+        &mut self,
+        params: alcomd_protocol::McpProjectsCreateParams,
+    ) -> Result<alcomd_protocol::ProjectsCreateResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_CREATE, params)
+            .await
+    }
+
+    pub async fn mcp_project_register(
+        &mut self,
+        params: alcomd_protocol::McpProjectsRegisterParams,
+    ) -> Result<alcomd_protocol::McpProjectsRegisterResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER, params)
+            .await
+    }
+
+    pub async fn mcp_project_plan_copy(
+        &mut self,
+        params: alcomd_protocol::McpProjectsPlanCopyParams,
+    ) -> Result<alcomd_protocol::McpProjectsCopyPlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY, params)
+            .await
+    }
+
+    pub async fn mcp_project_apply_copy(
+        &mut self,
+        params: alcomd_protocol::McpProjectsApplyCopyParams,
+    ) -> Result<alcomd_protocol::ProjectsApplyCopyResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY, params)
+            .await
+    }
+
+    pub async fn mcp_backup_plan_restore(
+        &mut self,
+        params: alcomd_protocol::McpBackupPlanRestoreParams,
+    ) -> Result<alcomd_protocol::McpBackupRestorePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE, params)
+            .await
+    }
+
+    pub async fn mcp_backup_apply_restore(
+        &mut self,
+        params: alcomd_protocol::McpBackupApplyRestoreParams,
+    ) -> Result<alcomd_protocol::BackupApplyRestoreResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE, params)
+            .await
+    }
+
     pub async fn mcp_clients_list(
         &mut self,
         params: alcomd_protocol::McpClientsListParams,
@@ -256,6 +312,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),

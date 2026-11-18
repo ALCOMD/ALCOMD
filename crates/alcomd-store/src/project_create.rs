@@ -56,6 +56,7 @@ pub(super) fn replay(
     fingerprint: &str,
     key: &IdempotencyKey,
 ) -> Result<Option<ProjectCreateAccepted>, ProjectCreateError> {
+    require_mcp_creation(connection, owner, false)?;
     let existing = connection
         .query_row(
             "SELECT request_fingerprint, operation_id, response_json
@@ -79,6 +80,9 @@ pub(super) fn replay(
         return Err(error(ProjectCreateErrorCode::IdempotencyConflict));
     }
     let response: AcceptedResponse = decode(&response)?;
+    if response.requires_package_changes {
+        require_mcp_creation(connection, owner, true)?;
+    }
     Ok(Some(ProjectCreateAccepted {
         operation_id: OperationId::parse(&operation_id).map_err(|_| internal())?,
         project_id: ProjectId::parse(&response.project_id).map_err(|_| internal())?,
@@ -90,6 +94,28 @@ pub(super) fn replay(
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct AcceptedResponse {
     project_id: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    requires_package_changes: bool,
+}
+
+fn require_mcp_creation(
+    db: &Connection,
+    owner: &PrincipalId,
+    packages: bool,
+) -> Result<(), ProjectCreateError> {
+    use alcomd_application::Permission;
+    let permissions: &[_] = if packages {
+        &[
+            Permission::ProjectsCreate,
+            Permission::PackagesRead,
+            Permission::PackagesManage,
+            Permission::RepositoriesRead,
+        ]
+    } else {
+        &[Permission::ProjectsCreate]
+    };
+    super::m8_workflows::require(db, owner, permissions)
+        .map_err(|cause| error(ProjectCreateErrorCode::PermissionDenied).with_source(cause))
 }
 
 pub(super) fn accept(
@@ -110,15 +136,20 @@ pub(super) fn accept(
     if let Some(accepted) = replay(&transaction, &owner, &fingerprint, &key)? {
         return Ok(accepted);
     }
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     let declaration = input
         .template
         .as_ref()
-        .map(|reference| project_templates::frozen(&transaction, &owner, reference))
+        .map(|reference| project_templates::frozen(&transaction, &resource_owner, reference))
         .transpose()?;
+    let requires_package_changes = declaration.as_ref().is_some_and(|declaration| {
+        !declaration.dependencies.is_empty() || !declaration.locked_versions.is_empty()
+    });
+    if requires_package_changes {
+        require_mcp_creation(&transaction, &owner, true)?;
+    }
     if let Some(declaration) = &declaration {
-        if !allow_package_changes
-            && (!declaration.dependencies.is_empty() || !declaration.locked_versions.is_empty())
-        {
+        if !allow_package_changes && requires_package_changes {
             return Err(error(ProjectCreateErrorCode::PermissionDenied));
         }
         if declaration
@@ -189,7 +220,9 @@ pub(super) fn accept(
                 fingerprint,
                 operation_id.to_string(),
                 json(&AcceptedResponse {
-                    project_id: project_id.to_string()
+                    project_id: project_id.to_string(),
+                    requires_package_changes: owner.as_str().starts_with("mcp:")
+                        && requires_package_changes,
                 })?,
                 timestamp
             ],
@@ -348,6 +381,7 @@ pub(super) fn finish(
         return Err(error(ProjectCreateErrorCode::DestinationChanged));
     }
     let timestamp = integer(now_ms)?;
+    let resource_owner = alcomd_application::workflow_resource_owner(&context.owner);
     transaction
         .execute(
             "INSERT INTO projects (
@@ -357,7 +391,7 @@ pub(super) fn finish(
              ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
             params![
                 project_id,
-                context.owner.as_str(),
+                resource_owner.as_str(),
                 observation.root_path,
                 observation.path_identity_key,
                 super::m3::project_type(observation.project_type),
@@ -378,7 +412,7 @@ pub(super) fn finish(
             params![
                 Uuid::new_v4().to_string(),
                 project_id,
-                context.owner.as_str(),
+                resource_owner.as_str(),
                 timestamp
             ],
         )

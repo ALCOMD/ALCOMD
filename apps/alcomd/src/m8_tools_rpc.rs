@@ -121,6 +121,7 @@ async fn entries(
     authentication: app::ToolAuthentication,
     package_tools: bool,
     repository_tools: bool,
+    workflow_tools: bool,
 ) -> Result<(Vec<Entry>, String), E> {
     let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
     let access = authentication.access(snapshot.client.clone())?;
@@ -143,6 +144,12 @@ async fn entries(
         append_builtin_tools(
             &mut entries,
             include_str!("../../../specs/mcp/repositories-v1.schema.json"),
+        )?;
+    }
+    if workflow_tools {
+        append_builtin_tools(
+            &mut entries,
+            include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
         )?;
     }
     entries.retain(|e| {
@@ -305,7 +312,7 @@ async fn call(
             return Ok(saved);
         }
     }
-    let (items, _) = entries(apps, authentication.clone(), false, false).await?;
+    let (items, _) = entries(apps, authentication.clone(), false, false, false).await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -478,6 +485,9 @@ pub(super) async fn dispatch(
                     state
                         .capabilities
                         .contains(rpc::CAPABILITY_MCP_REPOSITORIES_V1),
+                    state
+                        .capabilities
+                        .contains(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1),
                 )
                 .await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)

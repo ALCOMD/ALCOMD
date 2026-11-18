@@ -721,7 +721,12 @@ where
         }
         let mut records = self
             .store
-            .list_backups(access.principal().clone(), project_id, cursor, limit + 1)
+            .list_backups(
+                crate::workflow_resource_owner(access.principal()),
+                project_id,
+                cursor,
+                limit + 1,
+            )
             .await?;
         let has_more = records.len() > limit as usize;
         if has_more {
@@ -752,7 +757,10 @@ where
         require(access, Permission::BackupsRead)?;
         Ok(self
             .store
-            .get_backup(access.principal().clone(), backup_id)
+            .get_backup(
+                crate::workflow_resource_owner(access.principal()),
+                backup_id,
+            )
             .await?
             .record)
     }
@@ -831,12 +839,15 @@ where
     ) -> Result<BackupRestorePlanOutcome, M5BackupError> {
         require(access, Permission::BackupsRead)?;
         require(access, Permission::ProjectsCreate)?;
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_mcp_client() && access.principal() != &PrincipalId::local_owner() {
             return Err(error(M5BackupErrorCode::PermissionDenied));
         }
         let backup = self
             .store
-            .get_backup(access.principal().clone(), backup_id)
+            .get_backup(
+                crate::workflow_resource_owner(access.principal()),
+                backup_id,
+            )
             .await?;
         let target = crate::log_path(
             "project",
@@ -854,6 +865,10 @@ where
             |error| error.path().map(str::to_owned),
         )
         .await?;
+        if access.is_mcp_client() && !crate::workflow_parent_matches(&draft.target_parent_identity)
+        {
+            return Err(error(M5BackupErrorCode::BackupRestorePlanStale));
+        }
         let plan = self
             .store
             .create_backup_restore_plan(access.principal().clone(), draft, now_ms()?)
@@ -879,7 +894,7 @@ where
         require(access, Permission::BackupsRead)?;
         require(access, Permission::BackupsManage)?;
         require(access, Permission::ProjectsCreate)?;
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_mcp_client() && access.principal() != &PrincipalId::local_owner() {
             return Err(error(M5BackupErrorCode::PermissionDenied));
         }
         let outcome = self
@@ -1104,14 +1119,15 @@ where
             finish_cancelled(&self.store, operation_id).await?;
             return Ok(());
         }
-        let access = AccessContext::new(operation.owner.clone(), []);
+        let resource_owner = crate::workflow_resource_owner(&operation.owner);
+        let access = AccessContext::new(resource_owner.clone(), []);
         let _guard = self
             .locks
             .acquire(vec![ResourceKey::Project(operation.request.project_id)])
             .await;
         let project = self
             .store
-            .get_project(operation.owner.clone(), operation.request.project_id)
+            .get_project(resource_owner, operation.request.project_id)
             .await
             .map_err(|cause| error(M5BackupErrorCode::ProjectNotRegistered).with_source(cause))?;
         if project.revision != operation.request.expected_revision {

@@ -206,7 +206,7 @@ fn template_record(value: app::ProjectTemplateRecord) -> rpc::ProjectTemplateRec
     }
 }
 
-fn project_create_error(id: String, source: app::ProjectCreateError) -> DispatchAction {
+pub(super) fn project_create_error(id: String, source: app::ProjectCreateError) -> DispatchAction {
     use app::ProjectCreateErrorCode;
 
     let mut error = match source.code() {

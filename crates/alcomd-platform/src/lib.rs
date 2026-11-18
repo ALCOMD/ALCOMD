@@ -20,7 +20,7 @@ pub use credential_vault::{delete_credential, read_credential, write_credential}
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{
     default_storage_directories, normalize_storage_directory, prepare_storage_directory,
-    publish_path_no_replace,
+    publish_path_no_replace, resolve_plain_storage_directory,
 };
 pub use unity_hub_open::{UnityHubLaunchError, UnityHubLaunchErrorKind, UnityHubProcessLauncher};
 

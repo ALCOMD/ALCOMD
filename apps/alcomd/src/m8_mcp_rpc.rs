@@ -150,6 +150,16 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
             | alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
             | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
             | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE
+            | alcomd_protocol::METHOD_BACKUPS_LIST
+            | alcomd_protocol::METHOD_BACKUPS_GET
+            | alcomd_protocol::METHOD_BACKUPS_CREATE
+            | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
+            | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
+            | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
+            | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
+            | alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY
+            | alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE
+            | alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE
             | "mcp.tools.catalog"
             | "extensions.mcpTools.call"
             | "system.status"

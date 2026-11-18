@@ -556,6 +556,54 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         key: IdempotencyKey,
     ) -> Result<ProjectCreateAccepted, ProjectCreateError> {
         require_owner(access)?;
+        self.create_in_destination(access, input, key, None).await
+    }
+
+    pub async fn replay_mcp_create(
+        &self,
+        access: &AccessContext,
+        fingerprint: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<ProjectCreateAccepted>, ProjectCreateError> {
+        if !access.is_mcp_client() {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::PermissionDenied,
+            ));
+        }
+        self.store
+            .project_create_replay(access.principal().clone(), fingerprint, key)
+            .await
+    }
+
+    pub async fn create_mcp_project(
+        &self,
+        access: &AccessContext,
+        input: ProjectCreateInput,
+        key: IdempotencyKey,
+        fingerprint: String,
+        expected_parent_identity: Vec<u8>,
+    ) -> Result<ProjectCreateAccepted, ProjectCreateError> {
+        if !access.is_mcp_client() {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::PermissionDenied,
+            ));
+        }
+        self.create_in_destination(
+            access,
+            input,
+            key,
+            Some((fingerprint, expected_parent_identity)),
+        )
+        .await
+    }
+
+    async fn create_in_destination(
+        &self,
+        access: &AccessContext,
+        input: ProjectCreateInput,
+        key: IdempotencyKey,
+        binding: Option<(String, Vec<u8>)>,
+    ) -> Result<ProjectCreateAccepted, ProjectCreateError> {
         access
             .require(Permission::ProjectsCreate)
             .map_err(|cause| {
@@ -568,7 +616,10 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             validate_template_reference(&template.id, template.revision)?;
         }
         let owner = access.principal().clone();
-        let fingerprint = self.adapter.fingerprint(&input)?;
+        let (fingerprint, expected_parent) = match binding {
+            Some((fingerprint, parent)) => (fingerprint, Some(parent)),
+            None => (self.adapter.fingerprint(&input)?, None),
+        };
         if let Some(replayed) = self
             .store
             .project_create_replay(owner.clone(), fingerprint.clone(), key.clone())
@@ -587,6 +638,11 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     .ok_or(cause);
             }
         };
+        if expected_parent.is_some_and(|expected| expected != parent_identity) {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::DestinationChanged,
+            ));
+        }
         let allow_packages = [
             Permission::PackagesRead,
             Permission::RepositoriesRead,
@@ -625,7 +681,16 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         limit: Option<u16>,
         cursor: Option<String>,
     ) -> Result<ProjectTemplatePage, ProjectCreateError> {
-        require_owner(access)?;
+        if access.is_mcp_client() {
+            access
+                .require(Permission::ProjectsCreate)
+                .map_err(|cause| {
+                    ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied)
+                        .with_source(cause)
+                })?;
+        } else {
+            require_owner(access)?;
+        }
         let limit = limit.unwrap_or(100);
         if !(1..=100).contains(&limit) {
             return Err(ProjectCreateError::new(
@@ -633,7 +698,11 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             ));
         }
         self.store
-            .project_templates_list(access.principal().clone(), usize::from(limit), cursor)
+            .project_templates_list(
+                crate::workflow_resource_owner(access.principal()),
+                usize::from(limit),
+                cursor,
+            )
             .await
     }
 
@@ -960,7 +1029,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                 let catalog = self
                     .store
                     .resolver_catalog(
-                        work.owner.clone(),
+                        crate::workflow_resource_owner(&work.owner),
                         false,
                         self.adapter.source_settings().await?,
                     )

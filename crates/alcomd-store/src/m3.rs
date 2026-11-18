@@ -36,6 +36,7 @@ fn repository_target(
 }
 
 const PROJECT_REGISTER: &str = "projects.register";
+const MCP_PROJECT_REGISTER: &str = "mcp.projects.register";
 const PROJECT_REFRESH: &str = "projects.refresh";
 const PROJECT_SET_FAVORITE: &str = "projects.setFavorite";
 const PROJECT_UNREGISTER: &str = "projects.unregister";
@@ -315,7 +316,7 @@ fn begin(connection: &mut Connection) -> Result<Transaction<'_>, M3Error> {
 }
 
 fn existing_response<T: DeserializeOwned>(
-    transaction: &Transaction<'_>,
+    transaction: &Connection,
     owner: &PrincipalId,
     method: &str,
     key: &IdempotencyKey,
@@ -486,6 +487,90 @@ pub(super) fn register_project(
         transaction.commit().map_err(sql_failure)?;
         return Ok(response);
     }
+    let response = SyncWrite {
+        value: insert_project(&transaction, owner, owner, observation, now_ms)?,
+        replayed: false,
+    };
+    save_response(
+        &transaction,
+        owner,
+        PROJECT_REGISTER,
+        key,
+        &fingerprint,
+        &response,
+        now_ms,
+    )?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(response)
+}
+
+pub(super) fn replay_project_registration(
+    db: &Connection,
+    caller: &PrincipalId,
+    fingerprint: &str,
+    key: &IdempotencyKey,
+) -> Result<Option<SyncWrite<app::McpRegisteredProject>>, M3Error> {
+    super::m8_workflows::require(db, caller, &[app::Permission::ProjectsManage])
+        .map_err(|cause| M3Error::new(M3ErrorCode::PermissionDenied).with_source(cause))?;
+    existing_response::<SyncWrite<app::McpRegisteredProject>>(
+        db,
+        caller,
+        MCP_PROJECT_REGISTER,
+        key,
+        fingerprint,
+    )
+    .map(|existing| {
+        existing.map(|mut value| {
+            value.replayed = true;
+            value
+        })
+    })
+}
+
+pub(super) fn register_mcp_project(
+    db: &mut Connection,
+    caller: &PrincipalId,
+    observation: ProjectObservation,
+    fingerprint: &str,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<SyncWrite<app::McpRegisteredProject>, M3Error> {
+    let transaction = begin(db)?;
+    if let Some(existing) = replay_project_registration(&transaction, caller, fingerprint, key)? {
+        return Ok(existing);
+    }
+    let owner = app::workflow_resource_owner(caller);
+    let record = insert_project(&transaction, &owner, caller, observation, now_ms)?;
+    let response = SyncWrite {
+        value: app::McpRegisteredProject {
+            project_id: record.project_id,
+            revision: record.revision,
+            display_name: project_display_name(&record.observation.root_path).map(str::to_owned),
+            project_type: record.observation.project_type,
+            unity_version: record.observation.unity_version,
+        },
+        replayed: false,
+    };
+    save_response(
+        &transaction,
+        caller,
+        MCP_PROJECT_REGISTER,
+        key,
+        fingerprint,
+        &response,
+        now_ms,
+    )?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(response)
+}
+
+fn insert_project(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    caller: &PrincipalId,
+    observation: ProjectObservation,
+    now_ms: u64,
+) -> Result<ProjectRecord, M3Error> {
     let duplicate = transaction
         .query_row(
             "SELECT 1 FROM projects WHERE path_identity_key=?1",
@@ -529,7 +614,7 @@ pub(super) fn register_project(
     };
 
     insert_event(
-        &transaction,
+        transaction,
         owner,
         "project",
         &id.to_string(),
@@ -538,8 +623,8 @@ pub(super) fn register_project(
         now_ms,
     )?;
     committed(
-        &transaction,
-        owner,
+        transaction,
+        caller,
         now_ms,
         CommittedStep::succeeded(
             PROJECT_REGISTER,
@@ -548,21 +633,7 @@ pub(super) fn register_project(
         ),
     )
     .map_err(sql_failure)?;
-    let response = SyncWrite {
-        value: record,
-        replayed: false,
-    };
-    save_response(
-        &transaction,
-        owner,
-        PROJECT_REGISTER,
-        key,
-        &fingerprint,
-        &response,
-        now_ms,
-    )?;
-    transaction.commit().map_err(sql_failure)?;
-    Ok(response)
+    Ok(record)
 }
 
 pub(super) fn get_project(

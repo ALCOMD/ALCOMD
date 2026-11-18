@@ -779,6 +779,12 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
 State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。
 
+### M8 项目与备份委托
+
+`mcp.project-workflows.v1` 增加固定的登记、创建、复制 Plan/Apply、恢复 Plan/Apply 和本机路径审批。项目创建所需的模板列表以及备份列表、详情和创建复用现有方法。既有本机参数和结果保持原合同。精确形状见 [M8 项目与备份 Schema](m8-mcp-project-workflows-v1.schema.json)。
+
+本机所有者明示批准外部路径时，Core 冻结用途、实际客户端、目录身份和目标名称。审批有效期为十分钟，最多保留六十四条有效审批，未接受的外部路径审批在重启时失效。计划记录只持久保存审批摘要或默认位置类型。在接受和同键补收结果时重验客户端权限、凭据和 OAuth 限制。已接受操作沿用原任务与恢复规则。
+
 ## 21. M5 兼容增加：Backup Create
 
 Backup Create 在 RPC major 1 上冻结并发布两项 capability：`backups.read.v1` 与

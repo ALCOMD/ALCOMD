@@ -74,6 +74,15 @@ pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
         alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
         | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
         | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE => &["repositories.manage"],
+        METHOD_BACKUPS_LIST | METHOD_BACKUPS_GET => &["backups.read"],
+        METHOD_BACKUPS_CREATE => &["backups.manage", "projects.read"],
+        METHOD_MCP_PROJECTS_REGISTER => &["projects.manage"],
+        METHOD_MCP_PROJECTS_CREATE | METHOD_PROJECT_TEMPLATES_LIST => &["projects.create"],
+        METHOD_MCP_PROJECTS_PLAN_COPY | METHOD_MCP_PROJECTS_APPLY_COPY => {
+            &["projects.read", "projects.create"]
+        }
+        METHOD_MCP_BACKUPS_PLAN_RESTORE => &["backups.read", "projects.create"],
+        METHOD_MCP_BACKUPS_APPLY_RESTORE => &["backups.read", "backups.manage", "projects.create"],
         "packages.applyPlan" => &[
             "projects.read",
             "repositories.read",

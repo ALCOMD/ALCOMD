@@ -80,7 +80,7 @@ pub(super) async fn dispatch(
     }
 }
 
-fn plan(value: app::ProjectCopyPlanRecord) -> rpc::ProjectCopyPlan {
+pub(super) fn plan(value: app::ProjectCopyPlanRecord) -> rpc::ProjectCopyPlan {
     let project = &value.draft.source_project;
     rpc::ProjectCopyPlan {
         plan_id: value.draft.plan_id.to_string(),
@@ -189,7 +189,7 @@ fn writer_state(value: app::UnityWriterStateKind) -> &'static str {
     }
 }
 
-fn copy_error(id: String, source: app::M7CopyError) -> DispatchAction {
+pub(super) fn copy_error(id: String, source: app::M7CopyError) -> DispatchAction {
     let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M7CopyErrorCode::InvalidInput => rpc::RpcError::invalid_request(),

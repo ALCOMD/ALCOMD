@@ -1,0 +1,1230 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "MCP project and backup workflows",
+    "x-capability": "mcp.project-workflows.v1",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/project-workflows-v1.json",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_register_project",
+            "title": "Register an existing project",
+            "description": "Register a project under the default project directory or use its owner-approved path.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/register"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/registration"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.manage"
+            ]
+        },
+        {
+            "name": "alcomd_list_project_templates",
+            "title": "List project templates",
+            "description": "Read templates available for project creation.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/listTemplates"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/templates"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "projects.create"
+            ]
+        },
+        {
+            "name": "alcomd_create_project",
+            "title": "Create a project",
+            "description": "Create a project at the selected destination. A template with packages requires the existing package and repository permissions.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/create"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/projectAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.create"
+            ]
+        },
+        {
+            "name": "alcomd_plan_project_copy",
+            "title": "Review a project copy",
+            "description": "Freeze the source revision and selected destination for review.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/planCopy"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/copyPlan"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "projects.read",
+                "projects.create"
+            ]
+        },
+        {
+            "name": "alcomd_apply_project_copy",
+            "title": "Apply a reviewed project copy",
+            "description": "Use the original copy plan after the operator confirms it.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/applyCopy"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/copyAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.read",
+                "projects.create"
+            ]
+        },
+        {
+            "name": "alcomd_list_backups",
+            "title": "List managed backups",
+            "description": "Read the shared backup catalog, optionally filtered by source project.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/listBackups"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/backups"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "backups.read"
+            ]
+        },
+        {
+            "name": "alcomd_get_backup",
+            "title": "Get a managed backup",
+            "description": "Read a registered backup by its ID.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/getBackup"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/backup"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "backups.read"
+            ]
+        },
+        {
+            "name": "alcomd_create_backup",
+            "title": "Create a project backup",
+            "description": "Create a managed native backup at the effective backup directory.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/createBackup"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/backupAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.read",
+                "backups.manage"
+            ]
+        },
+        {
+            "name": "alcomd_plan_backup_restore",
+            "title": "Review a backup restore",
+            "description": "Freeze a plan to recover a managed archive to a new project.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/planRestore"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/restorePlan"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "backups.read",
+                "projects.create"
+            ]
+        },
+        {
+            "name": "alcomd_apply_backup_restore",
+            "title": "Apply a reviewed backup restore",
+            "description": "Restore the original plan to a new project after explicit confirmation.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/applyRestore"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/projectAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "backups.read",
+                "backups.manage",
+                "projects.create"
+            ]
+        }
+    ],
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+        },
+        "integer": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+        },
+        "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+        },
+        "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "source": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "default"
+                        },
+                        "relative_path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "relative_path"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "approved"
+                        },
+                        "approval_id": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "approval_id"
+                    ]
+                }
+            ]
+        },
+        "target": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "default"
+                        },
+                        "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "name"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "approved"
+                        },
+                        "approval_id": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "approval_id"
+                    ]
+                }
+            ]
+        },
+        "templateReference": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "revision": {
+                    "$ref": "#/$defs/revision"
+                }
+            },
+            "required": [
+                "id",
+                "revision"
+            ]
+        },
+        "register": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                }
+            },
+            "required": [
+                "source",
+                "idempotency_key"
+            ]
+        },
+        "registration": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "project_id": {
+                            "$ref": "#/$defs/id"
+                        },
+                        "revision": {
+                            "$ref": "#/$defs/revision"
+                        },
+                        "display_name": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 255
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "project_type": {
+                            "enum": [
+                                "avatars",
+                                "worlds",
+                                "legacy-avatars",
+                                "legacy-worlds",
+                                "unknown",
+                                "vpm-starter",
+                                "upm-avatars",
+                                "upm-worlds",
+                                "upm-starter",
+                                "legacy-sdk2"
+                            ]
+                        },
+                        "unity_version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "project_id",
+                        "revision",
+                        "display_name",
+                        "project_type",
+                        "unity_version"
+                    ]
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "project",
+                "replayed"
+            ]
+        },
+        "listTemplates": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                }
+            }
+        },
+        "templates": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "templates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "editor_version": {
+                                "anyOf": [
+                                    {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                    },
+                                    {
+                                        "type": "null"
+                                    }
+                                ]
+                            },
+                            "revision": {
+                                "$ref": "#/$defs/revision"
+                            },
+                            "locked": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "name",
+                            "revision",
+                            "locked"
+                        ]
+                    },
+                    "maxItems": 100
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "templates"
+            ]
+        },
+        "create": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "target": {
+                    "$ref": "#/$defs/target"
+                },
+                "unity_version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "template": {
+                    "$ref": "#/$defs/templateReference"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                }
+            },
+            "required": [
+                "target",
+                "unity_version",
+                "idempotency_key"
+            ]
+        },
+        "projectAccepted": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "operation_id",
+                "project_id",
+                "replayed"
+            ]
+        },
+        "planCopy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "source_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "target": {
+                    "$ref": "#/$defs/target"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                }
+            },
+            "required": [
+                "source_project_id",
+                "expected_revision",
+                "target",
+                "idempotency_key"
+            ]
+        },
+        "applyCopy": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "confirm": {
+                    "const": true
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "path_approval_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "plan_id",
+                "expected_revision",
+                "confirm",
+                "idempotency_key"
+            ]
+        },
+        "copyAccepted": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "target_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "operation_id",
+                "target_project_id",
+                "replayed"
+            ]
+        },
+        "copyPlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "source_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "target_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                },
+                "target_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "writer_evidence": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "state": {
+                            "enum": [
+                                "running_confirmed",
+                                "running_suspected",
+                                "not_observed",
+                                "unknown"
+                            ]
+                        },
+                        "observed_at_ms": {
+                            "$ref": "#/$defs/integer"
+                        }
+                    },
+                    "required": [
+                        "state",
+                        "observed_at_ms"
+                    ]
+                },
+                "profile": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                        },
+                        "version": {
+                            "$ref": "#/$defs/revision"
+                        },
+                        "includes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "maxItems": 32
+                        },
+                        "excludes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "maxItems": 32
+                        },
+                        "rejects": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "maxItems": 32
+                        },
+                        "quota": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "max_entries": {
+                                    "$ref": "#/$defs/integer"
+                                },
+                                "max_single_file_bytes": {
+                                    "$ref": "#/$defs/integer"
+                                },
+                                "max_total_regular_file_bytes": {
+                                    "$ref": "#/$defs/integer"
+                                },
+                                "max_depth": {
+                                    "$ref": "#/$defs/integer"
+                                },
+                                "max_normalized_path_utf8_bytes": {
+                                    "$ref": "#/$defs/integer"
+                                }
+                            },
+                            "required": [
+                                "max_entries",
+                                "max_single_file_bytes",
+                                "max_total_regular_file_bytes",
+                                "max_depth",
+                                "max_normalized_path_utf8_bytes"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "version",
+                        "includes",
+                        "excludes",
+                        "rejects",
+                        "quota"
+                    ]
+                },
+                "expires_at_ms": {
+                    "$ref": "#/$defs/integer"
+                },
+                "plan_fingerprint": {
+                    "$ref": "#/$defs/fingerprint"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "plan_id",
+                "source_project_id",
+                "expected_revision",
+                "target_name",
+                "target_project_id",
+                "writer_evidence",
+                "profile",
+                "expires_at_ms",
+                "plan_fingerprint",
+                "replayed"
+            ]
+        },
+        "compression": {
+            "enum": [
+                "store",
+                "fast",
+                "level3",
+                "level5",
+                "level7",
+                "maximum"
+            ]
+        },
+        "listBackups": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000
+                }
+            }
+        },
+        "backups": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/backup"
+                    },
+                    "maxItems": 1000
+                },
+                "next_cursor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "backups"
+            ]
+        },
+        "getBackup": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "backup_id"
+            ]
+        },
+        "backup": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "source_project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "archive_sha256": {
+                    "$ref": "#/$defs/fingerprint"
+                },
+                "archive_bytes": {
+                    "$ref": "#/$defs/integer"
+                },
+                "format_version": {
+                    "$ref": "#/$defs/revision"
+                },
+                "created_at_ms": {
+                    "$ref": "#/$defs/integer"
+                },
+                "compression_mode": {
+                    "$ref": "#/$defs/compression"
+                },
+                "exclude_vpm_packages": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "backup_id",
+                "source_project_id",
+                "archive_sha256",
+                "archive_bytes",
+                "format_version",
+                "created_at_ms",
+                "compression_mode",
+                "exclude_vpm_packages"
+            ]
+        },
+        "createBackup": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "compression_mode": {
+                    "$ref": "#/$defs/compression"
+                },
+                "exclude_vpm_packages": {
+                    "type": "boolean"
+                },
+                "include_library": {
+                    "type": "boolean"
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                }
+            },
+            "required": [
+                "project_id",
+                "expected_revision",
+                "idempotency_key"
+            ]
+        },
+        "backupAccepted": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "operation_id",
+                "backup_id",
+                "replayed"
+            ]
+        },
+        "planRestore": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "target": {
+                    "$ref": "#/$defs/target"
+                }
+            },
+            "required": [
+                "backup_id",
+                "target"
+            ]
+        },
+        "restorePlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "backup_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "target_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                },
+                "archive_sha256": {
+                    "$ref": "#/$defs/fingerprint"
+                },
+                "packages_require_resolve": {
+                    "type": "boolean"
+                },
+                "excluded_packages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "version": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            }
+                        },
+                        "required": [
+                            "package_id",
+                            "version"
+                        ]
+                    },
+                    "maxItems": 4096
+                },
+                "plan_fingerprint": {
+                    "$ref": "#/$defs/fingerprint"
+                }
+            },
+            "required": [
+                "plan_id",
+                "project_id",
+                "backup_id",
+                "target_name",
+                "archive_sha256",
+                "packages_require_resolve",
+                "excluded_packages",
+                "plan_fingerprint"
+            ]
+        },
+        "applyRestore": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "confirm": {
+                    "const": true
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "path_approval_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [
+                "plan_id",
+                "confirm",
+                "idempotency_key"
+            ]
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "code",
+                "retryable"
+            ]
+        }
+    }
+}

@@ -9,7 +9,11 @@ use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     BackupApplyRestoreParams, BackupCompression, BackupCreateParams, BackupPlanRestoreParams,
-    BackupRecord, BackupsListParams, OperationState,
+    BackupRecord, BackupsListParams, McpBackupApplyRestoreParams, McpBackupPlanRestoreParams,
+    McpClientGrant, McpClientMutationParams, McpClientsCreateParams, McpClientsSetGrantsParams,
+    McpProjectPathApproveParams, McpProjectPathPurpose, McpProjectSource, McpProjectTarget,
+    McpProjectsApplyCopyParams, McpProjectsCreateParams, McpProjectsPlanCopyParams,
+    McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -44,6 +48,309 @@ const RESTORE_PAUSE_GATE_ENV: &str = "ALCOMD_TEST_BACKUP_RESTORE_PAUSE_GATE";
 const RESTORE_PAUSE_SIGNAL_ENV: &str = "ALCOMD_TEST_BACKUP_RESTORE_PAUSE_SIGNAL";
 const RESTORE_PAUSE_RELEASE_ENV: &str = "ALCOMD_TEST_BACKUP_RESTORE_PAUSE_RELEASE";
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mcp_backup_uses_shared_registry_and_rechecks_grants_on_replay() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let project = fixture.path().join("Owned project");
+    create_project(&project);
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    let archive_dir = fixture.path().join("archives");
+    let projects = fixture.path().join("projects");
+    let external = fixture.path().join("external");
+    for path in [&runtime, &data, &archive_dir, &projects, &external] {
+        fs::create_dir(path).expect("isolated directory");
+    }
+    create_project(&projects.join("Existing project"));
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("start owned test daemon");
+    let mut owner = connect_with_retry(config.clone()).await;
+    let settings = owner.settings_get().await.expect("isolated settings");
+    owner
+        .settings_update(
+            serde_json::from_value(serde_json::json!({
+                "expectedRevision": settings.revision,
+                "update": {
+                    "paths": { "backupDirectory": archive_dir.to_string_lossy(), "projectDirectory": projects.to_string_lossy() },
+                    "projects": { "autoDiscover": false }
+                }
+            }))
+            .expect("directory update"),
+        )
+        .await
+        .expect("override backup destination within fixture");
+    let project = owner
+        .project_register(
+            project.to_string_lossy().into_owned(),
+            "backup-mcp-register".to_owned(),
+        )
+        .await
+        .expect("register")
+        .project;
+    let request = BackupCreateParams {
+        project_id: project.project_id.expect("registered project id"),
+        expected_revision: project.revision.expect("registered project revision"),
+        compression_mode: None,
+        exclude_vpm_packages: Some(true),
+        include_library: None,
+        idempotency_key: "shared-key".to_owned(),
+    };
+    let approvals = [
+        "projects.read",
+        "projects.create",
+        "projects.manage",
+        "backups.manage",
+        "backups.read",
+        "operations.read",
+    ]
+    .map(|permission| McpClientGrant {
+        permission: permission.to_owned(),
+        resource_kind: "global".to_owned(),
+        resource_id: "*".to_owned(),
+    })
+    .to_vec();
+    let mut actors = Vec::new();
+    for name in ["First MCP", "Second MCP"] {
+        let record = owner
+            .mcp_client_create(McpClientsCreateParams {
+                idempotency_key: format!("create-{name}"),
+                display_name: name.to_owned(),
+                grants: Vec::new(),
+            })
+            .await
+            .expect("independent client");
+        let issued = owner
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: record.client_id,
+                expected_revision: record.revision,
+                idempotency_key: format!("issue-{name}"),
+            })
+            .await
+            .expect("credential");
+        let client = AlcomdClient::connect(config.clone().with_mcp_credential(issued.credential))
+            .await
+            .expect("authenticate");
+        actors.push((issued.client_id, issued.revision, client));
+    }
+    for (id, revision, client) in &mut actors {
+        assert!(
+            matches!(client.backup_create(request.clone()).await, Err(ClientError::Remote(error)) if error.code == "permission_denied")
+        );
+        *revision = owner
+            .mcp_client_set_grants(McpClientsSetGrantsParams {
+                client_id: id.clone(),
+                expected_revision: *revision,
+                idempotency_key: format!("allow-{id}"),
+                grants: approvals.clone(),
+            })
+            .await
+            .expect("allow")
+            .revision;
+    }
+    let [(id, revision, first), (_, _, second)] = actors.as_mut_slice() else {
+        panic!("two independent actors required");
+    };
+    let registration = first
+        .mcp_project_register(McpProjectsRegisterParams {
+            source: McpProjectSource::Default {
+                relative_path: "Existing project".to_owned(),
+            },
+            idempotency_key: "register-project".to_owned(),
+        })
+        .await
+        .expect("register project under fixed root");
+    assert!(
+        owner
+            .project_get(registration.project.project_id)
+            .await
+            .is_ok()
+    );
+    let templates = first
+        .project_templates_list(Default::default())
+        .await
+        .expect("creation templates");
+    let blank = templates
+        .templates
+        .iter()
+        .find(|template| template.locked && template.editor_version.is_none())
+        .expect("builtin blank");
+    let approval = owner
+        .mcp_project_path_approve(McpProjectPathApproveParams {
+            client_id: id.clone(),
+            purpose: McpProjectPathPurpose::Create,
+            path: external
+                .join("Created project")
+                .to_string_lossy()
+                .into_owned(),
+            confirm: true,
+        })
+        .await
+        .expect("approve external target");
+    let create = McpProjectsCreateParams {
+        target: McpProjectTarget::Approved {
+            approval_id: approval.approval_id,
+        },
+        unity_version: "2022.3.22f1".to_owned(),
+        template: Some(ProjectTemplateRef {
+            id: blank.id.clone(),
+            revision: blank.revision,
+        }),
+        idempotency_key: "create-project".to_owned(),
+    };
+    assert!(second.mcp_project_create(create.clone()).await.is_err());
+    let created = first
+        .mcp_project_create(create.clone())
+        .await
+        .expect("create from template");
+    assert_eq!(
+        wait_for_operation(first, &created.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert_eq!(
+        first
+            .mcp_project_create(create)
+            .await
+            .expect("replay")
+            .operation_id,
+        created.operation_id
+    );
+    assert!(owner.project_get(created.project_id).await.is_ok());
+    let copy_plan = first
+        .mcp_project_plan_copy(McpProjectsPlanCopyParams {
+            source_project_id: request.project_id.clone(),
+            expected_revision: request.expected_revision,
+            target: McpProjectTarget::Default {
+                name: "Copied project".to_owned(),
+            },
+            idempotency_key: "plan-copy".to_owned(),
+        })
+        .await
+        .expect("copy plan");
+    let mut apply_copy = McpProjectsApplyCopyParams {
+        plan_id: copy_plan.plan_id,
+        expected_revision: copy_plan.expected_revision,
+        confirm: false,
+        idempotency_key: "apply-copy".to_owned(),
+        path_approval_id: None,
+    };
+    assert!(
+        first
+            .mcp_project_apply_copy(apply_copy.clone())
+            .await
+            .is_err()
+    );
+    apply_copy.confirm = true;
+    assert!(
+        second
+            .mcp_project_apply_copy(apply_copy.clone())
+            .await
+            .is_err()
+    );
+    let copied = first
+        .mcp_project_apply_copy(apply_copy)
+        .await
+        .expect("confirmed copy");
+    assert_eq!(
+        wait_for_operation(first, &copied.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    assert!(owner.project_get(copied.target_project_id).await.is_ok());
+    let accepted = first
+        .backup_create(request.clone())
+        .await
+        .expect("accepted");
+    assert!(!accepted.replayed);
+    assert!(
+        second
+            .operation_get(accepted.operation_id.clone())
+            .await
+            .is_err()
+    );
+    let result = wait_for_operation(first, &accepted.operation_id).await;
+    assert_eq!(result.state, OperationState::Succeeded, "{result:?}");
+    let original = owner
+        .backup_get(accepted.backup_id.clone())
+        .await
+        .expect("owner lookup");
+    let shared = second
+        .backup_get(accepted.backup_id.clone())
+        .await
+        .expect("shared lookup");
+    assert_eq!(shared, original);
+    assert_archive_profile(&archive_for_record(&archive_dir, &shared), false);
+    let restore_plan = first
+        .mcp_backup_plan_restore(McpBackupPlanRestoreParams {
+            backup_id: accepted.backup_id.clone(),
+            target: McpProjectTarget::Default {
+                name: "Restored project".to_owned(),
+            },
+        })
+        .await
+        .expect("restore plan");
+    let restored = first
+        .mcp_backup_apply_restore(McpBackupApplyRestoreParams {
+            plan_id: restore_plan.plan_id,
+            confirm: true,
+            idempotency_key: "apply-restore".to_owned(),
+            path_approval_id: None,
+        })
+        .await
+        .expect("confirmed restore");
+    let restored_task = wait_for_operation(first, &restored.operation_id).await;
+    assert_eq!(
+        restored_task.state,
+        OperationState::Succeeded,
+        "{restored_task:?}"
+    );
+    let restored_result = restored_task.result.expect("safe restore result");
+    assert_eq!(restored_result["targetName"], "Restored project");
+    assert!(restored_result.get("target").is_none());
+    assert!(owner.project_get(restored.project_id).await.is_ok());
+    let replay = first
+        .backup_create(request.clone())
+        .await
+        .expect("exact replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    assert_eq!(replay.backup_id, accepted.backup_id);
+    let other = second
+        .backup_create(request.clone())
+        .await
+        .expect("independent key");
+    assert_ne!(other.operation_id, accepted.operation_id);
+    assert!(!other.replayed);
+    assert_eq!(
+        wait_for_operation(second, &other.operation_id).await.state,
+        OperationState::Succeeded
+    );
+    owner
+        .mcp_client_set_grants(McpClientsSetGrantsParams {
+            client_id: id.clone(),
+            expected_revision: *revision,
+            idempotency_key: "revoke-backup-manage".to_owned(),
+            grants: approvals
+                .into_iter()
+                .filter(|item| item.permission != "backups.manage")
+                .collect(),
+        })
+        .await
+        .expect("revoke write on existing connection");
+    assert!(
+        matches!(first.backup_create(request).await, Err(ClientError::Remote(error)) if error.code == "permission_denied")
+    );
+    assert_eq!(fs::read_dir(archive_dir).expect("archives").count(), 2);
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("join").expect("daemon");
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {

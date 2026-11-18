@@ -18,6 +18,8 @@ mod extension_tools_flow;
 mod oauth_flow;
 #[path = "support/package_catalog_flow.rs"]
 mod package_catalog_flow;
+#[path = "support/project_workflows_flow.rs"]
+mod project_workflows_flow;
 
 #[path = "support/extension_sources_flow.rs"]
 mod extension_sources_flow;

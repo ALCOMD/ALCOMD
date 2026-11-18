@@ -7,6 +7,16 @@ use alcomd_application::{
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
 
+fn require_mcp_copy(db: &Connection, owner: &PrincipalId) -> Result<(), M7CopyError> {
+    use alcomd_application::Permission;
+    super::m8_workflows::require(
+        db,
+        owner,
+        &[Permission::ProjectsRead, Permission::ProjectsCreate],
+    )
+    .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))
+}
+
 pub(super) fn create_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -14,6 +24,7 @@ pub(super) fn create_plan(
 ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
     let fingerprint = plan_request_fingerprint(&draft)?;
     let transaction = begin(connection)?;
+    require_mcp_copy(&transaction, owner)?;
     if let Some((stored, response)) = transaction
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -27,8 +38,17 @@ pub(super) fn create_plan(
         if stored != fingerprint {
             return Err(error(M7CopyErrorCode::IdempotencyConflict));
         }
-        let mut outcome: ProjectCopyPlanOutcome =
-            serde_json::from_str(&response).map_err(|_| internal())?;
+        let mut outcome: ProjectCopyPlanOutcome = if owner.as_str().starts_with("mcp:") {
+            let plan_id = serde_json::from_str(&response).map_err(|_| internal())?;
+            super::m8_workflows::check_plan_proof(&transaction, owner, plan_id)
+                .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
+            ProjectCopyPlanOutcome {
+                plan: load_plan(&transaction, owner, plan_id)?,
+                replayed: true,
+            }
+        } else {
+            serde_json::from_str(&response).map_err(|_| internal())?
+        };
         outcome.replayed = true;
         transaction.commit().map_err(failure)?;
         return Ok(outcome);
@@ -66,6 +86,13 @@ pub(super) fn create_plan(
         )
         .map_err(failure)?;
     let plan = load_plan(&transaction, owner, draft.plan_id)?;
+    super::m8_workflows::install_plan_proof(
+        &transaction,
+        owner,
+        draft.plan_id,
+        draft.created_at_ms,
+    )
+    .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     let target =
         super::operation_logs::destination_target(&draft.target_parent_path, &draft.target_leaf);
     super::operation_logs::plan(
@@ -81,6 +108,11 @@ pub(super) fn create_plan(
         plan,
         replayed: false,
     };
+    let replay = if owner.as_str().starts_with("mcp:") {
+        json(&draft.plan_id)?
+    } else {
+        json(&outcome)?
+    };
     transaction
         .execute(
             "INSERT INTO idempotency_records (
@@ -91,7 +123,7 @@ pub(super) fn create_plan(
                 owner.as_str(),
                 draft.plan_idempotency_key.as_str(),
                 fingerprint,
-                json(&outcome)?,
+                replay,
                 integer(draft.created_at_ms)?,
             ],
         )
@@ -115,6 +147,9 @@ pub(super) fn replay_apply(
     expected_revision: Revision,
     key: &IdempotencyKey,
 ) -> Result<Option<ProjectCopyApplyOutcome>, M7CopyError> {
+    require_mcp_copy(connection, owner)?;
+    super::m8_workflows::check_plan_proof(connection, owner, plan_id)
+        .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     let expected_fingerprint = apply_request_fingerprint(plan_id, expected_revision)?;
     let Some((stored_fingerprint, response)) = connection
         .query_row(
@@ -148,6 +183,9 @@ pub(super) fn accept(
 ) -> Result<ProjectCopyApplyOutcome, M7CopyError> {
     let fingerprint = apply_request_fingerprint(plan_id, expected_revision)?;
     let transaction = begin(connection)?;
+    require_mcp_copy(&transaction, owner)?;
+    super::m8_workflows::check_plan_proof(&transaction, owner, plan_id)
+        .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     if let Some((stored, response)) = transaction
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -172,6 +210,18 @@ pub(super) fn accept(
     if now_ms >= plan.draft.expires_at_ms || plan.draft.source_project.revision != expected_revision
     {
         return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
+    }
+    if owner.as_str().starts_with("mcp:") {
+        let resource_owner = alcomd_application::workflow_resource_owner(owner);
+        let current = super::m3::get_project(
+            &transaction,
+            &resource_owner,
+            plan.draft.source_project.project_id,
+        )
+        .map_err(|cause| error(M7CopyErrorCode::ProjectCopyPlanStale).with_source(cause))?;
+        if current.revision != expected_revision {
+            return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
+        }
     }
     let applied: Option<String> = transaction
         .query_row(
@@ -365,6 +415,7 @@ pub(super) fn complete(
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let observation = published.observation.clone();
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     transaction
         .execute(
             "INSERT INTO projects (
@@ -374,7 +425,7 @@ pub(super) fn complete(
              ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
             params![
                 plan.draft.target_project_id.to_string(),
-                owner.as_str(),
+                resource_owner.as_str(),
                 observation.root_path,
                 observation.path_identity_key,
                 super::m3::project_type(observation.project_type),
@@ -407,7 +458,7 @@ pub(super) fn complete(
         .map_err(failure)?;
     insert_project_event(
         &transaction,
-        &owner,
+        &resource_owner,
         plan.draft.target_project_id,
         "project.registered",
         now_ms,

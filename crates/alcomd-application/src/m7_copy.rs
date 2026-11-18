@@ -396,10 +396,13 @@ where
     ) -> Result<ProjectCopyPlanOutcome, M7CopyError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsCreate)?;
-        local_owner(access)?;
+        if !access.is_mcp_client() {
+            local_owner(access)?;
+        }
+        let resource_owner = crate::workflow_resource_owner(access.principal());
         let source = self
             .store
-            .get_project(access.principal().clone(), source_project_id)
+            .get_project(resource_owner.clone(), source_project_id)
             .await
             .map_err(map_m3)?;
         if source.revision != expected_revision {
@@ -407,7 +410,7 @@ where
         }
         let writer = self
             .writer
-            .observe_backup_source(access, source_project_id)
+            .observe_backup_source(&AccessContext::new(resource_owner, []), source_project_id)
             .await
             .map_err(|cause| error(M7CopyErrorCode::Internal).with_source(cause))?;
         if writer.state == UnityWriterStateKind::RunningConfirmed {
@@ -423,6 +426,10 @@ where
             |error| error.path().map(str::to_owned),
         )
         .await?;
+        if access.is_mcp_client() && !crate::workflow_parent_matches(&draft.target_parent_identity)
+        {
+            return Err(error(M7CopyErrorCode::ProjectCopyPlanStale));
+        }
         self.store
             .create_project_copy_plan(access.principal().clone(), draft)
             .await
@@ -437,7 +444,9 @@ where
     ) -> Result<ProjectCopyApplyOutcome, M7CopyError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsCreate)?;
-        local_owner(access)?;
+        if !access.is_mcp_client() {
+            local_owner(access)?;
+        }
         if let Some(outcome) = self
             .store
             .replay_project_copy_apply(
@@ -455,12 +464,10 @@ where
             .get_project_copy_plan(access.principal().clone(), plan_id)
             .await?;
         let _guard = self.locks.acquire(self.adapter.resources(&plan)).await;
+        let resource_owner = crate::workflow_resource_owner(access.principal());
         let current = self
             .store
-            .get_project(
-                access.principal().clone(),
-                plan.draft.source_project.project_id,
-            )
+            .get_project(resource_owner.clone(), plan.draft.source_project.project_id)
             .await
             .map_err(map_m3)?;
         if current.revision != expected_revision
@@ -470,7 +477,7 @@ where
         }
         let writer = self
             .writer
-            .observe_backup_source(access, current.project_id)
+            .observe_backup_source(&AccessContext::new(resource_owner, []), current.project_id)
             .await
             .map_err(|cause| error(M7CopyErrorCode::Internal).with_source(cause))?;
         if writer.state == UnityWriterStateKind::RunningConfirmed {

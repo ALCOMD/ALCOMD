@@ -57,6 +57,21 @@ pub fn normalize_storage_directory(path: &str) -> io::Result<String> {
         .map_err(|_| invalid("directory path is not Unicode"))
 }
 
+/// Resolves a workflow directory without accepting a link in the selected path.
+/// Callers freeze the returned identity and check it again before accepting a write.
+pub fn resolve_plain_storage_directory(path: &Path) -> io::Result<(PathBuf, Vec<u8>)> {
+    validate_path_text(path)?;
+    for ancestor in path.ancestors() {
+        let metadata = std::fs::symlink_metadata(ancestor)?;
+        if !metadata.is_dir() || is_link_or_reparse(&metadata) {
+            return Err(invalid("workflow target must be a plain directory"));
+        }
+    }
+    let (canonical, identity) = crate::resolve_directory_identity(path)?;
+    validate_path_text(&canonical)?;
+    Ok((canonical, identity))
+}
+
 /// Prepares a Core-selected storage root. No project, archive or existing entry is removed.
 pub fn prepare_storage_directory(path: &Path) -> io::Result<PathBuf> {
     validate_path_text(path)?;

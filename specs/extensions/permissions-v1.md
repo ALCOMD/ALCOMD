@@ -148,10 +148,9 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
   staging、target 或 Operation。`backups.applyRestore` 必须重新验证相同权限，并额外需要
   `backups.manage`。两者都只允许恢复到明确不存在的全新 Project target，不隐含 package/repository/
   Unity 权限，也不允许 overwrite、merge、delete-then-restore 或 arbitrary ZIP。
-- 备份的外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
+- 备份使用 Core 确认的本机所有者默认根。恢复的外部目标由本机所有者批准，获准 MCP 按原 Plan 提交。Schema/PlanId、
   bundle digest、target path 与 object locator 都不是授权凭据。
-- `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation
-  尚未实现，高影响 write path 不得描述为已向任意第三方开放。
+- `builtin:local-owner` 可获得 M5 已批准权限。M8 外部 Principal 仍须真实认证和显式的备份能力。高影响写入继续受默认位置、外部路径批准及原 Plan 约束。
 - capability、InstallationId、LaunchId、BackupId、路径、PID 与 client metadata 都不是
   Principal 或授权凭据。
 
@@ -213,7 +212,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ### MCP tool providers
 
-Optional `mcp.tools.provide` publishes signed tool declarations and does not enable an extension or grant business authority. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution intersects declared closed operations, current extension grants/lease and the actual MCP client's current capabilities/OAuth ceiling. `projects.read` retains safe project projections, with no path/filesystem authority. See `../mcp/extension-tools-v1.md` and State38. MCP client capability names remain the existing eight.
+Optional `mcp.tools.provide` publishes signed tool declarations and does not enable an extension or grant business authority. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution intersects declared closed operations, current extension grants/lease and the actual MCP client's current capabilities/OAuth ceiling. `projects.read` retains safe project projections, with no path/filesystem authority. See `../mcp/extension-tools-v1.md` and State38. The MCP client capability contract is documented in `../rpc/m8-mcp-clients-v1.md`.
 
 
 ## M8 Core observation reads

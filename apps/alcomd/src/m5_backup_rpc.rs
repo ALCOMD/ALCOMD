@@ -241,7 +241,7 @@ fn hex(value: &[u8; 32]) -> String {
     value.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn backup_error(id: String, source: app::M5BackupError) -> DispatchAction {
+pub(super) fn backup_error(id: String, source: app::M5BackupError) -> DispatchAction {
     let diagnostic_id = source.diagnostic_id().map(str::to_owned);
     let mut error = match source.code() {
         app::M5BackupErrorCode::InvalidInput => rpc::RpcError::invalid_request(),

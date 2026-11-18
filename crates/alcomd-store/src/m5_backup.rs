@@ -85,10 +85,11 @@ pub(super) fn accept_backup_create(
         transaction.commit().map_err(failure)?;
         return Ok(outcome);
     }
+    let resource_owner = alcomd_application::workflow_resource_owner(owner);
     let revision = transaction
         .query_row(
             "SELECT revision FROM projects WHERE owner_principal_id=?1 AND project_id=?2",
-            params![owner.as_str(), request.project_id.to_string()],
+            params![resource_owner.as_str(), request.project_id.to_string()],
             |row| row.get::<_, i64>(0),
         )
         .optional()
@@ -156,6 +157,13 @@ pub(super) fn replay_backup_create(
     options: BackupCreateOptions,
     key: &alcomd_application::IdempotencyKey,
 ) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
+    use alcomd_application::Permission;
+    super::m8_workflows::require(
+        connection,
+        owner,
+        &[Permission::BackupsManage, Permission::ProjectsRead],
+    )
+    .map_err(|cause| error(M5BackupErrorCode::PermissionDenied).with_source(cause))?;
     if let Some((existing_fingerprint, response)) = connection
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -321,13 +329,14 @@ pub(super) fn complete_backup_create(
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     transaction.execute(
         "INSERT INTO backups (backup_id,owner_principal_id,source_project_id,archive_locator,file_identity_key,archive_sha256,byte_size,format_version,created_at_ms,compression_mode,exclude_vpm_packages)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
          ON CONFLICT(backup_id) DO NOTHING",
-        params![backup.record.backup_id.to_string(), owner.as_str(), backup.record.source_project_id.to_string(), backup.archive_locator, backup.file_identity_key, backup.record.archive_sha256.as_slice(), integer(backup.record.archive_bytes)?, i64::from(backup.record.format_version), integer(backup.record.created_at_ms)?, backup.record.compression_mode.as_str(), i64::from(backup.record.exclude_vpm_packages)],
+        params![backup.record.backup_id.to_string(), resource_owner.as_str(), backup.record.source_project_id.to_string(), backup.archive_locator, backup.file_identity_key, backup.record.archive_sha256.as_slice(), integer(backup.record.archive_bytes)?, i64::from(backup.record.format_version), integer(backup.record.created_at_ms)?, backup.record.compression_mode.as_str(), i64::from(backup.record.exclude_vpm_packages)],
     ).map_err(failure)?;
-    let stored = get_backup(&transaction, &owner, backup.record.backup_id)?;
+    let stored = get_backup(&transaction, &resource_owner, backup.record.backup_id)?;
     if stored != backup {
         return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
     }

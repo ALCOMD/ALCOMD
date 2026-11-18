@@ -56,6 +56,7 @@ mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
+mod m8_workflows_rpc;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;
@@ -121,6 +122,7 @@ struct Applications {
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
     mcp_runtime: alcomd_application::McpRuntimeObservations,
+    workflow_paths: m8_workflows_rpc::PathApprovals,
     mcp_transport: alcomd_application::McpTransportObservations,
     #[cfg(feature = "test-kill-gates")]
     runtime_call_gate: tokio::sync::Mutex<Option<Arc<test_support::RuntimeCallGate>>>,
@@ -426,6 +428,7 @@ async fn initialize_daemon_with_adapters(
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
         mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
+        workflow_paths: Default::default(),
         mcp_transport: alcomd_application::McpTransportObservations::new(),
         #[cfg(feature = "test-kill-gates")]
         runtime_call_gate: tokio::sync::Mutex::new(None),
@@ -862,6 +865,18 @@ async fn dispatch_payload(
     }
     if matches!(
         request.method.as_str(),
+        alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE
+            | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
+            | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
+            | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
+            | alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY
+            | alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE
+            | alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE
+    ) {
+        return m8_workflows_rpc::dispatch(request, state, applications, &access).await;
+    }
+    if matches!(
+        request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
     ) {
@@ -872,6 +887,20 @@ async fn dispatch_payload(
     }
     if request.method.starts_with("mcp.oauth.") {
         return m8_oauth_rpc::dispatch(request, state, &applications.oauth, &access).await;
+    }
+    if access.is_mcp_client() && request.method == alcomd_protocol::METHOD_BACKUPS_CREATE {
+        let Ok(authentication) = m8_tools_rpc::auth(state, &access) else {
+            return error_action(Some(request.id), RpcError::permission_denied(), false);
+        };
+        return alcomd_application::with_workflow_authentication(
+            authentication,
+            alcomd_application::with_log_caller(
+                applications.store.clone(),
+                &access,
+                m5_backup_rpc::dispatch(request, state, &applications.backups, &access),
+            ),
+        )
+        .await;
     }
 
     let repository_read = matches!(
@@ -995,6 +1024,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
+        alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,

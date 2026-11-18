@@ -13,6 +13,7 @@ pub(super) fn create_plan(
     created_at_ms: u64,
 ) -> Result<BackupRestorePlanRecord, M5BackupError> {
     let transaction = transaction(connection)?;
+    require_mcp_restore(&transaction, owner, false)?;
     transaction
         .execute(
             "INSERT INTO backup_restore_plans (
@@ -56,8 +57,63 @@ pub(super) fn create_plan(
     )
     .map_err(|error| unavailable().with_source(error))?;
     let record = load_plan(&transaction, owner, draft.plan_id)?;
+    super::m8_workflows::install_plan_proof(&transaction, owner, draft.plan_id, created_at_ms)
+        .map_err(permission)?;
     transaction.commit().map_err(failure)?;
     Ok(record)
+}
+
+fn permission(cause: alcomd_application::ToolError) -> M5BackupError {
+    error(M5BackupErrorCode::PermissionDenied).with_source(cause)
+}
+
+fn require_mcp_restore(
+    db: &Connection,
+    owner: &PrincipalId,
+    apply: bool,
+) -> Result<(), M5BackupError> {
+    use alcomd_application::Permission;
+    let permissions: &[_] = if apply {
+        &[
+            Permission::ProjectsCreate,
+            Permission::BackupsRead,
+            Permission::BackupsManage,
+        ]
+    } else {
+        &[Permission::ProjectsCreate, Permission::BackupsRead]
+    };
+    super::m8_workflows::require(db, owner, permissions).map_err(permission)
+}
+
+pub(super) fn replay(
+    connection: &Connection,
+    owner: &PrincipalId,
+    plan_id: PlanId,
+    key: &IdempotencyKey,
+) -> Result<Option<BackupRestoreApplyOutcome>, M5BackupError> {
+    let fingerprint = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
+    require_mcp_restore(connection, owner, true)?;
+    super::m8_workflows::check_plan_proof(connection, owner, plan_id).map_err(permission)?;
+    let Some((saved, response)) = connection
+        .query_row(
+            "SELECT request_fingerprint,response_json FROM idempotency_records
+             WHERE principal_id=?1 AND method='backups.applyRestore' AND idempotency_key=?2",
+            params![owner.as_str(), key.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(failure)?
+    else {
+        return Ok(None);
+    };
+    if saved != fingerprint {
+        return Err(error(M5BackupErrorCode::IdempotencyConflict));
+    }
+    let mut outcome: BackupRestoreApplyOutcome =
+        serde_json::from_str(&response).map_err(|_| internal())?;
+    outcome.replayed = true;
+    outcome.schedule = false;
+    Ok(Some(outcome))
 }
 
 pub(super) fn accept(
@@ -69,24 +125,7 @@ pub(super) fn accept(
 ) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
     let fingerprint = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
     let transaction = transaction(connection)?;
-    if let Some((saved, response)) = transaction
-        .query_row(
-            "SELECT request_fingerprint,response_json FROM idempotency_records
-             WHERE principal_id=?1 AND method='backups.applyRestore' AND idempotency_key=?2",
-            params![owner.as_str(), key.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(failure)?
-    {
-        if saved != fingerprint {
-            return Err(error(M5BackupErrorCode::IdempotencyConflict));
-        }
-        let mut outcome: BackupRestoreApplyOutcome =
-            serde_json::from_str(&response).map_err(|_| internal())?;
-        outcome.replayed = true;
-        outcome.schedule = false;
-        transaction.commit().map_err(failure)?;
+    if let Some(outcome) = replay(&transaction, owner, plan_id, key)? {
         return Ok(outcome);
     }
     let plan = load_plan(&transaction, owner, plan_id)?;
@@ -279,6 +318,7 @@ pub(super) fn complete(
     {
         return Err(error(M5BackupErrorCode::BackupRestorePlanStale));
     }
+    let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     let existing = transaction
         .query_row(
             "SELECT project_id,root_path,path_identity_key FROM projects
@@ -313,7 +353,7 @@ pub(super) fn complete(
                      ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
                     params![
                         restored.project_id.to_string(),
-                        owner.as_str(),
+                        resource_owner.as_str(),
                         restored.observation.root_path,
                         restored.observation.path_identity_key,
                         super::m3::project_type(restored.observation.project_type),
@@ -330,7 +370,7 @@ pub(super) fn complete(
                     "INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,
                         principal_id,occurred_at_ms,payload_json)
                      VALUES (?1,'project.registered','project',?2,1,?3,?4,'{}')",
-                    params![Uuid::new_v4().to_string(), restored.project_id.to_string(), owner.as_str(), integer(completed_at_ms)?],
+                    params![Uuid::new_v4().to_string(), restored.project_id.to_string(), resource_owner.as_str(), integer(completed_at_ms)?],
                 )
                 .map_err(failure)?;
         }
@@ -395,14 +435,18 @@ pub(super) fn finish_success(
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let next = revision.checked_add(1).ok_or_else(internal)?;
-    let result = serde_json::json!({
+    let mut result = serde_json::json!({
         "backupId": plan.draft.backup_id,
         "projectId": plan.draft.project_id,
-        "target": plan.draft.target,
         "packagesRequireResolve": plan.draft.exclude_vpm_packages,
         "excludedPackages": plan.draft.excluded_packages,
-    })
-    .to_string();
+    });
+    if owner.as_str().starts_with("mcp:") {
+        result["targetName"] = serde_json::json!(plan.draft.target.leaf);
+    } else {
+        result["target"] = serde_json::json!(plan.draft.target);
+    }
+    let result = result.to_string();
     transaction
         .execute(
             "UPDATE operations SET state='succeeded',revision=?1,result_json=?2,error_code=NULL,
@@ -573,7 +617,7 @@ pub(super) fn completed(
         .collect()
 }
 
-fn load_plan(
+pub(super) fn load_plan(
     connection: &Connection,
     owner: &PrincipalId,
     plan_id: PlanId,

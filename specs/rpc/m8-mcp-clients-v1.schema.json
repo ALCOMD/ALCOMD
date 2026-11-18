@@ -17,7 +17,11 @@
                         "events.read",
                         "repositories.read",
                         "repositories.manage",
-                        "packages.read"
+                        "packages.read",
+                        "backups.read",
+                        "backups.manage",
+                        "projects.manage",
+                        "projects.create"
                     ]
                 },
                 "resourceKind": {

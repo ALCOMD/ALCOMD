@@ -77,6 +77,19 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 `mcp.repositories.v1` 提供 [MCP 工具](repositories-v1.schema.json) 和 [Core RPC](../rpc/m8-mcp-repositories-v1.schema.json)。`alcomd_list_repositories` 用 `repositories.read` 浏览共用登记列表。`alcomd_inspect_repository` 检查远程地址，同时有 `repositories.manage` 时提供 60 秒有效、绑定到当前认证的预览 ID。`alcomd_register_repository` 要求显式确认原预览，Core 在提交前检查来源证据，变动时需要重新检查。`alcomd_refresh_repository` 和 `alcomd_remove_repository` 使用实际仓库 ID 和修订，移除另需显式确认与内置保护。三项写入均要求 `repositories.manage` 和幂等键，以原参数同键恢复。凭据及本地路径由本机入口管理，Core 在原规则下刷新这些已登记来源，安全响应省略来源地址与凭据。
 
+## 项目和备份
+
+`mcp.project-workflows.v1` 接通同一份 Core 项目和备份登记。工具、参数及结果见[工具 Schema](project-workflows-v1.schema.json)和 [Core RPC Schema](../rpc/m8-mcp-project-workflows-v1.schema.json)。
+
+- `alcomd_register_project` 登记现有项目。默认来源使用当前项目目录内的相对路径。根外登记需要本机所有者对该目录单独批准。
+- `alcomd_list_project_templates` 读取可用于创建的模板。创建可指定模板 ID 和修订。含包的模板依然需要现有包与仓库能力。
+- `alcomd_plan_project_copy` 冻结源项目修订和目标后供审阅。确认后用 `alcomd_apply_project_copy` 提交原 Plan。
+- `alcomd_list_backups`、`alcomd_get_backup`、`alcomd_create_backup` 使用现有备份目录和归档规则。恢复从已登记备份生成 Plan，并在确认后恢复到新项目。
+
+默认发布目标使用当前项目目录和单一目录名。根外操作由本机所有者运行 `alcomd-cli mcp approve-path --client <id> --purpose <register|create|copy|restore> --path <absolute-path>` 核对并确认。仅把得到的不透明审批 ID 交给该 MCP 客户端。复制和恢复的 Apply 需再次提供原审批 ID。Core 在接受任务前核对授权、目的地和原 Plan。已接受任务通过现有 Operation 查询或取消。写响应丢失时按原参数同键恢复。
+
+四项能力 `projects.manage`、`projects.create`、`backups.read` 和 `backups.manage` 默认关闭。工具目录按当前客户端授权及 OAuth 上限生成。共享资源归 Core 的本机所有者，Plan、Operation 和幂等记录归发起请求的实际客户端。对外结果只返回稳定 ID、必要的摘要和目标名称。
+
 ## 客户端接入速查
 
 为每个客户端单独创建身份，打开实际需要的能力，再由本机所有者用 `alcomd-cli mcp client issue-credential` 签发 Bearer 或 STDIO 凭据。凭据交给客户端的受控秘密入口。每次轮换立即使旧凭据失效。

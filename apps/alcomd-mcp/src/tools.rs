@@ -13,8 +13,10 @@ pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.s
 const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
 const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
+const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
 mod packages;
 mod repositories;
+mod workflows;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
@@ -24,6 +26,8 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         PACKAGE_CONTRACT
     } else if repositories::recognized(name) {
         REPOSITORY_CONTRACT
+    } else if workflows::recognized(name) {
+        WORKFLOW_CONTRACT
     } else {
         CONTRACT
     };
@@ -375,6 +379,15 @@ fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
         {
             return Err(Failure::InvalidCore);
         }
+        if workflows::operation_kind(&value.kind) {
+            value.result = value
+                .result
+                .map(|result| workflows::operation_result(&value.kind, result))
+                .transpose()?;
+            return Ok(snake(
+                serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
+            ));
+        }
         value.progress = None;
         if value.kind == "state.check" {
             if let Some(result) = value.result.as_ref() {
@@ -635,6 +648,12 @@ pub async fn execute(
             return Err(super::unsupported_method());
         }
         return repositories::execute(client, params).await;
+    }
+    if workflows::recognized(params.name.as_ref()) {
+        if !client.supports_capability(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1) {
+            return Err(super::unsupported_method());
+        }
+        return workflows::execute(client, params).await;
     }
     if packages::recognized(params.name.as_ref()) {
         if !client.supports_capability(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {

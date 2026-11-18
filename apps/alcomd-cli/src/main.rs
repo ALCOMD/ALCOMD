@@ -158,6 +158,15 @@ enum SystemCommand {
 
 #[derive(Debug, Subcommand)]
 enum McpCommand {
+    /// Approve one exact external path for a registered MCP client.
+    ApprovePath {
+        #[arg(long = "client")]
+        client_id: String,
+        #[arg(long, value_enum)]
+        purpose: McpPathPurpose,
+        #[arg(long)]
+        path: PathBuf,
+    },
     Oauth {
         #[command(subcommand)]
         command: m8_oauth::OAuthCommand,
@@ -167,6 +176,25 @@ enum McpCommand {
         #[command(subcommand)]
         command: McpClientCommand,
     },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum McpPathPurpose {
+    Register,
+    Create,
+    Copy,
+    Restore,
+}
+
+impl From<McpPathPurpose> for alcomd_protocol::McpProjectPathPurpose {
+    fn from(value: McpPathPurpose) -> Self {
+        match value {
+            McpPathPurpose::Register => Self::Register,
+            McpPathPurpose::Create => Self::Create,
+            McpPathPurpose::Copy => Self::Copy,
+            McpPathPurpose::Restore => Self::Restore,
+        }
+    }
 }
 #[derive(Debug, Subcommand)]
 enum McpClientCommand {
@@ -632,6 +660,15 @@ fn validate_mcp_output(
     stdout_is_terminal: bool,
 ) -> Result<(), CliError> {
     if let Command::Mcp {
+        command: McpCommand::ApprovePath { path, .. },
+    } = command
+        && (options.dry_run || options.no_wait || !path.is_absolute())
+    {
+        return Err(CliError::Usage(
+            "approve-path requires an exact absolute path and a confirmed request",
+        ));
+    }
+    if let Command::Mcp {
         command: McpCommand::Oauth { command },
     } = command
     {
@@ -666,6 +703,17 @@ async fn execute(
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
+        Command::Mcp { command: McpCommand::ApprovePath { client_id, purpose, path } } => {
+            if !client.supports_capability(alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1) {
+                return Err(CliError::Usage("the connected Core does not support project path approvals"));
+            }
+            let path = path.to_str().ok_or(CliError::Usage("path encoding is unsupported"))?.to_owned();
+            eprintln!("Approve {:?} at {} for MCP client {} for ten minutes.", purpose, path.escape_debug(), client_id.escape_debug());
+            confirm_high_impact(options)?;
+            serde_json::to_value(client.mcp_project_path_approve(alcomd_protocol::McpProjectPathApproveParams {
+                client_id, purpose: purpose.into(), path, confirm: true
+            }).await?)
+        }
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::List { cursor, limit } => serde_json::to_value(client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit }).await?),
@@ -1389,6 +1437,9 @@ async fn execute(
 impl Command {
     fn name(&self) -> &'static str {
         match self {
+            Self::Mcp {
+                command: McpCommand::ApprovePath { .. },
+            } => "mcp approve-path",
             Self::Mcp {
                 command: McpCommand::Oauth { command },
             } => m8_oauth::name(command),
