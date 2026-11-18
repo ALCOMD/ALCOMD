@@ -1655,6 +1655,10 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 批准前不扩展这些接口、权限或数据库状态。扩展人工延期、普通浏览器受信任 TLS、实际 Codex 订阅消费、持续满载与历史 Host `resource_limit` 按现有责任单独记结果。
 
+**认证来源的下一项具体差异（待审批）**。用一个默认关闭的 `repositories.use-authenticated` 全局能力接通已登记的受保护来源，不增加 RPC 或持久状态。`mcp.packages.query`、`mcp.packages.plan`、已有 Apply 沿用当前字段和方法，仓库读取、包读取与写入仍分别需要既有能力。只在 Core 同时验证当前授权及 OAuth consent 上限后，允许使用相关仓库已有的凭据引用、包下载认证头或带参数的已登记来源。同一来源规则覆盖目录、Plan 和传递依赖。开启后目录报告实际可用性，Plan/错误/事件仍只给稳定来源 ID 和安全名称，完整 URL、认证材料与内部凭据引用留在 Core。撤销阻止尚未接受的 Plan，已接受任务沿用已有冻结和恢复语义。既有身份、token 和授权快照不补授新能力。管理权限 Host/WIT 的 grant `permission` 已是 string，增加目录项和对应 OAuth scope 即可，现有形状保持。验证重点是跨角色目录一致性、OAuth 未同意新 scope 的拒绝、依赖不可借受保护源兜底及下载的已有源授权检查。
+
+仓库增删保留独立差异。现有检查预览绑连接，HTTP 每次请求建立新连接；现有登记/移除持久化同时使用调用者作资源 owner 与幂等归属。接线前需区分这两个身份，并明确绑定实际来源与确认，不得把连接预览复用失败变成无确认写入。认证来源使用授权不授予登记、删除或管理凭据的权力。
+
 ### 2026-11-19 首批包目录本地候选
 
 代码 `495cd4dd82aefe0e25afae83c5b6af153cc11d8d` 已接通两个专用 RPC、五个新增工具、协商与目录筛选。新 Plan 的只读投影去掉内部来源 pin，继续在 Core 冻结来源、校验真实认证、原 Plan 和当前可见性，复用既有 Apply、Operation 与恢复。无 State、Config、权限名称、生产依赖或 WIT 变更。兼容增加 RPC/tool 能力，现有六工具输入和输出形状保持。
@@ -1670,3 +1674,11 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 证据位于 `target/m8-package-catalog-20261119/`、`target/m8-package-catalog-regressions-20261119/` 和 `target/m8-package-catalog-final-20261119/`。每次完成测试后均恢复原隔离 Core/GUI、原数据及 WebView 配置，实际比较五组公开状态一致，最终 GUI 129108 可见且响应并连接 Core 124728。没有操作原开发数据、真实工程或 Unity，没有恢复桌面控制。
 
 新工具的普通 HTTPS 仓库实际下载、OAuth 上限专项及签名 Provider 合并目录复验仍需补齐。二进制本地候选无对应 Hosted CI/CodeQL，旧结果保持原 SHA。认证来源与其余流程继续按上节集中审批，M8 仍进行中。
+
+### 2026-11-19 包目录 OAuth 与 HTTPS 补验
+
+`33aca62a5a1efc82702bc4ef6f73fd8435e53435` 修复了 HTTP 准入的本地工具定义只覆盖旧六项的问题。首次 OAuth 用例中，Core 目录按 consent 隐藏新安装工具，HTTP 备用定义找不到该名称，提前返回 404。修复使准入同时从两份已批准 Schema 识别内置工具，目录仍由 Core 权威筛选，实际拒绝沿用 OAuth 的 403 `insufficient_scope`。`d2cf20c249b9001ebc866899344cb7398839324b` 只给测试门控构建增加 Host 预检阶段、时间和退出状态证据。无公共合同、State、Config、权限或依赖变更。
+
+- 最终两个独立 Windows 隔离测试共用 SHA-256 `b82bcac7599261d46146b449c236550257efd6f2c547f4a887f195fb56c3b8a1`。冻结 SDK→回环 HTTPS/OAuth→真实 Core→匿名 HTTPS VPM 源 **1/0，4.25 秒**。全局仓库读取与项目读取按各自授权，读 token 无法生成 Plan，计划 token 无法 Apply，完整 token 仅执行原 Plan。真实 TLS 下载一次，检查归档摘要与安装内容，源端未收到 OAuth 凭据或 referer，同键回读同一 Operation。测试证书仅由门控构建的隔离客户端显式信任，系统信任保持。
+- 最终签名 Provider **1/0，95.44 秒**，执行了真实安装、合并目录分页、权限隔离及副作用用例。两个 Host 预检退出均为 0，分别 4031 ms 和 3250 ms。上一个带诊断候选的 Provider 也独立通过 1/0，104.52 秒，其同轮 OAuth 用例保留 404 失败。更早两轮 `extension_package_invalid` 未复现，历史原因仍未确认，未改变原预检限时或签名验证。
+- MCP 单元 15/0，四个受影响 Rust 包严格 Clippy、fmt、metadata、xtask、diff 通过。原隔离 GUI 134448 恢复可见且响应，实际连接原隔离数据上的 Core 125516，五组公开状态一致。证据在 `target/m8-package-source-oauth-20261119/` 和 `target/m8-package-source-oauth-final-20261119/`。本轮未推送，未取得新候选 Hosted CI/CodeQL；认证来源的新增授权仍待集中审批，M8 保持进行中。
