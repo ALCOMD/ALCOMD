@@ -1,5 +1,143 @@
 use super::*;
 
+#[cfg(windows)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires the reviewed Claude Code executable and an exclusive Windows Core endpoint"]
+async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
+    use tokio::io::AsyncWriteExt;
+
+    let executable = std::path::PathBuf::from(
+        std::env::var_os("ALCOMD_TEST_CLAUDE_EXE").expect("reviewed Claude Code executable"),
+    );
+    assert!(executable.is_absolute() && executable.is_file());
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-business-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("isolated root");
+    let root = root.canonicalize().expect("canonical fixture root");
+    let profile = root.join("claude-profile");
+    std::fs::create_dir_all(&profile).expect("isolated profile");
+    let (stop_core, stopped) = tokio::sync::oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(root.join("data")),
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .expect("owner");
+    let actor = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Claude Code fixture".into(),
+            idempotency_key: "claude-fixture-client".into(),
+            grants: vec![grant("projects.read", "global", "*")],
+        })
+        .await
+        .expect("dedicated client");
+    let issued = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: actor.client_id,
+            expected_revision: actor.revision,
+            idempotency_key: "claude-fixture-credential".into(),
+        })
+        .await
+        .expect("dedicated credential");
+    let http = HttpFixture::start().await;
+    let configuration = json!({
+        "type": "http",
+        "url": http.url,
+        "headers": {"Authorization": "Bearer ${ALCOMD_CLAUDE_BEARER}"}
+    });
+    let profile_file = profile.join(".claude.json");
+    let sentinel = json!({"type": "http", "url": "http://127.0.0.1:1/mcp"});
+    std::fs::write(
+        &profile_file,
+        json!({"mcpServers": {"unrelated-fixture": sentinel}}).to_string(),
+    )
+    .expect("seed unrelated fixture entry");
+
+    let run = async |arguments: &[&str], input: Option<&serde_json::Value>| {
+        let mut command = tokio::process::Command::new(&executable);
+        command
+            .creation_flags(0x08000000)
+            .current_dir(&root)
+            .env_clear()
+            .env("CLAUDE_CONFIG_DIR", &profile)
+            .env("DISABLE_NONESSENTIAL_TRAFFIC", "1")
+            .env("DISABLE_AUTOUPDATER", "1")
+            .env("ENABLE_CLAUDEAI_MCP_SERVERS", "false")
+            .env("ALCOMD_CLAUDE_BEARER", &issued.credential)
+            .args(arguments)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true);
+        for key in ["SystemRoot", "WINDIR", "PATH"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+        for key in ["USERPROFILE", "APPDATA", "LOCALAPPDATA", "TEMP", "TMP"] {
+            command.env(key, &profile);
+        }
+        let mut child = command.spawn().expect("start isolated Claude Code");
+        let mut stdin = child.stdin.take().expect("stdin");
+        if let Some(input) = input {
+            stdin
+                .write_all(input.to_string().as_bytes())
+                .await
+                .expect("send config without a credential");
+        }
+        drop(stdin);
+        tokio::time::timeout(Duration::from_secs(20), child.wait_with_output())
+            .await
+            .expect("Claude Code command deadline")
+            .expect("Claude Code exit")
+    };
+    let read_config = || {
+        let bytes = std::fs::read(&profile_file).expect("read isolated Claude profile");
+        assert!(
+            !bytes
+                .windows(issued.credential.len())
+                .any(|field| field == issued.credential.as_bytes()),
+            "only the environment variable reference belongs in the profile"
+        );
+        let profile: serde_json::Value = serde_json::from_slice(&bytes).expect("parse profile");
+        assert_eq!(profile["mcpServers"]["unrelated-fixture"], sentinel);
+        profile
+    };
+    let add = ["mcp", "add-json", "alcomd", "-", "--scope", "user"];
+    assert!(run(&add, Some(&configuration)).await.status.success());
+    assert_eq!(read_config()["mcpServers"]["alcomd"], configuration);
+    assert!(!run(&add, Some(&sentinel)).await.status.success());
+    assert_eq!(read_config()["mcpServers"]["alcomd"], configuration);
+    let result = run(&["mcp", "get", "alcomd"], None).await;
+    let status = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        result.status.success()
+            && status
+                .lines()
+                .any(|line| line.trim().starts_with("Status:") && line.ends_with("Connected")),
+        "Claude Code did not report a healthy direct HTTP connection"
+    );
+    assert!(
+        run(&["mcp", "remove", "alcomd", "--scope", "user"], None)
+            .await
+            .status
+            .success()
+    );
+    assert!(read_config()["mcpServers"].get("alcomd").is_none());
+    http.finish().await;
+    drop(owner);
+    stop_core.send(()).expect("stop Core");
+    daemon.await.expect("join").expect("Core shutdown");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     let _serial = REAL_CORE_LOCK.lock().await;

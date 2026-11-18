@@ -125,4 +125,31 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 4. 查看当前可用工具并运行一项已授权的读取。清理时用 `codex mcp remove alcomd` 移除该配置，并在 Core 中撤销专用客户端。配置名若不同，使用实际配置名。
 
-该版本在隔离配置开启 `mcp_2026_07_28` 后已实测 HTTP Bearer 和预登记 OAuth。STDIO 实测仍发送旧握手，不能接入冻结协议。ALCOMD 自动写入客户端配置、Claude Code、Cursor 和真实通知消费仍待验证。 [接入证据](../../docs/testing/m8-management-manual-20261115.md)
+该版本在隔离配置开启 `mcp_2026_07_28` 后已实测 HTTP Bearer 和预登记 OAuth。STDIO 实测仍发送旧握手，不能接入冻结协议。ALCOMD 自动写入客户端配置、Cursor 和真实通知消费仍待验证。 [接入证据](../../docs/testing/m8-management-manual-20261115.md)
+
+### Claude Code 2.1.327 的回环 HTTP 接入
+
+为 Claude Code 创建独立客户端，授予实际需要的能力并签发专用 Bearer。运行 `alcomd-mcp serve --port 0`，用它报告的地址替换示例。在专用 PowerShell 终端执行以下命令。
+
+```powershell
+@'
+{"type":"http","url":"http://127.0.0.1:实际端口/mcp","headers":{"Authorization":"Bearer ${ALCOMD_CLAUDE_BEARER}"}}
+'@ | claude mcp add-json alcomd - --scope user
+```
+
+同名条目已存在时，此命令拒绝覆盖。核对现有条目后可以使用新名称。运行 `claude mcp get alcomd`，确认状态显示 `Connected`。在同一终端使用 Claude Code 时也需要保留环境变量。
+
+```powershell
+if (Test-Path Env:ALCOMD_CLAUDE_BEARER) { throw '请在尚未设置此变量的专用终端运行' }
+$env:ALCOMD_CLAUDE_BEARER = [System.Net.NetworkCredential]::new(
+    '', (Read-Host '输入此客户端的 Bearer 凭据' -AsSecureString)
+).Password
+try {
+    claude mcp get alcomd
+    # 连接通过后，可在此处启动 claude。
+} finally {
+    Remove-Item Env:ALCOMD_CLAUDE_BEARER
+}
+```
+
+清理时运行 `claude mcp remove alcomd --scope user`，并在 Core 中撤销该专用客户端。Windows 独立配置已实测添加、拒绝同名覆盖、真实回环 HTTP 连接和移除。Claude Code 的 STDIO、OAuth、模型发起的工具调用及通知消费未在此次检查中执行。 [Claude Code MCP 配置](https://code.claude.com/docs/en/mcp) · [协议支持记录](https://code.claude.com/docs/en/changelog)
