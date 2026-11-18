@@ -100,6 +100,8 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展可以显式授予这些既有权限，OAuth 另受当次同意的能力上限约束。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
 
+项目列表与详情在 `projects.read` 下返回同一 Core 登记路径 `root_path`。MCP 的项目操作继续使用稳定项目 ID。
+
 ## 客户端接入速查
 
 为每个客户端单独创建身份，打开实际需要的能力，再由本机所有者用 `alcomd-cli mcp client issue-credential` 签发 Bearer 或 STDIO 凭据。凭据交给客户端的受控秘密入口。每次轮换立即使旧凭据失效。

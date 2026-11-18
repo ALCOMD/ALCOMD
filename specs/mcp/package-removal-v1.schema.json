@@ -899,6 +899,11 @@
                 "project_id": {
                     "$ref": "#/$defs/id"
                 },
+                "root_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
+                },
                 "display_name": {
                     "type": "string",
                     "maxLength": 1024
@@ -924,6 +929,7 @@
             },
             "required": [
                 "project_id",
+                "root_path",
                 "revision",
                 "project_type",
                 "unity_version",
@@ -936,6 +942,11 @@
             "properties": {
                 "project_id": {
                     "$ref": "#/$defs/id"
+                },
+                "root_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
                 },
                 "display_name": {
                     "type": "string",
@@ -1046,6 +1057,7 @@
             },
             "required": [
                 "project_id",
+                "root_path",
                 "revision",
                 "project_type",
                 "unity_version",

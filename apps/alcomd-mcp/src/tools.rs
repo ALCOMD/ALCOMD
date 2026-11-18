@@ -333,7 +333,14 @@ fn project(value: rpc::ProjectSnapshot, detail: bool) -> Result<Value, Failure> 
         .filter(|v| revision(*v))
         .ok_or(Failure::InvalidCore)?;
     let state = value.directory_state.ok_or(Failure::InvalidCore)?;
-    let mut output = json!({"project_id":id,"revision":rev,"project_type":value.project_type,"unity_version":value.unity_version,"directory_state":state});
+    let mut output = json!({
+        "project_id": id,
+        "root_path": value.root_path,
+        "revision": rev,
+        "project_type": value.project_type,
+        "unity_version": value.unity_version,
+        "directory_state": state
+    });
     if let Some(name) = value.display_name {
         output["display_name"] = json!(name);
     }

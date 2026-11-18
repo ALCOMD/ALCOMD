@@ -995,6 +995,17 @@ async fn package_removal_flow(http: bool) {
         ]
         .contains(&listed["projects"][0]["project_id"].as_str().expect("ID"))
     );
+    let list_entry = owner
+        .project_get(
+            listed["projects"][0]["project_id"]
+                .as_str()
+                .expect("ID")
+                .to_owned(),
+        )
+        .await
+        .expect("same project in the native registry")
+        .project;
+    assert_eq!(listed["projects"][0]["root_path"], list_entry.root_path);
     assert_eq!(
         data(
             call(&sa, &mut trace, "get_project", json!({"project_id":rid}))
@@ -1012,7 +1023,7 @@ async fn package_removal_flow(http: bool) {
         read["locked_dependencies"][0]["package_id"],
         "com.example.fixture"
     );
-    assert!(read.get("root_path").is_none());
+    assert_eq!(read["root_path"], first.root_path);
     error(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.absent"})).await.expect("real business failure"),"package_not_found");
     let old_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     let args = json!({"plan_id":old_plan["plan_id"],"expected_revision":old_plan["project_revision"],"idempotency_key":"apply","confirm":true});
@@ -1408,7 +1419,16 @@ async fn package_removal_flow(http: bool) {
     if let Some(secret) = rotated_secret {
         assert!(!visible.contains(&secret));
     }
-    assert!(!visible.contains("root_path"));
+    for entry in &trace {
+        let project_read = matches!(
+            entry["name"].as_str(),
+            Some("alcomd_list_projects" | "alcomd_get_project")
+        );
+        let result = &entry["result"]["structuredContent"];
+        if !project_read || result.get("data").is_none() {
+            assert!(!entry["result"].to_string().contains("\"root_path\""));
+        }
+    }
     std::fs::write(root.join("tool-trace.json"), trace_json).expect("public contract evidence");
     std::fs::write(root.join("coverage.json"),json!({"cancelTerminal":cancel_terminal["state"],"realSdk":"rmcp 3.10.0 Discover","business":"removed actual VPM package","revoked":true,"resourceOwnerPreserved":true}).to_string()).expect("coverage");
     if let Some(http) = http {
