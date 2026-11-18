@@ -3,6 +3,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use serde::Deserialize;
 
@@ -284,7 +285,8 @@ fn check_unsafe_boundary(
         }
     }
 
-    scan_rust_sources(root, root, APPROVED, errors)?;
+    let nested_worktrees = registered_nested_worktrees(root)?;
+    scan_rust_sources(root, root, &nested_worktrees, APPROVED, errors)?;
 
     let platform_manifest: toml::Value =
         read_toml(&root.join("crates/alcomd-platform/Cargo.toml"))?;
@@ -297,13 +299,60 @@ fn check_unsafe_boundary(
     Ok(())
 }
 
+fn registered_nested_worktrees(
+    root: &Path,
+) -> Result<BTreeSet<PathBuf>, Box<dyn std::error::Error>> {
+    let local_worktrees = Path::new(".local/worktrees");
+    let mut nested = BTreeSet::new();
+    if !root.join(local_worktrees).is_dir() || !root.join(".git").exists() {
+        return Ok(nested);
+    }
+
+    let listing = Command::new("git")
+        .args([
+            "--no-optional-locks",
+            "worktree",
+            "list",
+            "--porcelain",
+            "-z",
+        ])
+        .current_dir(root)
+        .output()?;
+    if !listing.status.success() {
+        return Err("could not enumerate this checkout's registered worktrees".into());
+    }
+    let canonical_root = fs::canonicalize(root)?;
+    for field in listing.stdout.split(|byte| *byte == 0) {
+        let Some(path) = field.strip_prefix(b"worktree ") else {
+            continue;
+        };
+        let path = Path::new(std::str::from_utf8(path)?);
+        let path = match fs::canonicalize(path) {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.into()),
+        };
+        if let Ok(relative) = path.strip_prefix(&canonical_root)
+            && relative.parent() == Some(local_worktrees)
+            && path.join(".git").is_file()
+        {
+            nested.insert(relative.to_owned());
+        }
+    }
+    Ok(nested)
+}
+
 fn scan_rust_sources(
     root: &Path,
     path: &Path,
+    nested_worktrees: &BTreeSet<PathBuf>,
     approved: &[&str],
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if path.is_dir() {
+        if nested_worktrees.contains(path.strip_prefix(root)?) {
+            return Ok(());
+        }
         for entry in fs::read_dir(path)? {
             let child = entry?.path();
             let name = child
@@ -311,7 +360,7 @@ fn scan_rust_sources(
                 .and_then(OsStr::to_str)
                 .unwrap_or_default();
             if !matches!(name, "target" | "node_modules" | ".git") {
-                scan_rust_sources(root, &child, approved, errors)?;
+                scan_rust_sources(root, &child, nested_worktrees, approved, errors)?;
             }
         }
         return Ok(());
