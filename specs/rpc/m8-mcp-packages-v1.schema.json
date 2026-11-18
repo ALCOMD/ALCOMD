@@ -1,0 +1,951 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/m8-mcp-packages-v1.json",
+    "title": "Approved MCP package catalog and plan projection",
+    "x-capability": "mcp.packages.catalog-plan.v1",
+    "x-methods": {
+        "mcp.packages.query": {
+            "params": "queryParams",
+            "result": "queryResult"
+        },
+        "mcp.packages.plan": {
+            "params": "planParams",
+            "result": "planResult"
+        }
+    },
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+        },
+        "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "packageId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "cursor": {
+            "type": "string",
+            "pattern": "^[0-9]{1,8}\\.[0-9a-f]{64}$"
+        },
+        "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+        },
+        "source": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "repository"
+                        },
+                        "repositoryId": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "repositoryId"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "user_package"
+                        },
+                        "userPackageId": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "userPackageId"
+                    ]
+                }
+            ]
+        },
+        "selector": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "latest_compatible"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "exact"
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "version"
+                    ]
+                }
+            ]
+        },
+        "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "unity": {
+                    "enum": [
+                        "not_required",
+                        "compatible",
+                        "incompatible",
+                        "unknown"
+                    ]
+                },
+                "eligibility": {
+                    "enum": [
+                        "eligible",
+                        "blocked",
+                        "unknown"
+                    ]
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                    }
+                }
+            },
+            "required": [
+                "unity",
+                "eligibility",
+                "reasons"
+            ]
+        },
+        "sourceItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "displayName": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "availability": {
+                    "enum": [
+                        "available",
+                        "hidden",
+                        "authentication_required",
+                        "unsupported",
+                        "refresh_required"
+                    ]
+                }
+            },
+            "required": [
+                "source",
+                "displayName",
+                "availability"
+            ]
+        },
+        "summaryItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "displayName": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "lockedVersion": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/source"
+                    },
+                    "maxItems": 4096
+                },
+                "compatibility": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/compatibility"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "packageId",
+                "displayName",
+                "version",
+                "lockedVersion",
+                "sources",
+                "compatibility"
+            ]
+        },
+        "versionItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "displayName": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "description": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "unity": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "unityRelease": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "documentationUrl": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "changelogUrl": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "aliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "maxItems": 128
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "maxItems": 128
+                },
+                "legacyPackages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/packageId"
+                    },
+                    "maxItems": 128
+                },
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                    }
+                },
+                "yanked": {
+                    "type": "boolean"
+                },
+                "compatibility": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/compatibility"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "packageId",
+                "version",
+                "source",
+                "displayName",
+                "description",
+                "unity",
+                "unityRelease",
+                "documentationUrl",
+                "changelogUrl",
+                "aliases",
+                "keywords",
+                "legacyPackages",
+                "dependencies",
+                "yanked",
+                "compatibility"
+            ]
+        },
+        "planMutation": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "install",
+                        "remove",
+                        "replace"
+                    ]
+                },
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "fromVersion": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "toVersion": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "source": {
+                    "type": "null"
+                }
+            },
+            "required": [
+                "kind",
+                "packageId"
+            ]
+        },
+        "planChanges": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "formatVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mutations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/planMutation"
+                    },
+                    "maxItems": 4096
+                },
+                "dependencyEdges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "fromPackageId": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "toPackageId": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "range": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            "direct": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "fromPackageId",
+                            "toPackageId",
+                            "range",
+                            "direct"
+                        ]
+                    }
+                },
+                "legacyRemovals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            "kind": {
+                                "enum": [
+                                    "file",
+                                    "directory"
+                                ]
+                            },
+                            "packageId": {
+                                "$ref": "#/$defs/packageId"
+                            }
+                        },
+                        "required": [
+                            "path",
+                            "kind",
+                            "packageId"
+                        ]
+                    }
+                },
+                "vpmManifestSha256": {
+                    "$ref": "#/$defs/hash"
+                },
+                "removalConflicts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "unityCompatibilityOverrides": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                }
+            },
+            "required": [
+                "formatVersion",
+                "mutations",
+                "dependencyEdges",
+                "vpmManifestSha256"
+            ]
+        },
+        "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "planId": {
+                    "$ref": "#/$defs/id"
+                },
+                "projectId": {
+                    "$ref": "#/$defs/id"
+                },
+                "projectRevision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "action": {
+                    "enum": [
+                        "install",
+                        "reinstall"
+                    ]
+                },
+                "state": {
+                    "const": "unapplied"
+                },
+                "changeSetFingerprint": {
+                    "$ref": "#/$defs/hash"
+                },
+                "changeSet": {
+                    "$ref": "#/$defs/planChanges"
+                }
+            },
+            "required": [
+                "planId",
+                "projectId",
+                "projectRevision",
+                "action",
+                "state",
+                "changeSetFingerprint",
+                "changeSet"
+            ]
+        },
+        "planSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "displayName": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "packageId",
+                "source",
+                "displayName"
+            ]
+        },
+        "project": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "projectId": {
+                    "$ref": "#/$defs/id"
+                },
+                "expectedRevision": {
+                    "$ref": "#/$defs/revision"
+                }
+            },
+            "required": [
+                "projectId",
+                "expectedRevision"
+            ]
+        },
+        "view": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "sources"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "summary"
+                        },
+                        "query": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 256,
+                                    "minLength": 0
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "repositoryId": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/id"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "versions"
+                        },
+                        "packageId": {
+                            "$ref": "#/$defs/packageId"
+                        },
+                        "version": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "maxLength": 256,
+                                    "minLength": 1
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        },
+                        "source": {
+                            "anyOf": [
+                                {
+                                    "$ref": "#/$defs/source"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "packageId"
+                    ]
+                }
+            ]
+        },
+        "queryParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "view": {
+                    "$ref": "#/$defs/view"
+                },
+                "project": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/project"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "cursor": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/cursor"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/limit"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "view"
+            ],
+            "if": {
+                "properties": {
+                    "view": {
+                        "properties": {
+                            "kind": {
+                                "const": "sources"
+                            }
+                        }
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "project": {
+                        "type": "null"
+                    }
+                }
+            }
+        },
+        "queryResult": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "sources"
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/sourceItem"
+                            },
+                            "maxItems": 200
+                        },
+                        "snapshot": {
+                            "$ref": "#/$defs/hash"
+                        },
+                        "catalogComplete": {
+                            "type": "boolean"
+                        },
+                        "nextCursor": {
+                            "$ref": "#/$defs/cursor"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "items",
+                        "snapshot",
+                        "catalogComplete"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "summary"
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/summaryItem"
+                            },
+                            "maxItems": 200
+                        },
+                        "snapshot": {
+                            "$ref": "#/$defs/hash"
+                        },
+                        "catalogComplete": {
+                            "type": "boolean"
+                        },
+                        "nextCursor": {
+                            "$ref": "#/$defs/cursor"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "items",
+                        "snapshot",
+                        "catalogComplete"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "versions"
+                        },
+                        "items": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/versionItem"
+                            },
+                            "maxItems": 200
+                        },
+                        "snapshot": {
+                            "$ref": "#/$defs/hash"
+                        },
+                        "catalogComplete": {
+                            "type": "boolean"
+                        },
+                        "nextCursor": {
+                            "$ref": "#/$defs/cursor"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "items",
+                        "snapshot",
+                        "catalogComplete"
+                    ]
+                }
+            ]
+        },
+        "intent": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "install"
+                        },
+                        "versionSelector": {
+                            "$ref": "#/$defs/selector"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "versionSelector"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "reinstall"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                }
+            ]
+        },
+        "planParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project": {
+                    "$ref": "#/$defs/project"
+                },
+                "packageId": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "intent": {
+                    "$ref": "#/$defs/intent"
+                },
+                "source": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/source"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "project",
+                "packageId",
+                "intent"
+            ]
+        },
+        "planResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan": {
+                    "$ref": "#/$defs/plan"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/planSource"
+                    },
+                    "maxItems": 4096
+                }
+            },
+            "required": [
+                "plan",
+                "sources"
+            ]
+        }
+    }
+}

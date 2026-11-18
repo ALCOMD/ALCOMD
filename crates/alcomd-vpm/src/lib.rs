@@ -99,6 +99,18 @@ pub fn classify_prerelease(version: &str) -> Option<bool> {
         .map(|version| !version.pre.is_empty())
 }
 
+/// Compare validated catalog versions by semantic precedence, then deterministic text order.
+pub fn compare_catalog_versions(left: &str, right: &str) -> std::cmp::Ordering {
+    match (semver::Version::parse(left), semver::Version::parse(right)) {
+        (Ok(left_version), Ok(right_version)) => {
+            range::compare_precedence(&left_version, &right_version).then_with(|| left.cmp(right))
+        }
+        (Ok(_), Err(_)) => std::cmp::Ordering::Greater,
+        (Err(_), Ok(_)) => std::cmp::Ordering::Less,
+        (Err(_), Err(_)) => left.cmp(right),
+    }
+}
+
 /// Creates the same target lock used by project create, restore and copy publication.
 #[must_use]
 pub fn project_creation_resource(

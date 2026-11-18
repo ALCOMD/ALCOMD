@@ -843,12 +843,29 @@ pub trait M4Store: RepositoryArchivePinStore {
         settings: crate::ConfigPackageSettings,
     ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send;
 
+    fn delegated_resolver_catalog(
+        &self,
+        _settings: crate::ConfigPackageSettings,
+    ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send {
+        std::future::ready(Err(M4Error::new(M4ErrorCode::PermissionDenied)))
+    }
+
     fn create_package_plan(
         &self,
         owner: PrincipalId,
         draft: PackagePlanDraft,
         created_at_ms: u64,
     ) -> impl Future<Output = Result<PackagePlanRecord, M4Error>> + Send;
+
+    fn create_delegated_package_plan(
+        &self,
+        _owner: PrincipalId,
+        _authentication: crate::ToolAuthentication,
+        _draft: PackagePlanDraft,
+        _created_at_ms: u64,
+    ) -> impl Future<Output = Result<PackagePlanRecord, M4Error>> + Send {
+        std::future::ready(Err(M4Error::new(M4ErrorCode::PermissionDenied)))
+    }
 
     fn get_package_plan(
         &self,
@@ -896,6 +913,18 @@ pub trait M4Store: RepositoryArchivePinStore {
             )
             .await
         }
+    }
+
+    fn accept_delegated_package_plan(
+        &self,
+        _owner: PrincipalId,
+        _authentication: crate::ToolAuthentication,
+        _plan_id: PlanId,
+        _expected_revision: Revision,
+        _idempotency_key: IdempotencyKey,
+        _created_at_ms: u64,
+    ) -> impl Future<Output = Result<ApplyPlanOutcome, M4Error>> + Send {
+        std::future::ready(Err(M4Error::new(M4ErrorCode::PermissionDenied)))
     }
 
     fn append_filesystem_journal(
@@ -993,6 +1022,38 @@ pub fn validate_package_source_settings(
     }
 }
 
+/// Only anonymous HTTPS endpoints and enrolled immutable user archives are delegated.
+pub fn delegated_package_url(value: &str) -> bool {
+    url::Url::parse(value).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str().is_some()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.query().is_none()
+            && url.fragment().is_none()
+    })
+}
+
+impl ResolverCatalog {
+    pub fn restrict_to_delegated_sources(&mut self) {
+        self.entries.retain(|entry| match &entry.source {
+            ResolverCatalogSource::Repository {
+                repository_locator,
+                artifact_url,
+                credential_reference,
+                download_headers_present,
+                ..
+            } => {
+                credential_reference.is_none()
+                    && !download_headers_present
+                    && delegated_package_url(repository_locator)
+                    && delegated_package_url(artifact_url)
+            }
+            ResolverCatalogSource::UserPackage { .. } => true,
+        });
+    }
+}
+
 #[derive(Clone)]
 pub struct M4Application<S, A> {
     store: S,
@@ -1040,6 +1101,34 @@ where
         access: &AccessContext,
         request: PackagePlanRequest,
     ) -> Result<PackagePlanRecord, M4Error> {
+        self.plan_inner(access, request, None).await
+    }
+
+    pub async fn plan_delegated(
+        &self,
+        access: &AccessContext,
+        request: PackagePlanRequest,
+        authentication: crate::ToolAuthentication,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        if !access.is_mcp_client()
+            || !matches!(request.action, PlanAction::Install | PlanAction::Reinstall)
+            || request.allow_unity_incompatible
+        {
+            return Err(M4Error::new(M4ErrorCode::PermissionDenied));
+        }
+        self.plan_inner(access, request, Some(authentication)).await
+    }
+
+    pub async fn package_source_settings(&self) -> Result<crate::ConfigPackageSettings, M4Error> {
+        self.adapter.source_settings().await
+    }
+
+    async fn plan_inner(
+        &self,
+        access: &AccessContext,
+        request: PackagePlanRequest,
+        authentication: Option<crate::ToolAuthentication>,
+    ) -> Result<PackagePlanRecord, M4Error> {
         require(access, crate::Permission::ProjectsRead)?;
         require(access, crate::Permission::RepositoriesRead)?;
         require(access, crate::Permission::PackagesRead)?;
@@ -1075,6 +1164,10 @@ where
                 entries: Vec::new(),
                 complete: true,
             }
+        } else if authentication.is_some() {
+            self.store
+                .delegated_resolver_catalog(self.adapter.source_settings().await?)
+                .await?
         } else {
             self.store
                 .resolver_catalog(
@@ -1123,6 +1216,17 @@ where
             &self.adapter.source_settings().await?,
             &draft.source_set,
         )?;
+        if let Some(authentication) = authentication {
+            return self
+                .store
+                .create_delegated_package_plan(
+                    access.principal().clone(),
+                    authentication,
+                    draft,
+                    m4_time_ms()?,
+                )
+                .await;
+        }
         self.store
             .create_package_plan(access.principal().clone(), draft, m4_time_ms()?)
             .await
@@ -1135,6 +1239,18 @@ where
         expected_revision: Revision,
         idempotency_key: IdempotencyKey,
     ) -> Result<ApplyPlanOutcome, M4Error> {
+        self.apply_plan_authenticated(access, plan_id, expected_revision, idempotency_key, None)
+            .await
+    }
+
+    pub async fn apply_plan_authenticated(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+        authentication: Option<crate::ToolAuthentication>,
+    ) -> Result<ApplyPlanOutcome, M4Error> {
         require(access, crate::Permission::ProjectsRead)?;
         require(access, crate::Permission::RepositoriesRead)?;
         require(access, crate::Permission::PackagesRead)?;
@@ -1146,24 +1262,44 @@ where
             .store
             .get_package_plan(access.principal().clone(), plan_id)
             .await?;
+        let delegated = access.is_mcp_client()
+            && matches!(plan.action, PlanAction::Install | PlanAction::Reinstall);
         if access.is_mcp_client() {
             require(access, crate::Permission::OperationsRead)?;
-            if plan.action != PlanAction::Remove || !plan.source_set.is_empty() {
+            if (delegated && (authentication.is_none() || crate::tool_invocation().is_some()))
+                || (!delegated
+                    && (plan.action != PlanAction::Remove || !plan.source_set.is_empty()))
+            {
                 return Err(M4Error::new(M4ErrorCode::PermissionDenied));
             }
         }
+        let accept = || async {
+            if let Some(authentication) = authentication.filter(|_| delegated) {
+                self.store
+                    .accept_delegated_package_plan(
+                        access.principal().clone(),
+                        authentication,
+                        plan_id,
+                        expected_revision,
+                        idempotency_key,
+                        m4_time_ms()?,
+                    )
+                    .await
+            } else {
+                self.store
+                    .accept_package_plan_with_oauth(
+                        access.principal().clone(),
+                        plan_id,
+                        expected_revision,
+                        idempotency_key,
+                        m4_time_ms()?,
+                        access.oauth_guard().cloned(),
+                    )
+                    .await
+            }
+        };
         if plan.state == PlanState::Applied {
-            return self
-                .store
-                .accept_package_plan_with_oauth(
-                    access.principal().clone(),
-                    plan_id,
-                    expected_revision,
-                    idempotency_key,
-                    m4_time_ms()?,
-                    access.oauth_guard().cloned(),
-                )
-                .await;
+            return accept().await;
         }
         let _guard = self
             .locks
@@ -1185,6 +1321,10 @@ where
                 entries: Vec::new(),
                 complete: true,
             }
+        } else if delegated {
+            self.store
+                .delegated_resolver_catalog(self.adapter.source_settings().await?)
+                .await?
         } else {
             self.store
                 .resolver_catalog(
@@ -1206,20 +1346,8 @@ where
             |error| error.path().map(str::to_owned),
         )
         .await?;
-        let outcome = crate::log_transaction_step(
-            &action,
-            "accepted",
-            Some(target),
-            self.store.accept_package_plan_with_oauth(
-                access.principal().clone(),
-                plan_id,
-                expected_revision,
-                idempotency_key,
-                m4_time_ms()?,
-                access.oauth_guard().cloned(),
-            ),
-        )
-        .await?;
+        let outcome =
+            crate::log_transaction_step(&action, "accepted", Some(target), accept()).await?;
         if outcome.schedule {
             self.schedule(outcome.operation_id);
         }

@@ -1,0 +1,1085 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/package-catalog-plan-v1.json",
+    "title": "M8 delegated package catalog and plans",
+    "x-alcomd-protocol": "2026-07-28",
+    "x-alcomd-capability": "mcp.packages.catalog-plan.v1",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_package_sources",
+            "title": "List registered package sources",
+            "description": "Read package-source IDs and availability. Use these IDs to filter lists and select a version.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/sourceInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/sourcesOutput"
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "repositories.read",
+                "packages.read"
+            ]
+        },
+        {
+            "name": "alcomd_search_packages",
+            "title": "Search the package catalog",
+            "description": "List visible packages, optionally restricted to a repository or evaluated against a registered project.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/searchInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/summaryOutput"
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "repositories.read",
+                "packages.read"
+            ]
+        },
+        {
+            "name": "alcomd_get_package",
+            "title": "Read package versions",
+            "description": "Read metadata for a package, optionally selecting a version and source or checking project compatibility.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/detailInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/versionsOutput"
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "repositories.read",
+                "packages.read"
+            ]
+        },
+        {
+            "name": "alcomd_plan_package_install",
+            "title": "Review a package installation",
+            "description": "Plan one compatible installation. Show the complete plan and obtain confirmation before applying.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/installInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/planOutput"
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "repositories.read",
+                "packages.read",
+                "projects.read"
+            ]
+        },
+        {
+            "name": "alcomd_plan_package_reinstall",
+            "title": "Review a package reinstallation",
+            "description": "Plan a reinstallation of the current locked version. Show the complete plan and obtain confirmation before applying.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/reinstallInput"
+            },
+            "outputSchema": {
+                "$ref": "#/$defs/planOutput"
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "repositories.read",
+                "packages.read",
+                "projects.read"
+            ]
+        }
+    ],
+    "$defs": {
+        "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+        },
+        "hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+        },
+        "packageId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "cursor": {
+            "type": "string",
+            "pattern": "^[0-9]{1,8}\\.[0-9a-f]{64}$"
+        },
+        "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+        },
+        "source": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "repository"
+                        },
+                        "repository_id": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "repository_id"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "user_package"
+                        },
+                        "user_package_id": {
+                            "$ref": "#/$defs/id"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "user_package_id"
+                    ]
+                }
+            ]
+        },
+        "selector": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "latest_compatible"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "kind": {
+                            "const": "exact"
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "version"
+                    ]
+                }
+            ]
+        },
+        "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "unity": {
+                    "enum": [
+                        "not_required",
+                        "compatible",
+                        "incompatible",
+                        "unknown"
+                    ]
+                },
+                "eligibility": {
+                    "enum": [
+                        "eligible",
+                        "blocked",
+                        "unknown"
+                    ]
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                    }
+                }
+            },
+            "required": [
+                "unity",
+                "eligibility",
+                "reasons"
+            ]
+        },
+        "sourceInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "$ref": "#/$defs/cursor"
+                },
+                "limit": {
+                    "$ref": "#/$defs/limit"
+                }
+            },
+            "required": []
+        },
+        "searchInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "$ref": "#/$defs/cursor"
+                },
+                "limit": {
+                    "$ref": "#/$defs/limit"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "query": {
+                    "type": "string",
+                    "minLength": 0,
+                    "maxLength": 256
+                },
+                "repository_id": {
+                    "$ref": "#/$defs/id"
+                }
+            },
+            "required": [],
+            "dependentRequired": {
+                "project_id": [
+                    "expected_revision"
+                ],
+                "expected_revision": [
+                    "project_id"
+                ]
+            }
+        },
+        "detailInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {
+                    "$ref": "#/$defs/cursor"
+                },
+                "limit": {
+                    "$ref": "#/$defs/limit"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                }
+            },
+            "required": [
+                "package_id"
+            ],
+            "dependentRequired": {
+                "project_id": [
+                    "expected_revision"
+                ],
+                "expected_revision": [
+                    "project_id"
+                ]
+            }
+        },
+        "installInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "version_selector": {
+                    "$ref": "#/$defs/selector"
+                }
+            },
+            "required": [
+                "project_id",
+                "expected_revision",
+                "package_id",
+                "version_selector"
+            ]
+        },
+        "reinstallInput": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "expected_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                }
+            },
+            "required": [
+                "project_id",
+                "expected_revision",
+                "package_id"
+            ]
+        },
+        "sourceItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "display_name": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "availability": {
+                    "enum": [
+                        "available",
+                        "hidden",
+                        "authentication_required",
+                        "unsupported",
+                        "refresh_required"
+                    ]
+                }
+            },
+            "required": [
+                "source",
+                "display_name",
+                "availability"
+            ]
+        },
+        "summaryItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "display_name": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "locked_version": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/source"
+                    },
+                    "maxItems": 4096
+                },
+                "compatibility": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/compatibility"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "package_id",
+                "display_name",
+                "version",
+                "locked_version",
+                "sources",
+                "compatibility"
+            ]
+        },
+        "versionItem": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "display_name": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "description": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "unity": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "unity_release": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "documentation_url": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "changelog_url": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8192
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "aliases": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "maxItems": 128
+                },
+                "keywords": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256
+                    },
+                    "maxItems": 128
+                },
+                "legacy_packages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/packageId"
+                    },
+                    "maxItems": 128
+                },
+                "dependencies": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096
+                    }
+                },
+                "yanked": {
+                    "type": "boolean"
+                },
+                "compatibility": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/compatibility"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "package_id",
+                "version",
+                "source",
+                "display_name",
+                "description",
+                "unity",
+                "unity_release",
+                "documentation_url",
+                "changelog_url",
+                "aliases",
+                "keywords",
+                "legacy_packages",
+                "dependencies",
+                "yanked",
+                "compatibility"
+            ]
+        },
+        "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "outcome": {
+                    "const": "unknown"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "subreason"
+                    ]
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
+            ]
+        },
+        "sourcesOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "kind": {
+                                    "const": "sources"
+                                },
+                                "items": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/sourceItem"
+                                    },
+                                    "maxItems": 200
+                                },
+                                "snapshot": {
+                                    "$ref": "#/$defs/hash"
+                                },
+                                "catalog_complete": {
+                                    "type": "boolean"
+                                },
+                                "next_cursor": {
+                                    "$ref": "#/$defs/cursor"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "items",
+                                "snapshot",
+                                "catalog_complete"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "error": {
+                            "$ref": "#/$defs/error"
+                        }
+                    },
+                    "required": [
+                        "error"
+                    ]
+                }
+            ]
+        },
+        "summaryOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "kind": {
+                                    "const": "summary"
+                                },
+                                "items": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/summaryItem"
+                                    },
+                                    "maxItems": 200
+                                },
+                                "snapshot": {
+                                    "$ref": "#/$defs/hash"
+                                },
+                                "catalog_complete": {
+                                    "type": "boolean"
+                                },
+                                "next_cursor": {
+                                    "$ref": "#/$defs/cursor"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "items",
+                                "snapshot",
+                                "catalog_complete"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "error": {
+                            "$ref": "#/$defs/error"
+                        }
+                    },
+                    "required": [
+                        "error"
+                    ]
+                }
+            ]
+        },
+        "versionsOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "kind": {
+                                    "const": "versions"
+                                },
+                                "items": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/versionItem"
+                                    },
+                                    "maxItems": 200
+                                },
+                                "snapshot": {
+                                    "$ref": "#/$defs/hash"
+                                },
+                                "catalog_complete": {
+                                    "type": "boolean"
+                                },
+                                "next_cursor": {
+                                    "$ref": "#/$defs/cursor"
+                                }
+                            },
+                            "required": [
+                                "kind",
+                                "items",
+                                "snapshot",
+                                "catalog_complete"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "error": {
+                            "$ref": "#/$defs/error"
+                        }
+                    },
+                    "required": [
+                        "error"
+                    ]
+                }
+            ]
+        },
+        "planMutation": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "kind": {
+                    "enum": [
+                        "install",
+                        "remove",
+                        "replace"
+                    ]
+                },
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "from_version": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "to_version": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "source": {
+                    "type": "null"
+                }
+            },
+            "required": [
+                "kind",
+                "package_id"
+            ]
+        },
+        "planChanges": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "format_version": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mutations": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/planMutation"
+                    },
+                    "maxItems": 4096
+                },
+                "dependency_edges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "from_package_id": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "to_package_id": {
+                                "$ref": "#/$defs/packageId"
+                            },
+                            "range": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            "direct": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "from_package_id",
+                            "to_package_id",
+                            "range",
+                            "direct"
+                        ]
+                    }
+                },
+                "legacy_removals": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 4096
+                            },
+                            "kind": {
+                                "enum": [
+                                    "file",
+                                    "directory"
+                                ]
+                            },
+                            "package_id": {
+                                "$ref": "#/$defs/packageId"
+                            }
+                        },
+                        "required": [
+                            "path",
+                            "kind",
+                            "package_id"
+                        ]
+                    }
+                },
+                "vpm_manifest_sha256": {
+                    "$ref": "#/$defs/hash"
+                },
+                "removal_conflicts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "unity_compatibility_overrides": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                }
+            },
+            "required": [
+                "format_version",
+                "mutations",
+                "dependency_edges",
+                "vpm_manifest_sha256"
+            ]
+        },
+        "plan": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_id": {
+                    "$ref": "#/$defs/id"
+                },
+                "project_revision": {
+                    "$ref": "#/$defs/revision"
+                },
+                "action": {
+                    "enum": [
+                        "install",
+                        "reinstall"
+                    ]
+                },
+                "state": {
+                    "const": "unapplied"
+                },
+                "change_set_fingerprint": {
+                    "$ref": "#/$defs/hash"
+                },
+                "change_set": {
+                    "$ref": "#/$defs/planChanges"
+                }
+            },
+            "required": [
+                "plan_id",
+                "project_id",
+                "project_revision",
+                "action",
+                "state",
+                "change_set_fingerprint",
+                "change_set"
+            ]
+        },
+        "planSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "package_id": {
+                    "$ref": "#/$defs/packageId"
+                },
+                "source": {
+                    "$ref": "#/$defs/source"
+                },
+                "display_name": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "package_id",
+                "source",
+                "display_name"
+            ]
+        },
+        "planOutput": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "data": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "plan": {
+                                    "$ref": "#/$defs/plan"
+                                },
+                                "sources": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/planSource"
+                                    },
+                                    "maxItems": 4096
+                                }
+                            },
+                            "required": [
+                                "plan",
+                                "sources"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "data"
+                    ]
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "error": {
+                            "$ref": "#/$defs/error"
+                        }
+                    },
+                    "required": [
+                        "error"
+                    ]
+                }
+            ]
+        }
+    }
+}

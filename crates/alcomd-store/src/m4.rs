@@ -317,6 +317,16 @@ pub(super) fn create_package_plan(
     draft: PackagePlanDraft,
     created_at_ms: u64,
 ) -> Result<PackagePlanRecord, M4Error> {
+    create_package_plan_inner(connection, owner, draft, created_at_ms, None)
+}
+
+pub(super) fn create_package_plan_inner(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    draft: PackagePlanDraft,
+    created_at_ms: u64,
+    authentication: Option<&alcomd_application::ToolAuthentication>,
+) -> Result<PackagePlanRecord, M4Error> {
     draft.change_set.validate_bounds()?;
     let change_set_json = serde_json::to_string(&draft.change_set).map_err(|_| internal())?;
     let source_set_json = serde_json::to_string(&draft.source_set).map_err(|_| internal())?;
@@ -332,6 +342,18 @@ pub(super) fn create_package_plan(
         alcomd_application::ToolOperation::PlanUninstall,
     )
     .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
+    if let Some(authentication) = authentication {
+        if tool_guard.is_some()
+            || !matches!(draft.action, PlanAction::Install | PlanAction::Reinstall)
+        {
+            return Err(denied());
+        }
+        require_delegated_access(&transaction, owner, authentication, false)?;
+        delegated_project_revision(&transaction, draft.project_id)?;
+        validate_delegated_pins(&transaction, &draft.source_set)?;
+    } else if owner.as_str().starts_with("mcp:") && draft.action != PlanAction::Remove {
+        return Err(denied());
+    }
     let project_revision = transaction
         .query_row(
             "SELECT p.revision FROM projects p WHERE p.project_id=?1 AND (p.owner_principal_id=?2 OR EXISTS (
@@ -425,6 +447,29 @@ pub(super) fn accept_package_plan_with_oauth(
     created_at_ms: u64,
     guard: Option<&alcomd_application::OAuthAccessGuard>,
 ) -> Result<ApplyPlanOutcome, M4Error> {
+    accept_package_plan_inner(
+        connection,
+        owner,
+        plan_id,
+        expected_revision,
+        idempotency_key,
+        created_at_ms,
+        guard,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn accept_package_plan_inner(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    plan_id: PlanId,
+    expected_revision: Revision,
+    idempotency_key: &IdempotencyKey,
+    created_at_ms: u64,
+    guard: Option<&alcomd_application::OAuthAccessGuard>,
+    authentication: Option<&alcomd_application::ToolAuthentication>,
+) -> Result<ApplyPlanOutcome, M4Error> {
     if guard.is_some() && !owner.as_str().starts_with("mcp:") {
         return Err(M4Error::new(M4ErrorCode::PermissionDenied));
     }
@@ -448,7 +493,19 @@ pub(super) fn accept_package_plan_with_oauth(
     {
         return Err(M4Error::new(M4ErrorCode::PermissionDenied));
     }
-    let delegated_revision = if owner.as_str().starts_with("mcp:") {
+    let delegated_revision = if let Some(authentication) = authentication {
+        let plan = load_plan(&transaction, owner, plan_id)?;
+        if tool_guard.is_some()
+            || !matches!(plan.action, PlanAction::Install | PlanAction::Reinstall)
+        {
+            return Err(denied());
+        }
+        require_delegated_access(&transaction, owner, authentication, true)?;
+        if plan.state == PlanState::Unapplied {
+            validate_delegated_pins(&transaction, &plan.source_set)?;
+        }
+        Some(delegated_project_revision(&transaction, plan.project_id)?)
+    } else if owner.as_str().starts_with("mcp:") {
         let plan = load_plan(&transaction, owner, plan_id)?;
         if let Some(guard) = guard {
             let now = super::m8_oauth::wall_time().map_err(|_| internal())?;
@@ -610,6 +667,92 @@ pub(super) fn accept_package_plan_with_oauth(
     Ok(saved)
 }
 
+fn denied() -> M4Error {
+    M4Error::new(M4ErrorCode::PermissionDenied)
+}
+
+fn require_delegated_access(
+    db: &Connection,
+    actor: &PrincipalId,
+    authentication: &alcomd_application::ToolAuthentication,
+    apply: bool,
+) -> Result<(), M4Error> {
+    use alcomd_application::Permission;
+    let client = super::m8_tools::authenticate(db, authentication).map_err(|_| denied())?;
+    if &client.principal_id != actor {
+        return Err(denied());
+    }
+    let access = authentication.access(client).map_err(|_| denied())?;
+    for permission in [
+        Permission::ProjectsRead,
+        Permission::RepositoriesRead,
+        Permission::PackagesRead,
+    ] {
+        access.require(permission).map_err(|_| denied())?;
+    }
+    if apply {
+        access
+            .require(Permission::PackagesManage)
+            .map_err(|_| denied())?;
+        access
+            .require(Permission::OperationsRead)
+            .map_err(|_| denied())?;
+    }
+    Ok(())
+}
+
+fn delegated_project_revision(
+    db: &Connection,
+    project: alcomd_application::ProjectId,
+) -> Result<i64, M4Error> {
+    db.query_row(
+        "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+        params![project.to_string(), PrincipalId::LOCAL_OWNER],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(store_error)?
+    .ok_or_else(|| M4Error::new(M4ErrorCode::ProjectNotRegistered))
+}
+
+fn validate_delegated_pins(db: &Connection, pins: &[PackageSourcePin]) -> Result<(), M4Error> {
+    use alcomd_application::delegated_package_url;
+    for pin in pins {
+        let valid = match pin {
+            PackageSourcePin::Repository(pin) => {
+                let locator: Option<String> = db.query_row(
+                    "SELECT r.source_locator FROM repositories r JOIN repository_package_versions p USING(repository_id)
+                     WHERE r.owner_principal_id=?1 AND r.repository_id=?2 AND r.revision=?3
+                       AND r.source_kind='remote' AND r.credential_reference IS NULL AND r.resolver_indexed=1
+                       AND p.package_id=?4 AND p.version_text=?5 AND p.artifact_url=?6
+                       AND p.manifest_fingerprint=?7 AND p.download_headers_present=0 AND p.resolver_ready=1",
+                    params![PrincipalId::LOCAL_OWNER, pin.repository_id, sqlite_integer(pin.repository_revision)?,
+                        pin.package_id, pin.version, pin.artifact_url, pin.manifest_fingerprint.as_slice()],
+                    |row| row.get(0),
+                ).optional().map_err(store_error)?;
+                pin.credential_reference.is_none() && pin.download_headers.is_none()
+                    && delegated_package_url(&pin.artifact_url)
+                    && locator.is_some_and(|url| delegated_package_url(&url) && pin.source_identity == format!("remote:{url}"))
+            }
+            PackageSourcePin::UserPackage(pin) => db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM user_package_sources WHERE owner_principal_id=?1 AND user_package_id=?2
+                   AND revision=?3 AND package_id=?4 AND version=?5 AND archive_sha256=?6 AND manifest_fingerprint=?7
+                   AND 'user-package-identity-v1:' || lower(hex(source_identity_key))=?8)",
+                params![PrincipalId::LOCAL_OWNER, pin.user_package_id.to_string(), sqlite_integer(pin.source_revision)?,
+                    pin.package_id, pin.version, alcomd_application::oauth_hex(&pin.archive_sha256),
+                    pin.manifest_fingerprint.as_slice(), pin.source_identity], |row| row.get(0),
+            ).map_err(store_error)?,
+        };
+        if !valid {
+            return Err(M4Error::with_subreason(
+                M4ErrorCode::PlanStale,
+                "source_authority_changed",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// This check executes in the acceptance transaction, before any idempotency replay.
 fn require_mcp_removal_write(
     db: &Connection,
@@ -642,8 +785,10 @@ fn accepted_resource_owner(
          JOIN package_filesystem_journal j ON j.operation_id=o.operation_id AND j.step=1 AND j.plan_id=plan.plan_id AND j.project_id=target.project_id AND j.project_identity_key=target.path_identity_key AND j.phase='accepted' AND j.state='completed'
          WHERE o.operation_id=?1 AND o.kind='packages.apply' AND plan.state='applied'
          AND (target.owner_principal_id=o.owner_principal_id OR
-             (plan.action='remove' AND plan.source_set_json='[]' AND EXISTS(SELECT 1 FROM mcp_clients c WHERE c.principal_id=o.owner_principal_id)))",
-        [operation_id.to_string()],|r|Ok((r.get(0)?,r.get(1)?))
+             (EXISTS(SELECT 1 FROM mcp_clients c WHERE c.principal_id=o.owner_principal_id)
+              AND ((plan.action='remove' AND plan.source_set_json='[]')
+                   OR (plan.action IN ('install','reinstall') AND target.owner_principal_id=?2))))",
+        params![operation_id.to_string(), PrincipalId::LOCAL_OWNER],|r|Ok((r.get(0)?,r.get(1)?))
     ).optional().map_err(store_error)?;
     let (id, owner) = target.ok_or_else(|| M4Error::new(M4ErrorCode::PermissionDenied))?;
     Ok((

@@ -83,9 +83,14 @@ impl Rate {
 pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
     match name {
         Some("alcomd_list_projects" | "alcomd_get_project") => &["projects.read"],
-        Some("alcomd_plan_package_uninstall") => {
-            &["projects.read", "repositories.read", "packages.read"]
+        Some("alcomd_list_package_sources" | "alcomd_search_packages" | "alcomd_get_package") => {
+            &["repositories.read", "packages.read"]
         }
+        Some(
+            "alcomd_plan_package_uninstall"
+            | "alcomd_plan_package_install"
+            | "alcomd_plan_package_reinstall",
+        ) => &["projects.read", "repositories.read", "packages.read"],
         Some("alcomd_apply_package_changes") => &[
             "projects.read",
             "repositories.read",

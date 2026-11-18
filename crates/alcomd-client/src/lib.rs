@@ -253,6 +253,7 @@ impl AlcomdClient {
             capabilities: vec![
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
@@ -586,6 +587,22 @@ impl AlcomdClient {
         params: alcomd_protocol::PackagePlanReinstallParams,
     ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
         self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_REINSTALL, params)
+            .await
+    }
+
+    pub async fn mcp_package_query(
+        &mut self,
+        params: alcomd_protocol::McpPackageQuery,
+    ) -> Result<alcomd_protocol::McpPackagePage, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PACKAGES_QUERY, params)
+            .await
+    }
+
+    pub async fn mcp_package_plan(
+        &mut self,
+        params: alcomd_protocol::McpPackagePlanRequest,
+    ) -> Result<alcomd_protocol::McpPackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_PACKAGES_PLAN, params)
             .await
     }
 
@@ -1354,6 +1371,7 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_REPOSITORIES_GET
             | METHOD_REPOSITORIES_PACKAGES
             | METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
+            | METHOD_MCP_PACKAGES_QUERY
             | METHOD_PACKAGES_USER_PACKAGES_LIST
             | METHOD_PACKAGES_USER_PACKAGES_GET
             | METHOD_UNITY_INSTALLATIONS_LIST

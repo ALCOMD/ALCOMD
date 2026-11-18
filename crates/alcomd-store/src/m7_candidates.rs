@@ -16,6 +16,22 @@ pub(super) fn snapshot(
     // DEFERRED read transaction gives every registry read one SQLite snapshot. No writes.
     let transaction = connection.transaction().map_err(|_| Error::Unavailable)?;
     let (project, authority) = read_authority(&transaction, owner, project_id, settings)?;
+    let entries = catalog_entries(&transaction, owner, ids, settings)?;
+    Ok(CandidateStoreSnapshot {
+        project,
+        entries,
+        fingerprint_records: authority.fingerprint_records,
+        catalog_complete: authority.catalog_complete,
+        source_metadata: source_metadata(&transaction, owner, settings)?,
+    })
+}
+
+pub(super) fn catalog_entries(
+    transaction: &Connection,
+    owner: &PrincipalId,
+    ids: Option<Vec<String>>,
+    settings: &alcomd_application::ConfigPackageSettings,
+) -> Result<Vec<CandidateCatalogEntry>, Error> {
     let hidden =
         serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let ids_json = ids
@@ -160,13 +176,7 @@ pub(super) fn snapshot(
     {
         return Err(Error::LimitExceeded);
     }
-    Ok(CandidateStoreSnapshot {
-        project,
-        entries,
-        fingerprint_records: authority.fingerprint_records,
-        catalog_complete: authority.catalog_complete,
-        source_metadata: source_metadata(&transaction, owner, settings)?,
-    })
+    Ok(entries)
 }
 
 fn source_metadata(

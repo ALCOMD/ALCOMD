@@ -183,6 +183,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             &self.reader.package_settings().await?,
             &plan.source_set,
         )?;
+
         revalidate(&self.reader, &project, &catalog, &plan)
             .await
             .map(|_| ())
@@ -548,6 +549,12 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             &plan.source_set,
         )?;
 
+        // The accepted journal authorizes resource lookup; the operation keeps its caller.
+        let source_owner = if plan.owner.as_str().starts_with("mcp:") {
+            PrincipalId::local_owner()
+        } else {
+            plan.owner.clone()
+        };
         let mut next_step = self
             .store
             .next_filesystem_journal_step(operation_id)
@@ -565,7 +572,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         let sources = pin_apply_archives(
             &self.cache,
             &self.store,
-            &plan.owner,
+            &source_owner,
             self.reader.package_settings().await?,
             plan.change_set
                 .mutations
@@ -647,7 +654,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
         } else {
             self.store
                 .resolver_catalog(
-                    plan.owner.clone(),
+                    source_owner,
                     plan.source_set
                         .iter()
                         .any(alcomd_application::PackageSourcePin::is_user_package),
@@ -1076,19 +1083,19 @@ async fn revalidate(
         let row = catalog
             .entries
             .iter()
-            .find(|row| row.package_id == source.package_id() && row.version == source.version())
-            .and_then(|row| match (&row.source, source) {
+            .filter(|row| row.package_id == source.package_id() && row.version == source.version())
+            .find(|row| match (&row.source, source) {
                 (
                     alcomd_application::ResolverCatalogSource::Repository { repository_id, .. },
                     alcomd_application::PackageSourcePin::Repository(pin),
-                ) if repository_id == &pin.repository_id => Some(row),
+                ) => repository_id == &pin.repository_id,
                 (
                     alcomd_application::ResolverCatalogSource::UserPackage {
                         user_package_id, ..
                     },
                     alcomd_application::PackageSourcePin::UserPackage(pin),
-                ) if user_package_id == &pin.user_package_id => Some(row),
-                _ => None,
+                ) => user_package_id == &pin.user_package_id,
+                _ => false,
             })
             .ok_or_else(|| {
                 M4Error::with_subreason(M4ErrorCode::PlanStale, "source_revision_changed")

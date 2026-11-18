@@ -324,7 +324,22 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         ))
         .await
         .expect("valid isolated Provider fixture");
-    assert_eq!(remainder.tools.len(), 3);
+    assert_eq!(remainder.tools.len(), 8);
+    for name in [
+        "alcomd_list_package_sources",
+        "alcomd_search_packages",
+        "alcomd_get_package",
+        "alcomd_plan_package_install",
+        "alcomd_plan_package_reinstall",
+    ] {
+        assert!(
+            all.tools
+                .iter()
+                .chain(&remainder.tools)
+                .any(|tool| tool.name == name),
+            "missing {name}"
+        );
+    }
     assert!(remainder.next_cursor.is_none());
     assert!(
         sb.list_tools(Some(

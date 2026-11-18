@@ -8,7 +8,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 fn now() -> Result<u64, E> {
     super::current_time_ms().map_err(|_| E::Unavailable)
 }
-fn auth(
+pub(super) fn auth(
     state: &ConnectionState,
     access: &app::AccessContext,
 ) -> Result<app::ToolAuthentication, E> {
@@ -82,14 +82,61 @@ fn builtin() -> Result<Vec<Entry>, E> {
         })
         .collect()
 }
+fn append_package_tools(entries: &mut Vec<Entry>) -> Result<(), E> {
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../specs/mcp/package-catalog-plan-v1.schema.json"
+    ))
+    .map_err(|_| E::Unavailable)?;
+    for entry in schema["x-alcomd-tools"].as_array().ok_or(E::Unavailable)? {
+        let field = |key: &str| entry[key].as_str().map(str::to_owned).ok_or(E::Unavailable);
+        let effect = match field("effect")?.as_str() {
+            "read" => app::ToolOperation::ProjectsList.effect(),
+            "plan" => app::ToolOperation::PlanUninstall.effect(),
+            _ => return Err(E::Unavailable),
+        };
+        let schema_field = |key: &str| {
+            let mut value = entry[key].clone();
+            value["$defs"] = schema["$defs"].clone();
+            value
+        };
+        entries.push(Entry {
+            descriptor: app::ToolDescriptor {
+                name: field("name")?,
+                title: field("title")?,
+                description: field("description")?,
+                input_schema: schema_field("inputSchema"),
+                output_schema: schema_field("outputSchema"),
+                effect,
+                required_permissions: serde_json::from_value(entry["requiredPermissions"].clone())
+                    .map_err(|_| E::Unavailable)?,
+                origin: None,
+            },
+            provider: None,
+            declaration: None,
+        });
+    }
+    for entry in entries
+        .iter_mut()
+        .filter(|entry| entry.descriptor.name == "alcomd_apply_package_changes")
+    {
+        entry.descriptor.title = "Apply a reviewed package plan".into();
+        entry.descriptor.description = "Only call after the operator has reviewed and confirmed the entire original plan. Applies that plan without replanning and returns an operation to check.".into();
+    }
+    Ok(())
+}
+
 async fn entries(
     apps: &Applications,
     authentication: app::ToolAuthentication,
+    package_tools: bool,
 ) -> Result<(Vec<Entry>, String), E> {
     let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
     let access = authentication.access(snapshot.client.clone())?;
     let mut evidence = json!({"auth":authentication.binding(),"client":snapshot.client.revision,"grants":snapshot.client.grants,"providers":[]});
     let mut entries = builtin()?;
+    if package_tools {
+        append_package_tools(&mut entries)?;
+    }
     entries.retain(|e| {
         app::require_tool_permissions(&access, &e.descriptor.required_permissions).is_ok()
     });
@@ -250,7 +297,7 @@ async fn call(
             return Ok(saved);
         }
     }
-    let (items, _) = entries(apps, authentication.clone()).await?;
+    let (items, _) = entries(apps, authentication.clone(), false).await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -414,7 +461,14 @@ pub(super) async fn dispatch(
         match request.method.as_str() {
             rpc::METHOD_MCP_TOOLS_CATALOG => {
                 let params = serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?;
-                let (items, fingerprint) = entries(apps, authentication).await?;
+                let (items, fingerprint) = entries(
+                    apps,
+                    authentication,
+                    state
+                        .capabilities
+                        .contains(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1),
+                )
+                .await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)
                     .map_err(|_| E::Unavailable)
             }

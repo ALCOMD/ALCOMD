@@ -67,6 +67,8 @@ pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
     match method {
         "projects.list" | "projects.get" => &["projects.read"],
         "packages.planRemove" => &["projects.read", "repositories.read", "packages.read"],
+        METHOD_MCP_PACKAGES_QUERY => &["repositories.read", "packages.read"],
+        METHOD_MCP_PACKAGES_PLAN => &["projects.read", "repositories.read", "packages.read"],
         "packages.applyPlan" => &[
             "projects.read",
             "repositories.read",

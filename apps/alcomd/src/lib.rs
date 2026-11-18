@@ -51,6 +51,7 @@ mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
 mod m8_oauth_rpc;
+mod m8_packages_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
@@ -834,6 +835,13 @@ async fn dispatch_payload(
     }
     if matches!(
         request.method.as_str(),
+        alcomd_protocol::METHOD_MCP_PACKAGES_QUERY | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
+    ) {
+        return m8_packages_rpc::dispatch(request, state, applications, &access, payload.len())
+            .await;
+    }
+    if matches!(
+        request.method.as_str(),
         alcomd_protocol::METHOD_MCP_TOOLS_CATALOG
             | alcomd_protocol::METHOD_EXTENSION_MCP_TOOLS_CALL
     ) {
@@ -965,6 +973,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
+        alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,

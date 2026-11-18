@@ -83,7 +83,11 @@ async fn apply(
         Ok(value) => value,
         Err(_) => return invalid(request.id),
     };
-    match application.apply_plan(access, plan_id, revision, key).await {
+    let authentication = super::m8_tools_rpc::auth(state, access).ok();
+    match application
+        .apply_plan_authenticated(access, plan_id, revision, key, authentication)
+        .await
+    {
         Ok(value) => success_action(
             request.id,
             rpc::PackageApplyPlanResult {
@@ -96,7 +100,7 @@ async fn apply(
     }
 }
 
-fn plan_request(
+pub(super) fn plan_request(
     action: app::PlanAction,
     plan_version: app::PackagePlanVersion,
     params: serde_json::Value,
@@ -419,7 +423,7 @@ fn source_pin(value: app::PackageSourcePin) -> rpc::PackageSourcePin {
     }
 }
 
-fn m4_error(id: String, error: app::M4Error) -> DispatchAction {
+pub(super) fn m4_error(id: String, error: app::M4Error) -> DispatchAction {
     let diagnostic_id = error.diagnostic_id().map(str::to_owned);
     let mut rpc_error = match error.code() {
         app::M4ErrorCode::InvalidInput => rpc::RpcError::invalid_request(),

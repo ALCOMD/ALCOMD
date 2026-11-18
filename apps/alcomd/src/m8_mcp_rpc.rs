@@ -143,6 +143,8 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
     matches!(
         method,
         METHOD_MCP_TRANSPORT_BIND_REQUEST
+            | alcomd_protocol::METHOD_MCP_PACKAGES_QUERY
+            | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
             | "mcp.tools.catalog"
             | "extensions.mcpTools.call"
             | "system.status"

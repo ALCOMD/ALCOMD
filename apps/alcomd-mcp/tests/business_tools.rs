@@ -16,6 +16,8 @@ static REAL_CORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(()
 mod extension_tools_flow;
 #[path = "support/oauth_flow.rs"]
 mod oauth_flow;
+#[path = "support/package_catalog_flow.rs"]
+mod package_catalog_flow;
 
 #[path = "support/extension_sources_flow.rs"]
 mod extension_sources_flow;

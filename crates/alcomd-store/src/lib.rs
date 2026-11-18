@@ -64,7 +64,11 @@ mod m7_user_packages;
 mod m8_management;
 mod m8_mcp;
 mod m8_oauth;
+mod m8_packages;
 mod m8_tools;
+pub use m8_packages::{
+    DelegatedPackageCatalog, DelegatedPackageSource, DelegatedSourceAvailability,
+};
 mod operation_logs;
 mod project_create;
 mod project_template_jobs;
@@ -691,6 +695,17 @@ impl M4Store for StateStoreHandle {
         .await
     }
 
+    async fn delegated_resolver_catalog(
+        &self,
+        settings: alcomd_application::ConfigPackageSettings,
+    ) -> Result<ResolverCatalog, M4Error> {
+        self.request_worker(
+            move |connection| m8_packages::resolver_catalog(connection, settings),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
     async fn create_package_plan(
         &self,
         owner: PrincipalId,
@@ -699,6 +714,28 @@ impl M4Store for StateStoreHandle {
     ) -> Result<PackagePlanRecord, M4Error> {
         self.request_worker(
             move |connection| m4::create_package_plan(connection, &owner, draft, created_at_ms),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn create_delegated_package_plan(
+        &self,
+        owner: PrincipalId,
+        authentication: alcomd_application::ToolAuthentication,
+        draft: PackagePlanDraft,
+        created_at_ms: u64,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        self.request_worker(
+            move |connection| {
+                m4::create_package_plan_inner(
+                    connection,
+                    &owner,
+                    draft,
+                    created_at_ms,
+                    Some(&authentication),
+                )
+            },
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
         )
         .await
@@ -759,6 +796,33 @@ impl M4Store for StateStoreHandle {
                     &idempotency_key,
                     created_at_ms,
                     guard.as_ref(),
+                )
+            },
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn accept_delegated_package_plan(
+        &self,
+        owner: PrincipalId,
+        authentication: alcomd_application::ToolAuthentication,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+        created_at_ms: u64,
+    ) -> Result<ApplyPlanOutcome, M4Error> {
+        self.request_worker(
+            move |db| {
+                m4::accept_package_plan_inner(
+                    db,
+                    &owner,
+                    plan_id,
+                    expected_revision,
+                    &idempotency_key,
+                    created_at_ms,
+                    None,
+                    Some(&authentication),
                 )
             },
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),

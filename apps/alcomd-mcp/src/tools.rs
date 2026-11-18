@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.schema.json");
+mod packages;
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 static DIAGNOSTICS: AtomicU64 = AtomicU64::new(1);
 
@@ -388,7 +389,13 @@ fn failure(cause: Failure) -> CallToolResult {
             };
             if !contract["$defs"]["toolError"]["properties"]["code"]["enum"]
                 .as_array()
-                .is_some_and(|codes| codes.iter().any(|code| code == &e.code))
+                .is_some_and(|codes| {
+                    codes.iter().any(|code| code == &e.code)
+                        || matches!(
+                            e.code.as_str(),
+                            "package_candidate_evidence_stale" | "package_candidate_limit_exceeded"
+                        )
+                })
                 || e.message.len() > 1024
             {
                 return failure(Failure::InvalidCore);
@@ -505,6 +512,12 @@ pub async fn execute(
         result.structured_content = Some(output);
         return Ok(result);
     }
+    if packages::recognized(params.name.as_ref()) {
+        if !client.supports_capability(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {
+            return Err(super::unsupported_method());
+        }
+        return packages::execute(client, params).await;
+    }
     execute_builtin(client, params).await
 }
 async fn execute_builtin(
@@ -539,7 +552,7 @@ async fn execute_builtin(
             }
             Input::Apply(p) => {
                 let value=client.package_apply_plan(rpc::PackageApplyPlanParams{plan_id:p.plan_id,expected_revision:p.expected_revision,idempotency_key:p.idempotency_key}).await.map_err(write)?;
-                Ok((json!({"operation_id":value.operation_id,"replayed":value.replayed}),"Operation accepted. Query its state to learn whether the removal succeeds.".into(),false))
+                Ok((json!({"operation_id":value.operation_id,"replayed":value.replayed}),"Operation accepted. Query its state to learn whether the package changes succeeded.".into(),false))
             }
             Input::Operation(p) => Ok((operation(client.operation_get(p.operation_id).await.map_err(read)?)?,"Authoritative package operation state and result.".into(),false)),
             Input::Cancel(p) => {
