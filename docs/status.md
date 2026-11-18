@@ -6,6 +6,8 @@
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
 
+2026-11-19 [包 Apply 与任务权限整改](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-包-apply-与任务权限整改)。`dbda0679` 统一三端的包 Apply 和任务取消权限，查询保持独立授权，任务状态可跨业务读取。真实 Windows Core 首轮四项各 1/0，OAuth 综合首轮 0/1，更新过时目录断言后单项 1/0。MCP 单元 15/0，受影响严格检查通过，原隔离窗口及五组公开状态已恢复。包计划、任务列表和仓库的新公共差异集中待审。未推送，无对应远端结果。
+
 2026-11-19 [MCP 与 GUI、CLI 一致性审计](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-mcp-与-guicli-一致性审计)。`7e3efd24` 统一 Core 包来源规则，撤回独立认证来源授权草案。Windows 真实 Core 三项独立用例各 1/0，SQLite 定向 1/0，受影响严格检查通过。原隔离窗口已恢复，五组公开状态一致。[实际验证与限制](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-共享包来源验证)。包操作和任务权限差异、其余业务接线继续按现有合同边界收束。未推送，无对应远端结果。
 
 2026-11-19 [包目录 OAuth 与 HTTPS 补验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-包目录-oauth-与-https-补验)。`33aca62a` 修复新工具缺少 scope 被 HTTP 误判为 404，`d2cf20c2` 含测试预检诊断。最终真实 OAuth/匿名 HTTPS 下载和签名 Provider 合并目录各 1/0，MCP 单元 15/0、受影响严格检查通过。旧 Provider 预检失败原因仍未确认。原隔离环境已恢复，五组公开状态一致。无新远端验证。
