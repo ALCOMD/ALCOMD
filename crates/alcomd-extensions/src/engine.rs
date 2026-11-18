@@ -71,6 +71,15 @@ impl<S: M6Store> ExtensionEngine<S> {
         tokio::task::spawn_blocking(move || {
             use std::io::Write;
             use std::process::{Command, Stdio};
+            #[cfg(feature = "test-kill-gates")]
+            let trace = |stage: &str, elapsed: Option<std::time::Duration>, exit: Option<i32>| {
+                if std::env::var_os("ALCOMD_TEST_TRACE_EXTENSION_PREFLIGHT").is_some() {
+                    eprintln!(
+                        "extension preflight stage={stage} elapsed_ms={:?} exit={exit:?}",
+                        elapsed.map(|value| value.as_millis())
+                    );
+                }
+            };
             let directory = root.join(format!("validate-{}", OperationId::new()));
             std::fs::create_dir(&directory)
                 .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
@@ -91,6 +100,8 @@ impl<S: M6Store> ExtensionEngine<S> {
             file.write_all(&bytes)
                 .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))?;
             drop(file);
+            #[cfg(feature = "test-kill-gates")]
+            trace("launch", None, None);
             let mut child = Command::new(host)
                 .args(["--extension", &id, "--component"])
                 .arg(&path)
@@ -110,10 +121,17 @@ impl<S: M6Store> ExtensionEngine<S> {
                         .write_all(&declarations)
                         .map_err(|e| error(M6ErrorCode::PackageInvalid).with_source(e))
                 });
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let started = std::time::Instant::now();
+            let deadline = started + std::time::Duration::from_secs(5);
             loop {
                 match child.try_wait() {
                     Ok(Some(status)) => {
+                        #[cfg(feature = "test-kill-gates")]
+                        trace(
+                            if write.is_ok() { "exit" } else { "stdin" },
+                            Some(started.elapsed()),
+                            status.code(),
+                        );
                         return if status.success() && write.is_ok() {
                             Ok(())
                         } else {
@@ -124,6 +142,8 @@ impl<S: M6Store> ExtensionEngine<S> {
                         std::thread::sleep(std::time::Duration::from_millis(10))
                     }
                     _ => {
+                        #[cfg(feature = "test-kill-gates")]
+                        trace("wait_failed_or_expired", Some(started.elapsed()), None);
                         let _ = child.kill();
                         let _ = child.wait();
                         return Err(error(M6ErrorCode::PackageInvalid));
