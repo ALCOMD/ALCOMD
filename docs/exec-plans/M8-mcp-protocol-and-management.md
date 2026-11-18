@@ -1670,7 +1670,9 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 身份独立、OAuth 上限、实时撤销、原 Plan/Operation 归属、破坏性确认以及凭据和本机敏感字段的安全投影仍适用于各自调用者。仓库来源差异已修正。其余公共合同差异合并到本计划的后续批次审阅。
 
-#### 包计划及仓库接线的公共差异（待集中审批）
+#### 包计划、任务列表及仓库接线（本轮实施范围）
+
+所有者在收到本批明确差异后要求继续。实施沿用以下合同。项目登记、创建、复制、备份、模板、环境读取和客户端引导按 M8 计划另批推进。
 
 - **包计划。** 扩展现有 `mcp.packages.plan` 的 `intent`，新增 `upgrade`（包 ID、可选版本范围、来源、预发布策略）、`downgrade`（包 ID、精确版本、来源）、`resolve`（可选预发布策略）和 `bulk`（复用 `PackageBulkIntent` 的 install/upgrade/remove/reinstall，最多 256 项）。以现有 `project_id` 和 `expected_revision` 锚定一个项目。`install` 增加 `range` selector 及可选 `include_prerelease`，`reinstall` 接受现有的 all/指定包集合与包来源。安装、升级、降级只有在精确版本且显式指定时允许复用现有 Unity 兼容性例外，风险放入原 Plan。用一个 `alcomd_plan_package_changes` 暴露完整的 typed intent，现有三个专用途径继续接受原参数并委托同一计划入口。复用 `mcp.packages.catalog-plan.v1`、现有安全 Plan 投影、读取能力、`packages.manage` 与 Apply，必要时在接收事务显式区分既有扩展 Host 的卸载许可和内置工具的已授权 Plan。无新权限、State、Config 或依赖。验证与本机原 Plan 的变更和风险一致、批量上限、旧参数、OAuth 上限、过期和按同键恢复。
 - **任务列表。** 增加 `alcomd_list_operations(cursor?, limit?, active_only?)`，复用既有 `operations.list`、游标和 `operations.read`。返回同一安全任务视图的分页、下一游标及活动数。现有任务查询/取消工具继续使用各自权限，无新 Core RPC。
@@ -1715,3 +1717,12 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 - 首轮 Windows 冻结 SDK 加真实隔离 Core，STDIO 卸载/取消 1/0（7.03 秒）、HTTP Bearer 卸载/取消 1/0（26.61 秒）、OAuth 参数化来源与权限 1/0（3.52 秒）、签名 Provider 持久副作用 1/0（117.32 秒）。实际验证写权限可应用原 Plan，同时无法读取任务；仅有取消授权可以到达 Core，归属与终态校验仍生效；同一身份经 Core 创建的 `state.check` 可读取完整的安全分类。该轮二进制 SHA-256 `c431f7285844e3aceacab93c58462080129a1961d2d0fd1e31ec452e32c05928`。
 - 同轮 OAuth 综合用例 0/1，旧断言仍期待 6 个工具，实际为现行 11 个工具。本轮改为核对完整名称并定向复验 1/0（9.27 秒），复验覆盖 OAuth 身份、撤权、权限挑战、请求取消与写响应丢失的同键恢复。期间仅修正测试目录断言，原安全和业务断言保留。复验二进制 SHA-256 `648ea62def0e60c49458831bf0e306e06e30ee5630af5dfc28f6d3241c655ee3`，两轮各自保留结果。
 - MCP 单元 15/0，受影响四包严格 Clippy、fmt、锁定 metadata、xtask、MCP 工具 Schema 引用和 diff 通过。原隔离 GUI 115264 可见且响应，五条管道连接原 Core 128300，恢复前后五组公开状态相同。证据在 `target/m8-operation-parity-20261119/` 和 `target/m8-operation-parity-recheck-20261119/`。无完整本地套件或新远端验证，未推送。
+
+### 2026-11-19 包计划、任务分页与仓库管理本地候选
+
+代码 `c3e7912a096eb64f379a78a987cf75e6a136dc9d`。通用包计划接通升降级、重新解析、选择或全部重装以及批量操作，沿用原 Core 校验、来源、风险和显式 Apply。任务列表复用 `operations.list` 的归属、修订、游标和授权。五个仓库工具使用同一登记表和 Core 事务，确认句柄绑定调用者、认证和检查证据，管理授权默认关闭。原登记资源归属与实际调用者的幂等归属分开，保留内置仓库和凭据保护。管理扩展增加已有 `repositories.manage` 的全局开关。无 State、Config、依赖或 WIT 变更。
+
+- 包计划与任务分页真机定向 1/0（8.00 秒），二进制 SHA-256 `2dd490b2fc4ee5ec52331d69ad85b5c1a3aa04c35df4e65d0265cd2ef5434fe6`。真实执行本地来源安装、锁定重装、范围升级、精确降级和混合批量变更，比较原生 Core 升降级及解析 Plan 摘要，验证任务游标和身份隔离。最初升级夹具尝试重复登记同包 ID，Core 按原规则拒绝。后续从本地仓库提供另一版本，保留校验。最后一次变动仅涉及仓库撤权用例断言。
+- 仓库 HTTPS/OAuth 最终定向 1/0（2.55 秒），二进制 SHA-256 `d0b9c0d6667749d63f8d03d448425eeb69f1fcb41946bf3926ee7f2f5b5ac667`。验证原生登记可见、实际分页、无确认、他人预览和来源变化时拒绝写入，覆盖刷新、移除、内置 ID 保护、逐请求撤权和原键恢复。只读检查隔离库确认三条仓库写入回执归实际调用者，输入摘要和响应未留存地址或认证材料。保留此前两项夹具失败。其一默认隔离 Core 未预置内置行，后续直接测试受保护 ID。其二将授权撤回后的结构化 `permission_denied` 当作 HTTP 403，复验检查实际 MCP 错误和持久副作用。
+- 关联 OAuth 综合与签名 Provider 分别 1/0（8.44 秒和 110.02 秒），对应先前集成二进制 `e3dd20bbf1a840cce00269b5756db049c4396b8ab23bab02abb1b290bf38e5ff`。原生仓库 Store 7/0，九项授权分页 1/0，MCP 单元 15/0，管理扩展单元 8/0及 Wasm Component 构建通过。受影响七包及最终 MCP 适配器严格 Clippy、fmt、metadata、xtask、Schema 引用和 diff 通过。
+- 证据在 `target/m8-plan-parity-20261119/`、`target/m8-registry-parity-20261119/`、`target/m8-registry-parity-final-20261119/` 和 `target/m8-registry-revocation-20261119/`。Windows 链接器锁住旧输出文件时改用单独的测试产物名。原隔离 GUI 129908 可见且响应，五条管道连接 Core 86540，恢复前后五组公开状态一致。未推送，暂无同 SHA 远端验证。下一批按既有顺序核对项目、备份、模板和环境能力。
