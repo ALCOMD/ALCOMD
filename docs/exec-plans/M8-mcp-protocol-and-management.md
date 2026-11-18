@@ -1590,3 +1590,15 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 修复代码 `1883dac8cf62ded4d1ea808d1278ed0cb2109f8d`。同一二进制的五项独立复验均通过。SDK 在 599.043 秒取得正常终态，同一 Bearer 随后成功调用工具和重新订阅。容量 1/0（23.57 秒），冻结 SDK 的 HTTP、STDIO 和 OAuth 授权变更与撤销回归各 1/0。五项共用的二进制 SHA-256 为 `14ee5ddd99d856a5797a5d52c0f8a0167d97ca99cb1bfc01a1e0df860e27cecf`。最终 HTTP 单元 10/0，MCP 严格 Clippy、fmt、metadata、xtask 和 diff 通过。未改变公共 RPC、Schema 或依赖。
 
 首轮及复验分别存于 target/m8-subscription-limits-20261118/ 和 target/m8-subscription-limits-recheck-20261118/。第二轮准备时旧隔离窗口正常退出超时，所有者手动关闭后完成复验。原程序、数据和 WebView 配置已恢复，GUI 120268 可见且响应，五条管道均连接原隔离 Core 117724，五组公开状态一致。普通 Codex 的推送消费、持续满载、TCP 发送缓冲耗尽以及延期的扩展人工验收仍未覆盖。没有推送或重新执行全量。
+
+### 2026-11-18 订阅与管理扩展候选远端结果
+
+所有者批准后，将已核对的 10 笔提交从 `2d6e4bb235bc40e85b93b4159e7a6df729d8602f` 普通快进推送至 `origin/main`。远端确认候选为 `2735119f6245d7c97552b2c19c5f467c5c0ad4ae`。
+
+- [CI 44300586408](https://github.com/ALCOMD/ALCOMD/actions/runs/44300586408) 首次自动运行整体结论为 failure。Windows Server 2025 和 Ubuntu 22.04 作业全部通过，均包含仓库 Check、新增签名包启动回归、CLI 自动启动集成、发布构建、Tauri 构建及 Chromium。Windows Chromium 731/0（18.5 分钟），Ubuntu Chromium 731/0（15.7 分钟）。长时订阅与容量按需用例沿用同一生产代码的本地证据。
+- [macOS 作业 134788964082](https://github.com/ALCOMD/ALCOMD/actions/runs/44300586408/job/134788964082) 在排队约 15 分钟后取消，未分配运行器、未执行任何步骤。GitHub 注释明确记录 hosted 运行器未接手及 macOS arm64 容量紧张。该平台尚无同 SHA 构建或测试结果。
+- [CodeQL 44300585894](https://github.com/ALCOMD/ALCOMD/actions/runs/44300585894) 同 SHA 的首次自动运行完成，Rust、JavaScript/TypeScript、Python 和 Actions 均通过。
+
+首次运行终态、已执行作业的原始日志和摘要、macOS 取消注释归档于 target/m8-push-2735119f-20261118/。只收集推送自动触发的运行。M8 保持进行中，旧三平台通过记录继续对应其原 SHA，扩展人工继续延期，正式签名包与发行装配仍归 M12。
+
+范围核对确认，现有外部 MCP 允许列表只开放包移除 Plan 和既有 Apply，Core 接受事务也要求 MCP 写入是无来源集合的移除计划。项目包候选查询、安装和重装需另行明确允许委托的包来源和可见字段，再审阅工具与 Core 授权的最小差异。现有身份和运行时不需要重做。
