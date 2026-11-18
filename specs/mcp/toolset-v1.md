@@ -38,7 +38,7 @@ alcomd_
 
 不保留 `alcomd3_*` 运行时别名。
 
-本切片仅六个获批工具：
+首个卸载切片的六个工具：
 
 ```text
 alcomd_list_projects
@@ -49,7 +49,7 @@ alcomd_get_operation
 alcomd_cancel_operation
 ```
 
-项目查询只展示当前授权的登记快照，Plan重读当前文件。Apply要求显式confirm=true，只应用本Principal的原remove Plan，接受Operation不代表业务成功。来源委托、安装/重装、备份工具及管理扩展不在本切片。
+项目查询展示当前授权的登记快照，Plan 重读当前文件。卸载使用本 Principal 的原 remove Plan，Apply 要求显式 `confirm=true`。返回 Operation 表示 Core 已接受计划，业务结果由任务终态给出。包目录、安装及重装的后续接入见下方。
 
 2026-11-15所有者批准OAuth项目游标补充：`alcomd_list_projects`的cursor新增可选
 `authorization_binding`（64位小写hex），透传Core `authorizationBinding`，不由适配器签发。
@@ -59,13 +59,13 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 ## 长任务
 
-核心权威状态为 ALCOMD Operation；本切片任务查询/取消只支持packages.apply。4.0.0不采用或广告MCP Tasks。协议请求取消/STDIO EOF只结束当前请求，不能默认取消已经接受的Operation；只有显式cancel_operation请求Core合作式业务取消。
+核心权威状态为 ALCOMD Operation。`alcomd_get_operation` 需要 `operations.read`，`alcomd_cancel_operation` 需要 `operations.cancel`。两项按真实调用者读取或取消自身任务，使用 Core 的生命周期和修订规则。包变更和状态检查有明确结果字段，其余任务提供状态、修订、时间和稳定错误字段。4.0.0 不采用或广告 MCP Tasks。协议请求取消及 STDIO EOF 只结束当前请求，只有显式 `alcomd_cancel_operation` 请求 Core 合作式业务取消。
 
 ## 包目录、安装与重装
 
 获批的增量工具见[工具 Schema](package-catalog-plan-v1.schema.json)与 [Core RPC Schema](../rpc/m8-mcp-packages-v1.schema.json)。目录按当前 `repositories.read`、`packages.read` 展示可访问的包和来源，可选项目上下文另需 `projects.read`。`alcomd_search_packages` 可浏览全局包或按仓库筛选，`alcomd_get_package` 可查版本详情，`alcomd_list_package_sources` 提供选源所需的稳定 ID 和可用状态。受保护来源当前无需向客户端透露设置或凭据。
 
-`alcomd_plan_package_install` 可按最新兼容版本或精确版本生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 复用既有输入、确认和幂等规则，另需 `packages.manage`、`operations.read`。安装与重装共用已有 `packages.apply` 查询和取消。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称，不传内部下载地址或本机路径。
+`alcomd_plan_package_install` 可按最新兼容版本或精确版本生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 使用相同读取能力、`packages.manage`、原 Plan、显式确认和既有幂等规则。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称。
 
 MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档校验。获得所需业务权限的 MCP 客户端可使用已登记的公开或认证仓库、带查询参数的来源、本地仓库和用户包。Core 在原有范围内处理仓库凭据与下载头，MCP 响应只给安全的来源标识和普通文档链接。MCP 目录在协商 `mcp.packages.catalog-plan.v1` 后按实时权限展示这些工具。
 

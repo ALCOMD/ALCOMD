@@ -516,15 +516,9 @@ pub(super) fn accept_package_plan_inner(
             }
             let access = alcomd_application::mcp_access(&limited)
                 .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
-            for permission in [
-                alcomd_application::Permission::ProjectsRead,
-                alcomd_application::Permission::PackagesManage,
-                alcomd_application::Permission::PackagesRead,
-                alcomd_application::Permission::RepositoriesRead,
-                alcomd_application::Permission::OperationsRead,
-            ] {
+            for permission in alcomd_application::ToolOperation::ApplyPlan.permissions() {
                 access
-                    .require(permission)
+                    .require(*permission)
                     .map_err(|_| M4Error::new(M4ErrorCode::PermissionDenied))?;
             }
         }
@@ -677,26 +671,19 @@ fn require_delegated_access(
     authentication: &alcomd_application::ToolAuthentication,
     apply: bool,
 ) -> Result<(), M4Error> {
-    use alcomd_application::Permission;
+    use alcomd_application::ToolOperation;
     let client = super::m8_tools::authenticate(db, authentication).map_err(|_| denied())?;
     if &client.principal_id != actor {
         return Err(denied());
     }
     let access = authentication.access(client).map_err(|_| denied())?;
-    for permission in [
-        Permission::ProjectsRead,
-        Permission::RepositoriesRead,
-        Permission::PackagesRead,
-    ] {
-        access.require(permission).map_err(|_| denied())?;
-    }
-    if apply {
-        access
-            .require(Permission::PackagesManage)
-            .map_err(|_| denied())?;
-        access
-            .require(Permission::OperationsRead)
-            .map_err(|_| denied())?;
+    let operation = if apply {
+        ToolOperation::ApplyPlan
+    } else {
+        ToolOperation::PlanUninstall
+    };
+    for permission in operation.permissions() {
+        access.require(*permission).map_err(|_| denied())?;
     }
     Ok(())
 }
@@ -777,7 +764,7 @@ fn require_mcp_removal_write(
          WHERE p.project_id=?2 AND c.revoked_at_ms IS NULL
             AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='global' AND g.resource_id='*')
             AND EXISTS (SELECT 1 FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.permission='packages.manage' AND g.resource_kind='global' AND g.resource_id='*')
-            AND (SELECT count(DISTINCT g.permission) FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.resource_kind='global' AND g.resource_id='*' AND g.permission IN ('repositories.read','packages.read','operations.read'))=3",
+            AND (SELECT count(DISTINCT g.permission) FROM mcp_client_grants g WHERE g.client_id=c.client_id AND g.grant_revision=c.grant_revision AND g.resource_kind='global' AND g.resource_id='*' AND g.permission IN ('repositories.read','packages.read'))=2",
         params![actor.as_str(),plan.project_id.to_string()],|r|r.get(0)
     ).optional().map_err(store_error)?.ok_or_else(||M4Error::new(M4ErrorCode::PermissionDenied))
 }

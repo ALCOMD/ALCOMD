@@ -1238,14 +1238,12 @@ where
             .await?;
         let delegated = access.is_mcp_client()
             && matches!(plan.action, PlanAction::Install | PlanAction::Reinstall);
-        if access.is_mcp_client() {
-            require(access, crate::Permission::OperationsRead)?;
-            if (delegated && (authentication.is_none() || crate::tool_invocation().is_some()))
+        if access.is_mcp_client()
+            && ((delegated && (authentication.is_none() || crate::tool_invocation().is_some()))
                 || (!delegated
-                    && (plan.action != PlanAction::Remove || !plan.source_set.is_empty()))
-            {
-                return Err(M4Error::new(M4ErrorCode::PermissionDenied));
-            }
+                    && (plan.action != PlanAction::Remove || !plan.source_set.is_empty())))
+        {
+            return Err(M4Error::new(M4ErrorCode::PermissionDenied));
         }
         let accept = || async {
             if let Some(authentication) = authentication.filter(|_| delegated) {

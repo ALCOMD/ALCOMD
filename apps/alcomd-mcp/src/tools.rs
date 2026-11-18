@@ -211,7 +211,6 @@ fn invalid() -> ErrorData {
 enum Failure {
     Remote(ClientError, bool),
     InvalidCore,
-    UnsupportedKind,
 }
 fn read(error: ClientError) -> Failure {
     Failure::Remote(error, false)
@@ -287,12 +286,43 @@ struct PackageResult {
     plan_id: String,
     change_set_fingerprint: String,
 }
-fn operation(value: rpc::Operation) -> Result<Value, Failure> {
+fn operation(mut value: rpc::Operation) -> Result<Value, Failure> {
     if !canonical_id(&value.operation_id) || !revision(value.revision) {
         return Err(Failure::InvalidCore);
     }
     if value.kind != "packages.apply" {
-        return Err(Failure::UnsupportedKind);
+        // Other Core tasks share the lifecycle envelope. Expose their
+        // method-specific payloads only once they have a safe typed projection.
+        if value.kind.is_empty()
+            || value.kind.len() > 128
+            || !value
+                .kind
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+        {
+            return Err(Failure::InvalidCore);
+        }
+        value.progress = None;
+        if value.kind == "state.check" {
+            if let Some(result) = value.result.as_ref() {
+                let fields = result.as_object().ok_or(Failure::InvalidCore)?;
+                if fields.len() != 2
+                    || ["integrity", "foreignKeys"].into_iter().any(|key| {
+                        !matches!(
+                            fields.get(key).and_then(Value::as_str),
+                            Some("ok" | "issues_detected" | "issues_truncated")
+                        )
+                    })
+                {
+                    return Err(Failure::InvalidCore);
+                }
+            }
+        } else {
+            value.result = None;
+        }
+        return Ok(snake(
+            serde_json::to_value(value).map_err(|_| Failure::InvalidCore)?,
+        ));
     }
     let result = value
         .result
@@ -458,13 +488,6 @@ fn failure(cause: Failure) -> CallToolResult {
             None,
             false,
         ),
-        Failure::UnsupportedKind => error(
-            "invalid_request",
-            "This toolset supports package apply operations only.",
-            false,
-            None,
-            false,
-        ),
         Failure::InvalidCore => error(
             "internal_error",
             "Core returned a result this tool contract cannot safely represent.",
@@ -576,10 +599,8 @@ async fn execute_builtin(
                 let value=client.package_apply_plan(rpc::PackageApplyPlanParams{plan_id:p.plan_id,expected_revision:p.expected_revision,idempotency_key:p.idempotency_key}).await.map_err(write)?;
                 Ok((json!({"operation_id":value.operation_id,"replayed":value.replayed}),"Operation accepted. Query its state to learn whether the package changes succeeded.".into(),false))
             }
-            Input::Operation(p) => Ok((operation(client.operation_get(p.operation_id).await.map_err(read)?)?,"Authoritative package operation state and result.".into(),false)),
+            Input::Operation(p) => Ok((operation(client.operation_get(p.operation_id).await.map_err(read)?)?,"Authoritative operation state and available result.".into(),false)),
             Input::Cancel(p) => {
-                let current=client.operation_get(p.operation_id.clone()).await.map_err(read)?;
-                if current.kind!="packages.apply" {return Err(Failure::UnsupportedKind);}
                 let result=client.operation_cancel(p.operation_id,p.expected_revision,p.idempotency_key).await.map_err(write)?;
                 Ok((json!({"operation":operation(result.operation)?,"replayed":result.replayed}),"Cancellation response. Only the returned state determines whether the task is cancelled.".into(),false))
             }

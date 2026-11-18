@@ -74,7 +74,6 @@ pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
             "repositories.read",
             "packages.read",
             "packages.manage",
-            "operations.read",
         ],
         "operations.get" | "operations.list" => &["operations.read"],
         "operations.cancel" => &["operations.cancel"],

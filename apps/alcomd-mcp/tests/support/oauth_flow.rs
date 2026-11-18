@@ -452,6 +452,7 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     let read = [
         grant("repositories.read", "global", "*"),
         grant("packages.read", "global", "*"),
+        grant("operations.read", "global", "*"),
     ];
     let code = http.code(&mut owner, &registration, &read).await;
     let token = http.exchange(&registration, &code, None).await;
@@ -551,7 +552,11 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
         "rejected apply leaves no package files"
     );
 
-    let code = http.code(&mut owner, &registration, &grants(true)).await;
+    let write_grants: Vec<_> = grants(true)
+        .into_iter()
+        .filter(|grant| !grant.permission.starts_with("operations."))
+        .collect();
+    let code = http.code(&mut owner, &registration, &write_grants).await;
     let token = http.exchange(&registration, &code, None).await;
     let writer = http
         .sdk(token["access_token"].as_str().expect("write token"))
@@ -564,8 +569,35 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     let operation = accepted["operation_id"]
         .as_str()
         .expect("actual operation ID");
-    let result = terminal(&writer, &mut trace, operation).await;
+    let denied = raw_tool(
+        &http,
+        token["access_token"].as_str().expect("write token"),
+        "alcomd_get_operation",
+        json!({"operation_id":operation}),
+    )
+    .await;
+    assert_eq!(
+        denied.status(),
+        403,
+        "write consent grants no operation read"
+    );
+    let result = terminal(&reader, &mut trace, operation).await;
     assert_eq!(result["state"], "succeeded", "{result}");
+    let cancel_grants = [grant("operations.cancel", "global", "*")];
+    let code = http.code(&mut owner, &registration, &cancel_grants).await;
+    let token = http.exchange(&registration, &code, None).await;
+    let canceller = http
+        .sdk(token["access_token"].as_str().expect("cancel token"))
+        .await;
+    error(
+        call(&canceller, &mut trace, "cancel_operation", json!({
+            "operation_id":operation,"expected_revision":result["revision"],"idempotency_key":"cancel-after-completion",
+        }))
+        .await
+        .expect("terminal task still reaches the shared Core cancellation rule"),
+        "operation_not_cancellable",
+    );
+    canceller.cancel().await.expect("close cancel client");
     assert_eq!(
         std::fs::read(installed.join("fixture.txt")).expect("installed archive payload"),
         b"verified anonymous HTTPS fixture"
@@ -1527,13 +1559,30 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     assert!(
         matches!(persistent.mcp_clients_list(McpClientsListParams::default()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
+    let mut names: Vec<_> = sa
+        .list_tools(None)
+        .await
+        .expect("authorized tools")
+        .tools
+        .into_iter()
+        .map(|tool| tool.name.into_owned())
+        .collect();
+    names.sort_unstable();
     assert_eq!(
-        sa.list_tools(None)
-            .await
-            .expect("existing tools")
-            .tools
-            .len(),
-        6
+        names,
+        [
+            "alcomd_apply_package_changes",
+            "alcomd_cancel_operation",
+            "alcomd_get_operation",
+            "alcomd_get_package",
+            "alcomd_get_project",
+            "alcomd_list_package_sources",
+            "alcomd_list_projects",
+            "alcomd_plan_package_install",
+            "alcomd_plan_package_reinstall",
+            "alcomd_plan_package_uninstall",
+            "alcomd_search_packages",
+        ]
     );
     let mut cursor = None;
     let mut ids = vec![];
@@ -1709,7 +1758,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let challenge = denied.headers()["www-authenticate"]
         .to_str()
         .expect("scope challenge");
-    assert!(challenge.contains("scope=\"operations.read operations.cancel\""));
+    assert!(challenge.contains("scope=\"operations.cancel\""));
     assert_eq!(
         http.client
             .post(http.resource())

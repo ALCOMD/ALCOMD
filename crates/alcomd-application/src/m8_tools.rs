@@ -35,15 +35,9 @@ impl ToolOperation {
         match self {
             Self::ProjectsList | Self::ProjectsGet => &[ProjectsRead],
             Self::PlanUninstall => &[ProjectsRead, RepositoriesRead, PackagesRead],
-            Self::ApplyPlan => &[
-                ProjectsRead,
-                RepositoriesRead,
-                PackagesRead,
-                PackagesManage,
-                OperationsRead,
-            ],
+            Self::ApplyPlan => &[ProjectsRead, RepositoriesRead, PackagesRead, PackagesManage],
             Self::OperationGet => &[OperationsRead],
-            Self::OperationCancel => &[OperationsRead, OperationsCancel],
+            Self::OperationCancel => &[OperationsCancel],
         }
     }
     pub fn effect(self) -> ToolEffect {

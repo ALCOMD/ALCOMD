@@ -96,10 +96,9 @@ pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
             "repositories.read",
             "packages.read",
             "packages.manage",
-            "operations.read",
         ],
         Some("alcomd_get_operation") => &["operations.read"],
-        Some("alcomd_cancel_operation") => &["operations.read", "operations.cancel"],
+        Some("alcomd_cancel_operation") => &["operations.cancel"],
         _ => &[],
     }
 }
@@ -734,7 +733,11 @@ mod tests {
         assert!(!r.admit("same"));
         assert_eq!(
             tool_scopes(Some("alcomd_cancel_operation")),
-            &["operations.read", "operations.cancel"]
+            &["operations.cancel"]
+        );
+        assert_eq!(
+            tool_scopes(Some("alcomd_get_operation")),
+            &["operations.read"]
         );
     }
 }

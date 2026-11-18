@@ -1073,6 +1073,17 @@ async fn package_removal_flow(http: bool) {
         a = http_hello_does_not_freeze_grants(url, &token_a.credential, &mut owner, &a, &apply)
             .await;
     }
+    let package_write_grants = grants(true)
+        .into_iter()
+        .filter(|grant| !grant.permission.starts_with("operations."))
+        .collect();
+    a = update(
+        &mut owner,
+        &a,
+        package_write_grants,
+        "package-write-without-operation-read",
+    )
+    .await;
     let accepted = data(
         call(&sa, &mut trace, "apply_package_changes", apply.clone())
             .await
@@ -1082,6 +1093,18 @@ async fn package_removal_flow(http: bool) {
         .as_str()
         .expect("operation ID")
         .to_owned();
+    error(
+        call(
+            &sa,
+            &mut trace,
+            "get_operation",
+            json!({"operation_id":operation}),
+        )
+        .await
+        .expect("write does not authorize a read"),
+        "permission_denied",
+    );
+    a = update(&mut owner, &a, grants(true), "restore-operation-reader").await;
     error(
         call(
             &sb,
@@ -1139,6 +1162,30 @@ async fn package_removal_flow(http: bool) {
         .await
         .expect("current task revision"),
     );
+    a = update(
+        &mut owner,
+        &a,
+        vec![grant("operations.cancel", "global", "*")],
+        "cancel-only",
+    )
+    .await;
+    error(
+        call(
+            &sa,
+            &mut trace,
+            "get_operation",
+            json!({"operation_id":cancel_id}),
+        )
+        .await
+        .expect("cancel does not authorize a read"),
+        "permission_denied",
+    );
+    error(
+        call(&sb, &mut trace, "cancel_operation", json!({"operation_id":cancel_id,"expected_revision":state["revision"],"idempotency_key":"foreign-task"}))
+            .await
+            .expect("cancel still checks ownership"),
+        "operation_not_found",
+    );
     let cancellation=call(&sa,&mut trace,"cancel_operation",json!({"operation_id":cancel_id,"expected_revision":state["revision"],"idempotency_key":"cancel"})).await.expect("real cancellation response");
     if cancellation.is_error == Some(true) {
         let code = &cancellation.structured_content.expect("cancel error")["error"]["code"];
@@ -1151,10 +1198,32 @@ async fn package_removal_flow(http: bool) {
                 || returned["operation"]["state"] == "succeeded"
         );
     }
-    let cancel_terminal = terminal(&sa, &mut trace, cancel_id).await;
-    assert!(cancel_terminal["state"] == "succeeded" || cancel_terminal["state"] == "cancelled");
     let detached_id = detached_record.project_id.expect("detached project ID");
     a = update(&mut owner, &a, grants(true), "detached-grants").await;
+    let cancel_terminal = terminal(&sa, &mut trace, cancel_id).await;
+    assert!(cancel_terminal["state"] == "succeeded" || cancel_terminal["state"] == "cancelled");
+    let mut check_grants = grants(true);
+    check_grants.push(grant("state.check", "global", "*"));
+    a = update(&mut owner, &a, check_grants, "operation-kind-parity").await;
+    let mut native = AlcomdClient::connect(
+        config
+            .clone()
+            .with_mcp_credential(token_a.credential.clone()),
+    )
+    .await
+    .expect("same identity on Core IPC");
+    let check = native
+        .state_check("owned-state-check".into())
+        .await
+        .expect("existing Core state check");
+    drop(native);
+    let check_status = terminal(&sa, &mut trace, &check.operation_id).await;
+    assert_eq!(check_status["kind"], "state.check");
+    assert_eq!(check_status["state"], "succeeded");
+    assert_eq!(
+        check_status["result"],
+        json!({"integrity":"ok","foreign_keys":"ok"})
+    );
     let detached_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":detached_id,"expected_revision":detached_record.revision,"package_id":"com.example.fixture"})).await.expect("detached plan"));
     let detached_op=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":detached_plan["plan_id"],"expected_revision":detached_plan["project_revision"],"idempotency_key":"disconnect-after-accept","confirm":true})).await.expect("accepted before EOF"));
     // Close the actual SDK/STDIO process immediately after acceptance. Query the

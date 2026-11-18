@@ -79,8 +79,8 @@
         },
         {
             "name": "alcomd_get_operation",
-            "title": "Read a package operation",
-            "description": "Read the authoritative package apply status and result. A failed task remains failed even when this read succeeds.",
+            "title": "Read an operation",
+            "description": "Read the authoritative state of your operation and its result when supported. A failed task remains failed even when this read succeeds.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/get_operationInput"
@@ -97,7 +97,7 @@
         },
         {
             "name": "alcomd_cancel_operation",
-            "title": "Request package operation cancellation",
+            "title": "Request operation cancellation",
             "description": "Request cooperative cancellation. Cancelling is not cancelled; some phases cannot be cancelled and the operation may complete successfully.",
             "inputSchema": {
                 "type": "object",
@@ -1071,11 +1071,15 @@
                     "$ref": "#/$defs/id"
                 },
                 "kind": {
-                    "const": "packages.apply"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+$"
                 },
                 "state": {
                     "enum": [
                         "queued",
+                        "planning",
                         "waiting_for_input",
                         "running",
                         "cancelling",
@@ -1105,20 +1109,9 @@
                     "$ref": "#/$defs/operationProgress"
                 },
                 "result": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "plan_id": {
-                            "$ref": "#/$defs/id"
-                        },
-                        "change_set_fingerprint": {
-                            "type": "string",
-                            "pattern": "^[0-9a-f]{64}$"
-                        }
-                    },
-                    "required": [
-                        "plan_id",
-                        "change_set_fingerprint"
+                    "oneOf": [
+                        {"$ref": "#/$defs/packageOperationResult"},
+                        {"$ref": "#/$defs/stateCheckOperationResult"}
                     ]
                 },
                 "error_code": {
@@ -1138,6 +1131,27 @@
                 "created_at_ms",
                 "updated_at_ms"
             ]
+        },
+        "packageOperationResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "plan_id": {"$ref": "#/$defs/id"},
+                "change_set_fingerprint": {"$ref": "#/$defs/sha256"}
+            },
+            "required": ["plan_id", "change_set_fingerprint"]
+        },
+        "stateCheckClassification": {
+            "enum": ["ok", "issues_detected", "issues_truncated"]
+        },
+        "stateCheckOperationResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "integrity": {"$ref": "#/$defs/stateCheckClassification"},
+                "foreign_keys": {"$ref": "#/$defs/stateCheckClassification"}
+            },
+            "required": ["integrity", "foreign_keys"]
         },
         "toolError": {
             "type": "object",
