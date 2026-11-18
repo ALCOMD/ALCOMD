@@ -618,6 +618,103 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "uses the real ten-minute access token lifetime and an isolated Core endpoint"]
+async fn oauth_subscription_ends_at_natural_access_expiry() {
+    use rmcp::model::SubscriptionFilter;
+
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-oauth-subscription-expiry")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(root.join("data")).expect("owned disposable data");
+    let root = root.canonicalize().expect("normalized isolation");
+    let core = CoreConfiguration::new();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        core.ipc.clone(),
+        DataConfig::isolated(root.join("data")),
+        std::future::pending(),
+    )
+    .await
+    .expect("exclusive isolated Core");
+    let mut owner = AlcomdClient::connect(core.client.clone())
+        .await
+        .expect("native test owner");
+    let read = vec![grant("projects.read", "global", "*")];
+    let client = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "OAuth subscription expiry fixture".into(),
+            grants: read.clone(),
+            idempotency_key: "natural-expiry-client".into(),
+        })
+        .await
+        .expect("explicit read grant");
+    let http = Https::start(&root, core.client.clone()).await;
+    let reg = registration(&mut owner, &http, &client, false)
+        .await
+        .registration;
+    let code = http.code(&mut owner, &reg, &read).await;
+    let exchange_started = tokio::time::Instant::now();
+    let issued = http.exchange(&reg, &code, None).await;
+    let received = tokio::time::Instant::now();
+    let lifetime = Duration::from_secs(600);
+    assert_eq!(issued["expires_in"].as_u64(), Some(lifetime.as_secs()));
+    let access = issued["access_token"].as_str().expect("one-time access");
+    // Separate the token's natural expiry from the independent ten-minute stream limit.
+    tokio::time::sleep(Duration::from_secs(25)).await;
+    let sdk = http.sdk(access).await;
+    let listen_started = tokio::time::Instant::now();
+    let mut stream = sdk
+        .listen(SubscriptionFilter::builder().tools_list_changed().build())
+        .await
+        .expect("authenticated HTTPS subscription ack");
+    assert_eq!(sdk.list_all_tools().await.expect("read tools").len(), 2);
+    let end = tokio::time::timeout_at(received + lifetime + Duration::from_secs(8), stream.next())
+        .await
+        .expect("stream closes at token expiry");
+    assert!(
+        !matches!(end, Ok(Some(_))),
+        "expiry must not publish a false catalogue change"
+    );
+    let since_exchange = exchange_started.elapsed();
+    let since_listen = listen_started.elapsed();
+    assert!(since_exchange >= lifetime - Duration::from_secs(2));
+    assert!(
+        since_listen < lifetime - Duration::from_secs(10),
+        "the token must expire before the independent stream limit"
+    );
+    assert_eq!(
+        raw_tool(&http, access, "alcomd_list_projects", json!({}))
+            .await
+            .status(),
+        401
+    );
+    let new_code = http.code(&mut owner, &reg, &read).await;
+    let replacement = http.exchange(&reg, &new_code, None).await;
+    let fresh = http
+        .sdk(replacement["access_token"].as_str().expect("fresh access"))
+        .await;
+    assert_eq!(
+        fresh
+            .list_all_tools()
+            .await
+            .expect("fresh access works")
+            .len(),
+        2
+    );
+    eprintln!(
+        "Natural expiry closed the stream after {} ms ({} ms after exchange start)",
+        since_listen.as_millis(),
+        since_exchange.as_millis()
+    );
+    stop(fresh).await;
+    stop(sdk).await;
+    http.finish_server().await;
+    drop(owner);
+    daemon.abort();
+    let _ = daemon.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
