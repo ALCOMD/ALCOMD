@@ -1602,3 +1602,40 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 首次运行终态、已执行作业的原始日志和摘要、macOS 取消注释归档于 target/m8-push-2735119f-20261118/。只收集推送自动触发的运行。M8 保持进行中，旧三平台通过记录继续对应其原 SHA，扩展人工继续延期，正式签名包与发行装配仍归 M12。
 
 范围核对确认，现有外部 MCP 允许列表只开放包移除 Plan 和既有 Apply，Core 接受事务也要求 MCP 写入是无来源集合的移除计划。项目包候选查询、安装和重装需另行明确允许委托的包来源和可见字段，再审阅工具与 Core 授权的最小差异。现有身份和运行时不需要重做。
+
+### v3 MCP 能力对照与首批包目录合同（待审批）
+
+按所有者要求，M8 以冻结 v3.4.0 的实际用户能力为下限。对照 `4aa98ae4f18d42c10137278997180dbede991e88` 的工具参考、`vrc-get-gui/src/mcp/tools.rs` 注册目录和 `vrc-get-gui/src/backend/mcp_capabilities.rs`，确认实际注册 33 个工具。既有 [M-1 逐项映射](../baselines/mcp-tool-contract.md#33-个冻结用例的-v4-映射) 保留作历史索引，下表按当前 Core 与适配器复核交付状态。旧工具名、协议、共享凭据及日志系统仍受已接受决定约束。
+
+| v3 用例 | 当前 V4 MCP 状态及具体缺口 |
+| --- | --- |
+| 项目列表、详情（2） | 已有登记项目、Unity 版本、清单及锁定依赖读取。v3 详情还报告是否需要解析及已安装包的详细元数据，现有投影未完整覆盖，列入包详情和项目证据补充。身份使用 `ProjectId`，不需要传绝对路径。 |
+| 全局列包、按仓库列包、包详情、安装、卸载、重装（6） | 单包卸载已有真实闭环。其余五项未对外开放。全局目录与仓库目录需要脱离项目读取。安装要支持最新可用兼容版、精确版本和指定来源，重装须保持已安装版本。v3 本地用户包也在聚合目录中，本轮方案考虑已登记本地包。 |
+| 列出、添加和移除仓库（3） | Core 有 `repositories.list/inspect/register/unregister`，外部 MCP 未开放。首批目录提供查包所需的仓库索引与可用性，完整来源显示策略、登记和移除另批。仓库管理须对 URL、凭据和来源变更定义独立边界。 |
+| 创建、登记、复制项目、创建备份、从备份恢复（5） | Core 有 `projects.create/register/planCopy/applyCopy` 和 `backups.create/planRestore/applyRestore`。MCP 调用身份、导入及目标目录边界、备份授权和对应 Operation 投影待审。 |
+| 模板列表、详情、创建、编辑、设置和移除包、设置和移除 UnityPackage 附件、移除模板（9） | Core 使用 v4 模板模型及 `projectTemplates.list/save/remove`，外部 MCP 未开放。逐项核对模板定义、附件及原子修改能否映射现模型，真实缺口单列，保留内置模板保护。 |
+| 环境设置（1） | Unity 安装读取和 `settings.get` 已存在，外部 MCP 未开放。需定义仅包含已登记 Unity、有效启动参数及项目/备份目录的授权视图，目录等敏感值须明确授权。 |
+| 活动搜索、详情、统计、上下文及技术日志搜索、详情、统计（7） | A-026 后续决定明确撤销原活动/技术日志产品入口及相关权限。列为已撤销能力，当前 M8 的 Operation、事件和传输观测各按自身合同记验收。若要恢复这七项，需先明确修订 A-026。 |
+
+工具外仍有两项对照。v3 七个长任务可轮询、取消，个别流程可等待输入和审批。V4 使用 A-021 的 `OperationId`；目前工具只覆盖包任务查询及取消，需随各流程核对真实确认、继续和结果能力，Core 尚无通用 input/approve/reject/resume RPC。v3 Windows 上还有 Codex、Claude Code、Cursor 快速配置与覆盖确认。V4 当前有连接配置说明、受控凭据及真实 Codex HTTP/OAuth 证据，便捷配置仍有缺口，需按各客户端的冻结协议支持和独立凭据边界处理。管理扩展人工验证仍按所有者要求延期。
+
+#### 首批提交审批的最小外部合同
+
+建议完整交付一个目录到写入的流程。采用两个固定 Core RPC `mcp.packages.query`、`mcp.packages.plan` 和协商 capability `mcp.packages.catalog-plan.v1`。适配器使用 typed client，Core 调用已有目录、项目读取和 M4 Resolver/Plan/Apply。现有 GUI/CLI RPC 形状不动。新投影有必要，现有 `packages.queryProjectCandidates` 强制要求项目和 `settings.read`，`repositories.packages` 是原始单仓库报文，`packages.planInstall/planReinstall` 的 Plan RPC 输出包含内部来源标识和下载地址。
+
+| MCP 工具（名称均加 `alcomd_`） | 输入与返回 | Core 与能力 |
+| --- | --- | --- |
+| `list_package_sources` | `cursor?`, `limit?` → 来源 ID、名称、类型、可用性和受限原因、下一页 | `mcp.packages.query` 的 `sources`，`repositories.read` + `packages.read` |
+| `search_packages` | 空筛选可列全量。`query?`, `repository_id?`, `project_id?`, `expected_revision?`, `cursor?`, `limit?` → 包 ID、名称、代表版本及各来源、快照、下一页；项目视图另含当前锁定版本、兼容状态和候选原因 | `query` 的 `summary`；同上，项目视图再需 `projects.read`，`project_id` 与 `expected_revision` 同时提供 |
+| `get_package` | `package_id`, `version?`, `source?`, `project_id?`, `expected_revision?`, `cursor?`, `limit?` → 匹配版本的名称、描述、关键词、别名、依赖及范围、被替代包、Unity 要求、撤回状态、来源和可公开文档链接。项目视图另含兼容性 | `query` 的 `versions`；权限及项目参数同上 |
+| `plan_package_install` | `project_id`, `expected_revision`, `package_id`, `version_selector: {kind: latest_compatible} 或 {kind: exact, version}`, `source?` → 原 Plan ID、revision、变更摘要和风险 | `mcp.packages.plan` 的 `install`；`projects.read` + `repositories.read` + `packages.read`。使用 Core 当前可见、兼容的候选与原 resolver；不会绕过 yanked、Unity 或预发布规则 |
+| `plan_package_reinstall` | `project_id`, `expected_revision`, `package_id`, `source?` → 原 Plan ID、revision、变更摘要和风险 | `plan` 的 `reinstall`；同上。以项目实际锁定版本生成单包重装计划，版本不能漂移，无法取得原版本时明确返回错误 |
+| 现有 `apply_package_changes`、`get_operation`、`cancel_operation` | 原参数与任务结果。Apply 仍只接收 `plan_id`, `expected_revision`, `confirm: true`, `idempotency_key`。独立查询和显式取消 | 既有 `packages.applyPlan` 与 Operation RPC。Apply 额外需要 `packages.manage` + `operations.read`，查询和取消沿用各自权限 |
+
+- `source` 为已登记的 `{kind: repository, repository_id}` 或 `{kind: user_package, user_package_id}`。覆盖内置及已登记的匿名 HTTPS 仓库、已登记并已建立内容摘要的本地用户包。Core 复用可见性、优先级、来源身份、下载与归档校验。查询使用既有索引，缺少的包详情字段由 Core 从现有缓存 manifest 投影。用户包按冻结归档与摘要执行，适配器不读取目录；未登记目录不能用作来源。被隐藏或失去授权的来源同时从目录版本、直接解析和传递依赖中排除，无权来源不能用作兜底。仓库或下载需要现有认证材料，或来源无法满足本批约束时，提供受限状态及原因，下一批须补齐受控认证源等仍欠场景，不能以本批结果证明目录完整对等。
+- Core 始终在真实客户端权限及 OAuth token 上限的交集内读受委托目录和项目，仅在确定资源身份时取其登记 owner 作为数据选择条件。Plan、Operation 和幂等记录仍归真实 Principal。计划冻结本次解析的完整来源集合、各自 revision/摘要及项目证据。接受事务重查当前授权、目标身份/版本、每个 pin 的来源及快照，来源可见性设置也在接受前按当前 revision 复核。旧 Plan 失效时提示重查或重新确认，不切换来源或静默重规划。后续任务只执行已接受 Plan 和既有恢复规则；请求取消、连接断开或撤销不能隐式取消已接受任务。扩展 provider 原 Host 工具集合继续使用其原卸载操作。
+- 读取默认 100、每页最多 200，包 ID、UUID、revision 和幂等键沿用既有限制。索引分页排序固定，Core 不透明游标绑定当前 Principal、认证上限/授权修订、查询及目录快照，项目视图再绑定项目证据。失效或篡改使用既有 `revision_conflict`，从第一页重新读。目录缓存缺失、歧义、未授权来源和真实无匹配可区分。沿用 Core 有界读取及 MCP 3 MiB 数据预算，目录按条数和字节分页，完整 Plan 超限明确 `plan_too_large`。
+- Plan 摘要由 Core 生成，至少列版本变更、触发依赖、来源 ID/名称、冲突原因和计划中清理的相对路径。新查询、Plan、Operation、RPC 错误和事件均不带下载直链、认证头、凭据引用、内部来源 locator 或完整本机路径。文档/变更日志链接只采用现有安全链接投影中可公开的地址。保留已有业务错误与取消语义；真实写响应丢失沿用 `core_write_outcome_unknown`，以同身份、原 Plan 和同键恢复，不自动再次写入。
+- 无新增 State、Config、生产依赖或权限名称。原八项能力继续仅为 `Global/*`，不引入逐项目授权。审批后同步 Core RPC、工具 Schema、typed client、目录通知与能力筛选；只有真实链路实现后才宣告 capability。仓库增删、认证源委托、模板、项目/备份、环境与快捷配置继续按对照表逐批补齐。
+
+定向验收使用冻结协议客户端和隔离 Core。验证跨项目的全局目录、单仓库、包详情、同版本多来源、分页快照、最新兼容与精确版、项目兼容候选、认证来源受限、本地已登记包及依赖、重装保持原版本、风险展示、来源变动后拒绝原 Plan、零授权/逐次撤销/OAuth 上限、跨客户端隔离、同键恢复与在途取消。保留六工具现有卸载回归。当前仅完成源码与合同审计，未实施以上接口或补跑远端。
