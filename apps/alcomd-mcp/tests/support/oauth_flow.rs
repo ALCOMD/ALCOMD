@@ -367,6 +367,321 @@ async fn raw_tool(http: &Https, token: &str, name: &str, args: Value) -> reqwest
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_environment_matches_native_settings_and_unity_reads() {
+    use alcomd_application::{
+        IdempotencyKey, M5UnityStore, PrincipalId, UnityArchitecture, UnityInstallationObservation,
+        UnitySourceKind,
+    };
+
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-environment-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("isolated fixture");
+    let root = root.canonicalize().expect("canonical fixture");
+    let source = root.join("Project");
+    let archives = root.join("Backups");
+    project(&source, false);
+    std::fs::create_dir(&archives).expect("isolated backup directory");
+    let data_config = DataConfig::isolated(root.join("data"));
+    let store = alcomd_store::StateStoreHandle::open(
+        alcomd_platform::state_database_path(&data_config).expect("isolated database path"),
+    )
+    .expect("isolated Store");
+    // Pre-verified records keep this contract test independent of machine Editor installs.
+    for (index, version) in ["2022.3.22f1", "6000.0.3f1"].into_iter().enumerate() {
+        store
+            .register_installation(
+                PrincipalId::local_owner(),
+                UnityInstallationObservation {
+                    executable_path: root
+                        .join(version)
+                        .join("Unity")
+                        .to_string_lossy()
+                        .into_owned(),
+                    filesystem_identity: vec![1 + index as u8],
+                    unity_version: version.to_owned(),
+                    architecture: UnityArchitecture::X86_64,
+                    source_kind: UnitySourceKind::Manual,
+                    observed_at_ms: 10 + index as u64,
+                },
+                IdempotencyKey::parse(format!("seed-editor-{index}")).expect("seed key"),
+                10 + index as u64,
+            )
+            .await
+            .expect("seed only the isolated registry");
+    }
+    drop(store);
+    let config = CoreConfiguration::new();
+    let (shutdown, stopped) = tokio::sync::oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        config.ipc.clone(),
+        data_config,
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("isolated real Core");
+    let mut owner = AlcomdClient::connect(config.client.clone())
+        .await
+        .expect("owner");
+    let initial = owner.settings_get().await.expect("native settings");
+    let default_args = vec!["-logFile", "Default file with spaces.log"];
+    owner
+        .settings_update(serde_json::from_value(json!({
+            "expectedRevision": initial.revision,
+            "update": {
+                "paths": {"projectDirectory": root.to_string_lossy(), "backupDirectory": archives.to_string_lossy()},
+                "unity": {"defaultLaunchArguments": default_args},
+                "projects": {"autoDiscover": false}
+            }
+        })).expect("typed fixture settings"))
+        .await
+        .expect("set isolated defaults");
+    let project_id = owner
+        .project_register(
+            source.to_string_lossy().into_owned(),
+            "environment-project".into(),
+        )
+        .await
+        .expect("register native project")
+        .project
+        .project_id
+        .expect("project ID");
+    let settings = owner.settings_get().await.expect("current native settings");
+    let args = json!({"project_id":project_id});
+    let grants = ["projects.read", "settings.read", "unity.read"]
+        .map(|permission| grant(permission, "global", "*"))
+        .to_vec();
+    let actor = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "Environment read fixture".into(),
+            idempotency_key: "environment-client".into(),
+            grants: Vec::new(),
+        })
+        .await
+        .expect("isolated client");
+    let issued = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: actor.client_id.clone(),
+            expected_revision: actor.revision,
+            idempotency_key: "environment-credential".into(),
+        })
+        .await
+        .expect("isolated credential");
+    let mut delegated =
+        AlcomdClient::connect(config.client.clone().with_mcp_credential(issued.credential))
+            .await
+            .expect("same native routes with delegated identity");
+    assert!(delegated.settings_get().await.is_err());
+    assert!(
+        delegated
+            .unity_project_launch_config_get(project_id.clone())
+            .await
+            .is_err()
+    );
+    let actor = update(
+        &mut owner,
+        &McpClientRecord {
+            revision: issued.revision,
+            ..actor
+        },
+        grants.clone(),
+        "environment-grant",
+    )
+    .await;
+    assert_eq!(
+        delegated
+            .settings_get()
+            .await
+            .expect("native delegated settings"),
+        settings
+    );
+    assert_eq!(
+        delegated
+            .unity_project_launch_config_get(project_id.clone())
+            .await
+            .expect("native delegated config"),
+        owner
+            .unity_project_launch_config_get(project_id.clone())
+            .await
+            .expect("native owner config"),
+    );
+    let http = Https::start(&root, config.client.clone()).await;
+    let registration = registration(&mut owner, &http, &actor, false)
+        .await
+        .registration;
+    let (request, cookie) = http
+        .start_request_for_scopes(&registration, "projects.read settings.read unity.read")
+        .await;
+    let code = http
+        .approve_code(&mut owner, &grants[..2], request, cookie)
+        .await;
+    let restricted = http.exchange(&registration, &code, None).await;
+    let restricted = restricted["access_token"]
+        .as_str()
+        .expect("restricted token");
+    let denied = raw_tool(
+        &http,
+        restricted,
+        "alcomd_get_project_launch_config",
+        args.clone(),
+    )
+    .await;
+    assert_eq!(denied.status(), 403);
+    assert!(
+        denied.headers()["www-authenticate"]
+            .to_str()
+            .expect("challenge")
+            .contains("insufficient_scope")
+    );
+    let (request, cookie) = http
+        .start_request_for_scopes(&registration, "projects.read settings.read unity.read")
+        .await;
+    let code = http
+        .approve_code(&mut owner, &grants, request, cookie)
+        .await;
+    let token = http.exchange(&registration, &code, None).await;
+    let sdk = http
+        .sdk(token["access_token"].as_str().expect("granted token"))
+        .await;
+    let tools = sdk
+        .list_tools(None)
+        .await
+        .expect("authorized catalog")
+        .tools;
+    for name in [
+        "alcomd_get_settings",
+        "alcomd_list_unity_installations",
+        "alcomd_get_project_launch_config",
+    ] {
+        assert!(tools.iter().any(|tool| tool.name == name));
+    }
+    let mut trace = Vec::new();
+    let settings_tool = data(
+        call(&sdk, &mut trace, "get_settings", json!({}))
+            .await
+            .expect("settings tool"),
+    );
+    assert_eq!(settings_tool["revision"], settings.revision);
+    assert_eq!(
+        settings_tool["directories"]["project_directory"],
+        settings.directories.project_directory
+    );
+    assert_eq!(
+        settings_tool["directories"]["backup_directory"],
+        settings.directories.backup_directory
+    );
+    assert_eq!(
+        settings_tool["settings"]["unity"]["default_launch_arguments"],
+        json!(default_args)
+    );
+    let installs = data(
+        call(
+            &sdk,
+            &mut trace,
+            "list_unity_installations",
+            json!({"limit":1,"include_version_options":true}),
+        )
+        .await
+        .expect("Unity page"),
+    );
+    let native = owner
+        .unity_installations_list(UnityInstallationsListParams {
+            cursor: None,
+            limit: Some(1),
+            include_version_options: Some(true),
+        })
+        .await
+        .expect("native Unity page");
+    assert_eq!(
+        installs["installations"][0]["installation_id"],
+        native.installations[0].installation_id
+    );
+    assert_eq!(
+        installs["installations"][0]["executable_path"],
+        native.installations[0].executable_path
+    );
+    assert_eq!(
+        installs["version_options"]["versions"],
+        json!(native.version_options.expect("version choices").versions)
+    );
+    let cursor = native.next_cursor.expect("next page");
+    assert_eq!(installs["next_cursor"], cursor);
+    let next = data(
+        call(
+            &sdk,
+            &mut trace,
+            "list_unity_installations",
+            json!({"limit":1,"cursor":cursor}),
+        )
+        .await
+        .expect("Unity continuation"),
+    );
+    assert_ne!(
+        next["installations"][0]["installation_id"],
+        installs["installations"][0]["installation_id"]
+    );
+    assert!(next.get("next_cursor").is_none());
+    let launch = data(
+        call(&sdk, &mut trace, "get_project_launch_config", args.clone())
+            .await
+            .expect("effective defaults"),
+    );
+    assert_eq!(launch["effective_arguments"], json!(default_args));
+    assert_eq!(launch["config"]["revision"], 0);
+    let overrides = vec![
+        "-logFile".to_owned(),
+        "Exact Override destination.log".to_owned(),
+    ];
+    owner
+        .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
+            project_id: project_id.clone(),
+            arguments: overrides.clone(),
+            expected_revision: 0,
+            idempotency_key: "environment-launch-override".into(),
+        })
+        .await
+        .expect("native override");
+    let launch = data(
+        call(&sdk, &mut trace, "get_project_launch_config", args.clone())
+            .await
+            .expect("project override"),
+    );
+    let native = owner
+        .unity_project_launch_config_get(project_id)
+        .await
+        .expect("native override view");
+    assert_eq!(
+        launch["config"]["arguments"],
+        json!(native.config.arguments)
+    );
+    assert_eq!(launch["effective_arguments"], json!(overrides));
+    assert_eq!(launch["default_arguments"], json!(native.default_arguments));
+    update(
+        &mut owner,
+        &actor,
+        grants[..2].to_vec(),
+        "environment-revoke-unity",
+    )
+    .await;
+    error(
+        call(&sdk, &mut trace, "get_project_launch_config", args)
+            .await
+            .expect("revoked Core permission"),
+        "permission_denied",
+    );
+    assert!(delegated.settings_get().await.is_ok());
+    stop(sdk).await;
+    http.finish_server().await;
+    drop(delegated);
+    drop(owner);
+    shutdown.send(()).expect("stop fixture");
+    daemon.await.expect("join").expect("fixture shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_backup_write_respects_consent_and_current_grants() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))

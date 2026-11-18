@@ -7,7 +7,7 @@ use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as u
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-const MCP_PERMISSIONS: [&str; 13] = [
+const MCP_PERMISSIONS: [&str; 15] = [
     "projects.read",
     "packages.manage",
     "state.check",
@@ -21,6 +21,8 @@ const MCP_PERMISSIONS: [&str; 13] = [
     "backups.manage",
     "projects.manage",
     "projects.create",
+    "settings.read",
+    "unity.read",
 ];
 
 pub struct Management;
@@ -740,6 +742,8 @@ fn permission_label(permission: &str) -> &str {
         "backups.manage" => "创建和恢复项目备份",
         "projects.manage" => "登记现有项目",
         "projects.create" => "新建、复制和恢复项目",
+        "settings.read" => "读取设置和默认目录",
+        "unity.read" => "读取 Unity 安装与项目启动配置",
         "packages.read" => "读取包信息",
         _ => "不支持的权限",
     }
@@ -867,7 +871,11 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(fields.len(), 13);
+        assert_eq!(fields.len(), 15);
+        for permission in ["settings.read", "unity.read"] {
+            assert!(fields.iter().any(|field| field.field_id == permission
+                && matches!(field.value, ui::FieldValue::Boolean(false))));
+        }
         assert!(
             !doc.nodes
                 .iter()

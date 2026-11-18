@@ -1771,19 +1771,22 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 | --- | --- | --- |
 | 读取实际安装的包及判断是否需要解析 | 候选页已经用项目内 `Packages/<id>/package.json` 与锁定 ID、版本核对展示信息。包计划检查器可识别锁定包的实际缺失，目录查询可以返回同版本的可用来源。 | 建议为 `mcp.packages.query` 增加带项目 ID、修订及现有不透明游标的 `installed` 查询，工具名为 `alcomd_list_installed_packages`。继续要求 `projects.read`、`packages.read`，此查询无需查仓库。返回锁定版本、实际观察状态及已核实的包信息，具备来源证据时才提供来源。解析状态只基于锁定包缺失、直接依赖缺少匹配锁或 Core 已知的其他解析条件。不完整或变化的观察标出 `unknown`，不把同版本目录候选当作安装来源。 |
 | 查看和修改项目模板 | `projectTemplates.list` 只给摘要。`save` 可从文件、项目或手动定义保存。用原模板作基础时保留资产树、UPM 清单和 VPM 锁，直接依赖只追加或覆盖，无法精确移除。归档已校验并按摘要冻结。 | 建议新增共享 `projectTemplates.get(id)` 与 `projectTemplates.edit(id, expectedRevision, changes, idempotencyKey)`。详情返回标识、修订、可编辑性、名称、Unity 版本、直接依赖和原生附件目录。编辑以明确增删改修改现有归档，复用原保存任务、归档校验、发布及登记事务。锁定模板拒绝修改、移除。现有原生附件是归档里的内容，没有独立附件登记；编辑只限模板归档 `Assets/` 中显式选择的原生资产及其关联 `.meta`，新增输入使用本机所有者批准的文件，不接受任意路径。UnityPackage 导入行为及旧模板格式仍属 M11。模板浏览与编辑需要各自的默认关闭能力，创建项目所需的模板选择权保持独立。 |
-| 读取有效环境 | Unity 安装列表已有真实登记及基于 Core 的检查。有效启动参数由 `unity.projectLaunchConfig.get` 对应的 application 用例按项目设置或默认值取用。项目和备份目录共用已解析的设置与平台默认值。 | 建议一项 `mcp.environment.get`，只投影登记安装 ID、版本、选定项目的有效启动参数和获准查看的有效默认位置。按字段检查现有 `unity.read`、`projects.read`、`settings.read`。任意用户输入的启动参数可能自带秘密，参数和路径原值需要在授权界面明确列为可披露的数据；无授权时省略，禁止泛化为整体设置读取。安装项不返回可执行文件绝对路径。 |
+| 读取有效环境 | Unity 安装列表已有真实登记及基于 Core 的检查。有效启动参数由 `unity.projectLaunchConfig.get` 对应的 application 用例按项目设置或默认值取用。项目和备份目录共用已解析的设置与平台默认值。 | 所有者要求按 Core 权限对齐三个入口。MCP 直接调用已有 `settings.get`、`unity.installations.list`、`unity.projectLaunchConfig.get`，获得对应的原有结果，包括 Unity 安装位置和完整有效启动参数。 |
 
-上述差异仍是审计草案。模板编辑还需集中定稿权限名称、原生附件是否允许文件树级操作、文件审批输入和编辑的持久任务合同。项目与备份的审批句柄仅覆盖其所列四种用途。环境合同也须在实施前明确参数与位置的披露授权。已接通的包查询、模板原生入口和项目创建选择能力继续使用当前合同。
+项目包详情和模板编辑仍是审计草案。模板编辑还需集中定稿权限名称、原生附件是否允许文件树级操作、文件输入和编辑的持久任务合同。项目与备份的审批句柄仅覆盖其所列四种用途。已接通的包查询、模板原生入口和项目创建选择能力继续使用当前合同。
 
 #### 下一组合并公共合同草案
 
 | 能力 | 建议公开差异与验收证据 |
 | --- | --- |
 | 项目内实际包 | 在 `mcp.packages.query` 的 `view.kind` 增加 `installed`，使用既有 `project: {projectId,expectedRevision}`、cursor、limit。工具为 `alcomd_list_installed_packages`。仅此视图要求 `projects.read` 和 `packages.read`。Core 复用项目本地清单、锁和实际包目录观察，返回包 ID、声明/锁定/观察版本、观察状态以及可核实的公开包字段。来源只在现有证据能绑定实际安装时出现。解析检查返回 `needed`、`no_issue_observed` 或 `unknown` 及具体原因，分页绑定当前授权、项目修订与观察指纹。以目录缺失、版本不符和观察失败分别验证。 |
-| 现行模板定义与原生内容 | 提供共享 `projectTemplates.get`、`projectTemplates.edit`。编辑以 ID、预期修订、明确的名称和依赖差异、原生附件增删以及幂等键复用保存 Operation，避免完整重建而遗失未改字段。MCP 创建手动模板和移除复用现有保存、移除用例。提议 `templates.read` 和 `templates.manage` 两项独立 `global/*` 能力，创建项目选材沿用 `projects.create`。只列归档内 `Assets/` 的原生资源相对名；提议由本机所有者通过独立 `mcp.templateAttachments.approve` 绑定原生常规文件、模板 ID、修订及确切目标名，外部调用只交不透明 ID。复制校验内容摘要，已有 `.meta` 在未明确修改时保留，移除成对内容走原模板归档提交。按锁定模板、未获准文件、过期修订、其余依赖及附件保全验证。旧格式及 UnityPackage 导入留 M11。 |
-| 有效环境 | 提议 `mcp.environment.get({projectId?})`。复用已登记 Unity 和配置观察，`unity.read` 给安装 ID、版本，`settings.read` 给实际项目及备份默认目录。选定项目的完整有效启动参数额外要求现有 `projects.read` 和提议的 `unity.launch-arguments.read`。新增开关明确说明参数可能含用户自行填写的秘密，默认关闭。按未授权字段彻底省略、项目覆盖与默认参数切换验证。安装路径、其余设置及凭据存储保持封闭。 |
+| 现行模板定义与原生内容 | 提供共享 `projectTemplates.get`、`projectTemplates.edit`。编辑以 ID、预期修订、明确的名称和依赖差异、原生附件增删以及幂等键复用保存 Operation，避免完整重建而遗失未改字段。MCP 创建手动模板和移除复用现有保存、移除用例。提议 `templates.read` 和 `templates.manage` 两项独立 `global/*` 能力，创建项目选材沿用 `projects.create`。归档内 `Assets/` 的附件使用相对名。文件输入、确认和校验由同一 Core 用例根据已认证调用者及其文件授权执行。复制校验内容摘要，已有 `.meta` 在未明确修改时保留，移除成对内容走原模板归档提交。按锁定模板、未获准文件、过期修订、其余依赖及附件保全验证。旧格式及 UnityPackage 导入留 M11。 |
 
-新增能力名、参数披露和原生附件审批属于下一组待审合同。建议采用既有 State、Config、认证、复制和保存运行机制，扩展 Host/WIT 保持原合同。实际需要附带的迁移或新依赖另列证据后决定。
+模板能力名和共享附件输入属于下一组待审合同。建议采用既有 State、Config、认证、复制和保存运行机制，扩展 Host/WIT 保持原合同。实际需要附带的迁移或新依赖另列证据后决定。
+
+#### 环境读取按三端权限对齐
+
+所有者明确要求 MCP、GUI、CLI 对齐能力范围。Core 依据身份及授予的能力决定结果。复用原三个 RPC、原请求和结果类型。把现有 `settings.read`、`unity.read` 接入 MCP 显式授权与 OAuth 同意。项目启动参数继续用原 `projects.read + unity.read` 拿到完整默认、覆盖和有效值。已登记安装查同一资源，调用身份保持原 Principal。GUI、CLI 原有设置或 Unity 写入走既有授权。 [工具映射](../../specs/mcp/toolset-v1.md#读取设置和-unity-环境)
 
 ### 2026-11-19 Codex 快速接入核对
 

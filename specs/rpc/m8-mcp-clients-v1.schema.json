@@ -21,7 +21,9 @@
                         "backups.read",
                         "backups.manage",
                         "projects.manage",
-                        "projects.create"
+                        "projects.create",
+                        "settings.read",
+                        "unity.read"
                     ]
                 },
                 "resourceKind": {

@@ -90,6 +90,16 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 四项能力 `projects.manage`、`projects.create`、`backups.read` 和 `backups.manage` 默认关闭。工具目录按当前客户端授权及 OAuth 上限生成。共享资源归 Core 的本机所有者，Plan、Operation 和幂等记录归发起请求的实际客户端。对外结果只返回稳定 ID、必要的摘要和目标名称。
 
+## 读取设置和 Unity 环境
+
+| 工具 | 同一 Core 入口 | 权限 |
+| --- | --- | --- |
+| `alcomd_get_settings` | `settings.get`。返回当前设置和 Core 解析的默认项目、备份目录。 | `settings.read` |
+| `alcomd_list_unity_installations` | `unity.installations.list`。使用同一安装登记与游标，包含安装路径。 | `unity.read` |
+| `alcomd_get_project_launch_config` | `unity.projectLaunchConfig.get`。返回项目覆盖、默认值及实际有效的完整参数。 | `projects.read`、`unity.read` |
+
+三端由 Core 按当前调用者检查相同的读取权限。MCP 管理扩展可以显式授予这些既有权限，OAuth 另受当次同意的能力上限约束。MCP 工具仅将字段名转换为 snake_case，保留 Core 返回的值。 [工具 Schema](environment-v1.schema.json)
+
 ## 客户端接入速查
 
 为每个客户端单独创建身份，打开实际需要的能力，再由本机所有者用 `alcomd-cli mcp client issue-credential` 签发 Bearer 或 STDIO 凭据。凭据交给客户端的受控秘密入口。每次轮换立即使旧凭据失效。

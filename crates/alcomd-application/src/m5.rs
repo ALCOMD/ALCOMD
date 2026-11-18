@@ -416,7 +416,11 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         }
         let page = self
             .store
-            .list_installations(access.principal().clone(), cursor, limit)
+            .list_installations(
+                crate::workflow_resource_owner(access.principal()),
+                cursor,
+                limit,
+            )
             .await?;
         if !include_version_options {
             return Ok((page, None));
@@ -457,7 +461,11 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         loop {
             let page = self
                 .store
-                .list_installations(access.principal().clone(), cursor, 1_000)
+                .list_installations(
+                    crate::workflow_resource_owner(access.principal()),
+                    cursor,
+                    1_000,
+                )
                 .await?;
             page.installations.into_iter().for_each(&mut visit);
             cursor = page.next_cursor;
@@ -540,7 +548,10 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         require(access, Permission::UnityRead)?;
         let config = self
             .store
-            .get_project_launch_config(access.principal().clone(), project_id)
+            .get_project_launch_config(
+                crate::workflow_resource_owner(access.principal()),
+                project_id,
+            )
             .await?;
         let default_arguments = self.defaults.arguments().await?;
         let effective_arguments = if config.revision.is_some() {

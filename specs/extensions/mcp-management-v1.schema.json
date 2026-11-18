@@ -14,7 +14,7 @@
             "type": "object", "additionalProperties": false,
             "required": ["permission", "resourceKind", "resourceId"],
             "properties": {
-                "permission": {"enum": ["projects.read", "packages.manage", "state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "repositories.manage", "packages.read", "backups.read", "backups.manage", "projects.manage", "projects.create"]},
+                "permission": {"enum": ["projects.read", "packages.manage", "state.check", "operations.read", "operations.cancel", "events.read", "repositories.read", "repositories.manage", "packages.read", "backups.read", "backups.manage", "projects.manage", "projects.create", "settings.read", "unity.read"]},
                 "resourceKind": {"const": "global"},
                 "resourceId": {"const": "*"}
             }

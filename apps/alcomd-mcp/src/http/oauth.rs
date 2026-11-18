@@ -115,6 +115,9 @@ pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
         Some("alcomd_apply_backup_restore") => {
             &["backups.read", "backups.manage", "projects.create"]
         }
+        Some("alcomd_get_settings") => &["settings.read"],
+        Some("alcomd_list_unity_installations") => &["unity.read"],
+        Some("alcomd_get_project_launch_config") => &["projects.read", "unity.read"],
         _ => &[],
     }
 }
@@ -449,7 +452,7 @@ pub(super) async fn handle(
         } else {
             json_response(
                 StatusCode::OK,
-                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["projects.read","packages.read","repositories.read","repositories.manage","packages.manage","operations.read","operations.cancel","state.check","events.read","backups.read","backups.manage","projects.manage","projects.create"]}),
+                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["projects.read","packages.read","repositories.read","repositories.manage","packages.manage","operations.read","operations.cancel","state.check","events.read","backups.read","backups.manage","projects.manage","projects.create","settings.read","unity.read"]}),
             )
         };
     }

@@ -351,6 +351,8 @@ pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -
                 "backups.manage" => "Create and restore managed project backups",
                 "projects.manage" => "Register existing projects",
                 "projects.create" => "Create, copy and restore projects",
+                "settings.read" => "Read ALCOMD settings and default locations",
+                "unity.read" => "Read Unity installations and project launch configuration",
                 "operations.read" => "Read own operations",
                 "operations.cancel" => "Cancel own operations",
                 "state.check" => "Check state",

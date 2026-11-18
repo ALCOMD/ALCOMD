@@ -1,0 +1,198 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/environment-v1.json",
+    "title": "MCP reads of shared settings and Unity configuration",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_get_settings",
+            "title": "Read ALCOMD settings",
+            "description": "Read current ALCOMD settings and the effective default project and backup directories.",
+            "inputSchema": {"type": "object", "additionalProperties": false},
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {"$ref": "#/$defs/settings"},
+                    "error": {"$ref": "#/$defs/toolError"}
+                },
+                "oneOf": [{"required": ["data"]}, {"required": ["error"]}]
+            },
+            "effect": "read",
+            "requiredPermissions": ["settings.read"]
+        },
+        {
+            "name": "alcomd_list_unity_installations",
+            "title": "List registered Unity installations",
+            "description": "Read a page of registered Unity Editors. Pass the returned next_cursor to continue.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                    "include_version_options": {"type": "boolean"}
+                },
+                "not": {
+                    "properties": {"include_version_options": {"const": true}},
+                    "required": ["include_version_options", "cursor"]
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {"$ref": "#/$defs/unityInstallations"},
+                    "error": {"$ref": "#/$defs/toolError"}
+                },
+                "oneOf": [{"required": ["data"]}, {"required": ["error"]}]
+            },
+            "effect": "read",
+            "requiredPermissions": ["unity.read"]
+        },
+        {
+            "name": "alcomd_get_project_launch_config",
+            "title": "Read a project's Unity launch configuration",
+            "description": "Read the exact Unity launch arguments and defaults for a registered project, including any project override.",
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {"project_id": {"$ref": "#/$defs/id"}},
+                "required": ["project_id"]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {"$ref": "#/$defs/launchConfig"},
+                    "error": {"$ref": "#/$defs/toolError"}
+                },
+                "oneOf": [{"required": ["data"]}, {"required": ["error"]}]
+            },
+            "effect": "read",
+            "requiredPermissions": ["projects.read", "unity.read"]
+        }
+    ],
+    "$defs": {
+        "id": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "directory": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "arguments": {"type": "array", "items": {"type": "string"}},
+        "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "config_schema": {"type": "integer", "minimum": 1},
+                "revision": {"type": "integer", "minimum": 1},
+                "settings": {
+                    "type": "object",
+                    "description": "The settings document from Core settings.get. Field names use snake_case.",
+                    "properties": {
+                        "unity": {
+                            "type": "object",
+                            "properties": {
+                                "hub_path": {"type": ["string", "null"]},
+                                "default_launch_arguments": {"anyOf": [{"$ref": "#/$defs/arguments"}, {"type": "null"}]}
+                            },
+                            "required": ["hub_path", "default_launch_arguments"]
+                        }
+                    },
+                    "required": ["appearance", "locale", "packages", "unity", "paths", "window", "integrations", "network", "projects", "backups"]
+                },
+                "directories": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "project_directory": {"$ref": "#/$defs/directory"},
+                        "backup_directory": {"$ref": "#/$defs/directory"}
+                    },
+                    "required": ["project_directory", "backup_directory"]
+                },
+                "unity_hub": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "status": {"enum": ["available", "not_found", "unavailable"]},
+                        "source": {"enum": ["configured", "discovered", "none"]},
+                        "path": {"type": ["string", "null"]},
+                        "configured_path_status": {"enum": ["unset", "available", "invalid", "unavailable"]}
+                    },
+                    "required": ["status", "source", "path", "configured_path_status"]
+                }
+            },
+            "required": ["config_schema", "revision", "settings", "directories", "unity_hub"]
+        },
+        "unityInstallations": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "installations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "installation_id": {"$ref": "#/$defs/id"},
+                            "executable_path": {"$ref": "#/$defs/directory"},
+                            "filesystem_identity": {"type": "string"},
+                            "unity_version": {"type": "string"},
+                            "architecture": {"enum": ["x86_64", "arm64", "universal", "unknown"]},
+                            "source_kind": {"enum": ["manual", "hub_config", "known_install_root", "unity_cli_hint"]},
+                            "revision": {"type": "integer", "minimum": 1},
+                            "observed_at_ms": {"type": "integer", "minimum": 0},
+                            "updated_at_ms": {"type": "integer", "minimum": 0}
+                        },
+                        "required": ["installation_id", "executable_path", "filesystem_identity", "unity_version", "architecture", "source_kind", "revision", "observed_at_ms", "updated_at_ms"]
+                    }
+                },
+                "next_cursor": {"type": "string"},
+                "replayed": {"type": "boolean"},
+                "version_options": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "versions": {"type": "array", "items": {"type": "string"}},
+                        "default_version": {"type": ["string", "null"]}
+                    },
+                    "required": ["versions", "default_version"]
+                }
+            },
+            "required": ["installations", "replayed"]
+        },
+        "launchConfig": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "project_id": {"$ref": "#/$defs/id"},
+                        "arguments": {"$ref": "#/$defs/arguments"},
+                        "revision": {"type": "integer", "minimum": 0},
+                        "updated_at_ms": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["project_id", "arguments", "revision", "updated_at_ms"]
+                },
+                "default_arguments": {"$ref": "#/$defs/arguments"},
+                "effective_arguments": {"$ref": "#/$defs/arguments"}
+            },
+            "required": ["config", "default_arguments", "effective_arguments"]
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {"type": "string", "maxLength": 128},
+                "message": {"type": "string", "maxLength": 1024},
+                "retryable": {"type": "boolean"},
+                "diagnostic_id": {"type": "string", "maxLength": 128},
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {"subreason": {"type": "string", "maxLength": 128}},
+                    "required": ["subreason"]
+                }
+            },
+            "required": ["code", "message", "retryable"]
+        }
+    }
+}

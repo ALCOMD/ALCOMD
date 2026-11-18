@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-pub const OAUTH_SCOPES: [&str; 13] = [
+pub const OAUTH_SCOPES: [&str; 15] = [
     "projects.read",
     "packages.read",
     "repositories.read",
@@ -22,6 +22,8 @@ pub const OAUTH_SCOPES: [&str; 13] = [
     "backups.manage",
     "projects.manage",
     "projects.create",
+    "settings.read",
+    "unity.read",
 ];
 pub const OAUTH_ACCESS_MS: u64 = 600_000;
 pub const OAUTH_REFRESH_IDLE_MS: u64 = 7 * 86_400_000;

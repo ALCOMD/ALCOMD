@@ -78,6 +78,9 @@ pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
         METHOD_BACKUPS_CREATE => &["backups.manage", "projects.read"],
         METHOD_MCP_PROJECTS_REGISTER => &["projects.manage"],
         METHOD_MCP_PROJECTS_CREATE | METHOD_PROJECT_TEMPLATES_LIST => &["projects.create"],
+        METHOD_SETTINGS_GET => &["settings.read"],
+        METHOD_UNITY_INSTALLATIONS_LIST => &["unity.read"],
+        METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET => &["projects.read", "unity.read"],
         METHOD_MCP_PROJECTS_PLAN_COPY | METHOD_MCP_PROJECTS_APPLY_COPY => {
             &["projects.read", "projects.create"]
         }

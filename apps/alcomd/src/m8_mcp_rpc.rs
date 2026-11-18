@@ -154,6 +154,9 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
             | alcomd_protocol::METHOD_BACKUPS_GET
             | alcomd_protocol::METHOD_BACKUPS_CREATE
             | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
+            | alcomd_protocol::METHOD_SETTINGS_GET
+            | alcomd_protocol::METHOD_UNITY_INSTALLATIONS_LIST
+            | alcomd_protocol::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET
             | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
             | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
             | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY

@@ -127,6 +127,10 @@ async fn entries(
     let access = authentication.access(snapshot.client.clone())?;
     let mut evidence = json!({"auth":authentication.binding(),"client":snapshot.client.revision,"grants":snapshot.client.grants,"providers":[]});
     let mut entries = builtin()?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/environment-v1.schema.json"),
+    )?;
     if package_tools {
         append_builtin_tools(
             &mut entries,

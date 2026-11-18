@@ -14,6 +14,8 @@ const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
 const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
 const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
+const ENVIRONMENT_CONTRACT: &str = include_str!("../../../specs/mcp/environment-v1.schema.json");
+mod environment;
 mod packages;
 mod repositories;
 mod workflows;
@@ -28,6 +30,8 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         REPOSITORY_CONTRACT
     } else if workflows::recognized(name) {
         WORKFLOW_CONTRACT
+    } else if environment::recognized(name) {
+        ENVIRONMENT_CONTRACT
     } else {
         CONTRACT
     };
@@ -654,6 +658,9 @@ pub async fn execute(
             return Err(super::unsupported_method());
         }
         return workflows::execute(client, params).await;
+    }
+    if environment::recognized(params.name.as_ref()) {
+        return environment::execute(client, params).await;
     }
     if packages::recognized(params.name.as_ref()) {
         if !client.supports_capability(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {
