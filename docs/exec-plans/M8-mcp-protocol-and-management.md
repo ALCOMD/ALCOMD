@@ -1634,13 +1634,13 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 | `plan_package_reinstall` | `project_id`, `expected_revision`, `package_id`, `source?` → 原 Plan ID、revision、变更摘要和风险 | `plan` 的 `reinstall`；同上。以项目实际锁定版本生成单包重装计划，版本不能漂移，无法取得原版本时明确返回错误 |
 | 现有 `apply_package_changes`、`get_operation`、`cancel_operation` | 原参数与任务结果。Apply 仍只接收 `plan_id`, `expected_revision`, `confirm: true`, `idempotency_key`。独立查询和显式取消 | 既有 `packages.applyPlan` 与 Operation RPC。Apply 额外需要 `packages.manage` + `operations.read`，查询和取消沿用各自权限 |
 
-- `source` 为已登记的 `{kind: repository, repository_id}` 或 `{kind: user_package, user_package_id}`。覆盖内置及已登记的匿名 HTTPS 仓库、已登记并已建立内容摘要的本地用户包。Core 复用可见性、优先级、来源身份、下载与归档校验。查询使用既有索引，缺少的包详情字段由 Core 从现有缓存 manifest 投影。用户包按冻结归档与摘要执行，适配器不读取目录；未登记目录不能用作来源。被隐藏或失去授权的来源同时从目录版本、直接解析和传递依赖中排除，无权来源不能用作兜底。仓库或下载需要现有认证材料，或来源无法满足本批约束时，提供受限状态及原因，下一批须补齐受控认证源等仍欠场景，不能以本批结果证明目录完整对等。
+- `source` 为已登记的 `{kind: repository, repository_id}` 或 `{kind: user_package, user_package_id}`。按下方来源一致性决策，Core 对三端共用来源可见性、优先级、解析、来源身份、下载与归档校验。查询使用既有索引，缺少的包详情字段由 Core 从现有缓存 manifest 投影。用户包按冻结归档与摘要执行，适配器不读取目录。隐藏来源同时从目录版本、直接解析和传递依赖中排除。认证、参数化仓库及本地来源遵守同一规则。
 - Core 始终在真实客户端权限及 OAuth token 上限的交集内读受委托目录和项目，仅在确定资源身份时取其登记 owner 作为数据选择条件。Plan、Operation 和幂等记录仍归真实 Principal。计划冻结本次解析的完整来源集合、各自 revision/摘要及项目证据。接受事务重查当前授权、目标身份/版本、每个 pin 的来源及快照，来源可见性设置也在接受前按当前 revision 复核。旧 Plan 失效时提示重查或重新确认，不切换来源或静默重规划。后续任务只执行已接受 Plan 和既有恢复规则；请求取消、连接断开或撤销不能隐式取消已接受任务。扩展 provider 原 Host 工具集合继续使用其原卸载操作。
 - 读取默认 100、每页最多 200，包 ID、UUID、revision 和幂等键沿用既有限制。索引分页排序固定，Core 不透明游标绑定当前 Principal、认证上限/授权修订、查询及目录快照，项目视图再绑定项目证据。失效或篡改使用既有 `revision_conflict`，从第一页重新读。目录缓存缺失、歧义、未授权来源和真实无匹配可区分。沿用 Core 有界读取及 MCP 3 MiB 数据预算，目录按条数和字节分页，完整 Plan 超限明确 `plan_too_large`。
 - Plan 摘要由 Core 生成，至少列版本变更、触发依赖、来源 ID/名称、冲突原因和计划中清理的相对路径。新查询、Plan、Operation、RPC 错误和事件均不带下载直链、认证头、凭据引用、内部来源 locator 或完整本机路径。文档/变更日志链接只采用现有安全链接投影中可公开的地址。保留已有业务错误与取消语义；真实写响应丢失沿用 `core_write_outcome_unknown`，以同身份、原 Plan 和同键恢复，不自动再次写入。
-- 无新增 State、Config、生产依赖或权限名称。原八项能力继续仅为 `Global/*`，不引入逐项目授权。审批后同步 Core RPC、工具 Schema、typed client、目录通知与能力筛选；只有真实链路实现后才宣告 capability。仓库增删、认证源委托、模板、项目/备份、环境与快捷配置继续按对照表逐批补齐。
+- 无新增 State、Config、生产依赖或权限名称。原八项能力继续仅为 `Global/*`。同步 Core RPC、工具 Schema、typed client、目录通知与能力筛选。仓库增删、模板、项目/备份、环境与快捷配置继续按对照表逐批补齐。
 
-定向验收使用冻结协议客户端和隔离 Core。验证跨项目的全局目录、单仓库、包详情、同版本多来源、分页快照、最新兼容与精确版、项目兼容候选、认证来源受限、本地已登记包及依赖、重装保持原版本、风险展示、来源变动后拒绝原 Plan、零授权/逐次撤销/OAuth 上限、跨客户端隔离、同键恢复与在途取消。保留六工具现有卸载回归。
+定向验收使用冻结协议客户端和隔离 Core。验证跨项目的全局目录、单仓库、包详情、同版本多来源、分页快照、最新兼容与精确版、项目兼容候选、已登记认证来源及本地包和依赖、重装保持原版本、风险展示、来源变动后拒绝原 Plan、零授权/逐次撤销/OAuth 上限、跨客户端隔离、同键恢复与在途取消。保留六工具现有卸载回归。
 
 #### 后续批次需集中审批的合同边界
 
@@ -1648,16 +1648,27 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 | 后续用户流程 | 最小差异与推荐边界 |
 | --- | --- |
-| 仓库查看、添加、移除、认证来源 | 当前 `repositories.inspect/register/unregister` 的所有者、登记凭据和外部路径检查不足以直接委托给 MCP。复用原用例，扩大现有 `repositories.manage` 到 MCP 的可授权集合，只允许已经过 Core 网络策略校验的远程仓库。不开放本地路径或凭据变更。建议另加默认关闭的 `repositories.use-authenticated` 全局能力，要求同时持仓库/包读取授权及 OAuth 上限，Core 使用本机所有者已登记的凭据，依赖同样过滤。仅名单校验已有 `mcp_client_grants` 字段足以表达这些能力，需同步 Schema、OAuth scope、管理开关与执行检查；当前没有证据抵触现有数据库结构。 |
+| 仓库查看、添加、移除 | 使用已登记来源按同一 Core 规则。登记和移除仍需准备现有 `repositories.inspect/register/unregister` 的调用者、资源 owner、确认和凭据管理差异。来源可用权限与仓库管理权限各按既有业务范围校验。 |
 | 项目登记、创建、复制、备份与恢复 | 核对 `projects.register/create/planCopy/applyCopy`、`backups.create/planRestore/applyRestore` 的本机或 owner 限制。开放相关现有能力时，将授权的默认项目、备份根与资源身份作为 Core 执行条件。根外的外部输入须以本机审批绑定精确目标和请求调用者，不能借用 owner。注册备份和新项目发布沿用现有持久任务及原 Plan。旧 v3 zip 仍归 M11。路径审批只服务实际需要根外输入的流程，接口与持久化差异须另经集中审批。 |
 | 模板与环境 | 当前 `projectTemplates.*` 明限本机所有者，列表只提供摘要，`save` 接受完整模板来源。建议使用窄详情与带预期修订的合并编辑复用保存，写入仍保护内置记录。首次实现只涵盖现行原生模板格式；UnityPackage 与旧模板归 M11。环境以现有 `settings.read`、`unity.read` 能力提供独立安全投影，限 Unity 版本、有效启动参数及获准路径，不开放 Settings 整体读取。 |
 | 长任务和接入 | `operations.get/cancel` 适合继续共用，当前适配器把结果限制为 `packages.apply`。各业务增加明确结果投影；只有真实需要等待的工作才增加绑定任务/修订的 typed input、approve、reject、resume。客户端配置优先交付显式本机引导，隔离校验后仅更新用户确认的目标配置项。需要的 Host/WIT 接口集中评估，扩展仍不持有明文秘密或任意配置写权限。 |
 
 批准前不扩展这些接口、权限或数据库状态。扩展人工延期、普通浏览器受信任 TLS、实际 Codex 订阅消费、持续满载与历史 Host `resource_limit` 按现有责任单独记结果。
 
-**认证来源的下一项具体差异（待审批）**。用一个默认关闭的 `repositories.use-authenticated` 全局能力接通已登记的受保护来源，不增加 RPC 或持久状态。`mcp.packages.query`、`mcp.packages.plan`、已有 Apply 沿用当前字段和方法，仓库读取、包读取与写入仍分别需要既有能力。只在 Core 同时验证当前授权及 OAuth consent 上限后，允许使用相关仓库已有的凭据引用、包下载认证头或带参数的已登记来源。同一来源规则覆盖目录、Plan 和传递依赖。开启后目录报告实际可用性，Plan/错误/事件仍只给稳定来源 ID 和安全名称，完整 URL、认证材料与内部凭据引用留在 Core。撤销阻止尚未接受的 Plan，已接受任务沿用已有冻结和恢复语义。既有身份、token 和授权快照不补授新能力。管理权限 Host/WIT 的 grant `permission` 已是 string，增加目录项和对应 OAuth scope 即可，现有形状保持。验证重点是跨角色目录一致性、OAuth 未同意新 scope 的拒绝、依赖不可借受保护源兜底及下载的已有源授权检查。
+**来源一致性决策（2026-11-19）**。所有者要求 MCP 与 GUI、CLI 使用同一业务规则，撤回独立认证来源开关的草案。查包、Plan、Apply 和传递依赖均使用 Core 同一份已登记来源、可见性及解析证据，涵盖认证仓库、带查询参数的来源、本地仓库及用户包。继续逐次检查调用者业务能力和 OAuth 上限，保持 Plan/Operation/幂等归属。完整来源地址、认证材料和内部凭据引用继续留在 Core，对外只投影工具所需的安全字段。
 
-仓库增删保留独立差异。现有检查预览绑连接，HTTP 每次请求建立新连接；现有登记/移除持久化同时使用调用者作资源 owner 与幂等归属。接线前需区分这两个身份，并明确绑定实际来源与确认，不得把连接预览复用失败变成无确认写入。认证来源使用授权不授予登记、删除或管理凭据的权力。
+### 2026-11-19 MCP 与 GUI、CLI 一致性审计
+
+同一业务在获得对应授权后应复用 Core 的资格、输入校验、确认、任务状态和结果。对照 Core 分派与用例、MCP 已发布工具以及 GUI/CLI 接线，额外发现以下差异。
+
+| 位置 | 实际差异与后续收束 |
+| --- | --- |
+| 包计划与结果 | `mcp.packages.plan` 仅接入安装、单包重装，另有单包卸载。GUI 或 CLI 已可升级、降级、重新解析，GUI 还有批量操作。普通计划支持版本范围、预发布选项及显式接受 Unity 版本不兼容的受控例外，MCP 只接最新兼容版或精确版及默认策略。后续共用已有 Core 行为及确认约束。`get_project` 的安全投影还缺少是否需要解析等判断包状态所需信息。 |
+| Apply 与任务取消 | `packages.applyPlan` 对 MCP 额外要求 `operations.read`，Core 和 OAuth 都检查。MCP 的 `cancel_operation` 先执行 `operations.get`，也额外要求读取权限，而 Core 的取消用例按 `operations.cancel`、归属及预期修订执行。应分别核对写入或取消所需授权、和后续读取详情的授权。当前 `get_operation` 与 `cancel_operation` 仅投影 `packages.apply`，需随接入业务复用 Core 任务结果。 |
+| 仓库和其他现有流程 | 外部 MCP RPC 允许列表仍缺仓库检查、登记、刷新及移除，以及项目登记、创建和复制、备份与恢复、用户包和模板管理、Unity 与环境读取等接线。仓库检查预览目前绑连接，HTTP 每次请求独立连接，且现有登记/移除用同一调用者作资源 owner 与幂等归属。需先绑定真实调用者、实际来源和显式确认，再复用同一业务用例。路径输入和本机操作继续由 Core 校验。 |
+| 扩展工具 Host | 扩展注册的 MCP 工具只可调用当前窄 Host 用例。内置工具新增的目录或安装能力不会自动授予扩展。需要这些能力时，沿用扩展和调用者双方授权，复用同一 Core 用例并审查必要的 Host 合同。 |
+
+身份独立、OAuth 上限、实时撤销、原 Plan/Operation 归属、破坏性确认以及凭据和本机敏感字段的安全投影仍适用于各自调用者。仓库来源差异已修正。其余公共合同差异合并到本计划的后续批次审阅。
 
 ### 2026-11-19 首批包目录本地候选
 
@@ -1673,7 +1684,7 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 证据位于 `target/m8-package-catalog-20261119/`、`target/m8-package-catalog-regressions-20261119/` 和 `target/m8-package-catalog-final-20261119/`。每次完成测试后均恢复原隔离 Core/GUI、原数据及 WebView 配置，实际比较五组公开状态一致，最终 GUI 129108 可见且响应并连接 Core 124728。没有操作原开发数据、真实工程或 Unity，没有恢复桌面控制。
 
-新工具的普通 HTTPS 仓库实际下载、OAuth 上限专项及签名 Provider 合并目录复验仍需补齐。二进制本地候选无对应 Hosted CI/CodeQL，旧结果保持原 SHA。认证来源与其余流程继续按上节集中审批，M8 仍进行中。
+该候选尚缺普通 HTTPS 仓库实际下载、OAuth 上限专项及签名 Provider 合并目录复验，结果见下方后续记录。二进制本地候选无对应 Hosted CI/CodeQL，旧结果保持原 SHA。
 
 ### 2026-11-19 包目录 OAuth 与 HTTPS 补验
 
@@ -1681,4 +1692,12 @@ Core 启动入口可以接收一份已确认新配置资格的发行输入，包
 
 - 最终两个独立 Windows 隔离测试共用 SHA-256 `b82bcac7599261d46146b449c236550257efd6f2c547f4a887f195fb56c3b8a1`。冻结 SDK→回环 HTTPS/OAuth→真实 Core→匿名 HTTPS VPM 源 **1/0，4.25 秒**。全局仓库读取与项目读取按各自授权，读 token 无法生成 Plan，计划 token 无法 Apply，完整 token 仅执行原 Plan。真实 TLS 下载一次，检查归档摘要与安装内容，源端未收到 OAuth 凭据或 referer，同键回读同一 Operation。测试证书仅由门控构建的隔离客户端显式信任，系统信任保持。
 - 最终签名 Provider **1/0，95.44 秒**，执行了真实安装、合并目录分页、权限隔离及副作用用例。两个 Host 预检退出均为 0，分别 4031 ms 和 3250 ms。上一个带诊断候选的 Provider 也独立通过 1/0，104.52 秒，其同轮 OAuth 用例保留 404 失败。更早两轮 `extension_package_invalid` 未复现，历史原因仍未确认，未改变原预检限时或签名验证。
-- MCP 单元 15/0，四个受影响 Rust 包严格 Clippy、fmt、metadata、xtask、diff 通过。原隔离 GUI 134448 恢复可见且响应，实际连接原隔离数据上的 Core 125516，五组公开状态一致。证据在 `target/m8-package-source-oauth-20261119/` 和 `target/m8-package-source-oauth-final-20261119/`。本轮未推送，未取得新候选 Hosted CI/CodeQL；认证来源的新增授权仍待集中审批，M8 保持进行中。
+- MCP 单元 15/0，四个受影响 Rust 包严格 Clippy、fmt、metadata、xtask、diff 通过。原隔离 GUI 134448 恢复可见且响应，实际连接原隔离数据上的 Core 125516，五组公开状态一致。证据在 `target/m8-package-source-oauth-20261119/` 和 `target/m8-package-source-oauth-final-20261119/`。该候选没有对应 Hosted CI/CodeQL。当时的认证来源单独授权草案已由上方来源一致性决策撤回。
+
+### 2026-11-19 共享包来源验证
+
+代码 `7e3efd244926a3c80c490e5bcbc5a2c4dad74216` 删除 MCP 专用来源筛选。目录和解析、来源可见性、传递依赖及接受前的来源证据核对沿用 Core。内部仍以本机所有者定位已登记来源，以真实调用者检查授权并归属 Plan、Operation 和幂等记录。未变更 RPC/工具结构、State、Config、生产依赖或 WIT。
+
+- Windows 冻结 SDK 与真实隔离 Core 的三项独立回归各 1/0。公开 HTTPS/OAuth 3.23 秒，带参数 URL 与包声明下载认证头的 HTTPS/OAuth 3.28 秒，本地用户包的 STDIO 安装及重装 3.79 秒。两项 HTTPS 用例均比对本机 owner 入口和 MCP 的同一变更摘要，验证真实归档下载一次、同键恢复、OAuth 上限，以及凭据和 referer 未转发到仓库。测试二进制 SHA-256 `ffc2fed2aa222b8ba7154db95808939e220e1446de93317afa2886d487913512`。
+- SQLite 单项 1/0，覆盖匿名、凭据引用、参数化及本地仓库的索引与可见性，并验证接受事务拒绝过期凭据引用。实际 OS 凭据存储到 HTTPS 仓库的端到端读取未执行。五个受影响 Rust 包 `--all-targets` 严格 Clippy、fmt、锁定 metadata、xtask 和 diff 通过。
+- 原隔离 GUI 123212 可见且响应，经五条管道连接原隔离数据上的 Core 136052。原程序、数据和配置已恢复，五组公开状态一致。证据在 `target/m8-shared-sources-20261119/`。未推送，未执行完整本地套件或获取新远端结果。
