@@ -1513,3 +1513,11 @@ GUI窄修已以953ce174614b382762d0c0c0551d911efbcdb5fe本地提交，当前GUI9
 两条旧浏览器用例仍以主安装按钮打开本地包流程。现行主入口打开在线来源，本地文件从下拉菜单进入。本机两项均复现，失败快照显示在线地址字段。修复提交 `48c6e5341bfde68e1a5d2e60f731f298244327b1` 复用现有本地入口测试助手。文件选择仍验证内联控件与回填路径，安装用例验证原包路径进入 Plan、同意前无 Apply、同意后恰好一次 Apply 及任务反馈。仅测试文件变更，保留原超时及检查要求。
 
 本机修复后同轮相关四个 Chromium 模块 38/0，GUI 类型、Material 和本地化检查、xtask 与 diff 均通过。原失败、定向日志、输入摘要和自动运行终态分别保存在 target/m8-push-91065849-20261118/。新候选的自动结果仍待取得，扩展人工继续延期，M8 保持进行中。
+
+### 2026-11-18 本批自动检查终态
+
+按本轮授权，从 91065849 普通快进推送 48c6e534 和记录 2d6e4bb2。远端 `origin/main` 确认指向 `2d6e4bb235bc40e85b93b4159e7a6df729d8602f`。
+
+[CI 44254367013](https://github.com/ALCOMD/ALCOMD/actions/runs/44254367013) 同 SHA 的首次自动运行在 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 全部通过。三平台均通过仓库检查、CLI 自动启动集成、发布版构建、Tauri GUI 构建和完整 Chromium 回归。Chromium 每平台 731 通过、0 失败，Windows 18.7 分钟、Ubuntu 14.1 分钟、macOS 25.3 分钟。[CodeQL 44254366154](https://github.com/ALCOMD/ALCOMD/actions/runs/44254366154) 同 SHA 首次自动运行的 Rust、JavaScript/TypeScript、Python 和 Actions 全部通过。
+
+三平台原始任务日志、运行终态与 SHA-256 摘要保存在 target/m8-push-2d6e4bb2-20261118/，汇总为 final-evidence.json。此前失败保留各自候选及运行编号。扩展人工检查仍延期，历史 Host resource_limit 根因仍待定位。M8 保持进行中。
