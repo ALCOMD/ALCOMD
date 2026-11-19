@@ -1777,15 +1777,15 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 #### 下一组合并公共合同草案
 
-下表保留连接级授权决定前的接口评估。其中逐项模板权限、额外的 MCP 附件审批方式由下方决定替代。包详情和模板工作流仍按三端共用 Core 设计。
+GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功后可使用已发布的工具。以下差异待集中确认。
 
 | 能力 | 建议公开差异与验收证据 |
 | --- | --- |
-| 项目内实际包 | 新增共享只读 `packages.projectInventory({projectId,expectedRevision,cursor?,limit?})` 与同结果 MCP 工具 `alcomd_list_installed_packages`。沿用 `projects.read + packages.read`，查询仅使用项目本地数据。输出包 ID、可用的声明/锁定/观察版本、`matched/missing/version_mismatch/unknown` 及已有的可核实元数据。解析检查返回 `needed/no_issue_observed/unknown` 与原因。分页按包 ID，默认 50、最多 200 项，游标绑定授权、项目修订、实际观察指纹。来源只在本地证据可验证时返回。 |
-| 现行模板定义与原生内容 | 新增共享 `projectTemplates.get({id,cursor?,limit?})` 与 `projectTemplates.edit({id,expectedRevision,changes,idempotencyKey})`。详情返回记录、直接依赖及按路径分页的附件名，编辑接受可省略的名称、依赖增删及附件增删差异，返回原模板保存 Operation。模板读写由两项能力 `templates.read` 和 `templates.manage` 按实际调用者授予，`global/*`，默认关闭；创建项目选择模板仍沿用 `projects.create`。复用现有手动保存/移除，保留锁定模板保护、修订与幂等。 |
-| 附件文件输入 | 三端使用同一 Core 策略。在归档 `Assets/` 下，以规范化相对名定位一个原生文件，保留未修改的 `.meta`，删除时按现有资产配对规则处理。由本机所有者通过共享 `projectTemplates.approveAttachment({clientId,id,expectedRevision,targetPath,sourceFile})` 给受委托调用者批准一个常规文件；句柄绑定调用者、模板修订、确切目标、文件身份与 SHA-256。使用已有的有界短时审批与内容寻址归档机制。获权的本机所有者可直接选择文件，受委托身份传审批句柄。Core 在接受写入任务前校验并冻结材料，防止审批后换文件或重启后读取新内容。验证另一个调用者、过期或过时审批、改名冲突及未选内容保全。旧格式及 UnityPackage 导入留 M11。 |
+| 项目实际安装包 | 新增共享只读 `packages.projectInventory({projectId,expectedRevision,cursor?,limit?})` 与同结果 MCP 工具 `alcomd_list_installed_packages`。复用候选页已有的项目身份和本地观察，区分声明、锁定、观察版本。缺少文件、版本不符和无法读取给出各自结果。解析状态使用可核实的本地证据。分页按包 ID，默认 50、最多 200 项，游标绑定调用者、项目修订、实际观察指纹。元数据和来源只返回本地可证实的部分。沿用 `projects.read + packages.read`。 |
+| 模板详情与编辑 | 新增共享 `projectTemplates.get({id,cursor?,limit?})`、`projectTemplates.edit({id,expectedRevision,changes,idempotencyKey})`，对应 MCP 查看和编辑工具。详情返回模板名称、修订、Unity、直接依赖和按路径分页的附件目录。编辑只改明确指定的名称、依赖与附件，沿用模板保存 Operation。查阅复用模板列表的 `projects.create`，编辑复用 `projects.manage`，保留锁定模板保护、原模板登记归属和修订检查。 |
+| 模板附件文件 | 编辑输入指明源单文件和归档 `Assets/` 下的目标相对名。三端共用 Core 文件校验与确认。拒绝链接、路径逃逸及 Core 私有数据目录，保留未修改内容及既有资产配对规则。Core 在接受任务前冻结实际材料，只在持久任务中保存可恢复的摘要和目标绑定。接受后从冻结材料恢复，源文件变化或重启无需重新读原路径。旧模板与 UnityPackage 格式保留到 M11。 |
 
-以上是本批待审的新增共享合同。复用既有 State、Config、认证、复制和保存运行机制，保持当前 WIT。接受记录绑定实际调用者，模板目录保持原资源所有者。新增接口建议共用 capability `packages.project-inventory.v1` 与 `projectTemplates.edit.v1`。现有调用者继续协商原能力，已有 RPC 请求及回复形状保持。若既有模板任务无法持久保全已接受材料，则确认准确存储差异后再实施受影响部分。
+建议以 `packages.project-inventory.v1` 和 `projectTemplates.edit.v1` 协商。沿用现有权限名称、配置、数据库 Schema 和 WIT。模板编辑保留实际调用者的 Operation 和幂等归属。如果现有模板任务无法在原 journal 保全冻结材料，只就必要的持久差异另行确认。
 
 #### 环境读取按三端权限对齐
 
@@ -1862,4 +1862,10 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 
 代码 `9235349e72d8d5d3ee5a879e0d1c8b3f86a7e797`。本地定向验证已通过 Store 连接级与 OAuth 等 13 项、SQLite 迁移与权限回归 57 项、应用层 M8 16 项、MCP 适配器 16 项、OAuth Schema 1 项、管理合同与 Wasm 摘要 4 项、真实独立 Host 1 项、Guest 单测 7 项与 doctest 1 项。Core 读入现行工具合同逐项核对所需能力，全部已发布内置工具均通过。受影响包严格 Clippy、格式和仓库一致性检查通过。早期 Store 12/1 和迁移 49/8 为独立失败轮次，修正了旧授权断言及只适用于当前初始化的 State44 预期后复验。
 
-真实 Core 身份和业务用例已链接。上一套隔离验收窗口占用 Windows 当前用户唯一 Core 端点，真实三传输执行尚未开始。原环境未升级。新增代码尚无远端验证。
+此前旧隔离窗口占用 Windows 当前用户唯一 Core 端点。窗口释放后，使用真实 Windows 用户和可丢弃隔离数据验证，原环境未升级。
+
+- `9235349e` 生产代码的首轮真实身份用例 0/1，业务套件 10/9、3 项原有忽略、自然到期用例未执行。跨客户端 Plan 应按所有者查不到，分页断言应读取完整目录，当前版本应为 State44。改正后身份单项 1/0，9 项业务定向复验 7/2。仍失败的两项分别是 HTTP 写前撤销返回含糊的目录错误，以及仓库用例继续预期某枚已认证令牌无权取得登记预览。
+- `ce1e93dea64d674c34192689b5c302537d422ec5` 将同一 HTTP 工具元数据读取放到 SDK 发送 SSE 响应头之前。真实回环在 Core hello 成功、请求正文仍未发完时撤销凭据，返回 401，且 Core 的 Apply 调用计数保持不变。最终四项定向复验 4/0，覆盖 HTTP 卸载、在途取消和实际写回包丢失、真实 HTTPS OAuth 业务及三传输完整目录一致，以及仓库同身份不同令牌预览隔离与同键恢复。适配器单测 16/0，严格 Clippy、格式及仓库一致性检查通过。首轮和复验分别保存在 `target/m8-connection-identity.log`、`target/m8-connection-business.log`、`target/m8-connection-business-recheck.log` 与 `target/m8-connection-final-risks.log`。
+- 真实 Core/Host 定向单轮 6/0，覆盖客户端登记与撤销、扩展零授权启用和数据隔离、连接与请求观测、租约失效及打包扩展安装一次和保留用户卸载。记录在 `target/m8-connection-management-real.log`。
+
+自然到期长时用例及原有忽略项仍待对应验证。新增代码尚无远端结果。

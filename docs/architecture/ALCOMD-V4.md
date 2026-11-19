@@ -290,7 +290,7 @@ ExternalConfig(provider_id)
 项目权限按能力一次授予，覆盖当前及未来登记项目。运行时AccessContext不保存项目ID授权集合，
 也不提供逐项目授权构造或检查入口；读取与包修改分别检查projects.read与packages.manage。
 ProjectId仍用于操作目标、资源归属、Plan/修订及文件身份校验，不作为权限范围。
-Portable UI的ExtensionId访问隔离、OAuth能力上限、实际Principal和Operation/幂等归属继续独立检查。
+Portable UI 的 ExtensionId 访问隔离、实际 Principal 和 Operation、幂等归属继续独立检查。MCP 使用下文的连接级规则。
 
 
 后续可选 `alcomd-api`：
@@ -449,10 +449,13 @@ MCP 管理扩展 ID：
 com.vrclearn.alcomd.extension.mcp
 ```
 
-它负责客户端、请求、连接、订阅流、权限、审批、配置计划、操作进度与诊断可视化。禁用它
-不得影响 MCP 协议服务。HTTP Principal 按每请求 Bearer 身份隔离；STDIO 使用启动 Principal；
-自报 clientInfo 不参与安全决定。管理权限使用 `mcp.requests.read`、`mcp.connections.read` 与
-`mcp.subscription-streams.read`，不得重新引入协议级 `mcp.sessions.read`。
+MCP 启用后，认证成功的客户端可调用全部当前发布的工具。STDIO 使用启动凭据。HTTP 按请求验证
+Bearer 凭据或单一 `mcp` scope 的 OAuth 令牌。Core 绑定已登记的客户端 Principal，并继续检查凭据
+撤销、业务条件、计划和任务归属。自报 clientInfo 仅用于展示。
+
+管理扩展提供客户端登记、撤销、接入指引，以及连接、请求和工具列表变更订阅流的可视化。
+客户端管理使用 `mcp.clients.read/manage`。观测分别使用 `mcp.requests.read`、
+`mcp.connections.read` 和 `mcp.subscription-streams.read`。关闭管理扩展后，独立 MCP 服务仍可运行。
 
 MCP 管理扩展默认安装并启用。
 
