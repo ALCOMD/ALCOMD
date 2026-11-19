@@ -8,6 +8,10 @@ fn main() {
         .as_str()
         .expect("product Windows AUMID");
     println!("cargo:rustc-env=ALCOMD_WINDOWS_AUMID={windows_aumid}");
+    let uri_scheme = product["identity"]["uri_scheme"]
+        .as_str()
+        .expect("product URI scheme");
+    println!("cargo:rustc-env=ALCOMD_URI_SCHEME={uri_scheme}");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         // The headless native test links the Windows GUI runtime, which needs
         // Common Controls v6. Tauri supplies its own manifest for the app.

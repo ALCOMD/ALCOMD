@@ -7,6 +7,7 @@ use alcomd_protocol::{
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+mod desktop_links;
 mod events;
 mod picker_location;
 mod repository_links;
@@ -1769,9 +1770,9 @@ pub fn run() {
         .expect("failed to initialize Windows application identity");
 
     let builder = tauri::Builder::default()
-        .manage(repository_links::RepositoryLinks::from_arguments())
+        .manage(desktop_links::DesktopLinks::from_arguments())
         .plugin(tauri_plugin_single_instance::init(|app, arguments, _| {
-            repository_links::forward_arguments(app, arguments);
+            desktop_links::forward_arguments(app, arguments);
         }));
     #[cfg(any(windows, target_os = "linux"))]
     let builder = builder.plugin(tauri_plugin_deep_link::init());
@@ -1798,7 +1799,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            repository_links::gui_take_repository_link,
+            desktop_links::gui_take_desktop_link,
             repository_links::gui_vcc_registration_available,
             repository_links::gui_register_vcc_links,
             window_state::gui_window_state_configure,
@@ -1915,7 +1916,7 @@ pub fn run() {
         .run(|_app, _event| {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = _event {
-                repository_links::forward(_app, urls.into_iter().map(|url| url.to_string()));
+                desktop_links::forward(_app, urls.into_iter().map(|url| url.to_string()));
             }
         });
 }

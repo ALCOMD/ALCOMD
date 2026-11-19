@@ -987,6 +987,7 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
             const native = element.shadowRoot?.querySelector("dialog");
             const content = contentRef.current;
             if (active && native?.open && content !== null && !closing.current && resize === undefined) {
+                release = registerDialogSurface(content);
                 resize = observeDialogSize(native, content);
             }
         };
@@ -995,10 +996,6 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
             delete element.dataset.dialogClosing;
             // Material opens the native dialog immediately after dispatching this event.
             queueMicrotask(observe);
-        };
-        const opened = () => {
-            if (closing.current) return;
-            if (release === undefined && contentRef.current !== null) release = registerDialogSurface(contentRef.current);
         };
         const cleanup = () => {
             release?.();
@@ -1024,7 +1021,6 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
             if (event.target === element) cancelClose(event);
         };
         element.addEventListener("open", opening);
-        element.addEventListener("opened", opened);
         element.addEventListener("close", startClose);
         element.addEventListener("closed", closed);
         element.addEventListener("cancel", cancel);
@@ -1034,7 +1030,6 @@ export function Dialog({ actions, headlineActions, children, onClose, open, titl
             active = false;
             cleanup();
             element.removeEventListener("open", opening);
-            element.removeEventListener("opened", opened);
             element.removeEventListener("close", startClose);
             element.removeEventListener("closed", closed);
             element.removeEventListener("cancel", cancel);

@@ -53,7 +53,7 @@ import { DialogCloseButton, Button, Dialog as MaterialDialog, Icon, NavigationLi
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 import { nativeWindowStateMemory } from "./native-window-state";
-import { RepositoryLinkDialog, nativeRepositoryLinks, type RepositoryLinkInbox } from "./RepositoryLinkDialog";
+import { DesktopLinkDialog, nativeDesktopLinks, type DesktopLinkInbox } from "./DesktopLinkDialog";
 import type { WindowStateMemory } from "./window-state";
 import {
     capabilities,
@@ -91,10 +91,10 @@ type Route =
 
 interface AppProps {
     client?: GuiRpcClient;
-    repositoryLinks?: RepositoryLinkInbox;
+    desktopLinks?: DesktopLinkInbox;
 }
 
-export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nativeRepositoryLinks }: AppProps) {
+export function App({ client: sourceClient = guiRpcClient, desktopLinks = nativeDesktopLinks }: AppProps) {
     const [connectionGeneration, setConnectionGeneration] = useState(0);
     const events = useMemo(() => new CoreEvents(sourceClient), [sourceClient]);
     const notifications = useMemo(() => new AppNotifications(events), [events]);
@@ -186,8 +186,10 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
         setConnectionGeneration((generation) => generation + 1);
     }, []);
     const dirtyRef = useRef(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
+        setHasUnsavedChanges(dirty);
     }, []);
 
     useEffect(() => {
@@ -279,12 +281,12 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                 setPendingRoute(next);
                 return;
             }
-            dirtyRef.current = false;
+            handleDirtyChange(false);
             setRoute(next);
         };
         window.addEventListener("popstate", onPopState);
         return () => window.removeEventListener("popstate", onPopState);
-    }, [route, client, connectionGeneration, events, negotiatedCapabilities]);
+    }, [route, client, connectionGeneration, events, handleDirtyChange, negotiatedCapabilities]);
 
     useEffect(() => {
         const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -301,14 +303,14 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
             setPendingRoute(next);
             return;
         }
-        dirtyRef.current = false;
+        handleDirtyChange(false);
         window.history.pushState(null, "", routePath(next));
         setRoute(next);
     };
 
     const discardAndNavigate = () => {
         if (pendingRoute === undefined) return;
-        dirtyRef.current = false;
+        handleDirtyChange(false);
         window.history.pushState(null, "", routePath(pendingRoute));
         setRoute(pendingRoute);
         setPendingRoute(undefined);
@@ -357,7 +359,7 @@ export function App({ client: sourceClient = guiRpcClient, repositoryLinks = nat
                         <DialogCloseButton afterClose={discardAndNavigate}>{t("Discard changes")}</DialogCloseButton>
                     </div>
                 </MaterialDialog>
-                {repositoryLinks ? <RepositoryLinkDialog client={client} inbox={repositoryLinks} /> : null}
+                {desktopLinks ? <DesktopLinkDialog client={client} inbox={desktopLinks} blocked={hasUnsavedChanges} /> : null}
                 <TaskProgressDialog events={events} navigate={navigate} />
                 <AppNotificationOutlet notifications={notifications} navigate={navigate} />
             </div>

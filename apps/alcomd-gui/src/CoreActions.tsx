@@ -859,7 +859,11 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
     </ActionSection>;
 }
 
-export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKind = "online" }: ActionProps & { sourceKind?: "online" | "local"; onAccepted?(operationId: string): void }) {
+export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKind = "online", initialUrl = "" }: ActionProps & {
+    sourceKind?: "online" | "local";
+    initialUrl?: string;
+    onAccepted?(operationId: string): void;
+}) {
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.extensionsLifecycle);
@@ -867,7 +871,7 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
     const canGrant = useCapability(capabilities.extensionsPermissions);
     const [path, setPath] = useState("");
     const mode = sourceKind;
-    const [url, setUrl] = useState("");
+    const [url, setUrl] = useState(initialUrl);
     const [source, setSource] = useState<import("@alcomd/sdk").ExtensionSourcePreview>();
     const [version, setVersion] = useState("");
     const [applying, setApplying] = useState(false);

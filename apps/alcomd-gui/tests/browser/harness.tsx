@@ -27,6 +27,7 @@ import ReactDOM from "react-dom/client";
 import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json" with { type: "json" };
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
+import type { DesktopLink } from "../../src/DesktopLinkDialog";
 import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
@@ -1795,20 +1796,25 @@ if (query.has("vcc-settings-fixture")) {
     });
     Object.defineProperty(window, "isTauri", { value: true });
 }
-const pendingRepositoryLinks = query.has("repository-link-fixture") ? [
-    "vcc://vpm/addRepo?url=https%3A%2F%2Frepository.test%2Findex.json&headers%5B%5D=Authorization%3ABearer%20fixture-link-token"
-] : undefined;
-const repositoryLinks = pendingRepositoryLinks ? {
-    take: async () => pendingRepositoryLinks.shift() ?? null,
+const pendingDesktopLinks: DesktopLink[] = [];
+if (query.has("repository-link-fixture")) pendingDesktopLinks.push({
+    kind: "vccRepository",
+    link: "vcc://vpm/addRepo?url=https%3A%2F%2Frepository.test%2Findex.json&headers%5B%5D=Authorization%3ABearer%20fixture-link-token"
+});
+if (query.get("desktop-link-fixture") === "repository") pendingDesktopLinks.push({
+    kind: "repository", url: "https://repository.test/index.json?b=2&a=1&a=3"
+});
+const desktopLinks = query.has("desktop-link-fixture") || query.has("repository-link-fixture") ? {
+    take: async () => pendingDesktopLinks.shift() ?? null,
     listen: async (available: () => void) => {
         const receive = (event: Event) => {
-            if (event instanceof CustomEvent && typeof event.detail === "string") {
-                pendingRepositoryLinks.push(event.detail);
+            if (event instanceof CustomEvent) {
+                pendingDesktopLinks.push(event.detail);
                 available();
             }
         };
-        window.addEventListener("fixture-repository-link", receive);
-        return () => window.removeEventListener("fixture-repository-link", receive);
+        window.addEventListener("fixture-desktop-link", receive);
+        return () => window.removeEventListener("fixture-desktop-link", receive);
     },
 } : undefined;
 ReactDOM.createRoot(root).render(
@@ -1816,7 +1822,7 @@ ReactDOM.createRoot(root).render(
         {refreshFeedbackEvidence ? <RefreshFeedbackEvidence /> : query.has("file-picker-evidence") ? <FilePickerEvidence /> : materialEvidence
             ? <MaterialFoundationEvidence />
             : operationLogEvidence ? <OperationLogEvidence />
-            : <App client={window.fixtureCore} repositoryLinks={repositoryLinks} />}
+            : <App client={window.fixtureCore} desktopLinks={desktopLinks} />}
     </React.StrictMode>
 );
 

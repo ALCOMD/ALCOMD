@@ -2,10 +2,11 @@
 
 // Include the private native adapter without making it part of the app's API.
 #[allow(dead_code)]
-#[path = "../src/repository_links.rs"]
-mod repository_links;
+#[path = "../src/desktop_links.rs"]
+mod desktop_links;
 
-use repository_links::{RepositoryLinks, forward_arguments};
+use desktop_links::{DesktopLinks, forward_arguments};
+use serde_json::{Value, json};
 use tauri::Manager;
 
 #[test]
@@ -23,6 +24,10 @@ fn windows_single_instance_forwards_repository_link() {
     const TEST: &str = "windows_single_instance_forwards_repository_link";
     const COLD: &str = "vcc://vpm/addRepo?url=https%3A%2F%2Fcold.test%2Findex.json";
     const WARM: &str = "vcc://vpm/addRepo?url=https%3A%2F%2Fwarm.test%2Findex.json&headers%5B%5D=Authorization%3Afixture%7Cvalue";
+    const COLD_EXTENSION: &str =
+        "alcomd://extensions/add?url=https%3A%2F%2Fcold.test%2Fsource.json";
+    const WARM_REPOSITORY: &str =
+        "alcomd://repositories/add?url=https%3A%2F%2Fwarm.test%2Findex.json";
 
     if let Some(directory) = std::env::var_os(ENV) {
         let directory = PathBuf::from(directory);
@@ -37,7 +42,7 @@ fn windows_single_instance_forwards_repository_link() {
         context.config_mut().app.windows.clear();
         tauri::Builder::default()
             .any_thread()
-            .manage(RepositoryLinks::from_arguments())
+            .manage(DesktopLinks::from_arguments())
             .plugin(tauri_plugin_single_instance::init(
                 |app, mut arguments, _| {
                     // Strip the libtest options for this fixture. The shell
@@ -49,13 +54,21 @@ fn windows_single_instance_forwards_repository_link() {
             .setup(move |app| {
                 let app = app.handle().clone();
                 thread::spawn(move || {
-                    let inbox = app.state::<RepositoryLinks>();
-                    let first = inbox.take().unwrap_or_default();
-                    fs::write(directory.join("ready"), first).expect("cold evidence");
+                    let inbox = app.state::<DesktopLinks>();
+                    let first = inbox.take().expect("cold activation");
+                    fs::write(
+                        directory.join("ready"),
+                        serde_json::to_vec(&first).expect("serialize cold activation"),
+                    )
+                    .expect("cold evidence");
                     let deadline = Instant::now() + Duration::from_secs(15);
                     while Instant::now() < deadline {
                         if let Some(link) = inbox.take() {
-                            fs::write(directory.join("forwarded"), link).expect("warm evidence");
+                            fs::write(
+                                directory.join("forwarded"),
+                                serde_json::to_vec(&link).expect("serialize forwarded activation"),
+                            )
+                            .expect("warm evidence");
                             app.exit(0);
                             return;
                         }
@@ -93,21 +106,36 @@ fn windows_single_instance_forwards_repository_link() {
         let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline {
             if let Ok(value) = fs::read_to_string(directory.join(name))
-                && !value.is_empty()
+                && let Ok(link) = serde_json::from_str::<Value>(&value)
             {
-                return value;
+                return link;
             }
             thread::sleep(Duration::from_millis(20));
         }
         panic!("fixture file {name} did not arrive");
     };
-    let mut primary = launch(COLD);
-    assert_eq!(wait_file("ready"), COLD);
-    let mut secondary = launch(WARM);
-    assert_eq!(wait_file("forwarded"), WARM);
-    assert!(secondary.0.wait().expect("secondary exits").success());
-    assert!(primary.0.wait().expect("primary exits").success());
-    fs::remove_file(directory.join("ready")).expect("remove cold evidence");
-    fs::remove_file(directory.join("forwarded")).expect("remove warm evidence");
+    for (cold, expected_cold, warm, expected_warm) in [
+        (
+            COLD,
+            json!({ "kind": "vccRepository", "link": COLD }),
+            WARM,
+            json!({ "kind": "vccRepository", "link": WARM }),
+        ),
+        (
+            COLD_EXTENSION,
+            json!({ "kind": "extension", "url": "https://cold.test/source.json" }),
+            WARM_REPOSITORY,
+            json!({ "kind": "repository", "url": "https://warm.test/index.json" }),
+        ),
+    ] {
+        let mut primary = launch(cold);
+        assert_eq!(wait_file("ready"), expected_cold);
+        let mut secondary = launch(warm);
+        assert_eq!(wait_file("forwarded"), expected_warm);
+        assert!(secondary.0.wait().expect("secondary exits").success());
+        assert!(primary.0.wait().expect("primary exits").success());
+        fs::remove_file(directory.join("ready")).expect("remove cold evidence");
+        fs::remove_file(directory.join("forwarded")).expect("remove warm evidence");
+    }
     fs::remove_dir(directory).expect("remove fixture directory");
 }

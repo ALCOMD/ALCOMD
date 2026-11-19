@@ -11,8 +11,8 @@ test("repository links prefill the shared review, queue and require explicit reg
     expect(await requests()).toEqual([]);
 
     await page.evaluate(() => {
-        window.dispatchEvent(new CustomEvent("fixture-repository-link", { detail: "vcc://vpm/addRepo?url=https://ignored.test&url=https://duplicate.test" }));
-        window.dispatchEvent(new CustomEvent("fixture-repository-link", { detail: "vcc://vpm/addRepo?url=http://second.test/index.json&future=ignored&headers%5B%5D=X-API-Key%3Afixture-http-token" }));
+        window.dispatchEvent(new CustomEvent("fixture-desktop-link", { detail: { kind: "vccRepository", link: "vcc://vpm/addRepo?url=https://ignored.test&url=https://duplicate.test" } }));
+        window.dispatchEvent(new CustomEvent("fixture-desktop-link", { detail: { kind: "vccRepository", link: "vcc://vpm/addRepo?url=http://second.test/index.json&future=ignored&headers%5B%5D=X-API-Key%3Afixture-http-token" } }));
     });
     await dialog.getByRole("button", { name: "Review repository", exact: true }).click();
     await expect(dialog.getByText("Uses authentication", { exact: true })).toBeVisible();
@@ -37,7 +37,7 @@ test("duplicate request headers in a repository link must be corrected before re
         const link = new URL("vcc://vpm/addRepo?url=https://repository.test/index.json");
         link.searchParams.append("headers[]", "Authorization:Bearer first-fixture");
         link.searchParams.append("headers[]", "Authorization:Bearer second-fixture");
-        window.dispatchEvent(new CustomEvent("fixture-repository-link", { detail: link.href }));
+        window.dispatchEvent(new CustomEvent("fixture-desktop-link", { detail: { kind: "vccRepository", link: link.href } }));
     });
     const headers = dialog.getByRole("textbox", { name: "Header name", exact: true });
     const review = dialog.getByRole("button", { name: "Review repository", exact: true });

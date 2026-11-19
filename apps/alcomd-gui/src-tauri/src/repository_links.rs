@@ -1,95 +1,18 @@
-use std::collections::VecDeque;
 use std::sync::Mutex;
 
-use tauri::{AppHandle, Emitter, Manager, State, Url};
+use tauri::AppHandle;
+
+#[cfg(any(windows, target_os = "linux"))]
+use tauri::Manager;
 
 #[cfg(any(target_os = "linux", test))]
 #[path = "repository_links/linux.rs"]
 mod linux;
 
-const MAX_LINKS: usize = 8;
-const MAX_LINK_BYTES: usize = 16 * 1024;
-
 #[derive(Default)]
 pub(crate) struct VccRegistration {
     desired: Mutex<Option<bool>>,
     applied: Mutex<Option<bool>>,
-}
-
-#[derive(Default)]
-pub(crate) struct RepositoryLinks(Mutex<VecDeque<String>>);
-
-impl RepositoryLinks {
-    pub(crate) fn from_arguments() -> Self {
-        let inbox = Self::default();
-        for argument in std::env::args_os()
-            .skip(1)
-            .filter_map(|argument| argument.into_string().ok())
-        {
-            inbox.offer(argument);
-        }
-        inbox
-    }
-
-    pub(crate) fn offer(&self, value: String) -> bool {
-        if value.len() > MAX_LINK_BYTES
-            || value.contains('|')
-            || !Url::parse(&value).is_ok_and(|url| {
-                url.scheme() == "vcc"
-                    && url.host_str() == Some("vpm")
-                    && url.path() == "/addRepo"
-                    && url.username().is_empty()
-                    && url.password().is_none()
-                    && url.port().is_none()
-            })
-        {
-            return false;
-        }
-        let Ok(mut links) = self.0.lock() else {
-            return false;
-        };
-        if links.len() == MAX_LINKS || links.contains(&value) {
-            return false;
-        }
-        links.push_back(value);
-        true
-    }
-
-    pub(crate) fn take(&self) -> Option<String> {
-        self.0.lock().ok()?.pop_front()
-    }
-}
-
-pub(crate) fn forward_arguments(app: &AppHandle, mut arguments: Vec<String>) {
-    if arguments.len() == 1 {
-        let _ = focus_main(app);
-        return;
-    }
-    // Windows plugin 2.4.x separates forwarded arguments with a pipe. A raw
-    // pipe is not valid URI syntax. Reject split activations as a whole.
-    if arguments.len() == 2
-        && let Some(link) = arguments.pop()
-    {
-        forward(app, [link]);
-    }
-}
-
-fn focus_main(app: &AppHandle) -> Option<tauri::WebviewWindow> {
-    let window = app.get_webview_window("main")?;
-    let _ = window.unminimize();
-    let _ = window.set_focus();
-    Some(window)
-}
-
-pub(crate) fn forward(app: &AppHandle, links: impl IntoIterator<Item = String>) {
-    let inbox = app.state::<RepositoryLinks>();
-    let mut added = false;
-    for link in links {
-        added |= inbox.offer(link);
-    }
-    if added && let Some(window) = focus_main(app) {
-        let _ = window.emit_to("main", "alcomd-repository-link-available", ());
-    }
 }
 
 fn registration_available(app: &AppHandle) -> bool {
@@ -220,11 +143,6 @@ pub(crate) async fn gui_register_vcc_links(app: AppHandle) -> Result<(), &'stati
         .map_err(|_| "vcc_registration_failed")?
 }
 
-#[tauri::command]
-pub(crate) fn gui_take_repository_link(links: State<'_, RepositoryLinks>) -> Option<String> {
-    links.take()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,26 +153,5 @@ mod tests {
         assert!(!automatic_registration_allowed(false, false, false));
         assert!(!automatic_registration_allowed(true, true, false));
         assert!(!automatic_registration_allowed(true, false, true));
-    }
-
-    #[test]
-    fn inbox_accepts_only_repository_activations_and_drains_once_in_order() {
-        let links = RepositoryLinks::default();
-        assert!(!links.offer("vcc://other/addRepo?url=https://example.test".into()));
-        assert!(!links.offer("vcc://vpm/removeRepo?url=https://example.test".into()));
-        assert!(!links.offer("vcc://vpm/addRepo?url=https://example.test|extra".into()));
-        let expected = (0..MAX_LINKS)
-            .map(|id| format!("vcc://vpm/addRepo?url=https://example.test/{id}"))
-            .collect::<Vec<_>>();
-        for value in &expected {
-            assert!(links.offer(value.clone()));
-            assert!(!links.offer(value.clone()));
-        }
-        assert!(!links.offer("vcc://vpm/addRepo?url=https://example.test/overflow".into()));
-        assert_eq!(
-            std::iter::from_fn(|| links.take()).collect::<Vec<_>>(),
-            expected
-        );
-        assert!(links.take().is_none());
     }
 }

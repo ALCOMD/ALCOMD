@@ -17,6 +17,14 @@
 
 M7 于本地文档提交 `b6de51de` 正式收束。原生程序/数据保持；真实IPC验证按后来获批的短暂停用、备份及恢复流程执行，不操作真实项目，不恢复已停止的桌面控制。
 
+### 桌面添加深链（2026-11-19，所有者批准独立工作树实施）
+
+- `alcomd://repositories/add?url=…` 预填 VPM 仓库索引地址，用户发起预览后再确认登记。
+- `alcomd://extensions/add?url=…` 预填 [单扩展源](../../specs/extensions/source-v1.md)索引地址，用户按「继续」后读取索引，沿用版本选择、包签名校验、条款与必需权限确认。
+- 两条路由均接受单个百分号编码的匿名 HTTPS 索引地址，保留源地址的查询参数及顺序。打开链接仅预填表单。运行时接收复用冷启动参数、单实例转发和 macOS Open URL 事件。链接在内存排队，等已有弹窗或未保存编辑结束再打开。
+- `vcc://vpm/addRepo` 沿用现有注册偏好及 `headers[]` 兼容行为，与新仓库深链共用添加面板。原始链接不进入日志或页面路由。Core RPC、Schema 和权限合同沿用现状。正式系统协议注册与安装生命周期验收归 [M12](M12-full-product-distribution.md)。
+- 独立工作树的本地验证通过前端生产构建、26 项 Chromium 回归、24 项 GUI Rust 单测，以及 Windows 原生冷启动和单实例转发夹具。fmt 和 GUI 严格 Clippy 通过。macOS/Linux 原生激活及正式安装后的系统入口未验收。
+
 ## 协议与依赖
 
 身份接线新增直接依赖：daemon 使用已在 lockfile 的 `getrandom = =0.4.3`（MIT/Apache-2.0）取得32字节OS随机数，application复用已冻结sha2做凭据摘要。替代UUID拼接无法直接保证256位均匀随机；自行调用各OS随机API会重复维护平台实现。固定版本、熵源失败拒绝签发；不引入密码学框架或可恢复秘密存储。MCP实际连接复用alcomd-client，协议类型/帧预算直接复用alcomd-protocol，xtask精确依赖规则随实际引用同步。
