@@ -1928,3 +1928,13 @@ Windows 完整仓库门禁首轮在严格 Clippy 中止。新增 Schema 用例�
 - 综合测试原先通过私有端点启动 Core 和 OAuth，真实 STDIO 子进程以及 Bearer 监听器仍使用默认端点。`78b90927c9c41794b3b9b1538c60112a0d0d48ce` 使用同一个私有 Core 配置启动 Bearer，并使用操作系统现有的运行目录变量只配置 STDIO 子进程。两条目录一致性断言及同一凭据保持。Unix 子进程不继承用于定位真实用户数据目录的 `HOME`。Windows 真实隔离 SDK 的 OAuth 综合、STDIO 卸载、HTTP Bearer 卸载各定向 1/0，严格 Clippy、fmt、xtask、锁定 metadata 和 diff 通过。Unix 运行待同 SHA 复验。
 - Ubuntu 独立的 Provider 失败发生在综合 OAuth 用例之前。原断言只输出 `is_error`，结果不足以判定失败阶段。`622cb62ad507c700de42cd2db9ddd13a7835a754` 保留原断言，只记录失败的夹具序号和返回的稳定错误码。Windows 真实签名 Provider 用例定向 1/0，严格 Clippy 和 fmt 等廉价门禁通过。未复现 Ubuntu 失败，未对生产代码或预算进行调整。两项本地提交均通过签名验证。
 - 远端仍为 `36137b6c`。下一次快进的完整本地链是前一轮验收记录 `628597ce`、端点修复 `78b90927` 和 Provider 诊断 `622cb62a`，等待对这一范围的推送授权。M8 维持进行中。
+
+### 2026-11-20 三传输隔离夹具远端复验
+
+按所有者确认，核对远端 `36137b6c`、干净工作树和三笔签名后，只将 `628597ce`、`78b90927`、`622cb62a` 普通快进至 `origin/main`。`ls-remote` 确认远端指向 `622cb62ad507c700de42cd2db9ddd13a7835a754`。本地的上一轮复验记录 `2afbcc82` 未随此次提交链推送。
+
+- 同 SHA 自动触发的 [CodeQL 44566846484](https://github.com/ALCOMD/ALCOMD/actions/runs/44566846484) 首轮四项分析均通过。
+- [CI 44566846494 的 macOS 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/44566846494/job/135710835236) 在等待约 15 分钟后被取消，步骤列表为空。GitHub 注释明确指向 arm64 托管运行器容量不足，多次分配仍未取得运行器。本轮首轮 macOS 没有执行测试。
+- Ubuntu 原作业完整通过。`business_tools` 21 通过、0 失败、3 项原有忽略，含 OAuth 综合、OAuth 仓库重放、扩展 Provider 计划及此前因端点占用失败的用例。首轮独立 Provider 失败本轮未复现，根因未定位。CLI 集成、项目删除挂载边界、发布可执行文件、Tauri 构建、GLIBC 符号检查和 Chromium 单轮 734/0 均通过。
+- Windows 原作业完整通过。`business_tools` 21 通过、0 失败、4 项原有忽略，含 OAuth 综合与扩展 Provider。仓库检查、CLI 集成、发布可执行文件、Tauri 构建和 Chromium 单轮 734/0 均通过。
+- CI 首轮总状态为 `failure`，唯一未通过的平台是未分配运行器的 macOS。自动运行终态、Windows 和 Ubuntu 原始日志及 macOS 取消注释保存在 `target/m8-shared-project-assets-20261119/`。三平台同 SHA 验收仍缺 macOS。记录时尚未启动补跑或修改工作流，当前候选及原运行数据保持。M8 继续进行中。
