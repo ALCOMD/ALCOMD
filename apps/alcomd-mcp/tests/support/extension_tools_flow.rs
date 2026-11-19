@@ -397,7 +397,8 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     assert_ne!(http_echo.is_error, Some(true));
     let mut operations = Vec::new();
     let mut recovery_args = None;
-    operations.push(super::oauth_flow::extension_provider_oauth(&mut owner, &root, &a).await);
+    operations
+        .push(super::oauth_flow::extension_provider_oauth(&mut owner, &root, &a, &core).await);
     for fault in [false, true] {
         use rmcp::model::{ClientRequest, Request, ServerResult};
         use rmcp::service::PeerRequestOptions;

@@ -113,7 +113,7 @@ impl Drop for Https {
     }
 }
 impl Https {
-    async fn start(root: &Path, config: ClientConfig) -> Self {
+    async fn start(root: &Path, core: &CoreConfiguration) -> Self {
         let cert = root.join("public-test-cert.der");
         let key = root.join("public-test-key.pkcs8");
         std::fs::write(&cert, CERT).expect("test cert");
@@ -126,7 +126,7 @@ impl Https {
             drop(reservation);
             match alcomd_mcp::HttpServer::bind_oauth(
                 port,
-                config.clone(),
+                core.client.clone(),
                 cert.clone(),
                 key.clone(),
             )
@@ -471,7 +471,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
             .await
             .expect("native owner config"),
     );
-    let http = Https::start(&root, config.client.clone()).await;
+    let http = Https::start(&root, &config).await;
     let registration = registration(&mut owner, &http, &actor, false)
         .await
         .registration;
@@ -673,7 +673,7 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
         })
         .await
         .expect("client has write grant");
-    let http = Https::start(&root, config.client.clone()).await;
+    let http = Https::start(&root, &config).await;
     let registration = registration(&mut owner, &http, &actor, false)
         .await
         .registration;
@@ -785,7 +785,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         .await
         .expect("same native registry")
         .repository;
-    let http = Https::start(&root, configuration.client.clone()).await;
+    let http = Https::start(&root, &configuration).await;
     let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Repository manager A".into(),
@@ -1128,7 +1128,7 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
         .await
         .expect("same package through the local owner's Core planning API");
 
-    let http = Https::start(&root, configuration.client.clone()).await;
+    let http = Https::start(&root, &configuration).await;
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth package HTTPS fixture".into(),
@@ -1296,7 +1296,7 @@ async fn oauth_live_subscriptions_follow_refresh_and_revocation() {
         .await
         .expect("initial credential generation");
     client.revision = initial_credential.revision;
-    let http = Https::start(&root, core.client.clone()).await;
+    let http = Https::start(&root, &core).await;
     let reg = registration(&mut owner, &http, &client, false)
         .await
         .registration;
@@ -1535,7 +1535,7 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
         })
         .await
         .expect("explicit read grant");
-    let http = Https::start(&root, core.client.clone()).await;
+    let http = Https::start(&root, &core).await;
     let reg = registration(&mut owner, &http, &client, false)
         .await
         .registration;
@@ -1671,7 +1671,7 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         })
         .await
         .expect("B");
-    let http = Https::start(&root, core.client.clone()).await;
+    let http = Https::start(&root, &core).await;
     let reg_a = registration(&mut owner, &http, &a, false)
         .await
         .registration;
@@ -1905,7 +1905,7 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         matches!(ingress.oauth_request_get(McpOAuthRequestGetParams{request_id:uuid::Uuid::new_v4().to_string()}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     drop(ingress);
-    let http = Https::start(&root, core.client.clone()).await;
+    let http = Https::start(&root, &core).await;
     let port = reqwest::Url::parse(&http.issuer)
         .expect("issuer")
         .port()
@@ -2563,8 +2563,9 @@ pub(super) async fn extension_provider_oauth(
     owner: &mut AlcomdClient,
     root: &Path,
     client: &McpClientRecord,
+    core: &CoreConfiguration,
 ) -> String {
-    let http = Https::start(root, ClientConfig::default().without_daemon_start()).await;
+    let http = Https::start(root, core).await;
     let reg = registration(owner, &http, client, false).await.registration;
     let code = http.code(owner, &reg).await;
     let first = http.exchange(&reg, &code, None).await;
