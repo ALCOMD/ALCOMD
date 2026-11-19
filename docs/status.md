@@ -4,7 +4,9 @@
 
 ## 当前阶段
 
-**M8 已收尾，M9 实施待授权。** M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。
+**M8 已收尾，M9 实施中。** 已用当前 Windows Discord 账号验证 v3 Application ID `1536569303653154996` 的合成展示和清除。Core 与 Extension Host 已接通 Unity 会话、受限本机 IPC、一次启用和停用清除流程。独立公开仓库已创建，本地独立检出已生成开发签名包。远端候选、Hosted CI、CodeQL 和 Windows 真实 Unity 到 Discord 的产品验收仍待完成。[M9 实施记录](exec-plans/M9-discord-first-party-extension.md)
+
+M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。
 
 2026-11-20 [三传输隔离夹具远端复验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-三传输隔离夹具远端复验)。`622cb62a` 已按授权推送。自动 CI `44566846494` 首轮 `failure`，Windows 与 Ubuntu 全部门禁通过，各自 Chromium 734/0，Ubuntu 的 OAuth 综合和 Provider 均通过。macOS 因 GitHub arm64 运行器容量不足被取消，未执行步骤。同 SHA CodeQL `44566846484` 四项分析通过。macOS 同 SHA 验收延期。
 
@@ -349,6 +351,7 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 | 项目动作、包管理 | [项目与包功能收口](exec-plans/M7-project-package-functional-closure.md)、[包候选合同](exec-plans/M7-package-candidate-evidence-stop-a.md)、[VPM 事务](exec-plans/M4-package-transactions.md) |
 | Unity 项目版本迁移 | [Unity 版本迁移合同](exec-plans/M7-unity-project-version-stop-a.md) |
 | GUI 与公开 RPC 用例对照 | [M7 GUI RPC 覆盖](exec-plans/M7-gui-rpc-coverage.md) |
+| Discord 第一方扩展（M9 实施中） | [M9 实施顺序与公共合同](exec-plans/M9-discord-first-party-extension.md) |
 
 ## 剩余边界与下一停止点
 
@@ -356,6 +359,6 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 - 最终功能证据绑定`c46f7544`；此前候选的失败、分轮结果和历史三平台基线分别保留，不替代本轮完整通过。收尾文档为后续独立提交，不声称其新CI已完成。
 - 14项原有`#[ignore]`未全部直接单跑；子进程入口部分由父回归调用，联网VRCFury、Windows单实例/注册表、显式公开仓库快照及专用HTTP/代理隔离项不计作本轮直接通过。
 - v3 真实工程差分夹具仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
-- M7 已正式完成，M8 已按所有者要求收尾。M9 等待实施授权。
+- M7 已正式完成，M8 已按所有者要求收尾。M9 正在实施，下一停止点见 [M9 ExecPlan](exec-plans/M9-discord-first-party-extension.md#实施顺序与停止点)。
 
 [M7 状态与验收历史](testing/m7-status-history-through-20261107.md) 保存原状态页的候选、签收、遗留事项、失败轮次及证据链接。

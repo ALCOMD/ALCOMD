@@ -250,9 +250,6 @@ def main() -> int:
             "Workspace authors do not match the publisher")
     require(workspace["homepage"] == product["product"]["homepage_url"],
             "Workspace homepage does not match the product")
-    backend = load_toml("extensions/first-party/alcomd-extension-discord/backend/Cargo.toml")["package"]
-    require(backend["authors"] == workspace["authors"] and backend["homepage"] == workspace["homepage"],
-            "Discord backend author/homepage do not match the product")
     mcp_backend = load_toml("extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml")
     require(mcp_backend["package"]["authors"] == workspace["authors"]
             and mcp_backend["package"]["homepage"] == workspace["homepage"]
@@ -786,7 +783,12 @@ def main() -> int:
         "Invalid MCP conformance integrity",
     )
 
-    for extension_name in ["mcp", "discord"]:
+    bundle_id = product["identity"]["bundle_identifier"]
+    extension_ids = {
+        "mcp": f"{bundle_id}.extension.mcp",
+        "discord": f"{bundle_id}-discord-presence",
+    }
+    for extension_name, extension_id in extension_ids.items():
         relative = (
             "extensions/first-party/"
             f"alcomd-extension-{extension_name}/alcomd-extension.toml"
@@ -794,8 +796,7 @@ def main() -> int:
         manifest = load_toml(relative)
         require(manifest["schema"] == 1, f"Unsupported extension schema: {relative}")
         require(
-            manifest["id"]
-            == f"{product['identity']['bundle_identifier']}.extension.{extension_name}",
+            manifest["id"] == extension_id,
             f"Unexpected first-party extension ID: {relative}",
         )
         require(
@@ -879,9 +880,15 @@ def main() -> int:
             "Win32_Security",
             "Win32_Security_Authorization",
             "Win32_Security_Credentials",
+            "Win32_Security_Cryptography",
+            "Win32_Security_Cryptography_Catalog",
+            "Win32_Security_Cryptography_Sip",
+            "Win32_Security_WinTrust",
             "Win32_Storage_FileSystem",
             "Win32_System_Com",
+            "Win32_System_Pipes",
             "Win32_System_Registry",
+            "Win32_System_RemoteDesktop",
             "Win32_System_Threading",
             "Win32_UI_Shell",
             "Win32_UI_Accessibility",
@@ -1031,15 +1038,6 @@ def main() -> int:
     require(
         rust_toolchain["toolchain"]["channel"] == RUST_VERSION,
         "Unexpected rust-toolchain channel",
-    )
-
-    discord_backend = load_toml(
-        "extensions/first-party/alcomd-extension-discord/backend/Cargo.toml"
-    )
-    require(
-        discord_backend["package"]["repository"]
-        == PROJECT_REPOSITORY,
-        "Unexpected Discord backend repository",
     )
 
     npm_package_paths = [

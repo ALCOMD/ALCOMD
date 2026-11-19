@@ -420,9 +420,6 @@ surface 不属于 4.0.0；M8/M9 第一方扩展与第三方扩展使用同一 Po
 host.network.request
 host.external-config.plan
 host.external-config.apply
-host.discord-presence.connect
-host.discord-presence.update
-host.discord-presence.clear
 host.notification.send
 ```
 
@@ -464,10 +461,12 @@ MCP 管理扩展默认安装并启用。
 Discord 功能全部作为第一方扩展：
 
 ```text
-com.vrclearn.alcomd.extension.discord
+com.vrclearn.alcomd-discord-presence
 ```
 
-扩展包含设置/预览 UI 与 WASM 后台。它通过公开权限 `integrations.discord.presence` 调用 Extension Host 的窄 Discord Presence 能力。
+扩展显示名为 **ALCOMD Discord Presence**，计划在 `ALCOMD/alcomd-discord-presence` 独立维护，作为完整的第三方扩展示例。扩展负责设置和预览、WASM 后台、Discord IPC、连接与 Rich Presence。主仓提供应用无关的项目与 Unity 用例、权限、生命周期和公开扩展接口。
+
+M9 先核对现有公开接口，确有缺口时单独审批最小通用方案。[架构决策](../adr/0013-discord-first-party-extension.md) · [M9 ExecPlan](../exec-plans/M9-discord-first-party-extension.md)
 
 禁止：
 

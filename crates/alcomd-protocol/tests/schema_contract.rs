@@ -501,7 +501,7 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
     );
     assert_eq!(
         contract["$defs"]["permissionGrant"]["properties"]["resourceKind"]["enum"],
-        json!(["Extension", "Global"])
+        json!(["Extension", "Global", "LocalIpcTarget"])
     );
     assert_eq!(
         contract["$defs"]["permissionScope"]["oneOf"][1]["properties"]["resourceKind"]["const"],
@@ -511,6 +511,11 @@ fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
         contract["$defs"]["permissionScope"]["oneOf"][1]["properties"]["resourceId"]["const"],
         "*"
     );
+    let local_scope = &contract["$defs"]["permissionScope"]["oneOf"][2]["properties"];
+    assert_eq!(local_scope["permission"]["const"], "local-ipc.connect");
+    assert_eq!(local_scope["resourceKind"]["const"], "LocalIpcTarget");
+    assert_eq!(local_scope["resourceId"]["minLength"], 64);
+    assert_eq!(local_scope["resourceId"]["maxLength"], 64);
     let result = alcomd_protocol::ExtensionPermissionsListResult {
         available_permissions: vec!["projects.read".to_owned()],
         extension_id: "dev.example.fixture".to_owned(),

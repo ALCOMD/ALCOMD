@@ -38,7 +38,7 @@ use alcomd_application::{
     UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
     UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, mpsc, oneshot, watch};
 
 #[cfg(test)]
 mod events_sources_tests;
@@ -83,7 +83,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 44;
+pub const CURRENT_DATA_SCHEMA: u32 = 45;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -130,6 +130,7 @@ struct StoreInner {
     worker: Option<thread::JoinHandle<()>>,
     event_commits: watch::Receiver<EventCommitWatermark>,
     retired_legacy_template_state: bool,
+    extension_authority: Arc<RwLock<()>>,
 }
 
 impl Drop for StoreInner {
@@ -146,6 +147,34 @@ impl Drop for StoreInner {
 }
 
 impl StateStoreHandle {
+    /// Holds the current grant through bounded side effects, ordered against durable revocation.
+    pub async fn authorize_background_integration(
+        &self,
+        lease: ExtensionInstanceLease,
+        target_scope: Option<String>,
+    ) -> Result<OwnedRwLockReadGuard<()>, M6Error> {
+        let guard = Arc::clone(&self.inner.extension_authority)
+            .read_owned()
+            .await;
+        self.request_worker(
+            move |connection| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .and_then(|duration| u64::try_from(duration.as_millis()).ok())
+                    .ok_or_else(m6::unavailable)?;
+                m6::require_background_integration_grant(
+                    connection,
+                    &lease,
+                    target_scope.as_deref(),
+                    now,
+                )
+            },
+            m6::unavailable,
+        )
+        .await?;
+        Ok(guard)
+    }
     pub async fn workflow_plan_path_proof(
         &self,
         owner: PrincipalId,
@@ -220,6 +249,7 @@ impl StateStoreHandle {
                 worker: Some(worker),
                 event_commits,
                 retired_legacy_template_state,
+                extension_authority: Arc::default(),
             }),
         })
     }
@@ -311,6 +341,9 @@ impl StateStoreHandle {
         &self,
         work: impl FnOnce(&mut rusqlite::Connection) -> Result<(T, bool), M6Error> + Send + 'static,
     ) -> Result<T, M6Error> {
+        let authority = Arc::clone(&self.inner.extension_authority)
+            .write_owned()
+            .await;
         let (reply, response) = oneshot::channel();
         let commands = self
             .inner
@@ -324,6 +357,7 @@ impl StateStoreHandle {
         let tool_context = alcomd_application::tool_invocation();
         commands
             .send(Command::M3(Box::new(move |connection| {
+                let _authority = authority;
                 let _log = operation_logs::ContextGuard::install(log_context);
                 let _tool = m8_tools::ContextGuard::install(tool_context);
                 let (result, changed) = match work(connection) {
@@ -1365,6 +1399,31 @@ impl M6Store for StateStoreHandle {
                 &key,
                 true,
                 now_ms,
+                None,
+            )
+        })
+        .await
+    }
+
+    async fn enable_consented(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+        activation: alcomd_application::VerifiedExtensionActivation,
+    ) -> Result<ExtensionRecord, M6Error> {
+        self.request_extension_write(move |connection| {
+            m6::set_desired(
+                connection,
+                &owner,
+                &extension_id,
+                expected,
+                &key,
+                true,
+                now_ms,
+                Some(activation),
             )
         })
         .await
@@ -1387,6 +1446,7 @@ impl M6Store for StateStoreHandle {
                 &key,
                 false,
                 now_ms,
+                None,
             )
         })
         .await

@@ -1361,6 +1361,115 @@ async fn project_capability_data_namespace_and_revoke_revalidate_each_lease_call
 }
 
 #[tokio::test]
+async fn local_ipc_rechecks_exact_scope_and_orders_revocation_after_a_live_operation() {
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    let (store, path, package) = permissions_fixture("local-ipc-authority").await;
+    let owner = PrincipalId::local_owner();
+    let extension_id = package.extension_id;
+    permission_mutation(&store, &extension_id, false, true, "ipc-background-grant").await;
+    let scope = "a".repeat(64);
+    let now = u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_millis(),
+    )
+    .expect("timestamp");
+
+    let record = store
+        .get_extension(owner.clone(), extension_id.clone())
+        .await
+        .expect("record");
+    store
+        .set_grant(
+            owner.clone(),
+            ExtensionGrantMutation {
+                extension_id: extension_id.clone(),
+                permission: "local-ipc.connect".into(),
+                resource_kind: "LocalIpcTarget".into(),
+                resource_id: scope.clone(),
+                expected_revision: record.grant_revision,
+                grant: true,
+            },
+            IdempotencyKey::parse("ipc-scope-grant").expect("key"),
+            now,
+        )
+        .await
+        .expect("scoped grant");
+    let record = store
+        .get_extension(owner.clone(), extension_id.clone())
+        .await
+        .expect("record");
+    store
+        .enable(
+            owner.clone(),
+            extension_id.clone(),
+            record.revision,
+            IdempotencyKey::parse("ipc-enable").expect("key"),
+            now,
+        )
+        .await
+        .expect("enable fixture");
+    let lease = store
+        .prepare_instance(
+            owner.clone(),
+            extension_id.clone(),
+            "10000000-0000-4000-8000-000000000001".into(),
+            now,
+        )
+        .await
+        .expect("instance")
+        .lease;
+    store
+        .mark_instance_running(lease.clone(), now)
+        .await
+        .expect("active instance");
+
+    let denied = store
+        .authorize_background_integration(lease.clone(), Some("b".repeat(64)))
+        .await
+        .expect_err("different target scope");
+    assert_eq!(denied.code(), M6ErrorCode::PermissionDenied);
+    let authority = store
+        .authorize_background_integration(lease.clone(), Some(scope.clone()))
+        .await
+        .expect("correct target scope");
+    let revoke_store = store.clone();
+    let mut revoke = tokio::spawn(async move {
+        revoke_store
+            .set_grant(
+                owner,
+                ExtensionGrantMutation {
+                    extension_id,
+                    permission: "local-ipc.connect".into(),
+                    resource_kind: "LocalIpcTarget".into(),
+                    resource_id: scope,
+                    expected_revision: record.grant_revision,
+                    grant: false,
+                },
+                IdempotencyKey::parse("ipc-scope-revoke").expect("key"),
+                now,
+            )
+            .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(50), &mut revoke)
+            .await
+            .is_err()
+    );
+    drop(authority);
+    revoke.await.expect("revoke task").expect("durable revoke");
+    let denied = store
+        .authorize_background_integration(lease, Some("a".repeat(64)))
+        .await
+        .expect_err("revoked lease");
+    assert_eq!(denied.code(), M6ErrorCode::InstanceStale);
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
 async fn first_party_and_owner_selected_sources_share_the_same_runtime_authority() {
     let owner_selected =
         policy_capability_outcome("owner-selected", ExtensionSourceKind::LocalOwnerSelected).await;
@@ -1626,6 +1735,7 @@ async fn install_consent_rejects_missing_or_changed_evidence_before_acceptance_a
     });
     package.required_permissions = alcomd_application::EXTENSION_PERMISSIONS
         .iter()
+        .filter(|&&permission| permission != alcomd_application::LOCAL_IPC_PERMISSION)
         .map(|p| (*p).to_owned())
         .collect();
     package.required_permissions.sort();
@@ -1723,7 +1833,7 @@ async fn install_consent_rejects_missing_or_changed_evidence_before_acceptance_a
         .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
         .await
         .expect("isolated extension consent fixture");
-    assert_eq!(permissions.grants.len(), 13);
+    assert_eq!(permissions.grants.len(), 14);
     for permission in &package.required_permissions {
         assert!(
             permissions

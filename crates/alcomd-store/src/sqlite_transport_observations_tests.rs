@@ -103,3 +103,35 @@ fn state43_real_initializer_preserves_data_and_does_not_regrant_on_reopen() {
     }
     std::fs::remove_file(path).expect("State43 fixture");
 }
+
+#[test]
+fn state45_preserves_grants_and_requires_exact_local_ipc_scope() {
+    let db = fixture();
+    db.execute_batch(MIGRATION_V43).expect("State43");
+    db.execute_batch(MIGRATION_V44).expect("State44");
+    let before = publisher_trust_removal_tests::snapshot(&db);
+    db.execute_batch(MIGRATION_V45).expect("State45");
+    assert_eq!(publisher_trust_removal_tests::snapshot(&db), before);
+
+    let grant = |permission, kind, resource: &str| {
+        db.execute(
+            "INSERT INTO extension_grants VALUES ('dev.alcomd.state35',?1,?2,?3,'granted',3,20)",
+            rusqlite::params![permission, kind, resource],
+        )
+    };
+    assert!(grant("local-ipc.connect", "Global", "*").is_err());
+    assert!(grant("local-ipc.connect", "LocalIpcTarget", &"B".repeat(64)).is_err());
+    assert!(grant("local-ipc.connect", "LocalIpcTarget", "short").is_err());
+    assert!(grant("unity.sessions.read", "LocalIpcTarget", &"a".repeat(64)).is_err());
+    grant("local-ipc.connect", "LocalIpcTarget", &"a".repeat(64)).expect("scoped approval");
+    grant("unity.sessions.read", "Global", "*").expect("explicit Unity approval");
+    assert!(
+        db.prepare("PRAGMA foreign_key_check")
+            .expect("foreign keys")
+            .query([])
+            .expect("query")
+            .next()
+            .expect("read")
+            .is_none()
+    );
+}

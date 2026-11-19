@@ -120,3 +120,13 @@ invalidates old UI authority and does not turn stale data into successful empty 
 The new subscription-stream read is Global/* and may be required or optional, with
 existing explicit consent. State43 only extends the CHECK and never grants it.
 MCP business connections cannot read administrative projections.
+
+## M9 local IPC and session projection
+
+Only the background integration world can link the imports. Core checks the active background invocation and lease before reading Unity sessions or selecting a local IPC target. The Unity capability returns a selected registered project ID, start time and count. The invoking guest receives no path, argv or Unity process handle.
+
+On Windows Core builds local pipe names from the signed target's literal basename set and opens them with identification-only quality of service. It checks the connected server PID, current user SID, login session, executable basename and trusted Authenticode signer organization before sending any byte. Trust verification uses the system verifier with cached retrieval. Guest input supplies a signed target ID or an opaque channel ID, never an OS address. Each instance gets at most one channel. Actual read/write size is capped at 64 KiB, and a write that times out closes the channel to prevent reusing a stream with an unknown prefix. Host messages and diagnostic errors exclude endpoint paths and payloads.
+
+On Unix the address is a non-symlink filesystem socket in the selected Core runtime directory. The kernel provides peer UID and PID. macOS validates the running process against the signed bundle identifier and Team ID under Apple's signing anchor. Linux requires the peer's loaded executable inode to match the declared canonical system path, with every ancestor root-owned and without group or other write access. Per-user and sandbox-container installations outside the declared Linux system path are unsupported. All three platforms fail closed on missing or mismatched identity evidence.
+
+An in-flight IPC operation holds its verified access until it finishes or times out. The Store orders durable revoke, disable and uninstall mutations after that operation, even if the mutation request caller disconnects. A revoked lease cannot use an old handle, and process disposal closes the channel. The single-action activation flow remains follow-up work.

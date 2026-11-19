@@ -1,4 +1,4 @@
-//! The only approved Windows FFI boundary in `alcomd-platform`.
+//! Windows security primitives for current-user process, mutex, and pipe checks.
 
 #![allow(unsafe_code)]
 
@@ -71,12 +71,17 @@ impl Drop for LocalSecurityDescriptor {
 }
 
 pub(super) fn current_user_sid_string() -> io::Result<String> {
+    // SAFETY: GetCurrentProcess returns a borrowed pseudo-handle, valid for the process lifetime.
+    process_user_sid_string(unsafe { GetCurrentProcess() })
+}
+
+pub(super) fn process_user_sid_string(process: HANDLE) -> io::Result<String> {
     // SAFETY: all output pointers reference initialized local storage for the
     // duration of each call; the process pseudo-handle is borrowed, while the
     // returned token handle is immediately wrapped for deterministic closing.
     unsafe {
         let mut token = null_mut();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+        if OpenProcessToken(process, TOKEN_QUERY, &mut token) == 0 {
             return Err(io::Error::last_os_error());
         }
         let token = OwnedHandle(token);

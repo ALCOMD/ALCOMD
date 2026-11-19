@@ -44,7 +44,7 @@ jobs:
       - name: Check
         shell: pwsh
         run: .\scripts\check.ps1
-      # Check already runs the complete workspace/Discord tests and frontend checks.
+      # Check already runs the complete workspace and frontend checks.
       - name: Test CLI auto-start integration
         shell: pwsh
         run: |
@@ -62,7 +62,6 @@ jobs:
           git diff --exit-code -- `
             Cargo.lock `
             package-lock.json `
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock `
             extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
@@ -133,7 +132,6 @@ jobs:
           git diff --exit-code -- \
             Cargo.lock \
             package-lock.json \
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock \
             extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
@@ -192,7 +190,6 @@ jobs:
           git diff --exit-code -- \
             Cargo.lock \
             package-lock.json \
-            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock \
             extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check

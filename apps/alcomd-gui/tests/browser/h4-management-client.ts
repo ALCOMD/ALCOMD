@@ -28,6 +28,7 @@ declare global { interface Window { h4Management: ManagementFixture } }
 /** Opt-in public DTO fixture. It never reads or writes the native Core environment. */
 export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParams): GuiRpcClient {
     const hash = "a".repeat(64);
+    const localTarget = "b".repeat(64);
     const runtimePermissions: ManagementGrant["permission"][] = ["mcp.connections.read", "mcp.requests.read"];
     const providerPermissions: ManagementGrant["permission"][] = ["mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel", "projects.read"];
     const toolPreviews: import("@alcomd/sdk").McpToolPreview[] = query.has("m8-tool-provider") ? [
@@ -36,6 +37,12 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     ] : [];
     const extensions = new Map<string, ExtensionRecord>();
     for (const id of [H4_ALPHA, H4_BETA, H4_GAMMA]) extensions.set(id, record(id));
+    const scopedActivation = query.has("m9-activation");
+    if (scopedActivation) {
+        const alpha = extensions.get(H4_ALPHA)!;
+        alpha.desiredState = "installed_disabled";
+        alpha.runtimeState = "stopped";
+    }
     if (query.has("h4-quarantined")) {
         const alpha = extensions.get(H4_ALPHA)!;
         alpha.quarantineState = "quarantined";
@@ -47,6 +54,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         { permission: "background.run", resourceKind: "Extension", resourceId: id },
         { permission: "projects.read", resourceKind: "Global", resourceId: "*" }
     ]);
+    if (scopedActivation) grants.set(H4_ALPHA, []);
     const tasks = new Map<string, { operation: Operation; plan: ExtensionPlan }>();
     const held = new Set<string>();
     let failure: { method: string; code: string } | undefined;
@@ -162,7 +170,10 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         },
         async extensionGet(extensionId) {
             log("extensions.get", { extensionId });
-            return response("extensions.get", { extension: structuredClone(installed(extensionId)), mcpTools: structuredClone(toolPreviews) });
+            const consent = scopedActivation && extensionId === H4_ALPHA
+                ? { activationConsent: { packageDigest: hash, targets: ["Discord desktop (discord · discord.exe · Discord Inc.)"] } }
+                : {};
+            return response("extensions.get", { extension: structuredClone(installed(extensionId)), mcpTools: structuredClone(toolPreviews), ...consent });
         },
         async extensionPermissionsList(extensionId, cursor) {
             log("extensions.permissions.list", { extensionId, ...(cursor === undefined ? {} : { cursor }) });
@@ -172,8 +183,10 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const offset = parts === undefined ? 0 : Number(parts[2]);
             const all = grants.get(extensionId) ?? [];
             const page = all.slice(offset, offset + 1);
-            return response("extensions.permissions.list", { availablePermissions: ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"] as ManagementGrant["permission"][], extensionId, grantRevision: extension.grantRevision,
-                requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
+            const availablePermissions: ManagementGrant["permission"][] = ["background.run", "projects.read", "mcp.clients.read", "mcp.clients.manage", "mcp.connections.read", "mcp.requests.read", "mcp.subscription-streams.read", "mcp.tools.provide", "repositories.read", "packages.read", "packages.manage", "operations.read", "operations.cancel"];
+            if (scopedActivation) availablePermissions.push("unity.sessions.read", "local-ipc.connect");
+            return response("extensions.permissions.list", { availablePermissions, extensionId, grantRevision: extension.grantRevision,
+                requiredPermissions: query.has("m8-tool-provider") || query.has("m8-mcp-permissions") ? [] : ["projects.read"], optionalPermissions: scopedActivation && extensionId === H4_ALPHA ? ["background.run", "unity.sessions.read", "local-ipc.connect"] : query.has("m8-runtime-permissions") ? runtimePermissions : query.has("m8-tool-provider") ? providerPermissions : query.has("m8-mcp-permissions") ? ["mcp.clients.read", "mcp.clients.manage", "projects.read"] : ["background.run"], grants: structuredClone(page),
                 ...(offset + page.length < all.length ? { nextCursor: `${extensionId}:${extension.grantRevision}:${offset + page.length}` } : {}) });
         },
         async extensionInspectSource(url) {
@@ -200,12 +213,22 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             // A lost reply can follow actual acceptance; the UI must not retry it.
             return response("extensions.applyInstall", accept(planId, "install"));
         },
-        async extensionEnable(extensionId, expectedRevision) {
-            log("extensions.enable", { extensionId, expectedRevision });
+        async extensionEnable(extensionId, expectedRevision, activationPackageDigest) {
+            log("extensions.enable", { extensionId, expectedRevision, ...(activationPackageDigest === undefined ? {} : { activationPackageDigest }) });
             await response("extensions.enable", undefined);
             const extension = installed(extensionId);
             if (extension.revision !== expectedRevision) throw { code: "revision_conflict" };
+            if (scopedActivation && extensionId === H4_ALPHA && activationPackageDigest !== hash) throw { code: "permission_denied" };
             const updated: ExtensionRecord = { ...extension, desiredState: "enabled", quarantineState: "clear", runtimeState: "running", revision: extension.revision + 1 };
+            if (scopedActivation && extensionId === H4_ALPHA) {
+                updated.grantRevision += 1;
+                grants.set(extensionId, [
+                    { permission: "background.run", resourceKind: "Extension", resourceId: extensionId },
+                    { permission: "projects.read", resourceKind: "Global", resourceId: "*" },
+                    { permission: "unity.sessions.read", resourceKind: "Global", resourceId: "*" },
+                    { permission: "local-ipc.connect", resourceKind: "LocalIpcTarget", resourceId: localTarget }
+                ]);
+            }
             extensions.set(extensionId, updated);
             return { extension: structuredClone(updated) };
         },
@@ -255,6 +278,11 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             if (extension.grantRevision !== expectedGrantRevision) throw { code: "revision_conflict" };
             grants.set(extensionId, (grants.get(extensionId) ?? []).filter((grant) => grant.permission !== permission || grant.resourceKind !== resourceKind || grant.resourceId !== resourceId));
             extension.grantRevision += 1;
+            if (scopedActivation && resourceId === localTarget) {
+                extension.desiredState = "installed_disabled";
+                extension.runtimeState = "stopped";
+                extension.revision += 1;
+            }
             return { extensionId, grantRevision: extension.grantRevision, state: "revoked", replayed: false };
         }
     };

@@ -47,6 +47,20 @@ Manifest 不允许 `first_party`、trust 或 grant 字段；不要求额外发�
   unknown optional interface 可忽略。
 - package identity 是 `package-signing-v1.md` 定义的 content-tree SHA-256，不由文件名、安装路径或 ZIP bytes 决定。
 
+## Background integration targets
+
+The background integration world is requested by declaring `alcomd:extension/guest-background@1.0.0`, `alcomd:extension/host-local-ipc@1.0.0`, and `alcomd:extension/host-unity-sessions@1.0.0` in `[interfaces].required`. Partial declarations and optional declarations of these three interfaces are rejected.
+
+`local_ipc_targets` is a signed table of up to eight named targets. A manifest with targets declares `local-ipc.connect` as optional and lists `background.run`, `projects.read`, and `unity.sessions.read` as required or optional. Every target supplies a `label` and at least one platform section. Names are sorted, unique literal basenames.
+
+| Platform section | Fields |
+| --- | --- |
+| `windows` | `pipe_names`, `executable_name`, and the exact Authenticode signer organization in `publisher` |
+| `macos` | `socket_names`, `bundle_identifier`, and `team_identifier` from the Apple signing identity |
+| `linux` | `socket_names` and the canonical absolute `system_executable` installed in a root-owned non-user-writable directory tree |
+
+The scope key is lowercase SHA-256 over `alcomd-local-ipc-target-v1`, target ID and label, followed by the present platform sections in Windows, macOS, Linux order. Each section contributes its lowercase name, the identity values in table order, the endpoint names in sorted order, and one empty terminator. Every field is encoded as UTF-8 with a trailing NUL. Signed values contain no NUL. Target declarations are informational until an explicit grant is committed.
+
 ## Entrypoint 与 UI
 
 - `component` 必须精确为 `component/extension.wasm`。`background_component` 与 `ui_entry` 是未知字段并 fail closed；

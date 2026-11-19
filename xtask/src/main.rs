@@ -269,6 +269,8 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_unity_version.rs",
         // M7: Windows-owned event, process and window handles stay in the native adapter.
         "crates/alcomd-platform/src/windows_unity_window.rs",
+        // M9: outbound named-pipe peer, process token, and Authenticode inspection.
+        "crates/alcomd-platform/src/windows_local_ipc.rs",
         // Config5: one documented MoveFileExW(flags=0) call; never replaces a destination.
         "crates/alcomd-platform/src/windows_file_publish.rs",
         "crates/alcomd-platform/src/credential_vault/windows.rs",
@@ -591,14 +593,11 @@ fn check_derived_identity(
         }
     }
 
-    for extension in ["mcp", "discord"] {
+    for (extension, id_suffix) in [("mcp", ".extension.mcp"), ("discord", "-discord-presence")] {
         let relative =
             format!("extensions/first-party/alcomd-extension-{extension}/alcomd-extension.toml");
         let manifest: toml::Value = read_toml(&root.join(&relative))?;
-        let expected_id = format!(
-            "{}.extension.{extension}",
-            product.identity.bundle_identifier
-        );
+        let expected_id = format!("{}{id_suffix}", product.identity.bundle_identifier);
         if manifest["id"].as_str() != Some(&expected_id) {
             errors.push(format!("{relative} ID does not match alcomd.product.toml"));
         }

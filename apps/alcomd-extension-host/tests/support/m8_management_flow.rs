@@ -71,7 +71,7 @@ async fn transport_host_reads_only_current_granted_groups_and_revokes_old_ui_lea
         })
         .await
         .expect("current catalog");
-    assert_eq!(permissions.available_permissions.len(), 13);
+    assert_eq!(permissions.available_permissions.len(), 15);
     assert!(
         permissions
             .available_permissions

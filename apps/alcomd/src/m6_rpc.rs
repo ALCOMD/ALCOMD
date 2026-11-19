@@ -135,7 +135,15 @@ pub(super) async fn dispatch(
                             {
                                 return Err(app::M6Error::new(app::M6ErrorCode::PackageInvalid));
                             }
-                            previews(&package.manifest.id, package.mcp_tools)
+                            let consent = package
+                                .manifest
+                                .background_integration()
+                                .consent_preview(package.package_digest)
+                                .map(|consent| rpc::ExtensionActivationConsent {
+                                    package_digest: consent.package_digest,
+                                    targets: consent.targets,
+                                });
+                            Ok((previews(&package.manifest.id, package.mcp_tools)?, consent))
                         })
                         .await
                         .map_err(|_| app::M6Error::new(app::M6ErrorCode::Internal))??;
@@ -151,11 +159,11 @@ pub(super) async fn dispatch(
                         let source = store
                             .installation_source(access.principal().clone(), current.clone())
                             .await?;
-                        Ok((current, tools, source))
+                        Ok((current, tools.0, source, tools.1))
                     }
                     .await;
                     match preview {
-                        Ok((current, tools, source)) => success_action(
+                        Ok((current, tools, source, activation_consent)) => success_action(
                             request.id,
                             rpc::ExtensionResult {
                                 installation_source: source.map(|s| {
@@ -166,6 +174,7 @@ pub(super) async fn dispatch(
                                 }),
                                 extension: record(current),
                                 mcp_tools: Some(tools),
+                                activation_consent,
                             },
                             None,
                         ),
@@ -389,8 +398,7 @@ pub(super) async fn dispatch(
             }
         }
         rpc::METHOD_EXTENSIONS_ENABLE | rpc::METHOD_EXTENSIONS_DISABLE => {
-            let params: rpc::ExtensionLifecycleParams = match serde_json::from_value(request.params)
-            {
+            let params: rpc::ExtensionEnableParams = match serde_json::from_value(request.params) {
                 Ok(value) => value,
                 Err(_) => return invalid(request.id),
             };
@@ -401,9 +409,19 @@ pub(super) async fn dispatch(
             };
             let result = if request.method == rpc::METHOD_EXTENSIONS_ENABLE {
                 application
-                    .enable(access, params.extension_id, expected, key, now_ms())
+                    .enable_with_consent(
+                        access,
+                        params.extension_id,
+                        expected,
+                        key,
+                        now_ms(),
+                        params.activation_package_digest,
+                    )
                     .await
             } else {
+                if params.activation_package_digest.is_some() {
+                    return invalid(request.id);
+                }
                 application
                     .disable(access, params.extension_id, expected, key, now_ms())
                     .await
@@ -414,6 +432,7 @@ pub(super) async fn dispatch(
                     rpc::ExtensionResult {
                         installation_source: None,
                         mcp_tools: None,
+                        activation_consent: None,
                         extension: record(value),
                     },
                     None,

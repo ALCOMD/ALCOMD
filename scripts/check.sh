@@ -13,11 +13,6 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo check --locked --package alcomd-gui
 
-discord_manifest="extensions/first-party/alcomd-extension-discord/backend/Cargo.toml"
-cargo fmt --manifest-path "$discord_manifest" -- --check
-cargo clippy --locked --manifest-path "$discord_manifest" --all-targets -- -D warnings
-cargo test --locked --manifest-path "$discord_manifest"
-
 mcp_manifest="extensions/first-party/alcomd-extension-mcp/backend/Cargo.toml"
 cargo fmt --manifest-path "$mcp_manifest" -- --check
 cargo clippy --locked --manifest-path "$mcp_manifest" --all-targets -- -D warnings

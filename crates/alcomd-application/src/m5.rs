@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -150,6 +151,28 @@ pub struct UnityProcessObservation {
     pub verified_non_editor: bool,
     pub arguments: Option<Vec<String>>,
 }
+
+/// One selected, registered Unity editing session without process or path details.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnitySession {
+    pub project_id: ProjectId,
+    pub started_at_ms: u64,
+}
+
+/// Safe projection of one complete observation for the local Core user.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnitySessionObservation {
+    pub current_session: Option<UnitySession>,
+    pub editor_count: u32,
+}
+
+struct CachedUnitySessions {
+    sampled_at: Instant,
+    observation: Result<UnitySessionObservation, M5UnityError>,
+}
+
+const UNITY_SESSION_SAMPLE_INTERVAL: Duration = Duration::from_secs(5);
+const UNITY_SESSION_SAMPLE_TIMEOUT: Duration = Duration::from_millis(1_500);
 
 /// Public writer state is deliberately not a boolean.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -373,10 +396,27 @@ pub trait M5UnityPlatform: Clone + Send + Sync + 'static {
     fn observe_processes(
         &self,
     ) -> impl Future<Output = Result<Vec<UnityProcessObservation>, M5UnityError>> + Send;
+    /// Observes processes for a bounded background sample without blocking its executor.
+    fn observe_session_processes(
+        &self,
+    ) -> impl Future<Output = Result<Vec<UnityProcessObservation>, M5UnityError>> + Send {
+        self.observe_processes()
+    }
+    /// Current foreground process, when the platform can reliably observe it.
+    fn foreground_process(&self) -> Option<u32> {
+        None
+    }
     fn path_identity(
         &self,
         path: String,
     ) -> impl Future<Output = Result<Vec<u8>, M5UnityError>> + Send;
+    /// Resolves a project selection made by an observed editor without blocking sampling.
+    fn session_project_identity(
+        &self,
+        path: String,
+    ) -> impl Future<Output = Result<Vec<u8>, M5UnityError>> + Send {
+        self.path_identity(path)
+    }
     fn launch(
         &self,
         executable_path: String,
@@ -391,6 +431,7 @@ pub struct M5UnityApplication<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatf
     store: S,
     platform: P,
     defaults: Arc<dyn UnityLaunchDefaultsSource>,
+    unity_sessions: Arc<tokio::sync::Mutex<Option<CachedUnitySessions>>>,
 }
 
 impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S, P> {
@@ -400,7 +441,85 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             store,
             platform,
             defaults,
+            unity_sessions: Arc::default(),
         }
+    }
+
+    /// Core-only projection. The calling adapter must authorize the current invocation.
+    pub async fn observe_local_unity_sessions(
+        &self,
+    ) -> Result<UnitySessionObservation, M5UnityError> {
+        let mut cache = self.unity_sessions.lock().await;
+        if let Some(cached) = cache.as_ref()
+            && cached.sampled_at.elapsed() < UNITY_SESSION_SAMPLE_INTERVAL
+        {
+            return cached.observation.clone();
+        }
+
+        let sampled_at = Instant::now();
+        let observation = tokio::time::timeout(
+            UNITY_SESSION_SAMPLE_TIMEOUT,
+            self.sample_local_unity_sessions(),
+        )
+        .await
+        .unwrap_or_else(|_| Err(M5UnityError::new(M5UnityErrorCode::Internal)));
+        *cache = Some(CachedUnitySessions {
+            sampled_at,
+            observation: observation.clone(),
+        });
+        observation
+    }
+
+    async fn sample_local_unity_sessions(&self) -> Result<UnitySessionObservation, M5UnityError> {
+        let foreground_before = self.platform.foreground_process();
+        let processes = self.platform.observe_session_processes().await?;
+        let foreground_after = self.platform.foreground_process();
+        let foreground = foreground_before.filter(|pid| Some(*pid) == foreground_after);
+        let owner = PrincipalId::local_owner();
+
+        let mut installations = BTreeSet::new();
+        let mut cursor = None;
+        loop {
+            let page = self
+                .store
+                .list_installations(owner.clone(), cursor, 1_000)
+                .await?;
+            installations.extend(
+                page.installations
+                    .into_iter()
+                    .map(|record| record.observation.filesystem_identity),
+            );
+            cursor = page.next_cursor;
+            if cursor.is_none() {
+                break;
+            }
+        }
+
+        let confirmed =
+            confirm_session_processes(&self.platform, &installations, processes).await?;
+
+        let mut projects = BTreeMap::new();
+        if !confirmed.is_empty() {
+            let mut cursor = None;
+            loop {
+                let page = self
+                    .store
+                    .list_projects(owner.clone(), cursor, 1_000)
+                    .await
+                    .map_err(|_| M5UnityError::new(M5UnityErrorCode::StoreUnavailable))?;
+                projects.extend(
+                    page.projects
+                        .into_iter()
+                        .map(|record| (record.observation.path_identity_key, record.project_id)),
+                );
+                cursor = page.next_cursor;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+        }
+
+        project_unity_sessions(confirmed, &projects, foreground)
     }
 
     pub async fn list_installations(
@@ -925,6 +1044,74 @@ fn project_selector(arguments: &[String]) -> Option<&str> {
     })
 }
 
+async fn confirm_session_processes<P: M5UnityPlatform>(
+    platform: &P,
+    installations: &BTreeSet<Vec<u8>>,
+    processes: Vec<UnityProcessObservation>,
+) -> Result<BTreeMap<(u64, u32), Vec<u8>>, M5UnityError> {
+    let mut confirmed = BTreeMap::new();
+    for process in processes {
+        let key = (process.start_time, process.pid);
+        if process.pid == 0 || process.start_time == 0 || process.verified_non_editor {
+            continue;
+        }
+        let verified_editor = process
+            .executable_identity
+            .as_ref()
+            .is_some_and(|executable| installations.contains(executable));
+        if !verified_editor || confirmed.contains_key(&key) {
+            continue;
+        }
+        let arguments = process
+            .arguments
+            .ok_or_else(|| M5UnityError::new(M5UnityErrorCode::Internal))?;
+        if arguments
+            .iter()
+            .any(|argument| argument.eq_ignore_ascii_case("-batchmode"))
+        {
+            continue;
+        }
+        if let Some(project_path) = project_selector(&arguments) {
+            let identity = platform
+                .session_project_identity(project_path.to_owned())
+                .await?;
+            confirmed.insert(key, identity);
+        }
+    }
+    Ok(confirmed)
+}
+
+fn project_unity_sessions(
+    confirmed: BTreeMap<(u64, u32), Vec<u8>>,
+    projects: &BTreeMap<Vec<u8>, ProjectId>,
+    foreground: Option<u32>,
+) -> Result<UnitySessionObservation, M5UnityError> {
+    let mut latest = None;
+    let mut foreground_session = None;
+    let mut editor_count = 0;
+    for ((started_at_secs, pid), identity) in confirmed.into_iter().rev() {
+        let Some(project_id) = projects.get(&identity) else {
+            continue;
+        };
+        let started_at_ms = started_at_secs
+            .checked_mul(1_000)
+            .ok_or_else(|| M5UnityError::new(M5UnityErrorCode::Internal))?;
+        let session = UnitySession {
+            project_id: *project_id,
+            started_at_ms,
+        };
+        editor_count += 1;
+        latest.get_or_insert(session);
+        if foreground == Some(pid) {
+            foreground_session.get_or_insert(session);
+        }
+    }
+    Ok(UnitySessionObservation {
+        current_session: foreground_session.or(latest),
+        editor_count,
+    })
+}
+
 pub(crate) fn validate_arguments(arguments: &[String]) -> Result<(), M5UnityError> {
     let encoded_size = json_arguments_size(arguments)
         .ok_or_else(|| M5UnityError::new(M5UnityErrorCode::InvalidInput))?;
@@ -1108,6 +1295,116 @@ mod tests {
         async fn launch(&self, _: String, _: String, _: Vec<String>) -> Result<(), M5UnityError> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn session_projection_prefers_a_confirmed_foreground_editor() {
+        let foreground_project = ProjectId::new();
+        let latest_project = ProjectId::new();
+        let projects = BTreeMap::from([(vec![1], foreground_project), (vec![2], latest_project)]);
+        let processes = BTreeMap::from([
+            ((10, 100), vec![1]),
+            ((20, 200), vec![2]),
+            ((30, 300), vec![9]),
+            ((15, 150), vec![1]),
+        ]);
+
+        let foreground = project_unity_sessions(processes.clone(), &projects, Some(100))
+            .expect("confirmed foreground");
+        assert_eq!(foreground.editor_count, 3);
+        assert_eq!(
+            foreground.current_session,
+            Some(UnitySession {
+                project_id: foreground_project,
+                started_at_ms: 10_000
+            }),
+        );
+
+        let fallback = project_unity_sessions(processes, &projects, Some(300))
+            .expect("unregistered foreground does not affect selection");
+        assert_eq!(fallback.editor_count, 3);
+        assert_eq!(
+            fallback.current_session,
+            Some(UnitySession {
+                project_id: latest_project,
+                started_at_ms: 20_000
+            }),
+        );
+    }
+
+    #[test]
+    fn session_projection_distinguishes_empty_observation_from_invalid_evidence() {
+        let projects = BTreeMap::from([(vec![1], ProjectId::new())]);
+        let empty = project_unity_sessions(BTreeMap::from([((1, 1), vec![2])]), &projects, None)
+            .expect("unregistered editor");
+        assert_eq!(
+            empty,
+            UnitySessionObservation {
+                current_session: None,
+                editor_count: 0
+            }
+        );
+
+        let invalid =
+            project_unity_sessions(BTreeMap::from([((u64::MAX, 1), vec![1])]), &projects, None);
+        assert_eq!(
+            invalid.expect_err("timestamp overflow").code(),
+            M5UnityErrorCode::Internal
+        );
+    }
+
+    #[tokio::test]
+    async fn session_sampling_filters_batch_helpers_and_unverified_editors() {
+        let known_installation = vec![1];
+        let editor = UnityProcessObservation {
+            pid: 1,
+            start_time: 2,
+            name: "Unity".to_owned(),
+            executable_identity: Some(known_installation.clone()),
+            verified_non_editor: false,
+            arguments: Some(vec!["-projectPath".to_owned(), "X:/project".to_owned()]),
+        };
+        let mut batch = UnityProcessObservation {
+            pid: 2,
+            ..editor.clone()
+        };
+        batch
+            .arguments
+            .as_mut()
+            .expect("arguments")
+            .push("-batchmode".to_owned());
+        let helper = UnityProcessObservation {
+            pid: 3,
+            verified_non_editor: true,
+            ..editor.clone()
+        };
+        let unverified = UnityProcessObservation {
+            pid: 4,
+            executable_identity: Some(vec![5]),
+            ..editor.clone()
+        };
+        let platform = FakePlatform {
+            fail_identity: false,
+        };
+        let installations = BTreeSet::from([known_installation]);
+        let confirmed = confirm_session_processes(
+            &platform,
+            &installations,
+            vec![editor.clone(), editor.clone(), batch, helper, unverified],
+        )
+        .await
+        .expect("confirmed process");
+        assert_eq!(confirmed, BTreeMap::from([((2, 1), vec![7])]));
+
+        let unreadable = UnityProcessObservation {
+            arguments: None,
+            ..editor
+        };
+        assert!(
+            confirm_session_processes(&platform, &installations, vec![unreadable])
+                .await
+                .is_err()
+        );
     }
 
     #[test]

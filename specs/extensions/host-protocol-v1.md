@@ -60,6 +60,10 @@ oversized frame 或 malformed result/error envelope 都是 protocol violation：
 既有 crash/protocol-failure 路径，不忽略后继续。Host frame 仍不超过 512 KiB，WIT input/output 各不超过 256 KiB；
 Project summary、data key/value 的更窄既有上限优先。
 
+## Background integration (M9)
+
+Core selects `alcomd:extension/background-integration-v1@1.0.0` in `bootstrap.apiWorld` after verifying the signed package. Older components retain `alcomd:extension/extension-v1@1.0.0`. The new export is `background.tick`. Its private invocation accepts `host-unity-sessions.current` and the exact `host-local-ipc.connect/read/write/close` methods. Core verifies context, lease, background permission and signed target scope. Native endpoint addresses and OS handles stay in Core. Byte payloads use lowercase hexadecimal on this private JSON channel to keep a 64 KiB binary transfer inside the existing WIT and frame limits. Timeouts, closed peers and invalid handles have bounded stable codes. The base world has no linker entries for these imports.
+
 ## Revocation/cancellation
 
 grant revision durable commit 后 daemon 先使 lease invalid，再发送 best-effort `revoke-lease`；正确性不依赖 Host

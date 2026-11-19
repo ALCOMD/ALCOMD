@@ -52,45 +52,34 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
     async fn observe_processes(
         &self,
     ) -> Result<Vec<app::UnityProcessObservation>, app::M5UnityError> {
-        let snapshot = alcomd_platform::observe_processes();
-        Ok(snapshot
-            .processes()
-            .iter()
-            .map(|process| {
-                let name = process.name().to_string_lossy().into_owned();
-                let executable_identity = process
-                    .executable()
-                    .and_then(|path| alcomd_platform::file_identity_key(path).ok());
-                let verified_non_editor = verified_non_editor_process(
-                    &name,
-                    process.executable(),
-                    executable_identity.as_deref(),
-                );
-                app::UnityProcessObservation {
-                    pid: process.pid(),
-                    start_time: process.start_time(),
-                    name,
-                    executable_identity,
-                    verified_non_editor,
-                    arguments: process.arguments().and_then(|arguments| {
-                        arguments
-                            .iter()
-                            .map(|argument| argument.to_str().map(str::to_owned))
-                            .collect()
-                    }),
-                }
+        Ok(observe_unity_processes())
+    }
+
+    async fn observe_session_processes(
+        &self,
+    ) -> Result<Vec<app::UnityProcessObservation>, app::M5UnityError> {
+        tokio::task::spawn_blocking(observe_unity_processes)
+            .await
+            .map_err(|error| {
+                app::M5UnityError::new(app::M5UnityErrorCode::Internal).with_source(error)
             })
-            .collect())
+    }
+
+    #[cfg(any(windows, target_os = "macos"))]
+    fn foreground_process(&self) -> Option<u32> {
+        alcomd_platform::foreground_process_id()
     }
 
     async fn path_identity(&self, path: String) -> Result<Vec<u8>, app::M5UnityError> {
-        alcomd_platform::resolve_directory_identity(&PathBuf::from(&path))
-            .map(|(_, identity)| identity)
+        resolve_project_identity(path)
+    }
+
+    async fn session_project_identity(&self, path: String) -> Result<Vec<u8>, app::M5UnityError> {
+        tokio::task::spawn_blocking(move || resolve_project_identity(path))
+            .await
             .map_err(|error| {
-                app::M5UnityError::new(app::M5UnityErrorCode::Internal)
-                    .with_path(path)
-                    .with_source(error)
-            })
+                app::M5UnityError::new(app::M5UnityErrorCode::Internal).with_source(error)
+            })?
     }
 
     async fn launch(
@@ -114,6 +103,47 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
                 .with_source(error)
         })
     }
+}
+
+fn resolve_project_identity(path: String) -> Result<Vec<u8>, app::M5UnityError> {
+    alcomd_platform::resolve_directory_identity(&PathBuf::from(&path))
+        .map(|(_, identity)| identity)
+        .map_err(|error| {
+            app::M5UnityError::new(app::M5UnityErrorCode::Internal)
+                .with_path(path)
+                .with_source(error)
+        })
+}
+
+fn observe_unity_processes() -> Vec<app::UnityProcessObservation> {
+    alcomd_platform::observe_processes()
+        .processes()
+        .iter()
+        .map(|process| {
+            let name = process.name().to_string_lossy().into_owned();
+            let executable_identity = process
+                .executable()
+                .and_then(|path| alcomd_platform::file_identity_key(path).ok());
+            let verified_non_editor = verified_non_editor_process(
+                &name,
+                process.executable(),
+                executable_identity.as_deref(),
+            );
+            app::UnityProcessObservation {
+                pid: process.pid(),
+                start_time: process.start_time(),
+                name,
+                executable_identity,
+                verified_non_editor,
+                arguments: process.arguments().and_then(|arguments| {
+                    arguments
+                        .iter()
+                        .map(|argument| argument.to_str().map(str::to_owned))
+                        .collect()
+                }),
+            }
+        })
+        .collect()
 }
 
 fn verified_non_editor_process(

@@ -457,6 +457,18 @@ fn window_pid(window: HWND) -> u32 {
     pid
 }
 
+/// Process that currently owns the Windows foreground window, when available.
+#[must_use]
+pub fn foreground_process_id() -> Option<u32> {
+    // SAFETY: This query has no parameters and returns an OS-owned window handle.
+    let window = unsafe { GetForegroundWindow() };
+    if window.is_null() {
+        return None;
+    }
+    let pid = window_pid(window);
+    (pid != 0).then_some(pid)
+}
+
 fn is_ready_window(window: HWND) -> bool {
     let mut class = [0; 64];
     // SAFETY: These synchronous queries borrow an OS-owned window and a local

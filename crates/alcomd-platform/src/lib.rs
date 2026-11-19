@@ -30,6 +30,17 @@ pub use unity_hub::{
 };
 
 pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
+
+#[cfg(target_os = "macos")]
+/// Process that currently receives keyboard input in the macOS desktop session, when available.
+#[must_use]
+pub fn foreground_process_id() -> Option<u32> {
+    objc2::rc::autoreleasepool(|_| {
+        let application = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication()?;
+        let pid = u32::try_from(application.processIdentifier()).ok()?;
+        (pid != 0).then_some(pid)
+    })
+}
 pub use project_delete::{
     ProjectDeleteFilesystemError, ProjectDeleteFilesystemErrorKind, project_delete_cleanup,
     project_delete_preflight, verify_project_path_boundary,
@@ -47,6 +58,8 @@ pub use unity::{
 
 #[cfg(unix)]
 mod unix;
+#[cfg(unix)]
+mod unix_local_ipc;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
@@ -61,7 +74,7 @@ pub use windows_app_identity::set_current_process_app_user_model_id;
 #[cfg(windows)]
 pub use windows_unity_window::{
     UnityWindowFocus, UnityWindowMonitor, UnityWindowReader, UnityWindowSnapshot, UnityWindowState,
-    focus_unity_window,
+    focus_unity_window, foreground_process_id,
 };
 #[cfg(windows)]
 pub use windows_url_handler::unregister_owned_url_handler;
@@ -71,10 +84,13 @@ pub use unix::{
     DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, file_identity_key,
     state_database_path,
 };
+#[cfg(unix)]
+pub use unix_local_ipc::{UnixIpcIdentity, connect_verified_local_socket};
 #[cfg(windows)]
 pub use windows::{
-    DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect, endpoint_display,
-    file_identity, file_link_count, local_app_data_directory, state_database_path,
+    DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect,
+    connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
+    local_app_data_directory, state_database_path,
 };
 
 #[cfg(windows)]

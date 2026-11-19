@@ -49,7 +49,6 @@ clipboard.read
 clipboard.write
 external-config.read
 external-config.manage
-integrations.discord.presence
 mcp.clients.read
 mcp.clients.manage
 mcp.connections.read
@@ -70,7 +69,10 @@ Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-mana
 - Host Capability 每次调用仍需检查权限。
 - 权限不能隐式扩大到子权限。
 - 高风险权限必须显示具体资源范围。
-- `integrations.discord.presence` 只允许 Presence 窄能力，不代表任意 Discord IPC。
+
+## M9 后台观察与本机通信
+
+`unity.sessions.read` 使用 `Global/*`。`local-ipc.connect` 使用 `LocalIpcTarget/<signed-target-sha256>`。两项还要求当前实例的 `background.run` 和有效租约，只服务于已协商的后台集成调用。`local-ipc.connect` 作为可选声明，安装同意不会替目标授予权限。Core 在授权时验证已安装签名包确实包含该目标，在连接、读写和关闭时重新验证 exact scope。旧实例的 scope 不会转移到更新后的不同目标声明。见 [State45](../storage/state-v45.md)。
 
 ## M3 项目与 Repository 权限
 
@@ -177,7 +179,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 - uninstall 无论 `retain_data|delete_data` 都在 package authority removal 前 revoke 全部 grant/lease/session/handle；
   retained namespace 不保留 active grant，未来 reinstall 重新从 deny-by-default 开始。
 - 第一方只可获得同名 permission 与同种 scope；official trust 不绕过 grant/revoke/quota。
-- `network.request`、notifications、clipboard、external-config、Discord 与 M7 UI placement 仍 planned，M6 第一条
+- `network.request`、notifications、clipboard、external-config 与 M7 UI placement 仍 planned，M6 第一条
   slice 不链接或广告它们。
 - `mcp.sessions.read` 已由 A-023 拒绝；未来 MCP request/connection/subscription scope 属于 M8，不在 M6 重建。
 

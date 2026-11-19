@@ -63,7 +63,9 @@ fn provider_abi_is_additive_and_core_controls_write_targets() {
             "packages.read",
             "packages.manage",
             "operations.read",
-            "operations.cancel"
+            "operations.cancel",
+            "unity.sessions.read",
+            "local-ipc.connect"
         ])
     );
     assert!(

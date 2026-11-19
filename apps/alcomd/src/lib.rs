@@ -58,6 +58,7 @@ mod m8_runtime_rpc;
 mod m8_tools_rpc;
 mod m8_transport_rpc;
 mod m8_workflows_rpc;
+mod m9_runtime;
 mod project_create_rpc;
 mod project_discovery_platform;
 mod repository_list_rpc;

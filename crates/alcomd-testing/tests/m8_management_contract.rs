@@ -139,7 +139,7 @@ fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bound
         }
         assert_eq!(rpc["$defs"][row]["additionalProperties"], false);
     }
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 44);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
 }
 
 #[test]
@@ -213,12 +213,14 @@ fn management_v2_schema_preserves_bounded_secret_free_shapes() {
             "packages.read",
             "packages.manage",
             "operations.read",
-            "operations.cancel"
+            "operations.cancel",
+            "unity.sessions.read",
+            "local-ipc.connect"
         ])
     );
     assert_eq!(
         m6["$defs"]["permissionGrant"]["properties"]["resourceKind"]["enum"],
-        json!(["Extension", "Global"])
+        json!(["Extension", "Global", "LocalIpcTarget"])
     );
     assert_eq!(
         m6["$defs"]["permissionGrant"]["properties"]["resourceId"]["minLength"],

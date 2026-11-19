@@ -31,6 +31,43 @@
             }
         },
         "schema": {"const": 1},
+        "local_ipc_targets": {
+            "type": "object", "maxProperties": 8,
+            "propertyNames": {"pattern": "^[a-z0-9-]{1,64}$"},
+            "additionalProperties": {
+                "type": "object", "additionalProperties": false, "required": ["label"],
+                "anyOf": [{"required": ["windows"]}, {"required": ["macos"]}, {"required": ["linux"]}],
+                "properties": {
+                    "label": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "windows": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["pipe_names", "executable_name", "publisher"],
+                        "properties": {
+                            "pipe_names": {"type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}},
+                            "executable_name": {"type": "string", "pattern": "^[a-z0-9-]{1,76}\\.exe$"},
+                            "publisher": {"type": "string", "minLength": 1, "maxLength": 120}
+                        }
+                    },
+                    "macos": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["socket_names", "bundle_identifier", "team_identifier"],
+                        "properties": {
+                            "socket_names": {"type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}},
+                            "bundle_identifier": {"type": "string", "maxLength": 160, "pattern": "^[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$"},
+                            "team_identifier": {"type": "string", "pattern": "^[A-Z0-9]{10}$"}
+                        }
+                    },
+                    "linux": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["socket_names", "system_executable"],
+                        "properties": {
+                            "socket_names": {"type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}},
+                            "system_executable": {"type": "string", "maxLength": 512, "pattern": "^(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+)+$"}
+                        }
+                    }
+                }
+            }
+        },
         "mcp": {"type":"object","additionalProperties":false,"required":["tools"],"properties":{"tools":{"const":"component/mcp-tools.json"}}},
         "id": {
             "type": "string",
@@ -87,6 +124,34 @@
             }
         }
     },
+    "allOf": [
+        {
+            "if": {"required": ["local_ipc_targets"], "properties": {"local_ipc_targets": {"minProperties": 1}}},
+            "then": {
+                "properties": {
+                    "permissions": {
+                        "properties": {"optional": {"contains": {"const": "local-ipc.connect"}}},
+                        "allOf": [
+                            {"anyOf": [{"properties": {"required": {"contains": {"const": "background.run"}}}}, {"properties": {"optional": {"contains": {"const": "background.run"}}}}]},
+                            {"anyOf": [{"properties": {"required": {"contains": {"const": "projects.read"}}}}, {"properties": {"optional": {"contains": {"const": "projects.read"}}}}]},
+                            {"anyOf": [{"properties": {"required": {"contains": {"const": "unity.sessions.read"}}}}, {"properties": {"optional": {"contains": {"const": "unity.sessions.read"}}}}]}
+                        ]
+                    },
+                    "interfaces": {
+                        "properties": {
+                            "required": {"allOf": [
+                                {"contains": {"const": "alcomd:extension/guest-background@1.0.0"}},
+                                {"contains": {"const": "alcomd:extension/host-local-ipc@1.0.0"}},
+                                {"contains": {"const": "alcomd:extension/host-unity-sessions@1.0.0"}}
+                            ]}
+                        }
+                    }
+                }
+            },
+            "else": {"properties": {"permissions": {"properties": {"optional": {"not": {"contains": {"const": "local-ipc.connect"}}}}}}}
+        },
+        {"properties": {"permissions": {"properties": {"required": {"not": {"contains": {"const": "local-ipc.connect"}}}}}}}
+    ],
     "$defs": {
         "interfaces": {
             "type": "array",

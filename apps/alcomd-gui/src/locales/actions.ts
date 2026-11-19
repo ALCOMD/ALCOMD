@@ -2,6 +2,12 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Enable extension": { "zh-CN": "启用扩展", "ja-JP": "拡張機能を有効化" },
+    "Read active Unity sessions": { "zh-CN": "读取正在运行的 Unity 会话", "ja-JP": "実行中の Unity セッションを読み取る" },
+    "Observe which registered projects are open in Unity.": { "zh-CN": "读取已在 Unity 中打开的登记项目。", "ja-JP": "Unity で開いている登録済みプロジェクトを確認します。" },
+    "Connect to local applications": { "zh-CN": "连接本机应用", "ja-JP": "ローカルアプリへの接続" },
+    "Local application access": { "zh-CN": "本机应用访问", "ja-JP": "ローカルアプリへのアクセス" },
+    "Connect only to the local applications approved when enabling this extension.": { "zh-CN": "只连接启用扩展时已批准的本机应用。", "ja-JP": "拡張機能の有効化時に許可したローカルアプリだけに接続します。" },
     "Attachments": { "zh-CN": "附件", "ja-JP": "添付ファイル" },
     "No attachments": { "zh-CN": "没有附件", "ja-JP": "添付ファイルはありません" },
     "Remove {name}": { "zh-CN": "移除 {name}", "ja-JP": "{name} を削除" },

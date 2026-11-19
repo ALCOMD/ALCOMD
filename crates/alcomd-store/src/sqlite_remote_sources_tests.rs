@@ -188,6 +188,7 @@ fn applied_packaged_install_evidence_survives_uninstall_with_delete_data() {
         &IdempotencyKey::parse("packaged-default-disable").expect("fixture key"),
         false,
         35,
+        None,
     )
     .expect("user disables installed extension");
     m6::finish_install(&mut db, installed, "<FIXTURE>/installed", 36)

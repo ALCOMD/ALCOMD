@@ -524,6 +524,14 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn extension_enable_with_consent(
+        &mut self,
+        params: alcomd_protocol::ExtensionEnableParams,
+    ) -> Result<alcomd_protocol::ExtensionResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_ENABLE, params)
+            .await
+    }
+
     pub async fn extension_disable(
         &mut self,
         params: alcomd_protocol::ExtensionLifecycleParams,

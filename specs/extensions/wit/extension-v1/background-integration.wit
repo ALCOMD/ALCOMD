@@ -1,0 +1,64 @@
+package alcomd:extension@1.0.0;
+
+interface host-unity-sessions {
+    use types.{project-id};
+
+    enum session-error {
+        permission-denied,
+        lease-expired,
+        lease-revoked,
+        unavailable,
+    }
+
+    record unity-session {
+        project-id: project-id,
+        started-at-ms: u64,
+    }
+
+    record observation {
+        current-session: option<unity-session>,
+        editor-count: u32,
+    }
+
+    current: func() -> result<observation, session-error>;
+}
+
+interface host-local-ipc {
+    type channel-id = string;
+
+    enum ipc-error {
+        invalid-argument,
+        permission-denied,
+        scope-denied,
+        lease-expired,
+        lease-revoked,
+        unavailable,
+        timed-out,
+        peer-closed,
+        invalid-channel,
+        resource-limit,
+    }
+
+    record connection {
+        channel: channel-id,
+        client-process-id: u32,
+    }
+
+    connect: func(target-id: string) -> result<connection, ipc-error>;
+    read: func(channel: channel-id, max-bytes: u32) -> result<list<u8>, ipc-error>;
+    write: func(channel: channel-id, bytes: list<u8>) -> result<_, ipc-error>;
+    close: func(channel: channel-id) -> result<_, ipc-error>;
+}
+
+interface guest-background {
+    use types.{extension-error};
+
+    tick: func() -> result<_, extension-error>;
+}
+
+world background-integration-v1 {
+    include extension-v1;
+    import host-unity-sessions;
+    import host-local-ipc;
+    export guest-background;
+}

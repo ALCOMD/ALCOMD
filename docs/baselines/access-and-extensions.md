@@ -52,7 +52,7 @@ ALCOMD 的入口共享同一个 `alcomd-application` 用例层，但不共享万
 
 ### Discord 扩展
 
-- 只使用公开权限 `integrations.discord.presence` 与窄 Discord Presence Host Capability。
+- 扩展独立实现 Discord 协议与连接，仅通过应用无关的公开接口调用宿主。任何新增通用能力按独立合同审批。[M9 ExecPlan](../exec-plans/M9-discord-first-party-extension.md)
 - 不读取 Discord token、用户数据库，不模拟用户操作，不控制其他应用 Presence。
 - 禁用、卸载、权限撤销或后台租约结束时立即清除 Presence 并停止通信。
 

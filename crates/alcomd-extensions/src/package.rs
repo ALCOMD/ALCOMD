@@ -88,6 +88,24 @@ pub struct ExtensionManifest {
     pub mcp: Option<ManifestMcp>,
     pub interfaces: ManifestRequirements,
     pub permissions: ManifestRequirements,
+    #[serde(default)]
+    pub local_ipc_targets: BTreeMap<String, alcomd_application::LocalIpcTarget>,
+}
+
+impl ExtensionManifest {
+    pub fn background_integration(&self) -> alcomd_application::ExtensionBackgroundIntegration {
+        alcomd_application::ExtensionBackgroundIntegration {
+            enabled: alcomd_application::BACKGROUND_INTEGRATION_INTERFACES
+                .iter()
+                .all(|&interface| {
+                    self.interfaces
+                        .required
+                        .iter()
+                        .any(|value| value == interface)
+                }),
+            local_ipc_targets: self.local_ipc_targets.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -721,6 +739,31 @@ fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
     }
     let manifest: ExtensionManifest = toml::from_str(text)
         .map_err(|cause| error(PackageErrorCode::ManifestInvalid).with_source(cause))?;
+    use alcomd_application::{
+        BACKGROUND_INTEGRATION_INTERFACES, LOCAL_IPC_PERMISSION, UNITY_SESSION_PERMISSION,
+    };
+    let integration_count = manifest
+        .interfaces
+        .required
+        .iter()
+        .filter(|id| BACKGROUND_INTEGRATION_INTERFACES.contains(&id.as_str()))
+        .count();
+    let declares_targets = manifest
+        .permissions
+        .optional
+        .iter()
+        .any(|name| name == LOCAL_IPC_PERMISSION);
+    let declares_activation_permissions =
+        ["background.run", "projects.read", UNITY_SESSION_PERMISSION]
+            .iter()
+            .all(|permission| {
+                manifest
+                    .permissions
+                    .required
+                    .iter()
+                    .chain(&manifest.permissions.optional)
+                    .any(|name| name == permission)
+            });
     if manifest.schema != 1
         || manifest.api != 1
         || !valid_extension_id(&manifest.id)
@@ -743,6 +786,24 @@ fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
         || !valid_fingerprint(&manifest.publisher_key_fingerprint)
         || !valid_requirements(&manifest.interfaces, 32, valid_interface)
         || !valid_requirements(&manifest.permissions, 64, valid_permission)
+        || (integration_count != 0 && integration_count != BACKGROUND_INTEGRATION_INTERFACES.len())
+        || manifest
+            .interfaces
+            .optional
+            .iter()
+            .any(|id| BACKGROUND_INTEGRATION_INTERFACES.contains(&id.as_str()))
+        || manifest
+            .permissions
+            .required
+            .iter()
+            .any(|name| name == LOCAL_IPC_PERMISSION)
+        || declares_targets == manifest.local_ipc_targets.is_empty()
+        || (declares_targets && !declares_activation_permissions)
+        || manifest.local_ipc_targets.len() > 8
+        || manifest
+            .local_ipc_targets
+            .iter()
+            .any(|(id, target)| integration_count == 0 || !target.valid(id))
     {
         return Err(error(PackageErrorCode::ManifestInvalid));
     }
@@ -1247,7 +1308,7 @@ mod tests {
     }
 
     #[test]
-    fn every_supported_permission_can_be_required_or_optional_and_terms_are_bounded() {
+    fn unscoped_permissions_can_be_required_or_optional_and_terms_are_bounded() {
         let path = signed_package(&[], None);
         let fixture = inspect_extension_package(&path).expect("signed installation terms fixture");
         std::fs::remove_file(path).expect("signed installation terms fixture");
@@ -1262,9 +1323,18 @@ mod tests {
                     "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture\"\npublisher_key_fingerprint = \"{}\"\nlicense = \"MIT\"\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n[interfaces]\nrequired = []\noptional = []\n[permissions]\n{declarations}\n",
                     fixture.publisher_fingerprint
                 );
-                assert!(parse_manifest(manifest.as_bytes()).is_ok(), "{permission}");
+                let expected = *permission != alcomd_application::LOCAL_IPC_PERMISSION;
+                assert_eq!(
+                    parse_manifest(manifest.as_bytes()).is_ok(),
+                    expected,
+                    "{permission}"
+                );
                 manifest.push_str("\n[installation_terms]\ntitle = \"Terms\"\ntext = \"Acknowledge before installing.\"\n");
-                assert!(parse_manifest(manifest.as_bytes()).is_ok());
+                assert_eq!(
+                    parse_manifest(manifest.as_bytes()).is_ok(),
+                    expected,
+                    "{permission}"
+                );
             }
         }
         let valid = alcomd_application::ExtensionInstallationTerms {
@@ -1292,6 +1362,34 @@ mod tests {
                 ..valid
             }
             .valid()
+        );
+    }
+
+    #[test]
+    fn local_ipc_requires_a_target_and_all_activation_permissions() {
+        let manifest = include_str!(
+            "../../../extensions/first-party/alcomd-extension-discord/alcomd-extension.toml"
+        );
+        assert!(parse_manifest(manifest.as_bytes()).is_ok());
+        for permission in ["background.run", "projects.read", "unity.sessions.read"] {
+            let missing = manifest
+                .replace(&format!("\"{permission}\", "), "")
+                .replace(&format!(", \"{permission}\""), "");
+            assert_eq!(
+                parse_manifest(missing.as_bytes())
+                    .expect_err(permission)
+                    .code(),
+                PackageErrorCode::ManifestInvalid
+            );
+        }
+        let (no_target, _) = manifest
+            .split_once("[local_ipc_targets.discord]")
+            .expect("target declaration");
+        assert_eq!(
+            parse_manifest(no_target.as_bytes())
+                .expect_err("missing target")
+                .code(),
+            PackageErrorCode::ManifestInvalid
         );
     }
     #[test]

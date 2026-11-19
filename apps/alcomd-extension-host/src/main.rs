@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use alcomd_extensions::{
-    HOST_PROTOCOL_VERSION, HostMessage, HostMessageBody, HostStableError, RuntimeLimits,
-    read_host_message, write_host_message,
+    BACKGROUND_INTEGRATION_WORLD, HOST_PROTOCOL_VERSION, HostMessage, HostMessageBody,
+    HostStableError, RuntimeLimits, read_host_message, write_host_message,
 };
 use anyhow::{Context, Result, bail};
 use clap::Parser;
@@ -21,8 +21,10 @@ wasmtime::component::bindgen!({
     exports: { default: async },
 });
 
-use crate::alcomd::extension::{host_data, host_projects, types};
+pub use crate::alcomd::extension::types;
+use crate::alcomd::extension::{host_data, host_projects};
 use crate::exports::alcomd::extension::guest_ui;
+mod background_integration;
 mod mcp_management;
 mod mcp_runtime;
 mod mcp_tools;
@@ -99,7 +101,7 @@ async fn run() -> Result<()> {
         nonce,
         lease_id,
         extension_id,
-        api_world: _,
+        api_world,
         limits,
     } = &bootstrap.body
     else {
@@ -108,6 +110,7 @@ async fn run() -> Result<()> {
     if extension_id != &arguments.extension || limits != &RuntimeLimits::default() {
         bail!("protocol");
     }
+    let uses_background_integration = api_world == BACKGROUND_INTEGRATION_WORLD;
     let ready = HostMessage {
         protocol_version: HOST_PROTOCOL_VERSION,
         daemon_epoch: bootstrap.daemon_epoch.clone(),
@@ -175,17 +178,31 @@ async fn run() -> Result<()> {
     mcp_runtime::add_to_linker(&mut linker)?;
     mcp_transport::add_to_linker(&mut linker)?;
     mcp_tools::add_to_linker(&mut linker)?;
+    if uses_background_integration {
+        background_integration::add_to_linker(&mut linker)?;
+    }
     let instance = linker
         .instantiate_async(&mut store, &component)
         .await
         .map_err(|_| anyhow::anyhow!("instantiate"))?;
     let bindings =
         ExtensionV1::new(&mut store, &instance).map_err(|_| anyhow::anyhow!("bindings"))?;
+    let background = uses_background_integration
+        .then(|| background_integration::Bindings::new(&mut store, &instance))
+        .transpose()
+        .map_err(|_| anyhow::anyhow!("background bindings"))?;
     // Core starts the separate guest activation budget after receiving Ready.
     // Complete startup work before reporting that guest exports can run.
     write_host_message(&mut store.data_mut().protocol.output, &ready)
         .map_err(|_| anyhow::anyhow!("protocol"))?;
-    let result = event_loop(&bindings, &instance, &mut store, limits).await;
+    let result = event_loop(
+        &bindings,
+        background.as_ref(),
+        &instance,
+        &mut store,
+        limits,
+    )
+    .await;
     ticker_running.store(false, Ordering::Release);
     let _ = ticker.join();
     result
@@ -193,6 +210,7 @@ async fn run() -> Result<()> {
 
 async fn event_loop(
     bindings: &ExtensionV1,
+    background: Option<&background_integration::Bindings>,
     instance: &wasmtime::component::Instance,
     store: &mut Store<HostState>,
     limits: &RuntimeLimits,
@@ -225,6 +243,13 @@ async fn event_loop(
                     "mcp.invoke" => mcp_tools::invoke(instance, store, input).await,
                     "activate" => invoke_activate(bindings, store, &input).await,
                     "deactivate" => invoke_deactivate(bindings, store, &input).await,
+                    "background.tick" => {
+                        background_integration::tick(
+                            background.context("background ABI required")?,
+                            store,
+                        )
+                        .await
+                    }
                     "ui.open" => invoke_ui_open(bindings, store, &input).await,
                     "ui.refresh" => invoke_ui_refresh(bindings, store, &input).await,
                     "ui.dispatch" => invoke_ui_dispatch(bindings, store, &input).await,

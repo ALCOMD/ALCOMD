@@ -32,7 +32,13 @@ export interface ExtensionRecord {
 export interface ExtensionResult {
     installationSource?: import("./extension-sources").ExtensionInstallationSource;
     mcpTools?: McpToolPreview[];
+    activationConsent?: ExtensionActivationConsent;
     extension: ExtensionRecord;
+}
+
+export interface ExtensionActivationConsent {
+    packageDigest: string;
+    targets: string[];
 }
 
 export type UiValidation =

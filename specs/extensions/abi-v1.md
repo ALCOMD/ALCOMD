@@ -48,5 +48,7 @@ M8 client management uses `alcomd:mcp-management/clients@2.0.0`, negotiated by M
 Its `management-v1` world includes this frozen world and adds only the independent import.
 See `mcp-management-v2.md` for types and errors.
 
+The additive `alcomd:extension/background-integration-v1@1.0.0` world includes the exact base world and adds `host-unity-sessions`, `host-local-ipc`, and `guest-background`, each at `1.0.0`. A signed manifest opts into the world by declaring all three interface identifiers as required. The base Host world cannot import these capabilities. Core schedules a single awaited tick per active background instance. Interactive UI and MCP tool invocations cannot use the new imports. Local IPC handles are opaque and do not persist between daemon runs. [WIT](wit/extension-v1/background-integration.wit)
+
 `extension-error.code` 是 machine fact。`diagnostic-id` 只允许用于 `internal-error`，不得包含 path、trap backtrace、
 environment、argv、token 或 extension-owned value。lease/grant/scope error 在 guest boundary 分别保持稳定。

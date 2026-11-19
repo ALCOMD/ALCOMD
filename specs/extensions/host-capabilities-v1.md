@@ -45,7 +45,6 @@ host.filesystem.*
 host.clipboard.*
 host.notification.send
 host.external-config.*
-host.discord-presence.*
 ```
 
 raw socket、arbitrary filesystem、shell/process control 永久不由本合同暗示。

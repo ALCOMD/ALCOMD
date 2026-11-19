@@ -1,7 +1,7 @@
 import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
-import type { ExtensionRecord, RepositoryCredentials, RpcError } from "@alcomd/sdk";
+import type { ExtensionActivationConsent, ExtensionRecord, RepositoryCredentials, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
 import { useUtilityDialogComplete, useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -993,9 +993,19 @@ export function ExtensionInstallPanel({ client, onChanged, onAccepted, sourceKin
     </section>;
 }
 
-export function ExtensionActions({ client, extension, onChanged, onAccepted, operationActive = false }: ActionProps & { extension: ExtensionRecord; onAccepted?(operationId: string): void; operationActive?: boolean }) {
+export function ExtensionActivationSummary({ consent }: { consent: ExtensionActivationConsent }) {
+    const { t } = useTranslation();
+    return <div>
+        <ExtensionPermissionRequests required={["background.run", "projects.read", "unity.sessions.read"]} optional={[]} />
+        <p>{t("Local application access")}</p>
+        <ul>{consent.targets.map((label, index) => <li key={`${index}-${label}`}>{label}</li>)}</ul>
+    </div>;
+}
+
+export function ExtensionActions({ client, extension, activationConsent, onChanged, onAccepted, operationActive = false }: ActionProps & { extension: ExtensionRecord; activationConsent?: ExtensionActivationConsent; onAccepted?(operationId: string): void; operationActive?: boolean }) {
     const { t } = useTranslation();
     const canManageLifecycle = useCapability(capabilities.extensionsLifecycle);
+    const canGrant = useCapability(capabilities.extensionsPermissions);
     const [mode, setMode] = useState<"none" | "permissions" | "uninstall">("none");
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [deleteData, setDeleteData] = useState(false);
@@ -1026,7 +1036,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
                 setFeedback({ busy: false, operationId: result.operationId });
                 onAccepted?.(result.operationId);
             } else if (kind === "enable" || kind === "disable") {
-                await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision) : client.extensionDisable(extension.extensionId, extension.revision));
+                await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision, activationConsent?.packageDigest) : client.extensionDisable(extension.extensionId, extension.revision));
                 if (!current()) return;
                 setFeedback({ busy: false });
                 onChanged?.();
@@ -1037,7 +1047,8 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
     const blocked = extension.desiredState === "uninstalling" || operationActive;
     const quarantined = extension.quarantineState === "quarantined";
     return <ActionSection title={t("Extension management")}>
-        <div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || blocked || (extension.desiredState === "enabled" && !quarantined)} onClick={() => void run("enable")} type="button" variant="tonal">{quarantined ? t("Recover extension") : t("Enable")}</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">{t("Disable")}</Button><Button disabled={feedback.busy || blocked} onClick={() => open("permissions")} type="button" variant="text">{t("Manage permissions")}</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || blocked} onClick={() => open("uninstall")} type="button" variant="text">{t("Uninstall extension")}</Button></div>
+        {activationConsent !== undefined && (extension.desiredState === "installed_disabled" || quarantined) ? <ExtensionActivationSummary consent={activationConsent} /> : null}
+        <div className="action-row"><Button disabled={!canManageLifecycle || (activationConsent !== undefined && !canGrant) || feedback.busy || blocked || (extension.desiredState === "enabled" && !quarantined)} onClick={() => void run("enable")} type="button" variant="tonal">{quarantined ? t("Recover extension") : t("Enable")}</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">{t("Disable")}</Button><Button disabled={feedback.busy || blocked} onClick={() => open("permissions")} type="button" variant="text">{t("Manage permissions")}</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || blocked} onClick={() => open("uninstall")} type="button" variant="text">{t("Uninstall extension")}</Button></div>
         <MaterialDialog dismissible={!feedback.busy && !permissionsBusy} open={mode !== "none"} onClose={close} title={mode === "permissions" ? t("Extension permissions") : plan === undefined ? t("Uninstall extension") : t("Review extension uninstall")}>
             <p><strong>{extension.extensionId}</strong></p>
             {mode === "permissions" ? <ExtensionPermissions client={client} extensionId={extension.extensionId} onBusyChange={setPermissionsBusy} onChanged={onChanged} /> : feedback.operationId !== undefined ? <div className="dialog-actions"><DialogCloseButton variant="text">{t("Close")}</DialogCloseButton></div> : plan === undefined ? <>

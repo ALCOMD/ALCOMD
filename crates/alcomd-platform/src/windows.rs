@@ -15,11 +15,14 @@ mod file_identity;
 mod file_publish;
 #[path = "windows_known_folder.rs"]
 mod known_folder;
+#[path = "windows_local_ipc.rs"]
+mod local_ipc;
 #[path = "windows_security.rs"]
 mod security;
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_publish::publish_path_no_replace;
+pub use local_ipc::connect_verified_local_pipe;
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {

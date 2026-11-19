@@ -59,6 +59,7 @@ const MIGRATION_V39: &str = include_str!("../migrations/0039_remove_publisher_tr
 const MIGRATION_V42: &str = include_str!("../migrations/0042_extension_remote_sources.sql");
 const MIGRATION_V43: &str = include_str!("../migrations/0043_mcp_transport_observations.sql");
 const MIGRATION_V44: &str = include_str!("../migrations/0044_mcp_connection_access.sql");
+const MIGRATION_V45: &str = include_str!("../migrations/0045_extension_local_ipc.sql");
 const MIGRATION_V41: &str = include_str!("../migrations/0041_extension_install_consent.sql");
 const MIGRATION_V40: &str = include_str!("../migrations/0040_mcp_runtime_observations.sql");
 
@@ -326,6 +327,14 @@ pub(super) fn initialize_connection_with_report(
     if final_version == 43 {
         connection
             .execute_batch(MIGRATION_V44)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    let final_version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if final_version == 44 {
+        connection
+            .execute_batch(MIGRATION_V45)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection

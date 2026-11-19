@@ -17,6 +17,8 @@ export function hasPermissionRequests(value: { requiredPermissions?: unknown; op
 export function permissionName(permission: string, t: Translate): string {
     if (permission === "background.run") return t("Run in background");
     if (permission === "projects.read") return t("Read projects");
+    if (permission === "unity.sessions.read") return t("Read active Unity sessions");
+    if (permission === "local-ipc.connect") return t("Connect to local applications");
     if (permission === "mcp.clients.read") return t("Read MCP clients");
     if (permission === "mcp.clients.manage") return t("Manage MCP clients");
     if (permission === "mcp.connections.read") return t("Read MCP Core connections");
@@ -35,6 +37,8 @@ function permissionDescription(permission: string, t: Translate): string {
     switch (permission) {
         case "background.run": return t("Run background tasks when this extension's page is closed.");
         case "projects.read": return t("View basic information about all current and future projects.");
+        case "unity.sessions.read": return t("Observe which registered projects are open in Unity.");
+        case "local-ipc.connect": return t("Connect only to the local applications approved when enabling this extension.");
         case "mcp.connections.read": return t("View all MCP clients’ connections to Core.");
         case "mcp.subscription-streams.read": return t("View adapter-reported MCP notification streams.");
         case "mcp.requests.read": return t("View Core calls currently executing for all MCP clients.");
@@ -51,7 +55,7 @@ function permissionDescription(permission: string, t: Translate): string {
 }
 
 function editablePermission(permission: string): permission is ExtensionPermissionGrant["permission"] {
-    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.connections.read" || permission === "mcp.requests.read" || permission === "mcp.subscription-streams.read" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel";
+    return permission === "background.run" || permission === "projects.read" || permission === "mcp.clients.read" || permission === "mcp.clients.manage" || permission === "mcp.connections.read" || permission === "mcp.requests.read" || permission === "mcp.subscription-streams.read" || permission === "mcp.tools.provide" || permission === "repositories.read" || permission === "packages.read" || permission === "packages.manage" || permission === "operations.read" || permission === "operations.cancel" || permission === "unity.sessions.read" || permission === "local-ipc.connect";
 }
 
 export function ExtensionPermissionRequests({ required, optional }: { required: string[]; optional: string[] }) {
@@ -178,6 +182,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                 const name = permissionName(permission, t);
                 const grants = visibleValue.grants.filter((grant) => grant.permission === permission);
                 const known = editablePermission(permission);
+                const scoped = permission === "local-ipc.connect";
                 const kind = permission === "background.run" ? "Extension" : "Global";
                 const resourceId = permission === "background.run" ? extensionId : "*";
                 const allowed = grants.some((grant) => grant.resourceKind === kind && grant.resourceId === resourceId);
@@ -185,7 +190,7 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
                     <div className="extension-permission-heading">
                         <h3>{name}</h3>
                         <div className="extension-permission-controls">
-                            {!known ? null : <Switch label={name} disabled={blocked} selected={allowed} onChange={(next) => void write({ permission, resourceKind: kind, resourceId }, !next)} />}
+                            {scoped ? grants.filter((grant) => grant.resourceKind === "LocalIpcTarget").map((grant) => <LoadingButton key={grant.resourceId} disabled={blocked} onClick={() => void write(grant, true)} type="button" variant="text">{t("Revoke")}</LoadingButton>) : !known ? null : <Switch label={name} disabled={blocked} selected={allowed} onChange={(next) => void write({ permission, resourceKind: kind, resourceId }, !next)} />}
                         </div>
                     </div>
                     <p className="extension-permission-description">{permissionDescription(permission, t)}</p>

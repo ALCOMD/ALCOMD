@@ -324,6 +324,7 @@ async fn extension_commits_invalidate_without_fabricating_persistent_events() {
                 &key("disable-dropped"),
                 false,
                 14,
+                None,
             );
             let changed = result.as_ref().is_ok_and(|(_, changed)| *changed);
             let _ = reply.send(result.map(|(record, _)| record));

@@ -79,7 +79,7 @@ fn state44_preserves_every_unrelated_cell_and_reopens_after_rollback() {
         assert_eq!(
             db.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))
                 .expect("version"),
-            44
+            CURRENT_DATA_SCHEMA
         );
         assert!(db.prepare("SELECT * FROM mcp_client_grants").is_err());
         assert!(

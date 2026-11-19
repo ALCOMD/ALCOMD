@@ -7,6 +7,41 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub const HOST_PROTOCOL_VERSION: u32 = 1;
+pub const BASE_EXTENSION_WORLD: &str = "alcomd:extension/extension-v1@1.0.0";
+pub const BACKGROUND_INTEGRATION_WORLD: &str = "alcomd:extension/background-integration-v1@1.0.0";
+pub const MAX_LOCAL_IPC_BYTES: usize = 65_536;
+
+/// Compact private wire encoding keeps the maximum binary transfer below the JSON WIT limit.
+pub fn encode_local_ipc_bytes(bytes: &[u8]) -> Option<String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    if bytes.len() > MAX_LOCAL_IPC_BYTES {
+        return None;
+    }
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for &byte in bytes {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 15)]));
+    }
+    Some(encoded)
+}
+
+pub fn decode_local_ipc_bytes(encoded: &str) -> Option<Vec<u8>> {
+    fn digit(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            _ => None,
+        }
+    }
+    if encoded.len() > MAX_LOCAL_IPC_BYTES * 2 || !encoded.len().is_multiple_of(2) {
+        return None;
+    }
+    encoded
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| Some(digit(pair[0])? << 4 | digit(pair[1])?))
+        .collect()
+}
 pub const MAX_HOST_FRAME_BYTES: usize = 512 * 1024;
 pub const MAX_WIT_VALUE_BYTES: usize = 256 * 1024;
 
@@ -233,7 +268,10 @@ impl HostMessage {
                 if nonce.len() != 64
                     || lease_id.len() != 36
                     || !(3..=255).contains(&extension_id.len())
-                    || api_world != "alcomd:extension/extension-v1@1.0.0"
+                    || !matches!(
+                        api_world.as_str(),
+                        BASE_EXTENSION_WORLD | BACKGROUND_INTEGRATION_WORLD
+                    )
                     || limits != &RuntimeLimits::default()
                 {
                     return Err(HostProtocolError::InvalidEnvelope);
@@ -257,6 +295,7 @@ impl HostMessage {
                     "mcp.invoke"
                         | "activate"
                         | "deactivate"
+                        | "background.tick"
                         | "ui.open"
                         | "ui.refresh"
                         | "ui.dispatch"
@@ -283,6 +322,11 @@ impl HostMessage {
                             | "host-data.get"
                             | "host-data.set"
                             | "host-data.delete"
+                            | "host-unity-sessions.current"
+                            | "host-local-ipc.connect"
+                            | "host-local-ipc.read"
+                            | "host-local-ipc.write"
+                            | "host-local-ipc.close"
                             | "host-mcp-runtime.snapshot"
                             | "host-mcp-transport.snapshot"
                             | "host-mcp-clients.list"

@@ -9,7 +9,7 @@
 | A-005 | GUI、CLI、MCP、API 和扩展共用同一应用用例层 |
 | A-006 | MCP 协议适配器 `alcomd-mcp` 独立于 GUI |
 | A-007 | MCP 管理 GUI 作为第一方扩展 |
-| A-008 | Discord Rich Presence 全部作为第一方扩展 |
+| A-008 | Discord Rich Presence、协议和连接生命周期由独立仓库中的第一方扩展实现。扩展作为第三方示例，使用与第三方相同的应用无关的公开接口。见 [ADR 0013](../adr/0013-discord-first-party-extension.md) |
 | A-009 | 第一方扩展只能使用公开 Extension API |
 | A-010 | v3、VCC 与旧 ALCOM 格式仅用于迁移或隔离导入 |
 | A-011 | v3 成功迁移后执行可验证的零残留清理 |

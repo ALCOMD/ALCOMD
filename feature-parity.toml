@@ -366,12 +366,12 @@ id = "discord.rich-presence"
 title = "Discord 第一方扩展"
 source = ["alcomd3-v3-final", "product-plan"]
 user_entry = ["enable/disable", "presence settings", "background lifecycle", "uninstall"]
-behavior = "只使用公开 Presence 能力；撤权、禁用或卸载立即清除状态。"
-implementation = "com.vrclearn.alcomd.extension.discord"
+behavior = "扩展通过通用公开接口更新 Discord 状态，撤权、禁用或卸载时立即清除状态。"
+implementation = "com.vrclearn.alcomd-discord-presence"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "scaffold"
-evidence = ["docs/baselines/access-and-extensions.md", "docs/baselines/alcomd3-v3-audit.md::Discord", "docs/decisions/accepted.md::A-019"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/access-and-extensions.md", "docs/baselines/alcomd3-v3-audit.md::Discord", "docs/decisions/accepted.md::A-019", "docs/exec-plans/M9-discord-first-party-extension.md"]
 coverage = ["first/third parity", "lease", "revocation", "migration"]
 tests = ["discord.lifecycle", "extensions.first-third-parity"]
 

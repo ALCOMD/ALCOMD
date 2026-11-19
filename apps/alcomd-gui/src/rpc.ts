@@ -109,7 +109,7 @@ export interface GuiRpcClient {
     extensionPlanInstallFromSource(url: string, version: string, expectedSourceFingerprint: string): Promise<ExtensionPlanResult>;
     extensionPlanInstall(packagePath: string, expectedRevision: number): Promise<ExtensionPlanResult>;
     extensionApplyInstall(planId: string, consent: import("@alcomd/sdk").ExtensionInstallConsent): Promise<ExtensionOperationResult>;
-    extensionEnable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
+    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest?: string): Promise<ExtensionResult>;
     extensionDisable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
     extensionPlanUninstall(extensionId: string, expectedRevision: number, dataDisposition: "retain_data" | "delete_data"): Promise<ExtensionPlanResult>;
     extensionApplyUninstall(planId: string): Promise<ExtensionOperationResult>;
@@ -513,8 +513,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_extension_apply_install", { params: { planId, consent, idempotencyKey: crypto.randomUUID() } });
     }
 
-    extensionEnable(extensionId: string, expectedRevision: number): Promise<ExtensionResult> {
-        return invokeTyped("gui_extension_enable", { params: { extensionId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    extensionEnable(extensionId: string, expectedRevision: number, activationPackageDigest?: string): Promise<ExtensionResult> {
+        return invokeTyped("gui_extension_enable", { params: { extensionId, expectedRevision, activationPackageDigest, idempotencyKey: crypto.randomUUID() } });
     }
 
     extensionDisable(extensionId: string, expectedRevision: number): Promise<ExtensionResult> {

@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
+use super::m9_runtime::{BackgroundIntegration, TICK_INTERVAL};
 use alcomd_application::{
     ExtensionActivationKind, ExtensionInstanceLease, ExtensionInvocationKind,
     ExtensionProjectSummary, ExtensionRuntimePoll, ExtensionStartContext, ExtensionStopReason,
@@ -11,8 +12,9 @@ use alcomd_application::{
     M6RuntimeAdapter, M7RuntimeAdapter, OperationId, ProjectId, Revision,
 };
 use alcomd_extensions::{
-    HOST_PROTOCOL_VERSION, HostMessage, HostMessageBody, HostStableError, RuntimeLimits,
-    bootstrap_nonce, invocation_context_id, read_host_message, write_host_message,
+    BACKGROUND_INTEGRATION_WORLD, BASE_EXTENSION_WORLD, HOST_PROTOCOL_VERSION, HostMessage,
+    HostMessageBody, HostStableError, RuntimeLimits, bootstrap_nonce, invocation_context_id,
+    read_host_message, write_host_message,
 };
 use alcomd_store::StateStoreHandle;
 use serde_json::{Value, json};
@@ -30,6 +32,7 @@ struct RuntimeInner {
     daemon_epoch: String,
     host_executable: PathBuf,
     processes: Mutex<HashMap<String, HostProcess>>,
+    background_tick: Arc<tokio::sync::Semaphore>,
 }
 
 impl Drop for RuntimeInner {
@@ -52,6 +55,8 @@ struct HostProcess {
     host_sequence: u64,
     background_active: bool,
     mcp_only: bool,
+    integration: Option<BackgroundIntegration>,
+    cleared_before_disable: bool,
 }
 
 struct RuntimeInvocation {
@@ -101,6 +106,7 @@ impl PlatformExtensionRuntime {
                 daemon_epoch: OperationId::new().to_string(),
                 host_executable,
                 processes: Mutex::new(HashMap::new()),
+                background_tick: Arc::new(tokio::sync::Semaphore::new(1)),
             }),
         })
     }
@@ -125,11 +131,42 @@ impl M6RuntimeAdapter for PlatformExtensionRuntime {
             .map_err(|_| internal())?
     }
 
+    async fn clear_before_disable(&self, extension_id: String, lifecycle_generation: Revision) {
+        let inner = Arc::clone(&self.inner);
+        let _ = tokio::task::spawn_blocking(move || {
+            let Ok(mut processes) = inner.processes.lock() else {
+                return;
+            };
+            let Some(process) = processes.get_mut(&extension_id).filter(|process| {
+                process.background_active
+                    && process.lease.lifecycle_generation == lifecycle_generation
+            }) else {
+                return;
+            };
+            if process.integration.is_none() {
+                return;
+            }
+            process.cleared_before_disable = deactivate_guest(&inner, process, "disabled").is_ok();
+            if let Some(integration) = process.integration.as_mut() {
+                integration.next_tick = Instant::now() + TICK_INTERVAL;
+            }
+        })
+        .await;
+    }
+
     async fn poll(&self) -> Result<ExtensionRuntimePoll, M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || poll_hosts(&inner))
+        let (poll, due) = tokio::task::spawn_blocking(move || poll_hosts(&inner))
             .await
-            .map_err(|_| internal())?
+            .map_err(|_| internal())??;
+        if due && let Ok(slot) = Arc::clone(&self.inner.background_tick).try_acquire_owned() {
+            let inner = Arc::clone(&self.inner);
+            tokio::task::spawn_blocking(move || {
+                let _slot = slot;
+                run_background_tick(&inner);
+            });
+        }
+        Ok(poll)
     }
 
     async fn update_lease(&self, lease: ExtensionInstanceLease) -> Result<(), M6Error> {
@@ -278,8 +315,20 @@ impl M7RuntimeAdapter for PlatformExtensionRuntime {
     }
 }
 
-fn poll_hosts(inner: &RuntimeInner) -> Result<ExtensionRuntimePoll, M6Error> {
-    let mut processes = inner.processes.lock().map_err(|_| internal())?;
+fn poll_hosts(inner: &RuntimeInner) -> Result<(ExtensionRuntimePoll, bool), M6Error> {
+    let mut processes = match inner.processes.try_lock() {
+        Ok(processes) => processes,
+        Err(TryLockError::WouldBlock) => {
+            return Ok((
+                ExtensionRuntimePoll {
+                    active: Vec::new(),
+                    exited: Vec::new(),
+                },
+                false,
+            ));
+        }
+        Err(TryLockError::Poisoned(_)) => return Err(internal()),
+    };
     let exited_ids = processes
         .iter_mut()
         .filter_map(|(extension_id, process)| match process.child.try_wait() {
@@ -296,7 +345,56 @@ fn poll_hosts(inner: &RuntimeInner) -> Result<ExtensionRuntimePoll, M6Error> {
         .values()
         .map(|process| process.lease.clone())
         .collect();
-    Ok(ExtensionRuntimePoll { active, exited })
+    let due = processes
+        .values()
+        .any(|process| process.background_due_at(Instant::now()).is_some());
+    Ok((ExtensionRuntimePoll { active, exited }, due))
+}
+
+impl HostProcess {
+    fn background_due_at(&self, now: Instant) -> Option<Instant> {
+        self.integration
+            .as_ref()
+            .filter(|integration| self.background_active && integration.next_tick <= now)
+            .map(|integration| integration.next_tick)
+    }
+}
+
+fn run_background_tick(inner: &RuntimeInner) {
+    let Ok(mut processes) = inner.processes.try_lock() else {
+        return;
+    };
+    let now = Instant::now();
+    let Some(process) = processes
+        .values_mut()
+        .filter_map(|process| process.background_due_at(now).map(|due| (due, process)))
+        .min_by_key(|(due, _)| *due)
+        .map(|(_, process)| process)
+    else {
+        return;
+    };
+    let Some(integration) = process.integration.as_mut() else {
+        return;
+    };
+    integration.next_tick = now + TICK_INTERVAL;
+    process.cleared_before_disable = false;
+    // Let the maintenance loop renew the lease before launching another bounded invocation.
+    if !now_ms().is_ok_and(|now_ms| process.lease.expires_at_ms.saturating_sub(now_ms) > 30_000) {
+        return;
+    }
+    let _ = invoke(
+        inner,
+        process,
+        "background.tick",
+        json!({}),
+        Duration::from_secs(2),
+        RuntimeInvocation {
+            kind: ExtensionInvocationKind::Background,
+            ui_authority: None,
+            mcp_authority: None,
+            mcp_connection: None,
+        },
+    );
 }
 
 fn start_host(
@@ -306,6 +404,7 @@ fn start_host(
 ) -> Result<(), M6Error> {
     let component = PathBuf::from(&context.component_path);
     validate_component(&component)?;
+    let integration = BackgroundIntegration::new(context.background_integration);
     let mut processes = inner.processes.lock().map_err(|_| internal())?;
     if let Some(mut existing) = processes.remove(&context.lease.extension_id) {
         terminate(&mut existing.child);
@@ -328,7 +427,12 @@ fn start_host(
             nonce: nonce.clone(),
             lease_id: context.lease.lease_id.clone(),
             extension_id: context.lease.extension_id.clone(),
-            api_world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
+            api_world: if integration.is_some() {
+                BACKGROUND_INTEGRATION_WORLD
+            } else {
+                BASE_EXTENSION_WORLD
+            }
+            .to_owned(),
             limits: RuntimeLimits::default(),
         },
     };
@@ -353,6 +457,8 @@ fn start_host(
         host_sequence: 1,
         background_active: context.activation_kind == ExtensionActivationKind::Background,
         mcp_only: context.activation_kind == ExtensionActivationKind::McpTool,
+        integration,
+        cleared_before_disable: false,
     };
     let activation_kind = match context.activation_kind {
         ExtensionActivationKind::McpTool => "mcp_tool",
@@ -432,6 +538,16 @@ fn stop_host(
     let Some(mut process) = process.take() else {
         return Ok(());
     };
+    if matches!(
+        reason,
+        ExtensionStopReason::Disabled
+            | ExtensionStopReason::PermissionRevoked
+            | ExtensionStopReason::LeaseExpired
+            | ExtensionStopReason::Uninstalling
+    ) {
+        // Those actions have already invalidated authority. Close before calling the guest.
+        process.integration = None;
+    }
     let reason = match reason {
         ExtensionStopReason::Disabled => "disabled",
         ExtensionStopReason::PermissionRevoked => "permission_revoked",
@@ -457,24 +573,8 @@ fn stop_host(
             },
         },
     );
-    if !process.mcp_only {
-        let _ = invoke(
-            inner,
-            &mut process,
-            "deactivate",
-            json!({"reason": reason}),
-            Duration::from_millis(2_000),
-            RuntimeInvocation {
-                mcp_authority: None,
-                mcp_connection: None,
-                kind: if reason == "interactive_ui_idle" {
-                    ExtensionInvocationKind::InteractiveUiClose
-                } else {
-                    ExtensionInvocationKind::Background
-                },
-                ui_authority: None,
-            },
-        );
+    if !process.mcp_only && !(reason == "disabled" && process.cleared_before_disable) {
+        let _ = deactivate_guest(inner, &mut process, reason);
     }
     process.daemon_sequence = process
         .daemon_sequence
@@ -493,6 +593,30 @@ fn stop_host(
     );
     wait_or_kill(&mut process.child, Duration::from_millis(2_000));
     Ok(())
+}
+
+fn deactivate_guest(
+    inner: &RuntimeInner,
+    process: &mut HostProcess,
+    reason: &str,
+) -> Result<Value, M6Error> {
+    invoke(
+        inner,
+        process,
+        "deactivate",
+        json!({"reason": reason}),
+        Duration::from_secs(2),
+        RuntimeInvocation {
+            kind: if reason == "interactive_ui_idle" {
+                ExtensionInvocationKind::InteractiveUiClose
+            } else {
+                ExtensionInvocationKind::Background
+            },
+            ui_authority: None,
+            mcp_authority: None,
+            mcp_connection: None,
+        },
+    )
 }
 
 fn invoke(
@@ -566,13 +690,28 @@ fn invoke(
                 let (result, response_error) = if invocation_cancelled(&invocation) {
                     (None, Some(cancelled_error()))
                 } else {
-                    match route_capability(
-                        inner,
-                        process.lease.clone(),
-                        &invocation,
-                        capability.as_str(),
-                        input,
-                    ) {
+                    let routed = if capability == "host-unity-sessions.current"
+                        || capability.starts_with("host-local-ipc.")
+                    {
+                        route_background_integration(
+                            inner,
+                            process,
+                            &invocation,
+                            export,
+                            &capability,
+                            input,
+                            deadline,
+                        )
+                    } else {
+                        route_capability(
+                            inner,
+                            process.lease.clone(),
+                            &invocation,
+                            &capability,
+                            input,
+                        )
+                    };
+                    match routed {
                         Ok(result) => (Some(result), None),
                         Err(error) => {
                             let response = stable_error(error);
@@ -616,6 +755,41 @@ fn invoke(
             }
         }
     }
+}
+
+fn route_background_integration(
+    inner: &RuntimeInner,
+    process: &mut HostProcess,
+    invocation: &RuntimeInvocation,
+    export: &str,
+    capability: &str,
+    input: Value,
+    deadline: Instant,
+) -> Result<Value, M6Error> {
+    if !process.background_active
+        || invocation.kind != ExtensionInvocationKind::Background
+        || !matches!(export, "background.tick" | "deactivate")
+    {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
+    let integration = process
+        .integration
+        .as_mut()
+        .ok_or_else(|| error(M6ErrorCode::PermissionDenied))?;
+    let apps = inner
+        .applications
+        .lock()
+        .map_err(|_| internal())?
+        .upgrade()
+        .ok_or_else(internal)?;
+    tokio::runtime::Handle::current().block_on(integration.invoke(
+        &apps,
+        process.lease.clone(),
+        capability,
+        input,
+        export == "background.tick",
+        deadline.saturating_duration_since(Instant::now()),
+    ))
 }
 
 fn route_capability(

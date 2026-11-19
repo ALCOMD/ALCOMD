@@ -1584,12 +1584,12 @@ async fn gui_extension_apply_install(
 #[tauri::command]
 async fn gui_extension_enable(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::ExtensionLifecycleParams,
+    params: alcomd_protocol::ExtensionEnableParams,
 ) -> Result<ExtensionResult, RpcError> {
     let mut client = state.work.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.extension_enable(params).await,
+        Some(client) => client.extension_enable_with_consent(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)

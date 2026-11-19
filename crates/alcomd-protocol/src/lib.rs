@@ -3484,6 +3484,16 @@ pub struct ExtensionLifecycleParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionEnableParams {
+    pub extension_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation_package_digest: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExtensionGrantParams {
     pub extension_id: String,
     pub permission: String,
@@ -3577,7 +3587,16 @@ pub struct ExtensionResult {
     pub installation_source: Option<ExtensionInstallationSource>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mcp_tools: Option<Vec<McpToolPreview>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub activation_consent: Option<ExtensionActivationConsent>,
     pub extension: ExtensionRecord,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionActivationConsent {
+    pub package_digest: String,
+    pub targets: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

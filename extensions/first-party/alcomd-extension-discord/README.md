@@ -1,15 +1,5 @@
-# Discord 状态第一方扩展
+# ALCOMD Discord Presence
 
-扩展 ID：`com.vrclearn.alcomd.extension.discord`
+扩展 ID 为 `com.vrclearn.alcomd-discord-presence`。独立仓库提供 WASM 后台、Portable UI、构建和开发签名步骤。[ALCOMD Discord Presence](https://github.com/ALCOMD/alcomd-discord-presence)
 
-职责：
-
-- Discord Rich Presence 生成。
-- 项目名称、Unity 版本和会话时间隐私过滤。
-- 设置、预览、连接状态与诊断。
-- GUI 关闭后的受控后台运行。
-
-扩展后台最终编译为 WASM/WASI，并通过 Extension Host 暴露的窄 Discord Presence 能力通信。
-
-当前目录只保留 M9 之前的非安装规划 scaffold：没有已签名 Component package 或 Discord Presence 产品接线。
-Manifest 使用 active Portable UI shape 仅用于保持统一公开合同，不代表该扩展已可安装或已实现。
+主仓保留产品侧 Manifest 记录及公开的扩展合同。Core 负责 Unity 会话投影、授权和已验证本机 IPC。Discord 协议及隐私设置由扩展实现。[M9 ExecPlan](../../../docs/exec-plans/M9-discord-first-party-extension.md)

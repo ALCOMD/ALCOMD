@@ -304,7 +304,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         &self,
         record: alcomd_application::ExtensionRecord,
         live_locator: String,
-    ) -> Result<(), M6Error> {
+    ) -> Result<alcomd_application::ExtensionBackgroundIntegration, M6Error> {
         let path = PathBuf::from(live_locator);
         let verified = tokio::task::spawn_blocking(move || inspect_extension_directory(&path))
             .await
@@ -321,7 +321,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
         {
             return Err(error(M6ErrorCode::PackageInvalid));
         }
-        Ok(())
+        Ok(verified.manifest.background_integration())
     }
 
     async fn install(
@@ -632,15 +632,16 @@ fn package_evidence(
 
 fn required_interfaces_supported(interfaces: &[String]) -> bool {
     interfaces.iter().all(|interface| {
-        matches!(
-            interface.as_str(),
-            "alcomd:extension/host-data@1.0.0"
-                | "alcomd:extension/host-projects@1.0.0"
-                | "alcomd:mcp-runtime/observations@1.0.0"
-                | "alcomd:mcp-transport/observations@1.0.0"
-                | "alcomd:mcp-management/clients@2.0.0"
-                | "alcomd:mcp-tools/core@1.0.0"
-        )
+        alcomd_application::BACKGROUND_INTEGRATION_INTERFACES.contains(&interface.as_str())
+            || matches!(
+                interface.as_str(),
+                "alcomd:extension/host-data@1.0.0"
+                    | "alcomd:extension/host-projects@1.0.0"
+                    | "alcomd:mcp-runtime/observations@1.0.0"
+                    | "alcomd:mcp-transport/observations@1.0.0"
+                    | "alcomd:mcp-management/clients@2.0.0"
+                    | "alcomd:mcp-tools/core@1.0.0"
+            )
     })
 }
 

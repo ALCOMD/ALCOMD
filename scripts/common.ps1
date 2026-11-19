@@ -126,7 +126,6 @@ function Get-LockFileSnapshot {
     $lockFiles = @(
         "Cargo.lock",
         "package-lock.json",
-        "extensions/first-party/alcomd-extension-discord/backend/Cargo.lock"
         "extensions/first-party/alcomd-extension-mcp/backend/Cargo.lock"
     )
     foreach ($relative in $lockFiles) {

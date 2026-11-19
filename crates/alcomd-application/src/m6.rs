@@ -12,6 +12,8 @@ pub const EXTENSION_PERMISSIONS: &[&str] = &[
     "packages.manage",
     "operations.read",
     "operations.cancel",
+    crate::UNITY_SESSION_PERMISSION,
+    crate::LOCAL_IPC_PERMISSION,
 ];
 
 pub const PACKAGED_MCP_EXTENSION_ID: &str = "com.vrclearn.alcomd.extension.mcp";
@@ -66,6 +68,7 @@ pub const EXTENSION_GLOBAL_PERMISSIONS: &[&str] = &[
     "packages.manage",
     "operations.read",
     "operations.cancel",
+    crate::UNITY_SESSION_PERMISSION,
 ];
 
 use std::future::Future;
@@ -239,6 +242,9 @@ impl ExtensionPermissionsCursor {
             self.after.resource_kind.as_str(),
         ) {
             ("background.run", "Extension") => self.after.resource_id == self.extension_id,
+            (crate::LOCAL_IPC_PERMISSION, crate::LOCAL_IPC_RESOURCE_KIND) => {
+                crate::valid_local_ipc_scope_key(&self.after.resource_id)
+            }
             (permission, "Global") if crate::EXTENSION_GLOBAL_PERMISSIONS.contains(&permission) => {
                 self.after.resource_id == "*"
             }
@@ -429,6 +435,7 @@ pub struct ExtensionStartContext {
     pub lease: ExtensionInstanceLease,
     pub component_path: String,
     pub activation_kind: ExtensionActivationKind,
+    pub background_integration: crate::ExtensionBackgroundIntegration,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -596,7 +603,7 @@ pub trait M6PackageAdapter: Clone + Send + Sync + 'static {
         &self,
         record: ExtensionRecord,
         live_locator: String,
-    ) -> impl Future<Output = Result<(), M6Error>> + Send;
+    ) -> impl Future<Output = Result<crate::ExtensionBackgroundIntegration, M6Error>> + Send;
 
     fn install(
         &self,
@@ -628,6 +635,13 @@ pub trait M6RuntimeAdapter: Clone + Send + Sync + 'static {
         extension_id: String,
         reason: ExtensionStopReason,
     ) -> impl Future<Output = Result<(), M6Error>> + Send;
+    fn clear_before_disable(
+        &self,
+        _extension_id: String,
+        _lifecycle_generation: Revision,
+    ) -> impl Future<Output = ()> + Send {
+        std::future::ready(())
+    }
     fn poll(&self) -> impl Future<Output = Result<ExtensionRuntimePoll, M6Error>> + Send;
     fn update_lease(
         &self,
@@ -752,6 +766,15 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
+    ) -> impl Future<Output = Result<ExtensionRecord, M6Error>> + Send;
+    fn enable_consented(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+        activation: crate::VerifiedExtensionActivation,
     ) -> impl Future<Output = Result<ExtensionRecord, M6Error>> + Send;
     fn disable(
         &self,
@@ -1128,6 +1151,20 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<ExtensionRecord, M6Error> {
+        self.enable_with_consent(access, extension_id, expected_revision, key, now_ms, None)
+            .await
+    }
+
+    pub async fn enable_with_consent(
+        &self,
+        access: &AccessContext,
+        extension_id: String,
+        expected_revision: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+        accepted_package_digest: Option<String>,
+    ) -> Result<ExtensionRecord, M6Error> {
+        use crate::ExtensionActivationConsent;
         access
             .require(Permission::ExtensionsManage)
             .map_err(map_access)?;
@@ -1139,17 +1176,57 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .store
             .live_package_locator(access.principal().clone(), extension_id.clone())
             .await?;
-        self.packages.verify_installed(current, locator).await?;
-        let record = self
+        let package_digest = current.package_digest;
+        let integration = self.packages.verify_installed(current, locator).await?;
+        let owner = access.principal().clone();
+        let record = match integration.consent_preview(package_digest) {
+            Some(ExtensionActivationConsent {
+                package_digest: expected,
+                ..
+            }) => {
+                access
+                    .require(Permission::ExtensionsPermissionsManage)
+                    .map_err(map_access)?;
+                match accepted_package_digest.as_deref() {
+                    None => return Err(M6Error::new(M6ErrorCode::PermissionDenied)),
+                    Some(digest) if digest != expected => {
+                        return Err(M6Error::new(M6ErrorCode::RevisionConflict));
+                    }
+                    Some(_) => {}
+                }
+                self.store
+                    .enable_consented(
+                        owner,
+                        extension_id,
+                        expected_revision,
+                        key,
+                        now_ms,
+                        integration.activation(package_digest),
+                    )
+                    .await?
+            }
+            None if accepted_package_digest.is_some() => {
+                return Err(M6Error::new(M6ErrorCode::InvalidInput));
+            }
+            None => {
+                self.store
+                    .enable(owner, extension_id, expected_revision, key, now_ms)
+                    .await?
+            }
+        };
+        let current = self
             .store
-            .enable(
-                access.principal().clone(),
-                extension_id,
-                expected_revision,
-                key,
-                now_ms,
-            )
+            .get_extension(access.principal().clone(), record.extension_id.clone())
             .await?;
+        if current.lifecycle_generation != record.lifecycle_generation
+            || current.desired_state != ExtensionDesiredState::Enabled
+            || matches!(
+                current.runtime_state,
+                ExtensionRuntimeState::Starting | ExtensionRuntimeState::Running
+            )
+        {
+            return Ok(current);
+        }
         self.start_enabled(
             access.principal().clone(),
             record.extension_id.clone(),
@@ -1172,6 +1249,18 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         access
             .require(Permission::ExtensionsManage)
             .map_err(map_access)?;
+        let owner = access.principal().clone();
+        let current = self
+            .store
+            .get_extension(owner.clone(), extension_id.clone())
+            .await?;
+        if current.revision == expected_revision
+            && current.desired_state == ExtensionDesiredState::Enabled
+        {
+            self.runtime
+                .clear_before_disable(extension_id.clone(), current.lifecycle_generation)
+                .await;
+        }
         let record = self
             .store
             .disable(
@@ -1182,6 +1271,13 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 now_ms,
             )
             .await?;
+        let current = self
+            .store
+            .get_extension(owner, record.extension_id.clone())
+            .await?;
+        if current.lifecycle_generation != record.lifecycle_generation {
+            return Ok(current);
+        }
         self.runtime
             .stop(record.extension_id.clone(), ExtensionStopReason::Disabled)
             .await?;
@@ -1209,6 +1305,26 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         access
             .require(Permission::ExtensionsPermissionsManage)
             .map_err(map_access)?;
+        if grant && permission == crate::LOCAL_IPC_PERMISSION {
+            let owner = access.principal().clone();
+            let record = self
+                .store
+                .get_extension(owner.clone(), extension_id.clone())
+                .await?;
+            let locator = self
+                .store
+                .live_package_locator(owner, extension_id.clone())
+                .await?;
+            let integration = self.packages.verify_installed(record, locator).await?;
+            if resource_kind != crate::LOCAL_IPC_RESOURCE_KIND
+                || !integration
+                    .local_ipc_targets
+                    .iter()
+                    .any(|(id, target)| target.scope_key(id) == resource_id)
+            {
+                return Err(M6Error::new(M6ErrorCode::ScopeDenied));
+            }
+        }
         let result = self
             .store
             .set_grant(
@@ -1225,6 +1341,9 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
                 now_ms,
             )
             .await?;
+        if result.replayed {
+            return Ok(result);
+        }
         self.runtime
             .stop(
                 result.extension_id.clone(),
@@ -1447,12 +1566,13 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .store
             .live_package_locator(owner.clone(), extension_id.clone())
             .await?;
-        self.packages.verify_installed(record, locator).await?;
+        let integration = self.packages.verify_installed(record, locator).await?;
         let mut context = self
             .store
             .prepare_instance(owner, extension_id, self.runtime.daemon_epoch(), now_ms)
             .await?;
         context.activation_kind = ExtensionActivationKind::Background;
+        context.background_integration = integration;
         if let Err(start_error) = self.runtime.start(context.clone()).await {
             let decision = self
                 .store

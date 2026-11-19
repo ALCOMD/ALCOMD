@@ -324,6 +324,7 @@ pub(super) fn has_background_authority(
                 SELECT 1 FROM extensions e
                 JOIN extension_grants g ON g.extension_id=e.extension_id
                 WHERE e.principal_id=?1 AND e.extension_id=?2
+                  AND e.desired_state='enabled' AND e.quarantine_state='clear'
                   AND g.permission_name='background.run'
                   AND g.resource_kind='Extension'
                   AND g.resource_id=e.extension_id
@@ -375,7 +376,10 @@ fn create_install_plan_on(
         .evidence
         .required_permissions
         .iter()
-        .filter(|p| !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str()))
+        .filter(|p| {
+            p.as_str() == alcomd_application::LOCAL_IPC_PERMISSION
+                || !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str())
+        })
         .collect();
     if !unsupported.is_empty() {
         return Err(
@@ -824,12 +828,10 @@ fn validate_install_consent(
     {
         return Err(error(M6ErrorCode::PermissionDenied));
     }
-    if plan
-        .evidence
-        .required_permissions
-        .iter()
-        .any(|p| !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str()))
-    {
+    if plan.evidence.required_permissions.iter().any(|p| {
+        p == alcomd_application::LOCAL_IPC_PERMISSION
+            || !alcomd_application::EXTENSION_PERMISSIONS.contains(&p.as_str())
+    }) {
         return Err(error(M6ErrorCode::ApiUnsupported));
     }
     Ok(())
@@ -1253,6 +1255,12 @@ pub(super) fn set_grant(
         return Err(error(M6ErrorCode::RevisionConflict));
     }
     let next = expected.checked_next().ok_or_else(internal)?;
+    let interrupts_activation = !grant && matches!(permission, "background.run" | "projects.read"
+        | alcomd_application::UNITY_SESSION_PERMISSION | alcomd_application::LOCAL_IPC_PERMISSION)
+        && transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM extension_grants WHERE extension_id=?1 AND permission_name='local-ipc.connect' AND state='granted')",
+            [extension_id], |row| row.get::<_, bool>(0),
+        ).map_err(store_error)?;
     let now = sqlite_integer(now_ms)?;
     transaction
         .execute(
@@ -1268,14 +1276,16 @@ pub(super) fn set_grant(
         .map_err(store_error)?;
     transaction
         .execute(
-            "UPDATE extensions SET grant_revision=?1, revision=revision+1, updated_at_ms=?2
+            "UPDATE extensions SET grant_revision=?1, revision=revision+1, updated_at_ms=?2,
+             desired_state=CASE WHEN ?6 AND desired_state='enabled' THEN 'installed_disabled' ELSE desired_state END
              WHERE extension_id=?3 AND principal_id=?4 AND grant_revision=?5",
             params![
                 sqlite_revision(next),
                 now,
                 extension_id,
                 owner.as_str(),
-                sqlite_revision(expected)
+                sqlite_revision(expected),
+                interrupts_activation,
             ],
         )
         .map_err(store_error)?;
@@ -1308,6 +1318,7 @@ pub(super) fn set_grant(
     Ok((result, owner == &PrincipalId::local_owner()))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn set_desired(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -1316,6 +1327,7 @@ pub(super) fn set_desired(
     key: &IdempotencyKey,
     enable: bool,
     now_ms: u64,
+    activation: Option<alcomd_application::VerifiedExtensionActivation>,
 ) -> Result<(ExtensionRecord, bool), M6Error> {
     let transaction = transaction(connection)?;
     let method = if enable {
@@ -1323,10 +1335,17 @@ pub(super) fn set_desired(
     } else {
         "extensions.disable"
     };
-    let fingerprint = format!(
+    let mut fingerprint = format!(
         "{{\"extensionId\":\"{extension_id}\",\"expectedRevision\":{},\"version\":1}}",
         expected.get()
     );
+    if let Some(activation) = &activation {
+        fingerprint = serde_json::json!({
+            "extensionId": extension_id, "expectedRevision": expected.get(),
+            "packageDigest": activation.package_digest, "version": 2,
+        })
+        .to_string();
+    }
     if let Some((saved, response)) = idempotent(&transaction, owner, method, key)? {
         if saved != fingerprint {
             return Err(error(M6ErrorCode::IdempotencyConflict));
@@ -1339,10 +1358,56 @@ pub(super) fn set_desired(
     if current.revision != expected {
         return Err(error(M6ErrorCode::RevisionConflict));
     }
+    let now = sqlite_integer(now_ms)?;
+    if let Some(activation) = activation {
+        if !enable || current.package_digest != activation.package_digest {
+            return Err(error(M6ErrorCode::RevisionConflict));
+        }
+        if !(1..=8).contains(&activation.target_scopes.len())
+            || activation
+                .target_scopes
+                .iter()
+                .any(|scope| !alcomd_application::valid_local_ipc_scope_key(scope))
+        {
+            return Err(error(M6ErrorCode::InvalidInput));
+        }
+        let next = current
+            .grant_revision
+            .get()
+            .checked_add(1)
+            .and_then(Revision::new)
+            .ok_or_else(internal)?;
+        let grants = [
+            ("background.run", "Extension", extension_id),
+            ("projects.read", "Global", "*"),
+            (alcomd_application::UNITY_SESSION_PERMISSION, "Global", "*"),
+        ]
+        .into_iter()
+        .chain(activation.target_scopes.iter().map(|scope| {
+            (
+                alcomd_application::LOCAL_IPC_PERMISSION,
+                alcomd_application::LOCAL_IPC_RESOURCE_KIND,
+                scope.as_str(),
+            )
+        }));
+        for (permission, kind, resource) in grants {
+            transaction.execute(
+                "INSERT INTO extension_grants VALUES (?1,?2,?3,?4,'granted',?5,?6)
+                 ON CONFLICT(extension_id,permission_name,resource_kind,resource_id) DO UPDATE
+                 SET state='granted',grant_revision=excluded.grant_revision,updated_at_ms=excluded.updated_at_ms",
+                params![extension_id, permission, kind, resource, sqlite_revision(next), now],
+            ).map_err(store_error)?;
+        }
+        transaction
+            .execute(
+                "UPDATE extensions SET grant_revision=?1 WHERE extension_id=?2 AND principal_id=?3",
+                params![sqlite_revision(next), extension_id, owner.as_str()],
+            )
+            .map_err(store_error)?;
+    }
     if enable {
         require_extension_grants(&transaction, owner, extension_id)?;
     }
-    let now = sqlite_integer(now_ms)?;
     transaction
         .execute(
             "UPDATE extensions SET desired_state=?1,
@@ -1655,6 +1720,7 @@ pub(super) fn prepare_instance(
             expires_at_ms,
         },
         component_path,
+        background_integration: Default::default(),
         activation_kind: alcomd_application::ExtensionActivationKind::Background,
     };
     transaction.commit().map_err(store_error)?;
@@ -2328,6 +2394,39 @@ fn valid_scope(extension_id: &str, permission: &str, kind: &str, id: &str) -> bo
         || (alcomd_application::EXTENSION_GLOBAL_PERMISSIONS.contains(&permission)
             && kind == "Global"
             && id == "*")
+        || (permission == alcomd_application::LOCAL_IPC_PERMISSION
+            && kind == alcomd_application::LOCAL_IPC_RESOURCE_KIND
+            && alcomd_application::valid_local_ipc_scope_key(id))
+}
+
+pub(super) fn require_background_integration_grant(
+    connection: &Connection,
+    lease: &ExtensionInstanceLease,
+    target_scope: Option<&str>,
+    now_ms: u64,
+) -> Result<(), M6Error> {
+    validate_lease(connection, lease, now_ms)?;
+    let (permission, kind, resource) = match target_scope {
+        Some(scope) if alcomd_application::valid_local_ipc_scope_key(scope) => (
+            alcomd_application::LOCAL_IPC_PERMISSION,
+            alcomd_application::LOCAL_IPC_RESOURCE_KIND,
+            scope,
+        ),
+        Some(_) => return Err(error(M6ErrorCode::ScopeDenied)),
+        None => (alcomd_application::UNITY_SESSION_PERMISSION, "Global", "*"),
+    };
+    let allowed: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM extension_grants
+          WHERE extension_id=?1 AND permission_name='background.run' AND resource_kind='Extension'
+            AND resource_id=?1 AND state='granted') AND EXISTS(SELECT 1 FROM extension_grants
+          WHERE extension_id=?1 AND permission_name=?2 AND resource_kind=?3 AND resource_id=?4 AND state='granted')",
+        params![lease.extension_id, permission, kind, resource], |row| row.get(0),
+    ).map_err(store_error)?;
+    if allowed {
+        Ok(())
+    } else {
+        Err(error(M6ErrorCode::PermissionDenied))
+    }
 }
 
 fn valid_data_key(key: &str) -> bool {

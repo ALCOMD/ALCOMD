@@ -8,7 +8,7 @@ import { ProjectInventoryDialog } from "./ProjectInventoryDialog";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
-import type { CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
+import type { CandidateBulkActions, CandidateBulkIntent, CandidateCursor, CandidateFilter, ExtensionActivationConsent, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidateRequest, RpcError } from "@alcomd/sdk";
 import { actionableVersion, bulkPlanIntent, candidateSource, candidateSourceKey, finishCandidateSummary, queryCandidates, readCandidateSummaryPage, reasonText, updateReason, validateVersionPage, type CandidateSummaryPage, type CandidateSummarySet } from "./package-candidates";
 import { orderPackageWorkspaceRows } from "./package-workspace-order";
 import {
@@ -51,6 +51,7 @@ import type {
 import {
     BackupCreatePanel,
     ExtensionActions,
+    ExtensionActivationSummary,
     ExtensionInstallPanel,
     OperationActions,
     OperationFollow,
@@ -2241,20 +2242,30 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
     const { t } = useTranslation();
     const load = useCallback(() => client.extensionsList(), [client]);
     const canManage = useCapability(capabilities.extensionsLifecycle);
+    const canGrant = useCapability(capabilities.extensionsPermissions);
     const canOpen = useCapability(capabilities.extensionsPortableUi);
     const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState(false);
     const [operationId, setOperationId] = useState<string>();
     const [operationTerminal, setOperationTerminal] = useState(false);
-    const toggle = async (id: string, revision: number, enabled: boolean, refresh: () => void) => {
+    const [activation, setActivation] = useState<{ id: string; revision: number; consent: ExtensionActivationConsent; refresh(): void }>();
+    const toggle = async (id: string, revision: number, enabled: boolean, refresh: () => void, consent?: ExtensionActivationConsent) => {
         if (!canManage || pending.current) return;
         pending.current = true;
         setBusy(true);
         try {
-            await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
+            if (enabled && consent === undefined) {
+                const details = await client.extensionGet(id);
+                if (!current()) return;
+                if (details.activationConsent !== undefined) {
+                    setActivation({ id, revision: details.extension.revision, consent: details.activationConsent, refresh });
+                    return;
+                }
+            }
+            await (enabled ? client.extensionEnable(id, revision, consent?.packageDigest) : client.extensionDisable(id, revision));
             if (!current()) return;
-
+            setActivation(undefined);
             refresh();
         } catch {} finally {
             pending.current = false;
@@ -2279,7 +2290,13 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
             })}</div>}
         </section>
         )}</PagedItems>
-    </>}</UtilityWorkspace></>;
+    </>}</UtilityWorkspace>
+    {activation === undefined ? null : <Dialog open dismissible={!busy} title={t("Enable extension")} onClose={() => setActivation(undefined)}>
+        <ExtensionActivationSummary consent={activation.consent} />
+        {!canGrant ? <p role="alert">{t("You cannot approve extension permissions with this connection.")}</p> : null}
+        <div className="dialog-actions"><DialogCloseButton disabled={busy} variant="text">{t("Cancel")}</DialogCloseButton><Button disabled={busy || !canGrant} type="button" onClick={() => void toggle(activation.id, activation.revision, true, activation.refresh, activation.consent)}>{t("Enable")}</Button></div>
+    </Dialog>}
+    </>;
 }
 
 export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps & { extensionId: string }) {
@@ -2292,12 +2309,12 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
     return <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { setOperationTerminal(true); setCompletedOperation(operation); }} operationId={operationId} background />}
         {completedOperation?.state === "succeeded" ? <section className="utility-workspace page-surface--utility"><PageHeader title={t("Extension detail")} leading={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} /><p role="status">{t("Extension uninstalled.")}</p></section>
-        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools, installationSource }, refresh) => <>
+        : <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension, mcpTools, installationSource, activationConsent }, refresh) => <>
         <h2 className="extension-detail-identity">{extension.extensionId}</h2>
         <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {installationSource === undefined ? null : <dl className="detail-grid extension-source-preview"><Detail label={t("Installation source")} value={installationSource.url} /><Detail label={t("Source version")} value={installationSource.version} /></dl>}
         {extension.ui?.protocol === "portable-v1" ? <NavigationButton to={`/extensions/${encodeURIComponent(extensionId)}/ui`} disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</NavigationButton> : null}
-        <ExtensionActions client={client} extension={extension} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
+        <ExtensionActions client={client} extension={extension} activationConsent={activationConsent} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
         <ExtensionToolPreview tools={mcpTools} />
     </>}</UtilityWorkspace>}
     </>;

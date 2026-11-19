@@ -27,6 +27,8 @@ const KILL_GATE_ENV: &str = "ALCOMD_TEST_M6_KILL_GATE";
 const KILL_SIGNAL_ENV: &str = "ALCOMD_TEST_M6_KILL_SIGNAL";
 #[path = "support/m8_management_flow.rs"]
 mod m8_management_flow;
+#[path = "support/m9_discord_flow.rs"]
+mod m9_discord_flow;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn packaged_mcp_startup_installs_once_and_preserves_user_removal() {
@@ -1510,6 +1512,8 @@ async fn install_consent_and_undeclared_permissions_use_real_core_and_signed_pac
             "packages.manage",
             "operations.read",
             "operations.cancel",
+            "unity.sessions.read",
+            "local-ipc.connect",
         ]
     );
     assert_eq!(grants.grants.len(), 1);

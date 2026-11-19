@@ -731,7 +731,8 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
             .live_package_locator(access.principal().clone(), record.extension_id.clone())
             .await
             .map_err(map_m6)?;
-        self.core
+        let integration = self
+            .core
             .packages
             .verify_installed(record.clone(), locator)
             .await
@@ -748,6 +749,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M7RuntimeAdapter, V: M7UiValidator>
             .await
             .map_err(map_m6)?;
         context.activation_kind = ExtensionActivationKind::InteractiveUi;
+        context.background_integration = integration;
         let lease = context.lease.clone();
         if let Err(error) = self
             .core
