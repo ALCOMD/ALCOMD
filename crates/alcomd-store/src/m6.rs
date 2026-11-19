@@ -336,6 +336,41 @@ pub(super) fn has_background_authority(
         .map_err(store_error)
 }
 
+pub(super) fn has_scoped_background_work(
+    connection: &Connection,
+    daemon_epoch: &str,
+    now_ms: u64,
+) -> Result<bool, M6Error> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM extensions e JOIN extension_instances i USING (extension_id)
+                WHERE e.principal_id=?1 AND i.daemon_epoch=?2
+                  AND e.desired_state='enabled' AND e.quarantine_state='clear'
+                  AND i.lifecycle_generation=e.lifecycle_generation
+                  AND i.bound_grant_revision=e.grant_revision
+                  AND i.lease_expires_at_ms>?3
+                  AND (i.runtime_state='crashed' OR (i.runtime_state IN ('starting','running')
+                       AND i.lease_cancelled=0))
+                  AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
+                       AND g.permission_name='background.run' AND g.resource_kind='Extension'
+                       AND g.resource_id=e.extension_id AND g.state='granted')
+                  AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
+                       AND g.permission_name='local-ipc.connect' AND g.resource_kind='LocalIpcTarget'
+                       AND g.state='granted')
+                  AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
+                       AND g.permission_name='unity.sessions.read' AND g.resource_kind='Global'
+                       AND g.resource_id='*' AND g.state='granted')
+                  AND EXISTS(SELECT 1 FROM extension_grants g WHERE g.extension_id=e.extension_id
+                       AND g.permission_name='projects.read' AND g.resource_kind='Global'
+                       AND g.resource_id='*' AND g.state='granted')
+            )",
+            params![PrincipalId::LOCAL_OWNER, daemon_epoch, sqlite_integer(now_ms)?],
+            |row| row.get(0),
+        )
+        .map_err(store_error)
+}
+
 pub(super) fn create_install_plan(
     connection: &mut Connection,
     owner: &PrincipalId,

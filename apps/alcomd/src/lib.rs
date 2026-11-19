@@ -513,7 +513,11 @@ where
     > = tokio::task::JoinSet::new();
     let mut discovery_requested = false;
     let mut repository_refresh_tasks = tokio::task::JoinSet::new();
-    let idle = idle_shutdown::wait(&applications.m2, idle_shutdown::STARTUP_GRACE);
+    let idle = idle_shutdown::wait(
+        &applications.m2,
+        &applications.m6,
+        idle_shutdown::STARTUP_GRACE,
+    );
     tokio::pin!(idle);
     tokio::pin!(shutdown);
     loop {
@@ -530,14 +534,14 @@ where
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
                 if connections.is_empty() {
-                    idle.set(idle_shutdown::wait(&applications.m2, idle_shutdown::DISCONNECTED_GRACE));
+                    idle.set(idle_shutdown::wait(&applications.m2, &applications.m6, idle_shutdown::DISCONNECTED_GRACE));
                 }
             }
             () = &mut idle, if connections.is_empty() => {
                 if discovery_tasks.is_empty() && repository_refresh_tasks.is_empty() && initial_repository_sync.is_empty() {
                     break;
                 }
-                idle.set(idle_shutdown::wait(&applications.m2, idle_shutdown::DISCONNECTED_GRACE));
+                idle.set(idle_shutdown::wait(&applications.m2, &applications.m6, idle_shutdown::DISCONNECTED_GRACE));
             }
             _ = initial_repository_sync.join_next(), if !initial_repository_sync.is_empty() => {}
             _ = discovery_tick.tick() => discovery_requested = true,

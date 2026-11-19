@@ -679,6 +679,11 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         extension_id: String,
     ) -> impl Future<Output = Result<bool, M6Error>> + Send;
+    fn has_scoped_background_work(
+        &self,
+        daemon_epoch: String,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<bool, M6Error>> + Send;
     fn create_install_plan(
         &self,
         owner: PrincipalId,
@@ -1462,6 +1467,12 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
 
     pub async fn shutdown_runtime(&self) -> Result<(), M6Error> {
         self.runtime.shutdown().await
+    }
+
+    pub async fn has_scoped_background_work(&self) -> Result<bool, M6Error> {
+        self.store
+            .has_scoped_background_work(self.runtime.daemon_epoch(), m6_time_ms()?)
+            .await
     }
 
     fn schedule(&self, operation_id: OperationId) {

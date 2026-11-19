@@ -1,6 +1,6 @@
-use super::{
-    TestDirectory, connect_with_retry, isolated_ipc, wait_for_shutdown, wait_for_terminal,
-};
+#[cfg(windows)]
+use super::wait_for_shutdown;
+use super::{TestDirectory, connect_with_retry, isolated_ipc, wait_for_terminal};
 use alcomd_client::{AlcomdClient, ClientError};
 use alcomd_platform::DataConfig;
 use alcomd_protocol::{
@@ -10,8 +10,11 @@ use alcomd_protocol::{
     ExtensionUiOpenParams, OperationState,
 };
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(windows)]
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 const ID: &str = "com.vrclearn.alcomd-discord-presence";
 
@@ -229,21 +232,21 @@ async fn wait_for_discord_status(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires the independently built M9 development archive in ALCOMD_M9_DISCORD_PACKAGE"]
 async fn signed_discord_package_uses_scoped_activation_and_portable_ui() {
+    use std::time::Duration;
     let _serial = super::RPC_TEST_LOCK.lock().await;
     let package = PathBuf::from(std::env::var_os("ALCOMD_M9_DISCORD_PACKAGE").expect("archive"));
     let root = TestDirectory::new();
     let runtime = root.path().join("runtime");
     std::fs::create_dir(&runtime).expect("owned runtime directory");
     let (ipc, config) = isolated_ipc(runtime);
-    let shutdown = Arc::new(AtomicBool::new(false));
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
         DataConfig::isolated(root.path().join("data")),
-        wait_for_shutdown(Arc::clone(&shutdown)),
+        std::future::pending(),
     )
     .await
     .expect("isolated Core");
-    let mut client = connect_with_retry(config).await;
+    let mut client = connect_with_retry(config.clone()).await;
     install(&mut client, &package).await;
     let receipt = client.extension_get(ID.into()).await.expect("installed");
     assert_eq!(
@@ -378,6 +381,13 @@ async fn signed_discord_package_uses_scoped_activation_and_portable_ui() {
         })
         .await
         .expect("close extension view");
+    drop(client);
+    tokio::time::sleep(Duration::from_millis(2300)).await;
+    assert!(
+        !daemon.is_finished(),
+        "authorized background work keeps Core alive without clients"
+    );
+    let mut client = connect_with_retry(config).await;
     assert_eq!(
         client
             .extension_get(ID.into())
@@ -445,6 +455,9 @@ async fn signed_discord_package_uses_scoped_activation_and_portable_ui() {
     assert_eq!(disabled.runtime_state, ExtensionRuntimeState::Stopped);
 
     drop(client);
-    shutdown.store(true, Ordering::Release);
-    daemon.await.expect("daemon task").expect("clean shutdown");
+    tokio::time::timeout(Duration::from_secs(8), daemon)
+        .await
+        .expect("idle exit after disabling the last scoped background extension")
+        .expect("daemon task")
+        .expect("clean shutdown");
 }

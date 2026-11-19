@@ -1196,6 +1196,18 @@ impl M6Store for StateStoreHandle {
         .await
     }
 
+    async fn has_scoped_background_work(
+        &self,
+        daemon_epoch: String,
+        now_ms: u64,
+    ) -> Result<bool, M6Error> {
+        self.request_worker(
+            move |connection| m6::has_scoped_background_work(connection, &daemon_epoch, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
     async fn create_install_plan(
         &self,
         owner: PrincipalId,
