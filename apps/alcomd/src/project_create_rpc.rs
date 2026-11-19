@@ -23,11 +23,44 @@ pub(super) async fn dispatch(
 ) -> DispatchAction {
     let capability = match request.method.as_str() {
         rpc::METHOD_PROJECTS_CREATE => rpc::CAPABILITY_PROJECTS_CREATE_V1,
+        rpc::METHOD_PROJECT_TEMPLATES_SAVE
+        | rpc::METHOD_PROJECT_TEMPLATES_EXPORT
+        | rpc::METHOD_PROJECT_TEMPLATES_REMOVE
+            if access.is_mcp_client() =>
+        {
+            rpc::CAPABILITY_TEMPLATE_EDIT_V1
+        }
         _ => rpc::CAPABILITY_PROJECT_TEMPLATES_V2,
     };
     if let Some(action) = require_capability(&request.id, state, capability) {
         return action;
     }
+    if access.is_mcp_client()
+        && matches!(
+            request.method.as_str(),
+            rpc::METHOD_PROJECT_TEMPLATES_SAVE
+                | rpc::METHOD_PROJECT_TEMPLATES_EXPORT
+                | rpc::METHOD_PROJECT_TEMPLATES_REMOVE
+        )
+    {
+        let Ok(authentication) = super::m8_tools_rpc::auth(state, access) else {
+            return error_action(Some(request.id), rpc::RpcError::permission_denied(), false);
+        };
+        return app::with_workflow_authentication(
+            authentication,
+            dispatch_method(request, state, application, access),
+        )
+        .await;
+    }
+    dispatch_method(request, state, application, access).await
+}
+
+async fn dispatch_method(
+    request: rpc::RequestEnvelope,
+    state: &ConnectionState,
+    application: &ProjectCreateApplication,
+    access: &AccessContext,
+) -> DispatchAction {
     match request.method.as_str() {
         rpc::METHOD_PROJECTS_CREATE => {
             let params = parse!(request, rpc::ProjectsCreateParams);
@@ -114,8 +147,11 @@ pub(super) async fn dispatch(
         }
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE => {
             let params = parse!(request, rpc::ProjectTemplatesRemoveParams);
+            let Ok(key) = IdempotencyKey::parse(params.idempotency_key) else {
+                return invalid(request.id);
+            };
             match application
-                .remove_template(access, params.id.clone(), params.expected_revision)
+                .remove_template(access, params.id.clone(), params.expected_revision, key)
                 .await
             {
                 Ok(revision) => success_action(

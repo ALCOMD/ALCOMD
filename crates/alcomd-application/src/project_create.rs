@@ -397,6 +397,7 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
         owner: PrincipalId,
         id: String,
         expected_revision: u64,
+        key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<u64, ProjectCreateError>> + Send;
 
@@ -758,7 +759,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         expected_revision: Option<u64>,
         key: IdempotencyKey,
     ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
-        require_owner(access)?;
+        require_template_permission(access, Permission::ProjectsManage)?;
         if let Some(revision) = expected_revision {
             validate_safe_revision(revision)?;
         }
@@ -931,7 +932,7 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         destination_file: String,
         key: IdempotencyKey,
     ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
-        require_owner(access)?;
+        require_template_permission(access, Permission::ProjectsManage)?;
         validate_template_reference(&reference.id, reference.revision)?;
         validate_template_path(&destination_file)?;
         self.start_template_job(
@@ -985,12 +986,19 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
         access: &AccessContext,
         id: String,
         expected_revision: u64,
+        key: IdempotencyKey,
     ) -> Result<u64, ProjectCreateError> {
-        require_owner(access)?;
+        require_template_permission(access, Permission::ProjectsManage)?;
         validate_template_reference(&id, expected_revision)?;
         let revision = self
             .store
-            .project_templates_remove(access.principal().clone(), id, expected_revision, now_ms()?)
+            .project_templates_remove(
+                access.principal().clone(),
+                id,
+                expected_revision,
+                key,
+                now_ms()?,
+            )
             .await?;
         self.prune_template_archives().await;
         Ok(revision)
@@ -1077,7 +1085,10 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
                     );
                     let record = self
                         .store
-                        .project_templates_source_project(work.owner, *project_id)
+                        .project_templates_source_project(
+                            crate::workflow_resource_owner(&work.owner),
+                            *project_id,
+                        )
                         .await?;
                     if record.revision.get() != *expected_project_revision {
                         return Err(ProjectCreateError::new(

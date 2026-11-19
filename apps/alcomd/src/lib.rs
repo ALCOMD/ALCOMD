@@ -697,6 +697,10 @@ async fn serve_connection(
                 Some(alcomd_protocol::METHOD_BACKUPS_CREATE)
                     if action.response["result"]["operationId"].is_string() =>
                     Some(test_support::McpWriteResponseKind::Backup),
+                Some(alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE)
+                    if action.response["result"]["id"].is_string()
+                        && action.response["result"]["revision"].is_u64() =>
+                    Some(test_support::McpWriteResponseKind::TemplateRemoval),
                 _ => None,
             };
             #[cfg(feature = "test-kill-gates")]

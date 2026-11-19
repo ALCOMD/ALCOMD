@@ -124,7 +124,7 @@ enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
-    /// Read and edit an existing project template.
+    /// List, inspect, save, edit, export or remove project templates.
     Template {
         #[command(subcommand)]
         command: TemplateCommand,
@@ -251,6 +251,12 @@ enum OperationCommand {
 
 #[derive(Debug, Subcommand)]
 enum TemplateCommand {
+    List {
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
     Get {
         id: String,
         #[arg(long)]
@@ -267,6 +273,43 @@ enum TemplateCommand {
         #[arg(long)]
         idempotency_key: String,
     },
+    Save {
+        #[arg(long)]
+        source: PathBuf,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Export {
+        id: String,
+        destination: PathBuf,
+        #[arg(long)]
+        revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Remove {
+        id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+fn read_template_json(path: PathBuf) -> Result<serde_json::Value, CliError> {
+    use std::io::Read as _;
+    const LIMIT: usize = 48 * 1024;
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|file| file.take((LIMIT + 1) as u64).read_to_end(&mut bytes))
+        .map_err(alcomd_client::ClientError::Transport)?;
+    if bytes.len() > LIMIT {
+        return Err(CliError::Usage("Template input exceeds 48 KiB"));
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|_| CliError::Usage("Template input must be a valid JSON object"))
 }
 
 #[derive(Debug, Subcommand)]
@@ -808,24 +851,43 @@ async fn execute(
             ),
         },
         Command::Template { command } => match command {
+            TemplateCommand::List { cursor, limit } => serde_json::to_value(
+                client.project_templates_list(alcomd_protocol::ProjectTemplatesListParams { cursor, limit }).await?,
+            ),
             TemplateCommand::Get { id, cursor, limit } => serde_json::to_value(
                 client.template_get(alcomd_protocol::ProjectTemplateGetParams { id, cursor, limit }).await?,
             ),
             TemplateCommand::Edit { id, expected_revision, changes, idempotency_key } => {
-                use std::io::Read as _;
-                const LIMIT: usize = 48 * 1024;
-                let mut bytes = Vec::new();
-                std::fs::File::open(changes).and_then(|file| file.take((LIMIT + 1) as u64).read_to_end(&mut bytes))
-                    .map_err(alcomd_client::ClientError::Transport)?;
-                if bytes.len() > LIMIT {
-                    return Err(CliError::Usage("Template changes exceed 48 KiB"));
-                }
-                let changes = serde_json::from_slice(&bytes)
-                    .map_err(|_| CliError::Usage("Template changes must be a valid JSON object"))?;
+                let changes = serde_json::from_value(read_template_json(changes)?)
+                    .map_err(|_| CliError::Usage("Invalid template changes"))?;
                 eprintln!("Apply the selected changes to template {} at revision {expected_revision}.", id.escape_debug());
                 confirm_high_impact(options)?;
                 serde_json::to_value(client.template_edit(alcomd_protocol::ProjectTemplateEditParams {
                     id, expected_revision, changes, confirm: true, idempotency_key,
+                }).await?)
+            }
+            TemplateCommand::Save { source, expected_revision, idempotency_key } => {
+                let source = serde_json::from_value(read_template_json(source)?)
+                    .map_err(|_| CliError::Usage("Invalid template source"))?;
+                eprintln!("Save a template with the supplied definition or source.");
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.project_templates_save(alcomd_protocol::ProjectTemplatesSaveParams {
+                    source, expected_revision, idempotency_key,
+                }).await?)
+            }
+            TemplateCommand::Export { id, destination, revision, idempotency_key } => {
+                let destination = absolute_path(destination).map_err(alcomd_client::ClientError::Transport)?;
+                eprintln!("Export template {} at revision {revision} to {}.", id.escape_debug(), destination.as_str().escape_debug());
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.project_templates_export(alcomd_protocol::ProjectTemplatesExportParams {
+                    id, revision, destination_file: destination, idempotency_key,
+                }).await?)
+            }
+            TemplateCommand::Remove { id, expected_revision, idempotency_key } => {
+                eprintln!("Remove template {} at revision {expected_revision}.", id.escape_debug());
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.project_templates_remove(alcomd_protocol::ProjectTemplatesRemoveParams {
+                    id, expected_revision, idempotency_key,
                 }).await?)
             }
         },
@@ -1519,8 +1581,12 @@ impl Command {
                 OperationCommand::Cancel { .. } => "operation cancel",
             },
             Self::Template { command } => match command {
+                TemplateCommand::List { .. } => "template list",
                 TemplateCommand::Get { .. } => "template get",
                 TemplateCommand::Edit { .. } => "template edit",
+                TemplateCommand::Save { .. } => "template save",
+                TemplateCommand::Export { .. } => "template export",
+                TemplateCommand::Remove { .. } => "template remove",
             },
             Self::Project { command } => match command {
                 ProjectCommand::Copy { .. } => "project copy",
@@ -2084,7 +2150,7 @@ mod tests {
             ]))
             .is_ok()
         );
-        assert!(Arguments::try_parse_from(["alcomd-cli", "template", "list"]).is_err());
+        assert!(Arguments::try_parse_from(["alcomd-cli", "template", "list"]).is_ok());
     }
 
     #[test]

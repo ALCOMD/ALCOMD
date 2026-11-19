@@ -438,6 +438,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
     private templateDetails = new Map<string, Pick<Awaited<ReturnType<GuiRpcClient["projectTemplateGet"]>>, "dependencies" | "attachments">>();
+    private templateRemovals = new Map<string, { id: string; revision: number; expectedRevision: number }>();
     private projectTemplates = [...builtinTemplates(), ...(query.has("template-existing")
         ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "VRChat Avatars 2022" : "Existing fixture")] : [])];
     private templateRevision = 8;
@@ -1557,12 +1558,19 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     projectTemplatesRemove(params: Parameters<GuiRpcClient["projectTemplatesRemove"]>[0]): ReturnType<GuiRpcClient["projectTemplatesRemove"]> {
         window.templateRequests.push({ method: "projectTemplates.remove", params });
+        const prior = this.templateRemovals.get(params.idempotencyKey);
+        if (prior) {
+            if (prior.id !== params.id || prior.expectedRevision !== params.expectedRevision) return Promise.reject({ code: "idempotency_conflict" });
+            return this.value({ id: prior.id, revision: prior.revision });
+        }
         const existing = this.projectTemplates.find((item) => item.id === params.id);
         if (existing?.revision !== params.expectedRevision) return Promise.reject({ code: "revision_conflict" });
         if (existing.locked) return Promise.reject({ code: "template_builtin_immutable" });
         this.projectTemplates = this.projectTemplates.filter((item) => item !== existing);
         const revision = ++this.templateRevision;
+        this.templateRemovals.set(params.idempotencyKey, { id: params.id, revision, expectedRevision: params.expectedRevision });
         browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", revision);
+        if (query.has("template-remove-unknown")) return Promise.reject({ code: "daemon_unavailable" });
         return this.value({ id: params.id, revision });
     }
 

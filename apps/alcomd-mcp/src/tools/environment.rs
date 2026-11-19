@@ -18,6 +18,9 @@ pub(super) fn recognized(name: &str) -> bool {
             | "alcomd_list_installed_packages"
             | "alcomd_get_project_template"
             | "alcomd_edit_project_template"
+            | "alcomd_create_project_template"
+            | "alcomd_export_project_template"
+            | "alcomd_remove_project_template"
     )
 }
 
@@ -29,6 +32,23 @@ fn result<T: Serialize>(response: Result<T, ClientError>) -> Result<Value, Failu
     serde_json::to_value(response.map_err(read)?)
         .map(snake)
         .map_err(|_| Failure::InvalidCore)
+}
+
+fn write_result<T: Serialize>(response: Result<T, ClientError>) -> Result<Value, Failure> {
+    serde_json::to_value(response.map_err(|error| Failure::Remote(error, true))?)
+        .map(snake)
+        .map_err(|_| Failure::InvalidCore)
+}
+
+fn confirmed<T: DeserializeOwned>(mut fields: Value) -> Result<T, ErrorData> {
+    if fields
+        .as_object_mut()
+        .and_then(|fields| fields.remove("confirm"))
+        != Some(Value::Bool(true))
+    {
+        return Err(invalid());
+    }
+    params(fields)
 }
 
 pub(super) async fn execute(
@@ -53,20 +73,23 @@ pub(super) async fn execute(
             if !params.confirm {
                 return Err(invalid());
             }
-            let response = client
-                .template_edit(params)
-                .await
-                .map_err(|error| Failure::Remote(error, true))
-                .and_then(|accepted| {
-                    serde_json::to_value(accepted)
-                        .map(snake)
-                        .map_err(|_| Failure::InvalidCore)
-                });
             (
-                response,
+                write_result(client.template_edit(params).await),
                 "Template edit accepted. Check its Operation for the result.",
             )
         }
+        "alcomd_create_project_template" => (
+            write_result(client.project_templates_save(confirmed(fields)?).await),
+            "Template save accepted. Check its Operation for the result.",
+        ),
+        "alcomd_export_project_template" => (
+            write_result(client.project_templates_export(confirmed(fields)?).await),
+            "Template export accepted. Check its Operation for the result.",
+        ),
+        "alcomd_remove_project_template" => (
+            write_result(client.project_templates_remove(confirmed(fields)?).await),
+            "Template removed.",
+        ),
         "alcomd_get_settings" => {
             if fields.as_object().is_none_or(|fields| !fields.is_empty()) {
                 return Err(invalid());

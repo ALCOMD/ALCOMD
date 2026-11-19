@@ -113,6 +113,7 @@ export interface ProjectTemplateExportOperationResult {
 export interface ProjectTemplatesRemoveParams {
     id: string;
     expectedRevision: number;
+    idempotencyKey: string;
 }
 
 export interface ProjectTemplatesRemoveResult {

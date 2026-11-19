@@ -759,7 +759,8 @@ Core 通过 `projects.create.v1` 发布 `projects.create`。已认证的本机�
 Core 校验目标父目录的身份，只向不存在的目标发布，并在同一事务登记项目、完成任务和写入事件。
 
 模板目录通过 `projectTemplates.v2` 发布 `projectTemplates.list`、`projectTemplates.save`、
-`projectTemplates.export` 和 `projectTemplates.remove`，仅限已认证的本机所有者。
+`projectTemplates.export` 和 `projectTemplates.remove` 的本机入口。M8 的 MCP 调用
+使用同一方法，列表沿用项目流程协商，写入通过 `project-templates.edit.v1` 协商并检查 `projects.manage`。
 列表按 ID 分页，记录包含 ID、显示名、可选 Unity 版本、修订和锁定标记。变更提交
 `project-template.changed` 事件，内部 UUID 只用于关联事件。同 ID 同内容复用记录，
 同 ID 异内容需提供现有修订。锁定记录拒绝替换或删除。
@@ -770,6 +771,8 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 手动来源可带 `baseTemplate: {id,revision}`，省略时从最小空白脚手架开始。GUI 默认选择内置 Blank。基础归档与修订在接受事务中冻结并保留引用，恢复或执行期间不重新跟随目录记录；派生归档复制基础工程文件、UPM 清单和 VPM 依赖/锁，再按填写的包 ID 覆盖或追加直接依赖。基础模板声明完整版本时必须精确匹配，Blank 允许任意合法完整版本。保存结果自包含，后续替换或删除基础模板不改变派生模板。
 保存与导出使用持久幂等任务，接受后返回 `{operationId,replayed}`。
 保存成功结果为 `{template}`，导出成功结果为 `{id,revision}`。
+移除要求 `{id,expectedRevision,idempotencyKey}`。删除事务保存同一调用者的回执
+`{id,revision}`，相同请求可找回原回执，即使同 ID 已重建。
 导出目标通过独占发布产生。模板归档内部为标准 ZIP 及 VCC 目录结构。
 
 `projects.create` 以 `template: {id, revision}` 选择当前归档，在接受事务中冻结模板。

@@ -1019,11 +1019,21 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         owner: PrincipalId,
         id: String,
         expected_revision: u64,
+        key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<u64, ProjectCreateError> {
+        let authentication = alcomd_application::workflow_authentication();
         self.request_worker(
             move |connection| {
-                project_templates::remove(connection, &owner, &id, expected_revision, now_ms)
+                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
+                project_templates::remove_idempotent(
+                    connection,
+                    &owner,
+                    &id,
+                    expected_revision,
+                    &key,
+                    now_ms,
+                )
             },
             unavailable,
         )

@@ -151,6 +151,22 @@ test("user template replacement binds the selected revision and supports removal
     await expect(row(page, userId)).toHaveCount(0);
 });
 
+test("a lost template removal response is retried with the original key", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/templates&template-existing&template-remove-unknown");
+    const trigger = row(page, userId).getByRole("button", { name: "More actions for Existing fixture" });
+    await selectActionMenuItem(trigger, page.getByRole("menuitem", { name: "Remove template", exact: true }));
+    const dialog = page.locator("md-dialog[open]");
+    await dialog.getByRole("button", { name: "Remove template", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toBeVisible();
+    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(row(page, userId)).toHaveCount(0);
+    const requests = await page.evaluate(() => window.templateRequests.filter(({ method }) => method === "projectTemplates.remove"));
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+    expect(requests[0]?.params).toMatchObject({ id: userId, expectedRevision: expect.any(Number), idempotencyKey: expect.any(String) });
+});
+
 test("built-in export submits the chosen new file path and shows task completion", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
     await selectActionMenuItem(row(page, avatarId).getByRole("button", { name: /More actions/ }), page.getByRole("menuitem", { name: "Export template", exact: true }));

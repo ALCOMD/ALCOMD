@@ -44,6 +44,7 @@ pub(super) fn operation_kind(kind: &str) -> bool {
             | "backups.create"
             | "backups.restore"
             | "projectTemplates.save"
+            | "projectTemplates.export"
     )
 }
 
@@ -99,6 +100,7 @@ pub(super) fn operation_result(kind: &str, result: Value) -> Result<Value, Failu
         "projects.create" => project_receipt::<CreatedProject>(result),
         "projects.copy" => project_receipt::<CopiedProject>(result),
         "projectTemplates.save" => project_receipt::<SavedTemplate>(result),
+        "projectTemplates.export" => project_receipt::<rpc::ProjectTemplateRef>(result),
         "backups.restore" => project_receipt::<RestoredProject>(result),
         "backups.create" => {
             let backup: StoredBackup =

@@ -37,7 +37,11 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         INVENTORY_CONTRACT
     } else if matches!(
         name,
-        "alcomd_get_project_template" | "alcomd_edit_project_template"
+        "alcomd_get_project_template"
+            | "alcomd_edit_project_template"
+            | "alcomd_create_project_template"
+            | "alcomd_export_project_template"
+            | "alcomd_remove_project_template"
     ) {
         TEMPLATE_CONTRACT
     } else if environment::recognized(name) {
@@ -583,7 +587,7 @@ fn failure(cause: Failure) -> CallToolResult {
         }
         Failure::Remote(_, true) => error(
             "core_write_outcome_unknown",
-            "Core's write response was lost. The outcome is unknown; do not retry automatically. Recover Apply/Cancel with the original key and arguments. For a lost plan response, review the project before explicitly creating another plan.",
+            "Core's write response was lost. Do not retry automatically. For an idempotent write, recover with the original key and arguments. For a lost plan response, review the project before explicitly creating another plan.",
             false,
             None,
             true,

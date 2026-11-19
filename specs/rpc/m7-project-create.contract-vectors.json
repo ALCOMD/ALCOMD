@@ -53,7 +53,8 @@
     },
     "remove": {
         "id": "com.example.avatar-tools",
-        "expectedRevision": 3
+        "expectedRevision": 3,
+        "idempotencyKey": "template-remove"
     },
     "removed": {
         "id": "com.example.avatar-tools",

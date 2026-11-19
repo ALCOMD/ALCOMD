@@ -146,6 +146,7 @@ pub struct ProjectTemplatesExportParams {
 pub struct ProjectTemplatesRemoveParams {
     pub id: String,
     pub expected_revision: u64,
+    pub idempotency_key: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

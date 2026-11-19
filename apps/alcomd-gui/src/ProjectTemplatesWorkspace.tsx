@@ -1,5 +1,5 @@
 import { BLANK_PROJECT_TEMPLATE_ID } from "@alcomd/sdk";
-import type { ProjectTemplatesListResult, ProjectTemplateAttachment, ProjectTemplateDependency, ProjectTemplateEditParams, ProjectTemplateGetResult, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
+import type { ProjectTemplatesListResult, ProjectTemplateAttachment, ProjectTemplateDependency, ProjectTemplateEditParams, ProjectTemplateGetResult, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesRemoveParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
 import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
@@ -25,6 +25,7 @@ type Selection = { kind: "save"; source: SourceKind; template?: ProjectTemplateR
 type Request =
     | { kind: "save"; params: Omit<ProjectTemplatesSaveParams, "idempotencyKey"> }
     | { kind: "export"; params: Omit<ProjectTemplatesExportParams, "idempotencyKey"> }
+    | { kind: "remove"; params: Omit<ProjectTemplatesRemoveParams, "idempotencyKey"> }
     | { kind: "edit"; params: Omit<ProjectTemplateEditParams, "idempotencyKey"> };
 type SelectedProject = ProjectSnapshot & { projectId: string; revision: number };
 
@@ -227,6 +228,8 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
 
     const request: Request | undefined = selection.kind === "export" && destinationFile !== "" ? {
         kind: "export", params: { id: selection.template.id, revision: selection.template.revision, destinationFile }
+    } : selection.kind === "remove" ? {
+        kind: "remove", params: { id: selection.template.id, expectedRevision: selection.template.revision }
     } : selection.kind === "edit" ? editRequest() : selectedSource === undefined ? undefined : {
         kind: "save", params: { source: selectedSource, ...(record === undefined ? {} : { expectedRevision: record.revision }) }
     };
@@ -234,16 +237,17 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     function submit() {
         if (selection.kind === "view" || operationId !== undefined || choosing) return;
         void run(async () => {
-            if (selection.kind === "remove") {
-                await client.projectTemplatesRemove({ id: selection.template.id, expectedRevision: selection.template.revision });
-                if (current()) { onChanged(); onClose(); }
-                return;
-            }
             const submitted = retrying ? attempt.current : request === undefined ? undefined : { request, idempotencyKey: crypto.randomUUID() };
             if (submitted === undefined) return;
             attempt.current = submitted;
             let accepted;
             try {
+                if (submitted.request.kind === "remove") {
+                    await client.projectTemplatesRemove({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey });
+                    attempt.current = undefined;
+                    if (current()) { onChanged(); onClose(); }
+                    return;
+                }
                 accepted = submitted.request.kind === "save"
                     ? await client.projectTemplatesSave({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey })
                     : submitted.request.kind === "edit"
@@ -267,7 +271,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     const submitLabel = selection.kind === "edit" ? "Save template" : selection.kind === "remove" || selection.kind === "export" || record !== undefined ? title
         : source === "file" ? "Import template" : "Save template";
     const importing = selection.kind === "save" && record === undefined && source === "file" && operationId === undefined;
-    const submitDisabled = busy || choosing || !retrying && request === undefined && selection.kind !== "remove";
+    const submitDisabled = busy || choosing || !retrying && request === undefined;
     const terminalFailure = operation?.state === "failed" || operation?.state === "cancelled";
     const failedPackage = operation?.state === "failed" && typeof operation.result === "object" && operation.result !== null
         && "packageId" in operation.result && typeof operation.result.packageId === "string" ? operation.result.packageId : undefined;

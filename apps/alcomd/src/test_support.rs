@@ -167,6 +167,11 @@ impl TestDaemon {
             .await
     }
 
+    pub async fn truncate_next_mcp_template_removal_response(&self) -> Arc<McpWriteResponseGate> {
+        self.hold_next_mcp_write_response(McpWriteResponseKind::TemplateRemoval, true)
+            .await
+    }
+
     async fn hold_next_mcp_write_response(
         &self,
         kind: McpWriteResponseKind,
@@ -403,12 +408,13 @@ where
 pub(crate) enum McpWriteResponseKind {
     Apply,
     Backup,
+    TemplateRemoval,
 }
 
 /// Test-only transport fault; never changes a request, its identity or its result.
 pub struct McpWriteResponseGate {
     pub(crate) kind: McpWriteResponseKind,
-    accepted: Mutex<Option<McpWriteReceipt>>,
+    accepted: Mutex<Option<serde_json::Value>>,
     ready: tokio::sync::Notify,
     release: tokio::sync::Notify,
     truncate_on_release: bool,
@@ -423,6 +429,10 @@ pub struct McpWriteReceipt {
 
 impl McpWriteResponseGate {
     pub async fn accepted(&self) -> McpWriteReceipt {
+        serde_json::from_value(self.committed_result().await).expect("accepted Operation receipt")
+    }
+
+    pub async fn committed_result(&self) -> serde_json::Value {
         loop {
             let ready = self.ready.notified();
             if let Some(accepted) = self.accepted.lock().await.as_ref() {
@@ -442,13 +452,14 @@ impl McpWriteResponseGate {
         response: &serde_json::Value,
     ) -> std::io::Result<bool> {
         use tokio::io::AsyncWriteExt;
-        let accepted_value = if response["result"]["operationId"].is_string() {
+        let accepted_value = if self.kind == McpWriteResponseKind::TemplateRemoval
+            || response["result"]["operationId"].is_string()
+        {
             response["result"].clone()
         } else {
             serde_json::json!({"operationId":response["result"]["coreEffect"]["operationId"],"replayed":response["result"]["replayed"]})
         };
-        let accepted = serde_json::from_value(accepted_value).map_err(std::io::Error::other)?;
-        *self.accepted.lock().await = Some(accepted);
+        *self.accepted.lock().await = Some(accepted_value);
         self.ready.notify_one();
         self.release.notified().await;
         if self.truncate_on_release {

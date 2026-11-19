@@ -176,9 +176,14 @@ Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25
 | `alcomd_list_installed_packages` | `packages.projectInventory` | `projects.read`、`packages.read` |
 | `alcomd_get_project_template` | `projectTemplates.get` | `projects.create` |
 | `alcomd_edit_project_template` | `projectTemplates.edit` | `projects.manage` |
+| `alcomd_create_project_template` | `projectTemplates.save` | `projects.manage`，项目来源还需要 `projects.read` |
+| `alcomd_export_project_template` | `projectTemplates.export` | `projects.manage` |
+| `alcomd_remove_project_template` | `projectTemplates.remove` | `projects.manage` |
 
 项目包结果区分声明版本、锁定版本和本机观察到的版本。修订或观察结果变化时，
 从第一页重新读取。模板详情提供依赖和分页附件名。编辑使用原修订、明确修改内容
 和 `confirm: true`，通过既有任务工具查询结果。Core 在接受前冻结附件文件，
 写入结果未知时可显式使用原请求和原幂等键恢复。内置模板保持只读。
+创建可以使用手工定义、已登记项目或已有模板文件。创建和导出返回同一 Core
+任务。移除返回模板 ID 与移除修订，重放原请求返回同一结果，保留后来重建的模板。
 工具字段见[项目包 Schema](project-inventory-v1.schema.json)和[模板 Schema](template-edit-v1.schema.json)。

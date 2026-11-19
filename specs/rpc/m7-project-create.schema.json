@@ -2,7 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-create.json",
     "title": "ALCOMD project creation and template archives",
-    "x-alcomd-local-owner-only": true,
+    "x-alcomd-local-owner-only": false,
+    "x-alcomd-local-owner-only-methods": ["projects.create"],
     "x-alcomd-max-canonical-declaration-bytes": 24576,
     "x-alcomd-max-template-job-request-bytes": 49152,
     "x-alcomd-template-operation-results": {
@@ -11,11 +12,12 @@
     },
     "x-alcomd-method-permissions": {
         "projects.create": ["projects.create"],
-        "projectTemplates.list": [],
-        "projectTemplates.save": [],
-        "projectTemplates.remove": [],
-        "projectTemplates.export": []
+        "projectTemplates.list": ["projects.create"],
+        "projectTemplates.save": ["projects.manage"],
+        "projectTemplates.remove": ["projects.manage"],
+        "projectTemplates.export": ["projects.manage"]
     },
+    "x-alcomd-template-project-source-permissions": ["projects.read"],
     "x-alcomd-project-create-dependency-permissions": ["packages.read", "repositories.read", "packages.manage"],
     "x-alcomd-method-capabilities": {
         "projects.create": "projects.create.v1",
@@ -23,6 +25,12 @@
         "projectTemplates.save": "projectTemplates.v2",
         "projectTemplates.remove": "projectTemplates.v2",
         "projectTemplates.export": "projectTemplates.v2"
+    },
+    "x-alcomd-mcp-method-capabilities": {
+        "projectTemplates.list": "projectTemplates.v2",
+        "projectTemplates.save": "project-templates.edit.v1",
+        "projectTemplates.remove": "project-templates.edit.v1",
+        "projectTemplates.export": "project-templates.edit.v1"
     },
     "x-alcomd-method-params": {
         "projects.create": "#/$defs/createParams",
@@ -124,8 +132,8 @@
         "removeParams": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "expectedRevision"],
-            "properties": {"id": {"$ref": "#/$defs/templateId"}, "expectedRevision": {"$ref": "#/$defs/revision"}}
+            "required": ["id", "expectedRevision", "idempotencyKey"],
+            "properties": {"id": {"$ref": "#/$defs/templateId"}, "expectedRevision": {"$ref": "#/$defs/revision"}, "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"}}
         },
         "removeResult": {"$ref": "#/$defs/templateRef"},
         "fileSource": {

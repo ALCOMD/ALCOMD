@@ -212,7 +212,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         &mut client,
         "locked",
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
-        json!({"id":builtin["id"], "expectedRevision":builtin["revision"]}),
+        json!({"id":builtin["id"], "expectedRevision":builtin["revision"], "idempotencyKey":"remove-locked"}),
     )
     .await;
     assert_eq!(locked["error"]["code"], "template_builtin_immutable");
@@ -273,7 +273,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         &mut client,
         "remove",
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
-        json!({"id":custom["id"],"expectedRevision":custom["revision"]}),
+        json!({"id":custom["id"],"expectedRevision":custom["revision"],"idempotencyKey":"remove-custom"}),
     )
     .await;
     assert_eq!(removed["result"]["id"], custom["id"]);
@@ -313,7 +313,7 @@ async fn project_creation_and_template_mutation_fixture() -> std::path::PathBuf 
         &mut client,
         "remove-pinned",
         rpc::METHOD_PROJECT_TEMPLATES_REMOVE,
-        json!({"id":reference.id,"expectedRevision":reference.revision}),
+        json!({"id":reference.id,"expectedRevision":reference.revision,"idempotencyKey":"remove-pinned"}),
     )
     .await;
     assert_eq!(removed["result"]["id"], custom["id"]);

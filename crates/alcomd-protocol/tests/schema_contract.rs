@@ -1953,7 +1953,23 @@ fn project_creation_and_template_archives_round_trip() {
         ProjectsCreateParams, ProjectsCreateResult,
     };
     let contract = schema("m7-project-create");
-    assert_eq!(contract["x-alcomd-local-owner-only"], true);
+    assert_eq!(contract["x-alcomd-local-owner-only"], false);
+    assert_eq!(
+        contract["x-alcomd-local-owner-only-methods"],
+        json!(["projects.create"])
+    );
+    assert_eq!(
+        contract["x-alcomd-method-permissions"]["projectTemplates.remove"],
+        json!(["projects.manage"])
+    );
+    assert_eq!(
+        contract["x-alcomd-mcp-method-capabilities"]["projectTemplates.remove"],
+        alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1
+    );
+    assert_eq!(
+        contract["$defs"]["removeParams"]["required"],
+        json!(["id", "expectedRevision", "idempotencyKey"])
+    );
     assert_eq!(contract["x-alcomd-max-canonical-declaration-bytes"], 24_576);
     assert_eq!(
         contract["x-alcomd-method-capabilities"],

@@ -2,6 +2,236 @@ use super::*;
 use std::io::Read;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn frozen_sdk_template_lifecycle_replays_removal_after_recreation() {
+    let _serial = REAL_CORE_LOCK.lock().await;
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/m8-business-tests")
+        .join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir_all(&root).expect("isolated lifecycle fixture");
+    let root = root.canonicalize().expect("canonical lifecycle fixture");
+    let project_path = root.join("Project");
+    project(&project_path, false);
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        IpcConfig::default(),
+        DataConfig::isolated(root.join("data")),
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("isolated Core");
+    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+        .await
+        .expect("test owner");
+    let project = owner
+        .project_register(
+            project_path.to_string_lossy().into_owned(),
+            "template-lifecycle-project".into(),
+        )
+        .await
+        .expect("registered source")
+        .project;
+    let actor = owner
+        .mcp_client_create(McpClientsCreateParams {
+            idempotency_key: "template-lifecycle-client".into(),
+            display_name: "Template lifecycle fixture".into(),
+        })
+        .await
+        .expect("create MCP fixture client");
+    let issued = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: actor.client_id,
+            expected_revision: actor.revision,
+            idempotency_key: "template-lifecycle-credential".into(),
+        })
+        .await
+        .expect("issue independent credential");
+    let http = HttpFixture::start().await;
+    let connection = sdk(&issued.credential, Some(&http.url)).await;
+    let mut trace = Vec::new();
+    let id = "com.example.lifecycle";
+    let save = json!({"source":{"kind":"project","id":id,"name":"From project",
+        "project_id":project.project_id.expect("source ID"),
+        "expected_project_revision":project.revision.expect("source revision")},
+        "confirm":true,"idempotency_key":"template-lifecycle-save"});
+    let accepted = data(
+        call(
+            &connection,
+            &mut trace,
+            "create_project_template",
+            save.clone(),
+        )
+        .await
+        .expect("save template using registered project"),
+    );
+    let task = accepted["operation_id"]
+        .as_str()
+        .expect("save operation ID");
+    let saved = terminal(&connection, &mut trace, task).await;
+    assert_eq!(saved["state"], "succeeded", "{saved}");
+    let revision = saved["result"]["template"]["revision"]
+        .as_u64()
+        .expect("template saved");
+    let input = ProjectTemplateGetParams {
+        id: id.into(),
+        cursor: None,
+        limit: None,
+    };
+    assert_eq!(
+        owner
+            .template_get(input.clone())
+            .await
+            .expect("owner reads shared record")
+            .template
+            .revision,
+        revision
+    );
+
+    let output = root.join("output.alcomdtemplate");
+    let export = data(call(&connection, &mut trace, "export_project_template", json!({
+        "id":id,"revision":revision,"confirm":true,
+        "destination_file":output.to_string_lossy(),"idempotency_key":"template-lifecycle-export"
+    })).await.expect("export tool"));
+    let exported = terminal(
+        &connection,
+        &mut trace,
+        export["operation_id"].as_str().expect("export task"),
+    )
+    .await;
+    assert_eq!(exported["state"], "succeeded", "{exported}");
+    assert_eq!(exported["result"]["id"], id);
+    assert!(output.is_file());
+
+    let remove = json!({"id":id,"expected_revision":revision,"confirm":true,"idempotency_key":"template-lifecycle-remove"});
+    let gate = daemon.truncate_next_mcp_template_removal_response().await;
+    let (lost, committed) = tokio::join!(
+        call(
+            &connection,
+            &mut trace,
+            "remove_project_template",
+            remove.clone()
+        ),
+        async {
+            let receipt = tokio::time::timeout(Duration::from_secs(10), gate.committed_result())
+                .await
+                .expect("durably committed removal before reply");
+            assert_eq!(receipt["id"], id);
+            assert!(
+                owner.template_get(input.clone()).await.is_err(),
+                "committed deletion is visible during the held response"
+            );
+            gate.release();
+            receipt
+        }
+    );
+    error(
+        lost.expect("MCP reports the interrupted Core response"),
+        "core_write_outcome_unknown",
+    );
+    let removed = data(
+        call(
+            &connection,
+            &mut trace,
+            "remove_project_template",
+            remove.clone(),
+        )
+        .await
+        .expect("recover the committed removal with its original key"),
+    );
+    assert_eq!(removed, committed);
+    assert!(owner.template_get(input.clone()).await.is_err());
+    assert!(
+        matches!(owner.project_templates_remove(ProjectTemplatesRemoveParams {
+        id: id.into(), expected_revision: revision, idempotency_key: "template-lifecycle-remove".into(),
+    }).await, Err(alcomd_client::ClientError::Remote(e)) if e.code == "revision_conflict")
+    );
+
+    let imported = data(
+        call(
+            &connection,
+            &mut trace,
+            "create_project_template",
+            json!({
+                "source":{"kind":"file","source_file":output.to_string_lossy()},
+                "confirm":true,"idempotency_key":"template-lifecycle-reimport"
+            }),
+        )
+        .await
+        .expect("re-import exported archive via same Core"),
+    );
+    let imported = terminal(
+        &connection,
+        &mut trace,
+        imported["operation_id"].as_str().expect("import operation"),
+    )
+    .await;
+    assert_eq!(imported["state"], "succeeded", "{imported}");
+    let restored = owner
+        .template_get(input)
+        .await
+        .expect("owner reads recreated template");
+    assert!(restored.template.revision > revision);
+    assert_eq!(
+        data(
+            call(
+                &connection,
+                &mut trace,
+                "remove_project_template",
+                remove.clone()
+            )
+            .await
+            .expect("recover original result")
+        ),
+        removed
+    );
+    let mut conflicting = remove;
+    conflicting["expected_revision"] = restored.template.revision.into();
+    error(
+        call(
+            &connection,
+            &mut trace,
+            "remove_project_template",
+            conflicting,
+        )
+        .await
+        .expect("same key conflict"),
+        "idempotency_conflict",
+    );
+    let blank = owner
+        .template_get(ProjectTemplateGetParams {
+            id: "com.vrclearn.alcomd.templates.blank".into(),
+            cursor: None,
+            limit: None,
+        })
+        .await
+        .expect("built-in template");
+    error(
+        call(
+            &connection,
+            &mut trace,
+            "remove_project_template",
+            json!({
+                "id":blank.template.id,"expected_revision":blank.template.revision,
+                "confirm":true,"idempotency_key":"template-lifecycle-protect"
+            }),
+        )
+        .await
+        .expect("built-in protection"),
+        "template_builtin_immutable",
+    );
+    assert!(
+        output.is_file(),
+        "removing the template never removes its external export"
+    );
+    drop(connection);
+    http.finish().await;
+    drop(owner);
+    stop.send(()).expect("stop isolated Core");
+    daemon.await.expect("join").expect("Core clean shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn frozen_sdk_project_inventory_and_template_edit_share_core() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -165,21 +165,33 @@ pub(super) fn accept(
 ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
     let transaction = begin(connection)?;
     let kind = request_kind(&request);
+    require_edit_access(&transaction, owner)?;
+    let resource_owner = alcomd_application::workflow_resource_owner(owner);
+    if matches!(
+        &request,
+        ProjectTemplateJobRequest::Save {
+            source: ProjectTemplateSource::Project { .. },
+            ..
+        }
+    ) {
+        super::m8_workflows::require(
+            &transaction,
+            owner,
+            &[alcomd_application::Permission::ProjectsRead],
+        )
+        .map_err(|_| ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied))?;
+    }
     let frozen_edit = match &request {
         ProjectTemplateJobRequest::Save {
             source: ProjectTemplateSource::FrozenEdit { declaration },
             expected_revision,
-        } => {
-            require_edit_access(&transaction, owner)?;
-            Some((declaration, expected_revision.ok_or_else(internal)?))
-        }
+        } => Some((declaration, expected_revision.ok_or_else(internal)?)),
         _ => None,
     };
     if let Some(replayed) = replay(&transaction, owner, kind, key, fingerprint)? {
         return Ok(replayed);
     }
     if let Some((declaration, expected)) = frozen_edit {
-        let resource_owner = alcomd_application::workflow_resource_owner(owner);
         let (current, _) = project_templates::get(&transaction, &resource_owner, &declaration.id)?
             .ok_or_else(|| ProjectCreateError::new(ProjectCreateErrorCode::TemplateStale))?;
         if current.locked {
@@ -194,11 +206,13 @@ pub(super) fn accept(
         }
     }
     let export_declaration = match &request {
-        ProjectTemplateJobRequest::Export { reference, .. } => {
-            Some(project_templates::frozen(&transaction, owner, reference)?)
-        }
+        ProjectTemplateJobRequest::Export { reference, .. } => Some(project_templates::frozen(
+            &transaction,
+            &resource_owner,
+            reference,
+        )?),
         ProjectTemplateJobRequest::Save { source, .. } => {
-            check_source_revision(&transaction, owner, source)?;
+            check_source_revision(&transaction, &resource_owner, source)?;
             None
         }
     };
@@ -212,7 +226,7 @@ pub(super) fn accept(
                 },
             ..
         } => {
-            let declaration = project_templates::frozen(&transaction, owner, reference)?;
+            let declaration = project_templates::frozen(&transaction, &resource_owner, reference)?;
             if declaration
                 .editor_version
                 .as_ref()
@@ -394,12 +408,8 @@ pub(super) fn finish_save(
     if context.cancel_requested {
         terminal(&transaction, id, context, Completion::Cancelled, timestamp)?;
     } else {
-        check_source_revision(&transaction, &context.owner, source)?;
-        let owner = if matches!(source, ProjectTemplateSource::FrozenEdit { .. }) {
-            alcomd_application::workflow_resource_owner(&context.owner)
-        } else {
-            context.owner.clone()
-        };
+        let owner = alcomd_application::workflow_resource_owner(&context.owner);
+        check_source_revision(&transaction, &owner, source)?;
         let record = project_templates::save_in_transaction(
             &transaction,
             &owner,
