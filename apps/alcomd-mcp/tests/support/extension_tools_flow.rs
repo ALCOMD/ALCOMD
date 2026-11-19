@@ -505,7 +505,17 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             args.clone(),
         )
         .await;
-        assert_ne!(planned.is_error, Some(true));
+        assert_ne!(
+            planned.is_error,
+            Some(true),
+            "Provider plan fixture {index} failed: {}",
+            planned
+                .structured_content
+                .as_ref()
+                .and_then(|result| result.pointer("/error/code"))
+                .and_then(Value::as_str)
+                .unwrap_or("missing stable error code")
+        );
         let planned = planned
             .structured_content
             .expect("valid isolated Provider fixture");
