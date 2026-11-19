@@ -766,7 +766,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         .await
         .expect("same native registry")
         .repository;
-    let http = Https::start(&root, configuration.client).await;
+    let http = Https::start(&root, configuration.client.clone()).await;
     let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Repository manager A".into(),
