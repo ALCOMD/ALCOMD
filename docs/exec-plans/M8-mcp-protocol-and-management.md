@@ -1,6 +1,6 @@
 # M8：MCP 协议与管理扩展
 
-状态：IN_PROGRESS，2026-11-18。所有者已批准按既有计划进入 M8；不自动推送，不启动 M9–M12。
+状态：已收尾，2026-11-20。冻结候选 `622cb62a`，macOS 验证依所有者决定延期。当前结论见[收尾记录](#2026-11-20-m8-收尾)，其余章节保留各批次原始状态。
 
 ## 既有范围与复用核对
 
@@ -1938,3 +1938,12 @@ Windows 完整仓库门禁首轮在严格 Clippy 中止。新增 Schema 用例�
 - Ubuntu 原作业完整通过。`business_tools` 21 通过、0 失败、3 项原有忽略，含 OAuth 综合、OAuth 仓库重放、扩展 Provider 计划及此前因端点占用失败的用例。首轮独立 Provider 失败本轮未复现，根因未定位。CLI 集成、项目删除挂载边界、发布可执行文件、Tauri 构建、GLIBC 符号检查和 Chromium 单轮 734/0 均通过。
 - Windows 原作业完整通过。`business_tools` 21 通过、0 失败、4 项原有忽略，含 OAuth 综合与扩展 Provider。仓库检查、CLI 集成、发布可执行文件、Tauri 构建和 Chromium 单轮 734/0 均通过。
 - CI 首轮总状态为 `failure`，唯一未通过的平台是未分配运行器的 macOS。自动运行终态、Windows 和 Ubuntu 原始日志及 macOS 取消注释保存在 `target/m8-shared-project-assets-20261119/`。三平台同 SHA 验收仍缺 macOS。记录时尚未启动补跑或修改工作流，当前候选及原运行数据保持。M8 继续进行中。
+
+### 2026-11-20 M8 收尾
+
+按所有者要求，M8 在 `622cb62ad507c700de42cd2db9ddd13a7835a754` 收尾，停在 M9 正式实施之前。已交付 MCP STDIO、HTTP Bearer 与预登记 HTTPS OAuth 接入、独立客户端身份、工具目录订阅、Core 业务工具及扩展 Provider、管理扩展和传输观测。可用入口和已有证据见[能力与证据清单](#2026-11-19-当前能力与证据清单)。
+
+- 冻结候选的 Windows 和 Ubuntu 原作业均完整通过，各自 Chromium 734 通过、0 失败。同 SHA CodeQL 四项分析通过。[CI 44566846494](https://github.com/ALCOMD/ALCOMD/actions/runs/44566846494) · [CodeQL 44566846484](https://github.com/ALCOMD/ALCOMD/actions/runs/44566846484)
+- macOS arm64 作业因运行器容量不足在执行前取消。所有者决定本轮延期，后续在同一候选上补验。原 CI 总状态保留为 `failure`，完整三平台通过证据仍缺 macOS。[macOS 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/44566846494/job/135710835236)
+- 管理扩展人工体验和普通在线扩展源继续延期。实际 Codex 推送消费、普通浏览器受信任 TLS、持续传输满载及 TCP 发送缓冲耗尽仍未验证。Cursor 具名构建的握手不兼容。早期 Host `resource_limit` 和 Ubuntu Provider 失败的根因仍未定位，保留原始记录和后续复验结果。
+- 旧模板、UnityPackage 和旧备份格式按 M11，正式签名和发行装配按 M12。M9 等待独立实施授权。

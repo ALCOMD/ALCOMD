@@ -4,9 +4,9 @@
 
 ## 当前阶段
 
-**M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
+**M8 已收尾，M9 实施待授权。** M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。
 
-2026-11-20 [三传输隔离夹具远端复验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-三传输隔离夹具远端复验)。`622cb62a` 已按授权推送。自动 CI `44566846494` 首轮 `failure`，Windows 与 Ubuntu 全部门禁通过，各自 Chromium 734/0，Ubuntu 的 OAuth 综合和 Provider 均通过。macOS 因 GitHub arm64 运行器容量不足被取消，未执行步骤。同 SHA CodeQL `44566846484` 四项分析通过。待同 SHA macOS 验收。
+2026-11-20 [三传输隔离夹具远端复验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-三传输隔离夹具远端复验)。`622cb62a` 已按授权推送。自动 CI `44566846494` 首轮 `failure`，Windows 与 Ubuntu 全部门禁通过，各自 Chromium 734/0，Ubuntu 的 OAuth 综合和 Provider 均通过。macOS 因 GitHub arm64 运行器容量不足被取消，未执行步骤。同 SHA CodeQL `44566846484` 四项分析通过。macOS 同 SHA 验收延期。
 
 2026-11-20 [Unix OAuth 夹具远端复验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-unix-oauth-夹具远端复验)。`36137b6c` 的自动 CI `44551756595` 首轮总体失败，Windows 全部门禁通过（Chromium 734/0），macOS 和 Ubuntu 通过原编译与仓库复验，随后均在综合用例的 STDIO 探测失败。Ubuntu 另有六项 `AlreadyRunning` 和一项独立 Provider 计划失败。同 SHA CodeQL `44551755201` 四项分析通过。`78b90927` 修复三传输隔离端点，`622cb62a` 补充 Provider 错误码诊断；Windows 合计四个定向用例分别通过，Unix 复验依赖下一次获准推送。
 
@@ -356,6 +356,6 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 - 最终功能证据绑定`c46f7544`；此前候选的失败、分轮结果和历史三平台基线分别保留，不替代本轮完整通过。收尾文档为后续独立提交，不声称其新CI已完成。
 - 14项原有`#[ignore]`未全部直接单跑；子进程入口部分由父回归调用，联网VRCFury、Windows单实例/注册表、显式公开仓库快照及专用HTTP/代理隔离项不计作本轮直接通过。
 - v3 真实工程差分夹具仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
-- M7已正式完成；按所有者新授权进入M8既有能力核对与缺失实现，不自动推送、发布或打标签。
+- M7 已正式完成，M8 已按所有者要求收尾。M9 等待实施授权。
 
 [M7 状态与验收历史](testing/m7-status-history-through-20261107.md) 保存原状态页的候选、签收、遗留事项、失败轮次及证据链接。
