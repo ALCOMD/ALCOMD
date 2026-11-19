@@ -411,7 +411,6 @@ impl State {
             return protocol_rejected(StatusCode::BAD_REQUEST, Value::Null, -32600);
         }
         let id = value["id"].clone();
-        let required_scopes = oauth::tool_scopes(value["params"]["name"].as_str());
         let method = value["method"].as_str().unwrap_or_default();
         if !matches!(
             method,
@@ -501,7 +500,7 @@ impl State {
         } else {
             sdk.handle(request).await
         };
-        if let Some(issuer) = &self.oauth_issuer {
+        if self.oauth_issuer.is_some() {
             let rejection = service
                 .core
                 .lock()
@@ -511,14 +510,6 @@ impl State {
             match rejection {
                 Some(alcomd_client::OAuthRejection::InvalidToken) => {
                     return self.unauthorized(true);
-                }
-                Some(alcomd_client::OAuthRejection::InsufficientScope) => {
-                    return oauth::challenge(
-                        issuer,
-                        StatusCode::FORBIDDEN,
-                        Some("insufficient_scope"),
-                        required_scopes,
-                    );
                 }
                 None => {}
             }
@@ -562,7 +553,7 @@ impl State {
                 issuer,
                 StatusCode::UNAUTHORIZED,
                 invalid.then_some("invalid_token"),
-                &["projects.read"],
+                &["mcp"],
             ),
             None => rejected(StatusCode::UNAUTHORIZED),
         }

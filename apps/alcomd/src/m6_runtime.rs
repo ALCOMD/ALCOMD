@@ -860,8 +860,6 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
                     | "host-mcp-runtime.snapshot"
                     | "host-mcp-transport.snapshot"
                     | "host-mcp-clients.list"
-                    | "host-mcp-clients.grants"
-                    | "host-mcp-clients.projects"
             )
         }
         ExtensionInvocationKind::InteractiveUiAction => matches!(
@@ -873,10 +871,7 @@ fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
                 | "host-mcp-runtime.snapshot"
                 | "host-mcp-transport.snapshot"
                 | "host-mcp-clients.list"
-                | "host-mcp-clients.grants"
-                | "host-mcp-clients.projects"
                 | "host-mcp-clients.create"
-                | "host-mcp-clients.change-grants"
                 | "host-mcp-clients.revoke"
         ),
         ExtensionInvocationKind::InteractiveUiClose => false,
@@ -1352,10 +1347,7 @@ mod tests {
         }
         for capability in [
             "host-mcp-clients.list",
-            "host-mcp-clients.grants",
-            "host-mcp-clients.projects",
             "host-mcp-clients.create",
-            "host-mcp-clients.change-grants",
             "host-mcp-clients.revoke",
         ] {
             assert!(!capability_allowed(
@@ -1372,12 +1364,7 @@ mod tests {
             ));
             assert_eq!(
                 capability_allowed(ExtensionInvocationKind::InteractiveUiRender, capability),
-                matches!(
-                    capability,
-                    "host-mcp-clients.list"
-                        | "host-mcp-clients.grants"
-                        | "host-mcp-clients.projects"
-                )
+                matches!(capability, "host-mcp-clients.list")
             );
         }
         for capability in [

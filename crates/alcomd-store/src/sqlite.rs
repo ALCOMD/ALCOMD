@@ -58,6 +58,7 @@ const MIGRATION_V38: &str = include_str!("../migrations/0038_extension_mcp_tools
 const MIGRATION_V39: &str = include_str!("../migrations/0039_remove_publisher_trust.sql");
 const MIGRATION_V42: &str = include_str!("../migrations/0042_extension_remote_sources.sql");
 const MIGRATION_V43: &str = include_str!("../migrations/0043_mcp_transport_observations.sql");
+const MIGRATION_V44: &str = include_str!("../migrations/0044_mcp_connection_access.sql");
 const MIGRATION_V41: &str = include_str!("../migrations/0041_extension_install_consent.sql");
 const MIGRATION_V40: &str = include_str!("../migrations/0040_mcp_runtime_observations.sql");
 
@@ -317,6 +318,14 @@ pub(super) fn initialize_connection_with_report(
     if final_version == 42 {
         connection
             .execute_batch(MIGRATION_V43)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    let final_version: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if final_version == 43 {
+        connection
+            .execute_batch(MIGRATION_V44)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -1868,3 +1877,7 @@ mod install_consent_tests;
 #[cfg(test)]
 #[path = "sqlite_remote_sources_tests.rs"]
 mod remote_sources_tests;
+
+#[cfg(test)]
+#[path = "sqlite_connection_access_tests.rs"]
+mod connection_access_migration_tests;

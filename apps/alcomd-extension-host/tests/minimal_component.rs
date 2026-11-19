@@ -22,7 +22,7 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
     let component = root.join("extension.wasm");
     std::fs::write(
         &component,
-        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm"),
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
     )
     .expect("actual guest component");
     let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
@@ -94,7 +94,34 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
             error: None,
         },
     );
-    let result = read_host_message(&mut output).expect("readable error document");
+    let mut seq = 4;
+    let result = loop {
+        let result = read_host_message(&mut output).expect("readable error document");
+        let HostMessageBody::CapabilityCall {
+            ref call_id,
+            ref capability,
+            ..
+        } = result.body
+        else {
+            break result;
+        };
+        assert!(
+            capability.starts_with("host-mcp-runtime.")
+                || capability.starts_with("host-mcp-transport.")
+        );
+        send(
+            &mut input,
+            epoch,
+            instance,
+            seq,
+            HostMessageBody::CapabilityResult {
+                call_id: call_id.clone(),
+                result: Some(json!({"error":{"code":"permission-denied","diagnosticId":null}})),
+                error: None,
+            },
+        );
+        seq += 1;
+    };
     let HostMessageBody::ExportResult {
         result: Some(document),
         error: None,
@@ -111,7 +138,7 @@ fn management_component_links_new_import_and_keeps_permission_failure_readable()
     assert!(text.contains("neutral"));
     assert!(!text.contains("permission-denied"));
     assert!(!text.contains("创建客户端"));
-    send(&mut input, epoch, instance, 4, HostMessageBody::Shutdown);
+    send(&mut input, epoch, instance, seq, HostMessageBody::Shutdown);
     drop(input);
     assert!(child.wait().expect("Host exit").success());
     std::fs::remove_dir_all(root).expect("cleanup");

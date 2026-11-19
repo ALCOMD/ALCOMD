@@ -193,7 +193,6 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
         .mcp_client_create(McpClientsCreateParams {
             display_name: "CLI isolated client".into(),
             idempotency_key: "cli-create".into(),
-            grants: vec![],
         })
         .await
         .expect("zero grants");
@@ -302,7 +301,7 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
         .await
         .expect("authoritative final record");
     assert_eq!(current.items[0].revision, 3);
-    assert!(current.items[0].grants.is_empty());
+    assert!(current.items[0].revoked_at_ms.is_none());
     assert!(
         AlcomdClient::connect(config.clone().with_mcp_credential(secret.clone()))
             .await
@@ -343,7 +342,7 @@ async fn mcp_cli_issues_once_and_broken_stdout_never_reissues() {
         .await
         .expect("one closed-pipe rotation");
     assert_eq!(current.items[0].revision, 4);
-    assert!(current.items[0].grants.is_empty());
+    assert!(current.items[0].revoked_at_ms.is_none());
     shutdown.store(true, Ordering::Release);
     assert!(daemon.await.expect("shutdown isolated Core").is_ok());
     if let Some(path) = runtime {
@@ -368,11 +367,6 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
     let record = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth CLI isolated".into(),
-            grants: vec![McpClientGrant {
-                permission: "state.check".into(),
-                resource_kind: "global".into(),
-                resource_id: "*".into(),
-            }],
             idempotency_key: "cli-oauth-client".into(),
         })
         .await
@@ -518,7 +512,7 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
             redirect_uri: registration.redirect_uris[0].clone(),
             code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM".into(),
             code_challenge_method: "S256".into(),
-            scopes: vec!["state.check".into()],
+            scopes: vec!["mcp".into()],
             state: None,
         })
         .await
@@ -546,8 +540,6 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
             fp,
             "--idempotency-key",
             "cli-oauth-approve",
-            "--grant",
-            "state.check/global/*",
             "--yes",
         ],
     );
@@ -581,7 +573,7 @@ async fn oauth_cli_registration_and_consent_preserve_one_time_output_rules() {
         })
         .await
         .expect("real code exchange after CLI approval");
-    assert_eq!(token.scope, "state.check");
+    assert_eq!(token.scope, "mcp");
     let mut authenticated =
         AlcomdClient::connect(config.with_oauth_access(token.access_token, registration.resource))
             .await

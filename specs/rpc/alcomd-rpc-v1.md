@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config13 设置和 Unity Hub 打开。M7 已签收；M8 最小客户端身份合同已批准，具体实施状态见 `docs/status.md` 与 [客户端合同](m8-mcp-clients-v1.md)。
+状态：M1-M7 已完成人工验收。M8 实施状态见 `docs/status.md` 与 [客户端合同](m8-mcp-clients-v2.md)。
 
 ## 1. M1 合同范围
 
@@ -1180,8 +1180,8 @@ owner仅为内部归属，不在条目中暴露；operationId仅关联已接受�
 
 ## M8 OAuth（2026-11-15，所有者已批准）
 
-新增 `mcp.oauth.v1`、九个固定 typed RPC 和两个互斥 hello 身份分支，详见
-[OAuth RPC](m8-mcp-oauth-v1.md)及其 Schema；`system-hello.request.schema.json`
+现行 `mcp.oauth.v2` 保留九个 typed RPC 和两个互斥 hello 身份分支，详见
+[OAuth RPC](m8-mcp-oauth-v2.md)及其 Schema。`system-hello.request.schema.json`
 引用完整的 authentication 联合。`mcp-oauth-endpoint` 仅能执行 begin/finish/token/revoke，
 永不取得 owner；`mcp-oauth-access` 逐请求验证 Core 签发 token、audience 和当前授权。
 其余五个控制 RPC 仅 authenticated local-owner，沿用现有权限。

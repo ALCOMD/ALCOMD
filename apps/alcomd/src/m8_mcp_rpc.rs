@@ -3,8 +3,8 @@ use crate::{
     success_action,
 };
 use alcomd_application::{
-    AccessContext, McpClientId, McpGrant, McpIdentityApplication, McpIdentityError,
-    McpIdentityWrite, PrincipalId, mcp_credential_hash,
+    AccessContext, McpClientId, McpIdentityApplication, McpIdentityError, McpIdentityWrite,
+    PrincipalId, mcp_credential_hash,
 };
 use alcomd_protocol::*;
 use alcomd_store::StateStoreHandle;
@@ -26,16 +26,6 @@ pub(super) fn error(id: String, error: McpIdentityError, close: bool) -> Dispatc
     };
     error_action(Some(id), error, close)
 }
-fn grants(items: Vec<McpClientGrant>) -> Vec<McpGrant> {
-    items
-        .into_iter()
-        .map(|g| McpGrant {
-            permission: g.permission,
-            resource_kind: g.resource_kind,
-            resource_id: g.resource_id,
-        })
-        .collect()
-}
 fn id(value: &str) -> Result<McpClientId, McpIdentityError> {
     McpClientId::parse(value).map_err(|_| McpIdentityError::InvalidInput)
 }
@@ -46,7 +36,7 @@ pub(super) async fn dispatch(
     store: &StateStoreHandle,
     access: &AccessContext,
 ) -> DispatchAction {
-    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_CLIENTS_V1) {
+    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_CLIENTS_V2) {
         return action;
     }
     let service = McpIdentityApplication::new(store.clone());
@@ -70,19 +60,6 @@ pub(super) async fn dispatch(
                     p.idempotency_key,
                     McpIdentityWrite::Create {
                         name: p.display_name,
-                        grants: grants(p.grants),
-                    },
-                )
-            }
-            METHOD_MCP_CLIENTS_SET_GRANTS => {
-                let p: McpClientsSetGrantsParams = serde_json::from_value(request.params)
-                    .map_err(|_| McpIdentityError::InvalidInput)?;
-                (
-                    p.idempotency_key,
-                    McpIdentityWrite::SetGrants {
-                        id: id(&p.client_id)?,
-                        expected: p.expected_revision,
-                        grants: grants(p.grants),
                     },
                 )
             }
@@ -213,7 +190,7 @@ mod tests {
             "capability_required"
         );
         assert!(store.mcp_clients().await.expect("no mutation").is_empty());
-        state.capabilities.insert(CAPABILITY_MCP_CLIENTS_V1.into());
+        state.capabilities.insert(CAPABILITY_MCP_CLIENTS_V2.into());
         let unprivileged = AccessContext::new(
             PrincipalId::parse("test:unprivileged").expect("principal"),
             [],

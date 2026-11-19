@@ -1,5 +1,7 @@
 # MCP management Host interface v1
 
+Historical contract. See [MCP management Host interface v2](mcp-management-v2.md) for the current interface.
+
 Status: approved by the owner on 2026-11-14; implementation evidence is tracked in the M8 ExecPlan.
 
 The exact additive interface is `alcomd:mcp-management/clients@1.0.0`; the new world

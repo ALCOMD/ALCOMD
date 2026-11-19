@@ -60,7 +60,6 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Catalog A".into(),
-            grants: Vec::new(),
             idempotency_key: "catalog-a".into(),
         })
         .await
@@ -68,7 +67,6 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Catalog B".into(),
-            grants: grants(true),
             idempotency_key: "catalog-b".into(),
         })
         .await
@@ -92,22 +90,6 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
     let sa = sdk(&ca.credential, None).await;
     let sb = sdk(&cb.credential, None).await;
     let mut trace = Vec::new();
-    error(
-        call(&sa, &mut trace, "search_packages", json!({}))
-            .await
-            .expect("zero grant result"),
-        "permission_denied",
-    );
-    let a = update(
-        &mut owner,
-        &McpClientRecord {
-            revision: ca.revision,
-            ..a
-        },
-        grants(true),
-        "catalog-authorize",
-    )
-    .await;
     let first = data(
         call(&sa, &mut trace, "search_packages", json!({"limit":1}))
             .await
@@ -409,7 +391,14 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .get("operations"),
         Some(&json!([]))
     );
-    update(&mut owner, &a, Vec::new(), "catalog-revoke").await;
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: a.client_id,
+            expected_revision: ca.revision,
+            idempotency_key: "catalog-revoke".into(),
+        })
+        .await
+        .expect("revoke connection");
     error(
         call(
             &sa,

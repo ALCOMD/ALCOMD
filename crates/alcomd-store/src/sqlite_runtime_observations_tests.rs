@@ -96,7 +96,10 @@ fn state40_real_initializer_preserves_data_and_does_not_regrant_on_reopen() {
     drop(db);
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("State40 fixture");
-        assert_eq!(publisher_trust_removal_tests::snapshot(&db), before);
+        assert_eq!(
+            publisher_trust_removal_tests::snapshot(&db),
+            connection_access_migration_tests::expected_state44(before.clone())
+        );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("State40 fixture"),

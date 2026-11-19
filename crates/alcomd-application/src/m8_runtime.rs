@@ -499,20 +499,25 @@ mod tests {
         );
     }
     #[test]
-    fn observation_permissions_cannot_become_external_business_grants() {
-        for permission in ["mcp.connections.read", "mcp.requests.read"] {
-            assert!(
-                crate::validate_mcp_grants(&[crate::McpGrant {
-                    permission: permission.into(),
-                    resource_kind: "global".into(),
-                    resource_id: "*".into()
-                }])
-                .is_err()
-            );
+    fn mcp_connection_does_not_grant_extension_observation_permissions() {
+        let id = crate::McpClientId::new();
+        let client = crate::McpClient {
+            client_id: id,
+            principal_id: alcomd_domain::PrincipalId::parse(format!("mcp:{id}"))
+                .expect("principal"),
+            display_name: "test".into(),
+            revision: 1,
+            created_at_ms: 0,
+            revoked_at_ms: None,
+        };
+        let access = crate::mcp_access(&client).expect("client");
+        for permission in [
+            alcomd_domain::Permission::McpConnectionsRead,
+            alcomd_domain::Permission::McpRequestsRead,
+            alcomd_domain::Permission::McpSubscriptionStreamsRead,
+        ] {
+            assert!(access.require(permission).is_err());
         }
-        let access = AccessContext::local_owner().with_mcp_identity();
-        let read = RuntimeReadAccess::from_client(&access);
-        assert!(!read.connections && !read.requests);
     }
     #[test]
     fn overflow_is_explicit_bounded_and_clears_when_untracked_connection_closes() {

@@ -1,9 +1,9 @@
 use super::*;
 use alcomd_protocol::{
     McpClientMutationParams, McpClientsCreateParams, McpClientsListParams,
-    McpClientsSetGrantsParams, McpTransportConnectionInput, McpTransportConnectionStage,
-    McpTransportKind, McpTransportMethod, McpTransportReport, McpTransportRequestInput,
-    McpTransportRequestStage, McpTransportStreamInput, UiFieldValue, UiSnapshot, UiSubmittedField,
+    McpTransportConnectionInput, McpTransportConnectionStage, McpTransportKind, McpTransportMethod,
+    McpTransportReport, McpTransportRequestInput, McpTransportRequestStage,
+    McpTransportStreamInput, UiFieldValue, UiSnapshot, UiSubmittedField,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -211,7 +211,6 @@ async fn runtime_snapshot_rpc_tracks_authoritative_ids_disconnect_revocation_and
             .mcp_client_create(McpClientsCreateParams {
                 display_name: format!("Observed client {index}"),
                 idempotency_key: format!("observe-create-{index}"),
-                grants: vec![],
             })
             .await
             .expect("create client");
@@ -399,7 +398,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         "Core activity fixture",
         &profile,
         &[
-            "alcomd:mcp-management/clients@1.0.0",
+            "alcomd:mcp-management/clients@2.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
             "alcomd:mcp-transport/observations@1.0.0",
         ],
@@ -422,7 +421,6 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             .mcp_client_create(McpClientsCreateParams {
                 display_name: format!("Isolated runtime {index}"),
                 idempotency_key: format!("runtime-create-{index}"),
-                grants: vec![],
             })
             .await
             .expect("real runtime observation fixture");
@@ -570,10 +568,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
             assert!(!document.contains("idempotency"));
             gate.release();
             let (mcp, result) = call.await.expect("real runtime observation fixture");
-            assert!(
-                matches!(result,Err(ClientError::Remote(error)) if error.code=="permission_denied"),
-                "zero grants still reject the actual use case"
-            );
+            assert!(result.is_ok(), "connected identity can read the projects");
             connections.push(mcp);
             let narrowed = |permissions: Vec<alcomd_application::Permission>| {
                 alcomd_application::AccessContext::new(
@@ -838,10 +833,14 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
     let profile = format!("[permissions]{permissions}\n[ui]\nprotocol = \"portable-v1\"\n");
     create_signed_package_with_interfaces(
         &package,
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm"),
+        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
         "MCP management fixture",
         &profile,
-        &["alcomd:mcp-management/clients@1.0.0"],
+        &[
+            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-runtime/observations@1.0.0",
+            "alcomd:mcp-transport/observations@1.0.0",
+        ],
         "AGPL-3.0-only",
     );
     let (ipc, config) = isolated_ipc(runtime);
@@ -858,7 +857,6 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         .mcp_client_create(McpClientsCreateParams {
             display_name: "授权后才可见的客户端".into(),
             idempotency_key: "optional-management-seed".into(),
-            grants: vec![],
         })
         .await
         .expect("owner seed");
@@ -1039,10 +1037,14 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     let package = fixture.path().join("management.alcomdextension");
     create_signed_package_with_interfaces(
         &package,
-        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-management-v1.wasm"),
+        include_bytes!("../../../../crates/alcomd-testing/fixtures/m8/mcp-runtime-v1.wasm"),
         "MCP management fixture",
         "[permissions]\nrequired = [\"mcp.clients.read\"]\noptional = [\"mcp.clients.manage\",\"projects.read\"]\n\n[ui]\nprotocol = \"portable-v1\"\n",
-        &["alcomd:mcp-management/clients@1.0.0"],
+        &[
+            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-runtime/observations@1.0.0",
+            "alcomd:mcp-transport/observations@1.0.0",
+        ],
         "AGPL-3.0-only",
     );
     let (ipc, config) = isolated_ipc(runtime);
@@ -1060,11 +1062,9 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .mcp_client_create(McpClientsCreateParams {
             display_name: "真实 Core 客户端".into(),
             idempotency_key: "management-seed".into(),
-            grants: vec![],
         })
         .await
         .expect("real record");
-    assert!(created.grants.is_empty());
     let params = ExtensionPlanInstallParams {
         source_kind: ExtensionSourceKind::LocalOwnerSelected,
         package_path: package.to_string_lossy().into_owned(),
@@ -1176,7 +1176,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .expect("real new-world guest UI");
     let document = serde_json::to_string(&opened.snapshot.document).expect("safe document");
     assert!(document.contains("真实 Core 客户端"));
-    assert!(document.contains("查看权限"));
+    assert!(document.contains("查看客户端"));
     assert!(!document.contains("创建客户端"));
     assert!(!document.contains("credential"));
     // Closing/reopening exercises the real Host lifetime, not a renderer fixture.
@@ -1257,7 +1257,6 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     for (index, (permission, kind, id)) in [
         ("mcp.clients.read", "Global", "*"),
         ("mcp.clients.manage", "Global", "*"),
-        ("projects.read", "Global", "*"),
     ]
     .into_iter()
     .enumerate()
@@ -1277,7 +1276,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
                 idempotency_key: format!("management-authorize-{index}"),
             })
             .await
-            .expect("explicit management/project grants");
+            .expect("explicit extension management grants");
     }
     let opened = client
         .extension_ui_open(ExtensionUiOpenParams {
@@ -1311,7 +1310,6 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         .into_iter()
         .find(|item| item.display_name == "Created through real guest")
         .expect("new client");
-    assert!(record.grants.is_empty());
     assert_eq!(record.principal_id, format!("mcp:{}", record.client_id));
     let issued = client
         .mcp_client_issue_credential(McpClientMutationParams {
@@ -1328,7 +1326,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     )
     .await
     .expect("independent authenticated client");
-    assert!(mcp.project_get(project_id.clone()).await.is_err());
+    assert!(mcp.project_get(project_id.clone()).await.is_ok());
     refresh(&mut client, &mut snapshot).await;
     let document = serde_json::to_string(&snapshot.document).expect("scope document");
     assert!(!document.contains("AllowedProject"));
@@ -1350,8 +1348,15 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
     assert!(
         matches!(bad,Err(ClientError::Remote(error)) if error.code=="extension_ui_action_invalid")
     );
-    let draft = grant_form(&snapshot, "state.check", true);
-    dispatch(&mut client, &mut snapshot, &mut sequence, draft).await;
+
+    assert!(mcp.project_get(outside_id).await.is_ok());
+    dispatch(
+        &mut client,
+        &mut snapshot,
+        &mut sequence,
+        activate("revoke"),
+    )
+    .await;
     dispatch(
         &mut client,
         &mut snapshot,
@@ -1359,61 +1364,12 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         activate("cancel"),
     )
     .await;
-    assert!(
+    assert_eq!(
         current_client(&mut client, &record.client_id)
             .await
-            .grants
-            .is_empty()
+            .revision,
+        issued.revision
     );
-    add(&mut client, &mut snapshot, &mut sequence, "state.check").await;
-    add(&mut client, &mut snapshot, &mut sequence, "projects.read").await;
-    assert!(mcp.project_get(project_id.clone()).await.is_ok());
-    assert!(
-        mcp.project_get(outside_id.clone()).await.is_ok(),
-        "single read permission covers all registered projects"
-    );
-    let current = current_client(&mut client, &record.client_id).await;
-    let retained = current
-        .grants
-        .iter()
-        .filter(|grant| grant.permission != "state.check")
-        .cloned()
-        .collect();
-    client
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: record.client_id.clone(),
-            expected_revision: current.revision,
-            grants: retained,
-            idempotency_key: "management-concurrent-change".into(),
-        })
-        .await
-        .expect("real concurrent change");
-    add(&mut client, &mut snapshot, &mut sequence, "events.read").await;
-    assert!(
-        serde_json::to_string(&snapshot.document)
-            .expect("readable conflict")
-            .contains("记录已变化")
-    );
-    assert!(
-        !current_client(&mut client, &record.client_id)
-            .await
-            .grants
-            .iter()
-            .any(|g| g.permission == "events.read")
-    );
-    refresh(&mut client, &mut snapshot).await;
-    add(&mut client, &mut snapshot, &mut sequence, "events.read").await;
-    let disable_read = grant_form(&snapshot, "projects.read", false);
-    dispatch(&mut client, &mut snapshot, &mut sequence, disable_read).await;
-    dispatch(
-        &mut client,
-        &mut snapshot,
-        &mut sequence,
-        activate("confirm"),
-    )
-    .await;
-    assert!(mcp.project_get(project_id.clone()).await.is_err());
-    assert!(mcp.project_get(outside_id.clone()).await.is_err());
     dispatch(
         &mut client,
         &mut snapshot,
@@ -1548,38 +1504,6 @@ fn text(id: &str, value: &str) -> UiSubmittedField {
         },
     }
 }
-fn grant_form(snapshot: &UiSnapshot, permission: &str, enabled: bool) -> UiAction {
-    let value = serde_json::to_value(&snapshot.document).expect("public document");
-    let mut found = false;
-    let fields = value["nodes"]
-        .as_array()
-        .expect("nodes")
-        .iter()
-        .filter(|node| node["kind"] == "switch")
-        .map(|node| {
-            let id = node["payload"]["fieldId"].as_str().expect("field");
-            let checked = if id == permission {
-                found = true;
-                enabled
-            } else {
-                node["payload"]["initialValue"]
-                    .as_bool()
-                    .expect("authority")
-            };
-            UiSubmittedField {
-                field_id: id.into(),
-                value: UiFieldValue::Boolean { value: checked },
-            }
-        })
-        .collect::<Vec<_>>();
-    assert!(found);
-    assert_eq!(fields.len(), 8);
-    UiAction::SubmitForm {
-        action_id: "permissions".into(),
-        values: fields,
-    }
-}
-
 fn activate(id: &str) -> UiAction {
     UiAction::Activate {
         action_id: id.into(),
@@ -1610,16 +1534,6 @@ async fn dispatch(
         .document
         .validate()
         .expect("unchanged public UI contract");
-}
-async fn add(
-    client: &mut AlcomdClient,
-    snapshot: &mut UiSnapshot,
-    sequence: &mut u64,
-    permission: &str,
-) {
-    let action = grant_form(snapshot, permission, true);
-    dispatch(client, snapshot, sequence, action).await;
-    dispatch(client, snapshot, sequence, activate("confirm")).await;
 }
 async fn refresh(client: &mut AlcomdClient, snapshot: &mut UiSnapshot) {
     tokio::time::sleep(Duration::from_millis(1050)).await;
@@ -1724,7 +1638,6 @@ async fn accepted_ui_write_survives_lost_reply_and_connection_close(
         .collect();
     assert_eq!(accepted.len(), 1);
     assert_eq!(accepted[0].revision, 1);
-    assert!(accepted[0].grants.is_empty());
 }
 async fn native_ui_connection(ipc: &IpcConfig) -> alcomd_platform::IpcStream {
     let mut stream = alcomd_platform::connect(ipc)
@@ -1740,7 +1653,7 @@ async fn native_ui_connection(ipc: &IpcConfig) -> alcomd_platform::IpcStream {
         },
         capabilities: vec![
             alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1.into(),
-            alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.into(),
+            alcomd_protocol::CAPABILITY_MCP_CLIENTS_V2.into(),
         ],
     };
     send_ui_request(

@@ -1,7 +1,7 @@
 use crate::StateStoreHandle;
 use alcomd_application::McpClientId;
 use alcomd_application::{
-    McpClient, McpGrant, McpIdentityError as E, McpIdentityStore, McpIdentityWrite as W,
+    McpClient, McpIdentityError as E, McpIdentityStore, McpIdentityWrite as W,
     McpIdentityWriteResult as R, PrincipalId, mcp_credential_hash,
 };
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -12,14 +12,6 @@ fn unavailable<T>(_: T) -> E {
 }
 pub(super) fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
     let mut record=db.query_row("SELECT client_id,principal_id,display_name,revision,created_at_ms,revoked_at_ms FROM mcp_clients WHERE client_id=?1",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,Option<i64>>(5)?))).optional().map_err(unavailable)?.ok_or(E::PermissionDenied)?;
-    let revision = db
-        .query_row(
-            "SELECT grant_revision FROM mcp_clients WHERE client_id=?1",
-            [id],
-            |r| r.get::<_, i64>(0),
-        )
-        .map_err(unavailable)?;
-    let grants = grant_snapshot(db, id, revision)?;
     Ok(McpClient {
         client_id: McpClientId::parse(&record.0).map_err(unavailable)?,
         principal_id: PrincipalId::parse(std::mem::take(&mut record.1)).map_err(unavailable)?,
@@ -31,36 +23,7 @@ pub(super) fn client(db: &Connection, id: &str) -> Result<McpClient, E> {
             .map(u64::try_from)
             .transpose()
             .map_err(unavailable)?,
-        grants,
     })
-}
-pub(super) fn grant_snapshot(db: &Connection, id: &str, revision: i64) -> Result<Vec<McpGrant>, E> {
-    let mut q=db.prepare("SELECT permission,resource_kind,resource_id FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=?2 ORDER BY permission,resource_kind,resource_id").map_err(unavailable)?;
-    let items = q
-        .query_map(params![id, revision], |r| {
-            Ok(McpGrant {
-                permission: r.get(0)?,
-                resource_kind: r.get(1)?,
-                resource_id: r.get(2)?,
-            })
-        })
-        .map_err(unavailable)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(unavailable)?;
-    alcomd_application::validate_mcp_grants(&items).map_err(unavailable)?;
-    Ok(items)
-}
-fn grants(db: &Connection, id: &str, revision: i64, items: Vec<McpGrant>) -> Result<(), E> {
-    alcomd_application::validate_mcp_grants(&items)?;
-    for g in items {
-        db.execute("INSERT INTO mcp_client_grants(client_id,grant_revision,permission,resource_kind,resource_id) VALUES (?1,?2,?3,?4,?5)",params![id,revision,g.permission,g.resource_kind,g.resource_id]).map_err(unavailable)?;
-    }
-    db.execute(
-        "UPDATE mcp_clients SET grant_revision=?2 WHERE client_id=?1",
-        params![id, revision],
-    )
-    .map_err(unavailable)?;
-    Ok(())
 }
 fn write(
     db: &mut Connection,
@@ -81,47 +44,15 @@ pub(super) fn write_on(
     tx: &rusqlite::Transaction<'_>,
     actor: PrincipalId,
     key: String,
-    mut command: W,
+    command: W,
     now: u64,
 ) -> Result<R, E> {
-    if let W::Create { grants, .. } | W::SetGrants { grants, .. } = &command {
-        alcomd_application::validate_mcp_grants(grants)?;
-    }
-    if let W::ChangeGrants { add, remove, .. } = &mut command {
-        alcomd_application::validate_mcp_grant_delta(add, remove)?;
-        for items in [add, remove] {
-            items.sort_by(|a, b| {
-                (&a.permission, &a.resource_kind, &a.resource_id).cmp(&(
-                    &b.permission,
-                    &b.resource_kind,
-                    &b.resource_id,
-                ))
-            });
-        }
-    }
     let now = i64::try_from(now).map_err(|_| E::InvalidInput)?;
     let (method, input) = match &command {
-        W::Create { name, grants } => ("mcp.clients.create", serde_json::json!([name, grants])),
-        W::SetGrants {
-            id,
-            expected,
-            grants,
-        } => (
-            "mcp.clients.setGrants",
-            serde_json::json!([id, expected, grants]),
-        ),
+        W::Create { name } => ("mcp.clients.create", serde_json::json!([name])),
         W::Issue { id, expected, .. } => (
             "mcp.clients.issueCredential",
             serde_json::json!([id, expected]),
-        ),
-        W::ChangeGrants {
-            id,
-            expected,
-            add,
-            remove,
-        } => (
-            "host-mcp-clients.change-grants",
-            serde_json::json!([id, expected, add, remove]),
         ),
         W::Revoke { id, expected } => ("mcp.clients.revoke", serde_json::json!([id, expected])),
     };
@@ -141,22 +72,11 @@ pub(super) fn write_on(
         if matches!(command, W::Issue { .. }) {
             return Err(E::CredentialResponseUnavailable);
         }
-        let mut saved: serde_json::Value = serde_json::from_str(&response).map_err(unavailable)?;
-        let client_id = saved["client"]["clientId"].as_str().ok_or(E::Unavailable)?;
-        let revision = saved["grantRevision"].as_i64().ok_or(E::Unavailable)?;
-        let snapshot = grant_snapshot(tx, client_id, revision)?;
-        saved["client"]["grants"] = serde_json::to_value(snapshot).map_err(unavailable)?;
-        return Ok(R {
-            client: serde_json::from_value(saved["client"].clone()).map_err(unavailable)?,
-            credential_id: None,
-        });
+        return serde_json::from_str(&response).map_err(unavailable);
     }
     let mut credential_id = None;
     let id = match command {
-        W::Create {
-            name,
-            grants: items,
-        } => {
+        W::Create { name } => {
             let count: u32 = tx
                 .query_row("SELECT count(*) FROM mcp_clients", [], |r| r.get(0))
                 .map_err(unavailable)?;
@@ -169,15 +89,13 @@ pub(super) fn write_on(
                 params![id, format!("mcp:{id}"), name, now],
             )
             .map_err(unavailable)?;
-            grants(tx, &id, 1, items)?;
             id
         }
         command => {
             let (id, expected) = match &command {
-                W::SetGrants { id, expected, .. }
-                | W::ChangeGrants { id, expected, .. }
-                | W::Issue { id, expected, .. }
-                | W::Revoke { id, expected } => (id.to_string(), *expected),
+                W::Issue { id, expected, .. } | W::Revoke { id, expected } => {
+                    (id.to_string(), *expected)
+                }
                 W::Create { .. } => return Err(E::InvalidInput),
             };
             let current = client(tx, &id)?;
@@ -188,29 +106,6 @@ pub(super) fn write_on(
                 return Err(E::RevisionConflict);
             }
             match command {
-                W::SetGrants { grants: items, .. } => grants(
-                    tx,
-                    &id,
-                    i64::try_from(expected + 1).map_err(unavailable)?,
-                    items,
-                )?,
-                W::ChangeGrants { add, remove, .. } => {
-                    let mut items = current.grants;
-                    if remove.iter().any(|g| !items.contains(g))
-                        || add.iter().any(|g| items.contains(g))
-                    {
-                        return Err(E::InvalidInput);
-                    }
-                    items.retain(|g| !remove.contains(g));
-                    items.extend(add);
-                    alcomd_application::validate_mcp_grants(&items)?;
-                    grants(
-                        tx,
-                        &id,
-                        i64::try_from(expected + 1).map_err(unavailable)?,
-                        items,
-                    )?;
-                }
                 W::Issue { hash, .. } => {
                     tx.execute("UPDATE mcp_client_credentials SET revoked_at_ms=max(created_at_ms,?2) WHERE client_id=?1 AND revoked_at_ms IS NULL",params![id,now]).map_err(unavailable)?;
                     let cid = Uuid::new_v4().to_string();
@@ -239,19 +134,7 @@ pub(super) fn write_on(
         client: client(tx, &id)?,
         credential_id,
     };
-    let grant_revision = tx
-        .query_row(
-            "SELECT grant_revision FROM mcp_clients WHERE client_id=?1",
-            [&id],
-            |r| r.get::<_, i64>(0),
-        )
-        .map_err(unavailable)?;
-    let mut metadata = serde_json::to_value(&result.client).map_err(unavailable)?;
-    metadata
-        .as_object_mut()
-        .ok_or(E::Unavailable)?
-        .remove("grants");
-    let response=serde_json::json!({"client":metadata,"grantRevision":grant_revision,"credentialId":result.credential_id}).to_string();
+    let response = serde_json::to_string(&result).map_err(unavailable)?;
     // Record only the request digest and non-secret result, including for issuance.
     tx.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES (?1,?2,?3,?4,'completed',?5,?6)",params![actor.as_str(),method,key,fingerprint,response,now]).map_err(unavailable)?;
     Ok(result)
@@ -304,8 +187,8 @@ pub(super) fn project(
     principal: &PrincipalId,
     id: ProjectId,
 ) -> Result<ProjectRecord, M3Error> {
-    // Authorization is a join against current grants, never an owner substitution.
-    let owner=db.query_row("SELECT p.owner_principal_id FROM projects p JOIN mcp_client_grants g ON g.resource_id='*' AND g.resource_kind='global' AND g.permission='projects.read' JOIN mcp_clients c ON c.client_id=g.client_id AND g.grant_revision=c.grant_revision WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND p.project_id=?2",params![principal.as_str(),id.to_string()],|r|r.get::<_,String>(0)).optional().map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?.ok_or_else(||M3Error::new(M3ErrorCode::PermissionDenied))?;
+    // Read the resource using its recorded owner after checking the MCP identity.
+    let owner=db.query_row("SELECT p.owner_principal_id FROM projects p JOIN mcp_clients c ON c.principal_id=?1 WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND p.project_id=?2",params![principal.as_str(),id.to_string()],|r|r.get::<_,String>(0)).optional().map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?.ok_or_else(||M3Error::new(M3ErrorCode::PermissionDenied))?;
     let owner = PrincipalId::parse(owner).map_err(|_| M3Error::new(M3ErrorCode::Internal))?;
     crate::m3::get_project(db, &owner, id)
 }
@@ -344,7 +227,7 @@ fn authorized_projects_on(
     limit: u32,
     guard: Option<&alcomd_application::OAuthAccessGuard>,
 ) -> Result<ProjectPage, M3Error> {
-    let scope = if let Some(guard) = guard {
+    if let Some(guard) = guard {
         let now = super::m8_oauth::wall_time()
             .map_err(|_| M3Error::new(M3ErrorCode::StoreUnavailable))?;
         let limited = super::m8_oauth::authenticate(db, guard, now)
@@ -363,24 +246,12 @@ fn authorized_projects_on(
                         .fold(0u8, |difference, (a, b)| difference | (a ^ b))
                         == 0
             });
-            if !matches
-                || !limited.grants.iter().any(|g| {
-                    g.permission == "projects.read"
-                        && g.resource_kind == "global"
-                        && g.resource_id == "*"
-                })
-            {
+            if !matches {
                 return Err(M3Error::new(M3ErrorCode::RevisionConflict));
             }
         }
-        Some(
-            serde_json::to_string(&limited.grants)
-                .map_err(|_| M3Error::new(M3ErrorCode::Internal))?,
-        )
-    } else {
-        None
-    };
-    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c JOIN mcp_client_grants g USING(client_id) WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL AND g.grant_revision=c.grant_revision AND g.permission='projects.read' AND g.resource_kind='global' AND g.resource_id='*') AND (?5 IS NULL OR EXISTS (SELECT 1 FROM json_each(?5) WHERE json_extract(value,'$.permission')='projects.read' AND json_extract(value,'$.resourceKind')='global' AND json_extract(value,'$.resourceId')='*')) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
+    }
+    let mut q=db.prepare("SELECT p.project_id FROM projects p WHERE EXISTS (SELECT 1 FROM mcp_clients c WHERE c.principal_id=?1 AND c.revoked_at_ms IS NULL) AND (?2 IS NULL OR p.registered_at_ms<?2 OR (p.registered_at_ms=?2 AND p.project_id<?3)) ORDER BY p.registered_at_ms DESC,p.project_id DESC LIMIT ?4").map_err(|_|M3Error::new(M3ErrorCode::StoreUnavailable))?;
     let cursor_time = cursor
         .as_ref()
         .map(|c| i64::try_from(c.registered_at_ms))
@@ -393,7 +264,6 @@ fn authorized_projects_on(
                 cursor_time,
                 cursor.as_ref().map(|c| c.id.to_string()),
                 i64::from(limit) + 1,
-                scope,
             ],
             |r| r.get::<_, String>(0),
         )
@@ -439,8 +309,7 @@ mod tests {
     use alcomd_application::{IdempotencyKey, ManifestState, ProjectObservation, ProjectType};
 
     #[test]
-    fn accepted_removal_preserves_resource_owner_after_revocation_and_cannot_replay_without_grants()
-    {
+    fn revocation_blocks_replay_and_preserves_the_accepted_removal_and_existing_owner() {
         use alcomd_application::{
             PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction, Revision,
         };
@@ -471,28 +340,12 @@ mod tests {
         )
         .expect("register without filesystem access")
         .value;
-        let mut grants = vec![];
-        for permission in ["projects.read", "packages.manage"] {
-            grants.push(McpGrant {
-                permission: permission.into(),
-                resource_kind: "global".into(),
-                resource_id: "*".into(),
-            });
-        }
-        for permission in ["repositories.read", "packages.read", "operations.read"] {
-            grants.push(McpGrant {
-                permission: permission.into(),
-                resource_kind: "global".into(),
-                resource_id: "*".into(),
-            });
-        }
         let client = write(
             &mut db,
             owner.clone(),
             "create".into(),
             W::Create {
                 name: "Scoped writer".into(),
-                grants,
             },
             2,
         )
@@ -538,15 +391,14 @@ mod tests {
             &key,
             5,
         )
-        .expect("same grant replay");
+        .expect("same-key replay");
         assert_eq!(accepted.operation_id, replay.operation_id);
         assert!(replay.replayed);
         let mut nonremoval = draft();
         nonremoval.action = PlanAction::Install;
-        let install = crate::m4::create_package_plan(&mut db, &client.principal_id, nonremoval, 5)
-            .expect("frozen other action fixture");
+        let install = crate::m4::create_package_plan(&mut db, &client.principal_id, nonremoval, 5);
         assert!(
-            matches!(crate::m4::accept_package_plan(&mut db,&client.principal_id,install.plan_id,project.revision,&IdempotencyKey::parse("no-install").expect("key"),6),Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
+            matches!(install,Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
         );
         write(
             &mut db,
@@ -564,7 +416,7 @@ mod tests {
         );
         assert_eq!(
             crate::m4::operation_project(&db, accepted.operation_id)
-                .expect("accepted target, independent of revoked grants")
+                .expect("accepted target, independent of revoked client")
                 .project_id,
             project.project_id
         );
@@ -617,209 +469,5 @@ mod tests {
         )
         .expect("model a changed registered target identity");
         assert!(crate::m4::operation_project(&db, accepted.operation_id).is_err());
-    }
-
-    #[test]
-    fn unsupported_stored_grants_are_rejected_by_reads_and_idempotent_replays() {
-        let snapshot = |db: &Connection| {
-            [
-                "mcp_clients",
-                "mcp_client_grants",
-                "idempotency_records",
-                "sqlite_sequence",
-            ]
-            .map(|table| {
-                let mut query = db
-                    .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
-                    .expect("snapshot query");
-                let count = query.column_count();
-                query
-                    .query_map([], |row| {
-                        (0..count)
-                            .map(|i| row.get::<_, rusqlite::types::Value>(i))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .expect("snapshot")
-                    .collect::<Result<Vec<_>, _>>()
-                    .expect("rows")
-            })
-        };
-        for (permission, kind, resource) in [
-            (
-                "projects.read",
-                "project",
-                "00000000-0000-4000-8000-000000000001",
-            ),
-            (
-                "packages.manage",
-                "project",
-                "00000000-0000-4000-8000-000000000001",
-            ),
-            ("unknown.permission", "global", "*"),
-        ] {
-            let mut db = crate::sqlite::mcp_state32_fixture();
-            db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-                .expect("33");
-            db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
-                .expect("34");
-            let owner = PrincipalId::local_owner();
-            let request = || W::Create {
-                name: "Capabilities".into(),
-                grants: vec![],
-            };
-            let original = write(&mut db, owner.clone(), "create".into(), request(), 1)
-                .expect("create")
-                .client;
-            let id = original.client_id.to_string();
-            db.execute(
-                "INSERT INTO mcp_client_grants VALUES (?1,1,?2,?3,?4)",
-                params![id, permission, kind, resource],
-            )
-            .expect("unsupported stored input");
-            let before = snapshot(&db);
-            assert_eq!(
-                client(&db, &id).expect_err("unsupported current configuration"),
-                E::Unavailable
-            );
-            assert_eq!(
-                grant_snapshot(&db, &id, 1).expect_err("unsupported snapshot"),
-                E::Unavailable
-            );
-            assert_eq!(
-                write(&mut db, owner, "create".into(), request(), 2)
-                    .expect_err("unsupported original response"),
-                E::Unavailable
-            );
-            assert_eq!(
-                snapshot(&db),
-                before,
-                "no repair, conversion or mutation on read/replay"
-            );
-        }
-    }
-
-    #[test]
-    fn unsupported_large_snapshots_do_not_replay_or_gain_authority() {
-        let mut db = crate::sqlite::mcp_state32_fixture();
-        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-            .expect("State33");
-        db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
-            .expect("State34");
-        let owner = PrincipalId::local_owner();
-        let mut items = Vec::new();
-        for n in 0_u32..1024 {
-            let observation = ProjectObservation {
-                root_path: format!("C:/owned-fixture/{n}"),
-                path_identity_key: n.to_le_bytes().repeat(6),
-                project_type: ProjectType::Avatars,
-                unity_version: "2022.3.22f1".into(),
-                unity_revision: None,
-                vpm_manifest: ManifestState::Valid,
-                upm_manifest: ManifestState::Missing,
-                direct_dependencies: vec![],
-                locked_dependencies: vec![],
-                issues: vec![],
-            };
-            let project = crate::m3::register_project(
-                &mut db,
-                &owner,
-                observation,
-                &IdempotencyKey::parse(format!("seed-{n}")).expect("key"),
-                1,
-            )
-            .expect("isolated registry fixture")
-            .value;
-            items.push(McpGrant {
-                permission: "projects.read".into(),
-                resource_kind: "project".into(),
-                resource_id: project.project_id.to_string(),
-            });
-        }
-        // A genuine State34 record with its immutable, pre-State37 project grants.
-        // Evidence remains raw and immutable; runtime does not understand this format.
-        let id = Uuid::new_v4().to_string();
-        db.execute(
-            "INSERT INTO mcp_clients VALUES (?1,'mcp:'||?1,'Large ACL',1,2,NULL,1)",
-            [&id],
-        )
-        .expect("historical client");
-        for grant in &items {
-            db.execute(
-                "INSERT INTO mcp_client_grants VALUES (?1,1,?2,?3,?4)",
-                params![id, grant.permission, grant.resource_kind, grant.resource_id],
-            )
-            .expect("historical snapshot");
-        }
-        let original = McpClient {
-            client_id: McpClientId::parse(&id).expect("id"),
-            principal_id: PrincipalId::parse(format!("mcp:{id}")).expect("principal"),
-            display_name: "Large ACL".into(),
-            revision: 1,
-            created_at_ms: 2,
-            revoked_at_ms: None,
-            grants: items.clone(),
-        };
-        assert_eq!(
-            client(&db, &id).expect_err("unsupported stored configuration"),
-            E::Unavailable
-        );
-        let mut metadata = serde_json::to_value(&original).expect("metadata");
-        metadata.as_object_mut().expect("object").remove("grants");
-        let response = serde_json::json!({"client":metadata,"grantRevision":1,"credentialId":null})
-            .to_string();
-        let input = serde_json::json!(["Large ACL", items]);
-        let fingerprint = serde_json::to_string(
-            &mcp_credential_hash(&input.to_string())
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>(),
-        )
-        .expect("frozen request digest");
-        db.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES (?1,'mcp.clients.create','create',?2,'completed',?3,2)",params![owner.as_str(),fingerprint,response]).expect("historical compact response");
-        assert!(serde_json::to_vec(&original).expect("full result").len() > 65536);
-        let response_len:i64=db.query_row("SELECT length(response_json) FROM idempotency_records WHERE method='mcp.clients.create'",[],|r|r.get(0)).expect("compact record");
-        assert!(response_len < 65536);
-        for migration in [
-            include_str!("../migrations/0035_extension_mcp_permissions.sql"),
-            include_str!("../migrations/0036_mcp_oauth.sql"),
-            include_str!("../migrations/0037_capability_permission_switches.sql"),
-        ] {
-            db.execute_batch(migration).expect("approved cleanup");
-        }
-        let rejected = write(
-            &mut db,
-            owner,
-            "create".into(),
-            W::Create {
-                name: "Large ACL".into(),
-                grants: items.clone(),
-            },
-            4,
-        )
-        .expect_err("unsupported old request is not reinterpreted for replay");
-        assert_eq!(rejected, E::InvalidInput);
-        assert_eq!(
-            grant_snapshot(&db, &id, 1)
-                .expect_err("old response evidence is not a supported grant snapshot"),
-            E::Unavailable
-        );
-        let current = client(&db, &original.client_id.to_string()).expect("current authority");
-        assert!(current.grants.is_empty());
-        assert!(
-            alcomd_application::mcp_access(&current)
-                .expect("current identity")
-                .require(alcomd_application::Permission::ProjectsRead)
-                .is_err()
-        );
-        let denied = project(
-            &db,
-            &current.principal_id,
-            ProjectId::parse(&items[0].resource_id).expect("project ID"),
-        );
-        assert!(matches!(denied,Err(ref error) if error.code()==M3ErrorCode::PermissionDenied));
-        let retained: i64 = db
-            .query_row("SELECT count(*) FROM mcp_client_grants", [], |r| r.get(0))
-            .expect("history retained");
-        assert_eq!(retained, 1024);
     }
 }

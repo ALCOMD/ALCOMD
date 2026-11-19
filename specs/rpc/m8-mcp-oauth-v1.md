@@ -1,5 +1,7 @@
 # MCP OAuth v1
 
+Historical contract. The current RPC contract is [MCP OAuth v2](m8-mcp-oauth-v2.md).
+
 Owner approved 2026-11-15. The exact approved limits and boundaries are in the M8 ExecPlan's
 OAuth contract. `m8-mcp-oauth-v1.schema.json` defines the separate public DTOs. Advertise
 `mcp.oauth.v1` only when the Core use cases, typed client and real isolated flow are wired.

@@ -16,7 +16,7 @@ use alcomd_application::{
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
-    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_MCP_CLIENTS_V1, CAPABILITY_OPERATIONS_V1,
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_MCP_CLIENTS_V2, CAPABILITY_OPERATIONS_V1,
     CAPABILITY_STATE_CHECK_V1, ErrorResponse, Event, EventsListParams, EventsListResult,
     HelloParams, HelloResult, METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET,
     METHOD_OPERATIONS_LIST, METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS,
@@ -849,11 +849,6 @@ async fn dispatch_payload(
     if access.is_mcp_client() && !m8_mcp_rpc::allowed_client_method(&request.method) {
         return error_action(Some(request.id), RpcError::permission_denied(), false);
     }
-    if access.oauth_scope_denied(m8_oauth_rpc::required_scopes(&request.method)) {
-        let mut error = RpcError::permission_denied();
-        error.data = Some(serde_json::json!({"oauthError":"insufficient_scope"}));
-        return error_action(Some(request.id), error, false);
-    }
     let _observed_call = if access.is_mcp_client() {
         alcomd_application::ObservedCoreMethod::parse_static(&request.method).map(|method| {
             applications.mcp_runtime.begin_call(
@@ -1015,7 +1010,7 @@ async fn dispatch_hello(
                 )
                 .await
             {
-                Ok(authenticated) => Some(authenticated.client.client_id),
+                Ok(authenticated) => Some(authenticated.client_id),
                 Err(error) => return m8_oauth_rpc::error(request.id, error, true),
             }
         } else if let Some(hash) = mcp_hash {
@@ -1052,8 +1047,8 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
-        alcomd_protocol::CAPABILITY_MCP_OAUTH_V1,
-        CAPABILITY_MCP_CLIENTS_V1,
+        alcomd_protocol::CAPABILITY_MCP_OAUTH_V2,
+        CAPABILITY_MCP_CLIENTS_V2,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
@@ -1718,7 +1713,7 @@ mod tests {
         };
         let requested = [
             CAPABILITY_STATE_CHECK_V1,
-            CAPABILITY_MCP_CLIENTS_V1,
+            CAPABILITY_MCP_CLIENTS_V2,
             alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
             "unsupported.test-capability",
         ];
@@ -1757,7 +1752,7 @@ mod tests {
         assert_eq!(
             response.result.capabilities,
             [
-                CAPABILITY_MCP_CLIENTS_V1,
+                CAPABILITY_MCP_CLIENTS_V2,
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
                 CAPABILITY_STATE_CHECK_V1,
             ]
@@ -1766,7 +1761,7 @@ mod tests {
             action.complete_handshake,
             Some(HashSet::from([
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
-                CAPABILITY_MCP_CLIENTS_V1.to_owned(),
+                CAPABILITY_MCP_CLIENTS_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
             ]))
         );

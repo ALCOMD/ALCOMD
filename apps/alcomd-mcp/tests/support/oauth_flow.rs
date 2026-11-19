@@ -163,17 +163,6 @@ impl Https {
         .expect("frozen real SDK over verified TLS")
     }
     async fn start_request(&self, reg: &McpOAuthRegistration) -> (String, String) {
-        self.start_request_for_scopes(
-            reg,
-            "projects.read repositories.read repositories.manage packages.read packages.manage operations.read operations.cancel",
-        )
-        .await
-    }
-    async fn start_request_for_scopes(
-        &self,
-        reg: &McpOAuthRegistration,
-        scopes: &str,
-    ) -> (String, String) {
         let mut url = reqwest::Url::parse(&format!("{}/authorize", self.issuer)).expect("URL");
         url.query_pairs_mut().extend_pairs([
             ("client_id", reg.oauth_client_id.as_str()),
@@ -182,7 +171,7 @@ impl Https {
             ("code_challenge", CHALLENGE),
             ("code_challenge_method", "S256"),
             ("resource", reg.resource.as_str()),
-            ("scope", scopes),
+            ("scope", "mcp"),
             ("state", "isolated-state"),
         ]);
         let response = self.client.get(url).send().await.expect("authorize HTTP");
@@ -218,51 +207,27 @@ impl Https {
             .await
             .expect("finish HTTP")
     }
-    async fn code(
-        &self,
-        owner: &mut AlcomdClient,
-        reg: &McpOAuthRegistration,
-        allowed: &[McpClientGrant],
-    ) -> String {
+    async fn code(&self, owner: &mut AlcomdClient, reg: &McpOAuthRegistration) -> String {
         let (request, cookie) = self.start_request(reg).await;
-        self.approve_code(owner, allowed, request, cookie).await
+        self.approve_code(owner, request, cookie).await
     }
     async fn approve_code(
         &self,
         owner: &mut AlcomdClient,
-        allowed: &[McpClientGrant],
         request: String,
         cookie: String,
     ) -> String {
         let first = owner
             .oauth_request_get(McpOAuthRequestGetParams {
                 request_id: request.clone(),
-                cursor: None,
-                limit: Some(1),
             })
             .await
-            .expect("first review page");
-        let mut all = first.grants;
-        let mut cursor = first.next_cursor;
-        while let Some(c) = cursor {
-            let next = owner
-                .oauth_request_get(McpOAuthRequestGetParams {
-                    request_id: request.clone(),
-                    cursor: Some(c),
-                    limit: Some(1),
-                })
-                .await
-                .expect("next consistent page");
-            assert_eq!(next.approval_fingerprint, first.approval_fingerprint);
-            all.extend(next.grants);
-            cursor = next.next_cursor;
-        }
-        assert!(allowed.iter().all(|g| all.contains(g)));
+            .expect("owner review");
+        assert_eq!(first.scopes, ["mcp"]);
         owner
             .oauth_request_decide(McpOAuthRequestDecideParams {
                 request_id: request.clone(),
                 approve: true,
-                grants: allowed.to_vec(),
                 expected_fingerprint: first.approval_fingerprint,
                 idempotency_key: format!("consent-{request}"),
             })
@@ -451,14 +416,10 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         .expect("project ID");
     let settings = owner.settings_get().await.expect("current native settings");
     let args = json!({"project_id":project_id});
-    let grants = ["projects.read", "settings.read", "unity.read"]
-        .map(|permission| grant(permission, "global", "*"))
-        .to_vec();
     let actor = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Environment read fixture".into(),
             idempotency_key: "environment-client".into(),
-            grants: Vec::new(),
         })
         .await
         .expect("isolated client");
@@ -474,23 +435,6 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
         AlcomdClient::connect(config.client.clone().with_mcp_credential(issued.credential))
             .await
             .expect("same native routes with delegated identity");
-    assert!(delegated.settings_get().await.is_err());
-    assert!(
-        delegated
-            .unity_project_launch_config_get(project_id.clone())
-            .await
-            .is_err()
-    );
-    let actor = update(
-        &mut owner,
-        &McpClientRecord {
-            revision: issued.revision,
-            ..actor
-        },
-        grants.clone(),
-        "environment-grant",
-    )
-    .await;
     assert_eq!(
         delegated
             .settings_get()
@@ -512,36 +456,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
     let registration = registration(&mut owner, &http, &actor, false)
         .await
         .registration;
-    let (request, cookie) = http
-        .start_request_for_scopes(&registration, "projects.read settings.read unity.read")
-        .await;
-    let code = http
-        .approve_code(&mut owner, &grants[..2], request, cookie)
-        .await;
-    let restricted = http.exchange(&registration, &code, None).await;
-    let restricted = restricted["access_token"]
-        .as_str()
-        .expect("restricted token");
-    let denied = raw_tool(
-        &http,
-        restricted,
-        "alcomd_get_project_launch_config",
-        args.clone(),
-    )
-    .await;
-    assert_eq!(denied.status(), 403);
-    assert!(
-        denied.headers()["www-authenticate"]
-            .to_str()
-            .expect("challenge")
-            .contains("insufficient_scope")
-    );
-    let (request, cookie) = http
-        .start_request_for_scopes(&registration, "projects.read settings.read unity.read")
-        .await;
-    let code = http
-        .approve_code(&mut owner, &grants, request, cookie)
-        .await;
+    let code = http.code(&mut owner, &registration).await;
     let token = http.exchange(&registration, &code, None).await;
     let sdk = http
         .sdk(token["access_token"].as_str().expect("granted token"))
@@ -659,20 +574,27 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
     );
     assert_eq!(launch["effective_arguments"], json!(overrides));
     assert_eq!(launch["default_arguments"], json!(native.default_arguments));
-    update(
-        &mut owner,
-        &actor,
-        grants[..2].to_vec(),
-        "environment-revoke-unity",
-    )
-    .await;
-    error(
-        call(&sdk, &mut trace, "get_project_launch_config", args)
-            .await
-            .expect("revoked Core permission"),
-        "permission_denied",
+    let revoke = owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: actor.client_id,
+            expected_revision: issued.revision,
+            idempotency_key: "revoke-environment".into(),
+        })
+        .await
+        .expect("revoke connected client");
+    assert!(revoke.revoked_at_ms.is_some());
+    assert!(delegated.settings_get().await.is_err());
+    assert_eq!(
+        raw_tool(
+            &http,
+            token["access_token"].as_str().expect("token"),
+            "alcomd_get_project_launch_config",
+            args
+        )
+        .await
+        .status(),
+        401
     );
-    assert!(delegated.settings_get().await.is_ok());
     stop(sdk).await;
     http.finish_server().await;
     drop(delegated);
@@ -682,7 +604,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn oauth_backup_write_respects_consent_and_current_grants() {
+async fn oauth_backup_write_works_after_consent_until_revoked() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/m8-backup-oauth-tests")
@@ -729,16 +651,10 @@ async fn oauth_backup_write_respects_consent_and_current_grants() {
         .await
         .expect("registered project")
         .project;
-    let read = ["projects.read", "backups.read", "operations.read"]
-        .map(|permission| grant(permission, "global", "*"))
-        .to_vec();
-    let mut write = read.clone();
-    write.push(grant("backups.manage", "global", "*"));
     let actor = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Backup OAuth fixture".into(),
             idempotency_key: "oauth-backup-client".into(),
-            grants: write.clone(),
         })
         .await
         .expect("client has write grant");
@@ -751,48 +667,7 @@ async fn oauth_backup_write_respects_consent_and_current_grants() {
         "expected_revision": registered.revision.expect("registered revision"),
         "idempotency_key": "oauth-backup-exact-key"
     });
-    let (request, cookie) = http
-        .start_request_for_scopes(
-            &registration,
-            "projects.read backups.read backups.manage operations.read",
-        )
-        .await;
-    let code = http.approve_code(&mut owner, &read, request, cookie).await;
-    let read_token = http.exchange(&registration, &code, None).await;
-    let read_token = read_token["access_token"].as_str().expect("read token");
-    let reader = http.sdk(read_token).await;
-    let visible = reader.list_tools(None).await.expect("scoped tools").tools;
-    assert!(
-        visible
-            .iter()
-            .any(|tool| tool.name == "alcomd_list_backups")
-    );
-    assert!(
-        !visible
-            .iter()
-            .any(|tool| tool.name == "alcomd_create_backup")
-    );
-    let denied = raw_tool(&http, read_token, "alcomd_create_backup", args.clone()).await;
-    assert_eq!(denied.status(), 403);
-    assert!(
-        denied.headers()["www-authenticate"]
-            .to_str()
-            .expect("challenge")
-            .contains("insufficient_scope")
-    );
-    assert_eq!(
-        std::fs::read_dir(&archives)
-            .expect("no denied writes")
-            .count(),
-        0
-    );
-    let (request, cookie) = http
-        .start_request_for_scopes(
-            &registration,
-            "projects.read backups.read backups.manage operations.read",
-        )
-        .await;
-    let code = http.approve_code(&mut owner, &write, request, cookie).await;
+    let code = http.code(&mut owner, &registration).await;
     let write_token = http.exchange(&registration, &code, None).await;
     let write_token = write_token["access_token"].as_str().expect("write token");
     let writer = http.sdk(write_token).await;
@@ -817,14 +692,19 @@ async fn oauth_backup_write_respects_consent_and_current_grants() {
     );
     assert_eq!(replay["operation_id"], accepted["operation_id"]);
     assert_eq!(replay["replayed"], true);
-    update(&mut owner, &actor, read, "oauth-backup-revoke-write").await;
-    // The token still carries the consented scope. Core denies the business
-    // request because the client's current grant was removed.
-    error(
-        call(&writer, &mut trace, "create_backup", args)
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: actor.client_id,
+            expected_revision: actor.revision,
+            idempotency_key: "oauth-backup-revoke".into(),
+        })
+        .await
+        .expect("revoke connected client");
+    assert_eq!(
+        raw_tool(&http, write_token, "alcomd_create_backup", args)
             .await
-            .expect("revoked live grant gives a Core tool error"),
-        "permission_denied",
+            .status(),
+        401
     );
     assert_eq!(
         std::fs::read_dir(&archives)
@@ -833,7 +713,6 @@ async fn oauth_backup_write_respects_consent_and_current_grants() {
         1
     );
     stop(writer).await;
-    stop(reader).await;
     http.finish_server().await;
     drop(owner);
     shutdown.send(()).expect("stop fixture");
@@ -841,14 +720,14 @@ async fn oauth_backup_write_respects_consent_and_current_grants() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn oauth_package_scope_ceiling_and_anonymous_https_download() {
-    oauth_package_scope_and_https_download(false).await;
+async fn oauth_package_catalog_and_anonymous_https_download() {
+    oauth_package_catalog_and_https_download(false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn oauth_packages_use_parameterized_sources_and_download_authorization_without_extra_grants()
 {
-    oauth_package_scope_and_https_download(true).await;
+    oauth_package_catalog_and_https_download(true).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -892,15 +771,9 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         .expect("same native registry")
         .repository;
     let http = Https::start(&root, configuration.client).await;
-    let read_grants = [grant("repositories.read", "global", "*")];
-    let grants = vec![
-        read_grants[0].clone(),
-        grant("repositories.manage", "global", "*"),
-    ];
     let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Repository manager A".into(),
-            grants: grants.clone(),
             idempotency_key: "repository-manager-a".into(),
         })
         .await
@@ -908,7 +781,6 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Repository manager B".into(),
-            grants: grants.clone(),
             idempotency_key: "repository-manager-b".into(),
         })
         .await
@@ -919,16 +791,16 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     let reg_b = registration(&mut owner, &http, &b, false)
         .await
         .registration;
-    let code = http.code(&mut owner, &reg_a, &read_grants).await;
+    let code = http.code(&mut owner, &reg_a).await;
     let read_token = http.exchange(&reg_a, &code, None).await;
     let read_token = read_token["access_token"].as_str().expect("read access");
     let reader = http.sdk(read_token).await;
-    let code = http.code(&mut owner, &reg_a, &grants).await;
+    let code = http.code(&mut owner, &reg_a).await;
     let write_token = http.exchange(&reg_a, &code, None).await;
     let writer = http
         .sdk(write_token["access_token"].as_str().expect("write access"))
         .await;
-    let code = http.code(&mut owner, &reg_b, &grants).await;
+    let code = http.code(&mut owner, &reg_b).await;
     let foreign_token = http.exchange(&reg_b, &code, None).await;
     let foreign = http
         .sdk(
@@ -977,20 +849,6 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         call(&writer, &mut trace, "register_repository", unconfirmed)
             .await
             .is_err()
-    );
-    let denied = raw_tool(
-        &http,
-        read_token,
-        "alcomd_register_repository",
-        register.clone(),
-    )
-    .await;
-    assert_eq!(denied.status(), 403);
-    assert!(
-        denied.headers()["www-authenticate"]
-            .to_str()
-            .expect("scope")
-            .contains("repositories.manage")
     );
     error(
         call(
@@ -1108,18 +966,24 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         true
     );
     assert!(owner.repository_get(id.to_owned()).await.is_err());
-    update(
-        &mut owner,
-        &a,
-        read_grants.to_vec(),
-        "withdraw-repository-write",
-    )
-    .await;
-    error(
-        call(&writer, &mut trace, "register_repository", register)
-            .await
-            .expect("withdrawal returns a business denial even for a replay"),
-        "permission_denied",
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: a.client_id.clone(),
+            expected_revision: a.revision,
+            idempotency_key: "revoke-repository-client".into(),
+        })
+        .await
+        .expect("permanently revoke repository client");
+    assert_eq!(
+        raw_tool(
+            &http,
+            write_token["access_token"].as_str().expect("token"),
+            "alcomd_register_repository",
+            register
+        )
+        .await
+        .status(),
+        401
     );
     {
         let db = rusqlite::Connection::open_with_flags(
@@ -1154,7 +1018,7 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     drop(daemon);
 }
 
-async fn oauth_package_scope_and_https_download(protected: bool) {
+async fn oauth_package_catalog_and_https_download(protected: bool) {
     use std::io::{Cursor, Write};
     const PACKAGE: &str = "com.example.m8.https";
 
@@ -1247,7 +1111,6 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth package HTTPS fixture".into(),
-            grants: grants(true),
             idempotency_key: "oauth-package-client".into(),
         })
         .await
@@ -1255,12 +1118,7 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     let registration = registration(&mut owner, &http, &client, false)
         .await
         .registration;
-    let read = [
-        grant("repositories.read", "global", "*"),
-        grant("packages.read", "global", "*"),
-        grant("operations.read", "global", "*"),
-    ];
-    let code = http.code(&mut owner, &registration, &read).await;
+    let code = http.code(&mut owner, &registration).await;
     let token = http.exchange(&registration, &code, None).await;
     let read_token = token["access_token"].as_str().expect("read token");
     let reader = http.sdk(read_token).await;
@@ -1281,41 +1139,21 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
         .await
         .expect("read-only authorized directory");
     assert!(
-        !visible
+        visible
             .tools
             .iter()
             .any(|tool| tool.name == "alcomd_plan_package_install")
     );
-    error(call(&reader, &mut trace, "search_packages", json!({
-        "repository_id": repository_id, "project_id": project_id, "expected_revision": revision,
-    })).await.expect("project data requires project consent"), "permission_denied");
+    assert!(
+        visible
+            .tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_apply_package_changes")
+    );
     let arguments = json!({"project_id":project_id,"expected_revision":revision,"package_id":PACKAGE,
         "version_selector":{"kind":"latest_compatible"},"source":{"kind":"repository","repository_id":repository_id}});
-    let denied = raw_tool(
-        &http,
-        read_token,
-        "alcomd_plan_package_install",
-        arguments.clone(),
-    )
-    .await;
-    assert_eq!(
-        denied.status(),
-        403,
-        "client grants cannot exceed token consent"
-    );
-    assert!(
-        denied.headers()["www-authenticate"]
-            .to_str()
-            .expect("scope challenge")
-            .contains("insufficient_scope")
-    );
-
-    let code = http.code(&mut owner, &registration, &grants(false)).await;
-    let token = http.exchange(&registration, &code, None).await;
-    let plan_token = token["access_token"].as_str().expect("plan-only token");
-    let planner = http.sdk(plan_token).await;
     let plan = data(
-        call(&planner, &mut trace, "plan_package_install", arguments)
+        call(&reader, &mut trace, "plan_package_install", arguments)
             .await
             .expect("real latest-compatible plan"),
     );
@@ -1335,75 +1173,35 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     assert!(!plan.to_string().contains("isolated-vpm-package-fixture"));
     assert!(!installed.exists(), "planning does not publish files");
     let apply = json!({"plan_id":plan["plan"]["plan_id"],"expected_revision":revision,"idempotency_key":"oauth-https-apply","confirm":true});
-    let denied = raw_tool(
-        &http,
-        plan_token,
-        "alcomd_apply_package_changes",
-        apply.clone(),
-    )
-    .await;
-    assert_eq!(
-        denied.status(),
-        403,
-        "the planning token cannot accept a write"
-    );
+    let mut unconfirmed = apply.clone();
+    unconfirmed["confirm"] = json!(false);
     assert!(
-        denied.headers()["www-authenticate"]
-            .to_str()
-            .expect("apply challenge")
-            .contains("packages.manage")
+        call(&reader, &mut trace, "apply_package_changes", unconfirmed)
+            .await
+            .is_err()
     );
     assert!(
         !installed.exists(),
-        "rejected apply leaves no package files"
+        "unconfirmed apply leaves no package files"
     );
-
-    let write_grants: Vec<_> = grants(true)
-        .into_iter()
-        .filter(|grant| !grant.permission.starts_with("operations."))
-        .collect();
-    let code = http.code(&mut owner, &registration, &write_grants).await;
-    let token = http.exchange(&registration, &code, None).await;
-    let writer = http
-        .sdk(token["access_token"].as_str().expect("write token"))
-        .await;
     let accepted = data(
-        call(&writer, &mut trace, "apply_package_changes", apply.clone())
+        call(&reader, &mut trace, "apply_package_changes", apply.clone())
             .await
-            .expect("authorization for original Plan"),
+            .expect("use original Plan"),
     );
     let operation = accepted["operation_id"]
         .as_str()
         .expect("actual operation ID");
-    let denied = raw_tool(
-        &http,
-        token["access_token"].as_str().expect("write token"),
-        "alcomd_get_operation",
-        json!({"operation_id":operation}),
-    )
-    .await;
-    assert_eq!(
-        denied.status(),
-        403,
-        "write consent grants no operation read"
-    );
     let result = terminal(&reader, &mut trace, operation).await;
     assert_eq!(result["state"], "succeeded", "{result}");
-    let cancel_grants = [grant("operations.cancel", "global", "*")];
-    let code = http.code(&mut owner, &registration, &cancel_grants).await;
-    let token = http.exchange(&registration, &code, None).await;
-    let canceller = http
-        .sdk(token["access_token"].as_str().expect("cancel token"))
-        .await;
     error(
-        call(&canceller, &mut trace, "cancel_operation", json!({
+        call(&reader, &mut trace, "cancel_operation", json!({
             "operation_id":operation,"expected_revision":result["revision"],"idempotency_key":"cancel-after-completion",
         }))
         .await
         .expect("terminal task still reaches the shared Core cancellation rule"),
         "operation_not_cancellable",
     );
-    canceller.cancel().await.expect("close cancel client");
     assert_eq!(
         std::fs::read(installed.join("fixture.txt")).expect("installed archive payload"),
         b"verified anonymous HTTPS fixture"
@@ -1426,7 +1224,7 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     );
     drop(requests);
     let replay = data(
-        call(&writer, &mut trace, "apply_package_changes", apply)
+        call(&reader, &mut trace, "apply_package_changes", apply)
             .await
             .expect("existing idempotent result"),
     );
@@ -1438,16 +1236,14 @@ async fn oauth_package_scope_and_https_download(protected: bool) {
     )
     .expect("record package evidence");
     reader.cancel().await.expect("close read client");
-    planner.cancel().await.expect("close planning client");
-    writer.cancel().await.expect("close applying client");
     http.finish_server().await;
     drop(owner);
     drop(daemon);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
-    use rmcp::model::{ServerNotification, SubscriptionFilter};
+async fn oauth_live_subscriptions_follow_refresh_and_revocation() {
+    use rmcp::model::SubscriptionFilter;
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/m8-oauth-subscription-tests")
@@ -1465,11 +1261,9 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("native test owner");
-    let read = vec![grant("projects.read", "global", "*")];
     let mut client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth subscription fixture".into(),
-            grants: read.clone(),
             idempotency_key: "oauth-stream-client".into(),
         })
         .await
@@ -1487,7 +1281,7 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     let reg = registration(&mut owner, &http, &client, false)
         .await
         .registration;
-    let code = http.code(&mut owner, &reg, &read).await;
+    let code = http.code(&mut owner, &reg).await;
     let issued = http.exchange(&reg, &code, None).await;
     let access = issued["access_token"].as_str().expect("one-time access");
     let refresh = issued["refresh_token"].as_str().expect("one-time refresh");
@@ -1496,7 +1290,12 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
         .listen(SubscriptionFilter::builder().tools_list_changed().build())
         .await
         .expect("authenticated HTTPS subscription ack");
-    assert_eq!(a.list_all_tools().await.expect("read tools").len(), 2);
+    let initial_tools = a.list_all_tools().await.expect("all published tools");
+    assert!(
+        initial_tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_apply_package_changes")
+    );
     tokio::time::timeout(Duration::from_secs(7), async {
         loop {
             let snapshot = owner
@@ -1524,43 +1323,6 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     })
     .await
     .expect("OAuth identity bound through the actual TLS adapter");
-    client = update(&mut owner, &client, vec![], "oauth-stream-remove-read").await;
-    let changed = tokio::time::timeout(Duration::from_secs(4), stream_a.next())
-        .await
-        .expect("grant removal notification deadline")
-        .expect("valid notification")
-        .expect("change");
-    assert!(matches!(
-        changed,
-        ServerNotification::ToolListChangedNotification(_)
-    ));
-    assert!(
-        a.list_all_tools()
-            .await
-            .expect("current zero authority")
-            .is_empty()
-    );
-    let mut broader = read.clone();
-    broader.push(grant("operations.read", "global", "*"));
-    client = update(&mut owner, &client, broader, "oauth-stream-restore-read").await;
-    let changed = tokio::time::timeout(Duration::from_secs(4), stream_a.next())
-        .await
-        .expect("restore notification deadline")
-        .expect("valid notification")
-        .expect("change");
-    assert!(matches!(
-        changed,
-        ServerNotification::ToolListChangedNotification(_)
-    ));
-    let names: Vec<_> = a
-        .list_all_tools()
-        .await
-        .expect("frozen token ceiling")
-        .into_iter()
-        .map(|t| t.name.to_string())
-        .collect();
-    assert_eq!(names, ["alcomd_get_project", "alcomd_list_projects"]);
-
     let response = http
         .token(
             &reg,
@@ -1589,9 +1351,9 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     assert_eq!(
         b.list_all_tools()
             .await
-            .expect("refresh cannot widen ceiling")
+            .expect("refresh preserves catalogue")
             .len(),
-        2
+        initial_tools.len()
     );
     assert!(
         tokio::time::timeout(Duration::from_millis(1200), stream_a.next())
@@ -1629,7 +1391,7 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     stop(a).await;
     stop(b).await;
 
-    let code = http.code(&mut owner, &reg, &read).await;
+    let code = http.code(&mut owner, &reg).await;
     let issued = http.exchange(&reg, &code, None).await;
     let c = http
         .sdk(issued["access_token"].as_str().expect("new family access"))
@@ -1655,7 +1417,7 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
     );
     stop(c).await;
 
-    let code = http.code(&mut owner, &reg, &read).await;
+    let code = http.code(&mut owner, &reg).await;
     let issued = http.exchange(&reg, &code, None).await;
     let d = http
         .sdk(
@@ -1690,7 +1452,7 @@ async fn oauth_live_subscriptions_follow_grants_refresh_and_revocation() {
         "old registration revision cannot keep a stream alive"
     );
     stop(d).await;
-    let code = http.code(&mut owner, &rotated_reg, &read).await;
+    let code = http.code(&mut owner, &rotated_reg).await;
     let issued = http.exchange(&rotated_reg, &code, None).await;
     let e = http
         .sdk(
@@ -1747,11 +1509,9 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
     let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("native test owner");
-    let read = vec![grant("projects.read", "global", "*")];
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth subscription expiry fixture".into(),
-            grants: read.clone(),
             idempotency_key: "natural-expiry-client".into(),
         })
         .await
@@ -1760,7 +1520,7 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
     let reg = registration(&mut owner, &http, &client, false)
         .await
         .registration;
-    let code = http.code(&mut owner, &reg, &read).await;
+    let code = http.code(&mut owner, &reg).await;
     let exchange_started = tokio::time::Instant::now();
     let issued = http.exchange(&reg, &code, None).await;
     let received = tokio::time::Instant::now();
@@ -1775,7 +1535,12 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
         .listen(SubscriptionFilter::builder().tools_list_changed().build())
         .await
         .expect("authenticated HTTPS subscription ack");
-    assert_eq!(sdk.list_all_tools().await.expect("read tools").len(), 2);
+    let tools = sdk.list_all_tools().await.expect("published tools");
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_apply_package_changes")
+    );
     let end = tokio::time::timeout_at(received + lifetime + Duration::from_secs(8), stream.next())
         .await
         .expect("stream closes at token expiry");
@@ -1796,7 +1561,7 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
             .status(),
         401
     );
-    let new_code = http.code(&mut owner, &reg, &read).await;
+    let new_code = http.code(&mut owner, &reg).await;
     let replacement = http.exchange(&reg, &new_code, None).await;
     let fresh = http
         .sdk(replacement["access_token"].as_str().expect("fresh access"))
@@ -1807,7 +1572,7 @@ async fn oauth_subscription_ends_at_natural_access_expiry() {
             .await
             .expect("fresh access works")
             .len(),
-        2
+        tools.len()
     );
     eprintln!(
         "Natural expiry closed the stream after {} ms ({} ms after exchange start)",
@@ -1841,10 +1606,6 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("owner");
-    let allowed = vec![
-        grant("projects.read", "global", "*"),
-        grant("operations.read", "global", "*"),
-    ];
     for name in ["First", "Second", "Third"] {
         let path = root.join(name);
         project(&path, false);
@@ -1877,10 +1638,9 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
             .await
             .is_ok()
     );
-    let mut a = owner
+    let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Cursor A".into(),
-            grants: allowed.clone(),
             idempotency_key: "cursor-a".into(),
         })
         .await
@@ -1888,7 +1648,6 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Cursor B".into(),
-            grants: allowed.clone(),
             idempotency_key: "cursor-b".into(),
         })
         .await
@@ -1900,15 +1659,15 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
     let reg_b = registration(&mut owner, &http, &b, false)
         .await
         .registration;
-    let code = http.code(&mut owner, &reg_a, &allowed[..1]).await;
+    let code = http.code(&mut owner, &reg_a).await;
     let issued = http.exchange(&reg_a, &code, None).await;
     let access = issued["access_token"].as_str().expect("first access");
-    let code = http.code(&mut owner, &reg_a, &allowed).await;
+    let code = http.code(&mut owner, &reg_a).await;
     let other_issued = http.exchange(&reg_a, &code, None).await;
     let other_access = other_issued["access_token"]
         .as_str()
         .expect("same principal second token");
-    let code = http.code(&mut owner, &reg_b, &allowed).await;
+    let code = http.code(&mut owner, &reg_b).await;
     let b_issued = http.exchange(&reg_b, &code, None).await;
     let b_access = b_issued["access_token"].as_str().expect("B token");
     let sa = http.sdk(access).await;
@@ -2007,41 +1766,6 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
         matches!(direct.projects_list(Some(wire),Some(1)).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="revision_conflict"),
         "no adapter-only enforcement"
     );
-    let mut changed = allowed.clone();
-    changed.push(grant("state.check", "global", "*"));
-    a = update(&mut owner, &a, changed, "cursor-grants-changed").await;
-    error(
-        call(
-            &sa,
-            &mut trace,
-            "list_projects",
-            json!({"limit":1,"cursor":cursor}),
-        )
-        .await
-        .expect("stale authorization snapshot"),
-        "revision_conflict",
-    );
-    let restarted = data(
-        call(&sa, &mut trace, "list_projects", json!({"limit":1}))
-            .await
-            .expect("restart on current grant snapshot"),
-    );
-    assert_ne!(
-        restarted["next_cursor"]["authorization_binding"],
-        cursor["authorization_binding"]
-    );
-    assert!(
-        call(
-            &sa,
-            &mut trace,
-            "list_projects",
-            json!({"limit":1,"cursor":restarted["next_cursor"]})
-        )
-        .await
-        .expect("new snapshot continuation")
-        .is_error
-            != Some(true)
-    );
     owner
         .mcp_client_revoke(McpClientMutationParams {
             client_id: a.client_id,
@@ -2055,7 +1779,7 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
             &http,
             access,
             "alcomd_list_projects",
-            json!({"limit":1,"cursor":restarted["next_cursor"]})
+            json!({"limit":1,"cursor":cursor})
         )
         .await
         .status(),
@@ -2129,7 +1853,7 @@ async fn oauth_project_cursor_is_bound_to_token_snapshot_and_position() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
+async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
     let _serial = REAL_CORE_LOCK.lock().await;
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/m8-oauth-real")
@@ -2159,7 +1883,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         matches!(ingress.mcp_clients_list(McpClientsListParams::default()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     assert!(
-        matches!(ingress.oauth_request_get(McpOAuthRequestGetParams{request_id:uuid::Uuid::new_v4().to_string(),cursor:None,limit:None}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
+        matches!(ingress.oauth_request_get(McpOAuthRequestGetParams{request_id:uuid::Uuid::new_v4().to_string()}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     drop(ingress);
     let http = Https::start(&root, core.client.clone()).await;
@@ -2230,18 +1954,16 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         json!(["S256"])
     );
     assert!(metadata.get("registration_endpoint").is_none());
-    let mut a = owner
+    let a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth A".into(),
-            grants: vec![],
             idempotency_key: "oauth-a".into(),
         })
         .await
         .expect("client A");
-    let mut b = owner
+    let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "OAuth B".into(),
-            grants: vec![],
             idempotency_key: "oauth-b".into(),
         })
         .await
@@ -2256,20 +1978,14 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let zero_review = owner
         .oauth_request_get(McpOAuthRequestGetParams {
             request_id: zero.clone(),
-            cursor: None,
-            limit: None,
         })
         .await
         .expect("zero review");
-    assert!(zero_review.grants.is_empty());
-    assert!(
-        matches!(owner.oauth_request_decide(McpOAuthRequestDecideParams{request_id:zero.clone(),approve:true,grants:vec![grant("projects.read","global","*")],expected_fingerprint:zero_review.approval_fingerprint.clone(),idempotency_key:"zero-cannot-authorize".into()}).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
-    );
+    assert_eq!(zero_review.scopes, ["mcp"]);
     owner
         .oauth_request_decide(McpOAuthRequestDecideParams {
             request_id: zero.clone(),
             approve: false,
-            grants: vec![],
             expected_fingerprint: zero_review.approval_fingerprint,
             idempotency_key: "deny-zero".into(),
         })
@@ -2301,12 +2017,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let selected = projects[0].1.project_id.clone().expect("selected");
     let unselected = projects[1].1.project_id.clone().expect("unselected");
     let other = projects[2].1.project_id.clone().expect("other");
-    let allowed = grants(true);
-    let mut all = allowed.clone();
-    all.push(grant("state.check", "global", "*"));
-    a = update(&mut owner, &a, all, "grant-a").await;
-    b = update(&mut owner, &b, grants(true), "grant-b").await;
-    let code = http.code(&mut owner, &reg, &allowed).await;
+    let code = http.code(&mut owner, &reg).await;
     let bad = http
         .token(
             &reg,
@@ -2344,7 +2055,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         400,
         "lost token response cannot be reissued"
     );
-    let code_b = http.code(&mut owner, &reg_b, &b.grants).await;
+    let code_b = http.code(&mut owner, &reg_b).await;
     let issued_b = http.exchange(&reg_b, &code_b, None).await;
     let access_b = issued_b["access_token"]
         .as_str()
@@ -2374,26 +2085,41 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         .map(|tool| tool.name.into_owned())
         .collect();
     names.sort_unstable();
-    assert_eq!(
-        names,
-        [
-            "alcomd_apply_package_changes",
-            "alcomd_cancel_operation",
-            "alcomd_get_operation",
-            "alcomd_get_package",
-            "alcomd_get_project",
-            "alcomd_inspect_repository",
-            "alcomd_list_operations",
-            "alcomd_list_package_sources",
-            "alcomd_list_projects",
-            "alcomd_list_repositories",
-            "alcomd_plan_package_changes",
-            "alcomd_plan_package_install",
-            "alcomd_plan_package_reinstall",
-            "alcomd_plan_package_uninstall",
-            "alcomd_search_packages",
-        ]
+    let comparison = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: "STDIO catalogue comparison".into(),
+            idempotency_key: "compare-stdio".into(),
+        })
+        .await
+        .expect("transport comparison client");
+    let stdio = crate::sdk(
+        &owner
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: comparison.client_id,
+                expected_revision: comparison.revision,
+                idempotency_key: "compare-stdio-catalog".into(),
+            })
+            .await
+            .expect("separate transport client")
+            .credential,
+        None,
+    )
+    .await;
+    let mut stdio_names: Vec<_> = stdio
+        .list_all_tools()
+        .await
+        .expect("STDIO catalogue")
+        .into_iter()
+        .map(|tool| tool.name.into_owned())
+        .collect();
+    stdio_names.sort_unstable();
+    assert_eq!(names, stdio_names);
+    assert!(
+        names
+            .iter()
+            .any(|name| name == "alcomd_apply_package_changes")
     );
+    stop(stdio).await;
     let mut cursor = None;
     let mut ids = vec![];
     loop {
@@ -2433,8 +2159,10 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
         unselected
     );
     assert!(
-        matches!(persistent.state_check("outside-token-capability-ceiling".into()).await,Err(alcomd_client::ClientError::Remote(ref error)) if error.code=="permission_denied"),
-        "Core capability added after consent is not in the token ceiling"
+        persistent
+            .state_check("connected-state-check".into())
+            .await
+            .is_ok()
     );
     let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":selected,"expected_revision":projects[0].1.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     error(call(&sb,&mut trace,"apply_package_changes",json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"shared-apply-key","confirm":true})).await.expect("other identity rejected"),"plan_not_found");
@@ -2537,8 +2265,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     }
     let c = owner
         .mcp_client_create(McpClientsCreateParams {
-            display_name: "OAuth confidential read-only".into(),
-            grants: vec![grant("projects.read", "global", "*")],
+            display_name: "OAuth confidential client".into(),
             idempotency_key: "oauth-c".into(),
         })
         .await
@@ -2546,7 +2273,7 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     let registered_c = registration(&mut owner, &http, &c, true).await;
     let secret_c = registered_c.client_secret.expect("one-time client secret");
     let reg_c = registered_c.registration;
-    let code_c = http.code(&mut owner, &reg_c, &c.grants).await;
+    let code_c = http.code(&mut owner, &reg_c).await;
     let missing_secret = http
         .token(
             &reg_c,
@@ -2563,12 +2290,6 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
     assert_eq!(missing_secret.status(), 401);
     let issued_c = http.exchange(&reg_c, &code_c, Some(&secret_c)).await;
     let access_c = issued_c["access_token"].as_str().expect("C access");
-    let denied=raw_tool(&http,access_c,"alcomd_cancel_operation",json!({"operation_id":uuid::Uuid::new_v4().to_string(),"expected_revision":1,"idempotency_key":"c-cancel-denied"})).await;
-    assert_eq!(denied.status(), 403);
-    let challenge = denied.headers()["www-authenticate"]
-        .to_str()
-        .expect("scope challenge");
-    assert!(challenge.contains("scope=\"operations.cancel\""));
     assert_eq!(
         http.client
             .post(http.resource())
@@ -2664,33 +2385,6 @@ async fn frozen_sdk_oauth_real_core_identity_scope_and_package_flow() {
             .status(),
         401
     );
-    let a_current = owner
-        .mcp_clients_list(McpClientsListParams {
-            cursor: None,
-            limit: Some(64),
-        })
-        .await
-        .expect("current list")
-        .items
-        .into_iter()
-        .find(|c| c.client_id == a.client_id)
-        .expect("A");
-    let reduced = update(&mut owner, &a_current, vec![], "remove-authority").await;
-    assert!(
-        matches!(persistent.project_get(selected.clone()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
-    );
-    error(
-        call(
-            &sa,
-            &mut trace,
-            "get_project",
-            json!({"project_id":selected}),
-        )
-        .await
-        .expect("live revocation of grants"),
-        "permission_denied",
-    );
-    let _restored = update(&mut owner, &reduced, a_current.grants, "restore-authority").await;
     let refreshed = http
         .token(
             &reg,
@@ -2842,26 +2536,18 @@ pub(super) async fn extension_provider_oauth(
 ) -> String {
     let http = Https::start(root, ClientConfig::default().without_daemon_start()).await;
     let reg = registration(owner, &http, client, false).await.registration;
-    let code = http.code(owner, &reg, &grants(true)).await;
+    let code = http.code(owner, &reg).await;
     let first = http.exchange(&reg, &code, None).await;
     let access = first["access_token"]
         .as_str()
         .expect("valid isolated Provider OAuth fixture");
-    let code = http.code(owner, &reg, &grants(true)).await;
+    let code = http.code(owner, &reg).await;
     let second = http.exchange(&reg, &code, None).await;
     let other = second["access_token"]
         .as_str()
         .expect("valid isolated Provider OAuth fixture");
-    let code = http
-        .code(owner, &reg, &[grant("operations.read", "global", "*")])
-        .await;
-    let empty = http.exchange(&reg, &code, None).await;
-    let empty_access = empty["access_token"]
-        .as_str()
-        .expect("valid isolated Provider OAuth fixture");
     let sa = http.sdk(access).await;
     let sb = http.sdk(other).await;
-    let zero = http.sdk(empty_access).await;
     let page = sa
         .list_tools(None)
         .await
@@ -2876,16 +2562,10 @@ pub(super) async fn extension_provider_oauth(
         "same principal, distinct token cannot reuse catalogue cursor"
     );
     let pure = alcomd_application::tool_public_name("dev.alcomd.tools-fixture", "echo");
-    let reading = alcomd_application::tool_public_name("dev.alcomd.tools-fixture", "projects");
-    let page = zero
-        .list_tools(None)
-        .await
-        .expect("valid isolated Provider OAuth fixture");
-    assert!(page.tools.iter().all(|t| t.name != reading));
-    let result = zero
+    let result = sb
         .call_tool_once(
             CallToolRequestParams::new(pure).with_arguments(
-                json!({"text":"limited OAuth ceiling"})
+                json!({"text":"authenticated OAuth connection"})
                     .as_object()
                     .expect("valid isolated Provider OAuth fixture")
                     .clone(),
@@ -2897,12 +2577,6 @@ pub(super) async fn extension_provider_oauth(
         panic!("normal result")
     };
     assert_ne!(result.is_error, Some(true));
-    assert!(
-        zero.call_tool_once(CallToolRequestParams::new(reading).with_arguments(Default::default()))
-            .await
-            .is_err(),
-        "no upper-bound escalation"
-    );
     let directory = root.join("OAuth-provider-project");
     project(&directory, false);
     let registered = owner
@@ -2955,7 +2629,6 @@ pub(super) async fn extension_provider_oauth(
     );
     stop(sa).await;
     stop(sb).await;
-    stop(zero).await;
     http.finish_server().await;
     operation
 }

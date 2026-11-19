@@ -1,4 +1,4 @@
-//! SQLite authority for OAuth registrations, token ceilings and atomic rotation.
+//! SQLite authority for OAuth registrations, token validation and atomic rotation.
 use crate::StateStoreHandle;
 use alcomd_application::*;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -32,13 +32,6 @@ fn registration(db: &Connection, id: &str) -> Result<OAuthRegistrationState, OAu
         let uris=serde_json::from_str(&json).map_err(|e|rusqlite::Error::FromSqlConversionFailure(4,rusqlite::types::Type::Text,Box::new(e)))?;
         Ok((OAuthRegistration{oauth_client_id:r.get(0)?,client_id:r.get(1)?,issuer:r.get(2)?,resource:r.get(3)?,redirect_uris:uris,confidential:r.get(5)?,allow_refresh:r.get(6)?,revision:uint(r,7)?,created_at_ms:uint(r,8)?,revoked_at_ms:r.get::<_,Option<i64>>(9)?.map(|v|u64::try_from(v).map_err(|_|rusqlite::Error::IntegralValueOutOfRange(9,v))).transpose()?},r.get::<_,Option<Vec<u8>>>(10)?))
     }).optional().map_err(unavailable)?.ok_or(OAuthError::InvalidClient)?;
-    let grant_revision = db
-        .query_row(
-            "SELECT grant_revision FROM mcp_clients WHERE client_id=?1",
-            [&record.client_id],
-            |r| uint(r, 0),
-        )
-        .map_err(unavailable)?;
     Ok(OAuthRegistrationState {
         credential_generation: generation(db, &record.client_id)?,
         client: client(db, &record.client_id)?,
@@ -46,7 +39,6 @@ fn registration(db: &Connection, id: &str) -> Result<OAuthRegistrationState, OAu
         secret_hash: secret_hash
             .map(|v| v.try_into().map_err(|_| OAuthError::Unavailable))
             .transpose()?,
-        grant_revision,
     })
 }
 fn active(current: &OAuthRegistrationState) -> Result<(), OAuthError> {
@@ -254,8 +246,6 @@ struct Token {
     reg_revision: u64,
     family: String,
     generation: String,
-    grant_revision: u64,
-    grants: Vec<McpGrant>,
     issuer: String,
     resource: String,
     expires: u64,
@@ -264,12 +254,9 @@ struct Token {
     revoked: bool,
 }
 fn token(db: &Connection, hash: &[u8; 32]) -> Result<Token, OAuthError> {
-    let t=db.query_row("SELECT kind,oauth_client_id,registration_revision,family_id,credential_generation,grant_revision,grants_json,issuer,resource,expires_at_ms,family_expires_at_ms,consumed_at_ms,revoked_at_ms FROM mcp_oauth_tokens WHERE token_hash=?1",[hash.as_slice()],|r|{
-        let json:String=r.get(6)?;
-        let grants=serde_json::from_str(&json).map_err(|e|rusqlite::Error::FromSqlConversionFailure(6,rusqlite::types::Type::Text,Box::new(e)))?;
-        Ok(Token{kind:r.get(0)?,id:r.get(1)?,reg_revision:uint(r,2)?,family:r.get(3)?,generation:r.get(4)?,grant_revision:uint(r,5)?,grants,issuer:r.get(7)?,resource:r.get(8)?,expires:uint(r,9)?,absolute:uint(r,10)?,consumed:r.get::<_,Option<i64>>(11)?.is_some(),revoked:r.get::<_,Option<i64>>(12)?.is_some()})
+    let t=db.query_row("SELECT kind,oauth_client_id,registration_revision,family_id,credential_generation,issuer,resource,expires_at_ms,family_expires_at_ms,consumed_at_ms,revoked_at_ms FROM mcp_oauth_tokens WHERE token_hash=?1",[hash.as_slice()],|r|{
+        Ok(Token{kind:r.get(0)?,id:r.get(1)?,reg_revision:uint(r,2)?,family:r.get(3)?,generation:r.get(4)?,issuer:r.get(5)?,resource:r.get(6)?,expires:uint(r,7)?,absolute:uint(r,8)?,consumed:r.get::<_,Option<i64>>(9)?.is_some(),revoked:r.get::<_,Option<i64>>(10)?.is_some()})
     }).optional().map_err(unavailable)?.ok_or(OAuthError::InvalidGrant)?;
-    validate_mcp_grants(&t.grants).map_err(|_| OAuthError::InvalidGrant)?;
     Ok(t)
 }
 fn validate_token(
@@ -284,7 +271,6 @@ fn validate_token(
         // after its own idle deadline. Its caller must revoke the whole family.
         || (t.expires <= now && !(t.kind == "refresh" && t.consumed))
         || t.absolute <= now
-        || t.grant_revision > current.grant_revision
         || t.reg_revision != current.registration.revision
         || t.generation != current.credential_generation
         || t.issuer != current.registration.issuer
@@ -304,9 +290,7 @@ pub(super) fn authenticate(
         return Err(OAuthError::InvalidGrant);
     }
     let current = validate_token(db, &t, now)?;
-    let mut client = current.client;
-    client.grants.retain(|g| t.grants.contains(g));
-    Ok(client)
+    Ok(current.client)
 }
 pub(super) fn project_cursor_binding(
     db: &Connection,
@@ -319,7 +303,7 @@ pub(super) fn project_cursor_binding(
         return Err(OAuthError::InvalidGrant);
     }
     let current = validate_token(db, &t, now)?;
-    oauth_project_cursor_binding(guard, current.grant_revision, &t.grants, cursor)
+    oauth_project_cursor_binding(guard, current.client.revision, cursor)
 }
 fn revoke_family(db: &Connection, family: &str, now: u64) -> Result<(), OAuthError> {
     db.execute("UPDATE mcp_oauth_tokens SET revoked_at_ms=max(created_at_ms,?2) WHERE family_id=?1 AND revoked_at_ms IS NULL",params![family,integer(now)?]).map_err(unavailable)?;
@@ -346,7 +330,6 @@ fn refresh(
     }
     let result = OAuthTokenState {
         registration: current,
-        grants: t.grants,
         family_id: t.family,
         family_expires_at_ms: t.absolute,
         consumed: false,
@@ -366,13 +349,7 @@ fn issue(db: &mut Connection, issue: OAuthIssue, now: u64) -> Result<(), OAuthEr
     {
         return Err(OAuthError::RevisionConflict);
     }
-    validate_mcp_grants(&issue.grants).map_err(|_| OAuthError::InvalidInput)?;
-    if issue
-        .grants
-        .iter()
-        .any(|g| !current.client.grants.contains(g))
-        || issue.family_expires_at_ms <= now
-    {
+    if issue.family_expires_at_ms <= now {
         return Err(OAuthError::Denied);
     }
     if let Some(parent) = &issue.parent_refresh {
@@ -390,9 +367,6 @@ fn issue(db: &mut Connection, issue: OAuthIssue, now: u64) -> Result<(), OAuthEr
             tx.commit().map_err(unavailable)?;
             return Err(OAuthError::InvalidGrant);
         }
-        if issue.grants.iter().any(|g| !t.grants.contains(g)) {
-            return Err(OAuthError::Denied);
-        }
         tx.execute("UPDATE mcp_oauth_tokens SET consumed_at_ms=?2 WHERE token_hash=?1 AND consumed_at_ms IS NULL",params![parent.as_slice(),integer(now)?]).map_err(unavailable)?;
     }
     tx.execute(
@@ -403,10 +377,6 @@ fn issue(db: &mut Connection, issue: OAuthIssue, now: u64) -> Result<(), OAuthEr
     let access_count:i64=tx.query_row("SELECT count(*) FROM mcp_oauth_tokens WHERE oauth_client_id=?1 AND kind='access' AND expires_at_ms>?2 AND revoked_at_ms IS NULL",params![current.registration.oauth_client_id,integer(now)?],|r|r.get(0)).map_err(unavailable)?;
     let families:i64=tx.query_row("SELECT count(DISTINCT family_id) FROM mcp_oauth_tokens WHERE oauth_client_id=?1 AND expires_at_ms>?2 AND revoked_at_ms IS NULL",params![current.registration.oauth_client_id,integer(now)?],|r|r.get(0)).map_err(unavailable)?;
     if access_count >= 64 || (issue.parent_refresh.is_none() && families >= 16) {
-        return Err(OAuthError::LimitExceeded);
-    }
-    let grants = serde_json::to_string(&issue.grants).map_err(unavailable)?;
-    if grants.len() > 1_048_576 {
         return Err(OAuthError::LimitExceeded);
     }
     for (kind, digest, lifetime) in [
@@ -420,7 +390,7 @@ fn issue(db: &mut Connection, issue: OAuthIssue, now: u64) -> Result<(), OAuthEr
                 None
             };
             let expires = now.saturating_add(lifetime).min(issue.family_expires_at_ms);
-            tx.execute("INSERT INTO mcp_oauth_tokens(token_hash,kind,oauth_client_id,registration_revision,family_id,parent_hash,source_code_hash,credential_generation,grant_revision,grants_json,issuer,resource,created_at_ms,expires_at_ms,family_expires_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",params![digest.as_slice(),kind,current.registration.oauth_client_id,integer(current.registration.revision)?,issue.family_id,issue.parent_refresh.as_ref().map(|v|v.as_slice()),source_code,current.credential_generation,integer(current.grant_revision)?,grants,current.registration.issuer,current.registration.resource,integer(now)?,integer(expires)?,integer(issue.family_expires_at_ms)?]).map_err(|e| if matches!(e,rusqlite::Error::SqliteFailure(ref error,_) if error.code==rusqlite::ErrorCode::ConstraintViolation) { OAuthError::InvalidGrant } else { OAuthError::Unavailable })?;
+            tx.execute("INSERT INTO mcp_oauth_tokens(token_hash,kind,oauth_client_id,registration_revision,family_id,parent_hash,source_code_hash,credential_generation,issuer,resource,created_at_ms,expires_at_ms,family_expires_at_ms) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![digest.as_slice(),kind,current.registration.oauth_client_id,integer(current.registration.revision)?,issue.family_id,issue.parent_refresh.as_ref().map(|v|v.as_slice()),source_code,current.credential_generation,current.registration.issuer,current.registration.resource,integer(now)?,integer(expires)?,integer(issue.family_expires_at_ms)?]).map_err(|e| if matches!(e,rusqlite::Error::SqliteFailure(ref error,_) if error.code==rusqlite::ErrorCode::ConstraintViolation) { OAuthError::InvalidGrant } else { OAuthError::Unavailable })?;
         }
     }
     tx.commit().map_err(unavailable)?;
@@ -502,16 +472,9 @@ impl OAuthStore for StateStoreHandle {
         &self,
         guard: OAuthAccessGuard,
         now: u64,
-    ) -> Result<OAuthAuthenticated, OAuthError> {
+    ) -> Result<McpClient, OAuthError> {
         self.request_worker(
-            move |db| {
-                let client = authenticate(db, &guard, now)?;
-                let t = token(db, &guard.token_hash)?;
-                let mut scopes: Vec<_> = t.grants.into_iter().map(|g| g.permission).collect();
-                scopes.sort();
-                scopes.dedup();
-                Ok(OAuthAuthenticated { client, scopes })
-            },
+            move |db| authenticate(db, &guard, now),
             || OAuthError::Unavailable,
         )
         .await

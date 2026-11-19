@@ -1,6 +1,6 @@
 # MCP 客户端身份 RPC v1
 
-状态：2026-11-13 所有者批准。结构见同目录 `m8-mcp-clients-v1.schema.json`，实现与验证记录见 M8 ExecPlan。Core 身份接线验证后才协商 `mcp.clients.v1`，管理方法同时要求该 capability 与原有权限。
+历史合同。现行接口见 [MCP 客户端身份 v2](m8-mcp-clients-v2.md)。
 
 `system.hello.authentication` 的可选身份为 `{kind:"mcp-client",credential:string}`；Core 验证后绑定自身签发的 Principal。MCP 业务连接不得省略凭据或在认证失败时切换至 local-owner。现有本机 GUI/CLI 的 OS IPC 模式保持。认证字段须与 Core 的绑定和逐调用复查同时接入，禁止先接受字段、后补校验。
 

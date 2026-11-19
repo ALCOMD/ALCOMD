@@ -1,7 +1,7 @@
 package alcomd:mcp-transport@1.0.0;
 
 interface observations {
-    use alcomd:mcp-management/clients@1.0.0.{management-error};
+    use alcomd:mcp-management/clients@2.0.0.{management-error};
     enum availability { available, stale, unavailable }
     enum transport-kind { stdio, http, https-oauth }
     enum report-source { adapter-reported }
@@ -33,6 +33,6 @@ interface observations {
     snapshot: func(client-id: option<string>, limit: option<u32>) -> result<transport-snapshot, management-error>;
 }
 world transport-v1 {
-    include alcomd:mcp-management/management-v1@1.0.0;
+    include alcomd:mcp-management/management-v2@2.0.0;
     import observations;
 }

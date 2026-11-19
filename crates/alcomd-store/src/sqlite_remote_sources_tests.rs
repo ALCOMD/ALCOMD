@@ -121,7 +121,7 @@ fn state42_real_initializer_preserves_data_on_upgrade_and_reopen() {
         let db = initialize_connection(&path).expect("initializer");
         assert_eq!(
             publisher_trust_removal_tests::snapshot(&db),
-            expected(before.clone())
+            connection_access_migration_tests::expected_state44(expected(before.clone()))
         );
         assert_eq!(
             db.pragma_query_value(None, "foreign_keys", |r| r.get::<_, u32>(0))

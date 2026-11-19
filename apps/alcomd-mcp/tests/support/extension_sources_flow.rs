@@ -257,7 +257,6 @@ async fn remote_extension_source_real_https_install_and_refusals() {
     let created = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "source-denied-client".into(),
-            grants: vec![],
             idempotency_key: "source-client-create".into(),
         })
         .await

@@ -1,6 +1,6 @@
 {
     "artifact": "crates/alcomd-testing/fixtures/m8/mcp-transport-v1.wasm",
-    "sha256": "25714b35576442cc675ca72aac1a9e47377f0e38a8d63b5482815f314b2effeb",
+    "sha256": "fc0f1984d7abbbb27456f00740db920cc2d2b28dbdc1b2a0820681469ae9868c",
     "toolchain": "1.97.1",
     "target": "wasm32-unknown-unknown",
     "profile": "release",
@@ -17,8 +17,8 @@
         "specs/extensions/wit/mcp-transport-v1/deps/extension/host-projects.wit": "aa7fd7d38f2af28ca3606d7f70471586b134abb5a76dd4f82154bebd31a4dacb",
         "specs/extensions/wit/mcp-transport-v1/deps/extension/types.wit": "4fe1c69e2779b043f2f6ca81ca836e1e8f4132fa000f38cac256e03e9d2147bd",
         "specs/extensions/wit/mcp-transport-v1/deps/extension/world.wit": "27f577baa5510bde52ba57a7b1179e79f61511f81d3b290665cb06b967c17ffd",
-        "specs/extensions/wit/mcp-transport-v1/deps/mcp-management/management.wit": "c4ca610647aa3dff0430cc2132cfb16b7c42a12104bc052fcae640a51c6fbf0f",
-        "specs/extensions/wit/mcp-transport-v1/transport.wit": "72cf59022a46984cce3221d888ed86426c73d506e7953c22ee143af4eeed0cdd"
+        "specs/extensions/wit/mcp-transport-v1/deps/mcp-management/management.wit": "e2532b532df5c0dfda584f7161b1179ce043ee7358f4e2faf7e90df4edb7fe15",
+        "specs/extensions/wit/mcp-transport-v1/transport.wit": "a94cf2586575dc2d49b5323283b4b86175af53457e66590f30f113897901c53b"
     },
-    "sourceCandidate": "approved A/B; minimal test-only transport read guest"
+    "sourceCandidate": "connection-level management Host v2 with existing activity and transport observations"
 }

@@ -63,7 +63,7 @@ mcp.configuration.manage
 
 M8管理Host桥使用已存在的`mcp.clients.read/manage`，范围为`Global/*`；后者是全部MCP客户端的高风险管理权。
 不向扩展开放签发凭据；扩展`projects.read`按所有者2026-11-15批准的State37使用`Global/*`，不再逐项目授权。每次Host调用同时复查交互Client、
-Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v1.md`。
+Extension及当前lease/UI状态，声明不代表已授予。细节见`mcp-management-v2.md`。
 
 - 第一方和第三方扩展使用同一权限名称。
 - 权限按 Principal 授予并可随时撤销。
@@ -212,7 +212,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ### MCP tool providers
 
-Optional `mcp.tools.provide` publishes signed tool declarations and does not enable an extension or grant business authority. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution intersects declared closed operations, current extension grants/lease and the actual MCP client's current capabilities/OAuth ceiling. `projects.read` retains safe project projections, with no path/filesystem authority. See `../mcp/extension-tools-v1.md` and State38. The MCP client capability contract is documented in `../rpc/m8-mcp-clients-v1.md`.
+Optional `mcp.tools.provide` publishes signed tool declarations. Additional extension grants `repositories.read`, `packages.read`, `packages.manage`, `operations.read`, `operations.cancel` all use Global/*. Tool execution checks its declared operations, current extension grants and lease, and the actual MCP client identity. `projects.read` retains safe project projections. See `../mcp/extension-tools-v1.md`, State38 and the [MCP client contract](../rpc/m8-mcp-clients-v2.md).
 
 
 ## M8 Core observation reads

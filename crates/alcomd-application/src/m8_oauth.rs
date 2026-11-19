@@ -8,23 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use url::Url;
 
-pub const OAUTH_SCOPES: [&str; 15] = [
-    "projects.read",
-    "packages.read",
-    "repositories.read",
-    "repositories.manage",
-    "packages.manage",
-    "operations.read",
-    "operations.cancel",
-    "state.check",
-    "events.read",
-    "backups.read",
-    "backups.manage",
-    "projects.manage",
-    "projects.create",
-    "settings.read",
-    "unity.read",
-];
+pub const OAUTH_SCOPE: &str = "mcp";
 pub const OAUTH_ACCESS_MS: u64 = 600_000;
 pub const OAUTH_REFRESH_IDLE_MS: u64 = 7 * 86_400_000;
 pub const OAUTH_FAMILY_MS: u64 = 30 * 86_400_000;
@@ -60,25 +44,18 @@ impl OAuthAccessGuard {
         }
     }
 }
-pub struct OAuthAuthenticated {
-    pub client: McpClient,
-    pub scopes: Vec<String>,
-}
-
 /// Stateless, domain-separated HMAC-SHA256 under a private Core process key.
 /// Access secrets and their digests are client-derivable and must never be the key.
 pub fn oauth_project_cursor_binding(
     guard: &OAuthAccessGuard,
-    grant_revision: u64,
-    ceiling: &[McpGrant],
+    client_revision: u64,
     cursor: &RegistryCursor<ProjectId>,
 ) -> Result<String, OAuthError> {
     let message = serde_json::to_vec(&(
         "alcomd.m8.oauth.project-cursor.v1",
         &guard.token_hash,
         &guard.resource,
-        grant_revision,
-        ceiling,
+        client_revision,
         cursor.registered_at_ms,
         cursor.id,
     ))
@@ -141,19 +118,19 @@ mod cursor_binding_tests {
             id: ProjectId::new(),
             authorization_binding: None,
         };
-        assert!(oauth_project_cursor_binding(&guard, 1, &[], &cursor).is_err());
+        assert!(oauth_project_cursor_binding(&guard, 1, &cursor).is_err());
         let mut signed = guard.clone();
         signed.cursor_key = Some([17; 32]);
-        let mac = oauth_project_cursor_binding(&signed, 1, &[], &cursor).expect("private Core key");
+        let mac = oauth_project_cursor_binding(&signed, 1, &cursor).expect("private Core key");
         let mut forged = guard;
         forged.cursor_key = Some(forged.token_hash);
         assert_ne!(
-            oauth_project_cursor_binding(&forged, 1, &[], &cursor).expect("client guess"),
+            oauth_project_cursor_binding(&forged, 1, &cursor).expect("client guess"),
             mac
         );
         signed.cursor_key = Some([18; 32]);
         assert_ne!(
-            oauth_project_cursor_binding(&signed, 1, &[], &cursor).expect("new process key"),
+            oauth_project_cursor_binding(&signed, 1, &cursor).expect("new process key"),
             mac
         );
     }
@@ -167,16 +144,9 @@ impl AccessContext {
     pub fn oauth_guard(&self) -> Option<&OAuthAccessGuard> {
         self.oauth_guard.as_ref()
     }
-    pub(crate) fn with_oauth_guard(mut self, guard: OAuthAccessGuard, scopes: Vec<String>) -> Self {
+    pub(crate) fn with_oauth_guard(mut self, guard: OAuthAccessGuard) -> Self {
         self.oauth_guard = Some(guard);
-        self.oauth_scopes = scopes;
         self
-    }
-    pub fn oauth_scope_denied(&self, required: &[&str]) -> bool {
-        self.oauth_guard.is_some()
-            && required
-                .iter()
-                .any(|s| !self.oauth_scopes.iter().any(|known| known == s))
     }
 }
 
@@ -186,12 +156,10 @@ pub struct OAuthRegistrationState {
     pub secret_hash: Option<[u8; 32]>,
     pub client: McpClient,
     pub credential_generation: String,
-    pub grant_revision: u64,
 }
 #[derive(Clone)]
 pub struct OAuthTokenState {
     pub registration: OAuthRegistrationState,
-    pub grants: Vec<McpGrant>,
     pub family_id: String,
     pub family_expires_at_ms: u64,
     pub consumed: bool,
@@ -199,7 +167,6 @@ pub struct OAuthTokenState {
 #[derive(Clone)]
 pub struct OAuthIssue {
     pub registration: OAuthRegistrationState,
-    pub grants: Vec<McpGrant>,
     pub family_id: String,
     pub family_expires_at_ms: u64,
     pub parent_refresh: Option<[u8; 32]>,
@@ -250,7 +217,7 @@ pub trait OAuthStore: McpIdentityStore {
         &self,
         guard: OAuthAccessGuard,
         now: u64,
-    ) -> impl Future<Output = Result<OAuthAuthenticated, OAuthError>> + Send;
+    ) -> impl Future<Output = Result<McpClient, OAuthError>> + Send;
 }
 
 /// An entropy bundle is supplied by daemon's already-approved OS random source.
@@ -280,7 +247,7 @@ struct Pending {
     input: OAuthBeginParams,
     browser_hash: [u8; 32],
     expires: u64,
-    approved: Option<Vec<McpGrant>>,
+    approved: bool,
     denied: bool,
     delivered: bool,
     code_hash: Option<[u8; 32]>,
@@ -409,16 +376,11 @@ pub fn oauth_validate_registration(input: &OAuthRegistrationSetParams) -> Result
     Ok(())
 }
 fn scopes(values: &[String]) -> Result<(), OAuthError> {
-    if values.is_empty() || values.len() > 8 {
-        return Err(OAuthError::InvalidScope);
+    if values.len() == 1 && values[0] == OAUTH_SCOPE {
+        Ok(())
+    } else {
+        Err(OAuthError::InvalidScope)
     }
-    let mut seen = std::collections::HashSet::new();
-    for s in values {
-        if !OAUTH_SCOPES.contains(&s.as_str()) || !seen.insert(s) {
-            return Err(OAuthError::InvalidScope);
-        }
-    }
-    Ok(())
 }
 fn active(state: &OAuthRegistrationState) -> Result<(), OAuthError> {
     if state.registration.revoked_at_ms.is_some() || state.client.revoked_at_ms.is_some() {
@@ -451,19 +413,9 @@ pub fn oauth_s256(verifier: &str) -> String {
     out
 }
 
-fn review(
-    p: &Pending,
-    current: &OAuthRegistrationState,
-) -> Result<(Vec<McpGrant>, String), OAuthError> {
+fn review(p: &Pending, current: &OAuthRegistrationState) -> Result<String, OAuthError> {
     active(current)?;
-    let grants: Vec<_> = current
-        .client
-        .grants
-        .iter()
-        .filter(|g| p.input.scopes.contains(&g.permission))
-        .cloned()
-        .collect();
-    let fingerprint = oauth_fingerprint(&(
+    oauth_fingerprint(&(
         &p.id,
         &p.input.oauth_client_id,
         &p.input.issuer,
@@ -473,9 +425,7 @@ fn review(
         current.registration.revision,
         current.client.revision,
         &current.credential_generation,
-        &grants,
-    ))?;
-    Ok((grants, fingerprint))
+    ))
 }
 
 impl<S: OAuthStore> OAuthApplication<S> {
@@ -493,9 +443,9 @@ impl<S: OAuthStore> OAuthApplication<S> {
     ) -> Result<AccessContext, OAuthError> {
         let authenticated = self.store.oauth_authenticate(guard.clone(), now).await?;
         guard.cursor_key = Some(self.cursor_key);
-        Ok(mcp_access(&authenticated.client)
+        Ok(mcp_access(&authenticated)
             .map_err(|_| OAuthError::Denied)?
-            .with_oauth_guard(guard, authenticated.scopes))
+            .with_oauth_guard(guard))
     }
     pub async fn set_registration(
         &self,
@@ -597,7 +547,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
             input,
             browser_hash: hash(&browser_secret),
             expires: now.saturating_add(600_000),
-            approved: None,
+            approved: false,
             denied: false,
             delivered: false,
             code_hash: None,
@@ -631,15 +581,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
             .store
             .oauth_registration(p.input.oauth_client_id.clone())
             .await?;
-        let (all, fp) = review(p, &current)?;
-        let (start, limit) = page(&input.cursor, &fp, all.len(), input.limit)?;
-        let grants = all
-            .iter()
-            .skip(start)
-            .take(limit)
-            .cloned()
-            .collect::<Vec<_>>();
-        let end = start + grants.len();
+        let fp = review(p, &current)?;
         Ok(OAuthRequestReview {
             request_id: p.id.clone(),
             oauth_client_id: p.input.oauth_client_id.clone(),
@@ -649,8 +591,6 @@ impl<S: OAuthStore> OAuthApplication<S> {
             resource: p.input.resource.clone(),
             redirect_uri: p.input.redirect_uri.clone(),
             scopes: p.input.scopes.clone(),
-            grants,
-            next_cursor: (end < all.len()).then(|| format!("{fp}:{end}")),
             approval_fingerprint: fp,
             status: status(p).into(),
             expires_at_ms: p.expires,
@@ -673,7 +613,6 @@ impl<S: OAuthStore> OAuthApplication<S> {
         {
             return Err(OAuthError::InvalidInput);
         }
-        validate_mcp_grants(&input.grants).map_err(|_| OAuthError::InvalidInput)?;
         let mut pending = self.pending.lock().await;
         let p = pending
             .iter_mut()
@@ -696,21 +635,13 @@ impl<S: OAuthStore> OAuthApplication<S> {
             .store
             .oauth_registration(p.input.oauth_client_id.clone())
             .await?;
-        let (allowed, fp) = review(p, &current)?;
+        let fp = review(p, &current)?;
         if fp != input.expected_fingerprint {
             return Err(OAuthError::RevisionConflict);
         }
-        if input.grants.iter().any(|g| !allowed.contains(g))
-            || (!input.approve && !input.grants.is_empty())
-        {
-            return Err(OAuthError::Denied);
-        }
-        if input.approve && input.grants.is_empty() {
-            return Err(OAuthError::InvalidScope);
-        }
         p.denied = !input.approve;
         p.approval_fingerprint = Some(fp);
-        p.approved = input.approve.then_some(input.grants);
+        p.approved = input.approve;
         p.decision = Some((input.idempotency_key, digest));
         Ok(OAuthRequestDecision {
             request_id: p.id.clone(),
@@ -755,7 +686,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
         if p.delivered {
             return Err(OAuthError::ResponseUnavailable);
         }
-        let Some(grants) = p.approved.as_ref() else {
+        if !p.approved {
             if !p.denied {
                 return Ok(OAuthFinishResult {
                     status: "pending".into(),
@@ -774,10 +705,8 @@ impl<S: OAuthStore> OAuthApplication<S> {
                 status: "denied".into(),
                 redirect_url: Some(u.into()),
             });
-        };
-        if grants.iter().any(|g| !current.client.grants.contains(g))
-            || p.approval_fingerprint.as_ref() != Some(&review(p, &current)?.1)
-        {
+        }
+        if p.approval_fingerprint.as_ref() != Some(&review(p, &current)?) {
             return Err(OAuthError::RevisionConflict);
         }
         let code = entropy.secret;
@@ -812,7 +741,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
             return Err(OAuthError::InvalidTarget);
         }
         let mut pending = self.pending.lock().await;
-        let (grants, family_id, family_expires_at_ms, parent_refresh, source_code_hash, index) =
+        let (family_id, family_expires_at_ms, parent_refresh, source_code_hash, index) =
             match input.grant_type.as_str() {
                 "authorization_code" => {
                     if input.refresh_token.is_some() || input.scopes.is_some() {
@@ -848,11 +777,10 @@ impl<S: OAuthStore> OAuthApplication<S> {
                     {
                         return Err(OAuthError::InvalidGrant);
                     }
-                    if p.approval_fingerprint.as_ref() != Some(&review(p, &current)?.1) {
+                    if p.approval_fingerprint.as_ref() != Some(&review(p, &current)?) {
                         return Err(OAuthError::RevisionConflict);
                     }
                     (
-                        p.approved.clone().ok_or(OAuthError::InvalidGrant)?,
                         entropy.id.clone(),
                         now.saturating_add(OAUTH_FAMILY_MS),
                         None,
@@ -878,19 +806,10 @@ impl<S: OAuthStore> OAuthApplication<S> {
                         .store
                         .oauth_refresh(digest, input.oauth_client_id.clone(), now)
                         .await?;
-                    let mut grants = old.grants;
                     if let Some(requested) = &input.scopes {
                         scopes(requested)?;
-                        if requested
-                            .iter()
-                            .any(|s| !grants.iter().any(|g| &g.permission == s))
-                        {
-                            return Err(OAuthError::InvalidScope);
-                        }
-                        grants.retain(|g| requested.contains(&g.permission));
                     }
                     (
-                        grants,
                         old.family_id,
                         old.family_expires_at_ms,
                         Some(digest),
@@ -900,19 +819,6 @@ impl<S: OAuthStore> OAuthApplication<S> {
                 }
                 _ => return Err(OAuthError::InvalidInput),
             };
-        if grants.iter().any(|g| !current.client.grants.contains(g)) {
-            // Revocation narrows refresh; a code approved against stale grants must be reviewed again.
-            if parent_refresh.is_none() {
-                return Err(OAuthError::RevisionConflict);
-            }
-        }
-        let grants: Vec<_> = grants
-            .into_iter()
-            .filter(|g| current.client.grants.contains(g))
-            .collect();
-        if grants.is_empty() {
-            return Err(OAuthError::InvalidGrant);
-        }
         let access_token = entropy.access();
         let refresh_token = current
             .registration
@@ -922,7 +828,6 @@ impl<S: OAuthStore> OAuthApplication<S> {
             .oauth_issue(
                 OAuthIssue {
                     registration: current,
-                    grants: grants.clone(),
                     family_id,
                     family_expires_at_ms,
                     parent_refresh,
@@ -936,9 +841,6 @@ impl<S: OAuthStore> OAuthApplication<S> {
         if let Some(i) = index {
             pending[i].consumed = true
         }
-        let mut scopes: Vec<_> = grants.iter().map(|g| g.permission.clone()).collect();
-        scopes.sort();
-        scopes.dedup();
         Ok(OAuthTokenResult {
             access_token,
             token_type: "Bearer".into(),
@@ -946,7 +848,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
                 .saturating_sub(now)
                 .min(OAUTH_ACCESS_MS))
                 / 1000,
-            scope: scopes.join(" "),
+            scope: OAUTH_SCOPE.into(),
             refresh_token,
         })
     }
@@ -970,12 +872,13 @@ fn status(p: &Pending) -> &'static str {
         "denied"
     } else if p.consumed {
         "consumed"
-    } else if p.approved.is_some() {
+    } else if p.approved {
         "approved"
     } else {
         "pending"
     }
 }
+
 fn page(
     cursor: &Option<String>,
     fp: &str,

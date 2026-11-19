@@ -10,10 +10,10 @@ use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     BackupApplyRestoreParams, BackupCompression, BackupCreateParams, BackupPlanRestoreParams,
     BackupRecord, BackupsListParams, McpBackupApplyRestoreParams, McpBackupPlanRestoreParams,
-    McpClientGrant, McpClientMutationParams, McpClientsCreateParams, McpClientsSetGrantsParams,
-    McpProjectPathApproveParams, McpProjectPathPurpose, McpProjectSource, McpProjectTarget,
-    McpProjectsApplyCopyParams, McpProjectsCreateParams, McpProjectsPlanCopyParams,
-    McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
+    McpClientMutationParams, McpClientsCreateParams, McpProjectPathApproveParams,
+    McpProjectPathPurpose, McpProjectSource, McpProjectTarget, McpProjectsApplyCopyParams,
+    McpProjectsCreateParams, McpProjectsPlanCopyParams, McpProjectsRegisterParams, OperationState,
+    ProjectTemplateRef,
 };
 use sha2::{Digest, Sha256};
 
@@ -104,27 +104,12 @@ async fn mcp_backup_uses_shared_registry_and_rechecks_grants_on_replay() {
         include_library: None,
         idempotency_key: "shared-key".to_owned(),
     };
-    let approvals = [
-        "projects.read",
-        "projects.create",
-        "projects.manage",
-        "backups.manage",
-        "backups.read",
-        "operations.read",
-    ]
-    .map(|permission| McpClientGrant {
-        permission: permission.to_owned(),
-        resource_kind: "global".to_owned(),
-        resource_id: "*".to_owned(),
-    })
-    .to_vec();
     let mut actors = Vec::new();
     for name in ["First MCP", "Second MCP"] {
         let record = owner
             .mcp_client_create(McpClientsCreateParams {
                 idempotency_key: format!("create-{name}"),
                 display_name: name.to_owned(),
-                grants: Vec::new(),
             })
             .await
             .expect("independent client");
@@ -140,21 +125,6 @@ async fn mcp_backup_uses_shared_registry_and_rechecks_grants_on_replay() {
             .await
             .expect("authenticate");
         actors.push((issued.client_id, issued.revision, client));
-    }
-    for (id, revision, client) in &mut actors {
-        assert!(
-            matches!(client.backup_create(request.clone()).await, Err(ClientError::Remote(error)) if error.code == "permission_denied")
-        );
-        *revision = owner
-            .mcp_client_set_grants(McpClientsSetGrantsParams {
-                client_id: id.clone(),
-                expected_revision: *revision,
-                idempotency_key: format!("allow-{id}"),
-                grants: approvals.clone(),
-            })
-            .await
-            .expect("allow")
-            .revision;
     }
     let [(id, revision, first), (_, _, second)] = actors.as_mut_slice() else {
         panic!("two independent actors required");
@@ -333,14 +303,10 @@ async fn mcp_backup_uses_shared_registry_and_rechecks_grants_on_replay() {
         OperationState::Succeeded
     );
     owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
+        .mcp_client_revoke(McpClientMutationParams {
             client_id: id.clone(),
             expected_revision: *revision,
             idempotency_key: "revoke-backup-manage".to_owned(),
-            grants: approvals
-                .into_iter()
-                .filter(|item| item.permission != "backups.manage")
-                .collect(),
         })
         .await
         .expect("revoke write on existing connection");

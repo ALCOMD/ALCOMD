@@ -1105,7 +1105,6 @@ pub struct AccessContext {
     extension_ui_scopes: ExtensionUiScopes,
     mcp_identity: bool,
     oauth_guard: Option<OAuthAccessGuard>,
-    oauth_scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1127,7 +1126,6 @@ impl AccessContext {
             extension_ui_scopes: ExtensionUiScopes::None,
             mcp_identity: false,
             oauth_guard: None,
-            oauth_scopes: Vec::new(),
         }
     }
 

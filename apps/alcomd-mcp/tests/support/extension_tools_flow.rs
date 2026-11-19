@@ -160,7 +160,6 @@ async fn client(owner: &mut AlcomdClient, name: &str) -> (McpClientRecord, Strin
     let mut record = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: name.into(),
-            grants: vec![],
             idempotency_key: format!("create-{name}"),
         })
         .await
@@ -269,19 +268,33 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .extension;
     assert_eq!(enabled.desired_state, ExtensionDesiredState::Enabled);
     assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Stopped);
-    let (mut a, secret_a) = client(&mut owner, "Provider A").await;
-    let (mut b, secret_b) = client(&mut owner, "Provider B").await;
+    let (a, secret_a) = client(&mut owner, "Provider A").await;
+    let (b, secret_b) = client(&mut owner, "Provider B").await;
     let sa = sdk(&secret_a, None).await;
     let sb = sdk(&secret_b, None).await;
-    assert!(
-        sa.list_tools(None)
-            .await
-            .expect("valid isolated Provider fixture")
-            .tools
-            .is_empty(),
-        "publication is default off"
-    );
+    let initial = sa.list_all_tools().await.expect("built-in directory");
+    assert!(initial.iter().any(|tool| tool.name == "alcomd_get_project"));
+    assert!(initial.iter().all(|tool| tool.name != public("echo")));
+    let mut subscription = sa
+        .listen(
+            rmcp::model::SubscriptionFilter::builder()
+                .tools_list_changed()
+                .build(),
+        )
+        .await
+        .expect("catalogue subscription before publication");
     permission(&mut owner, "mcp.tools.provide", false, "publish").await;
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_secs(4), subscription.next())
+            .await
+            .expect("provider publication notice")
+            .expect("SSE event"),
+        Some(rmcp::model::ServerNotification::ToolListChangedNotification(_))
+    ));
+    subscription
+        .cancel()
+        .await
+        .expect("close only the subscription");
     let visible = sa
         .list_tools(None)
         .await
@@ -307,8 +320,6 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     ] {
         permission(&mut owner, name, false, &format!("grant-{name}")).await;
     }
-    a = update(&mut owner, &a, grants(true), "grant-a").await;
-    b = update(&mut owner, &b, grants(true), "grant-b").await;
     let all = sa
         .list_tools(None)
         .await
@@ -324,7 +335,16 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         ))
         .await
         .expect("valid isolated Provider fixture");
-    assert_eq!(remainder.tools.len(), 12);
+    let published = sa.list_all_tools().await.expect("complete catalogue");
+    assert_eq!(
+        published.len(),
+        initial.len()
+            + declarations()["tools"]
+                .as_array()
+                .expect("declared tools")
+                .len()
+    );
+    assert!(!remainder.tools.is_empty());
     for name in [
         "alcomd_list_package_sources",
         "alcomd_search_packages",

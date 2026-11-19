@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 
 mod bindings {
     wasmtime::component::bindgen!({
-        path: "../../specs/extensions/wit/mcp-management-v1",
-        world: "management-v1",
+        path: "../../specs/extensions/wit/mcp-management-v2",
+        world: "management-v2",
         imports: { default: async },
         exports: { default: async },
     });
@@ -50,18 +50,7 @@ fn client(value: alcomd_application::ManagementClientSummary) -> wit::ClientSumm
         revision: value.revision,
         created_at_ms: value.created_at_ms,
         revoked_at_ms: value.revoked_at_ms,
-        grant_count: value.grant_count,
     }
-}
-fn grants(items: Vec<wit::Grant>) -> Vec<alcomd_application::McpGrant> {
-    items
-        .into_iter()
-        .map(|g| alcomd_application::McpGrant {
-            permission: g.permission,
-            resource_kind: g.resource_kind,
-            resource_id: g.resource_id,
-        })
-        .collect()
 }
 impl HostState {
     fn management(
@@ -142,38 +131,6 @@ impl wit::Host for HostState {
             _ => Err(failure(E::InternalError)),
         }
     }
-    async fn grants(
-        &mut self,
-        client_id: String,
-        expected_revision: u64,
-        cursor: Option<String>,
-        limit: Option<u32>,
-    ) -> Result<wit::GrantPage, wit::ManagementError> {
-        match self.management("grants",json!({"clientId":client_id,"expectedRevision":expected_revision,"cursor":cursor,"limit":limit}),false)? {
-            R::Grants(page) => Ok(wit::GrantPage { revision: page.revision, items: page.items.into_iter().map(|g|wit::Grant { permission:g.permission,resource_kind:g.resource_kind,resource_id:g.resource_id }).collect(), next_cursor: page.next_cursor }),
-            _ => Err(failure(E::InternalError)),
-        }
-    }
-    async fn projects(
-        &mut self,
-        cursor: Option<String>,
-        limit: Option<u32>,
-    ) -> Result<wit::ProjectPage, wit::ManagementError> {
-        match self.management("projects", json!({"cursor":cursor,"limit":limit}), false)? {
-            R::Projects(page) => Ok(wit::ProjectPage {
-                items: page
-                    .items
-                    .into_iter()
-                    .map(|p| wit::ProjectSummary {
-                        project_id: p.project_id,
-                        name: p.name,
-                    })
-                    .collect(),
-                next_cursor: page.next_cursor,
-            }),
-            _ => Err(failure(E::InternalError)),
-        }
-    }
     async fn create(
         &mut self,
         display_name: String,
@@ -186,18 +143,6 @@ impl wit::Host for HostState {
         )? {
             R::Client(value) => Ok(client(value)),
             _ => Err(failure(E::WriteOutcomeUnknown)),
-        }
-    }
-    async fn change_grants(
-        &mut self,
-        client_id: String,
-        expected_revision: u64,
-        add: Vec<wit::Grant>,
-        remove: Vec<wit::Grant>,
-        idempotency_key: String,
-    ) -> Result<wit::ClientSummary, wit::ManagementError> {
-        match self.management("change-grants",json!({"clientId":client_id,"expectedRevision":expected_revision,"add":grants(add),"remove":grants(remove),"idempotencyKey":idempotency_key}),true)? {
-            R::Client(value) => Ok(client(value)), _ => Err(failure(E::WriteOutcomeUnknown)),
         }
     }
     async fn revoke(

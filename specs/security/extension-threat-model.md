@@ -4,12 +4,11 @@
 
 ## Assets 与 trust boundaries
 
-M8 approved management bridge adds only bounded MCP client administration through Core use cases
-(`../extensions/mcp-management-v1.md`). It adds no ambient WASI authority. Mandatory negative vectors:
-forged/stale lease and UI context; one-sided permissions; project capability escalation; grant revocation
-and package changes during paging or write acceptance; oversized grants; idempotency replay after
-revocation; accepted-write response loss; accidental credential/log disclosure. Grant checks and
-acceptance/replay share one Store transaction. First-party guests use the same interface and sandbox.
+M8 client management uses bounded Core operations
+(`../extensions/mcp-management-v2.md`). Test forged or stale leases and UI contexts, missing
+permissions on either side, revocation during paging or writes, idempotent replay, lost responses
+and credential disclosure. Permission checks, acceptance and replay share one Store transaction.
+The first-party guest uses the same interface and sandbox as other extensions.
 
 - authority：ExtensionId/Principal/grant/scope/revision、受控安装来源、Operation/Plan authority；
 - confidentiality：project/private path、extension-owned data、credential、argv/environment、Host internal channel；
@@ -120,4 +119,4 @@ Each unreadable group is omitted; none allowed returns permission_denied. Revoca
 invalidates old UI authority and does not turn stale data into successful empty data.
 The new subscription-stream read is Global/* and may be required or optional, with
 existing explicit consent. State43 only extends the CHECK and never grants it.
-External MCP business permission grants cannot read administrative projections.
+MCP business connections cannot read administrative projections.

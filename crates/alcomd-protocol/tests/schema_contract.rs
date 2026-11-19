@@ -135,17 +135,17 @@ const SCHEMAS: [(&str, &str); 32] = [
         include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
     (
-        "m8-mcp-oauth-v1",
-        include_str!("../../../specs/rpc/m8-mcp-oauth-v1.schema.json"),
+        "m8-mcp-oauth-v2",
+        include_str!("../../../specs/rpc/m8-mcp-oauth-v2.schema.json"),
     ),
 ];
 
 #[test]
 fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
-    let contract = schema("m8-mcp-oauth-v1");
+    let contract = schema("m8-mcp-oauth-v2");
     assert_eq!(
         contract["x-alcomd-capability"],
-        alcomd_protocol::CAPABILITY_MCP_OAUTH_V1
+        alcomd_protocol::CAPABILITY_MCP_OAUTH_V2
     );
     let methods = contract["x-alcomd-methods"].as_object().expect("methods");
     let mut names: Vec<_> = methods.keys().map(String::as_str).collect();
@@ -176,7 +176,7 @@ fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
         schema("system-hello.request")["properties"]["params"]["properties"]["authentication"],
         json!({
             "oneOf": [
-                {"$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"},
+                {"$ref": "m8-mcp-oauth-v2.schema.json#/$defs/authentication"},
                 {
                     "type": "object",
                     "additionalProperties": false,
@@ -193,9 +193,14 @@ fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {
         defs["PageParams"]["properties"]["limit"]["anyOf"][0]["minimum"],
         1
     );
+    assert!(
+        defs["RequestDecideParams"]["properties"]
+            .get("grants")
+            .is_none()
+    );
     assert_eq!(
-        defs["RequestDecideParams"]["properties"]["grants"]["maxItems"],
-        4096
+        defs["BeginParams"]["properties"]["scopes"]["const"],
+        json!(["mcp"])
     );
     for definition in defs
         .as_object()

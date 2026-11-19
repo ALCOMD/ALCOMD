@@ -1,5 +1,5 @@
 use super::*;
-use rmcp::model::{ServerNotification, SubscriptionFilter};
+use rmcp::model::SubscriptionFilter;
 
 async fn start_http_subscription_check() -> (
     alcomd_daemon::test_support::TestDaemon,
@@ -28,7 +28,6 @@ async fn subscription_reader(owner: &mut AlcomdClient, name: &str) -> (McpClient
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: name.into(),
-            grants: vec![grant("projects.read", "global", "*")],
             idempotency_key: format!("create-{name}"),
         })
         .await
@@ -142,22 +141,6 @@ async fn raw_subscription_check_request(
     request.send().await
 }
 
-async fn read_subscription_notice(response: &mut reqwest::Response, message: &str) {
-    tokio::time::timeout(Duration::from_secs(6), async {
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.expect("stream frame") {
-            bytes.extend_from_slice(&chunk);
-            assert!(bytes.len() <= 16_384, "bounded fixture observation");
-            if String::from_utf8_lossy(&bytes).contains(message) {
-                return;
-            }
-        }
-        panic!("stream closed before expected protocol message");
-    })
-    .await
-    .expect("subscription event deadline");
-}
-
 async fn wait_subscription_counts(
     owner: &mut AlcomdClient,
     streams: Option<u32>,
@@ -239,13 +222,6 @@ async fn http_subscription_capacity_and_paused_reader_isolate_business() {
             .status(),
         429
     );
-    update(
-        &mut owner,
-        &readers[0].0,
-        vec![],
-        "capacity-restrict-slow-reader",
-    )
-    .await;
     // The application has not polled any body on these four connections.
     // Cross one real SSE heartbeat interval while retaining all four slots.
     tokio::time::sleep(Duration::from_secs(16)).await;
@@ -256,8 +232,6 @@ async fn http_subscription_capacity_and_paused_reader_isolate_business() {
             .expect("another client can still call"),
     )
     .await;
-    read_subscription_notice(&mut paused[0], "notifications/tools/list_changed").await;
-
     let mut streams = paused;
     for (_, credential) in &readers[1..] {
         for _ in 0..4 {
@@ -351,7 +325,6 @@ async fn lost_observer_ticket_reply_does_not_reconnect_reissue_or_interrupt_busi
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Observer loss".into(),
-            grants: vec![grant("projects.read", "global", "*")],
             idempotency_key: "loss-client".into(),
         })
         .await
@@ -417,12 +390,12 @@ async fn lost_observer_ticket_reply_does_not_reconnect_reissue_or_interrupt_busi
     );
     assert_eq!(unavailable.status, McpTransportAvailability::Unavailable);
     assert!(unavailable.coverage_incomplete);
-    assert_eq!(
+    assert!(
         sdk.list_all_tools()
             .await
             .expect("authorized business connection still works")
-            .len(),
-        2
+            .iter()
+            .any(|tool| tool.name == "alcomd_apply_package_changes")
     );
     assert!(
         tokio::time::timeout(Duration::from_millis(1200), subscription.next())
@@ -479,7 +452,6 @@ async fn flow(http: bool) {
     let mut a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Subscriptions A".into(),
-            grants: vec![],
             idempotency_key: "subscription-a".into(),
         })
         .await
@@ -487,7 +459,6 @@ async fn flow(http: bool) {
     let mut b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Subscriptions B".into(),
-            grants: vec![],
             idempotency_key: "subscription-b".into(),
         })
         .await
@@ -654,12 +625,17 @@ async fn flow(http: bool) {
     let url = http_fixture.as_ref().map(|h| h.url.as_str());
     let sa = sdk(&ta.credential, url).await;
     let sb = sdk(&tb.credential, url).await;
-    let empty = ca
+    let initial = ca
         .mcp_tools_catalog(Default::default())
         .await
-        .expect("empty real catalog");
-    assert!(empty.tools.is_empty());
-    assert_eq!(empty.catalog_fingerprint.len(), 64);
+        .expect("published real catalog");
+    assert!(
+        initial
+            .tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_get_project")
+    );
+    assert_eq!(initial.catalog_fingerprint.len(), 64);
     assert!(
         sa.listen(SubscriptionFilter::builder().prompts_list_changed().build())
             .await
@@ -712,34 +688,17 @@ async fn flow(http: bool) {
         tokio::time::timeout(idle, sub.next()).await.is_err(),
         "unchanged catalogue must stay open without spurious invalidation"
     );
-    a = update(
-        &mut owner,
-        &a,
-        vec![grant("projects.read", "global", "*")],
-        "read-subs-a",
-    )
-    .await;
-    let notice = tokio::time::timeout(Duration::from_secs(4), sub.next())
-        .await
-        .expect("invalidation deadline")
-        .expect("valid SDK notification")
-        .expect("change");
-    assert!(matches!(
-        notice,
-        ServerNotification::ToolListChangedNotification(_)
-    ));
     assert!(
         tokio::time::timeout(Duration::from_millis(1200), sub_b.next())
             .await
             .is_err(),
-        "A grant cannot invalidate unchanged B catalogue"
+        "the other client's catalogue is also unchanged"
     );
-    let changed = ca
+    let current = ca
         .mcp_tools_catalog(Default::default())
         .await
-        .expect("current catalog");
-    assert_ne!(changed.catalog_fingerprint, empty.catalog_fingerprint);
-    assert_eq!(changed.tools.len(), 2);
+        .expect("current catalogue");
+    assert_eq!(current.catalog_fingerprint, initial.catalog_fingerprint);
     sub_b
         .cancel()
         .await

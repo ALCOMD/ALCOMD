@@ -158,7 +158,6 @@ fn state19_removal_preserves_all_business_rows_and_never_reuses_event_sequence()
     // database must never create implicit clients, grants, credentials, or tokens.
     for table in [
         "mcp_clients",
-        "mcp_client_grants",
         "mcp_client_credentials",
         "mcp_oauth_registrations",
         "mcp_oauth_tokens",

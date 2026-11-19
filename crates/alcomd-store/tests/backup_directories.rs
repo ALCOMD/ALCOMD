@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use alcomd_application::{
     BackupCompression, BackupCreateOptions, BackupCreateRequest, BackupDestination, IdempotencyKey,
-    M3RegistryStore, M5BackupErrorCode, M5BackupStore, ManifestState, McpGrant, McpIdentityStore,
+    M3RegistryStore, M5BackupErrorCode, M5BackupStore, ManifestState, McpIdentityStore,
     McpIdentityWrite, OperationState, PrincipalId, ProjectObservation, ProjectType, Revision,
     StateStore, ToolAuthentication, mcp_credential_hash, with_workflow_authentication,
 };
@@ -73,11 +73,6 @@ async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
         .await
         .expect("native registration")
         .value;
-    let grants = ["projects.read", "backups.manage"].map(|permission| McpGrant {
-        permission: permission.to_owned(),
-        resource_kind: "global".to_owned(),
-        resource_id: "*".to_owned(),
-    });
     let mut clients = Vec::new();
     for name in ["first", "second"] {
         let client = store
@@ -86,7 +81,6 @@ async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
                 format!("create-{name}"),
                 McpIdentityWrite::Create {
                     name: name.to_owned(),
-                    grants: grants.to_vec(),
                 },
                 2,
             )
@@ -159,10 +153,9 @@ async fn mcp_backup_acceptance_uses_shared_project_and_checks_live_authority() {
         .mcp_write(
             owner,
             "revoke-backup-write".to_owned(),
-            McpIdentityWrite::SetGrants {
+            McpIdentityWrite::Revoke {
                 id: first.client_id,
                 expected: first.revision,
-                grants: vec![grants[0].clone()],
             },
             5,
         )

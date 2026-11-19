@@ -3,16 +3,8 @@ pub use alcomd_domain::McpClientId;
 use alcomd_domain::{Permission, PrincipalId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use std::future::Future;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct McpGrant {
-    pub permission: String,
-    pub resource_kind: String,
-    pub resource_id: String,
-}
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpClient {
@@ -22,7 +14,6 @@ pub struct McpClient {
     pub revision: u64,
     pub created_at_ms: u64,
     pub revoked_at_ms: Option<u64>,
-    pub grants: Vec<McpGrant>,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum McpIdentityError {
@@ -38,19 +29,6 @@ pub enum McpIdentityError {
 pub enum McpIdentityWrite {
     Create {
         name: String,
-        grants: Vec<McpGrant>,
-    },
-    SetGrants {
-        id: McpClientId,
-        expected: u64,
-        grants: Vec<McpGrant>,
-    },
-    /// Internal bounded Host command; not a new Core RPC.
-    ChangeGrants {
-        id: McpClientId,
-        expected: u64,
-        add: Vec<McpGrant>,
-        remove: Vec<McpGrant>,
     },
     Issue {
         id: McpClientId,
@@ -88,91 +66,29 @@ pub fn mcp_credential_hash(secret: &str) -> [u8; 32] {
     Sha256::digest(secret.as_bytes()).into()
 }
 
-/// Validates only combinations currently enforced at every corresponding use case.
-/// Unsupported write/global-owner grants are rejected, never silently widened.
-pub fn validate_mcp_grants(grants: &[McpGrant]) -> Result<(), McpIdentityError> {
-    if grants.len() > 4096 {
-        return Err(McpIdentityError::LimitExceeded);
-    }
-    let mut keys = HashSet::new();
-    let mut permissions = HashSet::new();
-    for grant in grants {
-        let valid = matches!(
-            grant.permission.as_str(),
-            "projects.read"
-                | "packages.manage"
-                | "state.check"
-                | "operations.read"
-                | "operations.cancel"
-                | "events.read"
-                | "repositories.read"
-                | "repositories.manage"
-                | "packages.read"
-                | "backups.read"
-                | "backups.manage"
-                | "projects.manage"
-                | "projects.create"
-                | "settings.read"
-                | "unity.read"
-        ) && grant.resource_kind == "global"
-            && grant.resource_id == "*";
-        if !valid || !keys.insert((&grant.permission, &grant.resource_kind, &grant.resource_id)) {
-            return Err(McpIdentityError::InvalidInput);
-        }
-        permissions.insert(&grant.permission);
-    }
-    if permissions.len() > 64 {
-        return Err(McpIdentityError::LimitExceeded);
-    }
-    Ok(())
-}
-
-pub fn validate_mcp_grant_delta(
-    add: &[McpGrant],
-    remove: &[McpGrant],
-) -> Result<(), McpIdentityError> {
-    if add.len() > 128 || remove.len() > 128 {
-        return Err(McpIdentityError::LimitExceeded);
-    }
-    if add.is_empty() && remove.is_empty() {
-        return Err(McpIdentityError::InvalidInput);
-    }
-    validate_mcp_grants(add)?;
-    validate_mcp_grants(remove)?;
-    if add.iter().any(|g| remove.contains(g)) {
-        return Err(McpIdentityError::InvalidInput);
-    }
-    Ok(())
-}
-
 pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError> {
     if client.revoked_at_ms.is_some()
         || client.principal_id.as_str() != format!("mcp:{}", client.client_id)
     {
         return Err(McpIdentityError::PermissionDenied);
     }
-    validate_mcp_grants(&client.grants)?;
-    let mut permissions = Vec::new();
-    for grant in &client.grants {
-        permissions.push(match grant.permission.as_str() {
-            "projects.read" => Permission::ProjectsRead,
-            "state.check" => Permission::StateCheck,
-            "operations.read" => Permission::OperationsRead,
-            "operations.cancel" => Permission::OperationsCancel,
-            "events.read" => Permission::EventsRead,
-            "repositories.read" => Permission::RepositoriesRead,
-            "repositories.manage" => Permission::RepositoriesManage,
-            "packages.read" => Permission::PackagesRead,
-            "packages.manage" => Permission::PackagesManage,
-            "backups.read" => Permission::BackupsRead,
-            "backups.manage" => Permission::BackupsManage,
-            "projects.manage" => Permission::ProjectsManage,
-            "projects.create" => Permission::ProjectsCreate,
-            "settings.read" => Permission::SettingsRead,
-            "unity.read" => Permission::UnityRead,
-            _ => return Err(McpIdentityError::PermissionDenied),
-        });
-    }
+    let permissions = [
+        Permission::ProjectsRead,
+        Permission::ProjectsManage,
+        Permission::ProjectsCreate,
+        Permission::RepositoriesRead,
+        Permission::RepositoriesManage,
+        Permission::PackagesRead,
+        Permission::PackagesManage,
+        Permission::BackupsRead,
+        Permission::BackupsManage,
+        Permission::OperationsRead,
+        Permission::OperationsCancel,
+        Permission::StateCheck,
+        Permission::EventsRead,
+        Permission::SettingsRead,
+        Permission::UnityRead,
+    ];
     Ok(AccessContext::new(client.principal_id.clone(), permissions).with_mcp_identity())
 }
 
@@ -258,27 +174,20 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
         if crate::IdempotencyKey::parse(key.clone()).is_err() || now > i64::MAX as u64 {
             return Err(McpIdentityError::InvalidInput);
         }
-        if let McpIdentityWrite::SetGrants { expected, .. }
-        | McpIdentityWrite::ChangeGrants { expected, .. }
-        | McpIdentityWrite::Issue { expected, .. }
-        | McpIdentityWrite::Revoke { expected, .. } = &command
+        if let McpIdentityWrite::Issue { expected, .. } | McpIdentityWrite::Revoke { expected, .. } =
+            &command
             && (*expected == 0 || *expected > i64::MAX as u64)
         {
             return Err(McpIdentityError::InvalidInput);
         }
         match &command {
-            McpIdentityWrite::Create { name, grants } => {
+            McpIdentityWrite::Create { name } => {
                 if name.trim().is_empty()
                     || name.chars().count() > 128
                     || name.chars().any(char::is_control)
                 {
                     return Err(McpIdentityError::InvalidInput);
                 }
-                validate_mcp_grants(grants)?;
-            }
-            McpIdentityWrite::SetGrants { grants, .. } => validate_mcp_grants(grants)?,
-            McpIdentityWrite::ChangeGrants { add, remove, .. } => {
-                validate_mcp_grant_delta(add, remove)?;
             }
             McpIdentityWrite::Issue { .. } if access.principal() != &PrincipalId::local_owner() => {
                 return Err(McpIdentityError::PermissionDenied);
@@ -294,112 +203,32 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_domain::ProjectId;
-    fn record(grants: Vec<McpGrant>) -> McpClient {
+
+    #[test]
+    fn connected_client_gets_tools_without_owner_authority() {
         let id = McpClientId::new();
-        McpClient {
+        let mut client = McpClient {
             client_id: id,
-            principal_id: PrincipalId::parse(format!("mcp:{id}")).expect("Principal"),
+            principal_id: PrincipalId::parse(format!("mcp:{id}")).expect("principal"),
             display_name: "Client".into(),
             revision: 1,
             created_at_ms: 1,
             revoked_at_ms: None,
-            grants,
-        }
-    }
-    #[test]
-    fn zero_grants_never_inherit_owner_or_implicit_permissions() {
-        let access = mcp_access(&record(vec![])).expect("authenticated but unprivileged");
-        assert!(access.is_mcp_client());
-        assert_ne!(access.principal(), &PrincipalId::local_owner());
+        };
+        let access = mcp_access(&client).expect("active identity");
+        assert_eq!(access.principal(), &client.principal_id);
         for permission in [
             Permission::ProjectsRead,
-            Permission::ProjectsManage,
-            Permission::McpClientsManage,
-            Permission::StateCheck,
-            Permission::SettingsRead,
+            Permission::PackagesManage,
+            Permission::BackupsManage,
         ] {
-            assert!(access.require(permission).is_err());
+            assert!(access.require(permission).is_ok());
         }
-    }
-    #[test]
-    fn project_read_capability_covers_future_projects_but_never_expands_to_writes() {
-        let access = mcp_access(&record(vec![McpGrant {
-            permission: "projects.read".into(),
-            resource_kind: "global".into(),
-            resource_id: "*".into(),
-        }]))
-        .expect("scoped identity");
-        assert!(access.require(Permission::ProjectsRead).is_ok());
-        assert!(access.is_mcp_client());
-        assert_ne!(access.principal(), &PrincipalId::local_owner());
-        assert!(access.require(Permission::ProjectsManage).is_err());
-        assert!(access.require(Permission::PackagesManage).is_err());
-    }
-    #[test]
-    fn unknown_global_owner_and_duplicate_grants_are_rejected() {
-        for (permission, kind, id) in [
-            (
-                "projects.read",
-                "project",
-                "00000000-0000-4000-8000-000000000001",
-            ),
-            ("mcp.clients.manage", "global", "*"),
-            ("unknown", "global", "*"),
-            ("projects.read", "project", "builtin:local-owner"),
-        ] {
-            assert_eq!(
-                validate_mcp_grants(&[McpGrant {
-                    permission: permission.into(),
-                    resource_kind: kind.into(),
-                    resource_id: id.into()
-                }]),
-                Err(McpIdentityError::InvalidInput)
-            );
-        }
-        let g = McpGrant {
-            permission: "operations.read".into(),
-            resource_kind: "global".into(),
-            resource_id: "*".into(),
-        };
-        assert_eq!(
-            validate_mcp_grants(&[g.clone(), g]),
-            Err(McpIdentityError::InvalidInput)
-        );
-    }
-    #[test]
-    fn revoked_or_forged_owner_records_fail_closed() {
-        let mut client = record(vec![]);
+        assert!(access.require(Permission::McpClientsManage).is_err());
         client.revoked_at_ms = Some(2);
         assert!(matches!(
             mcp_access(&client),
             Err(McpIdentityError::PermissionDenied)
         ));
-        client.revoked_at_ms = None;
-        client.principal_id = PrincipalId::local_owner();
-        assert!(matches!(
-            mcp_access(&client),
-            Err(McpIdentityError::PermissionDenied)
-        ));
-    }
-
-    #[test]
-    fn package_write_is_a_separate_global_capability_not_implied_by_read() {
-        let id = ProjectId::new().to_string();
-        let grant = |permission: &str, kind: &str, resource: &str| McpGrant {
-            permission: permission.into(),
-            resource_kind: kind.into(),
-            resource_id: resource.into(),
-        };
-        let access = mcp_access(&record(vec![
-            grant("projects.read", "global", "*"),
-            grant("packages.manage", "global", "*"),
-        ]))
-        .expect("approved tuple");
-        assert!(access.require(Permission::PackagesManage).is_ok());
-        assert!(access.require(Permission::ProjectsRead).is_ok());
-        assert!(validate_mcp_grants(&[grant("packages.manage", "project", &id)]).is_err());
-        let read = mcp_access(&record(vec![grant("projects.read", "global", "*")])).expect("read");
-        assert!(read.require(Permission::PackagesManage).is_err());
     }
 }

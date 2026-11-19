@@ -218,7 +218,10 @@ fn state39_real_initializer_upgrades_and_reopens_without_any_trust_model() {
     drop(db);
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("upgrade and reopen");
-        assert_eq!(snapshot(&db), expected);
+        assert_eq!(
+            snapshot(&db),
+            connection_access_migration_tests::expected_state44(expected.clone())
+        );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("version"),

@@ -384,13 +384,12 @@ pub fn require_tool_permissions(
 
 impl ToolAuthentication {
     pub fn access(&self, client: crate::McpClient) -> Result<AccessContext, ToolError> {
-        let scopes = client.grants.iter().map(|g| g.permission.clone()).collect();
         let access = crate::mcp_access(&client)
             .map_err(|_| ToolError::PermissionDenied)?
             .with_actor("MCP".into());
         Ok(match self {
             Self::Credential(_) => access,
-            Self::OAuth(guard) => access.with_oauth_guard(guard.clone(), scopes),
+            Self::OAuth(guard) => access.with_oauth_guard(guard.clone()),
         })
     }
     pub fn binding(&self) -> String {

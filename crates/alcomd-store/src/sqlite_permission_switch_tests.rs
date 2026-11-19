@@ -135,8 +135,11 @@ fn state37_current_mcp_snapshot_drops_old_scopes_and_revokes_related_oauth_famil
     db.execute_batch(MIGRATION_V37).expect("37");
     let current = crate::m8_mcp::client(&db, &affected).expect("current");
     assert_eq!(current.revision, 5);
-    assert_eq!(current.grants.len(), 1);
-    assert_eq!(current.grants[0].permission, "state.check");
+    let grants: String = db.query_row(
+        "SELECT group_concat(permission) FROM mcp_client_grants WHERE client_id=?1 AND grant_revision=(SELECT grant_revision FROM mcp_clients WHERE client_id=?1)",
+        [&affected], |row| row.get(0),
+    ).expect("current State37 snapshot");
+    assert_eq!(grants, "state.check");
     assert_eq!(
         snapshot(&db)
             .into_iter()
@@ -147,10 +150,6 @@ fn state37_current_mcp_snapshot_drops_old_scopes_and_revokes_related_oauth_famil
             .filter(|row| !(row[0] == Value::Text(affected.clone()) && row[1] == Value::Integer(5)))
             .collect::<Vec<_>>(),
         history.1
-    );
-    assert!(
-        crate::m8_mcp::grant_snapshot(&db, &affected, 2).is_err(),
-        "retained raw history is not a supported grant snapshot"
     );
     assert_eq!(
         crate::m8_mcp::client(&db, &unaffected).expect("unchanged"),
@@ -277,7 +276,10 @@ fn state37_real_initializer_migrates_once_and_reopens_without_regranting() {
     drop(db);
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("initializer");
-        assert_eq!(snapshot(&db), expected);
+        assert_eq!(
+            snapshot(&db),
+            connection_access_migration_tests::expected_state44(expected.clone())
+        );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("version"),

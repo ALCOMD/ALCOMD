@@ -6,12 +6,12 @@
 
 - MCP 客户端配置向导。
 - 已连接客户端与活跃请求可视化。
-- 权限、审批、操作进度与诊断。
+- 客户端登记、接入指引和撤销。
 - `alcomd-mcp` 组件状态展示。
 
 本扩展不实现 MCP 协议，不直接读 token，不直接修改外部配置，也不管理 stdio 子进程。
 
-M8 当前实现位于 `backend/`，使用获批独立 Host/WIT 和原 Portable UI 组件承载客户端与授权管理。
+M8 当前实现位于 `backend/`，使用客户端管理 Host v2 和现有 Portable UI。
 当前技术验证及尚未覆盖内容以 `docs/exec-plans/M8-mcp-protocol-and-management.md` 为准；不能由代码存在宣称已验收。
 “活动”分段提供 Core 确认的 IPC 连接和在途 Core RPC，以及 MCP 适配器上报的工具列表变更订阅流。三个列表各自需要读取权限。订阅流会区分报告不可用、过期、覆盖不全及确实没有已跟踪记录，客户端身份仅在 Core 已关联时显示。HTTP 空闲连接和全部 MCP 协议请求未在该页面展示。预登记客户端 HTTPS/OAuth 已有隔离 Core/SDK 证据，2026-11-17 实际 Codex CLI 0.153.4 在仅信任测试证书的隔离进程中完成 OAuth 登录和读取。普通浏览器人工 TLS 接入及扩展人工检查仍待验证，CIMD/DCR 尚未支持。
 
@@ -37,6 +37,6 @@ cargo xtask component extensions/first-party/alcomd-extension-mcp/backend/target
 扩展不会读取、存储或展示凭据，不修改外部配置，不启动MCP子进程。
 已登记客户端的详情提供接入提示。Codex 回环 Bearer 的配置核对、凭据传入与清理步骤见[客户端接入速查](../../../specs/mcp/toolset-v1.md#客户端接入速查)。
 
-客户端按能力开关授权，项目读取和包修改覆盖当前及以后登记项目。
-切换只编辑草稿，审阅实际增减并确认后调用原change-grants；不重建协议或授权系统。
-扩展声明只是申请，不产生授权；旧局部授权经State37移除，OAuth旧项目令牌失效，须重新明确授权。
+STDIO、回环 HTTP Bearer 和 HTTPS OAuth 的客户端认证后都可使用全部当前发布的 MCP 工具。
+在客户端详情可以查看接入指引并撤销连接资格。OAuth 审阅以整个连接为单位。
+扩展本身仍使用上方五项权限，管理权限控制谁可以从这个扩展登记或撤销客户端。

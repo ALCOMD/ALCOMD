@@ -270,13 +270,6 @@ impl AlcomdClient {
         self.call(alcomd_protocol::METHOD_MCP_CLIENTS_CREATE, params)
             .await
     }
-    pub async fn mcp_client_set_grants(
-        &mut self,
-        params: alcomd_protocol::McpClientsSetGrantsParams,
-    ) -> Result<alcomd_protocol::McpClientRecord, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_CLIENTS_SET_GRANTS, params)
-            .await
-    }
     pub async fn mcp_client_issue_credential(
         &mut self,
         params: alcomd_protocol::McpClientMutationParams,
@@ -315,8 +308,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_OAUTH_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_CLIENTS_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
@@ -1362,7 +1355,6 @@ impl AlcomdClient {
             && let Some(tag) = error.data.as_ref().and_then(|v| v["oauthError"].as_str())
         {
             self.oauth_rejection = match tag {
-                "insufficient_scope" => Some(OAuthRejection::InsufficientScope),
                 "invalid_grant" | "invalid_client" => Some(OAuthRejection::InvalidToken),
                 _ => None,
             };

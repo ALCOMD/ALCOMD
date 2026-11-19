@@ -7,24 +7,6 @@ use crate::bindings::exports::alcomd::extension::{guest_lifecycle, guest_ui as u
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-const MCP_PERMISSIONS: [&str; 15] = [
-    "projects.read",
-    "packages.manage",
-    "state.check",
-    "operations.read",
-    "operations.cancel",
-    "events.read",
-    "repositories.read",
-    "repositories.manage",
-    "packages.read",
-    "backups.read",
-    "backups.manage",
-    "projects.manage",
-    "projects.create",
-    "settings.read",
-    "unity.read",
-];
-
 pub struct Management;
 thread_local! { static SESSIONS: RefCell<BTreeMap<String, View>> = const { RefCell::new(BTreeMap::new()) }; }
 #[derive(Default)]
@@ -33,9 +15,7 @@ struct View {
     selected: Option<host::ClientSummary>,
     client_cursor: Option<String>,
     next_clients: Option<String>,
-    grants: Vec<host::Grant>,
-    grants_loaded: bool,
-    confirmation: Option<Confirmation>,
+    confirm_revoke: bool,
     message: Option<(String, ui::Tone)>,
     unknown_write: bool,
     can_manage: bool,
@@ -46,14 +26,6 @@ struct View {
     stream_message: Option<String>,
     counter: u64,
 }
-enum Confirmation {
-    Revoke,
-    Change {
-        add: Vec<host::Grant>,
-        remove: Vec<host::Grant>,
-    },
-}
-
 impl guest_lifecycle::Guest for Management {
     fn activate(_: types::ActivationContext) -> Result<(), types::ExtensionError> {
         Ok(())
@@ -80,7 +52,7 @@ impl ui::Guest for Management {
     }
     fn refresh(session_id: String) -> ui::UiDocument {
         with_view(&session_id, |view| {
-            view.confirmation = None;
+            view.confirm_revoke = false;
             view.message = None;
             if view.activity && !view.unknown_write {
                 view.load_runtime();
@@ -90,9 +62,6 @@ impl ui::Guest for Management {
             view.client_cursor = None;
             if view.load_clients() {
                 view.unknown_write = false;
-                if view.selected.is_some() {
-                    view.load_grants();
-                }
             }
             view.load_runtime();
         })
@@ -327,7 +296,6 @@ impl View {
                                 cursor = next.next_cursor;
                             }
                             Err(error) => {
-                                self.grants.clear();
                                 self.fail(error);
                                 return false;
                             }
@@ -350,8 +318,6 @@ impl View {
                 self.next_clients = None;
                 if matches!(error.code, host::ErrorCode::PermissionDenied) {
                     self.selected = None;
-                    self.grants.clear();
-                    self.grants_loaded = false;
                     if self.unknown_write {
                         self.fail(error);
                     } else {
@@ -364,38 +330,6 @@ impl View {
                     self.fail(error);
                 }
                 false
-            }
-        }
-    }
-    fn load_grants(&mut self) {
-        self.grants_loaded = false;
-        self.grants.clear();
-        let Some(selected) = &self.selected else {
-            return;
-        };
-        let id = selected.client_id.clone();
-        let revision = selected.revision;
-        let mut cursor = None;
-        loop {
-            match host::grants(&id, revision, cursor.as_deref(), Some(64)) {
-                Ok(page) if page.revision == revision => {
-                    self.grants.extend(page.items);
-                    cursor = page.next_cursor;
-                    if cursor.is_none() {
-                        self.grants_loaded = true;
-                        break;
-                    }
-                }
-                Ok(_) => {
-                    self.grants.clear();
-                    self.message = Some(("记录已变化，请刷新后再操作。".into(), ui::Tone::Danger));
-                    break;
-                }
-                Err(error) => {
-                    self.grants.clear();
-                    self.fail(error);
-                    break;
-                }
             }
         }
     }
@@ -430,7 +364,7 @@ impl View {
             "runtime-refresh" => self.load_runtime(),
             "back" => {
                 self.selected = None;
-                self.confirmation = None;
+                self.confirm_revoke = false;
                 self.client_cursor = None;
                 self.load_clients();
             }
@@ -443,7 +377,7 @@ impl View {
                 self.load_clients();
             }
             "cancel" => {
-                self.confirmation = None;
+                self.confirm_revoke = false;
             }
             "create" if self.can_manage => {
                 let name = field(&fields, "name");
@@ -451,44 +385,22 @@ impl View {
                 match host::create(&name, &key) {
                     Ok(client) => {
                         self.selected = Some(client);
-                        self.load_grants();
                     }
                     Err(error) => self.fail(error),
                 }
             }
-            "permissions" if self.can_manage && self.grants_loaded => {
-                let Some((add, remove)) = permission_changes(&self.grants, &fields) else {
-                    self.message = Some((
-                        "权限选项不完整，请刷新页面后重试。".into(),
-                        ui::Tone::Danger,
-                    ));
-                    return;
-                };
-                if add.is_empty() && remove.is_empty() {
-                    self.message = Some(("权限未变化。".into(), ui::Tone::Neutral));
+            "revoke" if self.can_manage => self.confirm_revoke = true,
+            "confirm" if self.can_manage => {
+                if !std::mem::take(&mut self.confirm_revoke) {
                     return;
                 }
-                self.confirmation = Some(Confirmation::Change { add, remove });
-            }
-            "revoke" if self.can_manage => self.confirmation = Some(Confirmation::Revoke),
-            "confirm" if self.can_manage => {
-                let Some(confirmation) = self.confirmation.take() else {
-                    return;
-                };
                 let Some(client) = self.selected.clone() else {
                     return;
                 };
                 let key = self.key(session_id);
-                let result = match confirmation {
-                    Confirmation::Revoke => host::revoke(&client.client_id, client.revision, &key),
-                    Confirmation::Change { add, remove } => {
-                        host::change_grants(&client.client_id, client.revision, &add, &remove, &key)
-                    }
-                };
-                match result {
+                match host::revoke(&client.client_id, client.revision, &key) {
                     Ok(client) => {
                         self.selected = Some(client);
-                        self.load_grants();
                     }
                     Err(error) => self.fail(error),
                 }
@@ -496,8 +408,7 @@ impl View {
             _ if id.starts_with("client-") => {
                 if let Some(client) = self.clients.iter().find(|c| c.client_id == id[7..]) {
                     self.selected = Some(client.clone());
-                    self.confirmation = None;
-                    self.load_grants();
+                    self.confirm_revoke = false;
                 }
             }
             _ => self.message = Some(("当前操作已不可用，请刷新页面。".into(), ui::Tone::Warning)),
@@ -527,60 +438,22 @@ impl View {
                     "已登记"
                 },
             );
-            doc.key("授权数量", &client.grant_count.to_string());
-            if let Some(confirmation) = &self.confirmation {
-                match confirmation {
-                    Confirmation::Revoke => doc.status(
-                        "撤销后，此客户端的后续请求将被拒绝。已接受的业务任务不会回滚。",
-                        ui::Tone::Warning,
-                    ),
-                    Confirmation::Change { add, remove } => {
-                        for grant in add {
-                            doc.key("允许", permission_label(&grant.permission));
-                        }
-                        for grant in remove {
-                            doc.key("关闭", permission_label(&grant.permission));
-                        }
-                        if add
-                            .iter()
-                            .any(|grant| grant.permission == "packages.manage")
-                        {
-                            doc.status("允许修改所有现有及以后新建项目的包。实际修改仍需审阅并确认原计划。",ui::Tone::Warning);
-                        }
-                    }
-                }
+            if self.confirm_revoke {
+                doc.status(
+                    "撤销后，此客户端的后续请求将被拒绝。已接受的业务任务不会回滚。",
+                    ui::Tone::Warning,
+                );
                 doc.button("确认", "confirm", self.unknown_write);
                 doc.button("取消", "cancel", false);
             } else {
-                let editable = self.can_manage
-                    && self.grants_loaded
-                    && client.revoked_at_ms.is_none()
-                    && !self.unknown_write;
-                if !editable {
-                    let list = doc.node(
-                        None,
-                        ui::NodePayload::List(ui::ListNode {
-                            label: Some("已允许的权限".into()),
-                        }),
-                    );
-                    for grant in &self.grants {
-                        doc.node(
-                            Some(&list),
-                            ui::NodePayload::ListItem(ui::ListItemNode {
-                                label: Some(self.grant_label(grant)),
-                            }),
-                        );
-                    }
-                }
-                if editable {
-                    self.permissions_form(&mut doc);
+                if self.can_manage && client.revoked_at_ms.is_none() && !self.unknown_write {
                     doc.button("撤销客户端", "revoke", false);
                 }
                 if client.revoked_at_ms.is_none() {
                     doc.node(
                         None,
                         ui::NodePayload::Text(ui::TextNode {
-                            text: "接入客户端时，由本机所有者按上方 ID 在 CLI 签发独立凭据。使用 HTTP Bearer 时，将回环 MCP 地址和凭据分别填入客户端的连接设置。".into(),
+                            text: "连接成功后可使用全部已发布的 MCP 工具。由本机所有者在 CLI 签发独立凭据；使用 HTTP Bearer 时，在客户端填入本机 MCP 地址和凭据。".into(),
                             tone: ui::Tone::Neutral,
                         }),
                     );
@@ -610,7 +483,7 @@ impl View {
                 );
                 doc.node(
                     Some(&row),
-                    button("查看权限", &format!("client-{}", client.client_id), false),
+                    button("查看客户端", &format!("client-{}", client.client_id), false),
                 );
             }
             if self.clients.is_empty() && self.message.is_none() {
@@ -650,73 +523,6 @@ impl View {
         }
         doc.finish()
     }
-    fn grant_label(&self, grant: &host::Grant) -> String {
-        permission_label(&grant.permission).into()
-    }
-    fn permissions_form(&self, doc: &mut Document) {
-        let form = doc.node(
-            None,
-            ui::NodePayload::Form(ui::FormNode {
-                submit_action_id: "permissions".into(),
-                submit_label: "审阅权限修改".into(),
-                disabled: false,
-            }),
-        );
-        for permission in MCP_PERMISSIONS {
-            doc.node(
-                Some(&form),
-                ui::NodePayload::Switch(ui::SwitchNode {
-                    field_id: permission.into(),
-                    label: permission_label(permission).into(),
-                    initial_value: self.grants.iter().any(|grant| {
-                        grant.permission == permission
-                            && grant.resource_kind == "global"
-                            && grant.resource_id == "*"
-                    }),
-                    disabled: false,
-                    read_only: false,
-                    validation: None,
-                }),
-            );
-        }
-    }
-}
-fn permission_changes(
-    grants: &[host::Grant],
-    fields: &[ui::SubmittedField],
-) -> Option<(Vec<host::Grant>, Vec<host::Grant>)> {
-    if fields.len() != MCP_PERMISSIONS.len() {
-        return None;
-    }
-    let mut add = Vec::new();
-    let mut remove = Vec::new();
-    for permission in MCP_PERMISSIONS {
-        let mut matching = fields.iter().filter(|field| field.field_id == permission);
-        let ui::FieldValue::Boolean(enabled) = matching.next()?.value else {
-            return None;
-        };
-        if matching.next().is_some() {
-            return None;
-        }
-        let allowed = grants.iter().any(|grant| {
-            grant.permission == permission
-                && grant.resource_kind == "global"
-                && grant.resource_id == "*"
-        });
-        if enabled != allowed {
-            let grant = host::Grant {
-                permission: permission.into(),
-                resource_kind: "global".into(),
-                resource_id: "*".into(),
-            };
-            if enabled {
-                add.push(grant);
-            } else {
-                remove.push(grant);
-            }
-        }
-    }
-    Some((add, remove))
 }
 fn field(fields: &[ui::SubmittedField], id: &str) -> String {
     fields
@@ -727,26 +533,6 @@ fn field(fields: &[ui::SubmittedField], id: &str) -> String {
             _ => None,
         })
         .unwrap_or_default()
-}
-fn permission_label(permission: &str) -> &str {
-    match permission {
-        "projects.read" => "读取项目",
-        "packages.manage" => "修改项目包",
-        "state.check" => "检查服务状态",
-        "operations.read" => "查看任务",
-        "operations.cancel" => "取消任务",
-        "events.read" => "读取事件",
-        "repositories.read" => "读取仓库",
-        "repositories.manage" => "添加、刷新和移除仓库",
-        "backups.read" => "查看项目备份",
-        "backups.manage" => "创建和恢复项目备份",
-        "projects.manage" => "登记现有项目",
-        "projects.create" => "新建、复制和恢复项目",
-        "settings.read" => "读取设置和默认目录",
-        "unity.read" => "读取 Unity 安装与项目启动配置",
-        "packages.read" => "读取包信息",
-        _ => "不支持的权限",
-    }
 }
 fn error_text(code: host::ErrorCode) -> &'static str {
     match code {
@@ -846,92 +632,6 @@ fn error_document(message: &str) -> ui::UiDocument {
 mod tests {
     use super::*;
 
-    #[test]
-    fn permission_form_includes_repository_management_and_has_no_project_selector() {
-        let view = View {
-            selected: Some(selected()),
-            can_manage: true,
-            grants_loaded: true,
-            grants: vec![host::Grant {
-                permission: "projects.read".into(),
-                resource_kind: "global".into(),
-                resource_id: "*".into(),
-            }],
-            ..View::default()
-        };
-        let doc = view.document();
-        let fields = doc
-            .nodes
-            .iter()
-            .filter_map(|node| match &node.payload {
-                ui::NodePayload::Switch(field) => Some(ui::SubmittedField {
-                    field_id: field.field_id.clone(),
-                    value: ui::FieldValue::Boolean(field.initial_value),
-                }),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(fields.len(), 15);
-        for permission in ["settings.read", "unity.read"] {
-            assert!(fields.iter().any(|field| field.field_id == permission
-                && matches!(field.value, ui::FieldValue::Boolean(false))));
-        }
-        assert!(
-            !doc.nodes
-                .iter()
-                .any(|node| matches!(node.payload, ui::NodePayload::Select(_)))
-        );
-        let (add, remove) = permission_changes(&view.grants, &fields).expect("unchanged draft");
-        assert!(add.is_empty() && remove.is_empty());
-        let mut changed = fields;
-        changed
-            .iter_mut()
-            .find(|field| field.field_id == "projects.read")
-            .expect("read")
-            .value = ui::FieldValue::Boolean(false);
-        changed
-            .iter_mut()
-            .find(|field| field.field_id == "packages.manage")
-            .expect("write")
-            .value = ui::FieldValue::Boolean(true);
-        let repository = changed
-            .iter_mut()
-            .find(|field| field.field_id == "repositories.manage")
-            .expect("repository management");
-        assert!(matches!(repository.value, ui::FieldValue::Boolean(false)));
-        repository.value = ui::FieldValue::Boolean(true);
-        let (add, remove) = permission_changes(&view.grants, &changed).expect("delta");
-        assert_eq!(add.len(), 2);
-        assert_eq!(remove.len(), 1);
-        assert_eq!(add[0].permission, "packages.manage");
-        assert_eq!(add[1].permission, "repositories.manage");
-        assert_eq!(remove[0].permission, "projects.read");
-        assert!(
-            add.iter()
-                .chain(remove.iter())
-                .all(|grant| grant.resource_kind == "global" && grant.resource_id == "*")
-        );
-        changed.pop();
-        assert!(
-            permission_changes(&view.grants, &changed).is_none(),
-            "missing field never silently revokes a permission"
-        );
-    }
-
-    #[test]
-    fn incomplete_authoritative_grant_read_never_publishes_false_off_switches() {
-        let doc = View {
-            selected: Some(selected()),
-            can_manage: true,
-            grants_loaded: false,
-            ..View::default()
-        }
-        .document();
-        assert!(!doc.nodes.iter().any(|node| matches!(
-            node.payload,
-            ui::NodePayload::Form(_) | ui::NodePayload::Switch(_)
-        )));
-    }
     fn selected() -> host::ClientSummary {
         host::ClientSummary {
             client_id: "00000000-0000-4000-8000-000000000001".into(),
@@ -939,7 +639,6 @@ mod tests {
             revision: 1,
             created_at_ms: 1,
             revoked_at_ms: None,
-            grant_count: 0,
         }
     }
     #[test]
@@ -954,7 +653,7 @@ mod tests {
                 .iter()
                 .any(|node| matches!(&node.payload, ui::NodePayload::Form(_)))
         );
-        assert!(doc.nodes.iter().any(|node| matches!(&node.payload,ui::NodePayload::Button(button) if button.label=="查看权限")));
+        assert!(doc.nodes.iter().any(|node| matches!(&node.payload,ui::NodePayload::Button(button) if button.label=="查看客户端")));
     }
 
     #[test]
@@ -980,7 +679,7 @@ mod tests {
             selected: Some(selected()),
             can_manage: true,
             unknown_write: true,
-            confirmation: Some(Confirmation::Revoke),
+            confirm_revoke: true,
             message: Some((
                 error_text(host::ErrorCode::WriteOutcomeUnknown).into(),
                 ui::Tone::Danger,

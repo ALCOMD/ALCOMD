@@ -122,7 +122,10 @@ fn state38_real_initializer_upgrades_once_then_reopens() {
     let before = publisher_trust_removal_tests::expected_state39(rows(&source));
     for _ in 0..2 {
         let db = initialize_connection(&path).expect("valid isolated authority fixture");
-        assert_eq!(rows(&db), before);
+        assert_eq!(
+            rows(&db),
+            connection_access_migration_tests::expected_state44(before.clone())
+        );
         assert_eq!(
             db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .expect("valid isolated authority fixture"),
@@ -149,11 +152,6 @@ fn authority_fixture() -> (Connection, alcomd_application::ToolInvocation) {
         "operations.read",
         "operations.cancel",
     ] {
-        db.execute(
-            "INSERT INTO mcp_client_grants VALUES (?1,2,?2,'global','*')",
-            params![id, permission],
-        )
-        .expect("valid isolated authority fixture");
         db.execute("INSERT INTO extension_grants VALUES ('dev.alcomd.state35',?1,'Global','*','granted',4,30)",[permission]).expect("valid isolated authority fixture");
     }
     db.execute("INSERT INTO extension_grants VALUES ('dev.alcomd.state35','mcp.tools.provide','Global','*','granted',4,30)",[]).expect("valid isolated authority fixture");
@@ -253,14 +251,9 @@ fn tool_authority_checks_both_sides_source_lease_and_closed_operation_each_time(
         &tx,
         alcomd_application::PrincipalId::local_owner(),
         "revoke-manage".into(),
-        alcomd_application::McpIdentityWrite::SetGrants {
+        alcomd_application::McpIdentityWrite::Revoke {
             id: current.client_id,
             expected: current.revision,
-            grants: current
-                .grants
-                .into_iter()
-                .filter(|g| g.permission != "packages.manage")
-                .collect(),
         },
         crate::m8_oauth::wall_time().expect("valid isolated authority fixture"),
     )
@@ -492,7 +485,11 @@ async fn tool_restart_recovers_accepted_evidence_and_never_restarts_an_unaccepte
         }
         let db = Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .expect("inspect isolated recovery");
-        assert_eq!(rows(&db), before, "recovery did not execute business work");
+        assert_eq!(
+            rows(&db),
+            connection_access_migration_tests::expected_state44(before),
+            "recovery did not execute business work"
+        );
         assert_eq!(
             db.query_row("SELECT count(*) FROM extension_mcp_calls", [], |r| r
                 .get::<_, u32>(0))

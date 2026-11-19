@@ -116,16 +116,11 @@ fn append_builtin_tools(entries: &mut Vec<Entry>, contract: &str) -> Result<(), 
     Ok(())
 }
 
-async fn entries(
-    apps: &Applications,
-    authentication: app::ToolAuthentication,
+fn builtin_entries(
     package_tools: bool,
     repository_tools: bool,
     workflow_tools: bool,
-) -> Result<(Vec<Entry>, String), E> {
-    let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
-    let access = authentication.access(snapshot.client.clone())?;
-    let mut evidence = json!({"auth":authentication.binding(),"client":snapshot.client.revision,"grants":snapshot.client.grants,"providers":[]});
+) -> Result<Vec<Entry>, E> {
     let mut entries = builtin()?;
     append_builtin_tools(
         &mut entries,
@@ -156,9 +151,20 @@ async fn entries(
             include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
         )?;
     }
-    entries.retain(|e| {
-        app::require_tool_permissions(&access, &e.descriptor.required_permissions).is_ok()
-    });
+    Ok(entries)
+}
+
+async fn entries(
+    apps: &Applications,
+    authentication: app::ToolAuthentication,
+    package_tools: bool,
+    repository_tools: bool,
+    workflow_tools: bool,
+) -> Result<(Vec<Entry>, String), E> {
+    let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
+    let mut evidence =
+        json!({"auth":authentication.binding(),"client":snapshot.client.revision,"providers":[]});
+    let mut entries = builtin_entries(package_tools, repository_tools, workflow_tools)?;
     for provider in snapshot.providers {
         let path = std::path::PathBuf::from(&provider.locator);
         let verified = tokio::task::spawn_blocking(move || {
@@ -182,9 +188,7 @@ async fn entries(
         };
         for declaration in verified.mcp_tools {
             let required = declaration.permissions();
-            if app::require_tool_permissions(&access, &required).is_err()
-                || required.iter().any(|p| !provider.granted.contains(p))
-            {
+            if required.iter().any(|p| !provider.granted.contains(p)) {
                 continue;
             }
             entries.push(Entry {
@@ -210,6 +214,7 @@ async fn entries(
     );
     Ok((entries, fingerprint))
 }
+
 fn catalog(
     entries: Vec<Entry>,
     fingerprint: String,
@@ -646,4 +651,31 @@ pub(super) async fn business(
     Ok(
         json!({"error":match code{"permission_denied"=>"permission_denied","revision_conflict"=>"revision_conflict","idempotency_conflict"=>"idempotency_conflict","invalid_request"=>"invalid_input",_=>"unavailable"}}),
     )
+}
+
+#[cfg(test)]
+mod connection_access_tests {
+    use super::*;
+
+    #[test]
+    fn connection_authorizes_every_published_builtin_tool() {
+        let client_id = app::McpClientId::new();
+        let client = app::McpClient {
+            client_id,
+            principal_id: app::PrincipalId::parse(format!("mcp:{client_id}")).expect("principal"),
+            display_name: "Tool contract fixture".into(),
+            revision: 1,
+            created_at_ms: 0,
+            revoked_at_ms: None,
+        };
+        let access = app::mcp_access(&client).expect("authenticated client");
+        for tool in builtin_entries(true, true, true).expect("published tools") {
+            assert!(
+                app::require_tool_permissions(&access, &tool.descriptor.required_permissions)
+                    .is_ok(),
+                "{}",
+                tool.descriptor.name
+            );
+        }
+    }
 }

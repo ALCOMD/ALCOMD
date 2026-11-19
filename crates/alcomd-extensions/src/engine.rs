@@ -638,7 +638,7 @@ fn required_interfaces_supported(interfaces: &[String]) -> bool {
                 | "alcomd:extension/host-projects@1.0.0"
                 | "alcomd:mcp-runtime/observations@1.0.0"
                 | "alcomd:mcp-transport/observations@1.0.0"
-                | "alcomd:mcp-management/clients@1.0.0"
+                | "alcomd:mcp-management/clients@2.0.0"
                 | "alcomd:mcp-tools/core@1.0.0"
         )
     })
@@ -739,10 +739,10 @@ mod management_interface_tests {
         assert!(required_interfaces_supported(&[]));
         assert!(required_interfaces_supported(&[
             "alcomd:extension/host-data@1.0.0".into(),
-            "alcomd:mcp-management/clients@1.0.0".into(),
+            "alcomd:mcp-management/clients@2.0.0".into(),
         ]));
         for unsupported in [
-            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-management/issue-credential@1.0.0",
             "wasi:filesystem/types@0.2.0",
         ] {

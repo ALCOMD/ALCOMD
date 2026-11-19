@@ -80,47 +80,6 @@ impl Rate {
         true
     }
 }
-pub(super) fn tool_scopes(name: Option<&str>) -> &'static [&'static str] {
-    match name {
-        Some("alcomd_list_projects" | "alcomd_get_project") => &["projects.read"],
-        Some("alcomd_list_package_sources" | "alcomd_search_packages" | "alcomd_get_package") => {
-            &["repositories.read", "packages.read"]
-        }
-        Some(
-            "alcomd_plan_package_uninstall"
-            | "alcomd_plan_package_install"
-            | "alcomd_plan_package_changes"
-            | "alcomd_plan_package_reinstall",
-        ) => &["projects.read", "repositories.read", "packages.read"],
-        Some("alcomd_apply_package_changes") => &[
-            "projects.read",
-            "repositories.read",
-            "packages.read",
-            "packages.manage",
-        ],
-        Some("alcomd_get_operation" | "alcomd_list_operations") => &["operations.read"],
-        Some("alcomd_cancel_operation") => &["operations.cancel"],
-        Some("alcomd_list_repositories" | "alcomd_inspect_repository") => &["repositories.read"],
-        Some(
-            "alcomd_register_repository" | "alcomd_refresh_repository" | "alcomd_remove_repository",
-        ) => &["repositories.manage"],
-        Some("alcomd_register_project") => &["projects.manage"],
-        Some("alcomd_list_project_templates" | "alcomd_create_project") => &["projects.create"],
-        Some("alcomd_plan_project_copy" | "alcomd_apply_project_copy") => {
-            &["projects.read", "projects.create"]
-        }
-        Some("alcomd_list_backups" | "alcomd_get_backup") => &["backups.read"],
-        Some("alcomd_create_backup") => &["backups.manage", "projects.read"],
-        Some("alcomd_plan_backup_restore") => &["backups.read", "projects.create"],
-        Some("alcomd_apply_backup_restore") => {
-            &["backups.read", "backups.manage", "projects.create"]
-        }
-        Some("alcomd_get_settings") => &["settings.read"],
-        Some("alcomd_list_unity_installations") => &["unity.read"],
-        Some("alcomd_get_project_launch_config") => &["projects.read", "unity.read"],
-        _ => &[],
-    }
-}
 fn response(status: StatusCode, kind: &'static str, bytes: Vec<u8>) -> Response<GuardedBody> {
     let mut r = Response::new(GuardedBody::new(
         Full::new(Bytes::from(bytes)).boxed(),
@@ -447,12 +406,12 @@ pub(super) async fn handle(
         return if path.ends_with("/mcp") {
             json_response(
                 StatusCode::OK,
-                json!({"resource":format!("{issuer}/mcp"),"authorization_servers":[issuer],"bearer_methods_supported":["header"],"scopes_supported":["projects.read"]}),
+                json!({"resource":format!("{issuer}/mcp"),"authorization_servers":[issuer],"bearer_methods_supported":["header"],"scopes_supported":["mcp"]}),
             )
         } else {
             json_response(
                 StatusCode::OK,
-                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["projects.read","packages.read","repositories.read","repositories.manage","packages.manage","operations.read","operations.cancel","state.check","events.read","backups.read","backups.manage","projects.manage","projects.create","settings.read","unity.read"]}),
+                json!({"issuer":issuer,"authorization_endpoint":format!("{issuer}/authorize"),"token_endpoint":format!("{issuer}/token"),"revocation_endpoint":format!("{issuer}/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none","client_secret_basic"],"revocation_endpoint_auth_methods_supported":["none","client_secret_basic"],"authorization_response_iss_parameter_supported":true,"scopes_supported":["mcp"]}),
             )
         };
     }
@@ -538,7 +497,9 @@ pub(super) async fn handle(
                         redirect_uri: required(&values, "redirect_uri")?,
                         code_challenge: required(&values, "code_challenge")?,
                         code_challenge_method: required(&values, "code_challenge_method")?,
-                        scopes: scope(values.get("scope")),
+                        scopes: values
+                            .get("scope")
+                            .map_or_else(|| vec!["mcp".into()], |s| scope(Some(s))),
                         state: values.get("state").cloned(),
                     })
                 })();
@@ -744,19 +705,11 @@ mod tests {
         }
     }
     #[test]
-    fn rate_is_bounded_and_cancel_challenge_lists_all_permissions() {
+    fn rate_is_bounded() {
         let mut r = Rate::default();
         for _ in 0..10 {
             assert!(r.admit("same"))
         }
         assert!(!r.admit("same"));
-        assert_eq!(
-            tool_scopes(Some("alcomd_cancel_operation")),
-            &["operations.cancel"]
-        );
-        assert_eq!(
-            tool_scopes(Some("alcomd_get_operation")),
-            &["operations.read"]
-        );
     }
 }

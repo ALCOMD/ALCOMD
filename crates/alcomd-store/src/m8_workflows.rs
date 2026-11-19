@@ -85,6 +85,30 @@ pub(super) fn check_plan_proof(
     Ok(())
 }
 
+pub(super) fn require(
+    db: &Connection,
+    caller: &PrincipalId,
+    permissions: &[Permission],
+) -> Result<(), ToolError> {
+    if !caller.as_str().starts_with("mcp:") {
+        return Ok(());
+    }
+    let authentication = AUTHENTICATION
+        .with(|slot| slot.borrow().clone())
+        .ok_or(ToolError::PermissionDenied)?;
+    let client = super::m8_tools::authenticate(db, &authentication)?;
+    if &client.principal_id != caller {
+        return Err(ToolError::PermissionDenied);
+    }
+    let access = authentication.access(client)?;
+    for permission in permissions {
+        access
+            .require(*permission)
+            .map_err(|_| ToolError::PermissionDenied)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,28 +147,4 @@ mod tests {
         drop(db);
         std::fs::remove_dir_all(root).expect("remove isolated fixture");
     }
-}
-
-pub(super) fn require(
-    db: &Connection,
-    caller: &PrincipalId,
-    permissions: &[Permission],
-) -> Result<(), ToolError> {
-    if !caller.as_str().starts_with("mcp:") {
-        return Ok(());
-    }
-    let authentication = AUTHENTICATION
-        .with(|slot| slot.borrow().clone())
-        .ok_or(ToolError::PermissionDenied)?;
-    let client = super::m8_tools::authenticate(db, &authentication)?;
-    if &client.principal_id != caller {
-        return Err(ToolError::PermissionDenied);
-    }
-    let access = authentication.access(client)?;
-    for permission in permissions {
-        access
-            .require(*permission)
-            .map_err(|_| ToolError::PermissionDenied)?;
-    }
-    Ok(())
 }

@@ -15,22 +15,12 @@ fn path() -> PathBuf {
     std::fs::create_dir_all(&dir).expect("disposable test directory");
     dir.join("state.db")
 }
-fn grant(p: &str) -> McpGrant {
-    McpGrant {
-        permission: p.into(),
-        resource_kind: "global".into(),
-        resource_id: "*".into(),
-    }
-}
-async fn seed(store: &StateStoreHandle, grants: Vec<McpGrant>, name: &str) -> McpClient {
+async fn seed(store: &StateStoreHandle, name: &str) -> McpClient {
     store
         .mcp_write(
             PrincipalId::local_owner(),
             format!("create-{name}"),
-            McpIdentityWrite::Create {
-                name: name.into(),
-                grants,
-            },
+            McpIdentityWrite::Create { name: name.into() },
             100,
         )
         .await
@@ -76,7 +66,7 @@ async fn begin(
                 redirect_uri: reg.redirect_uris[0].clone(),
                 code_challenge: oauth_s256(VERIFIER),
                 code_challenge_method: "S256".into(),
-                scopes: vec!["state.check".into(), "operations.read".into()],
+                scopes: vec![OAUTH_SCOPE.into()],
                 state: Some("opaque-state".into()),
             },
             entropy(n),
@@ -88,15 +78,12 @@ async fn begin(
 async fn approve(
     service: &OAuthApplication<StateStoreHandle>,
     started: &OAuthBeginResult,
-    grants: Vec<McpGrant>,
 ) -> String {
     let reviewed = service
         .get(
             &AccessContext::local_owner(),
             OAuthRequestGetParams {
                 request_id: started.request_id.clone(),
-                cursor: None,
-                limit: None,
             },
             103,
         )
@@ -108,7 +95,6 @@ async fn approve(
             OAuthRequestDecideParams {
                 request_id: started.request_id.clone(),
                 approve: true,
-                grants,
                 expected_fingerprint: reviewed.approval_fingerprint,
                 idempotency_key: "explicit-consent".into(),
             },
@@ -194,10 +180,10 @@ fn s256_matches_rfc7636_and_targets_do_not_accept_aliases_or_cleartext() {
 }
 
 #[tokio::test]
-async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_request() {
+async fn connection_requires_owner_consent_and_rejects_an_unknown_browser() {
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(&store, vec![], "zero").await;
+    let core = seed(&store, "zero").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
     let owner = AccessContext::local_owner();
@@ -211,36 +197,10 @@ async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_r
                 &unknown,
                 OAuthRequestGetParams {
                     request_id: request.request_id.clone(),
-                    cursor: None,
-                    limit: None
                 },
                 103
             )
             .await,
-        Err(OAuthError::Denied)
-    ));
-    let review = service
-        .get(
-            &owner,
-            OAuthRequestGetParams {
-                request_id: request.request_id.clone(),
-                cursor: None,
-                limit: None,
-            },
-            103,
-        )
-        .await
-        .expect("owner review");
-    assert!(review.grants.is_empty());
-    let attempt = OAuthRequestDecideParams {
-        request_id: request.request_id.clone(),
-        approve: true,
-        grants: vec![grant("state.check")],
-        expected_fingerprint: review.approval_fingerprint,
-        idempotency_key: "no-privilege".into(),
-    };
-    assert!(matches!(
-        service.decide(&owner, attempt, 104).await,
         Err(OAuthError::Denied)
     ));
     assert!(matches!(
@@ -261,31 +221,17 @@ async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_r
             &owner,
             OAuthRequestGetParams {
                 request_id: request.request_id.clone(),
-                cursor: None,
-                limit: None,
             },
             103,
         )
         .await
         .expect("review");
-    let empty = OAuthRequestDecideParams {
-        request_id: request.request_id.clone(),
-        approve: true,
-        grants: vec![],
-        expected_fingerprint: review.approval_fingerprint.clone(),
-        idempotency_key: "empty-consent".into(),
-    };
-    assert!(matches!(
-        service.decide(&owner, empty, 104).await,
-        Err(OAuthError::InvalidScope)
-    ));
     service
         .decide(
             &owner,
             OAuthRequestDecideParams {
                 request_id: request.request_id.clone(),
                 approve: false,
-                grants: vec![],
                 expected_fingerprint: review.approval_fingerprint,
                 idempotency_key: "explicit-deny".into(),
             },
@@ -318,7 +264,7 @@ async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_r
         Err(OAuthError::InvalidGrant)
     ));
     let access = mcp_access(&core).expect("zero identity");
-    assert!(access.require(Permission::StateCheck).is_err());
+    assert!(access.require(Permission::StateCheck).is_ok());
     assert_eq!(access.principal(), &core.principal_id);
 }
 
@@ -326,19 +272,14 @@ async fn zero_authority_requires_real_owner_consent_and_cannot_be_increased_by_r
 async fn pkce_client_redirect_audience_and_code_response_loss_do_not_mint_twice() {
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(
-        &store,
-        vec![grant("state.check"), grant("operations.read")],
-        "one",
-    )
-    .await;
-    let other = seed(&store, vec![grant("state.check")], "two").await;
+    let core = seed(&store, "one").await;
+    let other = seed(&store, "two").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let reg2 = register(&service, other.client_id, false)
         .await
         .registration;
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     let input = token_input(&reg, code, None);
     let mut bad = input.clone();
     bad.code_verifier = Some("a".repeat(43));
@@ -371,7 +312,8 @@ async fn pkce_client_redirect_audience_and_code_response_loss_do_not_mint_twice(
         .await
         .expect("access");
     assert!(access.require(Permission::StateCheck).is_ok());
-    assert!(access.require(Permission::OperationsRead).is_err());
+    assert!(access.require(Permission::OperationsRead).is_ok());
+    assert!(access.require(Permission::McpClientsManage).is_err());
     let mut wrong = guard(&reg, &issued.access_token);
     assert!(matches!(
         service
@@ -415,10 +357,10 @@ async fn refresh_rotation_reuse_and_restart_preserve_revocation_without_reissuin
     let file = path();
     let store = StateStoreHandle::open(file.clone()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(&store, vec![grant("state.check")], "refresh").await;
+    let core = seed(&store, "refresh").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     let original = service
         .token(token_input(&reg, code, None), entropy(4), 106)
         .await
@@ -477,63 +419,31 @@ async fn refresh_rotation_reuse_and_restart_preserve_revocation_without_reissuin
 }
 
 #[tokio::test]
-async fn current_grants_narrow_existing_tokens_and_later_additions_do_not_expand_them() {
+async fn oauth_connection_has_business_access_until_rotation() {
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(&store, vec![grant("state.check")], "scope").await;
+    let core = seed(&store, "scope").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     let issued = service
         .token(token_input(&reg, code, None), entropy(4), 106)
         .await
         .expect("token");
-    let updated = store
-        .mcp_write(
-            PrincipalId::local_owner(),
-            "add".into(),
-            McpIdentityWrite::SetGrants {
-                id: core.client_id,
-                expected: core.revision,
-                grants: vec![grant("state.check"), grant("operations.read")],
-            },
-            107,
-        )
-        .await
-        .expect("grant")
-        .client;
-    let access = service
-        .authenticate(guard(&reg, &issued.access_token), 108)
-        .await
-        .expect("narrow");
-    assert!(access.require(Permission::StateCheck).is_ok());
-    assert!(access.require(Permission::OperationsRead).is_err());
-    let removed = store
-        .mcp_write(
-            PrincipalId::local_owner(),
-            "remove".into(),
-            McpIdentityWrite::SetGrants {
-                id: core.client_id,
-                expected: updated.revision,
-                grants: vec![],
-            },
-            109,
-        )
-        .await
-        .expect("remove")
-        .client;
     let access = service
         .authenticate(guard(&reg, &issued.access_token), 110)
         .await
-        .expect("identity survives reduced grants");
-    assert!(access.require(Permission::StateCheck).is_err());
+        .expect("authenticated connection");
+    assert!(access.require(Permission::StateCheck).is_ok());
+    assert!(access.require(Permission::OperationsRead).is_ok());
+    assert!(access.require(Permission::McpClientsManage).is_err());
     store
         .mcp_write(
             PrincipalId::local_owner(),
             "rotate-generic".into(),
             McpIdentityWrite::Issue {
                 id: core.client_id,
-                expected: removed.revision,
+                expected: core.revision,
                 hash: mcp_credential_hash("generic test secret"),
             },
             111,
@@ -552,7 +462,7 @@ async fn current_grants_narrow_existing_tokens_and_later_additions_do_not_expand
 async fn confidential_registration_response_is_one_shot_and_pending_consent_cannot_drift() {
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(&store, vec![grant("state.check")], "confidential").await;
+    let core = seed(&store, "confidential").await;
     let created = register(&service, core.client_id, true).await;
     let secret = created.client_secret.clone().expect("secret");
     let reg = created.registration;
@@ -573,7 +483,7 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
         Err(OAuthError::ResponseUnavailable)
     ));
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     assert!(matches!(
         service
             .token(token_input(&reg, code.clone(), None), entropy(4), 106)
@@ -602,8 +512,6 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
             &AccessContext::local_owner(),
             OAuthRequestGetParams {
                 request_id: pending.request_id.clone(),
-                cursor: None,
-                limit: None,
             },
             110,
         )
@@ -613,15 +521,15 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
         .mcp_write(
             PrincipalId::local_owner(),
             "changed".into(),
-            McpIdentityWrite::SetGrants {
+            McpIdentityWrite::Issue {
                 id: core.client_id,
                 expected: core.revision,
-                grants: vec![],
+                hash: mcp_credential_hash("rotate pending review"),
             },
             111,
         )
         .await
-        .expect("revoke scope");
+        .expect("rotate credential during review");
     assert!(matches!(
         service
             .decide(
@@ -629,7 +537,6 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
                 OAuthRequestDecideParams {
                     request_id: pending.request_id,
                     approve: true,
-                    grants: vec![],
                     expected_fingerprint: review.approval_fingerprint,
                     idempotency_key: "stale-consent".into()
                 },
@@ -644,10 +551,10 @@ async fn confidential_registration_response_is_one_shot_and_pending_consent_cann
 async fn concurrent_refresh_has_one_consumer_and_reuse_revokes_the_family() {
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
-    let core = seed(&store, vec![grant("state.check")], "concurrent").await;
+    let core = seed(&store, "concurrent").await;
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     let issued = service
         .token(token_input(&reg, code, None), entropy(4), 106)
         .await
@@ -691,11 +598,11 @@ async fn concurrent_refresh_has_one_consumer_and_reuse_revokes_the_family() {
 #[tokio::test]
 async fn consumed_refresh_replay_still_revokes_a_live_family_after_its_idle_deadline() {
     let store = StateStoreHandle::open(path()).expect("store");
-    let core = seed(&store, vec![grant("state.check")], "late-replay").await;
+    let core = seed(&store, "late-replay").await;
     let service = OAuthApplication::new(store, [17; 32]);
     let reg = register(&service, core.client_id, false).await.registration;
     let request = begin(&service, &reg, 2).await;
-    let code = approve(&service, &request, vec![grant("state.check")]).await;
+    let code = approve(&service, &request).await;
     let issued = service
         .token(token_input(&reg, code, None), entropy(4), 106)
         .await
@@ -736,7 +643,7 @@ async fn registration_history_is_preserved_with_snapshot_and_byte_bounded_pages(
     let store = StateStoreHandle::open(path()).expect("store");
     let service = OAuthApplication::new(store.clone(), [17; 32]);
     let owner = AccessContext::local_owner();
-    let core = seed(&store, vec![], "history").await;
+    let core = seed(&store, "history").await;
     let mut active = None;
     for n in 0..65u64 {
         let uris = if n < 4 {

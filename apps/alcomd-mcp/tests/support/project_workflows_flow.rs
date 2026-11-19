@@ -35,7 +35,6 @@ async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Claude Code fixture".into(),
             idempotency_key: "claude-fixture-client".into(),
-            grants: vec![grant("projects.read", "global", "*")],
         })
         .await
         .expect("dedicated client");
@@ -178,10 +177,9 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Project workflows fixture".into(),
             idempotency_key: "workflow-client".into(),
-            grants: Vec::new(),
         })
         .await
-        .expect("zero-grant client");
+        .expect("registered client");
     let credential = owner
         .mcp_client_issue_credential(McpClientMutationParams {
             client_id: actor.client_id.clone(),
@@ -197,31 +195,6 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         "source":{"kind":"default","relative_path":"Source"},
         "idempotency_key":"workflow-register"
     });
-    error(
-        call(&sdk, &mut trace, "register_project", register.clone())
-            .await
-            .expect("zero grant"),
-        "permission_denied",
-    );
-    let actor = update(
-        &mut owner,
-        &McpClientRecord {
-            revision: credential.revision,
-            ..actor
-        },
-        [
-            "projects.manage",
-            "projects.create",
-            "projects.read",
-            "backups.read",
-            "backups.manage",
-            "operations.read",
-        ]
-        .map(|name| grant(name, "global", "*"))
-        .to_vec(),
-        "workflow-allow",
-    )
-    .await;
     let registered = data(
         call(&sdk, &mut trace, "register_project", register)
             .await
@@ -395,12 +368,18 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     );
     stop(fault_sdk).await;
     drop(fault);
-    update(&mut owner, &actor, Vec::new(), "workflow-revoke").await;
-    error(
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: actor.client_id,
+            expected_revision: credential.revision,
+            idempotency_key: "workflow-revoke".into(),
+        })
+        .await
+        .expect("revoke connection");
+    assert!(
         call(&sdk, &mut trace, "create_backup", backup)
             .await
-            .expect("revoked on same client"),
-        "permission_denied",
+            .is_err()
     );
     std::fs::write(
         root.join("project-workflows-flow.json"),

@@ -58,6 +58,17 @@ pub(super) fn fixture() -> Connection {
 pub(super) fn snapshot(db: &Connection) -> Vec<(String, Vec<Vec<Value>>)> {
     let mut rows = mcp_clients_migration_tests::original_state(db);
     for name in ["mcp_clients", "mcp_client_grants", "mcp_client_credentials"] {
+        if name == "mcp_client_grants"
+            && !db
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1)",
+                    [name],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("table presence")
+        {
+            continue;
+        }
         let mut query = db
             .prepare(&format!("SELECT * FROM {name} ORDER BY rowid"))
             .expect("MCP table");
@@ -195,8 +206,10 @@ fn state35_failed_rebuild_rolls_back_durably_then_initialization_reopens_current
         let db = initialize_connection(&path).expect("actual initializer upgrade/reopen");
         assert_eq!(
             snapshot(&db),
-            publisher_trust_removal_tests::expected_state39(
-                permission_switch_migration_tests::expected_extension_delta(before.clone())
+            connection_access_migration_tests::expected_state44(
+                publisher_trust_removal_tests::expected_state39(
+                    permission_switch_migration_tests::expected_extension_delta(before.clone())
+                )
             )
         );
         assert_eq!(

@@ -63,49 +63,13 @@ pub(super) fn ingress_method(method: &str) -> bool {
             | METHOD_MCP_OAUTH_REVOKE
     )
 }
-pub(super) fn required_scopes(method: &str) -> &'static [&'static str] {
-    match method {
-        "projects.list" | "projects.get" => &["projects.read"],
-        "packages.planRemove" => &["projects.read", "repositories.read", "packages.read"],
-        METHOD_MCP_PACKAGES_QUERY => &["repositories.read", "packages.read"],
-        METHOD_MCP_PACKAGES_PLAN => &["projects.read", "repositories.read", "packages.read"],
-        alcomd_protocol::METHOD_MCP_REPOSITORIES_LIST
-        | alcomd_protocol::METHOD_MCP_REPOSITORIES_INSPECT => &["repositories.read"],
-        alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
-        | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
-        | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE => &["repositories.manage"],
-        METHOD_BACKUPS_LIST | METHOD_BACKUPS_GET => &["backups.read"],
-        METHOD_BACKUPS_CREATE => &["backups.manage", "projects.read"],
-        METHOD_MCP_PROJECTS_REGISTER => &["projects.manage"],
-        METHOD_MCP_PROJECTS_CREATE | METHOD_PROJECT_TEMPLATES_LIST => &["projects.create"],
-        METHOD_SETTINGS_GET => &["settings.read"],
-        METHOD_UNITY_INSTALLATIONS_LIST => &["unity.read"],
-        METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET => &["projects.read", "unity.read"],
-        METHOD_MCP_PROJECTS_PLAN_COPY | METHOD_MCP_PROJECTS_APPLY_COPY => {
-            &["projects.read", "projects.create"]
-        }
-        METHOD_MCP_BACKUPS_PLAN_RESTORE => &["backups.read", "projects.create"],
-        METHOD_MCP_BACKUPS_APPLY_RESTORE => &["backups.read", "backups.manage", "projects.create"],
-        "packages.applyPlan" => &[
-            "projects.read",
-            "repositories.read",
-            "packages.read",
-            "packages.manage",
-        ],
-        "operations.get" | "operations.list" => &["operations.read"],
-        "operations.cancel" => &["operations.cancel"],
-        "state.check" => &["state.check"],
-        "events.list" => &["events.read"],
-        _ => &[],
-    }
-}
 pub(super) async fn dispatch(
     request: RequestEnvelope,
     state: &ConnectionState,
     service: &OAuthApplication<StateStoreHandle>,
     access: &AccessContext,
 ) -> DispatchAction {
-    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_OAUTH_V1) {
+    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_OAUTH_V2) {
         return action;
     }
     if state.oauth_endpoint != ingress_method(&request.method) {

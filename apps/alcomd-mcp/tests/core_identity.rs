@@ -15,27 +15,6 @@ fn invisible_operation<T>(result: Result<T, ClientError>) {
         matches!(result,Err(ClientError::Remote(ref error)) if error.code=="operation_not_found")
     );
 }
-fn grant(permission: &str, kind: &str, id: &str) -> McpClientGrant {
-    McpClientGrant {
-        permission: permission.into(),
-        resource_kind: kind.into(),
-        resource_id: id.into(),
-    }
-}
-fn permissions() -> Vec<McpClientGrant> {
-    let mut grants = vec![grant("projects.read", "global", "*")];
-    for permission in [
-        "state.check",
-        "operations.read",
-        "operations.cancel",
-        "events.read",
-        "repositories.read",
-        "packages.read",
-    ] {
-        grants.push(grant(permission, "global", "*"));
-    }
-    grants
-}
 fn mutation(id: &str, revision: u64, key: &str) -> McpClientMutationParams {
     McpClientMutationParams {
         client_id: id.into(),
@@ -163,16 +142,13 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     let mut a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "A".into(),
-            grants: vec![],
             idempotency_key: "create-a".into(),
         })
         .await
         .expect("create A");
-    assert!(a.grants.is_empty());
     let replay = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "A".into(),
-            grants: vec![],
             idempotency_key: "create-a".into(),
         })
         .await
@@ -181,7 +157,6 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "B".into(),
-            grants: vec![],
             idempotency_key: "create-b".into(),
         })
         .await
@@ -219,8 +194,6 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
     )
     .await
     .expect("B bound");
-    denied(ca.project_get(p1id.clone()).await);
-    denied(ca.state_check("must-not-run".into()).await);
     denied(ca.mcp_clients_list(McpClientsListParams::default()).await);
     let page = owner
         .mcp_clients_list(McpClientsListParams {
@@ -229,34 +202,21 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
         })
         .await
         .expect("preview page");
-    a = owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: a.client_id.clone(),
-            expected_revision: a.revision,
-            idempotency_key: "grant-a".into(),
-            grants: permissions(),
+    let page_continued = owner
+        .mcp_clients_list(McpClientsListParams {
+            cursor: page.next_cursor,
+            limit: Some(1),
         })
         .await
-        .expect("grant A");
-    assert!(
-        matches!(owner.mcp_clients_list(McpClientsListParams{cursor:page.next_cursor,limit:Some(1)}).await,Err(ClientError::Remote(ref e)) if e.code=="revision_conflict")
-    );
-    owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: b.client_id.clone(),
-            expected_revision: issued_b.revision,
-            idempotency_key: "grant-b".into(),
-            grants: permissions(),
-        })
-        .await
-        .expect("grant B");
+        .expect("stable page");
+    assert_eq!(page_continued.items.len(), 1);
     assert!(ca.project_get(p1id.clone()).await.is_ok());
     assert!(ca.project_get(p2id.clone()).await.is_ok());
     assert!(cb.project_get(p1id.clone()).await.is_ok());
     let visible = ca
         .projects_list(None, Some(100))
         .await
-        .expect("filtered collection");
+        .expect("project collection");
     assert_eq!(visible.projects.len(), 2);
     assert!(
         visible
@@ -270,7 +230,7 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             .iter()
             .any(|project| project.project_id.as_deref() == Some(p2id.as_str()))
     );
-    let future_path = root.join("Created-after-grant");
+    let future_path = root.join("Created-after-connect");
     project(&future_path);
     let future = owner
         .project_register(
@@ -347,39 +307,6 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
         })
         .await,
     );
-    a = owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: a.client_id.clone(),
-            expected_revision: a.revision,
-            idempotency_key: "change-scope".into(),
-            grants: vec![],
-        })
-        .await
-        .expect("scope change while connected");
-    denied(ca.project_get(p1id.clone()).await);
-    denied(ca.project_get(p2id.clone()).await);
-    a = owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: a.client_id.clone(),
-            expected_revision: a.revision,
-            idempotency_key: "remove-operation-permissions".into(),
-            grants: vec![grant("projects.read", "global", "*")],
-        })
-        .await
-        .expect("remove permissions while connected");
-    denied(ca.state_check("removed-permission".into()).await);
-    denied(ca.operations_list(None, Some(100), false).await);
-    denied(ca.events_list(0, Some(100)).await);
-    assert!(ca.project_get(p2id.clone()).await.is_ok());
-    a = owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: a.client_id.clone(),
-            expected_revision: a.revision,
-            idempotency_key: "restore-explicit-permissions".into(),
-            grants: permissions(),
-        })
-        .await
-        .expect("explicitly regrant, no implicit restoration");
     let bridge_client = alcomd_mcp::connect_core(config.clone(), issued_a.credential.clone())
         .await
         .expect("STDIO existing typed client");

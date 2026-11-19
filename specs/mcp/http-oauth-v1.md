@@ -1,7 +1,7 @@
 # MCP HTTPS OAuth v1
 
 Owner approved 2026-11-15; exact limits and Core contracts are in the M8 ExecPlan and
-`../rpc/m8-mcp-oauth-v1.{md,schema.json}`. Frozen MCP revision is 2026-07-28.
+`../rpc/m8-mcp-oauth-v2.{md,schema.json}`. Frozen MCP revision is 2026-07-28.
 
 `alcomd-mcp serve-oauth --port <nonzero-port> --tls-cert <certificate.der> --tls-key <key.pkcs8>`
 binds only 127.0.0.1. Issuer is `https://localhost:<port>`, resource is exactly its `/mcp`.
@@ -18,23 +18,21 @@ isolated instance exits. Existing `serve` and STDIO profiles are unchanged.
 
 | Route | Contract |
 | --- | --- |
-| GET `/.well-known/oauth-protected-resource/mcp` | Exact resource, one AS, header Bearer; minimal projects.read guidance |
+| GET `/.well-known/oauth-protected-resource/mcp` | Exact resource, one AS, header Bearer, `mcp` connection scope |
 | GET `/.well-known/oauth-authorization-server` | Exact issuer, code/refresh, S256, none/client_secret_basic, RFC9207 iss; no OIDC/CIMD/DCR claims |
 | GET `/authorize` | Pre-registered client, exact callback/resource, S256, scope/state; create bounded Core pending request |
 | GET `/authorize/result` | Original Secure/HttpOnly host cookie proves browser flow; pending stays visible, owner-approved response redirects once with code/state/iss |
 | POST `/token` | Form-encoded code or rotating refresh exchange; Basic for confidential clients; no client_secret_post, implicit/password/client_credentials |
 | POST `/revoke` | RFC7009 client-authenticated family revocation; unknown tokens do not disclose existence |
-| POST `/mcp` | Existing SDK/six tools, independent OAuth-authenticated Core connection for every request, no protocol session |
+| POST `/mcp` | All published SDK tools, independent OAuth-authenticated Core connection for every request, no protocol session |
 
 Owner pre-registration and consent use formal CLI plus existing Core permissions and local-owner
-identity. The browser is never owner. Token scopes/grants can only narrow existing Core grants.
-Zero grants cannot approve requested scopes; do not issue a misleading zero-scope token. A
-revoked or changed grant stays authoritative even on an existing connection. Refresh never
-widens its previous ceiling. A new authorization review is needed for broader grants.
-Project continuation cursors carry Core-issued authorization_binding, tied to the token,
-current grant snapshot, ceiling and position. Missing/changed/cross-token bindings return
-revision_conflict. An independent private Core process key authenticates them; Core restart
-requires a new first page, without turning a cursor into authority or a protocol session.
+identity. The owner approves or declines the whole connection. The `mcp` scope provides all
+currently published tools. Core checks client status, credential generation, expiry and
+revocation on each request. Project continuation cursors carry Core-issued authorization_binding,
+tied to the token, resource, current client revision and position. Missing, altered and
+cross-token bindings return revision_conflict. An independent private Core process key
+authenticates them. Core restart requires a new first page.
 
 Registered callback queries cannot contain OAuth response keys code/state/iss/error/
 error_description/error_uri, preventing duplicate response parameters. Registered redirects
@@ -54,9 +52,8 @@ issuer/resource remain exact configured identifiers. Reject forwarded authoritie
 invalid/ambiguous Host, duplicate fields and controls. AS permits absent Origin or exact same
 origin; MCP resource rejects every Origin. No CORS/browser-JS profile, remote listen or proxy.
 
-401 challenge advertises PRM and invalid_token where applicable; insufficient token scope gives
-403 and the full tool's minimum scopes. Current Core project/grant denial stays a truthful tool
-business error. OAuth errors are fixed bounded tags, without raw input/secrets. All responses
+The 401 challenge advertises PRM, the `mcp` scope and invalid_token where applicable.
+Core business denials remain tool errors. OAuth errors are fixed bounded tags. All responses
 are no-store/no-referrer. Waiting HTML is semantic, script-free and has no third-party resources.
 
 HTTP/TLS cancellation, timeout and connection loss cancel only the protocol exchange. Accepted

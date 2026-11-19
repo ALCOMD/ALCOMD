@@ -1,13 +1,11 @@
 //! Bounded extension management projections. Credentials never cross this boundary.
-use crate::{
-    ExtensionInstanceLease, ExtensionUiInvocationAuthority, McpClient, McpClientId, McpGrant,
-};
+use crate::{ExtensionInstanceLease, ExtensionUiInvocationAuthority, McpClient, McpClientId};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::future::Future;
 
 pub const MCP_MANAGEMENT_BYTES: usize = 65_536;
-pub const MCP_MANAGEMENT_INTERFACE: &str = "alcomd:mcp-management/clients@1.0.0";
+pub const MCP_MANAGEMENT_INTERFACE: &str = "alcomd:mcp-management/clients@2.0.0";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -51,25 +49,8 @@ pub enum ManagementRequest {
         cursor: Option<String>,
         limit: Option<u32>,
     },
-    Grants {
-        client_id: McpClientId,
-        expected_revision: u64,
-        cursor: Option<String>,
-        limit: Option<u32>,
-    },
-    Projects {
-        cursor: Option<String>,
-        limit: Option<u32>,
-    },
     Create {
         display_name: String,
-        idempotency_key: String,
-    },
-    ChangeGrants {
-        client_id: McpClientId,
-        expected_revision: u64,
-        add: Vec<McpGrant>,
-        remove: Vec<McpGrant>,
         idempotency_key: String,
     },
     Revoke {
@@ -80,10 +61,7 @@ pub enum ManagementRequest {
 }
 impl ManagementRequest {
     pub fn is_write(&self) -> bool {
-        matches!(
-            self,
-            Self::Create { .. } | Self::ChangeGrants { .. } | Self::Revoke { .. }
-        )
+        matches!(self, Self::Create { .. } | Self::Revoke { .. })
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -94,7 +72,6 @@ pub struct ManagementClientSummary {
     pub revision: u64,
     pub created_at_ms: u64,
     pub revoked_at_ms: Option<u64>,
-    pub grant_count: u32,
 }
 impl From<&McpClient> for ManagementClientSummary {
     fn from(client: &McpClient) -> Self {
@@ -104,7 +81,6 @@ impl From<&McpClient> for ManagementClientSummary {
             revision: client.revision,
             created_at_ms: client.created_at_ms,
             revoked_at_ms: client.revoked_at_ms,
-            grant_count: client.grants.len() as u32,
         }
     }
 }
@@ -122,25 +98,10 @@ pub struct ManagementClientPage {
     /// Presentation hint only; every later write revalidates authority.
     pub can_manage: bool,
 }
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ManagementGrantPage {
-    pub revision: u64,
-    pub items: Vec<McpGrant>,
-    pub next_cursor: Option<String>,
-}
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ManagementProject {
-    pub project_id: String,
-    pub name: String,
-}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum ManagementResponse {
     Clients(ManagementClientPage),
-    Grants(ManagementGrantPage),
-    Projects(ManagementPage<ManagementProject>),
     Client(ManagementClientSummary),
 }
 pub trait McpManagementStore: Clone + Send + Sync + 'static {

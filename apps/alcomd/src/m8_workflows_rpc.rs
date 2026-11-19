@@ -229,13 +229,6 @@ pub(super) async fn dispatch(
     let Ok(authentication) = super::m8_tools_rpc::auth(state, access) else {
         return error_action(Some(id), rpc::RpcError::permission_denied(), false);
     };
-    let permissions = super::m8_oauth_rpc::required_scopes(&request.method)
-        .iter()
-        .map(|value| (*value).to_owned())
-        .collect::<Vec<_>>();
-    if app::require_tool_permissions(access, &permissions).is_err() {
-        return error_action(Some(id), rpc::RpcError::permission_denied(), false);
-    }
     app::with_workflow_authentication(
         authentication,
         app::with_log_caller(apps.store.clone(), access, async {

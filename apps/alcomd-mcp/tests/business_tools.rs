@@ -220,6 +220,7 @@ async fn http_identity_and_admission(
     b: &str,
     a_project: &str,
     expected_projects: &[&str],
+    a_operation: &str,
 ) {
     use http_body_util::{BodyExt, Full};
     use hyper::{Request, body::Bytes};
@@ -239,7 +240,11 @@ async fn http_identity_and_admission(
         "name":"alcomd_list_projects","arguments":{},"_meta":{
             "io.modelcontextprotocol/protocolVersion":"2026-07-28",
             "io.modelcontextprotocol/clientCapabilities":{}}}});
-    for (token, allowed) in [(a, true), (b, false), (a, true)] {
+    let operation_request = json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{
+        "name":"alcomd_list_operations","arguments":{},"_meta":{
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}}}});
+    for (token, owns_operation) in [(a, true), (b, false), (a, true)] {
         let request = Request::builder()
             .method("POST")
             .uri("/mcp")
@@ -249,9 +254,9 @@ async fn http_identity_and_admission(
             .header("Accept", "application/json,text/event-stream")
             .header("MCP-Protocol-Version", "2026-07-28")
             .header("Mcp-Method", "tools/call")
-            .header("Mcp-Name", "alcomd_list_projects")
+            .header("Mcp-Name", "alcomd_list_operations")
             .body(Full::new(Bytes::from(
-                serde_json::to_vec(&request).expect("request JSON"),
+                serde_json::to_vec(&operation_request).expect("request JSON"),
             )))
             .expect("HTTP request");
         let response = sender
@@ -278,28 +283,16 @@ async fn http_identity_and_admission(
             .expect("SSE JSON")
         });
         assert_eq!(value["id"], 7);
-        if allowed {
-            let items = value["result"]["structuredContent"]["data"]["projects"]
-                .as_array()
-                .expect("all registered projects");
-            let actual = items
+        let operations = value["result"]["structuredContent"]["data"]["operations"]
+            .as_array()
+            .expect("operations for this credential");
+        assert_eq!(operations.len(), usize::from(owns_operation));
+        assert_eq!(
+            operations
                 .iter()
-                .map(|item| item["project_id"].as_str().expect("ID"))
-                .collect::<std::collections::BTreeSet<_>>();
-            assert_eq!(items.len(), expected_projects.len());
-            assert_eq!(
-                actual,
-                expected_projects
-                    .iter()
-                    .copied()
-                    .collect::<std::collections::BTreeSet<_>>()
-            );
-        } else {
-            assert_eq!(
-                value["result"]["structuredContent"]["error"]["code"],
-                "permission_denied"
-            );
-        }
+                .any(|op| op["operation_id"] == a_operation),
+            owns_operation
+        );
     }
     drop(sender);
     connection
@@ -439,7 +432,10 @@ async fn http_identity_and_admission(
         .await
         .expect("B response");
     assert!(first.contains(a_project) && !first.contains("permission_denied"));
-    assert!(second.contains("permission_denied") && !second.contains(a_project));
+    assert!(second.contains(a_project) && !second.contains("permission_denied"));
+    for id in expected_projects {
+        assert!(first.contains(id) && second.contains(id));
+    }
     assert!(!first.contains(a) && !second.contains(b));
     for (encoded, status, code) in [
         (
@@ -645,7 +641,7 @@ async fn http_request_limits(url: &str, secret: &str) {
     assert!(response.starts_with("HTTP/1.1 408") && !response.contains(secret));
 }
 
-async fn http_hello_does_not_freeze_grants(
+async fn http_write_checks_revocation_after_hello(
     url: &str,
     secret: &str,
     owner: &mut AlcomdClient,
@@ -674,13 +670,14 @@ async fn http_hello_does_not_freeze_grants(
     assert_eq!(first, "HTTP/1.1 100 Continue\r\n");
     first.clear();
     stream.read_line(&mut first).await.expect("100 end");
-    let reduced = client
-        .grants
-        .iter()
-        .filter(|v| v.permission != "packages.manage")
-        .cloned()
-        .collect();
-    let reduced = update(owner, client, reduced, "http-withdraw-after-hello").await;
+    let revoked = owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: client.client_id.clone(),
+            expected_revision: client.revision,
+            idempotency_key: "http-revoke-after-hello".into(),
+        })
+        .await
+        .expect("revoke after hello");
     stream
         .get_mut()
         .write_all(body.as_bytes())
@@ -694,15 +691,12 @@ async fn http_hello_does_not_freeze_grants(
     .await
     .expect("race response deadline")
     .expect("response");
-    assert!(response.starts_with("HTTP/1.1 200") && response.contains("permission_denied"));
+    assert!(
+        response.starts_with("HTTP/1.1 401")
+            || (response.starts_with("HTTP/1.1 200") && response.contains("permission_denied"))
+    );
     assert!(!response.contains("operation_id") && !response.contains(secret));
-    update(
-        owner,
-        &reduced,
-        client.grants.clone(),
-        "http-restore-after-race",
-    )
-    .await
+    revoked
 }
 async fn call(
     client: &Sdk,
@@ -739,44 +733,6 @@ fn error(result: CallToolResult, code: &str) {
         result.structured_content.expect("structured error")["error"]["code"],
         code
     );
-}
-fn grant(permission: &str, kind: &str, id: &str) -> McpClientGrant {
-    McpClientGrant {
-        permission: permission.into(),
-        resource_kind: kind.into(),
-        resource_id: id.into(),
-    }
-}
-fn grants(write: bool) -> Vec<McpClientGrant> {
-    let mut result = vec![grant("projects.read", "global", "*")];
-    if write {
-        result.push(grant("packages.manage", "global", "*"));
-    }
-    for p in [
-        "packages.read",
-        "repositories.read",
-        "operations.read",
-        "operations.cancel",
-    ] {
-        result.push(grant(p, "global", "*"));
-    }
-    result
-}
-async fn update(
-    owner: &mut AlcomdClient,
-    client: &McpClientRecord,
-    grants: Vec<McpClientGrant>,
-    key: &str,
-) -> McpClientRecord {
-    owner
-        .mcp_client_set_grants(McpClientsSetGrantsParams {
-            client_id: client.client_id.clone(),
-            expected_revision: client.revision,
-            idempotency_key: key.into(),
-            grants,
-        })
-        .await
-        .expect("explicit owner grants")
 }
 fn project(root: &Path, risk: bool) {
     std::fs::create_dir_all(root.join("ProjectSettings")).expect("isolated project");
@@ -913,15 +869,13 @@ async fn package_removal_flow(http: bool) {
     let mut a = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Tools A".into(),
-            grants: vec![],
             idempotency_key: "client-a".into(),
         })
         .await
         .expect("create A");
-    let mut b = owner
+    let b = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Tools B".into(),
-            grants: vec![],
             idempotency_key: "client-b".into(),
         })
         .await
@@ -943,29 +897,34 @@ async fn package_removal_flow(http: bool) {
         })
         .await
         .expect("issue B");
-    b.revision = token_b.revision;
     let sa = sdk(&token_a.credential, url).await;
     let sb = sdk(&token_b.credential, url).await;
     let mut trace = vec![];
     let definitions = sa.list_tools(None).await.expect("SDK tools/list");
     assert!(
-        definitions.tools.is_empty(),
-        "zero-grant identity sees no business tools"
+        definitions
+            .tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_get_project")
     );
-    assert_eq!(definitions.ttl_ms, Some(0));
-    std::fs::write(
-        root.join("tools-list.json"),
-        serde_json::to_vec_pretty(&definitions).expect("list JSON"),
-    )
-    .expect("definitions evidence");
-    error(
-        call(&sa, &mut trace, "list_projects", json!({}))
-            .await
-            .expect("default reject"),
-        "permission_denied",
+    assert!(
+        definitions
+            .tools
+            .iter()
+            .any(|tool| tool.name == "alcomd_apply_package_changes")
     );
-    a = update(&mut owner, &a, grants(false), "read-a").await;
     if let Some(url) = url {
+        let mut authenticated = AlcomdClient::connect(
+            config
+                .clone()
+                .with_mcp_credential(token_a.credential.clone()),
+        )
+        .await
+        .expect("identity A owns an operation");
+        let a_operation = authenticated
+            .state_check("http-tcp-owner".into())
+            .await
+            .expect("operation accepted as A");
         http_identity_and_admission(
             url,
             &token_a.credential,
@@ -977,6 +936,7 @@ async fn package_removal_flow(http: bool) {
                 &cid,
                 detached_record.project_id.as_deref().expect("detached"),
             ],
+            &a_operation.operation_id,
         )
         .await;
     }
@@ -1027,12 +987,6 @@ async fn package_removal_flow(http: bool) {
     error(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.absent"})).await.expect("real business failure"),"package_not_found");
     let old_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":first.revision.expect("revision"),"package_id":"com.example.fixture"})).await.expect("real plan"));
     let args = json!({"plan_id":old_plan["plan_id"],"expected_revision":old_plan["project_revision"],"idempotency_key":"apply","confirm":true});
-    error(
-        call(&sa, &mut trace, "apply_package_changes", args.clone())
-            .await
-            .expect("read cannot write"),
-        "permission_denied",
-    );
     let mut unconfirmed = args.clone();
     unconfirmed["confirm"] = json!(false);
     assert!(
@@ -1044,8 +998,6 @@ async fn package_removal_flow(http: bool) {
         std::fs::read(p.join("Packages/vpm-manifest.json")).expect("no pre-confirm write"),
         before
     );
-    a = update(&mut owner, &a, grants(true), "write-a").await;
-    update(&mut owner, &b, grants(true), "same-resource-b").await;
     error(
         call(&sb, &mut trace, "apply_package_changes", args.clone())
             .await
@@ -1077,26 +1029,44 @@ async fn package_removal_flow(http: bool) {
         risks["change_set"]["removal_conflicts"][0]["package_id"],
         "com.example.b"
     );
-    a = update(&mut owner, &a, grants(false), "disable-package-capability").await;
-    error(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":risks["plan_id"],"expected_revision":risks["project_revision"],"idempotency_key":"no-write-scope","confirm":true})).await.expect("read capability is not write capability"),"permission_denied");
-    a = update(&mut owner, &a, grants(true), "restore-package-capability").await;
     let plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"})).await.expect("fresh plan"));
     let apply = json!({"plan_id":plan["plan_id"],"expected_revision":plan["project_revision"],"idempotency_key":"accepted-removal","confirm":true});
     if let Some(url) = url {
-        a = http_hello_does_not_freeze_grants(url, &token_a.credential, &mut owner, &a, &apply)
-            .await;
+        let race = owner
+            .mcp_client_create(McpClientsCreateParams {
+                display_name: "HTTP revocation race".into(),
+                idempotency_key: "race-client".into(),
+            })
+            .await
+            .expect("race client");
+        let issued = owner
+            .mcp_client_issue_credential(McpClientMutationParams {
+                client_id: race.client_id.clone(),
+                expected_revision: race.revision,
+                idempotency_key: "race-credential".into(),
+            })
+            .await
+            .expect("race credential");
+        let race_sdk = sdk(&issued.credential, Some(url)).await;
+        let race_plan = data(call(&race_sdk,&mut trace,"plan_package_uninstall",
+            json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"}))
+            .await.expect("race caller's own plan"));
+        let race_args = json!({"plan_id":race_plan["plan_id"],"expected_revision":race_plan["project_revision"],
+            "idempotency_key":"must-not-accept-race","confirm":true});
+        let active = McpClientRecord {
+            revision: issued.revision,
+            ..race
+        };
+        http_write_checks_revocation_after_hello(
+            url,
+            &issued.credential,
+            &mut owner,
+            &active,
+            &race_args,
+        )
+        .await;
+        stop(race_sdk).await;
     }
-    let package_write_grants = grants(true)
-        .into_iter()
-        .filter(|grant| !grant.permission.starts_with("operations."))
-        .collect();
-    a = update(
-        &mut owner,
-        &a,
-        package_write_grants,
-        "package-write-without-operation-read",
-    )
-    .await;
     let accepted = data(
         call(&sa, &mut trace, "apply_package_changes", apply.clone())
             .await
@@ -1106,18 +1076,6 @@ async fn package_removal_flow(http: bool) {
         .as_str()
         .expect("operation ID")
         .to_owned();
-    error(
-        call(
-            &sa,
-            &mut trace,
-            "get_operation",
-            json!({"operation_id":operation}),
-        )
-        .await
-        .expect("write does not authorize a read"),
-        "permission_denied",
-    );
-    a = update(&mut owner, &a, grants(true), "restore-operation-reader").await;
     error(
         call(
             &sb,
@@ -1154,14 +1112,6 @@ async fn package_removal_flow(http: bool) {
         std::fs::read(p.join("Packages/manifest.json")).expect("UPM after"),
         upm_before
     );
-    a = update(&mut owner, &a, grants(false), "withdraw-write").await;
-    error(
-        call(&sa, &mut trace, "apply_package_changes", apply.clone())
-            .await
-            .expect("replay cannot bypass withdrawal"),
-        "permission_denied",
-    );
-    a = update(&mut owner, &a, grants(true), "cancel-project").await;
     let cancel_plan=data(call(&sa,&mut trace,"plan_package_uninstall",json!({"project_id":cid,"expected_revision":cancel_record.revision,"package_id":"com.example.fixture"})).await.expect("cancel plan"));
     let cancel_apply=data(call(&sa,&mut trace,"apply_package_changes",json!({"plan_id":cancel_plan["plan_id"],"expected_revision":cancel_plan["project_revision"],"idempotency_key":"cancel-task","confirm":true})).await.expect("cancel candidate"));
     let cancel_id = cancel_apply["operation_id"].as_str().expect("cancel ID");
@@ -1174,24 +1124,6 @@ async fn package_removal_flow(http: bool) {
         )
         .await
         .expect("current task revision"),
-    );
-    a = update(
-        &mut owner,
-        &a,
-        vec![grant("operations.cancel", "global", "*")],
-        "cancel-only",
-    )
-    .await;
-    error(
-        call(
-            &sa,
-            &mut trace,
-            "get_operation",
-            json!({"operation_id":cancel_id}),
-        )
-        .await
-        .expect("cancel does not authorize a read"),
-        "permission_denied",
     );
     error(
         call(&sb, &mut trace, "cancel_operation", json!({"operation_id":cancel_id,"expected_revision":state["revision"],"idempotency_key":"foreign-task"}))
@@ -1212,12 +1144,8 @@ async fn package_removal_flow(http: bool) {
         );
     }
     let detached_id = detached_record.project_id.expect("detached project ID");
-    a = update(&mut owner, &a, grants(true), "detached-grants").await;
     let cancel_terminal = terminal(&sa, &mut trace, cancel_id).await;
     assert!(cancel_terminal["state"] == "succeeded" || cancel_terminal["state"] == "cancelled");
-    let mut check_grants = grants(true);
-    check_grants.push(grant("state.check", "global", "*"));
-    a = update(&mut owner, &a, check_grants, "operation-kind-parity").await;
     let mut native = AlcomdClient::connect(
         config
             .clone()
@@ -1268,7 +1196,6 @@ async fn package_removal_flow(http: bool) {
     let mut owner = AlcomdClient::connect(config.clone())
         .await
         .expect("native owner after restart");
-    a = update(&mut owner, &a, grants(true), "restore-original-scope").await;
     let sa = sdk(&token_a.credential, url).await;
     let sb = sdk(&token_b.credential, url).await;
     let persisted = data(
@@ -1498,7 +1425,6 @@ async fn transport_risks(http: bool) {
     let client = owner
         .mcp_client_create(McpClientsCreateParams {
             display_name: "Transport risk client".into(),
-            grants: grants(true),
             idempotency_key: "risk-client".into(),
         })
         .await

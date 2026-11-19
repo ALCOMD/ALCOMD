@@ -4,7 +4,6 @@ use alcomd_protocol::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OAuthRejection {
     InvalidToken,
-    InsufficientScope,
 }
 
 impl ClientConfig {

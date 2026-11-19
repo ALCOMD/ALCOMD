@@ -1,5 +1,4 @@
 //! Core OAuth use-case records, separate from public protocol DTOs.
-use crate::McpGrant;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -133,8 +132,6 @@ pub struct OAuthRevokeParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OAuthRequestGetParams {
     pub request_id: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -148,8 +145,6 @@ pub struct OAuthRequestReview {
     pub resource: String,
     pub redirect_uri: String,
     pub scopes: Vec<String>,
-    pub grants: Vec<McpGrant>,
-    pub next_cursor: Option<String>,
     pub approval_fingerprint: String,
     pub status: String,
     pub expires_at_ms: u64,
@@ -160,7 +155,6 @@ pub struct OAuthRequestReview {
 pub struct OAuthRequestDecideParams {
     pub request_id: String,
     pub approve: bool,
-    pub grants: Vec<McpGrant>,
     pub expected_fingerprint: String,
     pub idempotency_key: String,
 }

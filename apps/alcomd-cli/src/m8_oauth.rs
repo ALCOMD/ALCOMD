@@ -57,12 +57,6 @@ pub(super) enum RequestCommand {
         expected_fingerprint: String,
         #[arg(long)]
         idempotency_key: String,
-        /// Exact permission/kind/id triples from the review.
-        #[arg(long, conflicts_with = "allow_all_requested")]
-        grant: Vec<String>,
-        /// Explicitly allow all of the reviewed intersection, never all Core permissions.
-        #[arg(long)]
-        allow_all_requested: bool,
     },
     Deny {
         request_id: String,
@@ -134,33 +128,9 @@ async fn review(
     client: &mut alcomd_client::AlcomdClient,
     id: String,
 ) -> Result<McpOAuthRequestReview, CliError> {
-    let mut result = client
-        .oauth_request_get(McpOAuthRequestGetParams {
-            request_id: id.clone(),
-            cursor: None,
-            limit: Some(128),
-        })
-        .await?;
-    while let Some(cursor) = result.next_cursor.take() {
-        let next = client
-            .oauth_request_get(McpOAuthRequestGetParams {
-                request_id: id.clone(),
-                cursor: Some(cursor),
-                limit: Some(128),
-            })
-            .await?;
-        if result.approval_fingerprint != next.approval_fingerprint
-            || result.grants.len() + next.grants.len() > 4096
-            || next.grants.is_empty()
-        {
-            return Err(CliError::Client(
-                alcomd_client::ClientError::InvalidResponse,
-            ));
-        }
-        result.grants.extend(next.grants);
-        result.next_cursor = next.next_cursor;
-    }
-    Ok(result)
+    Ok(client
+        .oauth_request_get(McpOAuthRequestGetParams { request_id: id })
+        .await?)
 }
 pub(super) async fn execute(
     client: &mut alcomd_client::AlcomdClient,
@@ -185,7 +155,7 @@ pub(super) async fn execute(
                 ..
             } => {
                 eprintln!(
-                    "Bind OAuth to MCP client {} at https://localhost:{port}. Existing Core grants are unchanged.",
+                    "Bind OAuth to MCP client {} at https://localhost:{port}. ",
                     client_id.escape_debug()
                 );
                 if confidential {
@@ -195,7 +165,7 @@ pub(super) async fn execute(
                 }
                 if expected_revision != 0 {
                     eprintln!(
-                        "All previous OAuth tokens for this registration become invalid. Core grants and accepted operations are unchanged."
+                        "All previous OAuth tokens for this registration become invalid. Accepted operations are unchanged."
                     );
                 }
                 confirm_high_impact(options)?;
@@ -247,83 +217,56 @@ pub(super) async fn execute(
                 )
             }
         },
-        OAuthCommand::Request { command } => {
-            match command {
-                RequestCommand::Show { request_id } => {
-                    let review = review(client, request_id).await?;
-                    as_json!(&review)
+        OAuthCommand::Request { command } => match command {
+            RequestCommand::Show { request_id } => {
+                let review = review(client, request_id).await?;
+                as_json!(&review)
+            }
+            RequestCommand::Approve {
+                request_id,
+                expected_fingerprint,
+                idempotency_key,
+            } => {
+                let reviewed = review(client, request_id.clone()).await?;
+                if reviewed.approval_fingerprint != expected_fingerprint {
+                    return Err(CliError::Usage(
+                        "the authorization review changed; show it again before approving",
+                    ));
                 }
-                RequestCommand::Approve {
-                    request_id,
-                    expected_fingerprint,
-                    idempotency_key,
-                    grant,
-                    allow_all_requested,
-                } => {
-                    let reviewed = review(client, request_id.clone()).await?;
-                    if reviewed.approval_fingerprint != expected_fingerprint {
-                        return Err(CliError::Usage(
-                            "the authorization review changed; show it again before approving",
-                        ));
-                    }
-                    let grants = if allow_all_requested {
-                        reviewed.grants.clone()
-                    } else {
-                        grant.into_iter().map(|g|{
-                    let mut p=g.split('/');let permission=p.next().unwrap_or_default();let kind=p.next().unwrap_or_default();let id=p.next().unwrap_or_default();
-                    if permission.is_empty() || kind.is_empty() || id.is_empty() || p.next().is_some() {return Err(CliError::Usage("--grant must be permission/kind/id from the reviewed grants"))}
-                    Ok(McpClientGrant{permission:permission.into(),resource_kind:kind.into(),resource_id:id.into()})
-                }).collect::<Result<Vec<_>,_>>()?
-                    };
-                    if grants.is_empty() || grants.iter().any(|g| !reviewed.grants.contains(g)) {
-                        return Err(CliError::Usage(
-                            "select a nonempty subset of reviewed grants; zero authority cannot authorize this request",
-                        ));
-                    }
-                    eprintln!(
-                        "Authorize {} ({}) for {}. Callback: {}. {} explicit grants.",
-                        reviewed.display_name.escape_debug(),
-                        reviewed.oauth_client_id,
-                        reviewed.resource,
-                        reviewed.redirect_uri.escape_debug(),
-                        grants.len()
-                    );
-                    for g in &grants {
-                        eprintln!(
-                            "  {} / {} / {}",
-                            g.permission, g.resource_kind, g.resource_id
-                        );
-                    }
-                    confirm_high_impact(options)?;
-                    as_json!(
-                        client
-                            .oauth_request_decide(McpOAuthRequestDecideParams {
-                                request_id,
-                                approve: true,
-                                grants,
-                                expected_fingerprint,
-                                idempotency_key
-                            })
-                            .await?
-                    )
-                }
-                RequestCommand::Deny {
-                    request_id,
-                    expected_fingerprint,
-                    idempotency_key,
-                } => as_json!(
+                eprintln!(
+                    "Authorize {} ({}) to use all published MCP tools at {}. Callback: {}.",
+                    reviewed.display_name.escape_debug(),
+                    reviewed.oauth_client_id,
+                    reviewed.resource,
+                    reviewed.redirect_uri.escape_debug(),
+                );
+                confirm_high_impact(options)?;
+                as_json!(
                     client
                         .oauth_request_decide(McpOAuthRequestDecideParams {
                             request_id,
-                            approve: false,
-                            grants: vec![],
+                            approve: true,
                             expected_fingerprint,
                             idempotency_key
                         })
                         .await?
-                ),
+                )
             }
-        }
+            RequestCommand::Deny {
+                request_id,
+                expected_fingerprint,
+                idempotency_key,
+            } => as_json!(
+                client
+                    .oauth_request_decide(McpOAuthRequestDecideParams {
+                        request_id,
+                        approve: false,
+                        expected_fingerprint,
+                        idempotency_key
+                    })
+                    .await?
+            ),
+        },
     }
 }
 pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -> io::Result<()> {
@@ -338,30 +281,7 @@ pub(super) fn write_review(output: &mut impl Write, value: &serde_json::Value) -
         text("redirectUri"),
         text("status")
     )?;
-    if let Some(grants) = value["grants"].as_array() {
-        for g in grants {
-            let p = g["permission"].as_str().unwrap_or("");
-            let label = match p {
-                "projects.read" => "Read all projects",
-                "packages.manage" => "Manage packages in all projects",
-                "packages.read" => "Read packages",
-                "repositories.read" => "Read repositories",
-                "repositories.manage" => "Register, refresh and remove repositories",
-                "backups.read" => "Read managed project backups",
-                "backups.manage" => "Create and restore managed project backups",
-                "projects.manage" => "Register existing projects",
-                "projects.create" => "Create, copy and restore projects",
-                "settings.read" => "Read ALCOMD settings and default locations",
-                "unity.read" => "Read Unity installations and project launch configuration",
-                "operations.read" => "Read own operations",
-                "operations.cancel" => "Cancel own operations",
-                "state.check" => "Check state",
-                "events.read" => "Read own events",
-                _ => "Unsupported permission",
-            };
-            writeln!(output, "  {label}")?;
-        }
-    }
+    writeln!(output, "Access: all published MCP tools")?;
     writeln!(
         output,
         "Review fingerprint: {}",
@@ -420,11 +340,11 @@ mod tests {
     }
     #[test]
     fn review_uses_labels_and_preserves_opaque_ids_without_terminal_controls() {
-        let value = serde_json::json!({"requestId":"request","displayName":"Name\ncontrol","oauthClientId":"client","resource":"https://localhost:5443/mcp","redirectUri":"http://localhost:1234/callback","status":"pending","approvalFingerprint":"fingerprint","grants":[{"permission":"projects.read","resourceKind":"global","resourceId":"*"}]});
+        let value = serde_json::json!({"requestId":"request","displayName":"Name\ncontrol","oauthClientId":"client","resource":"https://localhost:5443/mcp","redirectUri":"http://localhost:1234/callback","status":"pending","approvalFingerprint":"fingerprint","scopes":["mcp"]});
         let mut bytes = Vec::new();
         write_review(&mut bytes, &value).expect("human output");
         let text = String::from_utf8(bytes).expect("text");
-        assert!(text.contains("Read all projects"));
+        assert!(text.contains("all published MCP tools"));
         assert!(text.contains("Name\\ncontrol"));
         assert!(!text.contains("\"resourceKind\""));
     }

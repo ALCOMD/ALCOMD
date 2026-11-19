@@ -2,20 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const CAPABILITY_MCP_CLIENTS_V1: &str = "mcp.clients.v1";
+pub const CAPABILITY_MCP_CLIENTS_V2: &str = "mcp.clients.v2";
 pub const METHOD_MCP_CLIENTS_LIST: &str = "mcp.clients.list";
 pub const METHOD_MCP_CLIENTS_CREATE: &str = "mcp.clients.create";
-pub const METHOD_MCP_CLIENTS_SET_GRANTS: &str = "mcp.clients.setGrants";
 pub const METHOD_MCP_CLIENTS_ISSUE_CREDENTIAL: &str = "mcp.clients.issueCredential";
 pub const METHOD_MCP_CLIENTS_REVOKE: &str = "mcp.clients.revoke";
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct McpClientGrant {
-    pub permission: String,
-    pub resource_kind: String,
-    pub resource_id: String,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,7 +17,6 @@ pub struct McpClientRecord {
     pub revision: u64,
     pub created_at_ms: u64,
     pub revoked_at_ms: Option<u64>,
-    pub grants: Vec<McpClientGrant>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,8 +38,6 @@ pub struct McpClientsListResult {
 pub struct McpClientsCreateParams {
     pub idempotency_key: String,
     pub display_name: String,
-    #[serde(default)]
-    pub grants: Vec<McpClientGrant>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -58,15 +46,6 @@ pub struct McpClientMutationParams {
     pub idempotency_key: String,
     pub client_id: String,
     pub expected_revision: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct McpClientsSetGrantsParams {
-    pub idempotency_key: String,
-    pub client_id: String,
-    pub expected_revision: u64,
-    pub grants: Vec<McpClientGrant>,
 }
 
 /// One-shot secret response. Never serialize it into an idempotency record.
@@ -96,12 +75,12 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn mcp_client_creation_defaults_to_zero_grants_and_rejects_identity_injection() {
+    fn mcp_client_creation_rejects_identity_and_grant_injection() {
         let value: McpClientsCreateParams =
             serde_json::from_value(json!({"displayName":"Client","idempotencyKey":"test"}))
                 .expect("default");
-        assert!(value.grants.is_empty());
-        for extra in ["principalId", "credential", "localOwner"] {
+        assert_eq!(value.display_name, "Client");
+        for extra in ["principalId", "credential", "localOwner", "grants"] {
             let mut input = json!({"displayName":"Client","idempotencyKey":"test"});
             input[extra] = json!("injected");
             assert!(serde_json::from_value::<McpClientsCreateParams>(input).is_err());

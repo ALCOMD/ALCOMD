@@ -61,7 +61,6 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     );
     for table in [
         "mcp_clients",
-        "mcp_client_grants",
         "mcp_client_credentials",
         "mcp_oauth_registrations",
         "mcp_oauth_tokens",

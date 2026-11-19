@@ -1,8 +1,7 @@
 //! Approved, bounded OAuth RPC DTOs. Secrets have no printable Debug representation.
-use crate::McpClientGrant;
 use serde::{Deserialize, Serialize};
 
-pub const CAPABILITY_MCP_OAUTH_V1: &str = "mcp.oauth.v1";
+pub const CAPABILITY_MCP_OAUTH_V2: &str = "mcp.oauth.v2";
 pub const METHOD_MCP_OAUTH_BEGIN: &str = "mcp.oauth.begin";
 pub const METHOD_MCP_OAUTH_FINISH: &str = "mcp.oauth.finish";
 pub const METHOD_MCP_OAUTH_TOKEN: &str = "mcp.oauth.token";
@@ -144,8 +143,6 @@ pub struct McpOAuthRevokeParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct McpOAuthRequestGetParams {
     pub request_id: String,
-    pub cursor: Option<String>,
-    pub limit: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -159,8 +156,6 @@ pub struct McpOAuthRequestReview {
     pub resource: String,
     pub redirect_uri: String,
     pub scopes: Vec<String>,
-    pub grants: Vec<McpClientGrant>,
-    pub next_cursor: Option<String>,
     pub approval_fingerprint: String,
     pub status: String,
     pub expires_at_ms: u64,
@@ -171,7 +166,6 @@ pub struct McpOAuthRequestReview {
 pub struct McpOAuthRequestDecideParams {
     pub request_id: String,
     pub approve: bool,
-    pub grants: Vec<McpClientGrant>,
     pub expected_fingerprint: String,
     pub idempotency_key: String,
 }
