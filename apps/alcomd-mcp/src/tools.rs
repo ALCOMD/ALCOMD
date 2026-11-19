@@ -15,6 +15,9 @@ const PACKAGE_CONTRACT: &str =
 const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
 const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
 const ENVIRONMENT_CONTRACT: &str = include_str!("../../../specs/mcp/environment-v1.schema.json");
+const INVENTORY_CONTRACT: &str =
+    include_str!("../../../specs/mcp/project-inventory-v1.schema.json");
+const TEMPLATE_CONTRACT: &str = include_str!("../../../specs/mcp/template-edit-v1.schema.json");
 mod environment;
 mod packages;
 mod repositories;
@@ -30,6 +33,13 @@ pub(crate) fn builtin_definition(name: &str) -> Result<Option<Tool>, ErrorData> 
         REPOSITORY_CONTRACT
     } else if workflows::recognized(name) {
         WORKFLOW_CONTRACT
+    } else if name == "alcomd_list_installed_packages" {
+        INVENTORY_CONTRACT
+    } else if matches!(
+        name,
+        "alcomd_get_project_template" | "alcomd_edit_project_template"
+    ) {
+        TEMPLATE_CONTRACT
     } else if environment::recognized(name) {
         ENVIRONMENT_CONTRACT
     } else {

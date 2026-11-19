@@ -66,6 +66,10 @@ pub(super) fn add_archive_references(
                 Some(context.journal.export_declaration.ok_or_else(internal)?)
             }
             ProjectTemplateJobRequest::Save {
+                source: ProjectTemplateSource::FrozenEdit { declaration },
+                ..
+            } => Some(declaration),
+            ProjectTemplateJobRequest::Save {
                 source:
                     ProjectTemplateSource::Manual {
                         base_template: Some(_),
@@ -99,6 +103,58 @@ pub(super) fn source_project(
     })
 }
 
+pub(super) fn edit_replay(
+    connection: &Connection,
+    owner: &PrincipalId,
+    key: &IdempotencyKey,
+    fingerprint: &str,
+) -> Result<Option<ProjectTemplateJobAccepted>, ProjectCreateError> {
+    require_edit_access(connection, owner)?;
+    replay(connection, owner, SAVE, key, fingerprint)
+}
+
+fn require_edit_access(
+    connection: &Connection,
+    caller: &PrincipalId,
+) -> Result<(), ProjectCreateError> {
+    super::m8_workflows::require(
+        connection,
+        caller,
+        &[alcomd_application::Permission::ProjectsManage],
+    )
+    .map_err(|_| ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied))
+}
+
+fn replay(
+    connection: &Connection,
+    owner: &PrincipalId,
+    kind: &str,
+    key: &IdempotencyKey,
+    fingerprint: &str,
+) -> Result<Option<ProjectTemplateJobAccepted>, ProjectCreateError> {
+    let existing = connection
+        .query_row(
+            "SELECT request_fingerprint, operation_id FROM idempotency_records
+         WHERE principal_id=?1 AND method=?2 AND idempotency_key=?3",
+            params![owner.as_str(), kind, key.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(db_error)?;
+    let Some((stored_fingerprint, id)) = existing else {
+        return Ok(None);
+    };
+    if stored_fingerprint != fingerprint {
+        return Err(ProjectCreateError::new(
+            ProjectCreateErrorCode::IdempotencyConflict,
+        ));
+    }
+    Ok(Some(ProjectTemplateJobAccepted {
+        operation_id: OperationId::parse(&id).map_err(|_| internal())?,
+        replayed: true,
+    }))
+}
+
 pub(super) fn accept(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -109,25 +165,33 @@ pub(super) fn accept(
 ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
     let transaction = begin(connection)?;
     let kind = request_kind(&request);
-    let existing = transaction
-        .query_row(
-            "SELECT request_fingerprint, operation_id FROM idempotency_records
-             WHERE principal_id=?1 AND method=?2 AND idempotency_key=?3",
-            params![owner.as_str(), kind, key.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(db_error)?;
-    if let Some((stored_fingerprint, id)) = existing {
-        if stored_fingerprint != fingerprint {
+    let frozen_edit = match &request {
+        ProjectTemplateJobRequest::Save {
+            source: ProjectTemplateSource::FrozenEdit { declaration },
+            expected_revision,
+        } => {
+            require_edit_access(&transaction, owner)?;
+            Some((declaration, expected_revision.ok_or_else(internal)?))
+        }
+        _ => None,
+    };
+    if let Some(replayed) = replay(&transaction, owner, kind, key, fingerprint)? {
+        return Ok(replayed);
+    }
+    if let Some((declaration, expected)) = frozen_edit {
+        let resource_owner = alcomd_application::workflow_resource_owner(owner);
+        let (current, _) = project_templates::get(&transaction, &resource_owner, &declaration.id)?
+            .ok_or_else(|| ProjectCreateError::new(ProjectCreateErrorCode::TemplateStale))?;
+        if current.locked {
             return Err(ProjectCreateError::new(
-                ProjectCreateErrorCode::IdempotencyConflict,
+                ProjectCreateErrorCode::TemplateLocked,
             ));
         }
-        return Ok(ProjectTemplateJobAccepted {
-            operation_id: OperationId::parse(&id).map_err(|_| internal())?,
-            replayed: true,
-        });
+        if current.revision != expected {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::TemplateStale,
+            ));
+        }
     }
     let export_declaration = match &request {
         ProjectTemplateJobRequest::Export { reference, .. } => {
@@ -331,9 +395,14 @@ pub(super) fn finish_save(
         terminal(&transaction, id, context, Completion::Cancelled, timestamp)?;
     } else {
         check_source_revision(&transaction, &context.owner, source)?;
+        let owner = if matches!(source, ProjectTemplateSource::FrozenEdit { .. }) {
+            alcomd_application::workflow_resource_owner(&context.owner)
+        } else {
+            context.owner.clone()
+        };
         let record = project_templates::save_in_transaction(
             &transaction,
-            &context.owner,
+            &owner,
             declaration,
             *expected_revision,
             now_ms,

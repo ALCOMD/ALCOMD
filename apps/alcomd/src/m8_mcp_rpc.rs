@@ -121,6 +121,9 @@ pub(super) fn allowed_client_method(method: &str) -> bool {
         method,
         METHOD_MCP_TRANSPORT_BIND_REQUEST
             | alcomd_protocol::METHOD_MCP_PACKAGES_QUERY
+            | alcomd_protocol::METHOD_PROJECT_INVENTORY
+            | alcomd_protocol::METHOD_TEMPLATE_GET
+            | alcomd_protocol::METHOD_TEMPLATE_EDIT
             | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
             | alcomd_protocol::METHOD_MCP_REPOSITORIES_LIST
             | alcomd_protocol::METHOD_MCP_REPOSITORIES_INSPECT

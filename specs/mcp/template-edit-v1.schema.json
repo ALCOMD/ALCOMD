@@ -1,0 +1,312 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/template-edit-v1.json",
+    "title": "Read and edit a project template through Core",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_get_project_template",
+            "title": "Read a project template",
+            "description": "Return the current template, declared dependencies and a page of attachment names.",
+            "effect": "read",
+            "requiredPermissions": [
+                "projects.create"
+            ],
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "cursor": {
+                        "type": "string",
+                        "maxLength": 96,
+                        "minLength": 1
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200
+                    }
+                },
+                "required": [
+                    "id"
+                ]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/detail"
+                    },
+                    "error": {
+                        "type": "object"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "name": "alcomd_edit_project_template",
+            "title": "Edit a project template",
+            "description": "Apply explicit changes to an editable template using its current revision. Inspect and confirm the requested changes before submitting. Returns a Core Operation.",
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.manage"
+            ],
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "expected_revision": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 9007199254740991
+                    },
+                    "changes": {
+                        "$ref": "#/$defs/changes"
+                    },
+                    "confirm": {
+                        "const": true
+                    },
+                    "idempotency_key": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    }
+                },
+                "required": [
+                    "id",
+                    "expected_revision",
+                    "changes",
+                    "confirm",
+                    "idempotency_key"
+                ]
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {
+                        "$ref": "#/$defs/accepted"
+                    },
+                    "error": {
+                        "type": "object"
+                    }
+                },
+                "oneOf": [
+                    {
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            }
+        }
+    ],
+    "$defs": {
+        "changes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "set_dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "version_range": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024
+                            }
+                        },
+                        "required": [
+                            "package_id",
+                            "version_range"
+                        ]
+                    },
+                    "maxItems": 128
+                },
+                "remove_dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "maxItems": 128
+                },
+                "add_attachments": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "source_file": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32768
+                            },
+                            "target_path": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 32768
+                            }
+                        },
+                        "required": [
+                            "source_file",
+                            "target_path"
+                        ]
+                    },
+                    "maxItems": 128
+                },
+                "remove_attachments": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32768
+                    },
+                    "maxItems": 128
+                }
+            }
+        },
+        "detail": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "template": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "editor_version": {
+                            "type": [
+                                "string",
+                                "null"
+                            ]
+                        },
+                        "revision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                        },
+                        "locked": {
+                            "type": "boolean"
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "name",
+                        "revision",
+                        "locked"
+                    ]
+                },
+                "dependencies": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "package_id": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "version_range": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024
+                            }
+                        },
+                        "required": [
+                            "package_id",
+                            "version_range"
+                        ]
+                    },
+                    "maxItems": 128
+                },
+                "attachments": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32768
+                    },
+                    "maxItems": 200
+                },
+                "next_cursor": {
+                    "type": [
+                        "string",
+                        "null"
+                    ]
+                }
+            },
+            "required": [
+                "template",
+                "dependencies",
+                "attachments",
+                "next_cursor"
+            ]
+        },
+        "accepted": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operation_id": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "operation_id",
+                "replayed"
+            ]
+        }
+    }
+}

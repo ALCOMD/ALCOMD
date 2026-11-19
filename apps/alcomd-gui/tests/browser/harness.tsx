@@ -172,6 +172,8 @@ const SUPPORTED_CAPABILITIES = [
     "packages.candidates.v2",
     "packages.plan.v1",
     "packages.plan.v2",
+    "packages.project-inventory.v1",
+    "project-templates.edit.v1",
     "packages.user-packages.v1",
     "projects.copy.v1",
     "projects.delete.v1",
@@ -302,7 +304,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (query.get("unity-picker") === "cancel") return undefined;
             if (query.has("unity-picker-path")) return this.value(query.get("unity-picker-path")!);
         }
-        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe", extensionPackage: "C:/fixture/test.alcomdextension" }[kind]);
+        return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe",
+            extensionPackage: "C:/fixture/test.alcomdextension", templateAttachment: "C:/fixture/attachment.txt" }[kind]);
     }
     async subscribeFileDrag(receive: (event: FileDrag) => void) {
         const listener = (event: Event) => receive((event as CustomEvent<FileDrag>).detail);
@@ -434,6 +437,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private lifecycleRepositories = new Map<string, RepositorySnapshot>();
     private templatePageReads = 0;
     private templatesUnavailable = query.has("template-list-error");
+    private templateDetails = new Map<string, Pick<Awaited<ReturnType<GuiRpcClient["projectTemplateGet"]>>, "dependencies" | "attachments">>();
     private projectTemplates = [...builtinTemplates(), ...(query.has("template-existing")
         ? [userTemplate(USER_TEMPLATE_ID, query.has("template-same-name") ? "VRChat Avatars 2022" : "Existing fixture")] : [])];
     private templateRevision = 8;
@@ -1424,7 +1428,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: this.beginOperation(), replayed: false });
     }
 
-async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTemplatesList"]> {
+    async projectInventory(params: Parameters<GuiRpcClient["projectInventory"]>[0]): ReturnType<GuiRpcClient["projectInventory"]> {
+        if (params.projectId !== PROJECT_ID || params.expectedRevision !== this.currentProjectRevision) throw { code: "revision_conflict" };
+        return this.value({
+            entries: [{ packageId: "com.example.package", declaredRange: "^1.0.0", lockedVersion: "1.0.0", observedVersion: null, state: "missing" }],
+            resolution: "needed", reason: "package_installation_differs", nextCursor: null
+        });
+    }
+
+    async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTemplatesList"]> {
         window.templateRequests.push({ method: "projectTemplates.list", params: cursor === undefined ? {} : { cursor } });
         if (this.templatesUnavailable) throw { code: "internal_error" };
         if (query.has("holdTemplates") && window.heldTemplateReads === 0) {
@@ -1443,6 +1455,37 @@ async projectTemplatesList(cursor?: string): ReturnType<GuiRpcClient["projectTem
             return this.value({ templates: [catalogTemplate(101)] });
         }
         return this.value({ templates: this.projectTemplates });
+    }
+
+    async projectTemplateGet(params: Parameters<GuiRpcClient["projectTemplateGet"]>[0]): ReturnType<GuiRpcClient["projectTemplateGet"]> {
+        window.templateRequests.push({ method: "projectTemplates.get", params: structuredClone(params) });
+        const template = this.projectTemplates.find(({ id }) => id === params.id);
+        if (!template) throw { code: "template_not_found" };
+        const detail = this.templateDetails.get(params.id) ?? { dependencies: [], attachments: [] };
+        return this.value({ template, ...detail, nextCursor: null });
+    }
+
+    projectTemplateEdit(params: Parameters<GuiRpcClient["projectTemplateEdit"]>[0]): ReturnType<GuiRpcClient["projectTemplateEdit"]> {
+        window.templateRequests.push({ method: "projectTemplates.edit", params: structuredClone(params) });
+        return this.beginTemplateOperation("projectTemplates.save", params.idempotencyKey, () => {
+            const existing = this.projectTemplates.find(({ id }) => id === params.id);
+            if (existing?.revision !== params.expectedRevision) throw { code: "revision_conflict" };
+            if (existing.locked || !params.confirm) throw { code: "invalid_request" };
+            const { changes } = params;
+            const detail = this.templateDetails.get(params.id) ?? { dependencies: [], attachments: [] };
+            const dependencies = new Map(detail.dependencies.map((entry) => [entry.packageId, entry]));
+            for (const id of changes.removeDependencies ?? []) dependencies.delete(id);
+            for (const entry of changes.setDependencies ?? []) dependencies.set(entry.packageId, entry);
+            this.templateDetails.set(params.id, {
+                dependencies: [...dependencies.values()],
+                attachments: [...detail.attachments.filter((path) => !changes.removeAttachments?.includes(path)),
+                    ...(changes.addAttachments ?? []).map(({ targetPath }) => targetPath)]
+            });
+            const template = { ...existing, name: changes.name ?? existing.name, revision: ++this.templateRevision };
+            this.projectTemplates = this.projectTemplates.map((entry) => entry.id === template.id ? template : entry);
+            browserCoreEvents.emit("project-template", TEMPLATE_EVENT_ID, "project-template.changed", template.revision);
+            return { template };
+        });
     }
 
 

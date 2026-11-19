@@ -16,6 +16,9 @@ pub use alcomd_domain::{
     UserPackageId,
 };
 use serde::{Deserialize, Serialize};
+
+mod project_inventory;
+pub use project_inventory::*;
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
 mod error_context;

@@ -39,6 +39,7 @@ export * from "./mcp-runtime";
 export * from "./events";
 export * from "./operation-logs";
 export * from "./package-candidates";
+export * from "./project-inventory";
 export * from "./unity-hub";
 export * from "./repository-list";
 export * from "./templates";

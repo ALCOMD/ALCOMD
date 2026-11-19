@@ -257,7 +257,7 @@ pub(super) fn seed(
     transaction.commit().map_err(db_error)
 }
 
-fn get(
+pub(super) fn get(
     connection: &Connection,
     owner: &PrincipalId,
     id: &str,

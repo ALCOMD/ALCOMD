@@ -17,6 +17,8 @@ export const capabilities = {
     packagesCandidates: RPC_CAPABILITIES.packagesCandidates,
     packagesPlanV1: "packages.plan.v1",
     packagesPlanV2: "packages.plan.v2",
+    projectInventory: "packages.project-inventory.v1",
+    templateEdit: "project-templates.edit.v1",
     packagesUserPackages: "packages.user-packages.v1",
     projectsCopy: "projects.copy.v1",
     projectsDelete: "projects.delete.v1",

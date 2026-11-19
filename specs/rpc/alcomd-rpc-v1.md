@@ -1203,3 +1203,26 @@ now include a required catalogFingerprint. Observer hello is an explicit restric
 protected-local-IPC role; it is never local-owner or a business MCP Principal.
 Transport reads use separate negotiated capabilities and existing/approved group
 permissions. Config13 and existing business tool/identity contracts are unchanged.
+
+## M8 installed package inventory and template editing
+
+[Project assets Schema](m8-project-assets-v1.schema.json) describes the three shared IPC
+methods. Negotiate `packages.project-inventory.v1` for `packages.projectInventory` and
+`project-templates.edit.v1` for `projectTemplates.get` and `projectTemplates.edit`.
+
+Inventory compares the registered project's direct VPM declarations and lock with verified
+local package manifests. The response distinguishes missing files, differing versions, and
+incomplete evidence. It reports observations and performs no resolution or project writes.
+The inventory requires `projects.read` and `packages.read`. Template detail uses
+`projects.create` and returns declared dependencies plus attachment names.
+
+Read pages default to 50, with at most 200 items. A continuation binds the caller, resource
+and evidence snapshot. Invalidated snapshots return `package_candidate_evidence_stale`.
+
+Editing requires `projects.manage`, an explicit confirmation, the current template revision
+and an idempotency key. Core rejects built-in template changes and validates attachment
+inputs before acceptance. Attachment destinations are relative to the archive, under
+`Assets/`. Core freezes the edited archive and uses the existing template save Operation.
+An unknown acceptance outcome can be recovered by explicitly resubmitting the original
+request with its original key. The Operation belongs to the caller. The template keeps its
+existing owner.

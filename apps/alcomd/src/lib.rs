@@ -52,6 +52,7 @@ mod m7_user_packages_rpc;
 mod m8_mcp_rpc;
 mod m8_oauth_rpc;
 mod m8_packages_rpc;
+mod m8_project_assets_rpc;
 mod m8_repositories_rpc;
 mod m8_runtime_rpc;
 mod m8_tools_rpc;
@@ -883,6 +884,15 @@ async fn dispatch_payload(
     if request.method.starts_with("mcp.repositories.") {
         return m8_repositories_rpc::dispatch(request, state, applications, &access).await;
     }
+    if request.method == alcomd_protocol::METHOD_PROJECT_INVENTORY {
+        return m8_project_assets_rpc::inventory(request, state, applications, &access).await;
+    }
+    if matches!(
+        request.method.as_str(),
+        alcomd_protocol::METHOD_TEMPLATE_GET | alcomd_protocol::METHOD_TEMPLATE_EDIT
+    ) {
+        return m8_project_assets_rpc::templates(request, state, applications, &access).await;
+    }
     if matches!(
         request.method.as_str(),
         alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE
@@ -1043,6 +1053,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1,
         alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1,
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
+        alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,
         alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
         alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
@@ -1074,6 +1085,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
         alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2,
+        alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,

@@ -124,6 +124,11 @@ enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// Read and edit an existing project template.
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
     /// Inspect and manage normalized VPM repository metadata.
     #[command(visible_alias = "repo")]
     Repository {
@@ -239,6 +244,26 @@ enum OperationCommand {
         operation_id: String,
         #[arg(long)]
         expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum TemplateCommand {
+    Get {
+        id: String,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+    },
+    Edit {
+        id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        changes: PathBuf,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -377,6 +402,16 @@ enum RepositoryCommand {
 
 #[derive(Debug, Subcommand)]
 enum PackageCommand {
+    /// Read declared, locked, and locally observed packages in a project.
+    Inventory {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<usize>,
+    },
     #[command(name = "install", visible_alias = "i", alias = "plan-install")]
     Install {
         project_id: String,
@@ -772,6 +807,28 @@ async fn execute(
                     .await?,
             ),
         },
+        Command::Template { command } => match command {
+            TemplateCommand::Get { id, cursor, limit } => serde_json::to_value(
+                client.template_get(alcomd_protocol::ProjectTemplateGetParams { id, cursor, limit }).await?,
+            ),
+            TemplateCommand::Edit { id, expected_revision, changes, idempotency_key } => {
+                use std::io::Read as _;
+                const LIMIT: usize = 48 * 1024;
+                let mut bytes = Vec::new();
+                std::fs::File::open(changes).and_then(|file| file.take((LIMIT + 1) as u64).read_to_end(&mut bytes))
+                    .map_err(alcomd_client::ClientError::Transport)?;
+                if bytes.len() > LIMIT {
+                    return Err(CliError::Usage("Template changes exceed 48 KiB"));
+                }
+                let changes = serde_json::from_slice(&bytes)
+                    .map_err(|_| CliError::Usage("Template changes must be a valid JSON object"))?;
+                eprintln!("Apply the selected changes to template {} at revision {expected_revision}.", id.escape_debug());
+                confirm_high_impact(options)?;
+                serde_json::to_value(client.template_edit(alcomd_protocol::ProjectTemplateEditParams {
+                    id, expected_revision, changes, confirm: true, idempotency_key,
+                }).await?)
+            }
+        },
         Command::Project { command } => match command {
             ProjectCommand::Copy {
                 project_id,
@@ -1075,6 +1132,11 @@ async fn execute(
             ),
         },
         Command::Package { command } => match command {
+            PackageCommand::Inventory { project_id, expected_revision, cursor, limit } => {
+                serde_json::to_value(client.project_inventory(alcomd_protocol::ProjectInventoryParams {
+                    project_id, expected_revision, cursor, limit,
+                }).await?)
+            }
             PackageCommand::Install {
                 project_id,
                 package_id,
@@ -1456,6 +1518,10 @@ impl Command {
                 OperationCommand::Follow { .. } => "operation follow",
                 OperationCommand::Cancel { .. } => "operation cancel",
             },
+            Self::Template { command } => match command {
+                TemplateCommand::Get { .. } => "template get",
+                TemplateCommand::Edit { .. } => "template edit",
+            },
             Self::Project { command } => match command {
                 ProjectCommand::Copy { .. } => "project copy",
                 ProjectCommand::Create { .. } => "project create",
@@ -1480,6 +1546,7 @@ impl Command {
             },
             Self::Package { command } => match command {
                 PackageCommand::Install { .. } => "package install",
+                PackageCommand::Inventory { .. } => "package inventory",
                 PackageCommand::Remove { .. } => "package remove",
                 PackageCommand::Upgrade { .. } => "package upgrade",
                 PackageCommand::Downgrade { .. } => "package downgrade",

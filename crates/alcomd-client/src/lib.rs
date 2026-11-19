@@ -304,6 +304,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_MCP_EXTENSION_TOOLS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
@@ -845,6 +847,30 @@ impl AlcomdClient {
         params: alcomd_protocol::ProjectsCreateParams,
     ) -> Result<alcomd_protocol::ProjectsCreateResult, ClientError> {
         self.call(alcomd_protocol::METHOD_PROJECTS_CREATE, params)
+            .await
+    }
+
+    pub async fn project_inventory(
+        &mut self,
+        params: alcomd_protocol::ProjectInventoryParams,
+    ) -> Result<alcomd_protocol::ProjectInventoryResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECT_INVENTORY, params)
+            .await
+    }
+
+    pub async fn template_get(
+        &mut self,
+        params: alcomd_protocol::ProjectTemplateGetParams,
+    ) -> Result<alcomd_protocol::ProjectTemplateGetResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATE_GET, params)
+            .await
+    }
+
+    pub async fn template_edit(
+        &mut self,
+        params: alcomd_protocol::ProjectTemplateEditParams,
+    ) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATE_EDIT, params)
             .await
     }
 
@@ -1431,6 +1457,8 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_UNITY_WRITER_STATE
             | METHOD_UNITY_LAUNCH_OPTIONS
             | METHOD_PROJECT_TEMPLATES_LIST
+            | alcomd_protocol::METHOD_PROJECT_INVENTORY
+            | alcomd_protocol::METHOD_TEMPLATE_GET
             | METHOD_BACKUPS_LIST
             | METHOD_BACKUPS_GET
             | METHOD_EXTENSIONS_LIST

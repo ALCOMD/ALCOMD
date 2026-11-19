@@ -9,7 +9,11 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 32] = [
+const SCHEMAS: [(&str, &str); 33] = [
+    (
+        "m8-project-assets-v1",
+        include_str!("../../../specs/rpc/m8-project-assets-v1.schema.json"),
+    ),
     (
         "m7-operation-logs",
         include_str!("../../../specs/rpc/m7-operation-logs.schema.json"),
@@ -139,6 +143,59 @@ const SCHEMAS: [(&str, &str); 32] = [
         include_str!("../../../specs/rpc/m8-mcp-oauth-v2.schema.json"),
     ),
 ];
+
+#[test]
+fn project_assets_wire_contract_requires_revision_confirmation_and_closed_changes() {
+    use alcomd_protocol::{
+        CAPABILITY_PROJECT_INVENTORY_V1, CAPABILITY_TEMPLATE_EDIT_V1, METHOD_PROJECT_INVENTORY,
+        METHOD_TEMPLATE_EDIT, METHOD_TEMPLATE_GET, ProjectTemplateEditParams,
+    };
+
+    let contract = schema("m8-project-assets-v1");
+    let methods = &contract["x-alcomd-methods"];
+    for (method, capability) in [
+        (METHOD_PROJECT_INVENTORY, CAPABILITY_PROJECT_INVENTORY_V1),
+        (METHOD_TEMPLATE_GET, CAPABILITY_TEMPLATE_EDIT_V1),
+        (METHOD_TEMPLATE_EDIT, CAPABILITY_TEMPLATE_EDIT_V1),
+    ] {
+        assert_eq!(methods[method]["capability"], capability);
+        assert!(
+            capability
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b".-".contains(&b))
+        );
+    }
+    let definitions = &contract["$defs"];
+    assert_eq!(
+        definitions["templateEditParams"]["properties"]["confirm"]["const"],
+        true
+    );
+    assert_eq!(definitions["changes"]["additionalProperties"], false);
+    assert_eq!(
+        definitions["inventoryResult"]["properties"]["entries"]["maxItems"],
+        200
+    );
+
+    let payload = json!({
+        "id":"com.example.asset-test","expectedRevision":2,"confirm":true,
+        "changes":{"addAttachments":[{"sourceFile":"/fixture/file.txt","targetPath":"Assets/file.txt"}]},
+        "idempotencyKey":"test-edit"
+    });
+    let request: ProjectTemplateEditParams = serde_json::from_value(payload.clone()).unwrap();
+    assert_eq!(
+        request.changes.add_attachments[0].target_path,
+        "Assets/file.txt"
+    );
+    let mut missing_confirmation = payload.clone();
+    missing_confirmation
+        .as_object_mut()
+        .unwrap()
+        .remove("confirm");
+    assert!(serde_json::from_value::<ProjectTemplateEditParams>(missing_confirmation).is_err());
+    let mut unexpected_change = payload;
+    unexpected_change["changes"]["editorVersion"] = "2022.3.22f1".into();
+    assert!(serde_json::from_value::<ProjectTemplateEditParams>(unexpected_change).is_err());
+}
 
 #[test]
 fn oauth_schema_exposes_only_approved_roles_methods_and_bounded_review() {

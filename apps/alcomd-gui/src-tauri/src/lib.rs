@@ -326,7 +326,7 @@ async fn gui_select_file(
         "repositoryManifest" => picker.add_filter("JSON manifest", &["json"]),
         "extensionPackage" => picker.add_filter("ALCOMD extension", &["alcomdextension"]),
         "unityEditor" if cfg!(windows) => picker.add_filter("Executable", &["exe"]),
-        "unityEditor" => picker,
+        "unityEditor" | "templateAttachment" => picker,
         _ => return Err(RpcError::invalid_request()),
     };
     picker
@@ -1314,6 +1314,48 @@ async fn gui_projects_create(
 }
 
 #[tauri::command]
+async fn gui_project_inventory(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectInventoryParams,
+) -> Result<alcomd_protocol::ProjectInventoryResult, RpcError> {
+    let mut client = state.reads.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_inventory(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_project_template_get(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectTemplateGetParams,
+) -> Result<alcomd_protocol::ProjectTemplateGetResult, RpcError> {
+    let mut client = state.reads.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.template_get(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_project_template_edit(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectTemplateEditParams,
+) -> Result<alcomd_protocol::ProjectTemplatesSaveResult, RpcError> {
+    let mut client = state.work.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.template_edit(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_project_templates_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectTemplatesListParams,
@@ -1839,6 +1881,9 @@ pub fn run() {
             unity_windows::gui_focus_project_unity,
             gui_projects_create,
             gui_project_templates_list,
+            gui_project_inventory,
+            gui_project_template_get,
+            gui_project_template_edit,
             gui_project_templates_save,
             gui_project_templates_export,
             gui_project_templates_remove,

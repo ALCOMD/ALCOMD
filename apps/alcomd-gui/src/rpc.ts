@@ -1,5 +1,6 @@
 import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
+import type { ProjectInventoryParams, ProjectInventoryResult, ProjectTemplateEditParams, ProjectTemplateGetParams, ProjectTemplateGetResult } from "@alcomd/sdk";
 import type { ProjectCandidateRequest, ProjectCandidatePage, ExtensionResult, ExtensionPermissionsListResult, ExtensionUiCloseParams, ExtensionUiCloseResult, ExtensionUiDispatchParams, ExtensionUiDispatchResult, ExtensionUiOpenParams, ExtensionUiOpenResult, ExtensionUiRefreshParams, ExtensionUiSnapshotResult, RpcError } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
 import type { RepositoryCredentials, RepositoryListCancelParams, RepositoryListCancelResult, RepositoryListExportResult, RepositoryListImportParams, RepositoryListImportResult, RepositoryListInspection, RepositoryListPreview, RepositoryRefreshAllParams, RepositoryRefreshAllResult, RepositorySetDisplayNameParams } from "@alcomd/sdk";
@@ -12,7 +13,7 @@ import type { ProjectListView } from "./core-models";
 import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
 export type FileDrag = { type: "leave" } | { type: "hover"; x: number; y: number } | { type: "drop"; x: number; y: number; paths: string[] };
-export type NativeFileKind = "repositoryManifest" | "unityEditor" | "extensionPackage";
+export type NativeFileKind = "repositoryManifest" | "unityEditor" | "extensionPackage" | "templateAttachment";
 
 export interface GuiRpcClient {
     readonly unityWindows?: GuiUnityWindows;
@@ -29,6 +30,7 @@ export interface GuiRpcClient {
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
     projectsList(cursor?: RegistryCursor, view?: ProjectListView, expectedViewSequence?: number): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
+    projectInventory(params: ProjectInventoryParams): Promise<ProjectInventoryResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(currentPath?: string): Promise<string | undefined>;
     selectFile(kind: NativeFileKind, currentPath?: string): Promise<string | undefined>;
@@ -90,6 +92,8 @@ export interface GuiRpcClient {
     projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
     projectsCreate(params: ProjectsCreateParams): Promise<ProjectsCreateResult>;
     projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult>;
+    projectTemplateGet(params: ProjectTemplateGetParams): Promise<ProjectTemplateGetResult>;
+    projectTemplateEdit(params: ProjectTemplateEditParams): Promise<ProjectTemplatesSaveResult>;
     projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult>;
     projectTemplatesExport(params: ProjectTemplatesExportParams): Promise<ProjectTemplatesExportResult>;
     projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult>;
@@ -431,6 +435,18 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectTemplatesList(cursor?: string): Promise<ProjectTemplatesListResult> {
         return invokeTyped("gui_project_templates_list", { params: { limit: 100, cursor } });
+    }
+
+    projectInventory(params: ProjectInventoryParams): Promise<ProjectInventoryResult> {
+        return invokeTyped("gui_project_inventory", { params });
+    }
+
+    projectTemplateGet(params: ProjectTemplateGetParams): Promise<ProjectTemplateGetResult> {
+        return invokeTyped("gui_project_template_get", { params });
+    }
+
+    projectTemplateEdit(params: ProjectTemplateEditParams): Promise<ProjectTemplatesSaveResult> {
+        return invokeTyped("gui_project_template_edit", { params });
     }
 
     projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult> {

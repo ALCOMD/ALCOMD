@@ -2,6 +2,13 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Attachments": { "zh-CN": "附件", "ja-JP": "添付ファイル" },
+    "No attachments": { "zh-CN": "没有附件", "ja-JP": "添付ファイルはありません" },
+    "Remove {name}": { "zh-CN": "移除 {name}", "ja-JP": "{name} を削除" },
+    "Source file": { "zh-CN": "源文件", "ja-JP": "元ファイル" },
+    "Path in template": { "zh-CN": "模板内路径", "ja-JP": "テンプレート内のパス" },
+    "Remove attachment": { "zh-CN": "移除附件", "ja-JP": "添付ファイルを削除" },
+    "Add attachment": { "zh-CN": "添加附件", "ja-JP": "添付ファイルを追加" },
     "Read MCP subscription streams": { "zh-CN": "读取 MCP 订阅流", "ja-JP": "MCP サブスクリプションの読み取り" },
     "View adapter-reported MCP notification streams.": { "zh-CN": "查看适配器上报的 MCP 通知订阅流。", "ja-JP": "アダプターが報告する MCP 通知ストリームを表示します。" },
     "Declared MCP tools": {"zh-CN":"声明的 MCP 工具","ja-JP":"宣言された MCP ツール"},

@@ -4,6 +4,7 @@ use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use alcomd_application::ProjectTemplateChanges;
 use alcomd_application::{
     OperationId, ProjectCreateError, ProjectCreateErrorCode, ProjectRecord,
     ProjectTemplateDeclaration, ProjectTemplateDependency, ProjectTemplateSource,
@@ -75,6 +76,10 @@ impl TemplateArchiveStore {
     ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
         self.verify_root()?;
         match source {
+            ProjectTemplateSource::FrozenEdit { declaration } => {
+                self.verified_object(&declaration)?;
+                Ok(declaration)
+            }
             ProjectTemplateSource::Manual {
                 id,
                 name,
@@ -116,6 +121,190 @@ impl TemplateArchiveStore {
                 self.import_file(template_path(&source_file)?)
             }
         }
+    }
+
+    pub(crate) fn attachments(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+    ) -> Result<Vec<String>, ProjectCreateError> {
+        self.verify_root()?;
+        let archive = preflight_archive(&self.verified_object(declaration)?)
+            .map_err(|error| invalid().with_source(error))?;
+        let mut names = archive
+            .entries
+            .into_iter()
+            .filter(|entry| !entry.directory && entry.relative_path.starts_with("Assets"))
+            .map(|entry| entry.relative_path.to_string_lossy().replace('\\', "/"))
+            .collect::<Vec<_>>();
+        names.sort();
+        Ok(names)
+    }
+
+    pub(crate) fn freeze_edit(
+        &self,
+        declaration: ProjectTemplateDeclaration,
+        changes: ProjectTemplateChanges,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        self.verify_root()?;
+        let scratch = Scratch::new(&self.root)?;
+        let unpacked = scratch.path.join("original");
+        fs::create_dir(&unpacked).map_err(|error| io_error(&unpacked, error))?;
+        unpack(&self.verified_object(&declaration)?, &unpacked)?;
+        let mut inventory = Inventory::default();
+        for folder in ROOTS {
+            inventory.add_tree(&unpacked, folder)?;
+        }
+        for entry in fs::read_dir(&unpacked).map_err(|error| io_error(&unpacked, error))? {
+            let entry = entry.map_err(|error| io_error(&unpacked, error))?;
+            if let Some(name) = entry
+                .file_name()
+                .to_str()
+                .filter(|name| optional_root_file(name))
+            {
+                inventory.add_file(&unpacked, name)?;
+            }
+        }
+        if let Some(name) = changes.name {
+            let bytes = read_bounded(
+                &unpacked.join("package.json"),
+                crate::PROJECT_MANIFEST_LIMIT,
+            )?;
+            let mut metadata = parse_json(&bytes)?;
+            metadata["displayName"] = name.trim().into();
+            inventory.add_bytes(
+                "package.json",
+                serde_json::to_vec(&metadata).map_err(|e| invalid().with_source(e))?,
+            )?;
+        } else {
+            inventory.add_file(&unpacked, "package.json")?;
+        }
+        if !changes.set_dependencies.is_empty() || !changes.remove_dependencies.is_empty() {
+            let mut manifest = if inventory.entries.contains_key(VPM) {
+                let bytes = read_bounded(&unpacked.join(VPM), crate::PROJECT_MANIFEST_LIMIT)?;
+                read_vpm(&bytes)?.2
+            } else {
+                json!({"dependencies": {}, "locked": {}})
+            };
+            let additions = dependency_map(changes.set_dependencies)?;
+            if manifest.get("dependencies").is_none() {
+                manifest["dependencies"] = json!({});
+            }
+            let direct = manifest["dependencies"]
+                .as_object_mut()
+                .ok_or_else(invalid)?;
+            for id in changes.remove_dependencies {
+                if additions.contains_key(&id) || direct.remove(&id).is_none() {
+                    return Err(invalid());
+                }
+            }
+            for (id, range) in additions {
+                direct.entry(id).or_insert_with(|| json!({}))["version"] = range.into();
+            }
+            if direct.len() > 128 {
+                return Err(invalid());
+            }
+            inventory.entries.remove(VPM);
+            inventory.add_bytes(
+                VPM,
+                serde_json::to_vec(&manifest).map_err(|e| invalid().with_source(e))?,
+            )?;
+        }
+        let removals: BTreeSet<_> = changes.remove_attachments.iter().collect();
+        if removals.len() != changes.remove_attachments.len() {
+            return Err(invalid());
+        }
+        for target in &removals {
+            validate_attachment(target)?;
+            if !matches!(inventory.entries.get(*target), Some(Content::File(..))) {
+                return Err(invalid());
+            }
+        }
+        for target in removals {
+            inventory.entries.remove(target);
+            inventory.entries.remove(&format!("{target}.meta"));
+        }
+        let mut remaining = LIMITS.total_uncompressed_bytes;
+        for content in inventory.entries.values() {
+            let size = match content {
+                Content::Directory => 0,
+                Content::Bytes(bytes) => bytes.len() as u64,
+                Content::File(_, stamp) => stamp.len,
+            };
+            remaining = remaining.checked_sub(size).ok_or_else(invalid)?;
+        }
+        for (index, item) in changes.add_attachments.into_iter().enumerate() {
+            validate_attachment(&item.target_path)?;
+            let source = Path::new(&item.source_file);
+            let (input, expected) = self.attachment_source(source)?;
+            let staged = scratch.path.join(format!("attachment-{index}"));
+            if expected.len > LIMITS.entry_bytes {
+                return Err(invalid());
+            }
+            remaining = remaining.checked_sub(expected.len).ok_or_else(invalid)?;
+            let mut output = new_file(&staged)?;
+            copy_stamped(&input, &expected, &mut output)?;
+            output
+                .sync_all()
+                .map_err(|error| io_error(&staged, error))?;
+            drop(output);
+            if self.attachment_source(source)? != (input, expected) {
+                return Err(stale());
+            }
+            inventory.ensure_parents(&item.target_path)?;
+            let stamp = stamp(&staged, false)?;
+            inventory.insert(&item.target_path, Content::File(staged, stamp))?;
+        }
+        self.publish_inventory(inventory)
+    }
+
+    fn attachment_source(&self, source: &Path) -> Result<(PathBuf, Stamp), ProjectCreateError> {
+        if !source.is_absolute()
+            || source
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        {
+            return Err(invalid());
+        }
+        #[cfg(windows)]
+        if source
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().contains(':'))
+        {
+            return Err(invalid());
+        }
+        let expected = stamp(source, false)?;
+        let canonical = fs::canonicalize(source).map_err(|error| io_error(source, error))?;
+        if stamp(&canonical, false)? != expected {
+            return Err(stale());
+        }
+        let private = self.root.parent().ok_or_else(invalid)?;
+        let private_identity = alcomd_platform::file_identity_key(private)
+            .map_err(|error| io_error(private, error))?;
+        for ancestor in source
+            .ancestors()
+            .skip(1)
+            .chain(canonical.ancestors().skip(1))
+            .filter(|ancestor| ancestor.is_absolute())
+        {
+            let directory = stamp(ancestor, true)?;
+            if directory.identity == private_identity {
+                return Err(invalid());
+            }
+        }
+        #[cfg(unix)]
+        let links = {
+            use std::os::unix::fs::MetadataExt;
+            fs::metadata(source)
+                .map_err(|error| io_error(source, error))?
+                .nlink()
+        };
+        #[cfg(windows)]
+        let links =
+            alcomd_platform::file_link_count(source).map_err(|error| io_error(source, error))?;
+        if links != 1 {
+            return Err(invalid());
+        }
+        Ok((canonical, expected))
     }
 
     fn import_file(&self, source: &Path) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
@@ -944,6 +1133,11 @@ impl Inventory {
     }
 
     fn add_bytes(&mut self, name: &str, bytes: Vec<u8>) -> Result<(), ProjectCreateError> {
+        self.ensure_parents(name)?;
+        self.insert(name, Content::Bytes(bytes))
+    }
+
+    fn ensure_parents(&mut self, name: &str) -> Result<(), ProjectCreateError> {
         let mut child = name;
         while let Some((parent, _)) = child.rsplit_once('/') {
             if self.entries.contains_key(parent) {
@@ -952,7 +1146,7 @@ impl Inventory {
             self.insert(parent, Content::Directory)?;
             child = parent;
         }
-        self.insert(name, Content::Bytes(bytes))
+        Ok(())
     }
 
     fn insert(&mut self, name: &str, content: Content) -> Result<(), ProjectCreateError> {
@@ -1391,6 +1585,13 @@ fn validate_path(name: &str) -> Result<(), ProjectCreateError> {
         return Err(invalid());
     }
     Ok(())
+}
+
+fn validate_attachment(name: &str) -> Result<(), ProjectCreateError> {
+    if name.strip_prefix("Assets/").is_none_or(str::is_empty) {
+        return Err(invalid());
+    }
+    validate_path(name)
 }
 
 fn template_path(value: &str) -> Result<&Path, ProjectCreateError> {

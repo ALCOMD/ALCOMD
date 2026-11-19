@@ -2,6 +2,18 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const pageMessages: TranslationTable = {
+    "Installed packages": { "zh-CN": "已安装的软件包", "ja-JP": "インストール済みのパッケージ" },
+    "Requested version": { "zh-CN": "要求的版本", "ja-JP": "要求バージョン" },
+    "Locked version": { "zh-CN": "锁定版本", "ja-JP": "ロック済みバージョン" },
+    "Detected version": { "zh-CN": "检测到的版本", "ja-JP": "検出されたバージョン" },
+    "Matches locked version": { "zh-CN": "与锁定版本一致", "ja-JP": "ロック済みバージョンと一致" },
+    "Package files missing": { "zh-CN": "缺少软件包文件", "ja-JP": "パッケージファイルがありません" },
+    "Files differ from locked version": { "zh-CN": "文件版本与锁定版本不一致", "ja-JP": "ファイルとロック済みのバージョンが異なります" },
+    "Could not verify package files": { "zh-CN": "无法验证软件包文件", "ja-JP": "パッケージファイルを確認できません" },
+    "Package resolution is needed": { "zh-CN": "需要重新解析软件包", "ja-JP": "パッケージの解決が必要です" },
+    "No package issues found": { "zh-CN": "未发现软件包问题", "ja-JP": "パッケージに問題は見つかりませんでした" },
+    "Package resolution status is unknown": { "zh-CN": "无法确定软件包解析状态", "ja-JP": "パッケージの解決状態を確認できません" },
+    "No packages in the project manifest": { "zh-CN": "项目清单中没有软件包", "ja-JP": "プロジェクトのマニフェストにパッケージがありません" },
     "Project folder is missing.": { "zh-CN": "项目文件夹不存在。", "ja-JP": "プロジェクトフォルダーが存在しません。" },
     "The project folder is unavailable.": { "zh-CN": "项目文件夹无法访问。", "ja-JP": "プロジェクトフォルダーにアクセスできません。" },
     "Use incompatible version?": { "zh-CN": "使用不兼容版本？", "ja-JP": "互換性のないバージョンを使用しますか？" },

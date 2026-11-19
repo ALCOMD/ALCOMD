@@ -5,7 +5,8 @@ use alcomd_application::{
     ProjectCreateAccepted, ProjectCreateError, ProjectCreateErrorCode, ProjectCreateInput,
     ProjectCreatePackages, ProjectCreateStore, ProjectCreateWork, ProjectId, ProjectObservation,
     ProjectRecord, ProjectTemplateDeclaration, ProjectTemplateJobAccepted,
-    ProjectTemplateJobRequest, ProjectTemplateJobWork, ProjectTemplatePage, Revision,
+    ProjectTemplateJobRequest, ProjectTemplateJobWork, ProjectTemplatePage, ProjectTemplateRecord,
+    Revision,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -849,6 +850,38 @@ pub(super) fn unavailable() -> ProjectCreateError {
 }
 
 impl ProjectCreateStore for crate::StateStoreHandle {
+    async fn project_template_get(
+        &self,
+        owner: PrincipalId,
+        id: String,
+    ) -> Result<ProjectTemplateRecord, ProjectCreateError> {
+        self.request_worker(
+            move |connection| {
+                project_templates::get(connection, &owner, &id)?
+                    .map(|(record, _)| record)
+                    .ok_or_else(|| ProjectCreateError::new(ProjectCreateErrorCode::TemplateStale))
+            },
+            unavailable,
+        )
+        .await
+    }
+
+    async fn project_template_edit_replay(
+        &self,
+        owner: PrincipalId,
+        key: IdempotencyKey,
+        fingerprint: String,
+    ) -> Result<Option<ProjectTemplateJobAccepted>, ProjectCreateError> {
+        let authentication = alcomd_application::workflow_authentication();
+        self.request_worker(
+            move |connection| {
+                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
+                project_template_jobs::edit_replay(connection, &owner, &key, &fingerprint)
+            },
+            unavailable,
+        )
+        .await
+    }
     async fn project_create_replay(
         &self,
         owner: PrincipalId,
@@ -1039,8 +1072,10 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         fingerprint: String,
         now_ms: u64,
     ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
+        let authentication = alcomd_application::workflow_authentication();
         self.request_worker(
             move |connection| {
+                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
                 project_template_jobs::accept(
                     connection,
                     &owner,

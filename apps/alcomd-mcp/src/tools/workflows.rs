@@ -39,7 +39,11 @@ fn reply<T: Serialize>(value: Result<T, ClientError>, writing: bool) -> Result<V
 pub(super) fn operation_kind(kind: &str) -> bool {
     matches!(
         kind,
-        "projects.create" | "projects.copy" | "backups.create" | "backups.restore"
+        "projects.create"
+            | "projects.copy"
+            | "backups.create"
+            | "backups.restore"
+            | "projectTemplates.save"
     )
 }
 
@@ -54,6 +58,12 @@ struct CreatedProject {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct CopiedProject {
     target_project_id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SavedTemplate {
+    template: rpc::ProjectTemplateRecord,
 }
 
 #[derive(Deserialize)]
@@ -88,6 +98,7 @@ pub(super) fn operation_result(kind: &str, result: Value) -> Result<Value, Failu
     match kind {
         "projects.create" => project_receipt::<CreatedProject>(result),
         "projects.copy" => project_receipt::<CopiedProject>(result),
+        "projectTemplates.save" => project_receipt::<SavedTemplate>(result),
         "backups.restore" => project_receipt::<RestoredProject>(result),
         "backups.create" => {
             let backup: StoredBackup =

@@ -1420,6 +1420,7 @@
                         "store_unavailable",
                         "template_builtin_immutable",
                         "template_conflict",
+                        "template_builtin_immutable",
                         "template_dependency_unsatisfied",
                         "unity_architecture_unsupported",
                         "unity_editor_selection_required",

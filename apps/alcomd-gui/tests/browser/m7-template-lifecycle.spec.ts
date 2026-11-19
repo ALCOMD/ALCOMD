@@ -5,6 +5,38 @@ import { expectRequestError } from "./request-error-assertions";
 const avatarId = "com.vrclearn.alcomd.templates.vrchat.avatars.2022";
 const userId = "com.example.fixture";
 
+test("template editing submits the displayed revision, declaration changes and the selected asset", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/templates&template-existing");
+    const trigger = row(page, userId).getByRole("button", { name: "More actions for Existing fixture" });
+    await selectActionMenuItem(trigger, page.getByRole("menuitem", { name: "Edit template", exact: true }));
+    await expect(page.getByRole("dialog", { name: "Edit template", exact: true })).toBeVisible();
+    const dialog = page.locator("md-dialog[open]");
+    await expect(dialog.getByRole("group", { name: "Attachments" })).toBeVisible();
+    await dialog.getByLabel("Display name").fill("Edited fixture");
+    await dialog.getByRole("button", { name: "Add package", exact: true }).click();
+    await dialog.getByLabel("Package ID", { exact: true }).fill("com.example.assets");
+    await dialog.getByLabel("Version", { exact: true }).fill("^1.0.0");
+    await dialog.getByRole("button", { name: "Add attachment", exact: true }).click();
+    await expect(dialog.getByLabel("Path in template")).toHaveValue("Assets/attachment.txt");
+    await dialog.getByRole("button", { name: "Save template", exact: true }).click();
+    await closeCompletedTemplate(dialog);
+    await expect(row(page, userId)).toContainText("Edited fixture");
+    expect(await request(page, "projectTemplates.edit")).toMatchObject({
+        id: userId,
+        expectedRevision: expect.any(Number),
+        confirm: true,
+        changes: { name: "Edited fixture", setDependencies: [{ packageId: "com.example.assets", versionRange: "^1.0.0" }],
+            addAttachments: [{ sourceFile: "C:/fixture/attachment.txt", targetPath: "Assets/attachment.txt" }] },
+        idempotencyKey: expect.any(String)
+    });
+    await selectActionMenuItem(row(page, userId).getByRole("button", { name: "More actions for Edited fixture" }),
+        page.getByRole("menuitem", { name: "View template", exact: true }));
+    await expect(page.getByRole("dialog", { name: "View template", exact: true })).toBeVisible();
+    const view = page.locator("md-dialog[open]");
+    await expect(view.getByText("Assets/attachment.txt", { exact: true })).toBeVisible();
+    await expect(view.getByLabel("Package ID", { exact: true })).toHaveValue("com.example.assets");
+});
+
 test("manual creation submits one exact editor and the package list as a tracked operation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates");
     const dialog = await create(page, "com.example.avatar-tools", "Avatar starter");

@@ -120,6 +120,8 @@ fn builtin_entries(
     package_tools: bool,
     repository_tools: bool,
     workflow_tools: bool,
+    inventory_tools: bool,
+    template_tools: bool,
 ) -> Result<Vec<Entry>, E> {
     let mut entries = builtin()?;
     append_builtin_tools(
@@ -151,6 +153,18 @@ fn builtin_entries(
             include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
         )?;
     }
+    if inventory_tools {
+        append_builtin_tools(
+            &mut entries,
+            include_str!("../../../specs/mcp/project-inventory-v1.schema.json"),
+        )?;
+    }
+    if template_tools {
+        append_builtin_tools(
+            &mut entries,
+            include_str!("../../../specs/mcp/template-edit-v1.schema.json"),
+        )?;
+    }
     Ok(entries)
 }
 
@@ -160,11 +174,19 @@ async fn entries(
     package_tools: bool,
     repository_tools: bool,
     workflow_tools: bool,
+    inventory_tools: bool,
+    template_tools: bool,
 ) -> Result<(Vec<Entry>, String), E> {
     let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
     let mut evidence =
         json!({"auth":authentication.binding(),"client":snapshot.client.revision,"providers":[]});
-    let mut entries = builtin_entries(package_tools, repository_tools, workflow_tools)?;
+    let mut entries = builtin_entries(
+        package_tools,
+        repository_tools,
+        workflow_tools,
+        inventory_tools,
+        template_tools,
+    )?;
     for provider in snapshot.providers {
         let path = std::path::PathBuf::from(&provider.locator);
         let verified = tokio::task::spawn_blocking(move || {
@@ -321,7 +343,16 @@ async fn call(
             return Ok(saved);
         }
     }
-    let (items, _) = entries(apps, authentication.clone(), false, false, false).await?;
+    let (items, _) = entries(
+        apps,
+        authentication.clone(),
+        false,
+        false,
+        false,
+        false,
+        false,
+    )
+    .await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -497,6 +528,12 @@ pub(super) async fn dispatch(
                     state
                         .capabilities
                         .contains(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1),
+                    state
+                        .capabilities
+                        .contains(rpc::CAPABILITY_PROJECT_INVENTORY_V1),
+                    state
+                        .capabilities
+                        .contains(rpc::CAPABILITY_TEMPLATE_EDIT_V1),
                 )
                 .await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)
@@ -669,7 +706,7 @@ mod connection_access_tests {
             revoked_at_ms: None,
         };
         let access = app::mcp_access(&client).expect("authenticated client");
-        for tool in builtin_entries(true, true, true).expect("published tools") {
+        for tool in builtin_entries(true, true, true, true, true).expect("published tools") {
             assert!(
                 app::require_tool_permissions(&access, &tool.descriptor.required_permissions)
                     .is_ok(),

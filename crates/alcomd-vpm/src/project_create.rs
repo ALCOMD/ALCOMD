@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use alcomd_application::ProjectTemplateChanges;
 use alcomd_application::{
     OperationId, ProjectCreateAdapter, ProjectCreateError, ProjectCreateErrorCode,
     ProjectCreateInput, ProjectCreatePackages, ProjectCreateWork, ProjectObservation,
@@ -129,6 +130,21 @@ struct OwnerMarker {
 }
 
 impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<S> {
+    fn template_attachments(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+    ) -> Result<Vec<String>, ProjectCreateError> {
+        self.templates.attachments(declaration)
+    }
+
+    fn freeze_template_edit(
+        &self,
+        declaration: ProjectTemplateDeclaration,
+        changes: ProjectTemplateChanges,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError> {
+        self.templates.freeze_edit(declaration, changes)
+    }
+
     async fn source_settings(
         &self,
     ) -> Result<alcomd_application::ConfigPackageSettings, ProjectCreateError> {

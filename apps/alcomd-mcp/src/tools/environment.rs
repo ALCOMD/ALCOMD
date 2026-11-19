@@ -15,6 +15,9 @@ pub(super) fn recognized(name: &str) -> bool {
         "alcomd_get_settings"
             | "alcomd_list_unity_installations"
             | "alcomd_get_project_launch_config"
+            | "alcomd_list_installed_packages"
+            | "alcomd_get_project_template"
+            | "alcomd_edit_project_template"
     )
 }
 
@@ -37,6 +40,33 @@ pub(super) async fn execute(
     }
     let fields = ipc_fields(Value::Object(request.arguments.unwrap_or_default()))?;
     let (response, summary) = match request.name.as_ref() {
+        "alcomd_list_installed_packages" => (
+            result(client.project_inventory(params(fields)?).await),
+            "Locally observed packages and resolution evidence.",
+        ),
+        "alcomd_get_project_template" => (
+            result(client.template_get(params(fields)?).await),
+            "Current template and attachments.",
+        ),
+        "alcomd_edit_project_template" => {
+            let params: rpc::ProjectTemplateEditParams = params(fields)?;
+            if !params.confirm {
+                return Err(invalid());
+            }
+            let response = client
+                .template_edit(params)
+                .await
+                .map_err(|error| Failure::Remote(error, true))
+                .and_then(|accepted| {
+                    serde_json::to_value(accepted)
+                        .map(snake)
+                        .map_err(|_| Failure::InvalidCore)
+                });
+            (
+                response,
+                "Template edit accepted. Check its Operation for the result.",
+            )
+        }
         "alcomd_get_settings" => {
             if fields.as_object().is_none_or(|fields| !fields.is_empty()) {
                 return Err(invalid());

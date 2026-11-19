@@ -1,9 +1,10 @@
 import { BLANK_PROJECT_TEMPLATE_ID } from "@alcomd/sdk";
-import type { ProjectTemplatesListResult, ProjectTemplateDependency, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
+import type { ProjectTemplatesListResult, ProjectTemplateAttachment, ProjectTemplateDependency, ProjectTemplateEditParams, ProjectTemplateGetResult, ProjectTemplateRecord, ProjectTemplateSource, ProjectTemplatesExportParams, ProjectTemplatesSaveParams, RpcError } from "@alcomd/sdk";
 import { closeIcon, moreVertIcon } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AcceptedOperationProgress, operationRequestOutcomeUnknown, useAcceptedOperations, useActionScope } from "./CoreActions";
+import { capabilities, useCapability } from "./capabilities";
 import { DesktopList, TableLoading } from "./DesktopList";
 import { DialogCloseButton, Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, PathField, Select, TextField, type DialogOrigin } from "./Material";
 import { FilePicker } from "./FilePicker";
@@ -20,10 +21,11 @@ import { CreateUnityVersionField, useCreateUnityVersion } from "./use-create-uni
 
 type SourceKind = ProjectTemplateSource["kind"];
 type Selection = { kind: "save"; source: SourceKind; template?: ProjectTemplateRecord }
-    | { kind: "view" | "export" | "remove"; template: ProjectTemplateRecord };
+    | { kind: "view" | "edit" | "export" | "remove"; template: ProjectTemplateRecord };
 type Request =
     | { kind: "save"; params: Omit<ProjectTemplatesSaveParams, "idempotencyKey"> }
-    | { kind: "export"; params: Omit<ProjectTemplatesExportParams, "idempotencyKey"> };
+    | { kind: "export"; params: Omit<ProjectTemplatesExportParams, "idempotencyKey"> }
+    | { kind: "edit"; params: Omit<ProjectTemplateEditParams, "idempotencyKey"> };
 type SelectedProject = ProjectSnapshot & { projectId: string; revision: number };
 
 const sourceLabels = {
@@ -88,6 +90,7 @@ export function ProjectTemplatesWorkspace({ client, navigation }: { client: GuiR
 
 function TemplateRowActions({ onSelect, template }: { onSelect(selection: Selection, origin: HTMLElement | null): void; template: ProjectTemplateRecord }) {
     const { t } = useTranslation();
+    const canEdit = useCapability(capabilities.templateEdit);
     const anchor = useRef<HTMLElement>(null);
     const [open, setOpen] = useState(false);
     function select(selection: Selection) {
@@ -99,6 +102,7 @@ function TemplateRowActions({ onSelect, template }: { onSelect(selection: Select
             onClick={() => setOpen(true)} ref={anchor} type="button"><Icon asset={moreVertIcon} size={24} /></IconButton>
         <Menu anchorRef={anchor} onClose={() => setOpen(false)} open={open}>
             <MenuItem label={t("View template")} onClick={() => select({ kind: "view", template })} />
+            {canEdit ? <MenuItem disabled={template.locked} label={t("Edit template")} onClick={() => select({ kind: "edit", template })} /> : null}
             <MenuItem label={t("Export template")} onClick={() => select({ kind: "export", template })} />
             <MenuItem disabled={template.locked} label={t("Replace template")} onClick={() => select({ kind: "save", source: "file", template })} />
             <MenuItem disabled={template.locked} label={t("Remove template")} onClick={() => select({ kind: "remove", template })} />
@@ -116,11 +120,17 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     catalog: ProjectTemplatesListResult;
 }) {
     const { t } = useTranslation();
+    const canReadDetail = useCapability(capabilities.templateEdit);
     const record = selection.template;
     const [source, setSource] = useState<SourceKind>(selection.kind === "save" ? selection.source : "manual");
     const [id, setId] = useState(record?.id ?? "");
     const [name, setName] = useState(record?.name ?? "");
     const [dependencies, setDependencies] = useState<(ProjectTemplateDependency & { key: string })[]>([]);
+    const [detail, setDetail] = useState<ProjectTemplateGetResult>();
+    const [detailError, setDetailError] = useState<RpcError>();
+    const [detailRetry, setDetailRetry] = useState(0);
+    const [addAttachments, setAddAttachments] = useState<(ProjectTemplateAttachment & { key: string })[]>([]);
+    const [removeAttachments, setRemoveAttachments] = useState<string[]>([]);
     const [project, setProject] = useState<SelectedProject>();
     const [base, setBase] = useState<ProjectTemplateRecord>();
     const [baseValid, setBaseValid] = useState(false);
@@ -140,6 +150,21 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     const operations = useAcceptedOperations(client);
     const operation = operationId === undefined ? undefined : operations.snapshot(operationId)?.operation;
     const unity = useCreateUnityVersion(client, base?.editorVersion, open && selection.kind === "save" && source === "manual");
+    const detailId = canReadDetail && (selection.kind === "view" || selection.kind === "edit") ? record?.id : undefined;
+
+    useEffect(() => {
+        if (!open || detailId === undefined) return;
+        let active = true;
+        setDetail(undefined);
+        setDetailError(undefined);
+        void client.projectTemplateGet({ id: detailId }).then((result) => {
+            if (!active) return;
+            setDetail(result);
+            setName(result.template.name);
+            setDependencies(result.dependencies.map((entry) => ({ ...entry, key: entry.packageId })));
+        }).catch((caught: unknown) => { if (active) setDetailError(normalizeRequestError(caught)); });
+        return () => { active = false; };
+    }, [client, detailId, detailRetry, open]);
 
     async function run(action: () => Promise<void>) {
         if (pending.current) return;
@@ -183,9 +208,26 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
     }
 
     const selectedSource = selection.kind === "save" ? saveSource() : undefined;
+    function editRequest(): Request | undefined {
+        if (detail === undefined || detail.template.locked || !name.trim()) return undefined;
+        const chosen = dependencies.map(({ packageId, versionRange }) => ({ packageId: packageId.trim(), versionRange: versionRange.trim() }));
+        const byId = new Map(chosen.map((entry) => [entry.packageId, entry.versionRange]));
+        const original = new Map(detail.dependencies.map((entry) => [entry.packageId, entry.versionRange]));
+        if (byId.size !== chosen.length || chosen.some(({ packageId, versionRange }) => !packageId || !versionRange)
+            || addAttachments.some(({ sourceFile, targetPath }) => !sourceFile || !targetPath.trim().startsWith("Assets/") || targetPath.trim() === "Assets/")) return undefined;
+        const setDependencies = chosen.filter(({ packageId, versionRange }) => original.get(packageId) !== versionRange);
+        const removeDependencies = detail.dependencies.filter(({ packageId }) => !byId.has(packageId)).map(({ packageId }) => packageId);
+        const nameChanged = name.trim() !== detail.template.name;
+        if (!nameChanged && !setDependencies.length && !removeDependencies.length && !addAttachments.length && !removeAttachments.length) return undefined;
+        return { kind: "edit", params: { id: detail.template.id, expectedRevision: detail.template.revision, confirm: true, changes: {
+            ...(nameChanged ? { name: name.trim() } : {}), setDependencies, removeDependencies, removeAttachments,
+            addAttachments: addAttachments.map(({ sourceFile, targetPath }) => ({ sourceFile, targetPath: targetPath.trim() }))
+        } } };
+    }
+
     const request: Request | undefined = selection.kind === "export" && destinationFile !== "" ? {
         kind: "export", params: { id: selection.template.id, revision: selection.template.revision, destinationFile }
-    } : selectedSource === undefined ? undefined : {
+    } : selection.kind === "edit" ? editRequest() : selectedSource === undefined ? undefined : {
         kind: "save", params: { source: selectedSource, ...(record === undefined ? {} : { expectedRevision: record.revision }) }
     };
 
@@ -204,29 +246,46 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
             try {
                 accepted = submitted.request.kind === "save"
                     ? await client.projectTemplatesSave({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey })
-                    : await client.projectTemplatesExport({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey });
+                    : submitted.request.kind === "edit"
+                        ? await client.projectTemplateEdit({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey })
+                        : await client.projectTemplatesExport({ ...submitted.request.params, idempotencyKey: submitted.idempotencyKey });
             } catch (caught: unknown) {
                 if (!operationRequestOutcomeUnknown(normalizeRequestError(caught))) attempt.current = undefined;
                 throw caught;
             }
             if (!current()) return;
             operations.accept(accepted.operationId, () => {
-                if (current() && submitted.request.kind === "save") onChanged();
+                if (current() && submitted.request.kind !== "export") onChanged();
             });
             attempt.current = undefined;
             setOperationId(accepted.operationId);
         });
     }
 
-    const title = selection.kind === "view" ? "View template" : selection.kind === "remove" ? "Remove template"
+    const title = selection.kind === "view" ? "View template" : selection.kind === "edit" ? "Edit template" : selection.kind === "remove" ? "Remove template"
         : selection.kind === "export" ? "Export template" : record !== undefined ? "Replace template" : sourceLabels[source];
-    const submitLabel = selection.kind === "remove" || selection.kind === "export" || record !== undefined ? title
+    const submitLabel = selection.kind === "edit" ? "Save template" : selection.kind === "remove" || selection.kind === "export" || record !== undefined ? title
         : source === "file" ? "Import template" : "Save template";
     const importing = selection.kind === "save" && record === undefined && source === "file" && operationId === undefined;
     const submitDisabled = busy || choosing || !retrying && request === undefined && selection.kind !== "remove";
     const terminalFailure = operation?.state === "failed" || operation?.state === "cancelled";
     const failedPackage = operation?.state === "failed" && typeof operation.result === "object" && operation.result !== null
         && "packageId" in operation.result && typeof operation.result.packageId === "string" ? operation.result.packageId : undefined;
+
+    const editable = selection.kind === "edit";
+    const dependencyFields = <fieldset className="template-declarations">
+        <legend>{t("Packages")}</legend>
+        {dependencies.map((dependency) => <div className="template-declaration-row" key={dependency.key}>
+            <TextField disabled={formDisabled} label={t("Package ID")} onInput={(packageId) => setDependencies((rows) => rows.map((row) =>
+                row.key === dependency.key ? { ...row, packageId } : row))} readOnly={selection.kind === "view"} required value={dependency.packageId} />
+            <TextField disabled={formDisabled} label={t("Version")} onInput={(versionRange) => setDependencies((rows) => rows.map((row) =>
+                row.key === dependency.key ? { ...row, versionRange } : row))} readOnly={selection.kind === "view"} required value={dependency.versionRange} />
+            {selection.kind === "view" ? null : <IconButton disabled={formDisabled} label={t("Remove package")} title={t("Remove package")}
+                onClick={() => setDependencies((rows) => rows.filter(({ key }) => key !== dependency.key))} type="button"><Icon asset={closeIcon} /></IconButton>}
+        </div>)}
+        {selection.kind === "view" ? null : <Button disabled={formDisabled} onClick={() => setDependencies((rows) => [...rows, { key: crypto.randomUUID(), packageId: "", versionRange: "" }])}
+            type="button" variant="text">{t("Add package")}</Button>}
+    </fieldset>;
 
     return <>
         <Dialog dismissible={!busy && !choosing} onClose={onClose} open={open} returnFocus={origin} title={t(title)} wide={selection.kind !== "save" || source !== "file"}
@@ -243,10 +302,47 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
                     <DialogCloseButton>{t(operation !== undefined && ["succeeded", "failed", "cancelled"].includes(operation.state) ? "Close" : "Minimize")}</DialogCloseButton>
                 </div>
             </div> : <form className="project-create-flow" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-                {selection.kind === "view" ? <>
-                    <TextField label={t("Template ID")} readOnly value={selection.template.id} />
-                    <TextField label={t("Display name")} readOnly value={selection.template.name} />
-                    {selection.template.editorVersion === undefined ? null : <TextField label={t("Unity version")} readOnly value={selection.template.editorVersion} />}
+                {selection.kind === "view" || editable ? <>
+                    <TextField label={t("Template ID")} readOnly value={id} />
+                    <TextField label={t("Display name")} disabled={editable && (formDisabled || detail === undefined)} readOnly={!editable} onInput={setName} value={name} />
+                    {record?.editorVersion === undefined ? null : <TextField label={t("Unity version")} readOnly value={detail?.template.editorVersion ?? record.editorVersion} />}
+                    {detailId === undefined ? null : detailError !== undefined ? <><TemplateFailure error={detailError} /><Button onClick={() => setDetailRetry((value) => value + 1)}
+                        type="button" variant="text">{t("Retry")}</Button></> : detail === undefined ? <p role="status">{t("Loading…")}</p> : <>
+                        {dependencyFields}
+                        <fieldset className="template-declarations">
+                            <legend>{t("Attachments")}</legend>
+                            <PagedItems initialItems={detail.attachments} initialCursor={detail.nextCursor ?? undefined} loadMore={async (cursor) => {
+                                const next = await client.projectTemplateGet({ id: detail.template.id, cursor });
+                                return { items: next.attachments, nextCursor: next.nextCursor ?? undefined };
+                            }}>
+                                {(attachments, pagination) => <>
+                                    {attachments.length === 0 ? <p>{t("No attachments")}</p> : <ul>
+                                        {attachments.map((path) => <li key={path}>
+                                            {editable ? <Checkbox checked={removeAttachments.includes(path)} disabled={formDisabled} label={t("Remove {name}", { name: path })}
+                                                onChange={(checked) => setRemoveAttachments((paths) => checked ? [...paths, path] : paths.filter((entry) => entry !== path))} />
+                                                : <code className="template-id">{path}</code>}
+                                        </li>)}
+                                    </ul>}
+                                    {pagination.error === undefined ? null : <TemplateFailure error={pagination.error} />}
+                                </>}
+                            </PagedItems>
+                            {editable ? <>
+                                {addAttachments.map((attachment) => <div className="template-declaration-row" key={attachment.key}>
+                                    <PathField label={t("Source file")} readOnly value={attachment.sourceFile} />
+                                    <TextField label={t("Path in template")} disabled={formDisabled} onInput={(targetPath) => setAddAttachments((rows) => rows.map((row) =>
+                                        row.key === attachment.key ? { ...row, targetPath } : row))} required value={attachment.targetPath} />
+                                    <IconButton label={t("Remove attachment")} disabled={formDisabled} onClick={() =>
+                                        setAddAttachments((rows) => rows.filter((row) => row.key !== attachment.key))} type="button"><Icon asset={closeIcon} /></IconButton>
+                                </div>)}
+                                <Button disabled={formDisabled} onClick={() => void run(async () => {
+                                    const sourceFile = await client.selectFile("templateAttachment");
+                                    if (sourceFile === undefined || !current()) return;
+                                    const fileName = sourceFile.split(/[\\/]/).pop();
+                                    if (fileName) setAddAttachments((rows) => [...rows, { key: crypto.randomUUID(), sourceFile, targetPath: "Assets/" + fileName }]);
+                                })} type="button" variant="text">{t("Add attachment")}</Button>
+                            </> : null}
+                        </fieldset>
+                    </>}
                 </> : selection.kind === "remove" ? <p>{t("Remove {name} from your templates?", { name })} <code className="template-id">{id}</code></p>
                     : selection.kind === "export" ? <>
                         <TextField disabled={formDisabled} label={t("File name")} onInput={(value) => { setFileName(value); setDestinationFile(""); }} required value={fileName} />
@@ -279,19 +375,7 @@ function TemplateDialog({ client, onChanged, onClose, open, origin, selection, c
                             </> : <>
                                 <TemplateBasePicker client={client} catalog={catalog} disabled={formDisabled} onSelect={setBase} onValid={setBaseValid} value={base} />
                                 <CreateUnityVersionField disabled={formDisabled} selection={unity} />
-                                <fieldset className="template-declarations">
-                                    <legend>{t("Packages")}</legend>
-                                    {dependencies.map((dependency) => <div className="template-declaration-row" key={dependency.key}>
-                                        <TextField disabled={formDisabled} label={t("Package ID")} onInput={(packageId) => setDependencies((rows) => rows.map((row) =>
-                                            row.key === dependency.key ? { ...row, packageId } : row))} required value={dependency.packageId} />
-                                        <TextField disabled={formDisabled} label={t("Version")} onInput={(versionRange) => setDependencies((rows) => rows.map((row) =>
-                                            row.key === dependency.key ? { ...row, versionRange } : row))} required value={dependency.versionRange} />
-                                        <IconButton disabled={formDisabled} label={t("Remove package")} title={t("Remove package")}
-                                            onClick={() => setDependencies((rows) => rows.filter(({ key }) => key !== dependency.key))} type="button"><Icon asset={closeIcon} /></IconButton>
-                                    </div>)}
-                                    <Button disabled={formDisabled} onClick={() => setDependencies((rows) => [...rows, { key: crypto.randomUUID(), packageId: "", versionRange: "" }])}
-                                        type="button" variant="text">{t("Add package")}</Button>
-                                </fieldset>
+                                {dependencyFields}
                             </>}
                         </>}
                     </>}

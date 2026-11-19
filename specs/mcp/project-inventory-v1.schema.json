@@ -1,0 +1,62 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/project-inventory-v1.json",
+    "title": "Read installed packages in a registered project",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_list_installed_packages",
+            "title": "List installed project packages",
+            "description": "Compare a registered project's declared and locked VPM packages with locally observed package versions.",
+            "effect": "read",
+            "requiredPermissions": ["projects.read", "packages.read"],
+            "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["project_id", "expected_revision"],
+                "properties": {
+                    "project_id": {"type": "string", "format": "uuid"},
+                    "expected_revision": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+                    "cursor": {"type": "string", "minLength": 1, "maxLength": 96},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200}
+                }
+            },
+            "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "data": {"$ref": "#/$defs/inventory"},
+                    "error": {"type": "object"}
+                },
+                "oneOf": [{"required": ["data"]}, {"required": ["error"]}]
+            }
+        }
+    ],
+    "$defs": {
+        "inventory": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["entries", "resolution", "reason", "next_cursor"],
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["package_id", "declared_range", "locked_version", "observed_version", "state"],
+                        "properties": {
+                            "package_id": {"type": "string"},
+                            "declared_range": {"type": ["string", "null"]},
+                            "locked_version": {"type": ["string", "null"]},
+                            "observed_version": {"type": ["string", "null"]},
+                            "state": {"enum": ["matched", "missing", "version_mismatch", "unknown"]}
+                        }
+                    }
+                },
+                "resolution": {"enum": ["needed", "no_issue_observed", "unknown"]},
+                "reason": {"enum": ["project_packages_out_of_sync", "vpm_manifest_missing", "package_evidence_incomplete", "declared_and_locked_packages_match"]},
+                "next_cursor": {"type": ["string", "null"]}
+            }
+        }
+    }
+}

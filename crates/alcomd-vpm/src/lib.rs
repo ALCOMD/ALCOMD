@@ -15,6 +15,7 @@ mod presentation;
 mod project_copy;
 mod project_create;
 mod project_delete;
+mod project_inventory;
 mod range;
 mod repository_auth;
 mod repository_list;

@@ -1,0 +1,435 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m8-project-assets-v1.json",
+    "title": "M8 shared project inventory and template editing",
+    "x-alcomd-methods": {
+        "packages.projectInventory": {
+            "capability": "packages.project-inventory.v1",
+            "params": {
+                "$ref": "#/$defs/inventoryParams"
+            },
+            "result": {
+                "$ref": "#/$defs/inventoryResult"
+            }
+        },
+        "projectTemplates.get": {
+            "capability": "project-templates.edit.v1",
+            "params": {
+                "$ref": "#/$defs/templateGetParams"
+            },
+            "result": {
+                "$ref": "#/$defs/templateGetResult"
+            }
+        },
+        "projectTemplates.edit": {
+            "capability": "project-templates.edit.v1",
+            "params": {
+                "$ref": "#/$defs/templateEditParams"
+            },
+            "result": {
+                "$ref": "#/$defs/accepted"
+            }
+        }
+    },
+    "$defs": {
+        "inventoryParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 96
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "projectId",
+                "expectedRevision"
+            ]
+        },
+        "inventoryEntry": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "type": "string"
+                },
+                "declaredRange": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "lockedVersion": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "observedVersion": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "state": {
+                    "enum": [
+                        "matched",
+                        "missing",
+                        "version_mismatch",
+                        "unknown"
+                    ]
+                }
+            },
+            "required": [
+                "packageId",
+                "declaredRange",
+                "lockedVersion",
+                "observedVersion",
+                "state"
+            ]
+        },
+        "inventoryResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "$ref": "#/$defs/inventoryEntry"
+                    }
+                },
+                "resolution": {
+                    "enum": [
+                        "needed",
+                        "no_issue_observed",
+                        "unknown"
+                    ]
+                },
+                "reason": {
+                    "enum": [
+                        "project_packages_out_of_sync",
+                        "vpm_manifest_missing",
+                        "package_evidence_incomplete",
+                        "declared_and_locked_packages_match"
+                    ]
+                },
+                "nextCursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 96
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "entries",
+                "resolution",
+                "reason",
+                "nextCursor"
+            ]
+        },
+        "templateGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "cursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 96
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "limit": {
+                    "anyOf": [
+                        {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 200
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "id"
+            ]
+        },
+        "template": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "editorVersion": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "locked": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "id",
+                "name",
+                "revision",
+                "locked"
+            ]
+        },
+        "dependency": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "packageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "versionRange": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                }
+            },
+            "required": [
+                "packageId",
+                "versionRange"
+            ]
+        },
+        "templateGetResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "template": {
+                    "$ref": "#/$defs/template"
+                },
+                "dependencies": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "$ref": "#/$defs/dependency"
+                    }
+                },
+                "attachments": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32768
+                    }
+                },
+                "nextCursor": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 96
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "template",
+                "dependencies",
+                "attachments",
+                "nextCursor"
+            ]
+        },
+        "attachment": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "sourceFile": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768
+                },
+                "targetPath": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32768,
+                    "pattern": "^Assets/"
+                }
+            },
+            "required": [
+                "sourceFile",
+                "targetPath"
+            ]
+        },
+        "changes": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                },
+                "setDependencies": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "$ref": "#/$defs/dependency"
+                    }
+                },
+                "removeDependencies": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    }
+                },
+                "addAttachments": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "$ref": "#/$defs/attachment"
+                    }
+                },
+                "removeAttachments": {
+                    "type": "array",
+                    "maxItems": 128,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32768
+                    }
+                }
+            }
+        },
+        "templateEditParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                },
+                "changes": {
+                    "$ref": "#/$defs/changes"
+                },
+                "confirm": {
+                    "const": true
+                },
+                "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                }
+            },
+            "required": [
+                "id",
+                "expectedRevision",
+                "changes",
+                "confirm",
+                "idempotencyKey"
+            ]
+        },
+        "accepted": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "operationId": {
+                    "type": "string",
+                    "format": "uuid"
+                },
+                "replayed": {
+                    "type": "boolean"
+                }
+            },
+            "required": [
+                "operationId",
+                "replayed"
+            ]
+        }
+    }
+}

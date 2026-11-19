@@ -59,6 +59,9 @@ pub struct ProjectTemplateDependency {
     deny_unknown_fields
 )]
 pub enum ProjectTemplateSource {
+    FrozenEdit {
+        declaration: ProjectTemplateDeclaration,
+    },
     File {
         source_file: String,
     },
@@ -78,6 +81,23 @@ pub enum ProjectTemplateSource {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         base_template: Option<ProjectTemplateRef>,
     },
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTemplateChanges {
+    pub name: Option<String>,
+    pub set_dependencies: Vec<ProjectTemplateDependency>,
+    pub remove_dependencies: Vec<String>,
+    pub add_attachments: Vec<ProjectTemplateAttachment>,
+    pub remove_attachments: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTemplateAttachment {
+    pub source_file: String,
+    pub target_path: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -292,6 +312,20 @@ pub const fn project_create_error_name(code: ProjectCreateErrorCode) -> &'static
 }
 
 pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
+    fn project_template_get(
+        &self,
+        owner: PrincipalId,
+        id: String,
+    ) -> impl std::future::Future<Output = Result<ProjectTemplateRecord, ProjectCreateError>> + Send;
+
+    fn project_template_edit_replay(
+        &self,
+        owner: PrincipalId,
+        key: IdempotencyKey,
+        fingerprint: String,
+    ) -> impl std::future::Future<
+        Output = Result<Option<ProjectTemplateJobAccepted>, ProjectCreateError>,
+    > + Send;
     fn project_create_replay(
         &self,
         owner: PrincipalId,
@@ -438,6 +472,17 @@ pub trait ProjectCreateStore: M4Store + Clone + Send + Sync + 'static {
 }
 
 pub trait ProjectCreateAdapter: Clone + Send + Sync + 'static {
+    fn template_attachments(
+        &self,
+        declaration: &ProjectTemplateDeclaration,
+    ) -> Result<Vec<String>, ProjectCreateError>;
+
+    fn freeze_template_edit(
+        &self,
+        declaration: ProjectTemplateDeclaration,
+        changes: ProjectTemplateChanges,
+    ) -> Result<ProjectTemplateDeclaration, ProjectCreateError>;
+
     fn source_settings(
         &self,
     ) -> impl Future<Output = Result<crate::ConfigPackageSettings, ProjectCreateError>> + Send;
@@ -718,6 +763,11 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             validate_safe_revision(revision)?;
         }
         match &source {
+            ProjectTemplateSource::FrozenEdit { .. } => {
+                return Err(ProjectCreateError::new(
+                    ProjectCreateErrorCode::InvalidInput,
+                ));
+            }
             ProjectTemplateSource::File { source_file } => validate_template_path(source_file)?,
             ProjectTemplateSource::Project {
                 expected_project_revision,
@@ -766,6 +816,112 @@ impl<S: ProjectCreateStore, A: ProjectCreateAdapter> ProjectCreateApplication<S,
             key,
         )
         .await
+    }
+
+    pub async fn template_detail(
+        &self,
+        access: &AccessContext,
+        id: String,
+    ) -> Result<(ProjectTemplateRecord, Vec<String>), ProjectCreateError> {
+        require_template_permission(access, Permission::ProjectsCreate)?;
+        if !valid_project_template_id(&id) {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::InvalidInput,
+            ));
+        }
+        let _archive_read = self.template_archive_writes.lock().await;
+        let owner = crate::workflow_resource_owner(access.principal());
+        let record = self.store.project_template_get(owner, id).await?;
+        let adapter = self.adapter.clone();
+        let declaration = record.declaration.clone();
+        let attachments = template_io(move || adapter.template_attachments(&declaration)).await?;
+        Ok((record, attachments))
+    }
+
+    pub async fn edit_template(
+        &self,
+        access: &AccessContext,
+        reference: ProjectTemplateRef,
+        changes: ProjectTemplateChanges,
+        key: IdempotencyKey,
+    ) -> Result<ProjectTemplateJobAccepted, ProjectCreateError> {
+        require_template_permission(access, Permission::ProjectsManage)?;
+        validate_template_reference(&reference.id, reference.revision)?;
+        if changes.set_dependencies.len() + changes.remove_dependencies.len() > 128
+            || changes.add_attachments.len() + changes.remove_attachments.len() > 128
+            || (changes.name.is_none()
+                && changes.set_dependencies.is_empty()
+                && changes.remove_dependencies.is_empty()
+                && changes.add_attachments.is_empty()
+                && changes.remove_attachments.is_empty())
+        {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::InvalidInput,
+            ));
+        }
+        if let Some(name) = changes.name.as_deref() {
+            validate_template_metadata(&reference.id, name)?;
+        }
+        for attachment in &changes.add_attachments {
+            validate_template_path(&attachment.source_file)?;
+        }
+        let request = serde_json::to_vec(&("templateEdit", &reference, &changes))
+            .map_err(|_| ProjectCreateError::new(ProjectCreateErrorCode::InvalidInput))?;
+        if request.len() > 48 * 1024 {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::InvalidInput,
+            ));
+        }
+        use sha2::{Digest, Sha256};
+        let fingerprint = serde_json::json!({
+            "templateEditSha256": crate::oauth_hex(&Sha256::digest(&request))
+        })
+        .to_string();
+        let caller = access.principal().clone();
+        let _archive_write = self.template_archive_writes.lock().await;
+        if let Some(replay) = self
+            .store
+            .project_template_edit_replay(caller.clone(), key.clone(), fingerprint.clone())
+            .await?
+        {
+            return Ok(replay);
+        }
+        let owner = crate::workflow_resource_owner(&caller);
+        let record = self.store.project_template_get(owner, reference.id).await?;
+        if record.locked {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::TemplateLocked,
+            ));
+        }
+        if record.revision != reference.revision {
+            return Err(ProjectCreateError::new(
+                ProjectCreateErrorCode::TemplateStale,
+            ));
+        }
+        let adapter = self.adapter.clone();
+        let declaration =
+            template_io(move || adapter.freeze_template_edit(record.declaration, changes)).await?;
+        let accepted = self
+            .store
+            .project_template_job_accept(
+                caller,
+                ProjectTemplateJobRequest::Save {
+                    source: ProjectTemplateSource::FrozenEdit { declaration },
+                    expected_revision: Some(reference.revision),
+                },
+                key,
+                fingerprint,
+                now_ms()?,
+            )
+            .await?;
+        if !accepted.replayed {
+            let application = self.clone();
+            let id = accepted.operation_id;
+            tokio::spawn(async move {
+                let _ = application.run_template_job(id).await;
+            });
+        }
+        Ok(accepted)
     }
 
     pub async fn export_template(
@@ -1073,6 +1229,19 @@ fn require_owner(access: &AccessContext) -> Result<(), ProjectCreateError> {
         ));
     }
     Ok(())
+}
+
+fn require_template_permission(
+    access: &AccessContext,
+    permission: Permission,
+) -> Result<(), ProjectCreateError> {
+    if access.is_mcp_client() {
+        access
+            .require(permission)
+            .map_err(|_| ProjectCreateError::new(ProjectCreateErrorCode::PermissionDenied))
+    } else {
+        require_owner(access)
+    }
 }
 
 #[must_use]

@@ -4,6 +4,7 @@ import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { OperationItems } from "./OperationItems";
+import { ProjectInventoryDialog } from "./ProjectInventoryDialog";
 import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
 import type { ChangeScope, CoreEvents } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
@@ -1290,9 +1291,14 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     )}</>;
 }
 
-function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(origin: DialogOrigin): void; onReinstallAll(origin: DialogOrigin): void }) {
-    const { t, locale } = useTranslation();
+function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, inventory, onResolve, onReinstallAll }: {
+    canPlanV1: boolean; canPlanV2: boolean;
+    inventory?: { client: GuiRpcClient; projectId: string; revision: number };
+    onResolve(origin: DialogOrigin): void; onReinstallAll(origin: DialogOrigin): void;
+}) {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
+    const [inventoryOpen, setInventoryOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     return (
         <>
@@ -1302,7 +1308,9 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={!canPlanV1} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
                 <MenuItem disabled={!canPlanV2} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
+                {inventory === undefined ? null : <MenuItem label={t("Installed packages")} onClick={() => { setOpen(false); setInventoryOpen(true); }} />}
             </Menu>
+            {inventory === undefined ? null : <ProjectInventoryDialog {...inventory} open={inventoryOpen} onClose={() => setInventoryOpen(false)} origin={anchorRef} />}
         </>
     );
 }
@@ -1640,6 +1648,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
+    const canReadInventory = useCapability(capabilities.projectInventory);
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
     const canQueryCandidates = useCapability(capabilities.packagesCandidates);
     const [search, setSearch] = useState("");
@@ -1760,7 +1769,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                              </> : null}
                              <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{t(rows.length === 1 ? "{count} package" : "{count} packages", { count: rows.length })}</span>
-                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady} onResolve={(origin) => selectAction("resolve", origin)} onReinstallAll={(origin) => selectAction("reinstall-all", origin)} />
+                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady}
+                                    inventory={canReadInventory && project.projectId !== undefined && project.revision !== undefined
+                                        ? { client, projectId: project.projectId, revision: project.revision } : undefined}
+                                    onResolve={(origin) => selectAction("resolve", origin)} onReinstallAll={(origin) => selectAction("reinstall-all", origin)} />
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>

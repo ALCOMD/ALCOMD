@@ -169,3 +169,16 @@ try {
 ### Cursor CLI 2026.11.17-f532c45
 
 Windows x64 具名版本在隔离配置实测 HTTP、STDIO 均发出 `2025-11-25` 的 `initialize`，无法接入当前冻结的 `2026-07-28` 服务。其他版本和 OAuth 未验证。 [实测记录](../../docs/exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-cursor-具名版本核对)
+## 项目已安装的包和模板编辑
+
+| MCP 工具 | 共享 Core 方法 | 所需 Core 权限 |
+| --- | --- | --- |
+| `alcomd_list_installed_packages` | `packages.projectInventory` | `projects.read`、`packages.read` |
+| `alcomd_get_project_template` | `projectTemplates.get` | `projects.create` |
+| `alcomd_edit_project_template` | `projectTemplates.edit` | `projects.manage` |
+
+项目包结果区分声明版本、锁定版本和本机观察到的版本。修订或观察结果变化时，
+从第一页重新读取。模板详情提供依赖和分页附件名。编辑使用原修订、明确修改内容
+和 `confirm: true`，通过既有任务工具查询结果。Core 在接受前冻结附件文件，
+写入结果未知时可显式使用原请求和原幂等键恢复。内置模板保持只读。
+工具字段见[项目包 Schema](project-inventory-v1.schema.json)和[模板 Schema](template-edit-v1.schema.json)。

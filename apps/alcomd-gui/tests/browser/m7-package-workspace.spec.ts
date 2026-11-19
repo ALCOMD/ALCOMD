@@ -62,6 +62,18 @@ test("Package confirmation lists legacy paths and Cancel does not apply", async 
     expect(await page.evaluate(() => window.packageRequests.map(({ method }) => method))).toEqual(["install"]);
 });
 
+test("Installed package observations are available from package actions", async ({ page }) => {
+    await openHarness(page, "ready");
+    const menu = page.getByRole("button", { name: "More package actions" });
+    await selectActionMenuItem(menu, page.getByRole("menuitem", { name: "Installed packages", exact: true }));
+    await expect(page.getByRole("dialog", { name: "Installed packages", exact: true })).toBeVisible();
+    const dialog = page.locator("md-dialog[open]");
+    await expect(dialog.getByText("Package resolution is needed")).toBeVisible();
+    await expect(dialog.getByRole("row", { name: /com.example.package.*Package files missing/ })).toBeVisible();
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(menu).toBeFocused();
+});
+
 test("Package toolbar uses the shared search preset and keeps maintenance in overflow", async ({ page }) => {
     await openHarness(page, "ready");
     const toolbar = page.locator(".package-workspace-toolbar");

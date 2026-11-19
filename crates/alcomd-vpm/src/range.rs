@@ -103,6 +103,10 @@ impl ProjectDependencyRange {
     pub(crate) fn canonical(&self) -> String {
         self.0.canonical()
     }
+
+    pub(crate) fn matches(&self, version: &Version) -> bool {
+        self.0.matches(version, true)
+    }
 }
 
 impl Conjunction {

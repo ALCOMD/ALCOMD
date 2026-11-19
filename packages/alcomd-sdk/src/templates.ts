@@ -53,6 +53,38 @@ export interface ProjectTemplatesSaveParams {
     idempotencyKey: string;
 }
 
+export interface ProjectTemplateGetParams {
+    id: string;
+    cursor?: string;
+    limit?: number;
+}
+
+export interface ProjectTemplateGetResult {
+    template: ProjectTemplateRecord;
+    dependencies: ProjectTemplateDependency[];
+    attachments: string[];
+    nextCursor: string | null;
+}
+
+export interface ProjectTemplateAttachment {
+    sourceFile: string;
+    targetPath: string;
+}
+
+export interface ProjectTemplateEditParams {
+    id: string;
+    expectedRevision: number;
+    changes: {
+        name?: string;
+        setDependencies?: ProjectTemplateDependency[];
+        removeDependencies?: string[];
+        addAttachments?: ProjectTemplateAttachment[];
+        removeAttachments?: string[];
+    };
+    confirm: boolean;
+    idempotencyKey: string;
+}
+
 export interface ProjectTemplateOperationAccepted {
     operationId: string;
     replayed: boolean;

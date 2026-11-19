@@ -178,7 +178,7 @@ fn template_source(value: rpc::ProjectTemplateSource) -> Option<app::ProjectTemp
     })
 }
 
-fn template_job_action(
+pub(super) fn template_job_action(
     id: String,
     result: Result<app::ProjectTemplateJobAccepted, app::ProjectCreateError>,
 ) -> DispatchAction {
@@ -195,7 +195,7 @@ fn template_job_action(
     }
 }
 
-fn template_record(value: app::ProjectTemplateRecord) -> rpc::ProjectTemplateRecord {
+pub(super) fn template_record(value: app::ProjectTemplateRecord) -> rpc::ProjectTemplateRecord {
     let declaration = value.declaration;
     rpc::ProjectTemplateRecord {
         id: declaration.id,
