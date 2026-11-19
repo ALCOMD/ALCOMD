@@ -1917,3 +1917,14 @@ Windows 完整仓库门禁首轮在严格 Clippy 中止。新增 Schema 用例�
 - 同 SHA 的 [CodeQL 44531022627](https://github.com/ALCOMD/ALCOMD/actions/runs/44531022627) 首轮通过。Actions、JavaScript/TypeScript、Python、Rust 四个分析作业均通过。
 - 签名修复 `36137b6c707d9c4c3ae8f453adc577e61003c905` 仅为 HTTPS 夹具复制连接配置，保留配置清理、测试断言和全部生产输入。Linux 与 macOS 目标上的最小所有权探针均复现原 `E0509`，修复行能编译。Windows 真实隔离 Core 的同一 OAuth 仓库流程定向 1/0，严格 Clippy、fmt、xtask check、锁定 metadata 和 diff 检查通过。本机完整 Linux 交叉编译在依赖构建前置因缺少 `x86_64-linux-gnu-gcc` 中止，真实 Unix 定向仍待新远端验证。
 - 工作流快照、三平台作业原始日志、交叉探针及 Windows 定向日志保存在 `target/m8-shared-project-assets-20261119/`。本轮未操作原 Core、GUI、真实项目或 Unity。记录时远端保持 `83c02356`，修复候选尚未推送。M8 继续等待同 SHA 三平台门禁。
+
+### 2026-11-19 Unix OAuth 夹具远端复验
+
+所有者确认继续后，只将签名夹具修复 `36137b6c707d9c4c3ae8f453adc577e61003c905` 普通快进至 `origin/main`。工作树及签名通过检查，远端确认指向该提交。上一轮的验收文档提交只保留在本地。
+
+- 同 SHA 的 [CodeQL 44551755201](https://github.com/ALCOMD/ALCOMD/actions/runs/44551755201) 首轮四项分析通过。
+- [CI 44551756595](https://github.com/ALCOMD/ALCOMD/actions/runs/44551756595) 中，macOS 和 Ubuntu 均通过此前阻塞的编译，原 OAuth 仓库确认与重放用例实际通过。macOS 的 `business_tools` 首轮 20 通过、1 失败、3 忽略。Ubuntu 为 13 通过、8 失败、3 忽略。两平台均在综合 OAuth 用例的 STDIO 探测失败。Ubuntu 稍后的六项返回 `AlreadyRunning`，另外一项扩展 Provider 计划断言在这之前就失败。
+- 本轮 CI 首轮总体失败。北京时间 11 月 20 日，Windows 原作业结束并完整通过，包括仓库检查、CLI 集成、发布可执行文件、Tauri 构建和 Chromium 单轮 734 通过、0 失败。终态和三平台完整作业日志保存在 `target/m8-shared-project-assets-20261119/`。
+- 综合测试原先通过私有端点启动 Core 和 OAuth，真实 STDIO 子进程以及 Bearer 监听器仍使用默认端点。`78b90927c9c41794b3b9b1538c60112a0d0d48ce` 使用同一个私有 Core 配置启动 Bearer，并使用操作系统现有的运行目录变量只配置 STDIO 子进程。两条目录一致性断言及同一凭据保持。Unix 子进程不继承用于定位真实用户数据目录的 `HOME`。Windows 真实隔离 SDK 的 OAuth 综合、STDIO 卸载、HTTP Bearer 卸载各定向 1/0，严格 Clippy、fmt、xtask、锁定 metadata 和 diff 通过。Unix 运行待同 SHA 复验。
+- Ubuntu 独立的 Provider 失败发生在综合 OAuth 用例之前。原断言只输出 `is_error`，结果不足以判定失败阶段。`622cb62ad507c700de42cd2db9ddd13a7835a754` 保留原断言，只记录失败的夹具序号和返回的稳定错误码。Windows 真实签名 Provider 用例定向 1/0，严格 Clippy 和 fmt 等廉价门禁通过。未复现 Ubuntu 失败，未对生产代码或预算进行调整。两项本地提交均通过签名验证。
+- 远端仍为 `36137b6c`。下一次快进的完整本地链是前一轮验收记录 `628597ce`、端点修复 `78b90927` 和 Provider 诊断 `622cb62a`，等待对这一范围的推送授权。M8 维持进行中。

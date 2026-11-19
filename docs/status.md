@@ -1,10 +1,12 @@
 # 项目状态
 
-最后更新：2026-11-19
+最后更新：2026-11-20
 
 ## 当前阶段
 
 **M8 IN_PROGRESS / MCP 协议与 MCP 管理扩展：先核对已有能力，只补缺失部分。** 所有者于2026-11-13明确授权进入既有M8范围，常规实现、定向验证与本地提交沿用本轮授权，不自动推送。
+
+2026-11-20 [Unix OAuth 夹具远端复验](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-unix-oauth-夹具远端复验)。`36137b6c` 的自动 CI `44551756595` 首轮总体失败，Windows 全部门禁通过（Chromium 734/0），macOS 和 Ubuntu 通过原编译与仓库复验，随后均在综合用例的 STDIO 探测失败。Ubuntu 另有六项 `AlreadyRunning` 和一项独立 Provider 计划失败。同 SHA CodeQL `44551755201` 四项分析通过。`78b90927` 修复三传输隔离端点，`622cb62a` 补充 Provider 错误码诊断；Windows 合计四个定向用例分别通过，Unix 复验依赖下一次获准推送。
 
 2026-11-19 [M8 候选远端验收](exec-plans/M8-mcp-protocol-and-management.md#2026-11-19-m8-候选远端验收)。`83c02356` 已按授权推送。自动 CI `44531024198` 首轮总体失败，Windows 全部门禁通过（Chromium 734/0），macOS 与 Ubuntu 均停在 Unix OAuth 仓库测试夹具的编译错误 `E0509`。同 SHA 自动 CodeQL `44531022627` 四项分析通过。签名修复 `36137b6c` 只有一处夹具改动，双 Unix 目标最小编译验证和 Windows 真实隔离定向通过，真实 Unix 结果待新候选远端验证。
 
