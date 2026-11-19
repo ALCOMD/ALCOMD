@@ -66,6 +66,7 @@ async fn discord_publishes_and_clears_generic_activity_for_real_unity() {
     let _serial = super::RPC_TEST_LOCK.lock().await;
     let package = PathBuf::from(std::env::var_os("ALCOMD_M9_DISCORD_PACKAGE").expect("archive"));
     let editor = PathBuf::from(std::env::var_os("ALCOMD_M9_UNITY_EDITOR").expect("Unity Editor"));
+    let control = std::env::var_os("ALCOMD_M9_LIVE_CONTROL_DIR").map(PathBuf::from);
     let root = TestDirectory::new();
     let runtime = root.path().join("runtime");
     std::fs::create_dir(&runtime).expect("owned runtime directory");
@@ -78,7 +79,7 @@ async fn discord_publishes_and_clears_generic_activity_for_real_unity() {
     )
     .await
     .expect("isolated Core");
-    let mut client = connect_with_retry(config).await;
+    let mut client = connect_with_retry(config.clone()).await;
     let version = client
         .unity_installation_register(alcomd_protocol::UnityInstallationRegisterParams {
             executable_path: editor.to_str().expect("editor path").into(),
@@ -126,15 +127,41 @@ async fn discord_publishes_and_clears_generic_activity_for_real_unity() {
         })
         .await
         .expect("enable without a GUI or Unity process");
-    wait_for_discord_status(&mut client, "Connected", Duration::from_secs(50)).await;
+    if control.is_none() {
+        wait_for_discord_status(&mut client, "Connected", Duration::from_secs(50)).await;
+    }
     let first = start_unity(&editor, &projects[0]);
+    if let Some(control) = &control {
+        wait_for_discord_status(&mut client, "Waiting for Discord", Duration::from_secs(20)).await;
+        live_checkpoint(control, "waiting-for-first-start").await;
+    }
     wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(90)).await;
+    eprintln!("Discord acknowledged generic Unity activity");
+    if let Some(control) = &control {
+        drop(client);
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(
+            !daemon.is_finished(),
+            "authorized presence retained Core with no GUI clients"
+        );
+        client = connect_with_retry(config).await;
+        wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(20)).await;
+        live_checkpoint(control, "published-before-discord-exit").await;
+        wait_for_discord_status(&mut client, "Waiting for Discord", Duration::from_secs(40)).await;
+        live_checkpoint(control, "waiting-after-discord-exit").await;
+        wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(75)).await;
+        live_checkpoint(control, "published-on-replacement-endpoint").await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(45)).await;
+        live_checkpoint(control, "recovered-after-host-exit").await;
+    }
     let second = start_unity(&editor, &projects[1]);
     drop(first);
     tokio::time::sleep(Duration::from_secs(8)).await;
     wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(90)).await;
     drop(second);
     wait_for_discord_status(&mut client, "Connected", Duration::from_secs(35)).await;
+    eprintln!("Discord acknowledged clearing after the Unity sessions ended");
 
     let restarted = start_unity(&editor, &projects[0]);
     wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(90)).await;
@@ -151,10 +178,123 @@ async fn discord_publishes_and_clears_generic_activity_for_real_unity() {
         })
         .await
         .expect("stop after clearing");
+    if let Some(control) = &control {
+        use alcomd_protocol::{
+            ExtensionApplyParams, ExtensionDataDisposition, ExtensionGrantParams,
+            ExtensionPlanUninstallParams,
+        };
+
+        live_checkpoint(control, "disabled-while-active").await;
+        activate_live(&mut client, "m9-live-enable-for-revocation").await;
+        wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(45)).await;
+        let grants = permissions(&mut client).await;
+        let scoped = grants
+            .grants
+            .iter()
+            .find(|grant| grant.permission == "local-ipc.connect")
+            .expect("approved Discord target grant");
+        client
+            .extension_revoke_grant(ExtensionGrantParams {
+                extension_id: ID.into(),
+                permission: scoped.permission.clone(),
+                resource_kind: scoped.resource_kind.clone(),
+                resource_id: scoped.resource_id.clone(),
+                expected_grant_revision: grants.grant_revision,
+                idempotency_key: "m9-live-revoke-discord".into(),
+            })
+            .await
+            .expect("revoked active Discord target through Core");
+        assert!(
+            permissions(&mut client)
+                .await
+                .grants
+                .iter()
+                .all(|grant| grant.permission != "local-ipc.connect")
+        );
+        assert_eq!(
+            client
+                .extension_get(ID.into())
+                .await
+                .expect("revoked extension")
+                .extension
+                .runtime_state,
+            ExtensionRuntimeState::Stopped
+        );
+        live_checkpoint(control, "revoked-while-active").await;
+
+        activate_live(&mut client, "m9-live-enable-for-uninstall").await;
+        wait_for_discord_status(&mut client, "Showing activity", Duration::from_secs(45)).await;
+        let current = client
+            .extension_get(ID.into())
+            .await
+            .expect("extension to uninstall")
+            .extension;
+        let plan = client
+            .extension_plan_uninstall(ExtensionPlanUninstallParams {
+                extension_id: ID.into(),
+                expected_revision: current.revision,
+                data_disposition: ExtensionDataDisposition::RetainData,
+            })
+            .await
+            .expect("planned uninstall of the temporary extension")
+            .plan;
+        let operation = client
+            .extension_apply_uninstall(ExtensionApplyParams {
+                plan_id: plan.plan_id,
+                idempotency_key: "m9-live-uninstall-discord".into(),
+            })
+            .await
+            .expect("applied uninstall");
+        assert_eq!(
+            wait_for_terminal(&mut client, &operation.operation_id).await,
+            OperationState::Succeeded
+        );
+        assert!(matches!(client.extension_get(ID.into()).await,
+            Err(ClientError::Remote(error)) if error.code == "extension_not_installed"));
+        live_checkpoint(control, "uninstalled-while-active").await;
+    }
     drop(restarted);
     drop(client);
     shutdown.store(true, Ordering::Release);
     daemon.await.expect("daemon task").expect("clean shutdown");
+}
+
+#[cfg(windows)]
+async fn activate_live(client: &mut AlcomdClient, key: &str) {
+    let receipt = client
+        .extension_get(ID.into())
+        .await
+        .expect("extension activation receipt");
+    client
+        .extension_enable_with_consent(ExtensionEnableParams {
+            extension_id: ID.into(),
+            expected_revision: receipt.extension.revision,
+            idempotency_key: key.into(),
+            activation_package_digest: Some(
+                receipt.activation_consent.expect("consent").package_digest,
+            ),
+        })
+        .await
+        .expect("activate approved Discord target");
+}
+
+#[cfg(windows)]
+async fn live_checkpoint(control: &Path, step: &str) {
+    use std::time::Duration;
+    eprintln!("M9 live checkpoint: {step}");
+    std::fs::write(
+        control.join(format!("{step}.ready")),
+        std::process::id().to_string(),
+    )
+    .expect("write checkpoint");
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(35);
+    while !control.join(format!("{step}.continue")).is_file() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "controller did not release {step}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
 #[cfg(windows)]

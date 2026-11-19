@@ -89,3 +89,11 @@ macOS 前台采样使用已锁定的 `objc2-app-kit = 0.3.2` 与 `objc2 = 0.6.4`
 - Windows 整仓收集轮为 1103 通过、4 失败、21 忽略。4 项失败来自三处旧断言。修正后的协议 Schema 53 项、State44 迁移保真复验 1 项和真实 MCP 传输订阅复验 3 项通过，传输复验另保留 2 项既有忽略。整仓严格 Clippy、fmt、`cargo xtask check`、原生 GUI 编译检查、前端检查和构建及元数据校验通过。
 - 主仓候选 `6e95e205` 的 Windows 单元与集成测试随后达到 1107 通过、0 失败、21 忽略。运行期间发现空闲退出缺口并开始修复，旧轮次的 rustdoc 在源码更新后遇到旧 trait 产物冲突。后续按更新后的源码复跑整仓 doctest、严格 Clippy、fmt、仓库与元数据检查均通过。独立签名包的 Windows 原生复验确认断开最后一个客户端后后台继续运行，停用并断开后 Core 自动退出。签名包复验首轮在并行编译期间触及 Host 既有 5 秒就绪上限，编译结束后按相同上限复验通过。修复后的原生扩展生命周期回归为 12 通过、0 失败、3 忽略，开发签名包用例另行通过。
 - Windows 真实产品验收用例已编译，仍待同一 Discord 账号的实际展示和重连授权。用例 `discord_publishes_and_clears_generic_activity_for_real_unity` 使用临时 Core 数据、独立开发包、真实 Unity Editor 和两个合成工程。真正的 Windows 展示、清除与异常生命周期，以及两仓的 Hosted CI 和 CodeQL 仍是 M9 收尾条件。
+
+## 2026-11-20 实机验证与远端复验
+
+- 所有者批准两仓快进和当前 Windows Discord 账号实机验证，包括为测试重启 Discord。首次快进了主仓 `d3c07abc` 和独立仓库 `4ee687e`。主仓原有四笔提交随普通快进一并推送，所有新增提交逐笔验签。
+- 独立仓库经 `0ff04bcb094d2929618bec9b62d7e3b74c1477a8` 补齐 Rust 和 Python 源码 CodeQL。Windows、Ubuntu、macOS 的开发包构建全部通过，默认 Actions CodeQL 通过，Rust 和 Python 源码分析均通过且各报告 0 项发现。这个提交只添加扫描工作流，实机包内容、摘要和 WIT 保持与 `4ee687e` 一致。[三平台 CI](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151791) · [Actions CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151294) · [源码 CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151598)
+- Windows 实机使用隔离的 Core、两个合成工程、Unity 2022.3.22f1 和已签名的 Discord 1.0.9269。仅发布通用文案 `Editing in Unity`。Discord 对展示与工程结束后的清除均返回 IPC 回执。断开最后一个客户端后重新连接 Core，当前展示仍有效。晚启动、切换工程、显示期间停用、撤权、卸载均通过。撤权和卸载后实例停止并关闭连接，Discord 资料卡没有可观察的原生窗口，未取得每次断开后的视觉证据。
+- 第一次换端点失败定位到已占用的旧命名管道。Windows 暂态 `ERROR_PIPE_BUSY` 现在会跳过该候选，并对下一个候选继续执行签名对端核验。定向 Windows 测试和实机复验通过。签名 Discord 从 `discord-ipc-0` 换到 `discord-ipc-1` 后重新确认展示，旧端点测试对端收到零协议字节。终止本轮隔离 Host 后，新 Host 重新发布，Discord 返回回执，测试完成后签名 Discord 客户端已恢复运行。[Windows 管道错误合同](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-client)
+- 主仓 `d3c07abc` 的四语言 CodeQL 通过。其 macOS Hosted CI 检查因先前深链接提交缺少 `tauri::Manager` 导入而编译失败，已在 `3155d104` 修复。最终候选包含这一修复和 Windows 换端点修复，三平台 Hosted CI 与 CodeQL 以新 SHA 复验。[首次 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44636975978) · [首次 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44636974959)

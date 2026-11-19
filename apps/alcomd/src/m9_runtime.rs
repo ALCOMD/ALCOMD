@@ -256,7 +256,9 @@ async fn connect_target(target: &LocalIpcTarget) -> io::Result<LocalStream> {
             Err(failure)
                 if matches!(
                     failure.kind(),
-                    io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                    io::ErrorKind::NotFound
+                        | io::ErrorKind::ConnectionRefused
+                        | io::ErrorKind::WouldBlock
                 ) => {}
             other => return other,
         }

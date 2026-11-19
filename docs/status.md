@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M8 已收尾，M9 实施中。** 已用当前 Windows Discord 账号验证 v3 Application ID `1536569303653154996` 的合成展示和清除。Core 与 Extension Host 已接通 Unity 会话、受限本机 IPC、一次启用和停用清除流程。独立公开仓库已创建，本地独立检出已生成开发签名包。远端候选、Hosted CI、CodeQL 和 Windows 真实 Unity 到 Discord 的产品验收仍待完成。[M9 实施记录](exec-plans/M9-discord-first-party-extension.md)
+**M8 已收尾，M9 验收中。** Windows 已完成真实 Unity 与 Discord 的 IPC 验收。独立仓库候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。主仓正在补验 Windows 换端点修复和 macOS 编译修复后的三平台 Hosted CI 与 CodeQL。[M9 实施记录](exec-plans/M9-discord-first-party-extension.md)
 
 M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。
 

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::ptr::{from_mut, null_mut};
 
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
-use windows_sys::Win32::Foundation::HANDLE;
+use windows_sys::Win32::Foundation::{ERROR_PIPE_BUSY, HANDLE};
 use windows_sys::Win32::Security::Cryptography::{
     CERT_NAME_ATTR_TYPE, CertGetNameStringW, szOID_ORGANIZATION_NAME,
 };
@@ -41,7 +41,14 @@ pub async fn connect_verified_local_pipe(
     let endpoint = local_endpoint(&name)?;
     let pipe = ClientOptions::new()
         .security_qos_flags(SECURITY_IDENTIFICATION)
-        .open(endpoint)?;
+        .open(endpoint)
+        .map_err(|failure| {
+            if failure.raw_os_error() == Some(ERROR_PIPE_BUSY as i32) {
+                io::Error::new(io::ErrorKind::WouldBlock, failure)
+            } else {
+                failure
+            }
+        })?;
     tokio::task::spawn_blocking(move || {
         verify_peer(&pipe, &executable_name, &publisher)?;
         Ok(pipe)
@@ -212,6 +219,28 @@ fn denied() -> io::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn occupied_pipe_reports_would_block_without_validating_or_writing() {
+        use tokio::net::windows::named_pipe::ServerOptions;
+
+        let name = format!("alcomd-m9-busy-{}", std::process::id());
+        let endpoint = local_endpoint(&name).expect("local fixture name");
+        let server = ServerOptions::new()
+            .first_pipe_instance(true)
+            .max_instances(1)
+            .create(&endpoint)
+            .expect("one-instance fixture pipe");
+        let client = ClientOptions::new()
+            .open(&endpoint)
+            .expect("occupy the pipe");
+        server.connect().await.expect("fixture connection");
+        let error = connect_verified_local_pipe(name, "Discord.exe".into(), "Discord Inc.".into())
+            .await
+            .expect_err("occupied fixture cannot be opened");
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        drop(client);
+    }
 
     #[test]
     fn remote_and_private_path_syntax_cannot_be_opened() {
