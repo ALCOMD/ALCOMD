@@ -8,14 +8,15 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(&root).expect("owned evidence root");
     let root = root.canonicalize().expect("fixture root");
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
     .await
     .expect("exclusive real Core bind");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("native test owner");
     let fixture = root.join("Project");
@@ -87,8 +88,8 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         })
         .await
         .expect("credential B");
-    let sa = sdk(&ca.credential, None).await;
-    let sb = sdk(&cb.credential, None).await;
+    let sa = sdk(&ca.credential, None, &core).await;
+    let sb = sdk(&cb.credential, None, &core).await;
     let mut trace = Vec::new();
     let first = data(
         call(&sa, &mut trace, "search_packages", json!({"limit":1}))

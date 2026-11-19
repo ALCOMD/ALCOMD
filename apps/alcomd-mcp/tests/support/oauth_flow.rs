@@ -58,7 +58,7 @@ impl CoreConfiguration {
         }
     }
 
-    fn configure_stdio(&self, command: &mut tokio::process::Command) {
+    pub(super) fn configure_stdio(&self, command: &mut tokio::process::Command) {
         // A missing Unix fixture must not let the child start a Core with real data.
         #[cfg(unix)]
         command.env_remove("HOME");
@@ -2131,8 +2131,8 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         .collect();
     stdio_names.sort_unstable();
     assert_eq!(names, stdio_names);
-    let bearer_server = HttpFixture::start_with_config(core.client.clone()).await;
-    let bearer = crate::sdk(&credential.credential, Some(&bearer_server.url)).await;
+    let bearer_server = HttpFixture::start(&core).await;
+    let bearer = crate::sdk(&credential.credential, Some(&bearer_server.url), &core).await;
     let mut bearer_names: Vec<_> = bearer
         .list_all_tools()
         .await

@@ -2,6 +2,7 @@
 use alcomd_client::{AlcomdClient, ClientConfig};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::*;
+use oauth_flow::CoreConfiguration;
 use rmcp::{
     ClientLifecycleMode, ClientServiceExt, RoleClient, ServiceError,
     model::{CallToolRequestParams, CallToolResponse, CallToolResult, ProtocolVersion},
@@ -35,12 +36,8 @@ struct HttpFixture {
     task: tokio::task::JoinHandle<std::io::Result<()>>,
 }
 impl HttpFixture {
-    async fn start() -> Self {
-        Self::start_with_config(ClientConfig::default().without_daemon_start()).await
-    }
-
-    async fn start_with_config(config: ClientConfig) -> Self {
-        let server = alcomd_mcp::HttpServer::bind(0, config)
+    async fn start(core: &CoreConfiguration) -> Self {
+        let server = alcomd_mcp::HttpServer::bind(0, core.client.clone())
             .await
             .expect("owned HTTP listener");
         let url = format!(
@@ -170,7 +167,7 @@ impl HttpResponseFault {
     }
 }
 
-async fn sdk(secret: &str, url: Option<&str>) -> Sdk {
+async fn sdk(secret: &str, url: Option<&str>, core: &CoreConfiguration) -> Sdk {
     if let Some(url) = url {
         use rmcp::transport::{
             StreamableHttpClientTransport,
@@ -193,7 +190,7 @@ async fn sdk(secret: &str, url: Option<&str>) -> Sdk {
             .await
             .expect("actual frozen SDK HTTP Discover");
     }
-    stdio_sdk(secret, |_| {}).await
+    stdio_sdk(secret, |command| core.configure_stdio(command)).await
 }
 
 async fn stdio_sdk(secret: &str, configure: impl FnOnce(&mut tokio::process::Command)) -> Sdk {
@@ -819,8 +816,9 @@ async fn package_removal_flow(http: bool) {
     let root = root.canonicalize().expect("fixture root");
     let data_root = root.join("data");
     std::fs::create_dir(&data_root).expect("isolated Core data");
-    let ipc = IpcConfig::default();
-    let config = ClientConfig::default().without_daemon_start();
+    let core = CoreConfiguration::new();
+    let ipc = core.ipc.clone();
+    let config = core.client.clone();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc.clone(),
         DataConfig::isolated(data_root.clone()),
@@ -829,7 +827,7 @@ async fn package_removal_flow(http: bool) {
     .await
     .expect("exclusive real Core bind");
     let http = if http {
-        Some(HttpFixture::start().await)
+        Some(HttpFixture::start(&core).await)
     } else {
         None
     };
@@ -908,8 +906,8 @@ async fn package_removal_flow(http: bool) {
         })
         .await
         .expect("issue B");
-    let sa = sdk(&token_a.credential, url).await;
-    let sb = sdk(&token_b.credential, url).await;
+    let sa = sdk(&token_a.credential, url, &core).await;
+    let sb = sdk(&token_b.credential, url, &core).await;
     let mut trace = vec![];
     let definitions = sa.list_tools(None).await.expect("SDK tools/list");
     assert!(
@@ -1058,7 +1056,7 @@ async fn package_removal_flow(http: bool) {
             })
             .await
             .expect("race credential");
-        let race_sdk = sdk(&issued.credential, Some(url)).await;
+        let race_sdk = sdk(&issued.credential, Some(url), &core).await;
         let race_plan = data(call(&race_sdk,&mut trace,"plan_package_uninstall",
             json!({"project_id":id,"expected_revision":refreshed.revision,"package_id":"com.example.fixture"}))
             .await.expect("race caller's own plan"));
@@ -1183,7 +1181,7 @@ async fn package_removal_flow(http: bool) {
     // Close the actual SDK/STDIO process immediately after acceptance. Query the
     // accepted task using a new independently authenticated SDK connection.
     stop(sa).await;
-    let reconnected = sdk(&token_a.credential, url).await;
+    let reconnected = sdk(&token_a.credential, url, &core).await;
     let detached_terminal = terminal(
         &reconnected,
         &mut trace,
@@ -1209,8 +1207,8 @@ async fn package_removal_flow(http: bool) {
     let mut owner = AlcomdClient::connect(config.clone())
         .await
         .expect("native owner after restart");
-    let sa = sdk(&token_a.credential, url).await;
-    let sb = sdk(&token_b.credential, url).await;
+    let sa = sdk(&token_a.credential, url, &core).await;
+    let sb = sdk(&token_b.credential, url, &core).await;
     let persisted = data(
         call(
             &sa,
@@ -1257,7 +1255,7 @@ async fn package_removal_flow(http: bool) {
             .expect("rotation status");
         assert_eq!(response.status(), 401);
         stop(sa).await;
-        let fresh = sdk(&rotated.credential, Some(url)).await;
+        let fresh = sdk(&rotated.credential, Some(url), &core).await;
         assert_eq!(
             data(
                 call(&fresh, &mut trace, "get_project", json!({"project_id":id}))
@@ -1402,20 +1400,21 @@ async fn transport_risks(http: bool) {
     let root = root.canonicalize().expect("risk root");
     let data_root = root.join("data");
     std::fs::create_dir(&data_root).expect("isolated data");
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(data_root.clone()),
         std::future::pending(),
     )
     .await
     .expect("exclusive isolated Core");
     let http = if http {
-        Some(HttpFixture::start().await)
+        Some(HttpFixture::start(&core).await)
     } else {
         None
     };
     let url = http.as_ref().map(|value| value.url.as_str());
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("isolated native owner");
     let mut projects = Vec::new();
@@ -1456,7 +1455,7 @@ async fn transport_risks(http: bool) {
     for (index, (directory, snapshot)) in projects.iter().enumerate() {
         let id = snapshot.project_id.as_deref().expect("project ID");
         let stopping_server = if index == 4 {
-            Some(HttpFixture::start().await)
+            Some(HttpFixture::start(&core).await)
         } else {
             None
         };
@@ -1469,7 +1468,7 @@ async fn transport_risks(http: bool) {
                 HttpResponseFault::start(&token.credential, url.expect("HTTP risk URL")).await;
             (sdk, Some(fault))
         } else {
-            (sdk(&token.credential, request_url).await, None)
+            (sdk(&token.credential, request_url, &core).await, None)
         };
         let plan = data(call(&sdk_session, &mut trace, "plan_package_uninstall", json!({
             "project_id":id,"expected_revision":snapshot.revision,"package_id":"com.example.fixture"
@@ -1626,7 +1625,7 @@ async fn transport_risks(http: bool) {
         stop(sdk_session).await;
         drop(wire_fault);
         // Explicit operator recovery: same identity, original Plan/revision/key.
-        let recovered = sdk(&token.credential, url).await;
+        let recovered = sdk(&token.credential, url, &core).await;
         let replay = data(
             call(
                 &recovered,

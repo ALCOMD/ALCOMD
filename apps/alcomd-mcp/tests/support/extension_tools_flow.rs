@@ -215,14 +215,15 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .expect("valid isolated Provider fixture");
     let data_root = root.join("data");
     std::fs::create_dir(&data_root).expect("valid isolated Provider fixture");
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(data_root.clone()),
         std::future::pending(),
     )
     .await
     .expect("exclusive isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("valid isolated Provider fixture");
     let path = root.join("provider.alcomdextension");
@@ -270,8 +271,8 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Stopped);
     let (a, secret_a) = client(&mut owner, "Provider A").await;
     let (b, secret_b) = client(&mut owner, "Provider B").await;
-    let sa = sdk(&secret_a, None).await;
-    let sb = sdk(&secret_b, None).await;
+    let sa = sdk(&secret_a, None, &core).await;
+    let sb = sdk(&secret_b, None, &core).await;
     let initial = sa.list_all_tools().await.expect("built-in directory");
     assert!(initial.iter().any(|tool| tool.name == "alcomd_get_project"));
     assert!(initial.iter().all(|tool| tool.name != public("echo")));
@@ -390,8 +391,8 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     )
     .await;
     assert_eq!(denied.is_error, Some(true));
-    let http = HttpFixture::start().await;
-    let http_sdk = sdk(&secret_a, Some(&http.url)).await;
+    let http = HttpFixture::start(&core).await;
+    let http_sdk = sdk(&secret_a, Some(&http.url), &core).await;
     let http_echo = ext(&http_sdk, "echo", json!({"text":"HTTP provider"})).await;
     assert_ne!(http_echo.is_error, Some(true));
     let mut operations = Vec::new();
@@ -413,7 +414,7 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         let planned=ext(&sa,"plan_remove",json!({"project_id":registered.project_id,"expected_revision":registered.revision,"package_id":"com.example.fixture","idempotency_key":format!("fault-plan-{fault}")})).await.structured_content.expect("valid isolated Provider fixture");
         let plan = &planned["coreEffect"];
         let args = json!({"plan_id":plan["planId"],"expected_revision":plan["projectRevision"],"idempotency_key":format!("fault-apply-{fault}"),"confirm":true});
-        let risk_sdk = sdk(&secret_a, None).await;
+        let risk_sdk = sdk(&secret_a, None, &core).await;
         let gate = daemon.hold_next_mcp_apply_response(fault).await;
         let mut pending = risk_sdk
             .send_cancellable_request(
@@ -455,7 +456,7 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
             };
             error(result, "core_write_outcome_unknown");
         }
-        let recovery = sdk(&secret_a, None).await;
+        let recovery = sdk(&secret_a, None, &core).await;
         let restored = ext(&recovery, "apply", args).await;
         assert_ne!(restored.is_error, Some(true));
         let restored = restored

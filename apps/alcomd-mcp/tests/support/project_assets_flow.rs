@@ -12,8 +12,9 @@ async fn frozen_sdk_template_lifecycle_replays_removal_after_recreation() {
     let project_path = root.join("Project");
     project(&project_path, false);
     let (stop, stopped) = tokio::sync::oneshot::channel();
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         async {
             let _ = stopped.await;
@@ -21,7 +22,7 @@ async fn frozen_sdk_template_lifecycle_replays_removal_after_recreation() {
     )
     .await
     .expect("isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("test owner");
     let project = owner
@@ -47,8 +48,8 @@ async fn frozen_sdk_template_lifecycle_replays_removal_after_recreation() {
         })
         .await
         .expect("issue independent credential");
-    let http = HttpFixture::start().await;
-    let connection = sdk(&issued.credential, Some(&http.url)).await;
+    let http = HttpFixture::start(&core).await;
+    let connection = sdk(&issued.credential, Some(&http.url), &core).await;
     let mut trace = Vec::new();
     let id = "com.example.lifecycle";
     let save = json!({"source":{"kind":"project","id":id,"name":"From project",
@@ -251,8 +252,9 @@ async fn frozen_sdk_project_inventory_and_template_edit_share_core() {
     std::fs::write(&second_source, "second asset").expect("isolated project assets fixture");
 
     let (stop_core, stopped) = tokio::sync::oneshot::channel();
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         async {
             let _ = stopped.await;
@@ -260,7 +262,7 @@ async fn frozen_sdk_project_inventory_and_template_edit_share_core() {
     )
     .await
     .expect("isolated project assets fixture");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("isolated project assets fixture");
     let registered = owner
@@ -293,8 +295,8 @@ async fn frozen_sdk_project_inventory_and_template_edit_share_core() {
         })
         .await
         .expect("isolated project assets fixture");
-    let http = HttpFixture::start().await;
-    let connection = sdk(&issued.credential, Some(&http.url)).await;
+    let http = HttpFixture::start(&core).await;
+    let connection = sdk(&issued.credential, Some(&http.url), &core).await;
     let mut trace = Vec::new();
     let mut inventory_args =
         json!({"project_id":project_id,"expected_revision":revision,"limit":1});

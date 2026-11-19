@@ -19,8 +19,9 @@ async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
     let profile = root.join("claude-profile");
     std::fs::create_dir_all(&profile).expect("isolated profile");
     let (stop_core, stopped) = tokio::sync::oneshot::channel();
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         async {
             let _ = stopped.await;
@@ -28,7 +29,7 @@ async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
     )
     .await
     .expect("exclusive isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("owner");
     let actor = owner
@@ -46,7 +47,7 @@ async fn claude_code_http_setup_uses_isolated_profile_and_real_core() {
         })
         .await
         .expect("dedicated credential");
-    let http = HttpFixture::start().await;
+    let http = HttpFixture::start(&core).await;
     let configuration = json!({
         "type": "http",
         "url": http.url,
@@ -153,8 +154,9 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     std::fs::create_dir(&archives).expect("isolated archives");
     project(&projects.join("Source"), false);
     let (stop_core, stopped) = tokio::sync::oneshot::channel();
+    let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         async {
             let _ = stopped.await;
@@ -162,7 +164,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     )
     .await
     .expect("exclusive isolated Core");
-    let mut owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let mut owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("owner");
     let settings = owner.settings_get().await.expect("settings");
@@ -188,8 +190,8 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         })
         .await
         .expect("independent credential");
-    let http = HttpFixture::start().await;
-    let sdk = sdk(&credential.credential, Some(&http.url)).await;
+    let http = HttpFixture::start(&core).await;
+    let sdk = sdk(&credential.credential, Some(&http.url), &core).await;
     let mut trace = Vec::new();
     let register = json!({
         "source":{"kind":"default","relative_path":"Source"},

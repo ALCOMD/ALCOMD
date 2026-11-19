@@ -1,7 +1,9 @@
 use super::*;
 use rmcp::model::SubscriptionFilter;
 
-async fn start_http_subscription_check() -> (
+async fn start_http_subscription_check(
+    core: &CoreConfiguration,
+) -> (
     alcomd_daemon::test_support::TestDaemon,
     AlcomdClient,
     HttpFixture,
@@ -12,16 +14,16 @@ async fn start_http_subscription_check() -> (
     std::fs::create_dir_all(root.join("data")).expect("owned disposable data");
     let root = root.canonicalize().expect("normalized isolation");
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
     .await
     .expect("exclusive isolated Core");
-    let owner = AlcomdClient::connect(ClientConfig::default().without_daemon_start())
+    let owner = AlcomdClient::connect(core.client.clone())
         .await
         .expect("test owner");
-    (daemon, owner, HttpFixture::start().await)
+    (daemon, owner, HttpFixture::start(core).await)
 }
 
 async fn subscription_reader(owner: &mut AlcomdClient, name: &str) -> (McpClientRecord, String) {
@@ -54,9 +56,10 @@ async fn http_subscription_reaches_stream_limit_with_valid_bearer() {
     use tokio::time::Instant;
 
     let _serial = REAL_CORE_LOCK.lock().await;
-    let (daemon, mut owner, http) = start_http_subscription_check().await;
+    let core = CoreConfiguration::new();
+    let (daemon, mut owner, http) = start_http_subscription_check(&core).await;
     let (_, credential) = subscription_reader(&mut owner, "stream-lifetime").await;
-    let client = sdk(&credential, Some(&http.url)).await;
+    let client = sdk(&credential, Some(&http.url), &core).await;
     let filter = SubscriptionFilter::builder().tools_list_changed().build();
     let started = Instant::now();
     let mut stream = client.listen(filter.clone()).await.expect("real SDK ack");
@@ -179,7 +182,8 @@ async fn wait_subscription_counts(
 #[ignore = "holds real local HTTP resources and uses an isolated Core endpoint"]
 async fn http_subscription_capacity_and_paused_reader_isolate_business() {
     let _serial = REAL_CORE_LOCK.lock().await;
-    let (daemon, mut owner, http) = start_http_subscription_check().await;
+    let core = CoreConfiguration::new();
+    let (daemon, mut owner, http) = start_http_subscription_check(&core).await;
     let mut readers = Vec::new();
     for i in 0..4 {
         readers.push(subscription_reader(&mut owner, &format!("capacity-{i}")).await);
@@ -313,9 +317,10 @@ async fn lost_observer_ticket_reply_does_not_reconnect_reissue_or_interrupt_busi
         .join(uuid::Uuid::new_v4().to_string());
     std::fs::create_dir_all(root.join("data")).expect("disposable data");
     let root = root.canonicalize().expect("normalized isolation");
-    let config = ClientConfig::default().without_daemon_start();
+    let core = CoreConfiguration::new();
+    let config = core.client.clone();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(root.join("data")),
         std::future::pending(),
     )
@@ -338,8 +343,8 @@ async fn lost_observer_ticket_reply_does_not_reconnect_reissue_or_interrupt_busi
         .await
         .expect("one-time credential");
     let gate = daemon.hold_next_transport_binding_response().await;
-    let http = HttpFixture::start().await;
-    let sdk = sdk(&credential.credential, Some(&http.url)).await;
+    let http = HttpFixture::start(&core).await;
+    let sdk = sdk(&credential.credential, Some(&http.url), &core).await;
     let mut subscription = sdk
         .listen(SubscriptionFilter::builder().tools_list_changed().build())
         .await
@@ -432,9 +437,10 @@ async fn flow(http: bool) {
     let root = root.canonicalize().expect("normalized isolated root");
     let data_root = root.join("data");
     std::fs::create_dir(&data_root).expect("fresh data");
-    let config = ClientConfig::default().without_daemon_start();
+    let core = CoreConfiguration::new();
+    let config = core.client.clone();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
-        IpcConfig::default(),
+        core.ipc.clone(),
         DataConfig::isolated(data_root.clone()),
         std::future::pending(),
     )
@@ -618,13 +624,13 @@ async fn flow(http: bool) {
     .expect("forget on exact reporter close");
 
     let http_fixture = if http {
-        Some(HttpFixture::start().await)
+        Some(HttpFixture::start(&core).await)
     } else {
         None
     };
     let url = http_fixture.as_ref().map(|h| h.url.as_str());
-    let sa = sdk(&ta.credential, url).await;
-    let sb = sdk(&tb.credential, url).await;
+    let sa = sdk(&ta.credential, url, &core).await;
+    let sb = sdk(&tb.credential, url, &core).await;
     let initial = ca
         .mcp_tools_catalog(Default::default())
         .await
