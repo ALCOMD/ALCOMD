@@ -1773,19 +1773,27 @@ Core 已有登记、模板创建、复制、创建备份和恢复。当前登记
 | 查看和修改项目模板 | `projectTemplates.list` 只给摘要。`save` 可从文件、项目或手动定义保存。用原模板作基础时保留资产树、UPM 清单和 VPM 锁，直接依赖只追加或覆盖，无法精确移除。归档已校验并按摘要冻结。 | 建议新增共享 `projectTemplates.get(id)` 与 `projectTemplates.edit(id, expectedRevision, changes, idempotencyKey)`。详情返回标识、修订、可编辑性、名称、Unity 版本、直接依赖和原生附件目录。编辑以明确增删改修改现有归档，复用原保存任务、归档校验、发布及登记事务。锁定模板拒绝修改、移除。现有原生附件是归档里的内容，没有独立附件登记；编辑只限模板归档 `Assets/` 中显式选择的原生资产及其关联 `.meta`，新增输入使用本机所有者批准的文件，不接受任意路径。UnityPackage 导入行为及旧模板格式仍属 M11。模板浏览与编辑需要各自的默认关闭能力，创建项目所需的模板选择权保持独立。 |
 | 读取有效环境 | Unity 安装列表已有真实登记及基于 Core 的检查。有效启动参数由 `unity.projectLaunchConfig.get` 对应的 application 用例按项目设置或默认值取用。项目和备份目录共用已解析的设置与平台默认值。 | 所有者要求按 Core 权限对齐三个入口。MCP 直接调用已有 `settings.get`、`unity.installations.list`、`unity.projectLaunchConfig.get`，获得对应的原有结果，包括 Unity 安装位置和完整有效启动参数。 |
 
-项目包详情和模板编辑仍是审计草案。模板编辑还需集中定稿权限名称、原生附件是否允许文件树级操作、文件输入和编辑的持久任务合同。项目与备份的审批句柄仅覆盖其所列四种用途。已接通的包查询、模板原生入口和项目创建选择能力继续使用当前合同。
+下节记录项目包详情和模板编辑的共享合同。项目与备份的路径预览句柄覆盖其各自列明的用途。模板编辑使用现有文件校验与保存任务。
 
 #### 下一组合并公共合同草案
 
-GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功后可使用已发布的工具。以下差异待集中确认。
+所有者回复继续实施以下已列明的差异。GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功后可使用已发布的工具。
 
 | 能力 | 建议公开差异与验收证据 |
 | --- | --- |
 | 项目实际安装包 | 新增共享只读 `packages.projectInventory({projectId,expectedRevision,cursor?,limit?})` 与同结果 MCP 工具 `alcomd_list_installed_packages`。复用候选页已有的项目身份和本地观察，区分声明、锁定、观察版本。缺少文件、版本不符和无法读取给出各自结果。解析状态使用可核实的本地证据。分页按包 ID，默认 50、最多 200 项，游标绑定调用者、项目修订、实际观察指纹。元数据和来源只返回本地可证实的部分。沿用 `projects.read + packages.read`。 |
-| 模板详情与编辑 | 新增共享 `projectTemplates.get({id,cursor?,limit?})`、`projectTemplates.edit({id,expectedRevision,changes,idempotencyKey})`，对应 MCP 查看和编辑工具。详情返回模板名称、修订、Unity、直接依赖和按路径分页的附件目录。编辑只改明确指定的名称、依赖与附件，沿用模板保存 Operation。查阅复用模板列表的 `projects.create`，编辑复用 `projects.manage`，保留锁定模板保护、原模板登记归属和修订检查。 |
+| 模板详情与编辑 | 新增共享 `projectTemplates.get({id,cursor?,limit?})`、`projectTemplates.edit({id,expectedRevision,changes,confirm,idempotencyKey})`，对应 MCP 查看和编辑工具。详情返回模板名称、修订、Unity、直接依赖和按路径分页的附件目录。编辑只改明确指定的名称、依赖与附件，沿用模板保存 Operation。查阅复用模板列表的 `projects.create`，编辑复用 `projects.manage`，保留锁定模板保护、原模板登记归属和修订检查。 |
 | 模板附件文件 | 编辑输入指明源单文件和归档 `Assets/` 下的目标相对名。三端共用 Core 文件校验与确认。拒绝链接、路径逃逸及 Core 私有数据目录，保留未修改内容及既有资产配对规则。Core 在接受任务前冻结实际材料，只在持久任务中保存可恢复的摘要和目标绑定。接受后从冻结材料恢复，源文件变化或重启无需重新读原路径。旧模板与 UnityPackage 格式保留到 M11。 |
 
-建议以 `packages.project-inventory.v1` 和 `projectTemplates.edit.v1` 协商。沿用现有权限名称、配置、数据库 Schema 和 WIT。模板编辑保留实际调用者的 Operation 和幂等归属。如果现有模板任务无法在原 journal 保全冻结材料，只就必要的持久差异另行确认。
+以 `packages.project-inventory.v1` 和 `project-templates.edit.v1` 协商。模板能力名使用现有握手允许的小写形式。沿用现有权限名称、配置、数据库 Schema 和 WIT。模板编辑保留实际调用者的 Operation 和幂等归属，原任务 journal 引用已冻结的归档。[共享 RPC Schema](../../specs/rpc/m8-project-assets-v1.schema.json)
+
+#### 模板创建、导出与移除的共享合同
+
+冻结 v3 的 MCP 能创建及移除用户模板。现行 MCP 已能列出模板并从模板创建项目，模板读取与编辑采用上节共享合同。`projectTemplates.save` 与 `projectTemplates.remove` 仍要求本机所有者，GUI 有相应入口，CLI 尚无对应命令。编辑已存在的模板无法替代创建或移除。
+
+所有者批准三端共用，并采用同键恢复移除结果。复用现有 RPC 与 `projects.manage`，通过 `alcomd_create_project_template`、`alcomd_export_project_template` 和 `alcomd_remove_project_template` 接通 MCP，CLI 使用同一用例。创建沿用手工定义、现有项目及模板文件作为来源，由 Core 执行既有来源和归档校验，返回原 `projectTemplates.save` Operation。替换要求原记录的修订，路径和资源规则与 GUI 保持一致。移除仍按模板 ID 与修订检查，并保持内置保护。为 GUI、CLI 和 MCP 的响应丢失恢复，在共享 `projectTemplates.remove` 请求中增加必需的 `idempotencyKey`，在现有幂等表和同一个移除事务内保存原回执。重复原请求返回原 ID 与修订，换请求使用同键拒绝。实际调用者持有回执和任务，模板登记仍属于现有资源所有者。MCP 在现有业务入口提示确认后调用。
+
+导出复用带幂等键的 `projectTemplates.export`、现有任务、输出格式、目标校验及禁止覆盖规则。删除请求新增必需字段，是当前未发布候选的破坏性变化。无 State、Config、WIT 或生产依赖增量。定向验证覆盖共享结果、内置保护、跨身份任务隔离、同键恢复以及移除后同名重建。
 
 #### 环境读取按三端权限对齐
 
@@ -1830,10 +1838,10 @@ GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功�
 
 | 用户能力 | 现行入口与证据 | 仍需处理 |
 | --- | --- | --- |
-| 查看项目、查包、选来源、安装和包变更 | `alcomd_list_projects` 与 `alcomd_get_project` 返回 Core 登记与路径。查包、来源、安装、升级、降级、重装、卸载、解析与合并 Plan 由同一 Core 负责。真实包与仓库定向候选 `c3e7912a`，项目路径和原卸载回归 `24c4f36d`。 | 三端共用的实际安装观察和解析状态仍待接通。 |
+| 查看项目、查包、选来源、安装和包变更 | `alcomd_list_projects` 与 `alcomd_get_project` 返回 Core 登记与路径。查包、来源、安装、升级、降级、重装、卸载、解析与合并 Plan 由同一 Core 负责。真实包与仓库定向候选 `c3e7912a`，项目路径和原卸载回归 `24c4f36d`。`e7c2c526` 增加本机实际安装观察和解析状态，见下节。 | 已安装观察面向登记项目中声明或锁定的 VPM 包。可从包目录取得的元数据见既有查包流程。 |
 | 查看、登记、刷新和移除仓库 | `mcp.repositories.v1` 与关联工具，真实 HTTPS/OAuth 仓库用例 1/0。Core 按登记来源使用原凭据规则，内置仓库继续受保护。候选 `c3e7912a`。 | 既有登记能力可以使用，来源地址和凭据管理仍遵循各自已接受的合同。 |
 | 登记、创建和复制项目、备份与恢复 | `mcp.project-workflows.v1` 共用 Core 业务和 Operation。`aa3a8c5f` 的原生与冻结 SDK 定向各 1/0，OAuth 撤权、同键恢复与在途取消分别见 `ec99aa05`、`78ef488`。 | 最终需按同一候选汇总适用门禁。 |
-| 模板定义、依赖及附件 | 创建项目可以读取模板并选用。原生已有模板保存、导入导出及移除。 | 三端共同的详情、现行格式的模板编辑、附件与对应写入流程待接通。旧模板、UnityPackage 和旧备份格式按既定 M11 边界。 |
+| 模板定义、依赖及附件 | 三端使用共享 Core 目录、详情、编辑、创建、导出和移除。创建项目可使用同一模板记录。当前格式的附件、资源归属、任务和移除重放已通过真实隔离验证。 | 旧模板、UnityPackage 和旧备份格式按既定 M11 边界。 |
 | 设置、已登记 Unity 和有效启动参数 | `3ec540fe` 复用既有设置、安装和项目启动参数读接口。真实隔离 Core 验证权限和结果一致、OAuth 上限与撤权。 | 已有桌面验收继续有效。 |
 | 任务状态、取消、恢复及观测 | `alcomd_list_operations`、`alcomd_get_operation`、`alcomd_cancel_operation` 已接通。项目与备份已有真实身份归属、回包丢失及在途取消证据。工具目录订阅、只读连接和请求观测有既有冻结 SDK 与 Host 证据。 | 当前已接通流程的确认在接受任务前完成。若后续真实业务需要任务在途输入，再为该业务核对继续入口。真实 Codex 推送消费、持续满载和 TCP 发送缓冲耗尽未验证。 |
 | 客户端快速接入 | Codex 0.153.4 具名回环 HTTP Bearer 和预登记 OAuth，Claude Code 2.1.327 具名回环 HTTP，均有独立配置证据。 | Cursor 本轮具名构建的 HTTP 和 STDIO 握手不兼容，自动配置、普通浏览器受信任 TLS 仍未验证。 |
@@ -1841,7 +1849,7 @@ GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功�
 
 `06dd8b03` 修正仓库检查沿 `.local/worktrees` 进入独立 Git 工作树的误报。检查器只排除 Git 实际登记且仍存在的该位置子工作树，主仓路径和安全断言保持。实际主仓 `cargo xtask check` 通过，在同一父目录放置普通未登记的测试 Rust 文件时能识别违规，撤回该临时文件后同一检查再次通过。xtask 严格 Clippy、fmt 和 diff 通过。原 18 项失败属于改动前，历史记录保留。
 
-完整同 SHA 本地与远端最终验收仍待稳定候选。现有 `2735119f` 的 macOS 作业未执行，原 CodeQL 与 Windows、Ubuntu 结果仅对应该 SHA。M8 保持进行中。
+本地稳定代码和各轮门禁见下文。现有远端 `2735119f` 的 macOS 作业未执行，原 CodeQL 与 Windows、Ubuntu 结果仅对应该 SHA。新候选仍需同 SHA 三平台 CI 与 CodeQL，M8 保持进行中。
 
 ### 2026-11-19 MCP 启用并连接后使用工具
 
@@ -1869,3 +1877,33 @@ GUI、CLI 和 MCP 使用同一 Core 用例、输入和结果。MCP 连接成功�
 - 真实 Core/Host 定向单轮 6/0，覆盖客户端登记与撤销、扩展零授权启用和数据隔离、连接与请求观测、租约失效及打包扩展安装一次和保留用户卸载。记录在 `target/m8-connection-management-real.log`。
 
 自然到期长时用例及原有忽略项仍待对应验证。新增代码尚无远端结果。
+
+### 2026-11-19 项目包观察和模板生命周期
+
+签名代码 `e7c2c526e5ae8a31d0752a9a4117c77312e69c8d` 接通三端项目包观察、模板详情和编辑。项目详情的包操作菜单提供本机状态，明确区分缺失、版本不符和未知。资源页的模板操作提供详情与编辑，写入沿用现有任务。附件限现行归档的 `Assets/`，Core 在接受前冻结材料。CLI 入口为 `package inventory`、`template get` 和 `template edit`。
+
+签名代码 `539d81857aa90215569501c0a2861e6e8a0552da` 落实获批的创建、导出和移除。GUI 沿用资源页，CLI 加入 `template list/save/export/remove`，MCP 使用[工具清单](../../specs/mcp/toolset-v1.md#项目已安装的包和模板编辑)中的公开入口。模板移除使用原预期修订和原幂等键找回同一回执。创建、导出使用既有任务，实际调用者保持回执和任务归属。
+
+- 真实 Windows 隔离 Core 和冻结 SDK 最终定向 2/0，测试二进制 SHA-256 `dd5e003f00c5717225ebedaddf5b41d9385c5de49114fd9474a705d86f56c8be`。覆盖包文件缺失、版本不符和观察变化使续页失效。确认模板内置保护、修订失效、私有附件拒绝、真实导出字节、项目来源、导入、重建和跨身份归属。截断提交后的真实 IPC 回包，SDK 得到 `core_write_outcome_unknown`，同键找回确切回执。同 ID 重建后再次重放保留新模板。首轮握手拒绝、SQLite 指纹 JSON 检查拒绝以及用于定位的失败轮次保留。
+- 相关 Chromium 模块首轮 46/1，入口移入原包操作菜单后原工具栏高度断言通过。次轮 47/2，失败来自测试用原生对话框节点访问 Material 插槽内的控件。按现有宿主选择方式修正后，三条定向 3/0，三个相关模块同轮 49/0。模板生命周期新增同键重试后模块单独 16/0。Schema 首轮 52/1 为新 Schema ID 路径缺少 RPC 版本，按既有要求修正后 53/0。
+- 具名结果保存在 `target/m8-shared-project-assets-20261119/`。本轮端点空闲，真实用例使用独立 Core 和数据并正常退出。原 Core、GUI、数据和 Unity 未启停或迁移。
+
+完整 Chromium 使用 `539d8185` 的前端输入，734 项同轮结果为 730/4。四项均触发原有 30 秒全用例时限，分别是 GUI 路由遍历、高影响操作遍历、800px 布局和项目卡片布局。保留完整日志、失败截图与 trace。Rust 构建结束后仅复验原四项，使用一名浏览器工作线程，原断言与时限均保持，结果 4/0。完整首轮保持 730/4。
+
+Windows 完整仓库门禁首轮在严格 Clippy 中止。新增 Schema 用例的两处 `unwrap` 不符合仓库 lint 规则。签名提交 `218d14b6b8effcbc910a0f386e0cbe0608bf9a08` 仅增加失败诊断，两处仍执行原断言，业务代码与前端输入一致。
+
+恢复后的完整仓库门禁通过严格 Clippy，原生模板 IPC 用例通过。工作区测试在真实扩展 Host 生命周期模块中止，模块结果 8/4、1 项忽略。四次失败均由 Host 等待回包的约 4,999 ms 激活预算触发，原错误为 `extension_resource_limit`。Host 原先先发送 Ready，再编译和实例化组件，导致冷启动工作占用激活窗口。修正将 Ready 移到组件准备完成之后，沿用分别对启动和激活生效的 5,000 ms 上限以及原 WIT 与运行态限制。现有测试诊断增加阶段，便于区分 Ready 与激活超限。
+
+`7548e77cc583ea5dbce3df87cc26603d9b061dc4` 的真实生命周期模块定向 12/0、1 项原有忽略，独立 Host Component 模块 6/0。新增用例确认无效组件退出且未发 Ready。更早的 `resource_limit` 轮次保留原各自记录。
+
+`f49f7fbdf1842117b28cf562a710a68327c70983` 补上模板编辑对附件和依赖可能有移除效果的工具标记。Schema 结构比较确认只改变该工具的提示属性。MCP 模块 17/0，受影响严格 Clippy 通过。
+
+`7548e77c` 的下一轮整仓运行中，真实 Host 生命周期 12/0、1 项原有忽略，MCP 业务集成 21/0、4 项原有忽略。运行在项目操作静态合同模块中止，模块为 6/3，三项均把现行 StateSchema 断言成 43。全仓核对现行断言后，`522dabc58ec270a375041fa44645be5b3a1a9a21` 只同步这三处为 State44，定向复验 9/0。历史迁移、RPC、权限、数据保全和安全断言继续逐项检查。
+
+### 2026-11-19 M8 本地候选验收
+
+- Windows 完整 Rust 工作区在代码 `522dabc58ec270a375041fa44645be5b3a1a9a21` 单轮执行 `cargo test --locked --workspace -j 3 --no-fail-fast`，`RUST_TEST_THREADS=2`。日志记录 99 组测试与 doctest 结果，合计 1096 通过、0 失败、18 忽略。原始日志为 `target/m8-shared-project-assets-20261119/workspace-final-complete.log`。
+- 同一代码的 `xtask check`、fmt、整仓严格 Clippy、Windows 原生 GUI `cargo check`、两扩展后端 fmt 与严格 Clippy、前端检查和构建、metadata、锁文件及 diff 检查通过。MCP 管理扩展后端 7 项单元、1 项 doctest 通过。Discord 后端命令正常结束，共发现 0 项测试，本阶段没有 Discord 业务验证。完整输出为 `target/m8-shared-project-assets-20261119/workspace-final-static-and-frontend.log`。本轮未构建本机 Tauri Release。
+- Chromium 使用 `539d8185` 至候选未变化的前端工作区、根 package manifest 和 lockfile。完整单轮 730 通过、4 超时，独立定向复验 4 通过。新的同 SHA 完整远端浏览器结果待验证。
+- 管理扩展人工体验、普通在线扩展源继续按所有者决定延期。真实 Codex 工具目录推送消费、普通浏览器受信任 TLS、持续满载及 TCP 发送缓冲耗尽未执行。此前复现的 Host 激活预算问题已修正并验证，早期其他 `resource_limit` 记录仍保留。当前 Cursor 具名版本协议不兼容。旧模板、UnityPackage 和旧备份格式按 M11，正式签名和发行装配按 M12。A-026 的日志能力保持撤销。
+- 最终远端验证要求同一候选 SHA 的三平台 CI 和 CodeQL。此前 `2735119f6245d7c97552b2c19c5f467c5c0ad4ae` 的 Windows、Ubuntu 及 CodeQL 结果继续保留，macOS 未执行；该批结果仅适用于原候选。M8 收束等待新候选远端证据和所有者确认剩余事项。

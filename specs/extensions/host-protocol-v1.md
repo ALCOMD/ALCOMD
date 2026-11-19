@@ -1,6 +1,6 @@
 # Extension Host internal protocol logical contract v1
 
-状态：M6 contract-first Stop A candidate；internal only，不是 public RPC，production 尚未实现。
+状态：已实现的进程间内部协议。由 Core 与随包 Host 使用。
 
 ## Transport 与 framing
 
@@ -19,9 +19,9 @@ invalid UTF-8/JSON 或 sequence violation 立即终止该 Host；不把 malforme
 ## Bootstrap/channel binding
 
 首帧只能由 daemon 发送 `bootstrap`：protocolVersion=1、daemon epoch、一次性 256-bit random nonce、
-ExtensionInstanceLease 的 opaque leaseId/InstanceId/lifecycle generation/API world 和 exact limits。Host 必须以
-`ready` echo nonce 与 monotonically increasing
-sequence=1；不匹配立即终止。
+ExtensionInstanceLease 的 opaque leaseId/InstanceId/lifecycle generation/API world 和 exact limits。Host 完成组件编译、实例化及绑定后，
+以 `ready` 回传 nonce 和 sequence=1。失败时在就绪前退出。Core 校验绑定后才发送第一个 export 请求，
+启动与激活分别使用既有的 5,000 ms 预算。
 
 nonce、pipe handle 与 lease 只存在当前 daemon/Host memory；不写 package、extension data、SQLite、log、Event 或
 diagnostic。channel 是 daemon-spawned child binding，不接受外部 reconnect，也不是长期 bearer credential。
