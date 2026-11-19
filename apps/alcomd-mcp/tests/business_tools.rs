@@ -36,10 +36,13 @@ struct HttpFixture {
 }
 impl HttpFixture {
     async fn start() -> Self {
-        let server =
-            alcomd_mcp::HttpServer::bind(0, ClientConfig::default().without_daemon_start())
-                .await
-                .expect("owned HTTP listener");
+        Self::start_with_config(ClientConfig::default().without_daemon_start()).await
+    }
+
+    async fn start_with_config(config: ClientConfig) -> Self {
+        let server = alcomd_mcp::HttpServer::bind(0, config)
+            .await
+            .expect("owned HTTP listener");
         let url = format!(
             "http://{}/mcp",
             server.local_addr().expect("loopback address")
@@ -190,6 +193,10 @@ async fn sdk(secret: &str, url: Option<&str>) -> Sdk {
             .await
             .expect("actual frozen SDK HTTP Discover");
     }
+    stdio_sdk(secret, |_| {}).await
+}
+
+async fn stdio_sdk(secret: &str, configure: impl FnOnce(&mut tokio::process::Command)) -> Sdk {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_alcomd-mcp"));
     command
         .arg("stdio")
@@ -197,6 +204,7 @@ async fn sdk(secret: &str, url: Option<&str>) -> Sdk {
         .kill_on_drop(true);
     #[cfg(windows)]
     command.creation_flags(0x08000000);
+    configure(&mut command);
     let transport = TokioChildProcess::new(command).expect("owned MCP STDIO process");
     ().serve_with_lifecycle(
         transport,

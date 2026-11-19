@@ -16,29 +16,36 @@ pub(super) struct CoreConfiguration {
     pub(super) ipc: IpcConfig,
     pub(super) client: ClientConfig,
     #[cfg(unix)]
-    runtime: std::path::PathBuf,
+    runtime_parent: std::path::PathBuf,
 }
 impl CoreConfiguration {
     pub(super) fn new() -> Self {
         #[cfg(unix)]
         {
+            use std::os::unix::fs::DirBuilderExt;
+
             // Reuse the CLI fixture's private, short Unix endpoint convention.
             #[cfg(target_os = "macos")]
             let base = std::path::PathBuf::from("/private/tmp");
             #[cfg(not(target_os = "macos"))]
             let base = std::env::temp_dir();
-            let runtime = base.join(format!(
+            let runtime_parent = base.join(format!(
                 "ac-oauth-{}-{}",
                 std::process::id(),
                 uuid::Uuid::new_v4().simple()
             ));
-            assert!(!runtime.exists(), "new owned runtime path");
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&runtime_parent)
+                .expect("new private runtime parent");
+            // Match the executable's native lookup under TMPDIR/XDG_RUNTIME_DIR.
+            let runtime = runtime_parent.join("alcomd");
             Self {
                 ipc: IpcConfig::isolated(runtime.clone()),
                 client: ClientConfig::default()
                     .without_daemon_start()
-                    .with_runtime_directory(runtime.clone()),
-                runtime,
+                    .with_runtime_directory(runtime),
+                runtime_parent,
             }
         }
         #[cfg(windows)]
@@ -50,24 +57,36 @@ impl CoreConfiguration {
             }
         }
     }
+
+    fn configure_stdio(&self, command: &mut tokio::process::Command) {
+        // A missing Unix fixture must not let the child start a Core with real data.
+        #[cfg(unix)]
+        command.env_remove("HOME");
+        #[cfg(target_os = "linux")]
+        command.env("XDG_RUNTIME_DIR", &self.runtime_parent);
+        #[cfg(target_os = "macos")]
+        command.env("TMPDIR", &self.runtime_parent);
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        let _ = command;
+    }
 }
 #[cfg(unix)]
 impl Drop for CoreConfiguration {
     fn drop(&mut self) {
-        if !self.runtime.exists() {
+        if !self.runtime_parent.exists() {
             return;
         }
         assert!(
             !self
-                .runtime
+                .runtime_parent
                 .symlink_metadata()
                 .expect("owned runtime metadata")
                 .file_type()
                 .is_symlink()
         );
-        let path = self.runtime.canonicalize().expect("owned runtime");
+        let path = self.runtime_parent.canonicalize().expect("owned runtime");
         let parent = self
-            .runtime
+            .runtime_parent
             .parent()
             .expect("runtime parent")
             .canonicalize()
@@ -2099,7 +2118,10 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         })
         .await
         .expect("separate transport client");
-    let stdio = crate::sdk(&credential.credential, None).await;
+    let stdio = crate::stdio_sdk(&credential.credential, |command| {
+        core.configure_stdio(command)
+    })
+    .await;
     let mut stdio_names: Vec<_> = stdio
         .list_all_tools()
         .await
@@ -2109,7 +2131,7 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         .collect();
     stdio_names.sort_unstable();
     assert_eq!(names, stdio_names);
-    let bearer_server = HttpFixture::start().await;
+    let bearer_server = HttpFixture::start_with_config(core.client.clone()).await;
     let bearer = crate::sdk(&credential.credential, Some(&bearer_server.url)).await;
     let mut bearer_names: Vec<_> = bearer
         .list_all_tools()
