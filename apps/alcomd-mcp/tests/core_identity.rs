@@ -298,14 +298,17 @@ async fn m8_client_identity_real_core_isolation_rotation_revocation_and_restart(
             package_id: "com.example.fixture".into(),
         })
         .await
-        .expect("A read-only plan");
-    denied(
-        cb.package_apply_plan(PackageApplyPlanParams {
+        .expect("A's plan");
+    let foreign_plan = cb
+        .package_apply_plan(PackageApplyPlanParams {
             plan_id: plan.plan_id.clone(),
             expected_revision: plan.project_revision,
             idempotency_key: "foreign-plan".into(),
         })
-        .await,
+        .await;
+    assert!(
+        matches!(foreign_plan, Err(ClientError::Remote(ref error)) if error.code == "plan_not_found"),
+        "B must not be able to resolve A's Plan: {foreign_plan:?}"
     );
     let bridge_client = alcomd_mcp::connect_core(config.clone(), issued_a.credential.clone())
         .await

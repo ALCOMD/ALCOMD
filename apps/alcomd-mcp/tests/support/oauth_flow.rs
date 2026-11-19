@@ -461,11 +461,7 @@ async fn oauth_environment_matches_native_settings_and_unity_reads() {
     let sdk = http
         .sdk(token["access_token"].as_str().expect("granted token"))
         .await;
-    let tools = sdk
-        .list_tools(None)
-        .await
-        .expect("authorized catalog")
-        .tools;
+    let tools = sdk.list_all_tools().await.expect("authorized catalog");
     for name in [
         "alcomd_get_settings",
         "alcomd_list_unity_installations",
@@ -810,10 +806,9 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
         )
         .await;
     let tools = writer
-        .list_tools(None)
+        .list_all_tools()
         .await
-        .expect("repository descriptors")
-        .tools;
+        .expect("repository descriptors");
     let register_tool = tools
         .iter()
         .find(|tool| tool.name == "alcomd_register_repository")
@@ -831,9 +826,9 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     let read_preview = data(
         call(&reader, &mut trace, "inspect_repository", args.clone())
             .await
-            .expect("read-only inspect"),
+            .expect("inspect as the first OAuth connection"),
     );
-    assert!(read_preview.get("preview_id").is_none());
+    assert!(read_preview["preview_id"].as_str().is_some());
     let preview = data(
         call(&writer, &mut trace, "inspect_repository", args.clone())
             .await
@@ -843,6 +838,13 @@ async fn frozen_sdk_oauth_repository_registry_confirmation_and_replay() {
     assert_eq!(preview["version_count"], 1);
     assert!(!preview.to_string().contains(&source.base));
     let register = json!({"preview_id":preview["preview_id"],"confirm":true,"idempotency_key":"register-inspected"});
+    assert_ne!(read_preview["preview_id"], preview["preview_id"]);
+    error(
+        call(&reader, &mut trace, "register_repository", register.clone())
+            .await
+            .expect("same client cannot use a preview issued to another token"),
+        "revision_conflict",
+    );
     let mut unconfirmed = register.clone();
     unconfirmed["confirm"] = json!(false);
     assert!(
@@ -1135,18 +1137,16 @@ async fn oauth_package_catalog_and_https_download(protected: bool) {
     );
     assert_eq!(summaries["items"][0]["package_id"], PACKAGE);
     let visible = reader
-        .list_tools(None)
+        .list_all_tools()
         .await
-        .expect("read-only authorized directory");
+        .expect("complete authorized directory");
     assert!(
         visible
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_plan_package_install")
     );
     assert!(
         visible
-            .tools
             .iter()
             .any(|tool| tool.name == "alcomd_apply_package_changes")
     );
@@ -2077,10 +2077,9 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         matches!(persistent.mcp_clients_list(McpClientsListParams::default()).await,Err(alcomd_client::ClientError::Remote(ref e)) if e.code=="permission_denied")
     );
     let mut names: Vec<_> = sa
-        .list_tools(None)
+        .list_all_tools()
         .await
         .expect("authorized tools")
-        .tools
         .into_iter()
         .map(|tool| tool.name.into_owned())
         .collect();
@@ -2092,19 +2091,15 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         })
         .await
         .expect("transport comparison client");
-    let stdio = crate::sdk(
-        &owner
-            .mcp_client_issue_credential(McpClientMutationParams {
-                client_id: comparison.client_id,
-                expected_revision: comparison.revision,
-                idempotency_key: "compare-stdio-catalog".into(),
-            })
-            .await
-            .expect("separate transport client")
-            .credential,
-        None,
-    )
-    .await;
+    let credential = owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: comparison.client_id,
+            expected_revision: comparison.revision,
+            idempotency_key: "compare-stdio-catalog".into(),
+        })
+        .await
+        .expect("separate transport client");
+    let stdio = crate::sdk(&credential.credential, None).await;
     let mut stdio_names: Vec<_> = stdio
         .list_all_tools()
         .await
@@ -2114,6 +2109,19 @@ async fn frozen_sdk_oauth_real_core_identity_and_package_flow() {
         .collect();
     stdio_names.sort_unstable();
     assert_eq!(names, stdio_names);
+    let bearer_server = HttpFixture::start().await;
+    let bearer = crate::sdk(&credential.credential, Some(&bearer_server.url)).await;
+    let mut bearer_names: Vec<_> = bearer
+        .list_all_tools()
+        .await
+        .expect("HTTP Bearer catalogue")
+        .into_iter()
+        .map(|tool| tool.name.into_owned())
+        .collect();
+    bearer_names.sort_unstable();
+    assert_eq!(names, bearer_names);
+    stop(bearer).await;
+    bearer_server.finish().await;
     assert!(
         names
             .iter()

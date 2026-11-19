@@ -242,6 +242,7 @@ struct State {
 #[derive(Clone)]
 struct BoundRequest {
     service: Arc<ProtocolService>,
+    call_writes: Result<Option<bool>, ErrorData>,
     deadline: Instant,
     notifications: bool,
     subscription: Arc<Mutex<Option<(subscriptions::Prepared, Instant)>>>,
@@ -376,15 +377,7 @@ impl State {
         let mut core =
             match tokio::time::timeout_at(deadline, AlcomdClient::connect(config.clone())).await {
                 Ok(Ok(core)) => core,
-                Ok(Err(ClientError::Remote(e)))
-                    if matches!(
-                        e.code.as_str(),
-                        "permission_denied"
-                            | "authorization_required"
-                            | "mcp_oauth_invalid_grant"
-                            | "mcp_oauth_expired"
-                    ) =>
-                {
+                Ok(Err(error)) if is_credential_rejection(&error) => {
                     return self.unauthorized(true);
                 }
                 _ => return rejected(StatusCode::SERVICE_UNAVAILABLE),
@@ -425,6 +418,24 @@ impl State {
         let notifications =
             core.supports_capability(alcomd_protocol::CAPABILITY_MCP_TOOLS_NOTIFICATIONS_V1);
         let is_listen = method == "subscriptions/listen";
+        // Resolve tool metadata after reading the body but before the SDK can
+        // send SSE headers. A revoked credential here has reached no business call.
+        let call_writes = match (method, value["params"]["name"].as_str()) {
+            ("tools/call", Some(name)) => {
+                match tokio::time::timeout_at(deadline, tools::descriptor(&mut core, name)).await {
+                    Ok(Ok(tool)) => Ok(tool.as_ref().map(tools::descriptor_writes)),
+                    Ok(Err(error)) if is_credential_rejection(&error) => {
+                        return self.unauthorized(true);
+                    }
+                    Ok(Err(_)) => Err(ErrorData::internal_error(
+                        "The current tool catalogue is unavailable.",
+                        None,
+                    )),
+                    Err(_) => Err(ErrorData::internal_error("Core catalogue timed out", None)),
+                }
+            }
+            _ => Ok(None),
+        };
         let (core, subscription) =
             if is_listen {
                 if !is_listen_hint {
@@ -477,6 +488,7 @@ impl State {
             .map(|_| Instant::now() + subscriptions::MAX_AGE);
         let binding = BoundRequest {
             service: Arc::clone(&service),
+            call_writes,
             deadline,
             notifications,
             subscription: Arc::new(Mutex::new(subscription.zip(subscription_deadline))),
@@ -558,6 +570,13 @@ impl State {
             None => rejected(StatusCode::UNAUTHORIZED),
         }
     }
+}
+
+fn is_credential_rejection(error: &ClientError) -> bool {
+    matches!(error, ClientError::Remote(remote) if matches!(
+        remote.code.as_str(),
+        "permission_denied" | "authorization_required" | "mcp_oauth_invalid_grant" | "mcp_oauth_expired"
+    ))
 }
 
 fn unique<'a>(headers: &'a hyper::HeaderMap, name: &str) -> Result<Option<&'a str>, ()> {
@@ -825,22 +844,10 @@ impl ServerHandler for HttpHandler {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let bound = self.binding.clone();
-        // Resolve current Core metadata before the business call. Failure here is read-only.
-        let metadata = tokio::time::timeout_at(bound.deadline, async {
-            let mut slot = bound.service.core.lock().await;
-            let core = slot.as_mut().ok_or_else(super::unsupported_method)?;
-            tools::descriptor(core, params.name.as_ref())
-                .await
-                .map_err(|_| {
-                    ErrorData::internal_error("The current tool catalogue is unavailable.", None)
-                })
-        })
-        .await
-        .map_err(|_| ErrorData::internal_error("Core catalogue timed out", None))??;
         // A source change after lookup cannot turn a keyless read into a persistent action.
         // Conservatively retain unknown-write semantics when reserved write controls exist.
-        let writing = match metadata.as_ref() {
-            Some(tool) => tools::descriptor_writes(tool),
+        let writing = match bound.call_writes.clone()? {
+            Some(writes) => writes,
             None if params.name.starts_with("alcomd_ext_")
                 && params
                     .arguments

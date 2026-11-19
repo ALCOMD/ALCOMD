@@ -740,8 +740,8 @@ async fn flow(http: bool) {
     .expect("read-only evidence");
     assert_eq!(
         db.pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
-            .expect("State43"),
-        43
+            .expect("current database schema"),
+        44
     );
     let persisted: i64 = db
         .query_row(

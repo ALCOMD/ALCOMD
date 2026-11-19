@@ -296,11 +296,11 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         .await
         .expect("close only the subscription");
     let visible = sa
-        .list_tools(None)
+        .list_all_tools()
         .await
         .expect("valid isolated Provider fixture");
-    assert!(visible.tools.iter().any(|t| t.name == public("echo")));
-    assert!(!visible.tools.iter().any(|t| t.name == public("projects")));
+    assert!(visible.iter().any(|t| t.name == public("echo")));
+    assert!(!visible.iter().any(|t| t.name == public("projects")));
     let echo = ext(&sa, "echo", json!({"text":"actual Wasm"})).await;
     assert_ne!(echo.is_error, Some(true));
     let echo = echo
@@ -357,14 +357,14 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
         "alcomd_inspect_repository",
     ] {
         assert!(
-            all.tools
-                .iter()
-                .chain(&remainder.tools)
-                .any(|tool| tool.name == name),
+            published.iter().any(|tool| tool.name == name),
             "missing {name}"
         );
     }
-    assert!(remainder.next_cursor.is_none());
+    assert_eq!(
+        remainder.next_cursor.is_some(),
+        all.tools.len() + remainder.tools.len() < published.len()
+    );
     assert!(
         sb.list_tools(Some(
             rmcp::model::PaginatedRequestParams::default().with_cursor(Some(next.clone()))
@@ -590,15 +590,11 @@ async fn frozen_sdk_extension_tools_real_signed_provider_and_core_effects() {
     }
     permission(&mut owner, "mcp.tools.provide", true, "unpublish").await;
     let removed = sa
-        .list_tools(None)
+        .list_all_tools()
         .await
         .expect("valid isolated Provider fixture");
-    assert!(
-        removed
-            .tools
-            .iter()
-            .all(|t| !t.name.starts_with("alcomd_ext_"))
-    );
+    assert!(removed.iter().all(|t| !t.name.starts_with("alcomd_ext_")));
+    assert_eq!(removed.len(), initial.len());
     let last = operations.last().expect("valid isolated Provider fixture");
     let db = rusqlite::Connection::open_with_flags(
         data_root.join("state.db"),

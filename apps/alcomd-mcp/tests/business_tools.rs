@@ -617,7 +617,7 @@ async fn http_request_limits(url: &str, secret: &str) {
             .text()
             .await
             .expect("maximum request response")
-            .contains("alcomd_list_projects")
+            .contains("alcomd_get_project")
     );
 
     let mut slow = BufReader::new(
@@ -691,11 +691,12 @@ async fn http_write_checks_revocation_after_hello(
     .await
     .expect("race response deadline")
     .expect("response");
-    assert!(
-        response.starts_with("HTTP/1.1 401")
-            || (response.starts_with("HTTP/1.1 200") && response.contains("permission_denied"))
-    );
     assert!(!response.contains("operation_id") && !response.contains(secret));
+    assert!(
+        response.starts_with("HTTP/1.1 401"),
+        "{}",
+        response.lines().next().unwrap_or_default()
+    );
     revoked
 }
 async fn call(
@@ -1057,6 +1058,7 @@ async fn package_removal_flow(http: bool) {
             revision: issued.revision,
             ..race
         };
+        let previous_apply_requests = daemon.mcp_apply_request_count();
         http_write_checks_revocation_after_hello(
             url,
             &issued.credential,
@@ -1065,6 +1067,7 @@ async fn package_removal_flow(http: bool) {
             &race_args,
         )
         .await;
+        assert_eq!(daemon.mcp_apply_request_count(), previous_apply_requests);
         stop(race_sdk).await;
     }
     let accepted = data(
