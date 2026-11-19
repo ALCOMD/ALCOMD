@@ -1,9 +1,6 @@
 use std::sync::Mutex;
 
-use tauri::AppHandle;
-
-#[cfg(any(windows, target_os = "linux"))]
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 #[cfg(any(target_os = "linux", test))]
 #[path = "repository_links/linux.rs"]
