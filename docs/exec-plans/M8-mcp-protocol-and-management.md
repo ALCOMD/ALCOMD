@@ -1907,3 +1907,13 @@ Windows 完整仓库门禁首轮在严格 Clippy 中止。新增 Schema 用例�
 - Chromium 使用 `539d8185` 至候选未变化的前端工作区、根 package manifest 和 lockfile。完整单轮 730 通过、4 超时，独立定向复验 4 通过。新的同 SHA 完整远端浏览器结果待验证。
 - 管理扩展人工体验、普通在线扩展源继续按所有者决定延期。真实 Codex 工具目录推送消费、普通浏览器受信任 TLS、持续满载及 TCP 发送缓冲耗尽未执行。此前复现的 Host 激活预算问题已修正并验证，早期其他 `resource_limit` 记录仍保留。当前 Cursor 具名版本协议不兼容。旧模板、UnityPackage 和旧备份格式按 M11，正式签名和发行装配按 M12。A-026 的日志能力保持撤销。
 - 最终远端验证要求同一候选 SHA 的三平台 CI 和 CodeQL。此前 `2735119f6245d7c97552b2c19c5f467c5c0ad4ae` 的 Windows、Ubuntu 及 CodeQL 结果继续保留，macOS 未执行；该批结果仅适用于原候选。M8 收束等待新候选远端证据和所有者确认剩余事项。
+
+### 2026-11-19 M8 候选远端验收
+
+所有者批准完整候选 `83c023566698b2aa013e9f22bb1b3c925d862cf0`。在真实 Windows 用户环境下核对 `main` 工作树、远端 `2735119f6245d7c97552b2c19c5f467c5c0ad4ae`、快进关系及 42 笔签名后，普通快进推送。`ls-remote` 确认远端指向候选。收集的运行均由该次推送自动触发。
+
+- [CI 44531024198](https://github.com/ALCOMD/ALCOMD/actions/runs/44531024198) 的 macOS 和 Ubuntu 均在 `Check` 的全目标严格 Clippy 中止。`business_tools` 测试在 Unix 不能移出 `CoreConfiguration` 的 `client` 字段，编译器返回 `E0509`。该配置只在 Unix 实现 `Drop` 以清理自有临时端点，Windows 不会触发这一编译错误。两个作业的后续测试、构建和浏览器门禁均未执行。
+- 同一 CI 首轮总体失败，Windows 作业完整通过。包含 `Check`、CLI 自启动集成、发布可执行文件、Tauri 无安装包构建、锁文件与差异检查，以及完整 Chromium 单轮 734 通过、0 失败。此结果对应远端 `83c02356`，本机 Chromium 的首轮超时与定向复验继续分别保留。
+- 同 SHA 的 [CodeQL 44531022627](https://github.com/ALCOMD/ALCOMD/actions/runs/44531022627) 首轮通过。Actions、JavaScript/TypeScript、Python、Rust 四个分析作业均通过。
+- 签名修复 `36137b6c707d9c4c3ae8f453adc577e61003c905` 仅为 HTTPS 夹具复制连接配置，保留配置清理、测试断言和全部生产输入。Linux 与 macOS 目标上的最小所有权探针均复现原 `E0509`，修复行能编译。Windows 真实隔离 Core 的同一 OAuth 仓库流程定向 1/0，严格 Clippy、fmt、xtask check、锁定 metadata 和 diff 检查通过。本机完整 Linux 交叉编译在依赖构建前置因缺少 `x86_64-linux-gnu-gcc` 中止，真实 Unix 定向仍待新远端验证。
+- 工作流快照、三平台作业原始日志、交叉探针及 Windows 定向日志保存在 `target/m8-shared-project-assets-20261119/`。本轮未操作原 Core、GUI、真实项目或 Unity。记录时远端保持 `83c02356`，修复候选尚未推送。M8 继续等待同 SHA 三平台门禁。
