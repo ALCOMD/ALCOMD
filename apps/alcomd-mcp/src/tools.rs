@@ -805,6 +805,24 @@ pub(crate) async fn list(
 mod tests {
     use super::*;
     #[test]
+    fn template_write_hints_reflect_destructive_and_idempotent_behavior() {
+        for (name, destructive) in [
+            ("alcomd_edit_project_template", true),
+            ("alcomd_create_project_template", true),
+            ("alcomd_remove_project_template", true),
+            ("alcomd_export_project_template", false),
+        ] {
+            let tool = builtin_definition(name)
+                .expect("valid template tool definition")
+                .expect("published template tool");
+            let flags = serde_json::to_value(tool.annotations).expect("published hints");
+            assert_eq!(flags["readOnlyHint"], false);
+            assert_eq!(flags["destructiveHint"], destructive);
+            assert_eq!(flags["idempotentHint"], true);
+        }
+    }
+
+    #[test]
     fn input_contract_rejects_missing_confirmation_unknown_fields_and_unsafe_revisions() {
         let id = "11111111-1111-4111-8111-111111111111";
         for args in [
