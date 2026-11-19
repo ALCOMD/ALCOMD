@@ -181,7 +181,8 @@ fn project_assets_wire_contract_requires_revision_confirmation_and_closed_change
         "changes":{"addAttachments":[{"sourceFile":"/fixture/file.txt","targetPath":"Assets/file.txt"}]},
         "idempotencyKey":"test-edit"
     });
-    let request: ProjectTemplateEditParams = serde_json::from_value(payload.clone()).unwrap();
+    let request: ProjectTemplateEditParams =
+        serde_json::from_value(payload.clone()).expect("valid template edit payload");
     assert_eq!(
         request.changes.add_attachments[0].target_path,
         "Assets/file.txt"
@@ -189,7 +190,7 @@ fn project_assets_wire_contract_requires_revision_confirmation_and_closed_change
     let mut missing_confirmation = payload.clone();
     missing_confirmation
         .as_object_mut()
-        .unwrap()
+        .expect("template edit object")
         .remove("confirm");
     assert!(serde_json::from_value::<ProjectTemplateEditParams>(missing_confirmation).is_err());
     let mut unexpected_change = payload;
