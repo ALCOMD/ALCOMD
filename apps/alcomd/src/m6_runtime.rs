@@ -336,7 +336,8 @@ fn start_host(
         terminate(&mut child);
         return Err(error(M6ErrorCode::Crashed).with_source(source));
     }
-    let (ready, output) = read_with_timeout(output, Duration::from_millis(5_000), &mut child)?;
+    let (ready, output) =
+        read_with_timeout(output, Duration::from_millis(5_000), &mut child, "ready")?;
     if !bound(&ready, &context.lease, 1)
         || !matches!(ready.body, HostMessageBody::Ready { nonce: value } if value == nonce)
     {
@@ -539,7 +540,7 @@ fn invoke(
             return Err(error(M6ErrorCode::ResourceLimit));
         }
         let output = process.output.take().ok_or_else(internal)?;
-        let (message, returned) = read_with_timeout(output, remaining, &mut process.child)?;
+        let (message, returned) = read_with_timeout(output, remaining, &mut process.child, export)?;
         process.output = Some(returned);
         if !bound(&message, &process.lease, process.host_sequence + 1) {
             terminate(&mut process.child);
@@ -909,6 +910,7 @@ fn read_with_timeout(
     mut output: ChildStdout,
     timeout: Duration,
     child: &mut Child,
+    _phase: &str,
 ) -> Result<(HostMessage, ChildStdout), M6Error> {
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
@@ -923,7 +925,7 @@ fn read_with_timeout(
         }
         Err(source) => {
             #[cfg(feature = "test-kill-gates")]
-            crate::test_support::trace_host_read_limit(timeout, &source);
+            crate::test_support::trace_host_read_limit(_phase, timeout, &source);
             terminate(child);
             Err(error(M6ErrorCode::ResourceLimit).with_source(source))
         }

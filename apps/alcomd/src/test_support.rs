@@ -27,11 +27,12 @@ pub(crate) fn trace_host_invocation_deadline(export: &str, timeout: std::time::D
 }
 
 pub(crate) fn trace_host_read_limit(
+    phase: &str,
     timeout: std::time::Duration,
     reason: &std::sync::mpsc::RecvTimeoutError,
 ) {
     eprintln!(
-        "test Host read limit: budget_ms={} reason={reason}",
+        "test Host read limit: phase={phase} budget_ms={} reason={reason}",
         timeout.as_millis()
     );
 }

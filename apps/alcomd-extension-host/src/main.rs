@@ -93,7 +93,7 @@ async fn run() -> Result<()> {
         return Ok(());
     }
     let mut input = std::io::stdin();
-    let mut output = std::io::stdout();
+    let output = std::io::stdout();
     let bootstrap = read_host_message(&mut input).map_err(|_| anyhow::anyhow!("protocol"))?;
     let HostMessageBody::Bootstrap {
         nonce,
@@ -108,20 +108,16 @@ async fn run() -> Result<()> {
     if extension_id != &arguments.extension || limits != &RuntimeLimits::default() {
         bail!("protocol");
     }
-    write_host_message(
-        &mut output,
-        &HostMessage {
-            protocol_version: HOST_PROTOCOL_VERSION,
-            daemon_epoch: bootstrap.daemon_epoch.clone(),
-            instance_id: bootstrap.instance_id.clone(),
-            lifecycle_generation: bootstrap.lifecycle_generation,
-            sequence: 1,
-            body: HostMessageBody::Ready {
-                nonce: nonce.clone(),
-            },
+    let ready = HostMessage {
+        protocol_version: HOST_PROTOCOL_VERSION,
+        daemon_epoch: bootstrap.daemon_epoch.clone(),
+        instance_id: bootstrap.instance_id.clone(),
+        lifecycle_generation: bootstrap.lifecycle_generation,
+        sequence: 1,
+        body: HostMessageBody::Ready {
+            nonce: nonce.clone(),
         },
-    )
-    .map_err(|_| anyhow::anyhow!("protocol"))?;
+    };
 
     let engine = create_engine()?;
     let component = Component::from_file(&engine, &arguments.component)
@@ -185,6 +181,10 @@ async fn run() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("instantiate"))?;
     let bindings =
         ExtensionV1::new(&mut store, &instance).map_err(|_| anyhow::anyhow!("bindings"))?;
+    // Core starts the separate guest activation budget after receiving Ready.
+    // Complete startup work before reporting that guest exports can run.
+    write_host_message(&mut store.data_mut().protocol.output, &ready)
+        .map_err(|_| anyhow::anyhow!("protocol"))?;
     let result = event_loop(&bindings, &instance, &mut store, limits).await;
     ticker_running.store(false, Ordering::Release);
     let _ = ticker.join();

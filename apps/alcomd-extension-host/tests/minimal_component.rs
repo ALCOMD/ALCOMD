@@ -9,6 +9,52 @@ use alcomd_extensions::{
 use serde_json::json;
 
 #[test]
+fn host_reports_ready_only_for_a_prepared_component() {
+    let root = std::env::temp_dir().join(format!(
+        "alcomd-invalid-host-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    std::fs::create_dir(&root).expect("owned directory");
+    let component = root.join("extension.wasm");
+    std::fs::write(&component, b"invalid component fixture").expect("invalid component file");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_alcomd-extension-host"))
+        .args(["--extension", "dev.alcomd.fixture", "--component"])
+        .arg(&component)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("owned Host");
+    let mut input = BufWriter::new(child.stdin.take().expect("stdin"));
+    send(
+        &mut input,
+        "10000000-0000-4000-8000-000000000001",
+        "20000000-0000-4000-8000-000000000002",
+        1,
+        HostMessageBody::Bootstrap {
+            nonce: "a".repeat(64),
+            lease_id: "30000000-0000-4000-8000-000000000003".into(),
+            extension_id: "dev.alcomd.fixture".into(),
+            api_world: "alcomd:extension/extension-v1@1.0.0".into(),
+            limits: RuntimeLimits::default(),
+        },
+    );
+    drop(input);
+    let output = child.wait_with_output().expect("invalid Host exit");
+    std::fs::remove_file(component).expect("remove fixture file");
+    std::fs::remove_dir(root).expect("remove empty fixture directory");
+    assert!(!output.status.success(), "component cannot start");
+    assert!(
+        output.stdout.is_empty(),
+        "no Ready frame before component preparation"
+    );
+}
+
+#[test]
 fn management_component_links_new_import_and_keeps_permission_failure_readable() {
     let root = std::env::temp_dir().join(format!(
         "alcomd-management-host-{}-{}",
