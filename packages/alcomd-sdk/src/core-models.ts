@@ -41,6 +41,7 @@ export interface UnityHubLocation {
     status: "available" | "not_found" | "unavailable";
     source: "configured" | "discovered" | "none";
     path: string | null;
+    targetToken: string | null;
     configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
 }
 

@@ -258,9 +258,9 @@ fn check_unsafe_boundary(
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const APPROVED: &[&str] = &[
-        // AUMID: process identity only, documented input/output ownership.
+        // App Model: application identity, bounded package presence, registered activation.
         "crates/alcomd-platform/src/windows_app_identity.rs",
-        // VCC opt-out: remove only the current executable's user registration.
+        // Registry: read-only registration lookup and ownership-checked VCC opt-out.
         "crates/alcomd-platform/src/windows_url_handler.rs",
         "crates/alcomd-platform/src/windows_security.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",

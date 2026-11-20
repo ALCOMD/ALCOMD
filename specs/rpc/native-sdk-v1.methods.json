@@ -1452,7 +1452,7 @@
         "unity.hub.open": {
             "kind": "write",
             "capabilities": [
-                "unity.hub.open.v1"
+                "unity.hub.open.v2"
             ],
             "rustMethod": "unity_hub_open",
             "requestType": "UnityHubOpenParams",

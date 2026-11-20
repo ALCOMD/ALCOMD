@@ -888,13 +888,13 @@ State v18，并只在 client 请求时回显已实现的 `extensions.ui.portable
 
 ## 24. M7：Official GUI settings
 
-M7 保留设置 base methods 与独立 `unity.hub.open.v1`。所有者于2026-11-05批准撤销日志、活动记录及提示系统，这是未发布RPC major 1的破坏性删除：`activity.list/get`、`diagnostics.list`、`diagnostics.log.read/history/health`、`diagnostics.log.v1`及其专属权限/DTO不再提供，无兼容别名；旧方法按未知方法拒绝。业务Operation、Event与`events.live.v1`不受影响。
+M7 保留设置 base methods 与独立 `unity.hub.open.v2`。所有者于2026-11-05批准撤销日志、活动记录及提示系统，这是未发布RPC major 1的破坏性删除：`activity.list/get`、`diagnostics.list`、`diagnostics.log.read/history/health`、`diagnostics.log.v1`及其专属权限/DTO不再提供，无兼容别名；旧方法按未知方法拒绝。业务Operation、Event与`events.live.v1`不受影响。
 
 | method | params | result | permission |
 |---|---|---|---|
 | `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
 | `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
-| `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
+| `unity.hub.open` | `expectedRevision`, required nullable `expectedTargetToken` | `outcome: launch_requested \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
 
 Config13 的 `settings.packages.hiddenRepositoryPackages` 按仓库 ID 分组保存关闭的包 ID，默认空清单。
 每组关闭该来源的全部现有及未来版本，不影响其他仓库或本地用户来源；整库开关叠加且保留包偏好。
@@ -920,17 +920,17 @@ settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对
 denylist 的窄例外；Event和普通错误不得因此泄露路径。位置偏好本身不新增
 method、capability、permission、Config version 或 State migration；严格旧客户端须更新新增的发布前响应字段。
 
-已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v1` 和权限
+已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v2` 和权限
 `unity.hub.open`；它不扩大 Project／Editor 的 `unity.launch` 或 registry 的 `unity.manage`。
 仅认证的 `builtin:local-owner` 可调用，且同时要求 `settings.read`，在配置／文件／进程访问前
-完成 Principal 与权限校验。closed params 的 `expectedRevision` 至少为 1；`expectedPath` 必须
-提供，可为 null，否则为无控制字符的非空字符串，最多 4096 UTF-8 字节。它是当前 Core
-effective path 的相等性防护，不是 executable／argv／URL 指令。
+完成 Principal 与权限校验。closed params 的 `expectedRevision` 至少为 1。设置响应的
+`unityHub.targetToken` 与请求的 `expectedTargetToken` 均为必需可空字段。非空令牌是 64 位小写
+十六进制字符串，绑定 Core 解析的启动目标。可用的 MSIX 或 Flatpak 目标可以没有显示路径。
 
-Core 在现有 settings 协调下读取当前配置、验证 revision 并重新检测 Hub，目标与 guard 不同
-返回 `hub_path_changed`，不能自动打开另一个目标。可用的 configured 或 discovered 目标均可
-打开，包括无效手工偏好但默认位置可用的既有 fallback。仅配置路径为 null 且当前确实未发现
-Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程；坏的显式路径无 fallback
+Core 读取当前配置并重新查询 Hub。revision 或目标令牌变化时拒绝启动，目标变化沿用
+`hub_path_changed`。可用的手动目标优先，失效的手动路径可以使用已登记目标。系统接受启动请求时
+返回 `launch_requested`。只有未配置手动路径且查询确认未安装、令牌为 null 时才返回
+download_required`，不启动进程；坏的显式路径无 fallback
 返回 `hub_path_invalid`，I/O 无法验证返回 `hub_unavailable`。GUI 只在 download_required 后
 通过封闭系统适配器打开固定官网 `https://unity.com/download`，Core 不联网或安装程序。
 

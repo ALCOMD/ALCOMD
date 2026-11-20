@@ -41,10 +41,15 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
             .map_err(|error| invalid_installation().with_source(error))?
             .map_err(|error| installation_validation_error(error.kind()).with_source(error))?
             .into_iter()
-            .map(|value| {
+            .map(|discovered| {
+                let value = discovered.executable;
                 let path = value.executable_path().to_path_buf();
-                observation(value, app::UnitySourceKind::KnownInstallRoot)
-                    .map_err(|error| error.with_path(path.to_string_lossy()))
+                let source = if discovered.from_official_list {
+                    app::UnitySourceKind::UnityCliHint
+                } else {
+                    app::UnitySourceKind::KnownInstallRoot
+                };
+                observation(value, source).map_err(|error| error.with_path(path.to_string_lossy()))
             })
             .collect()
     }

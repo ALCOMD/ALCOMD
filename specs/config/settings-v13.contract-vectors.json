@@ -53,7 +53,7 @@
                 "status": "not_found",
                 "source": "none",
                 "path": null,
-                "configuredPathStatus": "unset"
+                "targetToken": null,                "configuredPathStatus": "unset"
             },
             "directories": {
                 "projectDirectory": "/fixture/ALCOMD/Projects",

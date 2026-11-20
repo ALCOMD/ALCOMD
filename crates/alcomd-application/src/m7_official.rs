@@ -255,22 +255,35 @@ pub enum UnityHubConfiguredPathStatus {
     Unavailable,
 }
 
-/// Derived executable evidence. It is never persisted as configuration authority.
+/// Derived location and activation evidence. It is never persisted as configuration authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnityHubLocation {
     pub status: UnityHubStatus,
     pub source: UnityHubSource,
     pub path: Option<String>,
+    pub registered_target: Option<String>,
     pub configured_path_status: UnityHubConfiguredPathStatus,
 }
 
 impl UnityHubLocation {
+    fn launch_target(&self) -> Option<&str> {
+        self.registered_target.as_deref().or(self.path.as_deref())
+    }
+
+    #[must_use]
+    pub fn target_token(&self) -> Option<String> {
+        (self.status == UnityHubStatus::Available)
+            .then(|| self.launch_target())
+            .flatten()
+            .map(hub_target_token)
+    }
     #[must_use]
     pub fn unavailable(configured: bool) -> Self {
         Self {
             status: UnityHubStatus::Unavailable,
             source: UnityHubSource::None,
             path: None,
+            registered_target: None,
             configured_path_status: if configured {
                 UnityHubConfiguredPathStatus::Unavailable
             } else {
@@ -280,7 +293,7 @@ impl UnityHubLocation {
     }
 }
 
-/// Blocking filesystem inspection port. Implementations must not execute Hub or write files.
+/// Blocking system inspection port. Implementations must not execute Hub or change registrations.
 pub trait UnityHubPlatform: Send + Sync + 'static {
     fn normalize_path(&self, path: &str) -> Result<String, OfficialGuiError>;
     fn inspect(&self, configured_path: Option<&str>) -> UnityHubLocation;
@@ -288,9 +301,9 @@ pub trait UnityHubPlatform: Send + Sync + 'static {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnityHubOpenOutcome {
-    /// The operating system accepted process creation; no window readiness is implied.
-    Spawned,
-    /// No configured or discovered executable exists. No process was started.
+    /// The operating system accepted activation or process creation.
+    LaunchRequested,
+    /// No configured or discovered target exists. No activation was attempted.
     DownloadRequired,
 }
 
@@ -299,9 +312,9 @@ mod errors;
 pub use errors::*;
 
 /// Command port separate from read-only location inspection. Implementations revalidate
-/// the Core-resolved target, start it without arguments and retain child-reaping ownership.
+/// the Core-resolved target and retain ownership of any child they start.
 pub trait UnityHubLauncher: Send + Sync + 'static {
-    fn launch(&self, path: &str) -> Result<(), UnityHubOpenError>;
+    fn launch(&self, target: &str) -> Result<(), UnityHubOpenError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -615,12 +628,12 @@ impl M7OfficialApplication {
     }
 
     /// Opens only the current authoritative Hub target for the authenticated local owner.
-    /// expected_path is a comparison guard, never an executable or argument instruction.
+    /// expected_target_token is a comparison guard, never an executable or argument instruction.
     pub async fn open_unity_hub(
         &self,
         access: &AccessContext,
         expected_revision: u64,
-        expected_path: Option<String>,
+        expected_target_token: Option<String>,
     ) -> Result<UnityHubOpenOutcome, UnityHubOpenError> {
         if access.principal() != &PrincipalId::local_owner()
             || access.require(Permission::SettingsRead).is_err()
@@ -629,9 +642,12 @@ impl M7OfficialApplication {
             return Err(UnityHubOpenError::PermissionDenied);
         }
         if expected_revision == 0
-            || expected_path
-                .as_ref()
-                .is_some_and(|path| !valid_hub_path_text(path))
+            || expected_target_token.as_deref().is_some_and(|token| {
+                token.len() != 64
+                    || !token
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            })
         {
             return Err(UnityHubOpenError::InvalidInput);
         }
@@ -641,57 +657,65 @@ impl M7OfficialApplication {
         let launcher = Arc::clone(&self.hub_launcher);
         // Cancellation must not release settings coordination between validation and
         // process-creation acknowledgement. Child lifetime belongs to the launcher.
-        let log_target = expected_path
-            .clone()
-            .map(|path| crate::log_path("unity", path));
         let disk = tokio::task::spawn_blocking(move || {
-            *guard = None;
-            let snapshot = config.load().map_err(|error| {
-                let diagnostic = error.diagnostic_id().map(str::to_owned);
-                let path = error.path().map(str::to_owned);
-                let value = UnityHubOpenError::Unavailable
-                    .with_source(error)
-                    .with_diagnostic_id(diagnostic);
-                match path {
-                    Some(path) => value.with_path(path),
-                    None => value,
+            let mut log_target = None;
+            let result = (|| {
+                *guard = None;
+                let snapshot = config.load().map_err(|error| {
+                    let diagnostic = error.diagnostic_id().map(str::to_owned);
+                    let path = error.path().map(str::to_owned);
+                    let value = UnityHubOpenError::Unavailable
+                        .with_source(error)
+                        .with_diagnostic_id(diagnostic);
+                    match path {
+                        Some(path) => value.with_path(path),
+                        None => value,
+                    }
+                })?;
+                *guard = Some(snapshot.clone());
+                if snapshot.revision != expected_revision {
+                    return Err(UnityHubOpenError::RevisionConflict);
                 }
-            })?;
-            *guard = Some(snapshot.clone());
-            if snapshot.revision != expected_revision {
-                return Err(UnityHubOpenError::RevisionConflict);
-            }
-            let location = platform.inspect(snapshot.settings.unity.hub_path.as_deref());
-            if location.status == UnityHubStatus::Unavailable {
-                return Err(UnityHubOpenError::Unavailable);
-            }
-            if location.path != expected_path {
-                return Err(UnityHubOpenError::PathChanged);
-            }
-            match location.status {
-                UnityHubStatus::Available => {
-                    let path = location.path.ok_or(UnityHubOpenError::Unavailable)?;
-                    launcher.launch(&path)?;
-                    Ok(UnityHubOpenOutcome::Spawned)
+                let location = platform.inspect(snapshot.settings.unity.hub_path.as_deref());
+                if location.status == UnityHubStatus::Unavailable {
+                    return Err(UnityHubOpenError::Unavailable);
                 }
-                UnityHubStatus::NotFound if snapshot.settings.unity.hub_path.is_none() => {
-                    Ok(UnityHubOpenOutcome::DownloadRequired)
+                if location.target_token() != expected_target_token {
+                    return Err(UnityHubOpenError::PathChanged);
                 }
-                UnityHubStatus::NotFound => Err(UnityHubOpenError::PathInvalid),
-                UnityHubStatus::Unavailable => Err(UnityHubOpenError::Unavailable),
-            }
+                match location.status {
+                    UnityHubStatus::Available => {
+                        log_target = location
+                            .path
+                            .as_ref()
+                            .map(|path| crate::log_path("unity", path.clone()));
+                        launcher.launch(
+                            location
+                                .launch_target()
+                                .ok_or(UnityHubOpenError::Unavailable)?,
+                        )?;
+                        Ok(UnityHubOpenOutcome::LaunchRequested)
+                    }
+                    UnityHubStatus::NotFound if snapshot.settings.unity.hub_path.is_none() => {
+                        Ok(UnityHubOpenOutcome::DownloadRequired)
+                    }
+                    UnityHubStatus::NotFound => Err(UnityHubOpenError::PathInvalid),
+                    UnityHubStatus::Unavailable => Err(UnityHubOpenError::Unavailable),
+                }
+            })();
+            (result, log_target)
         });
         let dispatch = async move {
-            let result = disk
+            let (result, log_target) = disk
                 .await
                 .map_err(|error| {
                     UnityHubOpenError::Internal
                         .with_source(error)
                         .with_reason("Unity Hub dispatch worker did not complete")
                 })
-                .and_then(std::convert::identity);
+                .unwrap_or_else(|error| (Err(error), None));
             let (step, outcome, details) = match &result {
-                Ok(UnityHubOpenOutcome::Spawned) => {
+                Ok(UnityHubOpenOutcome::LaunchRequested) => {
                     ("launch_requested", crate::LogOutcome::Succeeded, None)
                 }
                 Ok(UnityHubOpenOutcome::DownloadRequired) => {
@@ -1161,6 +1185,14 @@ fn valid_source_color(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte))
 }
 
+fn hub_target_token(target: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(target.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 fn valid_hub_path_text(value: &str) -> bool {
     !value.is_empty() && value.len() <= 4096 && !value.bytes().any(|byte| byte < 32 || byte == 127)
 }
@@ -1376,7 +1408,7 @@ mod tests {
 
     impl UnityHubPlatform for OpenHubPlatform {
         fn normalize_path(&self, _: &str) -> Result<String, OfficialGuiError> {
-            panic!("open must use the Core-inspected target, not normalize expectedPath")
+            panic!("open must use the Core-inspected target, not normalize the caller's guard")
         }
 
         fn inspect(&self, _: Option<&str>) -> UnityHubLocation {
@@ -1413,6 +1445,7 @@ mod tests {
             status: UnityHubStatus::NotFound,
             source: UnityHubSource::None,
             path: None,
+            registered_target: None,
             configured_path_status: UnityHubConfiguredPathStatus::Unset,
         }
     }
@@ -1425,6 +1458,7 @@ mod tests {
             status: UnityHubStatus::Available,
             source,
             path: Some("/core/resolved-hub".into()),
+            registered_target: None,
             configured_path_status,
         }
     }
@@ -1471,13 +1505,13 @@ mod tests {
         }
         assert_eq!(config.loads.load(Ordering::SeqCst), 0);
         assert_eq!(
-            app.open_unity_hub(&access, 2, platform.location.path.clone())
+            app.open_unity_hub(&access, 2, platform.location.target_token())
                 .await,
             Err(UnityHubOpenError::RevisionConflict)
         );
         assert_eq!(platform.inspections.load(Ordering::SeqCst), 0);
         assert_eq!(
-            app.open_unity_hub(&access, 1, Some("/client/other-hub".into()))
+            app.open_unity_hub(&access, 1, Some(hub_target_token("/client/other-hub")))
                 .await,
             Err(UnityHubOpenError::PathChanged)
         );
@@ -1521,10 +1555,10 @@ mod tests {
                 app.open_unity_hub(
                     &AccessContext::local_owner(),
                     1,
-                    platform.location.path.clone()
+                    platform.location.target_token()
                 )
                 .await,
-                Ok(UnityHubOpenOutcome::Spawned)
+                Ok(UnityHubOpenOutcome::LaunchRequested)
             );
             assert_eq!(
                 launcher.calls.lock().expect("calls").as_slice(),
@@ -1534,6 +1568,27 @@ mod tests {
             assert_eq!(app.candidate_settings().await, Ok(original));
             assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
         }
+    }
+
+    #[tokio::test]
+    async fn registered_hub_can_open_without_a_display_path() {
+        let mut location = available_hub(
+            UnityHubSource::Discovered,
+            UnityHubConfiguredPathStatus::Unset,
+        );
+        location.path = None;
+        location.registered_target = Some("system:hub".into());
+        let token = location.target_token().expect("target token");
+        let (app, _, _, launcher) = open_fixture(location);
+        assert_eq!(
+            app.open_unity_hub(&AccessContext::local_owner(), 1, Some(token))
+                .await,
+            Ok(UnityHubOpenOutcome::LaunchRequested)
+        );
+        assert_eq!(
+            launcher.calls.lock().expect("calls").as_slice(),
+            &["system:hub"]
+        );
     }
 
     #[tokio::test]
@@ -1560,7 +1615,7 @@ mod tests {
             app.open_unity_hub(
                 &AccessContext::local_owner(),
                 1,
-                Some("/old/visible-hub".into())
+                Some(hub_target_token("/old/visible-hub"))
             )
             .await,
             Err(UnityHubOpenError::PathChanged)
@@ -1594,7 +1649,7 @@ mod tests {
                 app.open_unity_hub(
                     &AccessContext::local_owner(),
                     1,
-                    platform.location.path.clone()
+                    platform.location.target_token()
                 )
                 .await,
                 Err(error)
@@ -1622,7 +1677,7 @@ mod tests {
             app.open_unity_hub(
                 &AccessContext::local_owner(),
                 1,
-                platform.location.path.clone()
+                platform.location.target_token()
             )
             .await,
             Err(UnityHubOpenError::Internal)
@@ -1645,7 +1700,7 @@ mod tests {
         ));
         *launcher.blocked.lock().expect("launch gate") = true;
         let application = app.clone();
-        let path = platform.location.path.clone();
+        let path = platform.location.target_token();
         let request = tokio::spawn(async move {
             application
                 .open_unity_hub(&AccessContext::local_owner(), 1, path)
@@ -1705,12 +1760,14 @@ mod tests {
                     status: UnityHubStatus::Available,
                     source: UnityHubSource::Configured,
                     path: Some(path.to_owned()),
+                    registered_target: None,
                     configured_path_status: UnityHubConfiguredPathStatus::Available,
                 },
                 None => UnityHubLocation {
                     status: UnityHubStatus::NotFound,
                     source: UnityHubSource::None,
                     path: None,
+                    registered_target: None,
                     configured_path_status: UnityHubConfiguredPathStatus::Unset,
                 },
             }

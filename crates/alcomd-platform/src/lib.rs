@@ -16,6 +16,7 @@ mod storage_directories;
 mod unity;
 mod unity_hub;
 mod unity_hub_open;
+mod unity_registration;
 
 pub use core_installation::{
     CORE_EXECUTABLE_NAME, core_installation_registration, registered_core_executable,
@@ -55,9 +56,9 @@ pub use project_discovery::{
 #[cfg(windows)]
 pub use unity::is_verified_non_editor_executable;
 pub use unity::{
-    UnityArchitecture, UnityMigrationExit, UnityMigrationProcess, ValidatedUnityExecutable,
-    discover_unity_executables, inspect_unity_installation, launch_unity_editor,
-    spawn_unity_editor_migration, validate_unity_executable,
+    DiscoveredUnityExecutable, UnityArchitecture, UnityMigrationExit, UnityMigrationProcess,
+    ValidatedUnityExecutable, discover_unity_executables, inspect_unity_installation,
+    launch_unity_editor, spawn_unity_editor_migration, validate_unity_executable,
 };
 
 #[cfg(unix)]

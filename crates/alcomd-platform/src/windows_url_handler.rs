@@ -1,10 +1,21 @@
 #![allow(unsafe_code)]
 
-use std::{io, mem::size_of, path::Path, ptr::null_mut};
+use std::{
+    io,
+    mem::size_of,
+    path::Path,
+    ptr::{null, null_mut},
+};
 
 use windows_sys::Win32::{
-    Foundation::{ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_PATH_NOT_FOUND, ERROR_SUCCESS},
-    System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_SZ, RegDeleteTreeW, RegGetValueW},
+    Foundation::{
+        ERROR_FILE_NOT_FOUND, ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS, ERROR_PATH_NOT_FOUND,
+        ERROR_SUCCESS, ERROR_UNSUPPORTED_TYPE,
+    },
+    System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_READ, RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegCloseKey,
+        RegDeleteTreeW, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW,
+    },
 };
 
 fn wide(value: &str) -> Vec<u16> {
@@ -65,6 +76,90 @@ pub fn unregister_owned_url_handler(scheme: &str, identifier: &str, exe: &Path) 
         Ok(())
     } else {
         Err(io::Error::from_raw_os_error(status as i32))
+    }
+}
+
+pub(crate) struct ReadOnlyRegistryKey(HKEY);
+
+impl Drop for ReadOnlyRegistryKey {
+    fn drop(&mut self) {
+        // SAFETY: The handle was returned by RegOpenKeyExW and is owned by this wrapper.
+        unsafe { RegCloseKey(self.0) };
+    }
+}
+
+pub(crate) fn open_read_only(
+    parent: HKEY,
+    name: &str,
+    view: u32,
+) -> io::Result<Option<ReadOnlyRegistryKey>> {
+    let mut key = null_mut();
+    // SAFETY: The path is terminated and the output handle is writable.
+    let status =
+        unsafe { RegOpenKeyExW(parent, wide(name).as_ptr(), 0, KEY_READ | view, &mut key) };
+    match status {
+        ERROR_SUCCESS => Ok(Some(ReadOnlyRegistryKey(key))),
+        status if missing(status) => Ok(None),
+        status => Err(io::Error::from_raw_os_error(status as i32)),
+    }
+}
+
+impl ReadOnlyRegistryKey {
+    pub(crate) fn child(&self, name: &str, view: u32) -> io::Result<Option<Self>> {
+        open_read_only(self.0, name, view)
+    }
+
+    pub(crate) fn value(&self, name: &str) -> io::Result<Option<String>> {
+        let mut data = [0_u16; 4097];
+        let mut size = size_of_val(&data) as u32;
+        // SAFETY: The key is live. The name and returned value buffer outlive the call.
+        let status = unsafe {
+            RegGetValueW(
+                self.0,
+                null(),
+                wide(name).as_ptr(),
+                RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ,
+                null_mut(),
+                data.as_mut_ptr().cast(),
+                &mut size,
+            )
+        };
+        match status {
+            ERROR_SUCCESS => {
+                let end = data
+                    .iter()
+                    .position(|unit| *unit == 0)
+                    .unwrap_or(data.len());
+                Ok(String::from_utf16(&data[..end]).ok())
+            }
+            status if missing(status) || status == ERROR_MORE_DATA => Ok(None),
+            // An unrelated registry value of another type is not a discovery failure.
+            ERROR_UNSUPPORTED_TYPE => Ok(None),
+            status => Err(io::Error::from_raw_os_error(status as i32)),
+        }
+    }
+
+    pub(crate) fn child_name(&self, index: u32) -> io::Result<Option<String>> {
+        let mut data = [0_u16; 256];
+        let mut size = data.len() as u32;
+        // SAFETY: The key is live and the buffer capacity is supplied in UTF-16 units.
+        let status = unsafe {
+            RegEnumKeyExW(
+                self.0,
+                index,
+                data.as_mut_ptr(),
+                &mut size,
+                null(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+            )
+        };
+        match status {
+            ERROR_SUCCESS => Ok(Some(String::from_utf16_lossy(&data[..size as usize]))),
+            ERROR_NO_MORE_ITEMS => Ok(None),
+            status => Err(io::Error::from_raw_os_error(status as i32)),
+        }
     }
 }
 

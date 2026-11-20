@@ -17,7 +17,7 @@
     },
     "x-alcomd-capability": null,
     "x-alcomd-method-capabilities": {
-        "unity.hub.open": "unity.hub.open.v1"
+        "unity.hub.open": "unity.hub.open.v2"
     },
     "x-alcomd-redaction": {
         "forbidden": [
@@ -84,7 +84,7 @@
             "additionalProperties": false,
             "required": [
                 "expectedRevision",
-                "expectedPath"
+                "expectedTargetToken"
             ],
             "properties": {
                 "expectedRevision": {
@@ -92,14 +92,12 @@
                     "minimum": 1,
                     "maximum": 18446744073709551615
                 },
-                "expectedPath": {
+                "expectedTargetToken": {
                     "type": [
                         "string",
                         "null"
                     ],
-                    "minLength": 1,
-                    "maxLength": 4096,
-                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                    "pattern": "^[a-f0-9]{64}$"
                 }
             }
         },
@@ -112,7 +110,7 @@
             "properties": {
                 "outcome": {
                     "enum": [
-                        "spawned",
+                        "launch_requested",
                         "download_required"
                     ]
                 }
@@ -129,6 +127,7 @@
                 "status",
                 "source",
                 "path",
+                "targetToken",
                 "configuredPathStatus"
             ],
             "properties": {
@@ -156,6 +155,13 @@
                         "invalid",
                         "unavailable"
                     ]
+                },
+                "targetToken": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "pattern": "^[a-f0-9]{64}$"
                 }
             },
             "allOf": [
@@ -175,7 +181,7 @@
                                     "discovered"
                                 ]
                             },
-                            "path": {
+                            "targetToken": {
                                 "type": "string"
                             }
                         }
@@ -186,6 +192,9 @@
                                 "const": "none"
                             },
                             "path": {
+                                "type": "null"
+                            },
+                            "targetToken": {
                                 "type": "null"
                             }
                         }
@@ -203,6 +212,9 @@
                         "properties": {
                             "configuredPathStatus": {
                                 "const": "available"
+                            },
+                            "path": {
+                                "type": "string"
                             }
                         }
                     }

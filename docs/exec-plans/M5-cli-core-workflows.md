@@ -222,8 +222,7 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
 - 项目首选 Editor 是显式 ProjectId -> EditorId 关系；项目 `ProjectVersion.txt` 继续是兼容校验输入。
   launch arguments 持久化为最多 64 项、单项最多 4,096 bytes 的 string list，不存 shell command
   line，不经 shell 解析，并拒绝 `-projectPath` 及等价重复 selector。
-- Unity 官方当前文档将独立 Unity CLI 标为 experimental，并将 Hub CLI 标为 deprecated；M5 不把
-  两者当权威发现依赖。它们未来最多是经审批的可选 import source。
+- 三平台 Unity 发现使用后续独立计划中的官方安装清单和系统登记。候选仍经过现有 Editor 校验，无须安装 CLI 即可使用系统查询和手动添加。见 [Unity 应用发现](unity-application-discovery.md)。
 
 参考官方材料：
 

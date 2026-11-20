@@ -1,6 +1,9 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const settingsH5Messages: TranslationTable = {
+    "Manually added": { "zh-CN": "手动添加", "ja-JP": "手動で追加" },
+    "Unity installation list": { "zh-CN": "Unity 安装清单", "ja-JP": "Unity インストール一覧" },
+    "Detected by the system": { "zh-CN": "系统检测", "ja-JP": "システムで検出" },
     "Window mode and saved size could not be applied.": { "zh-CN": "无法应用窗口模式和已保存的大小。", "ja-JP": "ウィンドウモードと保存したサイズを適用できませんでした。" },
     "Full screen mode (F11)": { "zh-CN": "全屏模式（F11）", "ja-JP": "全画面モード（F11）" },
     "Window": { "zh-CN": "窗口", "ja-JP": "ウィンドウ" },

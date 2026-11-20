@@ -97,8 +97,8 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                         backupDirectory: update.paths?.backupDirectory === undefined ? previous.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
                     },
                     unityHub: update.unity?.hubPath === undefined ? previous.unityHub : hubPath === null
-                        ? { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" }
-                        : { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" },
+                        ? { status: "not_found", source: "none", path: null, targetToken: null, configuredPathStatus: "unset" }
+                        : { status: "available", source: "configured", path: hubPath, targetToken: "a".repeat(64), configuredPathStatus: "available" },
                     settings: {
                         projects: { ...previous.settings.projects, ...update.projects },
                         backups: { ...previous.settings.backups, ...update.backups },

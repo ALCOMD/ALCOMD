@@ -1,3 +1,4 @@
+import { unityInstallationSourceLabel } from "./unity-installation-source";
 import { ExtensionToolPreview } from "./ExtensionPermissions";
 import { Translated, useTranslation } from "./i18n";
 import { backupCompressionLabel } from "./backup-compression";
@@ -2118,7 +2119,7 @@ export function TemplatesPage({ client, navigate }: PageProps) {
 export function UnityPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => loadAllUnityInstallations(client), [client]);
-    return <UtilityWorkspace table loading={<TableLoading label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} />} changes={["unity"]} title={t(navigationLabels.settings)} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: t("Manage installations"), render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title={t("No Unity installations registered")} /> : <UtilityTable label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(t, item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace table loading={<TableLoading label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} />} changes={["unity"]} title={t(navigationLabels.settings)} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: t("Manage installations"), render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title={t("No Unity installations registered")} /> : <UtilityTable label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, t(unityInstallationSourceLabel(item.sourceKind)), item.installationId] }))} />}</>}</UtilityWorkspace>;
 }
 
 export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {

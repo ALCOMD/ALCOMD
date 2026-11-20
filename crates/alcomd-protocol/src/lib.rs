@@ -202,7 +202,7 @@ pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
 pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 pub const METHOD_UNITY_HUB_OPEN: &str = "unity.hub.open";
-pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
+pub const CAPABILITY_UNITY_HUB_OPEN_V2: &str = "unity.hub.open.v2";
 pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
@@ -2916,6 +2916,8 @@ pub struct UnityHubLocation {
     pub source: UnityHubSource,
     #[serde(deserialize_with = "Option::deserialize")]
     pub path: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub target_token: Option<String>,
     pub configured_path_status: UnityHubConfiguredPathStatus,
 }
 
@@ -2924,7 +2926,7 @@ pub struct UnityHubLocation {
 pub struct UnityHubOpenParams {
     pub expected_revision: u64,
     #[serde(deserialize_with = "Option::deserialize")]
-    pub expected_path: Option<String>,
+    pub expected_target_token: Option<String>,
 }
 
 impl<'de> Deserialize<'de> for UnityHubOpenParams {
@@ -2937,19 +2939,22 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
         struct Fields {
             expected_revision: u64,
             #[serde(deserialize_with = "Option::deserialize")]
-            expected_path: Option<String>,
+            expected_target_token: Option<String>,
         }
         let value = Fields::deserialize(deserializer)?;
         if value.expected_revision == 0
-            || value.expected_path.as_ref().is_some_and(|path| {
-                path.is_empty() || path.len() > 4096 || path.chars().any(char::is_control)
+            || value.expected_target_token.as_deref().is_some_and(|token| {
+                token.len() != 64
+                    || !token
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             })
         {
             return Err(serde::de::Error::custom("invalid Unity Hub evidence guard"));
         }
         Ok(Self {
             expected_revision: value.expected_revision,
-            expected_path: value.expected_path,
+            expected_target_token: value.expected_target_token,
         })
     }
 }
@@ -2957,7 +2962,7 @@ impl<'de> Deserialize<'de> for UnityHubOpenParams {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnityHubOpenOutcome {
-    Spawned,
+    LaunchRequested,
     DownloadRequired,
 }
 

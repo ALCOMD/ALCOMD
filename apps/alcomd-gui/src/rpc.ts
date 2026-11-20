@@ -37,7 +37,7 @@ export interface GuiRpcClient {
     subscribeFileDrag?(receive: (event: FileDrag) => void): Promise<() => void>;
     selectProjectTemplateFile(mode: "open" | "save", fileName?: string, currentPath?: string): Promise<string | undefined>;
     selectUnityHub(currentPath: string | null): Promise<string | undefined>;
-    unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
+    unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult>;
     openUnityHubDownload(): Promise<void>;
     projectRegister(path: string): Promise<ProjectWriteResult>;
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
@@ -237,8 +237,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped<string | null>("gui_select_unity_hub", { currentPath }).then((path) => path ?? undefined);
     }
 
-    unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult> {
-        return invokeTyped("gui_unity_hub_open", { params: { expectedRevision, expectedPath } });
+    unityHubOpen(expectedRevision: number, expectedTargetToken: string | null): Promise<UnityHubOpenResult> {
+        return invokeTyped("gui_unity_hub_open", { params: { expectedRevision, expectedTargetToken } });
     }
 
     openUnityHubDownload(): Promise<void> {
