@@ -1,6 +1,6 @@
 # M9 ALCOMD Discord Presence
 
-状态为实施中。所有者已批准按本计划实施，并要求沿用 v3 的 Discord 应用身份。当前阶段见[项目状态](../status.md)。
+状态为已完成。扩展沿用 v3 的 Discord 应用身份。当前阶段见[项目状态](../status.md)。
 
 ## 交付范围
 
@@ -94,6 +94,17 @@ macOS 前台采样使用已锁定的 `objc2-app-kit = 0.3.2` 与 `objc2 = 0.6.4`
 
 - 所有者批准两仓快进和当前 Windows Discord 账号实机验证，包括为测试重启 Discord。首次快进了主仓 `d3c07abc` 和独立仓库 `4ee687e`。主仓原有四笔提交随普通快进一并推送，所有新增提交逐笔验签。
 - 独立仓库经 `0ff04bcb094d2929618bec9b62d7e3b74c1477a8` 补齐 Rust 和 Python 源码 CodeQL。Windows、Ubuntu、macOS 的开发包构建全部通过，默认 Actions CodeQL 通过，Rust 和 Python 源码分析均通过且各报告 0 项发现。这个提交只添加扫描工作流，实机包内容、摘要和 WIT 保持与 `4ee687e` 一致。[三平台 CI](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151791) · [Actions CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151294) · [源码 CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151598)
-- Windows 实机使用隔离的 Core、两个合成工程、Unity 2022.3.22f1 和已签名的 Discord 1.0.9269。仅发布通用文案 `Editing in Unity`。Discord 对展示与工程结束后的清除均返回 IPC 回执。断开最后一个客户端后重新连接 Core，当前展示仍有效。晚启动、切换工程、显示期间停用、撤权、卸载均通过。撤权和卸载后实例停止并关闭连接，Discord 资料卡没有可观察的原生窗口，未取得每次断开后的视觉证据。
+- Windows 实机使用隔离的 Core、两个合成工程、Unity 2022.3.22f1 和已签名的 Discord 1.0.9269。仅发布通用文案 `Editing in Unity`。Discord 对展示与工程结束后的清除均返回 IPC 回执。断开最后一个客户端后重新连接 Core，当前展示仍有效。晚启动、切换工程、显示期间停用、撤权、卸载均通过，Discord 客户端日志分别记录了停用、撤权和卸载的连接关闭。测试结束后本人资料的「动态」页未见测试状态。补验时资料面板未显示已获 IPC 回执的活动，因此未取得断开自动清除的视觉对照。补验结束时的显式清除也获 Discord 回执。
 - 第一次换端点失败定位到已占用的旧命名管道。Windows 暂态 `ERROR_PIPE_BUSY` 现在会跳过该候选，并对下一个候选继续执行签名对端核验。定向 Windows 测试和实机复验通过。签名 Discord 从 `discord-ipc-0` 换到 `discord-ipc-1` 后重新确认展示，旧端点测试对端收到零协议字节。终止本轮隔离 Host 后，新 Host 重新发布，Discord 返回回执，测试完成后签名 Discord 客户端已恢复运行。[Windows 管道错误合同](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-client)
-- 主仓 `d3c07abc` 的四语言 CodeQL 通过。其 macOS Hosted CI 检查因先前深链接提交缺少 `tauri::Manager` 导入而编译失败，已在 `3155d104` 修复。最终候选包含这一修复和 Windows 换端点修复，三平台 Hosted CI 与 CodeQL 以新 SHA 复验。[首次 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44636975978) · [首次 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44636974959)
+- 主仓 `d3c07abc` 的四语言 CodeQL 通过。其 macOS Hosted CI 检查因先前深链接提交缺少 `tauri::Manager` 导入而编译失败，已在 `3155d104` 修复。Ubuntu 的六项 MCP 综合用例因复用默认 Unix IPC 端点而报 `AlreadyRunning`。`b22ca2cc` 同时包含 macOS 编译修复和 Windows 换端点修复，Ubuntu 再现了这组夹具失败。[首次 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44636975978) · [首次 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44636974959) · [换端点修复候选 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44639111803)
+- `7812dd31` 为 MCP 真实测试统一隔离 Unix 端点。Ubuntu 和 macOS 的 MCP 综合测试各 20 通过、1 失败、3 项原有忽略。六项 `AlreadyRunning` 已消失，剩余 Provider OAuth 夹具误连默认端点，授权入口返回 HTTP 503。Windows 本机同组 21 通过、0 失败、4 项原有忽略。[夹具首轮 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44640177927)
+- 主仓签名候选 `4043d7a817378b84e9796c3b8ad1ba417ed785ce` 让 HTTPS OAuth 夹具也必须传入相同的隔离 Core 配置。Windows 本机 Provider 三传输定向测试 1 通过、0 失败，严格 Clippy、格式和元数据检查通过。同 SHA 的四语言 CodeQL 和三平台整仓 `Check` 通过。Windows、macOS 完整 Hosted CI 通过。Ubuntu CLI、构建和平台门禁通过，完整 Chromium 回归因 60 分钟作业总时限被终止。[候选 Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44642231588) · [候选 CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44642232180) · [Ubuntu 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/44642231588/job/135975916436)
+- 主仓签名候选 `d25eefe2cee53e5c3e6e74b971d3e67e61808deb` 将 Ubuntu Hosted CI 的作业总时限设为 90 分钟，同 SHA 四语言 CodeQL 通过。Ubuntu、macOS 完整 Hosted CI 通过，Chromium 各 738 项通过。Windows 通过 Chromium 前的全部步骤，浏览器回归记录了 706 项通过后因 90 分钟作业总时限被终止。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44650589035) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44650589310) · [Windows 作业](https://github.com/ALCOMD/ALCOMD/actions/runs/44650589035/job/136004180764)
+- 主仓签名候选 `feca8df3bee266c515a4a8806fe85d955ad0d85c` 将三平台的作业总时限统一为 120 分钟，为冷构建和完整浏览器回归预留时间。沿用原测试和单项限额，仓库检查通过，候选已快进至 `main`。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44661714414) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44661714489)
+
+## 2026-11-20 M9 收尾
+
+- 主仓 `feca8df3bee266c515a4a8806fe85d955ad0d85c` 的 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 Hosted CI 均通过。三平台均完成整仓检查、CLI 自动启动、二进制和 Tauri 构建、适用平台边界检查，以及各 738 项 Chromium 回归。真实 MCP 综合测试各 21 通过、0 失败，Windows 有 4 项原有忽略，Unix 各 3 项。Rust、Python、JavaScript/TypeScript 和 Actions CodeQL 四项均通过。[Hosted CI](https://github.com/ALCOMD/ALCOMD/actions/runs/44661714414) · [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/44661714489)
+- 独立扩展 `0ff04bcb094d2929618bec9b62d7e3b74c1477a8` 的 Windows、Ubuntu 和 macOS 构建及 Actions、Rust 和 Python CodeQL 均通过。主仓与独立扩展的签名候选均已验签并与各自远端 `main` 一致。两仓所用的七份 WIT 文件逐字节一致，`background-integration.wit` SHA-256 为 `04d5ffb117c33cf3ca9a71764f4f76127b503b66e6ddae7c5c9980de882c78c0`。实机开发包内容摘要为 `0184f648bdc34612648365541492a3cb590426ebbc09c0efd522595301eb13ff`，归档 SHA-256 为 `60bac5acc95d327516312b2f7808598ca6ffb70d6014a0f1aa1d34ec0ae68520`。[扩展仓库](https://github.com/ALCOMD/alcomd-discord-presence) · [三平台 CI](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151791) · [Actions CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151294) · [源码 CodeQL](https://github.com/ALCOMD/alcomd-discord-presence/actions/runs/44638151598)
+- Windows 实机的首次完整通过覆盖 GUI 关闭、Discord 晚启动和换端点、Unity 工程切换和结束、停用、撤权、卸载与 Host 异常退出。Discord IPC 回执确认通用展示和清除，本机客户端日志确认停用、撤权和卸载时对应连接关闭。本人资料仅用于观察测试后的状态，未取得断连自动清除的视觉对照。实机后的主仓候选更改限于 MCP 测试夹具与 CI 作业时限。Ubuntu 和 macOS 的真实 Unity 与 Discord 桌面闭环按计划延期。
+- 新用户默认安装但禁用沿用 A-019。v3 启用状态迁移归 M11，正式签名、随包装配和发行归 M12。

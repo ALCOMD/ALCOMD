@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M8 已收尾，M9 验收中。** Windows 已完成真实 Unity 与 Discord 的 IPC 验收。独立仓库候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。主仓正在补验 Windows 换端点修复和 macOS 编译修复后的三平台 Hosted CI 与 CodeQL。[M9 实施记录](exec-plans/M9-discord-first-party-extension.md)
+**M9 已完成。** 第一方 Discord 扩展已通过公开 Extension API 接通 Core 和 Host，并沿用 v3 的 Discord 应用身份。主仓候选 `feca8df3` 的三平台 Hosted CI 和四语言 CodeQL 全部通过，Chromium 各 738 项通过。独立扩展候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。Windows 已完成真实 Unity 与 Discord 的 IPC 验收，Ubuntu 和 macOS 的真实桌面验收按计划延期。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)
 
 M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。
 
@@ -351,7 +351,7 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 | 项目动作、包管理 | [项目与包功能收口](exec-plans/M7-project-package-functional-closure.md)、[包候选合同](exec-plans/M7-package-candidate-evidence-stop-a.md)、[VPM 事务](exec-plans/M4-package-transactions.md) |
 | Unity 项目版本迁移 | [Unity 版本迁移合同](exec-plans/M7-unity-project-version-stop-a.md) |
 | GUI 与公开 RPC 用例对照 | [M7 GUI RPC 覆盖](exec-plans/M7-gui-rpc-coverage.md) |
-| Discord 第一方扩展（M9 实施中） | [M9 实施顺序与公共合同](exec-plans/M9-discord-first-party-extension.md) |
+| Discord 第一方扩展（M9 已完成） | [M9 实施顺序、公共合同与验收记录](exec-plans/M9-discord-first-party-extension.md) |
 
 ## 剩余边界与下一停止点
 
@@ -359,6 +359,6 @@ H2-A/Visual Gate 2及H2-B、H3–H6已有签收和保留边界沿用，H7按所�
 - 最终功能证据绑定`c46f7544`；此前候选的失败、分轮结果和历史三平台基线分别保留，不替代本轮完整通过。收尾文档为后续独立提交，不声称其新CI已完成。
 - 14项原有`#[ignore]`未全部直接单跑；子进程入口部分由父回归调用，联网VRCFury、Windows单实例/注册表、显式公开仓库快照及专用HTTP/代理隔离项不计作本轮直接通过。
 - v3 真实工程差分夹具仍属 M11。原生安装、更新、卸载和完整发行验收仍属 M12。后续里程碑按各自授权推进。
-- M7 已正式完成，M8 已按所有者要求收尾。M9 正在实施，下一停止点见 [M9 ExecPlan](exec-plans/M9-discord-first-party-extension.md#实施顺序与停止点)。
+- M7 已正式完成，M8 已按所有者要求收尾，M9 已验收完成。Discord 启用状态迁移和随包装配分别归入 M11 和 M12。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)
 
 [M7 状态与验收历史](testing/m7-status-history-through-20261107.md) 保存原状态页的候选、签收、遗留事项、失败轮次及证据链接。
