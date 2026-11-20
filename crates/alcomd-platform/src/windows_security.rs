@@ -1,13 +1,15 @@
-//! Windows security primitives for current-user IPC and local file checks.
+//! Windows security primitives for current-user IPC, file checks and Core startup.
 
 #![allow(unsafe_code)]
 
-use std::ffi::{OsStr, c_void};
+use std::ffi::{OsStr, OsString, c_void};
 use std::io;
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::io::AsRawHandle;
-use std::ptr::{addr_of, null_mut};
+use std::path::Path;
+use std::process::Command;
+use std::ptr::{addr_of, null, null_mut};
 
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows_sys::Win32::Foundation::{
@@ -25,7 +27,10 @@ use windows_sys::Win32::Security::{
     TOKEN_USER, TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
-use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, GetCurrentProcess,
+    OpenProcessToken, PROCESS_INFORMATION, STARTUPINFOW,
+};
 
 use crate::BindError;
 
@@ -34,6 +39,159 @@ pub(super) fn is_fixed_drive(root: &OsStr) -> bool {
     let root = wide_null(root);
     // SAFETY: the UTF-16 buffer is NUL-terminated and lives across the call.
     (unsafe { GetDriveTypeW(root.as_ptr()) }) == DRIVE_FIXED
+}
+
+/// Starts the selected Core in the background without inheriting caller handles.
+/// The child receives the current environment except for the named variable.
+pub fn start_core_process<'a>(
+    program: &Path,
+    arguments: impl IntoIterator<Item = &'a OsStr>,
+    working_directory: Option<&Path>,
+    excluded_variable: &str,
+) -> io::Result<()> {
+    create_background_process(program, arguments, working_directory, excluded_variable).map(drop)
+}
+
+fn create_background_process<'a>(
+    program: &Path,
+    arguments: impl IntoIterator<Item = &'a OsStr>,
+    working_directory: Option<&Path>,
+    excluded_variable: &str,
+) -> io::Result<OwnedHandle> {
+    let mut command_line =
+        background_command_line(&wide_process_value(program.as_os_str())?, arguments)?;
+    let absolute_program = std::path::absolute(program)?;
+    let mut application = wide_process_value(absolute_program.as_os_str())?;
+    if application.len() > 260 {
+        // Canonical Windows paths use the verbatim prefix, which allows the
+        // verified executable to retain its identity beyond MAX_PATH.
+        application = wide_process_value(absolute_program.canonicalize()?.as_os_str())?;
+    }
+    let directory = working_directory
+        .map(|path| wide_process_value(crate::external_filesystem_path(path).as_os_str()))
+        .transpose()?;
+    let environment = core_environment(std::env::vars_os(), excluded_variable);
+    let startup = STARTUPINFOW {
+        cb: size_of::<STARTUPINFOW>() as u32,
+        ..Default::default()
+    };
+    let mut process = PROCESS_INFORMATION::default();
+    // SAFETY: all inputs are live, NUL-terminated UTF-16 buffers. The Windows
+    // API can write into the command line and the output structure. Inheritance
+    // is disabled and no standard handles are supplied in the startup structure.
+    if unsafe {
+        CreateProcessW(
+            application.as_ptr(),
+            command_line.as_mut_ptr(),
+            null(),
+            null(),
+            0,
+            CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT,
+            environment.as_ptr().cast(),
+            directory.as_ref().map_or(null(), |value| value.as_ptr()),
+            &startup,
+            &mut process,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let _thread = OwnedHandle(process.hThread);
+    Ok(OwnedHandle(process.hProcess))
+}
+
+fn wide_process_value(value: &OsStr) -> io::Result<Vec<u16>> {
+    let wide = wide_null(value);
+    if wide[..wide.len() - 1].contains(&0) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Core launch argument contains a NUL",
+        ));
+    }
+    Ok(wide)
+}
+
+fn background_command_line<'a>(
+    application: &[u16],
+    args: impl IntoIterator<Item = &'a OsStr>,
+) -> io::Result<Vec<u16>> {
+    const QUOTE: u16 = b'"' as u16;
+    const MAX_COMMAND_LINE_UNITS: usize = 32_767;
+    let program = &application[..application.len() - 1];
+    if program.is_empty() || program.contains(&QUOTE) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid Core launch executable",
+        ));
+    }
+
+    // argv[0] has its own Windows parsing rule. A filesystem path has no
+    // literal quote, so enclose it to preserve any whitespace.
+    let mut command_line = vec![QUOTE];
+    command_line.extend_from_slice(program);
+    command_line.push(QUOTE);
+    for arg in args {
+        let wide = wide_process_value(arg)?;
+        command_line.push(b' ' as u16);
+        push_quoted_argument(&mut command_line, &wide[..wide.len() - 1]);
+    }
+    command_line.push(0);
+    if command_line.len() > MAX_COMMAND_LINE_UNITS {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Core launch command line exceeds the Windows limit",
+        ));
+    }
+    Ok(command_line)
+}
+
+fn push_quoted_argument(command_line: &mut Vec<u16>, argument: &[u16]) {
+    const QUOTE: u16 = b'"' as u16;
+    const BACKSLASH: u16 = b'\\' as u16;
+    command_line.push(QUOTE);
+    let mut backslashes = 0;
+    for &unit in argument {
+        if unit == BACKSLASH {
+            backslashes += 1;
+            continue;
+        }
+        if unit == QUOTE {
+            command_line.extend(std::iter::repeat_n(BACKSLASH, 2 * backslashes + 1));
+        } else {
+            command_line.extend(std::iter::repeat_n(BACKSLASH, backslashes));
+        }
+        command_line.push(unit);
+        backslashes = 0;
+    }
+    command_line.extend(std::iter::repeat_n(BACKSLASH, 2 * backslashes));
+    command_line.push(QUOTE);
+}
+
+fn core_environment(
+    variables: impl IntoIterator<Item = (OsString, OsString)>,
+    excluded_variable: &str,
+) -> Vec<u16> {
+    // Use Command's Windows environment-key ordering and ordinal casing. This
+    // sorts the snapshot and removes every OS-equivalent spelling of the
+    // excluded name, while preserving per-drive variables beginning with '='.
+    let mut snapshot = Command::new(OsStr::new("unused"));
+    snapshot
+        .env_clear()
+        .envs(variables)
+        .env_remove(excluded_variable);
+    let mut environment = Vec::new();
+    for (name, value) in snapshot.get_envs() {
+        let Some(value) = value else { continue };
+        environment.extend(name.encode_wide());
+        environment.push(b'=' as u16);
+        environment.extend(value.encode_wide());
+        environment.push(0);
+    }
+    if environment.is_empty() {
+        environment.push(0);
+    }
+    environment.push(0);
+    environment
 }
 
 pub(super) struct WindowsInstanceGuard {
@@ -378,11 +536,136 @@ fn wide_null(value: &OsStr) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use windows_sys::Win32::Foundation::{ERROR_BROKEN_PIPE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::System::Pipes::{CreatePipe, PeekNamedPipe};
+    use windows_sys::Win32::System::Threading::WaitForSingleObject;
+    use windows_sys::Win32::UI::Shell::CommandLineToArgvW;
+
+    const DETACHED_CHILD: &str = "alcomd-detached-core-launch-probe";
+    const TEST_CREDENTIAL: &str = "ALCOMD_MCP_CLIENT_CREDENTIAL";
 
     #[test]
     fn current_sid_is_usable_in_sddl() {
         let sid = current_user_sid_string().expect("current SID");
         assert!(sid.starts_with("S-1-"));
         let _descriptor = descriptor_for_sid(&sid).expect("current-user descriptor");
+    }
+
+    #[test]
+    fn background_arguments_roundtrip_the_native_windows_parser() {
+        let path = OsStr::new(r"C:\Program Files\ALCOMD\alcomd.exe");
+        let surrogate_path = OsString::from_wide(&[b'X' as u16, 0xd800, b'\\' as u16]);
+        let arguments = [
+            OsStr::new(""),
+            OsStr::new("--data-dir"),
+            OsStr::new("C:\\some path\twith spaces\\"),
+            OsStr::new("one\\\\\"two"),
+            surrogate_path.as_os_str(),
+        ];
+        let command = background_command_line(&wide_null(path), arguments).expect("command line");
+        let mut count = 0;
+        // SAFETY: command is terminated by a NUL and count is a writable i32.
+        let parsed = unsafe { CommandLineToArgvW(command.as_ptr(), &mut count) };
+        assert!(!parsed.is_null(), "{}", io::Error::last_os_error());
+        // SAFETY: Windows returned count readable pointers, all NUL-terminated,
+        // in a LocalAlloc block. Copy before releasing the allocation.
+        let decoded = unsafe {
+            let arguments = std::slice::from_raw_parts(parsed, count as usize);
+            let decoded: Vec<_> = arguments
+                .iter()
+                .map(|&argument| {
+                    let length = (0..).take_while(|&at| *argument.add(at) != 0).count();
+                    OsString::from_wide(std::slice::from_raw_parts(argument, length))
+                })
+                .collect();
+            let _ = LocalFree(parsed.cast());
+            decoded
+        };
+        assert_eq!(
+            decoded,
+            [path].into_iter().chain(arguments).collect::<Vec<_>>()
+        );
+        let too_long = OsString::from("a".repeat(32_767));
+        assert!(background_command_line(&wide_null(path), [too_long.as_os_str()]).is_err());
+        assert!(background_command_line(&wide_null(path), [OsStr::new("a\0b")]).is_err());
+    }
+
+    #[test]
+    fn core_environment_excludes_case_variants_and_preserves_native_values() {
+        let units = [
+            ("=C:", r"C:\work"),
+            ("alcomd_mcp_client_credential", "test-marker"),
+            ("Path", r"C:\bin"),
+            ("UNICODE", "目录"),
+        ];
+        let variables = units.map(|(name, value)| (name.into(), value.into()));
+        let block = core_environment(variables, TEST_CREDENTIAL);
+        let expected: Vec<_> = "=C:=C:\\work\0Path=C:\\bin\0UNICODE=目录\0\0"
+            .encode_utf16()
+            .collect();
+        assert_eq!(block, expected);
+        assert_eq!(core_environment([], TEST_CREDENTIAL), [0, 0]);
+    }
+
+    #[test]
+    fn background_process_does_not_keep_an_inheritable_pipe_open() {
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: null_mut(),
+            bInheritHandle: 1,
+        };
+        let mut reader = null_mut();
+        let mut writer = null_mut();
+        // SAFETY: the two writable handle slots and initialized attributes live
+        // across CreatePipe. On success both handles are owned by this test.
+        let created = unsafe { CreatePipe(&mut reader, &mut writer, &attributes, 0) };
+        assert_ne!(created, 0);
+        let reader = OwnedHandle(reader);
+        let writer = OwnedHandle(writer);
+        let program = std::env::current_exe().expect("current test executable");
+        let args = [
+            "--exact",
+            "windows::security::tests::background_process_child",
+            "--skip",
+            DETACHED_CHILD,
+        ];
+        let child = create_background_process(
+            &program,
+            args.map(OsStr::new),
+            program.parent(),
+            TEST_CREDENTIAL,
+        )
+        .expect("start detached test child");
+        drop(writer);
+        // SAFETY: child owns a valid process handle and this wait does not
+        // consume it. The child must still be alive while its pipe is checked.
+        assert_eq!(unsafe { WaitForSingleObject(child.0, 0) }, WAIT_TIMEOUT);
+        // SAFETY: only the live pipe handle is needed to check for a writer.
+        // All optional output pointers are null and no buffer is supplied.
+        let peeked =
+            unsafe { PeekNamedPipe(reader.0, null_mut(), 0, null_mut(), null_mut(), null_mut()) };
+        assert_eq!(
+            peeked, 0,
+            "the detached child inherited the writable handle"
+        );
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(ERROR_BROKEN_PIPE as i32)
+        );
+        // SAFETY: the live process handle is still owned by child. Verify that
+        // the pipe had no writer while the process was definitely still alive.
+        let during_check = unsafe { WaitForSingleObject(child.0, 0) };
+        assert_eq!(during_check, WAIT_TIMEOUT);
+        // SAFETY: the process handle remains valid through this bounded wait.
+        let exited = unsafe { WaitForSingleObject(child.0, 10_000) };
+        assert_eq!(exited, WAIT_OBJECT_0);
+    }
+
+    #[test]
+    fn background_process_child() {
+        if std::env::args_os().any(|argument| argument == DETACHED_CHILD) {
+            std::thread::sleep(Duration::from_millis(800));
+        }
     }
 }

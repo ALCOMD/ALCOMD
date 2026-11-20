@@ -192,16 +192,21 @@ async function stopChild(child, exited, label) {
 async function readReadyLine(child, exited, timeout, label) {
     const ready = createInterface({ input: child.stdout });
     try {
-        const [line] = await within(Promise.race([
+        const output = Promise.race([
             once(ready, "line"),
+            once(ready, "close").then(() => { throw new Error(`${label} closed stdout before reporting readiness.`); })
+        ]);
+        const [line] = await within(Promise.race([
+            output,
             exited.then(([code, signal]) => {
-                throw new Error(`${label} exited before reporting readiness (code ${code}, signal ${signal}).`);
+                if (code !== 0) throw new Error(`${label} exited before reporting readiness (code ${code}, signal ${signal}).`);
+                return output;
             })
         ]), timeout, `${label} readiness`);
         return line;
     } finally {
         ready.close();
-        child.stdout.resume();
+        child.stdout.destroy();
     }
 }
 
@@ -214,6 +219,22 @@ async function openNodeConsumer(mode) {
     } catch (error) {
         await stopChild(child, exited, "Stop failed Node cold consumer");
         throw error;
+    }
+}
+
+async function connectColdRust() {
+    const child = start(rustExample, ["probe"], ["ignore", "pipe", "inherit"]);
+    const exited = observeExit(child);
+    try {
+        // The Core started by the Rust consumer can outlive the probe. Read its
+        // single JSON report and wait for the consumer process, not pipe EOF.
+        const [line] = await Promise.all([
+            readReadyLine(child, exited, 35_000, "Rust cold consumer"),
+            expectExit(exited, 45_000, "Rust cold consumer")
+        ]);
+        return probeResult(line);
+    } finally {
+        await stopChild(child, exited, "Stop Rust cold consumer");
     }
 }
 
@@ -314,13 +335,14 @@ try {
 
         phase("Connect Node and Rust in parallel from a cold start");
         const nodeReady = openNodeConsumer("hold");
-        // Attach a handler immediately while the independent Rust program connects.
-        nodeReady.catch(() => {});
-        const parallelRust = Promise.resolve().then(() => rustProbe("probe"));
+        const parallelRust = connectColdRust();
         parallelRust.catch(() => {});
-        const held = await nodeReady;
+        const held = await nodeReady.catch(async (error) => {
+            await parallelRust.catch(() => {});
+            throw error;
+        });
         try {
-            const parallel = probeResult(success(await parallelRust, "Parallel Rust cold connection"));
+            const parallel = await parallelRust;
             assert.equal(parallel.instanceId, held.result.instanceId);
             assert.notEqual(parallel.instanceId, initialized.instanceId);
             phase("Attach Rust to the running Core during the Node event subscription");

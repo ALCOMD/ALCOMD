@@ -27,6 +27,7 @@ mod security;
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_publish::publish_path_no_replace;
 pub use local_ipc::connect_verified_local_pipe;
+pub use security::start_core_process;
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {

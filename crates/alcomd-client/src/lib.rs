@@ -32,6 +32,7 @@ pub use m8_oauth::OAuthRejection;
 
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
+const MCP_CREDENTIAL_ENVIRONMENT_KEY: &str = "ALCOMD_MCP_CLIENT_CREDENTIAL";
 static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// Client connection settings.
@@ -1530,10 +1531,20 @@ async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientE
 }
 
 fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
-    daemon_command(config)?
-        .spawn()
-        .map_err(ClientError::StartDaemon)?;
-    Ok(())
+    let command = daemon_command(config)?;
+    #[cfg(windows)]
+    let started = alcomd_platform::start_core_process(
+        std::path::Path::new(command.get_program()),
+        command.get_args(),
+        command.get_current_dir(),
+        MCP_CREDENTIAL_ENVIRONMENT_KEY,
+    );
+    #[cfg(not(windows))]
+    let started = {
+        let mut command = command;
+        command.spawn().map(drop)
+    };
+    started.map_err(ClientError::StartDaemon)
 }
 
 fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
@@ -1557,7 +1568,7 @@ fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
             None => Command::new(sibling_daemon_path()?),
         }
     };
-    command.env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL");
+    command.env_remove(MCP_CREDENTIAL_ENVIRONMENT_KEY);
     if let Some(runtime_directory) = &config.runtime_directory {
         command.arg("--runtime-dir").arg(runtime_directory);
     }
@@ -1667,10 +1678,10 @@ mod connection_reuse_tests {
             .with_mcp_credential(marker.clone());
         assert!(!format!("{config:?}").contains(&marker));
         let command = daemon_command(&config).expect("construct, never spawn");
-        assert!(
-            command
-                .get_envs()
-                .any(|(key, value)| key == "ALCOMD_MCP_CLIENT_CREDENTIAL" && value.is_none())
+        let environment: Vec<_> = command.get_envs().collect();
+        assert_eq!(
+            environment,
+            [(std::ffi::OsStr::new(MCP_CREDENTIAL_ENVIRONMENT_KEY), None)]
         );
     }
 
