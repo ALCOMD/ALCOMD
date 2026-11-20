@@ -677,6 +677,19 @@ test("Candidate reads share a two-request bound across independent menu/traversa
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
+for (const [action, name] of [["Install", "Remote tools"], ["Update", "Avatar tools"]] as const) {
+    test(`Default ${action} leaves version and source selection to Core`, async ({ page }) => {
+        await open(page);
+        const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${name}`, exact: true }) });
+        await row.getByRole("button", { name: action, exact: true }).click();
+        await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
+        const request = await page.evaluate(() => window.packageRequests[0]);
+        expect(request?.method).toBe(action === "Install" ? "install" : "upgrade");
+        expect(request?.params).not.toHaveProperty("versionRange");
+        expect(request?.params).not.toHaveProperty("source");
+    });
+}
+
 test("Changing source immediately invalidates the old target until the matching source query completes", async ({ page }) => {
     await open(page, "versions=1&delaySource=1");
     await expect(page.getByRole("button", { name: "Update", exact: true })).toBeEnabled();

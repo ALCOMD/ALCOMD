@@ -1225,12 +1225,12 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
     />;
 }
 
-function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, onSelect, onRemove, row }: { canPlanV1: boolean; canPlanV2: boolean; catalogReady: boolean; evidence?: PackageCandidateSummary; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onRemove(origin: DialogOrigin): void; row: PackageWorkspaceRow }) {
+function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, onSelect, onRemove, row }: { canPlanV1: boolean; canPlanV2: boolean; catalogReady: boolean; evidence?: PackageCandidateSummary; onSelect(origin: DialogOrigin): void; onRemove(origin: DialogOrigin): void; row: PackageWorkspaceRow }) {
     const { t } = useTranslation();
     const origin = useRef<HTMLElement>(null);
     const installChoice = evidence?.recommended;
     if (row.installedVersion !== undefined) return <IconButton className="package-primary-action material-button--danger" disabled={!canPlanV1} label={t("Remove")} onClick={() => onRemove(origin)} ref={origin} title={t("Remove {value0}", { value0: row.displayName })} type="button"><Icon asset={cancelIcon} /></IconButton>;
-    return <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") onSelect(installChoice.candidate, origin); }} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={addCircleIcon} /></IconButton>;
+    return <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") onSelect(origin); }} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={addCircleIcon} /></IconButton>;
 }
 
 function PackageSourcePicker({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
@@ -1245,14 +1245,14 @@ function PackageSourcePicker({ label, onChange, options, value, disabled }: { la
     ]} value={value} /></div>;
 }
 
-function PackageLatestInfo({ evidence, row, canPlan, onSelect }: { evidence?: PackageCandidateSummary; row: PackageWorkspaceRow; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void }) {
+function PackageLatestInfo({ evidence, row, canPlan, onSelect }: { evidence?: PackageCandidateSummary; row: PackageWorkspaceRow; canPlan: boolean; onSelect(origin: DialogOrigin): void }) {
     const { t } = useTranslation();
     const origin = useRef<HTMLElement>(null);
     if (evidence === undefined) return <>—</>;
     const candidate = evidence.projectLatest.kind === "candidate" ? evidence.projectLatest.candidate : undefined;
     const update = evidence.update.kind === "target" ? evidence.update.candidate : undefined;
     const incompatible = evidence.latest.kind === "candidate" && evidence.latest.candidate.unity === "incompatible" ? t("Incompatible version: {version}", { version: evidence.latest.candidate.version }) : undefined;
-    if (update !== undefined) return <Button aria-label={t("Update")} className="package-latest-update" disabled={!canPlan} onClick={() => onSelect(update, origin)} ref={origin} title={incompatible ?? t("Update {value0}", { value0: row.displayName })} type="button" variant="outlined"><Icon asset={upgradeIcon} slot="icon" />{update.version}</Button>;
+    if (update !== undefined) return <Button aria-label={t("Update")} className="package-latest-update" disabled={!canPlan} onClick={() => onSelect(origin)} ref={origin} title={incompatible ?? t("Update {value0}", { value0: row.displayName })} type="button" variant="outlined"><Icon asset={upgradeIcon} slot="icon" />{update.version}</Button>;
     return <span title={incompatible ?? updateReason(evidence.update, t)}>{candidate?.version ?? "—"}</span>;
 }
 
@@ -1684,10 +1684,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         if (selectedKey?.startsWith("user-package:")) return { kind: "user_package", userPackageId: selectedKey.slice(13) };
         return undefined;
     };
-    const selectAction = (action: PackageActionSelection["action"], origin: DialogOrigin, row?: PackageWorkspaceRow, version?: string) => {
+    const selectAction = (action: PackageActionSelection["action"], origin: DialogOrigin, row?: PackageWorkspaceRow, candidateSnapshot?: string) => {
         const packageId = row?.packageId ?? "";
         const source = row === undefined ? undefined : selectedSource(row);
-        setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
+        setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId, ...(candidateSnapshot === undefined ? {} : { candidateSnapshot }), ...(source === undefined ? {} : { source }) });
     };
     const refreshPackages = async (reload: () => void) => {
         if (repositoryRefreshPending.current) return;
@@ -1814,9 +1814,9 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                         <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={selectRow} />,
                                         <><strong title={evidence?.description}>{row.displayName}</strong><small>{row.packageId}</small></>,
                                         <PackageVersionPicker client={client} project={project} source={selectedSource(row)} snapshot={candidates?.snapshot.fingerprint} disabled={!canQueryCandidates || !currentEvidence} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin, automaticSource) => chooseCandidate(row, option, origin, automaticSource)} row={row} />,
-                                        <PackageLatestInfo canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />,
+                                        <PackageLatestInfo canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} evidence={evidence} onSelect={(origin) => selectAction("upgrade", origin, row, candidates?.snapshot.fingerprint)} row={row} />,
                                         row.sourceOptions.length === 0 ? <span>{evidence === undefined ? "—" : t("Unknown source")}</span> : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
-                                        <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onRemove={(origin) => selectAction("remove", origin, row)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
+                                        <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onRemove={(origin) => selectAction("remove", origin, row)} onSelect={(origin) => selectAction("install", origin, row, candidates?.snapshot.fingerprint)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                     ] };
                                 })}
                             />
