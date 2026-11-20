@@ -1,4 +1,5 @@
-import type { RpcError } from "./index";
+import type { Operation } from "./core-models.js";
+import type { RpcError } from "./portable-ui.js";
 
 export type CoreEventAggregateKind = "operation" | "project" | "repository" | "unity-installation"
     | "project-editor-preference" | "project-unity-launch-config" | "project-template" | "user-package";
@@ -71,7 +72,7 @@ export interface OperationsListParams {
 }
 
 /** Shared envelope shape without redefining the application's Operation DTO. */
-export interface OperationsListResult<T> {
+export interface OperationsListResult<T = Operation> {
     operations: T[];
     activeCount: number;
     nextCursor?: OperationsListCursor;

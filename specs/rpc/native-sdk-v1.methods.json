@@ -1,0 +1,1621 @@
+{
+    "rpcVersion": 1,
+    "errors": "rpc-error.schema.json",
+    "requestErrorCodes": [
+        "handshake_required",
+        "invalid_request",
+        "method_not_found"
+    ],
+    "capabilityErrorCode": "capability_required",
+    "errorProfiles": {
+        "backup": [
+            "backup_archive_limit_exceeded",
+            "backup_integrity_mismatch",
+            "backup_not_found",
+            "backup_restore_plan_not_found",
+            "backup_restore_plan_stale",
+            "backup_restore_recovery_required",
+            "backup_source_unsafe",
+            "backup_target_exists",
+            "backup_target_invalid",
+            "backup_unavailable",
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_changed_during_backup",
+            "project_not_registered",
+            "revision_conflict",
+            "store_unavailable",
+            "unity_project_running"
+        ],
+        "extension": [
+            "extension_already_installed",
+            "extension_api_unsupported",
+            "extension_crashed",
+            "extension_data_owner_mismatch",
+            "extension_data_quota_exceeded",
+            "extension_instance_stale",
+            "extension_manifest_invalid",
+            "extension_not_installed",
+            "extension_package_invalid",
+            "extension_package_untrusted",
+            "extension_plan_stale",
+            "extension_quarantined",
+            "extension_recovery_required",
+            "extension_resource_limit",
+            "extension_scope_denied",
+            "extension_signature_invalid",
+            "extension_source_invalid",
+            "extension_source_unavailable",
+            "idempotency_conflict",
+            "internal_error",
+            "package_download_too_large",
+            "package_integrity_mismatch",
+            "permission_denied",
+            "project_not_found",
+            "revision_conflict",
+            "store_unavailable"
+        ],
+        "extensionUi": [
+            "extension_crashed",
+            "extension_instance_stale",
+            "extension_not_enabled",
+            "extension_not_installed",
+            "extension_permission_denied",
+            "extension_quarantined",
+            "extension_resource_limit",
+            "extension_scope_denied",
+            "extension_ui_action_invalid",
+            "extension_ui_document_invalid",
+            "extension_ui_limit_exceeded",
+            "extension_ui_not_available",
+            "extension_ui_protocol_unsupported",
+            "extension_ui_session_not_found",
+            "extension_ui_session_stale",
+            "extension_ui_snapshot_stale",
+            "internal_error",
+            "permission_denied",
+            "store_unavailable"
+        ],
+        "operationCancel": [
+            "idempotency_conflict",
+            "internal_error",
+            "operation_not_cancellable",
+            "operation_not_found",
+            "permission_denied",
+            "revision_conflict",
+            "store_unavailable"
+        ],
+        "operationGet": [
+            "internal_error",
+            "operation_not_found",
+            "permission_denied",
+            "store_unavailable"
+        ],
+        "packageCandidates": [
+            "internal_error",
+            "package_candidate_evidence_stale",
+            "package_candidate_limit_exceeded",
+            "permission_denied",
+            "project_manifest_invalid",
+            "project_not_registered",
+            "revision_conflict"
+        ],
+        "packageTransaction": [
+            "idempotency_conflict",
+            "internal_error",
+            "offline_cache_miss",
+            "package_archive_invalid",
+            "package_archive_limit_exceeded",
+            "package_archive_unsupported_compression",
+            "package_cache_corrupt",
+            "package_cache_quota_exceeded",
+            "package_dependency_conflict",
+            "package_dependency_missing",
+            "package_download_too_large",
+            "package_hash_required",
+            "package_integrity_mismatch",
+            "package_intent_conflict",
+            "package_legacy_cleanup_required",
+            "package_manifest_invalid",
+            "package_not_found",
+            "package_not_installed",
+            "package_path_collision",
+            "package_path_invalid",
+            "package_range_invalid",
+            "package_source_ambiguous",
+            "package_unity_incompatible",
+            "package_version_invalid",
+            "package_version_yanked",
+            "permission_denied",
+            "plan_not_found",
+            "plan_stale",
+            "plan_too_large",
+            "project_changed_during_apply",
+            "project_not_registered",
+            "project_transaction_recovery_required",
+            "repository_refresh_required",
+            "revision_conflict",
+            "store_unavailable"
+        ],
+        "projectCopy": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_copy_limit_exceeded",
+            "project_copy_plan_not_found",
+            "project_copy_plan_stale",
+            "project_copy_recovery_required",
+            "project_copy_source_changed",
+            "project_copy_source_missing",
+            "project_copy_source_unsafe",
+            "project_copy_target_exists",
+            "project_copy_target_unsafe",
+            "project_not_registered",
+            "revision_conflict",
+            "store_unavailable",
+            "unity_project_running"
+        ],
+        "projectCreate": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_create_destination_changed",
+            "project_create_target_exists",
+            "revision_conflict",
+            "store_unavailable",
+            "template_builtin_immutable",
+            "template_conflict",
+            "template_dependency_unsatisfied"
+        ],
+        "projectDelete": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_delete_plan_not_found",
+            "project_delete_plan_stale",
+            "project_delete_recovery_required",
+            "project_delete_source_changed",
+            "project_delete_source_missing",
+            "project_delete_source_unsafe",
+            "project_not_registered",
+            "revision_conflict",
+            "store_unavailable",
+            "unity_project_running"
+        ],
+        "projectRegistry": [
+            "idempotency_conflict",
+            "internal_error",
+            "path_encoding_unsupported",
+            "permission_denied",
+            "project_already_registered",
+            "project_inaccessible",
+            "project_manifest_invalid",
+            "project_not_found",
+            "project_not_registered",
+            "project_version_invalid",
+            "project_version_missing",
+            "revision_conflict",
+            "store_unavailable"
+        ],
+        "repositoryList": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "repository_list_changed",
+            "repository_list_configuration_failed",
+            "repository_list_import_incomplete",
+            "repository_list_invalid",
+            "store_unavailable"
+        ],
+        "repositoryRegistry": [
+            "idempotency_conflict",
+            "internal_error",
+            "path_encoding_unsupported",
+            "permission_denied",
+            "repository_already_registered",
+            "repository_credentials_unsupported",
+            "repository_document_invalid",
+            "repository_document_too_large",
+            "repository_inaccessible",
+            "repository_not_found",
+            "repository_not_registered",
+            "repository_source_invalid",
+            "repository_unavailable",
+            "revision_conflict",
+            "store_unavailable"
+        ],
+        "settingsGet": [
+            "internal_error",
+            "permission_denied"
+        ],
+        "settingsUpdate": [
+            "internal_error",
+            "permission_denied",
+            "revision_conflict"
+        ],
+        "stateCheck": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "store_unavailable"
+        ],
+        "storeRead": [
+            "internal_error",
+            "permission_denied",
+            "store_unavailable"
+        ],
+        "unity": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_not_registered",
+            "revision_conflict",
+            "store_unavailable",
+            "unity_editor_selection_required",
+            "unity_installation_in_use",
+            "unity_installation_invalid",
+            "unity_installation_not_found",
+            "unity_launch_failed",
+            "unity_launch_not_found",
+            "unity_launch_state_uncertain",
+            "unity_project_running",
+            "unity_project_selector_forbidden",
+            "unity_version_mismatch",
+            "unity_version_unverified"
+        ],
+        "unityHub": [
+            "hub_open_busy",
+            "hub_open_failed",
+            "hub_path_changed",
+            "hub_path_invalid",
+            "hub_unavailable",
+            "internal_error",
+            "permission_denied",
+            "revision_conflict"
+        ],
+        "unityMigration": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "project_not_registered",
+            "project_unity_migration_plan_not_found",
+            "project_unity_migration_plan_stale",
+            "project_unity_migration_recovery_required",
+            "project_unity_migration_source_changed",
+            "project_unity_migration_unsupported",
+            "revision_conflict",
+            "store_unavailable",
+            "unity_installation_not_found",
+            "unity_project_running"
+        ],
+        "userPackage": [
+            "idempotency_conflict",
+            "internal_error",
+            "permission_denied",
+            "revision_conflict",
+            "store_unavailable",
+            "user_package_already_enrolled",
+            "user_package_limit_exceeded",
+            "user_package_manifest_invalid",
+            "user_package_not_found",
+            "user_package_source_changed",
+            "user_package_source_unavailable",
+            "user_package_source_unsafe"
+        ]
+    },
+    "methods": {
+        "backups.applyRestore": {
+            "kind": "write",
+            "capabilities": [
+                "backups.restore.v1"
+            ],
+            "rustMethod": "backup_apply_restore",
+            "requestType": "BackupApplyRestoreParams",
+            "resultType": "BackupApplyRestoreResult",
+            "requestSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreParams",
+            "resultSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreResult",
+            "errorProfiles": [
+                "backup"
+            ]
+        },
+        "backups.create": {
+            "kind": "write",
+            "capabilities": [
+                "backups.create.v1"
+            ],
+            "rustMethod": "backup_create",
+            "requestType": "BackupCreateParams",
+            "resultType": "BackupCreateResult",
+            "requestSchema": "m5-backup-create.schema.json#/$defs/createParams",
+            "resultSchema": "m5-backup-create.schema.json#/$defs/createResult",
+            "errorProfiles": [
+                "backup"
+            ]
+        },
+        "backups.get": {
+            "kind": "read",
+            "capabilities": [
+                "backups.read.v1"
+            ],
+            "rustMethod": "backup_get",
+            "requestType": "BackupGetParams",
+            "resultType": "BackupRecord",
+            "requestSchema": "m5-backup-create.schema.json#/$defs/getParams",
+            "resultSchema": "m5-backup-create.schema.json#/$defs/backupRecord",
+            "errorProfiles": [
+                "backup"
+            ]
+        },
+        "backups.list": {
+            "kind": "read",
+            "capabilities": [
+                "backups.read.v1"
+            ],
+            "rustMethod": "backups_list",
+            "requestType": "BackupsListParams",
+            "resultType": "BackupsListResult",
+            "requestSchema": "m5-backup-create.schema.json#/$defs/listParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/BackupsListResult",
+            "errorProfiles": [
+                "backup"
+            ]
+        },
+        "backups.planRestore": {
+            "kind": "write",
+            "capabilities": [
+                "backups.restore.v1"
+            ],
+            "rustMethod": "backup_plan_restore",
+            "requestType": "BackupPlanRestoreParams",
+            "resultType": "BackupRestorePlan",
+            "requestSchema": "m5-backup-restore.schema.json#/$defs/planRestoreParams",
+            "resultSchema": "m5-backup-restore.schema.json#/$defs/restorePlan",
+            "errorProfiles": [
+                "backup"
+            ]
+        },
+        "events.list": {
+            "kind": "read",
+            "capabilities": [
+                "events.replay.v1"
+            ],
+            "rustMethod": "events_list",
+            "requestType": "EventsListParams",
+            "resultType": "EventsListResult",
+            "requestSchema": "events-list.request.schema.json#/properties/params",
+            "resultSchema": "events-list.response.schema.json#/properties/result",
+            "errorProfiles": [
+                "storeRead"
+            ]
+        },
+        "events.subscribe": {
+            "kind": "stream",
+            "capabilities": [
+                "events.live.v1"
+            ],
+            "rustMethod": "EventSubscription::connect",
+            "requestType": "EventsSubscribeParams",
+            "resultType": "EventsSubscribeResult",
+            "requestSchema": "m7-events-live.schema.json#/$defs/subscribeParams",
+            "resultSchema": "m7-events-live.schema.json#/$defs/subscribeResult",
+            "errorProfiles": [
+                "storeRead"
+            ]
+        },
+        "extensions.applyInstall": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_apply_install",
+            "requestType": "ExtensionInstallApplyParams",
+            "resultType": "ExtensionOperationResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/installApplyParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/operationResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.applyUninstall": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_apply_uninstall",
+            "requestType": "ExtensionApplyParams",
+            "resultType": "ExtensionOperationResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/applyPlanParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/operationResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.disable": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_disable",
+            "requestType": "ExtensionLifecycleParams",
+            "resultType": "ExtensionResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/lifecycleParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/extensionResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.enable": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_enable_with_consent",
+            "requestType": "ExtensionEnableParams",
+            "resultType": "ExtensionResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/enableParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/extensionResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.get": {
+            "kind": "read",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_get",
+            "requestType": "ExtensionIdParams",
+            "resultType": "ExtensionResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/getParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/extensionResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.inspectSource": {
+            "kind": "read",
+            "capabilities": [
+                "extensions.remote-install.v1"
+            ],
+            "rustMethod": "extension_inspect_source",
+            "requestType": "ExtensionInspectSourceParams",
+            "resultType": "ExtensionSourcePreview",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/inspectSourceParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/sourcePreview",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.list": {
+            "kind": "read",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extensions_list",
+            "requestType": "ExtensionsListParams",
+            "resultType": "ExtensionsListResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/listParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/listResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.permissions.list": {
+            "kind": "read",
+            "capabilities": [
+                "extensions.permissions.read.v1"
+            ],
+            "rustMethod": "extension_permissions_list",
+            "requestType": "ExtensionPermissionsListParams",
+            "resultType": "ExtensionPermissionsListResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/permissionsListParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/permissionsListResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.planInstall": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_plan_install",
+            "requestType": "ExtensionPlanInstallParams",
+            "resultType": "ExtensionPlanResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/planInstallParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/planResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.planInstallFromSource": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.remote-install.v1"
+            ],
+            "rustMethod": "extension_plan_install_from_source",
+            "requestType": "ExtensionPlanInstallFromSourceParams",
+            "resultType": "ExtensionPlanResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/planInstallFromSourceParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/planResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.planUninstall": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.lifecycle.v1"
+            ],
+            "rustMethod": "extension_plan_uninstall",
+            "requestType": "ExtensionPlanUninstallParams",
+            "resultType": "ExtensionPlanResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/planUninstallParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/planResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.revokeGrant": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.permissions.v1"
+            ],
+            "rustMethod": "extension_revoke_grant",
+            "requestType": "ExtensionGrantParams",
+            "resultType": "ExtensionGrantResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/grantParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/grantResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.setGrant": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.permissions.v1"
+            ],
+            "rustMethod": "extension_set_grant",
+            "requestType": "ExtensionGrantParams",
+            "resultType": "ExtensionGrantResult",
+            "requestSchema": "m6-extension-runtime.schema.json#/$defs/grantParams",
+            "resultSchema": "m6-extension-runtime.schema.json#/$defs/grantResult",
+            "errorProfiles": [
+                "extension"
+            ]
+        },
+        "extensions.ui.close": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.ui.portable.v1"
+            ],
+            "rustMethod": "extension_ui_close",
+            "requestType": "ExtensionUiCloseParams",
+            "resultType": "ExtensionUiCloseResult",
+            "requestSchema": "m7-portable-ui.schema.json#/$defs/closeParams",
+            "resultSchema": "m7-portable-ui.schema.json#/$defs/closeResult",
+            "errorProfiles": []
+        },
+        "extensions.ui.dispatch": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.ui.portable.v1"
+            ],
+            "rustMethod": "extension_ui_dispatch",
+            "requestType": "ExtensionUiDispatchParams",
+            "resultType": "ExtensionUiDispatchResult",
+            "requestSchema": "m7-portable-ui.schema.json#/$defs/dispatchParams",
+            "resultSchema": "m7-portable-ui.schema.json#/$defs/dispatchResult",
+            "errorProfiles": [
+                "extensionUi"
+            ]
+        },
+        "extensions.ui.open": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.ui.portable.v1"
+            ],
+            "rustMethod": "extension_ui_open",
+            "requestType": "ExtensionUiOpenParams",
+            "resultType": "ExtensionUiOpenResult",
+            "requestSchema": "m7-portable-ui.schema.json#/$defs/openParams",
+            "resultSchema": "m7-portable-ui.schema.json#/$defs/openResult",
+            "errorProfiles": [
+                "extensionUi"
+            ]
+        },
+        "extensions.ui.refresh": {
+            "kind": "write",
+            "capabilities": [
+                "extensions.ui.portable.v1"
+            ],
+            "rustMethod": "extension_ui_refresh",
+            "requestType": "ExtensionUiRefreshParams",
+            "resultType": "ExtensionUiSnapshotResult",
+            "requestSchema": "m7-portable-ui.schema.json#/$defs/refreshParams",
+            "resultSchema": "m7-portable-ui.schema.json#/$defs/snapshotResult",
+            "errorProfiles": [
+                "extensionUi"
+            ]
+        },
+        "logs.read": {
+            "kind": "read",
+            "capabilities": [
+                "logs.read.v1"
+            ],
+            "rustMethod": "logs_read",
+            "requestType": "LogsReadParams",
+            "resultType": "LogsReadResult",
+            "requestSchema": "m7-operation-logs.schema.json#/$defs/params",
+            "resultSchema": "m7-operation-logs.schema.json#/$defs/result",
+            "errorProfiles": [
+                "storeRead"
+            ]
+        },
+        "operations.cancel": {
+            "kind": "write",
+            "capabilities": [
+                "operations.v1"
+            ],
+            "rustMethod": "operation_cancel",
+            "requestType": "OperationsCancelParams",
+            "resultType": "OperationWriteResult",
+            "requestSchema": "operations-cancel.request.schema.json#/properties/params",
+            "resultSchema": "operations-cancel.response.schema.json#/properties/result",
+            "errorProfiles": [
+                "operationCancel"
+            ]
+        },
+        "operations.get": {
+            "kind": "read",
+            "capabilities": [
+                "operations.v1"
+            ],
+            "rustMethod": "operation_get",
+            "requestType": "OperationsGetParams",
+            "resultType": "Operation",
+            "requestSchema": "operations-get.request.schema.json#/properties/params",
+            "resultSchema": "operation.schema.json",
+            "errorProfiles": [
+                "operationGet"
+            ]
+        },
+        "operations.list": {
+            "kind": "read",
+            "capabilities": [
+                "operations.v1"
+            ],
+            "rustMethod": "operations_list",
+            "requestType": "OperationsListParams",
+            "resultType": "OperationsListResult",
+            "requestSchema": "operations-list.request.schema.json#/properties/params",
+            "resultSchema": "operations-list.response.schema.json#/properties/result",
+            "errorProfiles": [
+                "storeRead"
+            ]
+        },
+        "packages.applyPlan": {
+            "kind": "write",
+            "capabilities": [
+                "packages.apply.v1"
+            ],
+            "rustMethod": "package_apply_plan",
+            "requestType": "PackageApplyPlanParams",
+            "resultType": "PackageApplyPlanResult",
+            "requestSchema": "m4-package-transaction.schema.json#/$defs/applyPlanParams",
+            "resultSchema": "m4-package-transaction.schema.json#/$defs/applyPlanResult",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planBulk": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_bulk",
+            "requestType": "PackagePlanBulkParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/PackagePlanBulkParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planDowngrade": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v1",
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_downgrade",
+            "requestType": "PackagePlanDowngradeParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/PackagePlanDowngradeParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planInstall": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v1",
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_install",
+            "requestType": "PackagePlanInstallParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/PackagePlanInstallParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planReinstall": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_reinstall",
+            "requestType": "PackagePlanReinstallParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/planReinstallParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planRemove": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v1",
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_remove",
+            "requestType": "PackagePlanRemoveParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "m4-package-transaction.schema.json#/$defs/planRemoveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planResolve": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v1",
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_resolve",
+            "requestType": "PackagePlanResolveParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "m4-package-transaction.schema.json#/$defs/planResolveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.planUpgrade": {
+            "kind": "write",
+            "capabilities": [
+                "packages.plan.v1",
+                "packages.plan.v2"
+            ],
+            "rustMethod": "package_plan_upgrade",
+            "requestType": "PackagePlanUpgradeParams",
+            "resultType": "PackagePlan",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/PackagePlanInstallParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/PackagePlan",
+            "errorProfiles": [
+                "packageTransaction"
+            ]
+        },
+        "packages.projectInventory": {
+            "kind": "read",
+            "capabilities": [
+                "packages.project-inventory.v1"
+            ],
+            "rustMethod": "project_inventory",
+            "requestType": "ProjectInventoryParams",
+            "resultType": "ProjectInventoryResult",
+            "requestSchema": "m8-project-assets-v1.schema.json#/$defs/inventoryParams",
+            "resultSchema": "m8-project-assets-v1.schema.json#/$defs/inventoryResult",
+            "errorProfiles": [
+                "packageCandidates"
+            ]
+        },
+        "packages.queryProjectCandidates": {
+            "kind": "read",
+            "capabilities": [
+                "packages.candidates.v2"
+            ],
+            "rustMethod": "package_query_project_candidates",
+            "requestType": "ProjectCandidateRequest",
+            "resultType": "ProjectCandidatePage",
+            "requestSchema": "m7-package-candidates.proposal.schema.json#/$defs/Request",
+            "resultSchema": "m7-package-candidates.proposal.schema.json#/$defs/Result",
+            "errorProfiles": [
+                "packageCandidates"
+            ]
+        },
+        "packages.userPackages.enroll": {
+            "kind": "write",
+            "capabilities": [
+                "packages.user-packages.v1"
+            ],
+            "rustMethod": "user_package_enroll",
+            "requestType": "UserPackageEnrollParams",
+            "resultType": "UserPackageWriteResult",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/userPackageEnrollParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackageWriteResult",
+            "errorProfiles": [
+                "userPackage"
+            ]
+        },
+        "packages.userPackages.get": {
+            "kind": "read",
+            "capabilities": [
+                "packages.user-packages.v1"
+            ],
+            "rustMethod": "user_package_get",
+            "requestType": "UserPackageGetParams",
+            "resultType": "UserPackageResult",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/userPackageGetParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackageResult",
+            "errorProfiles": [
+                "userPackage"
+            ]
+        },
+        "packages.userPackages.list": {
+            "kind": "read",
+            "capabilities": [
+                "packages.user-packages.v1"
+            ],
+            "rustMethod": "user_packages_list",
+            "requestType": "UserPackagesListParams",
+            "resultType": "UserPackagesListResult",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/userPackageListParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackagesListResult",
+            "errorProfiles": [
+                "userPackage"
+            ]
+        },
+        "packages.userPackages.refresh": {
+            "kind": "write",
+            "capabilities": [
+                "packages.user-packages.v1"
+            ],
+            "rustMethod": "user_package_refresh",
+            "requestType": "UserPackageMutationParams",
+            "resultType": "UserPackageWriteResult",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/userPackageMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackageWriteResult",
+            "errorProfiles": [
+                "userPackage"
+            ]
+        },
+        "packages.userPackages.remove": {
+            "kind": "write",
+            "capabilities": [
+                "packages.user-packages.v1"
+            ],
+            "rustMethod": "user_package_remove",
+            "requestType": "UserPackageMutationParams",
+            "resultType": "UserPackageRemoveResult",
+            "requestSchema": "m7-p6-package-closure.proposal.schema.json#/$defs/userPackageMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UserPackageRemoveResult",
+            "errorProfiles": [
+                "userPackage"
+            ]
+        },
+        "projectTemplates.edit": {
+            "kind": "write",
+            "capabilities": [
+                "project-templates.edit.v1"
+            ],
+            "rustMethod": "template_edit",
+            "requestType": "ProjectTemplateEditParams",
+            "resultType": "ProjectTemplatesSaveResult",
+            "requestSchema": "m8-project-assets-v1.schema.json#/$defs/templateEditParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/saveResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projectTemplates.export": {
+            "kind": "write",
+            "capabilities": [
+                "projectTemplates.v2"
+            ],
+            "rustMethod": "project_templates_export",
+            "requestType": "ProjectTemplatesExportParams",
+            "resultType": "ProjectTemplatesSaveResult",
+            "requestSchema": "m7-project-create.schema.json#/$defs/exportParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/saveResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projectTemplates.get": {
+            "kind": "read",
+            "capabilities": [
+                "project-templates.edit.v1"
+            ],
+            "rustMethod": "template_get",
+            "requestType": "ProjectTemplateGetParams",
+            "resultType": "ProjectTemplateGetResult",
+            "requestSchema": "m8-project-assets-v1.schema.json#/$defs/templateGetParams",
+            "resultSchema": "m8-project-assets-v1.schema.json#/$defs/templateGetResult",
+            "errorProfiles": [
+                "packageCandidates",
+                "projectCreate"
+            ]
+        },
+        "projectTemplates.list": {
+            "kind": "read",
+            "capabilities": [
+                "projectTemplates.v2"
+            ],
+            "rustMethod": "project_templates_list",
+            "requestType": "ProjectTemplatesListParams",
+            "resultType": "ProjectTemplatesListResult",
+            "requestSchema": "m7-project-create.schema.json#/$defs/listParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/listResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projectTemplates.remove": {
+            "kind": "write",
+            "capabilities": [
+                "projectTemplates.v2"
+            ],
+            "rustMethod": "project_templates_remove",
+            "requestType": "ProjectTemplatesRemoveParams",
+            "resultType": "ProjectTemplatesRemoveResult",
+            "requestSchema": "m7-project-create.schema.json#/$defs/removeParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/removeResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projectTemplates.save": {
+            "kind": "write",
+            "capabilities": [
+                "projectTemplates.v2"
+            ],
+            "rustMethod": "project_templates_save",
+            "requestType": "ProjectTemplatesSaveParams",
+            "resultType": "ProjectTemplatesSaveResult",
+            "requestSchema": "m7-project-create.schema.json#/$defs/saveParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/saveResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projects.applyCopy": {
+            "kind": "write",
+            "capabilities": [
+                "projects.copy.v1"
+            ],
+            "rustMethod": "project_apply_copy",
+            "requestType": "ProjectsApplyCopyParams",
+            "resultType": "ProjectsApplyCopyResult",
+            "requestSchema": "m7-project-copy.proposal.schema.json#/$defs/applyCopyParams",
+            "resultSchema": "m7-project-copy.proposal.schema.json#/$defs/applyCopyResult",
+            "errorProfiles": [
+                "projectCopy"
+            ]
+        },
+        "projects.applyDeleteDirectory": {
+            "kind": "write",
+            "capabilities": [
+                "projects.delete.v1"
+            ],
+            "rustMethod": "project_apply_delete_directory",
+            "requestType": "ProjectsApplyDeleteDirectoryParams",
+            "resultType": "ProjectsApplyDeleteDirectoryResult",
+            "requestSchema": "m7-project-delete.proposal.schema.json#/$defs/applyDeleteDirectoryParams",
+            "resultSchema": "m7-project-delete.proposal.schema.json#/$defs/applyDeleteDirectoryResult",
+            "errorProfiles": [
+                "projectDelete"
+            ]
+        },
+        "projects.applyUnityMigration": {
+            "kind": "write",
+            "capabilities": [
+                "projects.unity-migration.v1"
+            ],
+            "rustMethod": "project_apply_unity_migration",
+            "requestType": "ProjectsApplyUnityMigrationParams",
+            "resultType": "ProjectsApplyUnityMigrationResult",
+            "requestSchema": "m7-unity-project-version.proposal.schema.json#/$defs/applyUnityMigrationParams",
+            "resultSchema": "m7-unity-project-version.proposal.schema.json#/$defs/applyUnityMigrationResult",
+            "errorProfiles": [
+                "unityMigration"
+            ]
+        },
+        "projects.create": {
+            "kind": "write",
+            "capabilities": [
+                "projects.create.v1"
+            ],
+            "rustMethod": "projects_create",
+            "requestType": "ProjectsCreateParams",
+            "resultType": "ProjectsCreateResult",
+            "requestSchema": "m7-project-create.schema.json#/$defs/createParams",
+            "resultSchema": "m7-project-create.schema.json#/$defs/createResult",
+            "errorProfiles": [
+                "projectCreate"
+            ]
+        },
+        "projects.get": {
+            "kind": "read",
+            "capabilities": [
+                "projects.read.v1"
+            ],
+            "rustMethod": "project_get",
+            "requestType": "ProjectIdParams",
+            "resultType": "ProjectResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectIdParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.inspect": {
+            "kind": "read",
+            "capabilities": [
+                "projects.read.v1"
+            ],
+            "rustMethod": "project_inspect",
+            "requestType": "ProjectsInspectParams",
+            "resultType": "ProjectResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectInspectParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.list": {
+            "kind": "read",
+            "capabilities": [
+                "projects.read.v1"
+            ],
+            "rustMethod": "projects_list_with_view",
+            "requestType": "ProjectsListParams",
+            "resultType": "ProjectsListResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectListParams",
+            "resultSchema": "m3-project-repository.schema.json#/$defs/projectListResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.planCopy": {
+            "kind": "write",
+            "capabilities": [
+                "projects.copy.v1"
+            ],
+            "rustMethod": "project_plan_copy",
+            "requestType": "ProjectsPlanCopyParams",
+            "resultType": "ProjectsPlanCopyResult",
+            "requestSchema": "m7-project-copy.proposal.schema.json#/$defs/planCopyParams",
+            "resultSchema": "m7-project-copy.proposal.schema.json#/$defs/planCopyResult",
+            "errorProfiles": [
+                "projectCopy"
+            ]
+        },
+        "projects.planDeleteDirectory": {
+            "kind": "write",
+            "capabilities": [
+                "projects.delete.v1"
+            ],
+            "rustMethod": "project_plan_delete_directory",
+            "requestType": "ProjectsPlanDeleteDirectoryParams",
+            "resultType": "ProjectsPlanDeleteDirectoryResult",
+            "requestSchema": "m7-project-delete.proposal.schema.json#/$defs/planDeleteDirectoryParams",
+            "resultSchema": "m7-project-delete.proposal.schema.json#/$defs/planDeleteDirectoryResult",
+            "errorProfiles": [
+                "projectDelete"
+            ]
+        },
+        "projects.planUnityMigration": {
+            "kind": "write",
+            "capabilities": [
+                "projects.unity-migration.v1"
+            ],
+            "rustMethod": "project_plan_unity_migration",
+            "requestType": "ProjectsPlanUnityMigrationParams",
+            "resultType": "ProjectsPlanUnityMigrationResult",
+            "requestSchema": "m7-unity-project-version.proposal.schema.json#/$defs/planUnityMigrationParams",
+            "resultSchema": "m7-unity-project-version.proposal.schema.json#/$defs/planUnityMigrationResult",
+            "errorProfiles": [
+                "unityMigration"
+            ]
+        },
+        "projects.refresh": {
+            "kind": "write",
+            "capabilities": [
+                "projects.registry.v1"
+            ],
+            "rustMethod": "project_refresh",
+            "requestType": "ProjectMutationParams",
+            "resultType": "ProjectWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectWriteResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.register": {
+            "kind": "write",
+            "capabilities": [
+                "projects.registry.v1"
+            ],
+            "rustMethod": "project_register",
+            "requestType": "ProjectRegisterParams",
+            "resultType": "ProjectWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectRegisterParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectWriteResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.setFavorite": {
+            "kind": "write",
+            "capabilities": [
+                "projects.registry.v1"
+            ],
+            "rustMethod": "project_set_favorite",
+            "requestType": "ProjectSetFavoriteParams",
+            "resultType": "ProjectWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectSetFavoriteParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectWriteResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "projects.unregister": {
+            "kind": "write",
+            "capabilities": [
+                "projects.registry.v1"
+            ],
+            "rustMethod": "project_unregister",
+            "requestType": "ProjectMutationParams",
+            "resultType": "ProjectUnregisterResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/projectMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/ProjectUnregisterResult",
+            "errorProfiles": [
+                "projectRegistry"
+            ]
+        },
+        "repositories.cancelListRegistration": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.list-import.v1"
+            ],
+            "rustMethod": "repository_list_cancel_registration",
+            "requestType": "RepositoryListCancelParams",
+            "resultType": "RepositoryListCancelResult",
+            "requestSchema": "m7-repository-list.schema.json#/$defs/cancelListRegistrationParams",
+            "resultSchema": "m7-repository-list.schema.json#/$defs/cancelListRegistrationResult",
+            "errorProfiles": [
+                "repositoryList"
+            ]
+        },
+        "repositories.exportListFile": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.list-files.v1"
+            ],
+            "rustMethod": "repository_configuration_export_file",
+            "requestType": "RepositoryListExportParams",
+            "resultType": "RepositoryListExportResult",
+            "requestSchema": "m7-repository-list.schema.json#/$defs/exportListFileParams",
+            "resultSchema": "m7-repository-list.schema.json#/$defs/exportListFileResult",
+            "errorProfiles": [
+                "repositoryList"
+            ]
+        },
+        "repositories.get": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.read.v1"
+            ],
+            "rustMethod": "repository_get",
+            "requestType": "RepositoryIdParams",
+            "resultType": "RepositoryResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryIdParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.importListFile": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.list-import.v1"
+            ],
+            "rustMethod": "repository_list_import_file",
+            "requestType": "RepositoryListImportParams",
+            "resultType": "RepositoryListImportResult",
+            "requestSchema": "m7-repository-list.schema.json#/$defs/importListFileParams",
+            "resultSchema": "m7-repository-list.schema.json#/$defs/importListFileResult",
+            "errorProfiles": [
+                "repositoryList"
+            ]
+        },
+        "repositories.inspect": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.read.v1"
+            ],
+            "rustMethod": "repository_inspect_with_credentials",
+            "requestType": "RepositoryInspectParams",
+            "resultType": "RepositoryResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryInspectParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.inspectListFile": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.list-files.v1"
+            ],
+            "rustMethod": "repository_list_inspect_file",
+            "requestType": "RepositoryListInspectParams",
+            "resultType": "RepositoryListInspection",
+            "requestSchema": "m7-repository-list.schema.json#/$defs/inspectListFileParams",
+            "resultSchema": "m7-repository-list.schema.json#/$defs/inspectListFileResult",
+            "errorProfiles": [
+                "repositoryList"
+            ]
+        },
+        "repositories.list": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.read.v1"
+            ],
+            "rustMethod": "repositories_list",
+            "requestType": "RegistryListParams",
+            "resultType": "RepositoriesListResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/registryListParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoriesListResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.packages": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.read.v1"
+            ],
+            "rustMethod": "repository_packages",
+            "requestType": "RepositoryPackagesParams",
+            "resultType": "RepositoryPackagesResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryPackagesParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryPackagesResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.previewListExport": {
+            "kind": "read",
+            "capabilities": [
+                "repositories.list-files.v1"
+            ],
+            "rustMethod": "repository_configuration_preview_export",
+            "requestType": "RepositoryListPreviewParams",
+            "resultType": "RepositoryListPreview",
+            "requestSchema": "m7-repository-list.schema.json#/$defs/previewListExportParams",
+            "resultSchema": "m7-repository-list.schema.json#/$defs/previewListExportResult",
+            "errorProfiles": [
+                "repositoryList"
+            ]
+        },
+        "repositories.refresh": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_refresh",
+            "requestType": "RepositoryMutationParams",
+            "resultType": "RepositoryWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryWriteResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.refreshAll": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repositories_refresh_all",
+            "requestType": "RepositoryRefreshAllParams",
+            "resultType": "RepositoryRefreshAllResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryRefreshAllParams",
+            "resultSchema": "m3-project-repository.schema.json#/$defs/repositoryRefreshAllResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.register": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_register_with_credentials",
+            "requestType": "RepositoryRegisterParams",
+            "resultType": "RepositoryWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryRegisterParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryWriteResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.setCredentials": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_set_credentials",
+            "requestType": "RepositorySetCredentialsParams",
+            "resultType": "RepositoryWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositorySetCredentialsParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryWriteResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.setDisplayName": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_set_display_name",
+            "requestType": "RepositorySetDisplayNameParams",
+            "resultType": "RepositoryWriteResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositorySetDisplayNameParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryWriteResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "repositories.unregister": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_unregister",
+            "requestType": "RepositoryMutationParams",
+            "resultType": "RepositoryUnregisterResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMutationParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryUnregisterResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
+        "settings.get": {
+            "kind": "read",
+            "capabilities": [],
+            "rustMethod": "settings_get",
+            "requestType": "EmptyParams",
+            "resultType": "SettingsGetResult",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/EmptyParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/SettingsGetResult",
+            "errorProfiles": [
+                "settingsGet"
+            ]
+        },
+        "settings.update": {
+            "kind": "write",
+            "capabilities": [],
+            "rustMethod": "settings_update",
+            "requestType": "SettingsUpdateParams",
+            "resultType": "SettingsGetResult",
+            "requestSchema": "m7-official-gui.schema.json#/$defs/settingsUpdateParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/SettingsGetResult",
+            "errorProfiles": [
+                "settingsUpdate"
+            ]
+        },
+        "state.check": {
+            "kind": "write",
+            "capabilities": [
+                "state.check.v1"
+            ],
+            "rustMethod": "state_check",
+            "requestType": "StateCheckParams",
+            "resultType": "OperationAccepted",
+            "requestSchema": "state-check.request.schema.json#/properties/params",
+            "resultSchema": "state-check.response.schema.json#/properties/result",
+            "errorProfiles": [
+                "stateCheck"
+            ]
+        },
+        "system.status": {
+            "kind": "read",
+            "capabilities": [],
+            "rustMethod": "system_status",
+            "requestType": "EmptyParams",
+            "resultType": "SystemStatusResult",
+            "requestSchema": "native-sdk-v1.schema.json#/$defs/EmptyParams",
+            "resultSchema": "system-status.response.schema.json#/properties/result",
+            "errorProfiles": []
+        },
+        "unity.hub.open": {
+            "kind": "write",
+            "capabilities": [
+                "unity.hub.open.v1"
+            ],
+            "rustMethod": "unity_hub_open",
+            "requestType": "UnityHubOpenParams",
+            "resultType": "UnityHubOpenResult",
+            "requestSchema": "m7-official-gui.schema.json#/$defs/hubOpenParams",
+            "resultSchema": "m7-official-gui.schema.json#/$defs/hubOpenResult",
+            "errorProfiles": [
+                "unityHub"
+            ]
+        },
+        "unity.installations.get": {
+            "kind": "read",
+            "capabilities": [
+                "unity.read.v1"
+            ],
+            "rustMethod": "unity_installation_get",
+            "requestType": "UnityInstallationIdParams",
+            "resultType": "UnityInstallationResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/installationGetParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UnityInstallationResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.installations.list": {
+            "kind": "read",
+            "capabilities": [
+                "unity.read.v1"
+            ],
+            "rustMethod": "unity_installations_list",
+            "requestType": "UnityInstallationsListParams",
+            "resultType": "UnityInstallationsListResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/installationListParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/installationListResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.installations.refresh": {
+            "kind": "write",
+            "capabilities": [
+                "unity.manage.v1"
+            ],
+            "rustMethod": "unity_installations_refresh",
+            "requestType": "UnityInstallationRefreshParams",
+            "resultType": "UnityInstallationsListResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/installationRefreshParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/installationListResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.installations.register": {
+            "kind": "write",
+            "capabilities": [
+                "unity.manage.v1"
+            ],
+            "rustMethod": "unity_installation_register",
+            "requestType": "UnityInstallationRegisterParams",
+            "resultType": "UnityInstallationResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/installationRegisterParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UnityInstallationResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.installations.remove": {
+            "kind": "write",
+            "capabilities": [
+                "unity.manage.v1"
+            ],
+            "rustMethod": "unity_installation_remove",
+            "requestType": "UnityInstallationRemoveParams",
+            "resultType": "UnityInstallationRemoveResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/installationRemoveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UnityInstallationRemoveResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.launch": {
+            "kind": "write",
+            "capabilities": [
+                "unity.launch.v1"
+            ],
+            "rustMethod": "unity_launch",
+            "requestType": "UnityLaunchParams",
+            "resultType": "UnityLaunchResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/launchParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/UnityLaunchResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.launchOptions": {
+            "kind": "read",
+            "capabilities": [
+                "unity.launch.v1"
+            ],
+            "rustMethod": "unity_launch_options",
+            "requestType": "UnityLaunchOptionsParams",
+            "resultType": "UnityLaunchOptionsResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/launchOptionsParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/launchOptionsResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.projectLaunchConfig.clear": {
+            "kind": "write",
+            "capabilities": [
+                "unity.manage.v1"
+            ],
+            "rustMethod": "unity_project_launch_config_clear",
+            "requestType": "ProjectUnityLaunchConfigClearParams",
+            "resultType": "ProjectUnityLaunchConfigMutationResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigClearParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigMutationResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.projectLaunchConfig.get": {
+            "kind": "read",
+            "capabilities": [
+                "unity.read.v1"
+            ],
+            "rustMethod": "unity_project_launch_config_get",
+            "requestType": "UnityProjectIdParams",
+            "resultType": "ProjectUnityLaunchConfigResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigGetParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.projectLaunchConfig.set": {
+            "kind": "write",
+            "capabilities": [
+                "unity.manage.v1"
+            ],
+            "rustMethod": "unity_project_launch_config_set",
+            "requestType": "ProjectUnityLaunchConfigSetParams",
+            "resultType": "ProjectUnityLaunchConfigMutationResult",
+            "requestSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigSetParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigMutationResult",
+            "errorProfiles": [
+                "unity"
+            ]
+        },
+        "unity.writerState": {
+            "kind": "read",
+            "capabilities": [
+                "unity.read.v1"
+            ],
+            "rustMethod": "unity_writer_state",
+            "requestType": "UnityProjectIdParams",
+            "resultType": "UnityWriterState",
+            "requestSchema": "m5-unity.schema.json#/$defs/projectUnityLaunchConfigGetParams",
+            "resultSchema": "m5-unity.schema.json#/$defs/writerState",
+            "errorProfiles": [
+                "unity"
+            ]
+        }
+    }
+}

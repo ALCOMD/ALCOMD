@@ -60,6 +60,14 @@ status = "implemented"
 description = "运行真实 daemon 与 CLI，覆盖 human/JSON、stderr/退出码、--no-start-daemon 以及两个 CLI 并发按需启动只产生一个权威实例。"
 
 [[test]]
+id = "sdk.native-desktop-consumers"
+stage = "M10"
+kind = "end-to-end"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "用仓库外 Rust 和 TypeScript 消费者验证安装暂存的真实 Core 冷启动、并发直连、空闲重启、RPC 合同和官方 GUI 方法覆盖。"
+
+[[test]]
 id = "access.principal-revocation"
 stage = "M2"
 kind = "security"

@@ -20,6 +20,8 @@ cargo test --locked --manifest-path "$mcp_manifest"
 
 npm run check
 npm run build
+npm run test --workspace @alcomd/sdk
 invoke_metadata_validator
+"${REPOSITORY_PYTHON[@]}" ./scripts/check-native-sdk.py
 
 assert_lock_file_snapshot "$lock_snapshot"

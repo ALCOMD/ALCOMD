@@ -5,8 +5,8 @@ use std::path::{Component, Path, PathBuf};
 
 use rustix::fd::OwnedFd;
 use rustix::fs::{
-    AtFlags, CWD, FileType, FlockOperation, Mode, OFlags, RawMode, chmodat, fchmod, flock, fstat,
-    mkdirat, openat, statat, unlinkat,
+    AtFlags, CWD, FileType, FlockOperation, Mode, OFlags, RawMode, RenameFlags, chmodat, fchmod,
+    flock, fstat, mkdirat, openat, renameat_with, statat, unlinkat,
 };
 use rustix::io::Errno;
 use rustix::process::geteuid;
@@ -24,6 +24,7 @@ pub fn file_identity_key(path: &std::path::Path) -> io::Result<Vec<u8>> {
 }
 
 const SOCKET_NAME: &str = "rpc-v1.sock";
+const STAGED_SOCKET_NAME: &str = ".rpc-bind";
 const LOCK_NAME: &str = "daemon-v1.lock";
 const PRIVATE_DIRECTORY_MODE: RawMode = 0o700;
 const PRIVATE_FILE_MODE: RawMode = 0o600;
@@ -54,11 +55,27 @@ impl DaemonInstance {
 
     /// Recovers the owned stale socket and publishes the ready endpoint.
     pub fn bind(self) -> Result<IpcListener, BindError> {
-        remove_stale_socket(&self.runtime_fd)?;
-        let socket_path = self.runtime_path.join(SOCKET_NAME);
-        validate_socket_path_length(&socket_path)?;
-        let listener = UnixListener::bind(&socket_path)?;
-        secure_socket_node(&self.runtime_fd)?;
+        validate_socket_path_length(&self.runtime_path.join(SOCKET_NAME))?;
+        remove_stale_socket(&self.runtime_fd, SOCKET_NAME)?;
+        remove_stale_socket(&self.runtime_fd, STAGED_SOCKET_NAME)?;
+
+        // An ordinary bind creates a socket with the caller's umask. Publish it
+        // under the client-visible name only after setting the required mode.
+        let listener = UnixListener::bind(self.runtime_path.join(STAGED_SOCKET_NAME))?;
+        let publish = secure_socket_node(&self.runtime_fd, STAGED_SOCKET_NAME).and_then(|()| {
+            renameat_with(
+                &self.runtime_fd,
+                STAGED_SOCKET_NAME,
+                &self.runtime_fd,
+                SOCKET_NAME,
+                RenameFlags::NOREPLACE,
+            )
+            .map_err(io::Error::from)
+        });
+        if let Err(error) = publish {
+            let _ = remove_stale_socket(&self.runtime_fd, STAGED_SOCKET_NAME);
+            return Err(error.into());
+        }
         Ok(IpcListener {
             listener,
             runtime_fd: self.runtime_fd,
@@ -82,7 +99,15 @@ impl IpcListener {
 
     /// Accepts one same-user connection.
     pub async fn accept(&mut self) -> io::Result<IpcStream> {
-        self.listener.accept().await.map(|(stream, _)| stream)
+        loop {
+            let (stream, _) = self.listener.accept().await?;
+            if stream
+                .peer_cred()
+                .is_ok_and(|peer| peer.uid() == geteuid().as_raw())
+            {
+                return Ok(stream);
+            }
+        }
     }
 }
 
@@ -94,11 +119,70 @@ impl Drop for IpcListener {
     }
 }
 
-/// Connects to the configured per-user Unix endpoint.
+/// Connects to the configured per-user Unix endpoint after checking both ends.
 pub async fn connect(config: &IpcConfig) -> io::Result<IpcStream> {
-    let path = runtime_path(config)?.join(SOCKET_NAME);
+    let runtime = runtime_path(config)?;
+    let path = runtime.join(SOCKET_NAME);
     validate_socket_path_length(&path)?;
-    UnixStream::connect(path).await
+    let directory = open_protected_directory_chain(&runtime).map_err(endpoint_path_error)?;
+    validate_owned_type(&directory, FileType::Directory, "runtime directory")?;
+    let directory_stat = fstat(&directory).map_err(io::Error::from)?;
+    if directory_stat.st_mode & 0o777 != PRIVATE_DIRECTORY_MODE {
+        return Err(insecure_endpoint());
+    }
+    let initial_socket = protected_socket_stat(&directory)?;
+    let stream = UnixStream::connect(path).await?;
+    if !stream
+        .peer_cred()
+        .is_ok_and(|peer| peer.uid() == geteuid().as_raw())
+    {
+        return Err(insecure_endpoint());
+    }
+    let current_directory =
+        open_protected_directory_chain(&runtime).map_err(|_| insecure_endpoint())?;
+    let current_directory_stat = fstat(&current_directory).map_err(|_| insecure_endpoint())?;
+    let current_socket =
+        protected_socket_stat(&current_directory).map_err(|_| insecure_endpoint())?;
+    if current_directory_stat.st_dev != directory_stat.st_dev
+        || current_directory_stat.st_ino != directory_stat.st_ino
+        || current_directory_stat.st_mode != directory_stat.st_mode
+        || current_directory_stat.st_uid != directory_stat.st_uid
+        || current_socket.st_dev != initial_socket.st_dev
+        || current_socket.st_ino != initial_socket.st_ino
+    {
+        return Err(insecure_endpoint());
+    }
+    Ok(stream)
+}
+
+fn protected_socket_stat(directory: &OwnedFd) -> io::Result<rustix::fs::Stat> {
+    let stat =
+        statat(directory, SOCKET_NAME, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+    if stat.st_uid != geteuid().as_raw()
+        || FileType::from_raw_mode(stat.st_mode) != FileType::Socket
+        || stat.st_mode & 0o777 != PRIVATE_FILE_MODE
+    {
+        return Err(insecure_endpoint());
+    }
+    Ok(stat)
+}
+
+fn endpoint_path_error(error: io::Error) -> io::Error {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+    ) {
+        error
+    } else {
+        insecure_endpoint()
+    }
+}
+
+fn insecure_endpoint() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "untrusted Unix IPC endpoint",
+    )
 }
 
 /// Returns a non-sensitive endpoint string for diagnostics.
@@ -117,39 +201,63 @@ pub fn state_database_path(config: &DataConfig) -> io::Result<PathBuf> {
         return Ok(path.join("state.db"));
     }
 
+    let home = home_directory()?;
+    let home_fd = open_directory_chain(&home)?;
+    validate_owned_type(&home_fd, FileType::Directory, "home directory")?;
+    let (base_path, components) = user_data_layout(&home)?;
+    let base_fd = if base_path == home {
+        home_fd
+    } else {
+        let fd = open_directory_chain(&base_path)?;
+        validate_owned_type(&fd, FileType::Directory, "XDG data directory")?;
+        fd
+    };
+    let directory_fd = ensure_owned_relative_directories(base_fd, components)?;
+    fchmod(&directory_fd, Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE)).map_err(io::Error::from)?;
+    Ok(join_data_components(base_path, components).join("state.db"))
+}
+
+fn home_directory() -> io::Result<PathBuf> {
     let home = env::var_os("HOME").ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
             "HOME is required for the data directory",
         )
     })?;
-    let home = validate_absolute_runtime_path(&PathBuf::from(home))?;
-    let home_fd = open_directory_chain(&home)?;
-    validate_owned_type(&home_fd, FileType::Directory, "home directory")?;
+    validate_absolute_runtime_path(&PathBuf::from(home))
+}
 
+fn user_data_layout(home: &Path) -> io::Result<(PathBuf, &'static [&'static str])> {
     #[cfg(target_os = "linux")]
-    let (base_path, base_fd, components): (PathBuf, OwnedFd, &[&str]) =
-        if let Some(xdg) = env::var_os("XDG_DATA_HOME") {
-            let base = validate_absolute_runtime_path(&PathBuf::from(xdg))?;
-            let fd = open_directory_chain(&base)?;
-            validate_owned_type(&fd, FileType::Directory, "XDG data directory")?;
-            (base, fd, &["alcomd"])
-        } else {
-            (home.clone(), home_fd, &[".local", "share", "alcomd"])
-        };
+    if let Some(xdg) = env::var_os("XDG_DATA_HOME") {
+        return Ok((
+            validate_absolute_runtime_path(&PathBuf::from(xdg))?,
+            &[env!("ALCOMD_DAEMON_NAME")],
+        ));
+    }
+    #[cfg(target_os = "linux")]
+    let components: &[&str] = &[".local", "share", env!("ALCOMD_DAEMON_NAME")];
     #[cfg(target_os = "macos")]
-    let (base_path, base_fd, components): (PathBuf, OwnedFd, &[&str]) = (
-        home.clone(),
-        home_fd,
-        &["Library", "Application Support", "ALCOMD"],
-    );
+    let components: &[&str] = &[
+        "Library",
+        "Application Support",
+        env!("ALCOMD_PRODUCT_DIRECTORY"),
+    ];
+    Ok((home.to_path_buf(), components))
+}
 
-    let directory_fd = ensure_owned_relative_directories(base_fd, components)?;
-    fchmod(&directory_fd, Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE)).map_err(io::Error::from)?;
-    let directory = components
+fn join_data_components(base: PathBuf, components: &[&str]) -> PathBuf {
+    components
         .iter()
-        .fold(base_path, |path, component| path.join(component));
-    Ok(directory.join("state.db"))
+        .fold(base, |path, component| path.join(component))
+}
+
+pub(super) fn data_directory_path(config: &DataConfig) -> io::Result<PathBuf> {
+    if let Some(path) = config.data_directory() {
+        return validate_absolute_runtime_path(path);
+    }
+    let (base, components) = user_data_layout(&home_directory()?)?;
+    Ok(join_data_components(base, components))
 }
 
 fn ensure_owned_relative_directories(
@@ -226,7 +334,7 @@ fn runtime_path(config: &IpcConfig) -> io::Result<PathBuf> {
     validate_absolute_runtime_path(&fallback)
 }
 
-fn validate_absolute_runtime_path(path: &Path) -> io::Result<PathBuf> {
+pub(super) fn validate_absolute_runtime_path(path: &Path) -> io::Result<PathBuf> {
     #[cfg(target_os = "macos")]
     let path = normalize_macos_system_alias(path);
     #[cfg(not(target_os = "macos"))]
@@ -304,6 +412,30 @@ fn ensure_private_runtime_directory(path: &Path) -> io::Result<OwnedFd> {
 }
 
 fn open_directory_chain(path: &Path) -> io::Result<OwnedFd> {
+    open_directory_chain_with(path, |_| Ok(()))
+}
+
+pub(super) fn open_protected_directory_chain(path: &Path) -> io::Result<OwnedFd> {
+    open_directory_chain_with(path, |directory| {
+        let stat = fstat(directory).map_err(io::Error::from)?;
+        let root_owned_sticky = stat.st_uid == 0 && stat.st_mode & 0o1000 != 0;
+        if (stat.st_uid == 0 || stat.st_uid == geteuid().as_raw())
+            && (stat.st_mode & 0o022 == 0 || root_owned_sticky)
+        {
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "untrusted directory permissions",
+            ))
+        }
+    })
+}
+
+fn open_directory_chain_with(
+    path: &Path,
+    check_directory: impl Fn(&OwnedFd) -> io::Result<()>,
+) -> io::Result<OwnedFd> {
     let mut current = openat(
         CWD,
         Path::new("/"),
@@ -311,6 +443,7 @@ fn open_directory_chain(path: &Path) -> io::Result<OwnedFd> {
         Mode::empty(),
     )
     .map_err(io::Error::from)?;
+    check_directory(&current)?;
 
     for component in path.components() {
         match component {
@@ -323,6 +456,7 @@ fn open_directory_chain(path: &Path) -> io::Result<OwnedFd> {
                     Mode::empty(),
                 )
                 .map_err(io::Error::from)?;
+                check_directory(&current)?;
             }
             _ => {
                 return Err(io::Error::new(
@@ -335,8 +469,8 @@ fn open_directory_chain(path: &Path) -> io::Result<OwnedFd> {
     Ok(current)
 }
 
-fn remove_stale_socket(runtime_fd: &OwnedFd) -> io::Result<()> {
-    match statat(runtime_fd, SOCKET_NAME, AtFlags::SYMLINK_NOFOLLOW) {
+fn remove_stale_socket(runtime_fd: &OwnedFd, name: &str) -> io::Result<()> {
+    match statat(runtime_fd, name, AtFlags::SYMLINK_NOFOLLOW) {
         Ok(stat) => {
             if stat.st_uid != geteuid().as_raw()
                 || FileType::from_raw_mode(stat.st_mode) != FileType::Socket
@@ -346,16 +480,15 @@ fn remove_stale_socket(runtime_fd: &OwnedFd) -> io::Result<()> {
                     "existing endpoint is not an owned Unix socket",
                 ));
             }
-            unlinkat(runtime_fd, SOCKET_NAME, AtFlags::empty()).map_err(io::Error::from)
+            unlinkat(runtime_fd, name, AtFlags::empty()).map_err(io::Error::from)
         }
         Err(Errno::NOENT) => Ok(()),
         Err(error) => Err(error.into()),
     }
 }
 
-fn secure_socket_node(runtime_fd: &OwnedFd) -> io::Result<()> {
-    let stat =
-        statat(runtime_fd, SOCKET_NAME, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+fn secure_socket_node(runtime_fd: &OwnedFd, name: &str) -> io::Result<()> {
+    let stat = statat(runtime_fd, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
     if stat.st_uid != geteuid().as_raw()
         || FileType::from_raw_mode(stat.st_mode) != FileType::Socket
     {
@@ -366,13 +499,12 @@ fn secure_socket_node(runtime_fd: &OwnedFd) -> io::Result<()> {
     }
     chmodat(
         runtime_fd,
-        SOCKET_NAME,
+        name,
         Mode::from_raw_mode(PRIVATE_FILE_MODE),
         AtFlags::empty(),
     )
     .map_err(io::Error::from)?;
-    let secured =
-        statat(runtime_fd, SOCKET_NAME, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
+    let secured = statat(runtime_fd, name, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
     if secured.st_mode & 0o777 != PRIVATE_FILE_MODE {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -441,6 +573,7 @@ mod tests {
         let path = isolated_path("private");
         let config = IpcConfig::isolated(path.clone());
         let mut listener = IpcListener::bind(&config).expect("bind first listener");
+        assert!(!path.join(STAGED_SOCKET_NAME).exists());
         assert!(matches!(
             IpcListener::bind(&config),
             Err(BindError::AlreadyRunning)
@@ -467,6 +600,45 @@ mod tests {
         drop((client, server, listener));
         assert!(!path.join(SOCKET_NAME).exists());
         fs::remove_dir_all(path).expect("remove isolated runtime");
+    }
+
+    #[tokio::test]
+    async fn connect_distinguishes_absence_from_untrusted_socket_or_directory() {
+        let path = isolated_path("connect");
+        let config = IpcConfig::isolated(path.clone());
+        assert_eq!(
+            connect(&config).await.expect_err("absent endpoint").kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!path.exists());
+
+        let listener = IpcListener::bind(&config).expect("private listener");
+        let socket_path = path.join(SOCKET_NAME);
+        fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o660))
+            .expect("unsafe socket mode");
+        assert_eq!(
+            connect(&config).await.expect_err("unsafe socket").kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))
+            .expect("restore socket mode");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o770)).expect("unsafe runtime mode");
+        assert_eq!(
+            connect(&config).await.expect_err("unsafe directory").kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+            .expect("restore runtime mode");
+        drop(listener);
+
+        symlink(path.join("absent"), &socket_path).expect("dangling socket symlink");
+        assert_eq!(
+            connect(&config).await.expect_err("socket symlink").kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        fs::remove_file(socket_path).expect("remove fixture symlink");
+        fs::remove_file(path.join(LOCK_NAME)).expect("remove fixture lock");
+        fs::remove_dir(path).expect("remove fixture directory");
     }
 
     #[test]

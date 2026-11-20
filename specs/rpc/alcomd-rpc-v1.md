@@ -265,9 +265,9 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本。当前 State v28 由 daemon 的存储
-组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 13，
-`extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
+`dataSchema` 报告 daemon 成功打开的实际数据库结构版本，`configSchema` 报告 daemon 支持的配置
+格式版本。两者均为可选字段，提供时接受 1 到 4,294,967,295 的整数。daemon 从实际子系统取得版本。
+`extensionApi.major` 当前为 1。格式版本独立于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
 不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
 
@@ -284,8 +284,9 @@ M2 内建 Principal ID 是 `builtin:local-owner`，权限固定为：
 - `events.read`
 
 每个 application 用例复验 permission 和 owner/visibility。client metadata、SID、pipe 名、
-OperationId 与 capability 都不能证明 Principal。`builtin:local-owner` 是官方本地客户端的 M2
-bootstrap Principal，不代表任意同用户进程已经完成可信认证，也不自动获得未来业务权限。
+OperationId 与 capability 都不能自报 Principal。M2 最初使用 `builtin:local-owner` 作为
+bootstrap Principal。M10 将同系统账号端点上的原生 GUI 与 CLI 统一纳入该 Principal，
+由平台确认端点的账号边界，再由 Core 执行业务校验。MCP 和扩展使用各自合同。
 
 ## 11. M2 method
 
@@ -1229,3 +1230,22 @@ inputs before acceptance. Attachment destinations are relative to the archive, u
 An unknown acceptance outcome can be recovered by explicitly resubmitting the original
 request with its original key. The Operation belongs to the caller. The template keeps its
 existing owner.
+
+## M10 native SDK
+
+The public desktop contract records each method's capability alternatives, operation
+semantics, wire schemas and error profiles. Both SDKs send these requests through the
+same per-user native IPC used by the official GUI. Clients establish RPC v1 with
+`system.hello` and can use the negotiated capabilities to check which versioned methods
+the active Core supports. [Native method catalogue](native-sdk-v1.methods.json)
+
+The catalogue lists the request-level codes and the code for an unmet capability.
+Each method references the stable error families of its dispatcher. Some codes
+require a particular request variant or resource state. Async failures after Core
+accepts a task are reported through the operation result and event contracts.
+
+Ordinary calls are sequential per connection. `events.subscribe` takes over a separate
+connection for the live stream. Interrupted writes are resolved by inspecting Core
+state or explicitly recovering with the original idempotency key and payload.
+TypeScript rejects numeric values outside its safe integer range while the native
+wire retains its existing integer types.

@@ -52,6 +52,8 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           cargo build --locked --package alcomd --package alcomd-cli
           .\scripts\test-m1-auto-start.ps1
+      - name: Test packaged native SDK consumers
+        run: npm run sdk:hosted
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
@@ -70,6 +72,13 @@ jobs:
         working-directory: apps/alcomd-gui
       - name: Test official GUI in Chromium
         run: npm run test:browser --workspace @alcomd/gui
+      - name: Retain the verified Windows SDK package
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: target/m10-sdk/alcomd-sdk-*-win32-x64.tgz
+          archive: false
+          if-no-files-found: error
 
   linux-hosted:
     name: Ubuntu 22.04 hosted
@@ -119,6 +128,8 @@ jobs:
           set -euo pipefail
           cargo build --locked --package alcomd --package alcomd-cli
           ./scripts/test-m1-auto-start.sh
+      - name: Test packaged native SDK consumers
+        run: npm run sdk:hosted
       - name: Test Project Delete same-filesystem bind-mount boundary
         run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
@@ -140,6 +151,13 @@ jobs:
         working-directory: apps/alcomd-gui
       - name: Test official GUI in Chromium
         run: npm run test:browser --workspace @alcomd/gui
+      - name: Retain the verified Linux SDK package
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: target/m10-sdk/alcomd-sdk-*-linux-x64.tgz
+          archive: false
+          if-no-files-found: error
 
   macos-hosted:
     name: macOS 15 arm64 hosted
@@ -176,6 +194,8 @@ jobs:
           set -euo pipefail
           cargo build --locked --package alcomd --package alcomd-cli
           ./scripts/test-m1-auto-start.sh
+      - name: Test packaged native SDK consumers
+        run: npm run sdk:hosted
       - name: Test Project Delete nested filesystem mount boundary
         run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
@@ -197,3 +217,10 @@ jobs:
         working-directory: apps/alcomd-gui
       - name: Test official GUI in Chromium
         run: npm run test:browser --workspace @alcomd/gui
+      - name: Retain the verified macOS SDK package
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: target/m10-sdk/alcomd-sdk-*-darwin-arm64.tgz
+          archive: false
+          if-no-files-found: error

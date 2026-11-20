@@ -1,4 +1,4 @@
-//! Windows security primitives for current-user process, mutex, and pipe checks.
+//! Windows security primitives for current-user IPC and local file checks.
 
 #![allow(unsafe_code)]
 
@@ -16,16 +16,25 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo,
-    SDDL_REVISION_1, SE_KERNEL_OBJECT,
+    SDDL_REVISION_1, SE_FILE_OBJECT, SE_KERNEL_OBJECT, SE_OBJECT_TYPE,
 };
 use windows_sys::Win32::Security::{
-    ACCESS_ALLOWED_ACE, ACL, ACL_SIZE_INFORMATION, AclSizeInformation, DACL_SECURITY_INFORMATION,
-    GetAce, GetAclInformation, GetTokenInformation, PSECURITY_DESCRIPTOR, PSID,
-    SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER, TokenUser,
+    ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_SIZE_INFORMATION, AclSizeInformation,
+    DACL_SECURITY_INFORMATION, GetAce, GetAclInformation, GetTokenInformation, INHERIT_ONLY_ACE,
+    OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+    TOKEN_USER, TokenUser,
 };
+use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcess, OpenProcessToken};
 
 use crate::BindError;
+
+pub(super) fn is_fixed_drive(root: &OsStr) -> bool {
+    const DRIVE_FIXED: u32 = 3;
+    let root = wide_null(root);
+    // SAFETY: the UTF-16 buffer is NUL-terminated and lives across the call.
+    (unsafe { GetDriveTypeW(root.as_ptr()) }) == DRIVE_FIXED
+}
 
 pub(super) struct WindowsInstanceGuard {
     handle: HANDLE,
@@ -190,18 +199,97 @@ fn descriptor_for_sid(sid: &str) -> io::Result<LocalSecurityDescriptor> {
     Ok(LocalSecurityDescriptor(descriptor))
 }
 
-fn validate_current_user_only_dacl(handle: HANDLE, expected_sid: &str) -> io::Result<()> {
+pub(super) fn validate_current_user_only_dacl(
+    handle: HANDLE,
+    expected_sid: &str,
+) -> io::Result<()> {
+    let (_descriptor, dacl) = open_dacl(handle, SE_KERNEL_OBJECT, None)?;
+    if ace_count(dacl)? != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Windows IPC DACL must contain exactly one access rule",
+        ));
+    }
+    let ace_pointer = get_ace(dacl, 0)?;
+    // SAFETY: the ACE header is part of the live security descriptor.
+    let header = unsafe { &*ace_pointer.cast::<ACE_HEADER>() };
+    if u32::from(header.AceFlags) & INHERIT_ONLY_ACE != 0 {
+        return Err(untrusted_security_descriptor());
+    }
+    let (mask, sid) = allowed_access(ace_pointer, header)?;
+    if mask == 0 || sid != expected_sid {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "Windows IPC DACL is not restricted to the current user",
+        ));
+    }
+    Ok(())
+}
+
+pub(super) fn validate_installation_dacl(
+    handle: HANDLE,
+    user_sid: &str,
+    unsafe_access: u32,
+) -> io::Result<()> {
+    let mut owner = null_mut();
+    let (_descriptor, dacl) = open_dacl(handle, SE_FILE_OBJECT, Some(&mut owner))?;
+    if owner.is_null() {
+        return Err(untrusted_security_descriptor());
+    }
+    // SAFETY: the owner SID points into the still-live security descriptor.
+    let owner = unsafe { sid_to_string(owner) }?;
+    if !trusted_installation_sid(&owner, user_sid) {
+        return Err(untrusted_security_descriptor());
+    }
+    for index in 0..ace_count(dacl)? {
+        let ace_pointer = get_ace(dacl, index)?;
+        // SAFETY: the ACE header is part of the live security descriptor.
+        let header = unsafe { &*ace_pointer.cast::<ACE_HEADER>() };
+        if u32::from(header.AceFlags) & INHERIT_ONLY_ACE != 0 || header.AceType == 1 {
+            continue;
+        }
+        let (mask, sid) = allowed_access(ace_pointer, header)?;
+        if mask & unsafe_access != 0 && !trusted_installation_sid(&sid, user_sid) {
+            return Err(untrusted_security_descriptor());
+        }
+    }
+    Ok(())
+}
+
+fn trusted_installation_sid(sid: &str, user_sid: &str) -> bool {
+    sid == user_sid
+        || matches!(
+            sid,
+            "S-1-5-18" // LocalSystem
+                | "S-1-5-32-544" // Built-in administrators
+                | "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464" // TrustedInstaller
+        )
+}
+
+fn untrusted_security_descriptor() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "untrusted Windows security descriptor",
+    )
+}
+
+fn open_dacl(
+    handle: HANDLE,
+    object_type: SE_OBJECT_TYPE,
+    owner: Option<&mut PSID>,
+) -> io::Result<(LocalSecurityDescriptor, *mut ACL)> {
     let mut dacl: *mut ACL = null_mut();
     let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
-    // SAFETY: all optional outputs are null except DACL and descriptor, whose
-    // pointers reference local storage. The returned descriptor is LocalAlloc
-    // memory and is wrapped immediately for deterministic release.
+    let flags =
+        DACL_SECURITY_INFORMATION | owner.as_ref().map_or(0, |_| OWNER_SECURITY_INFORMATION);
+    // SAFETY: non-null output pointers reference writable storage. The
+    // returned descriptor is LocalAlloc memory and owns the ACL and owner SID.
     let result = unsafe {
         GetSecurityInfo(
             handle,
-            SE_KERNEL_OBJECT,
-            DACL_SECURITY_INFORMATION,
-            null_mut(),
+            object_type,
+            flags,
+            owner.map_or(null_mut(), std::ptr::from_mut),
             null_mut(),
             &mut dacl,
             null_mut(),
@@ -211,17 +299,16 @@ fn validate_current_user_only_dacl(handle: HANDLE, expected_sid: &str) -> io::Re
     if result != ERROR_SUCCESS {
         return Err(io::Error::from_raw_os_error(result as i32));
     }
-    let _descriptor = LocalSecurityDescriptor(descriptor);
+    let descriptor = LocalSecurityDescriptor(descriptor);
     if dacl.is_null() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Windows IPC object has no DACL",
-        ));
+        return Err(untrusted_security_descriptor());
     }
+    Ok((descriptor, dacl))
+}
 
+fn ace_count(dacl: *mut ACL) -> io::Result<u32> {
     let mut info = ACL_SIZE_INFORMATION::default();
-    // SAFETY: `dacl` points inside the live security descriptor and `info`
-    // provides the exact writable ACL_SIZE_INFORMATION buffer size.
+    // SAFETY: the caller keeps the security descriptor owning the ACL alive.
     if unsafe {
         GetAclInformation(
             dacl,
@@ -233,39 +320,29 @@ fn validate_current_user_only_dacl(handle: HANDLE, expected_sid: &str) -> io::Re
     {
         return Err(io::Error::last_os_error());
     }
-    if info.AceCount != 1 {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Windows IPC DACL must contain exactly one access rule",
-        ));
-    }
+    Ok(info.AceCount)
+}
 
+fn get_ace(dacl: *mut ACL, index: u32) -> io::Result<*mut c_void> {
     let mut ace_pointer = null_mut();
-    // SAFETY: the ACL reports exactly one ACE, so index zero is valid and the
-    // output pointer remains valid while the descriptor wrapper is alive.
-    if unsafe { GetAce(dacl, 0, &mut ace_pointer) } == 0 {
+    // SAFETY: the caller keeps the descriptor alive and provides an in-range ACE index.
+    if unsafe { GetAce(dacl, index, &mut ace_pointer) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: the SDDL used to create the object contains one ACCESS_ALLOWED_ACE;
-    // we verify the ACE type byte before reading the remaining layout.
+    Ok(ace_pointer)
+}
+
+fn allowed_access(ace_pointer: *mut c_void, header: &ACE_HEADER) -> io::Result<(u32, String)> {
+    if header.AceType != 0 || usize::from(header.AceSize) < size_of::<ACCESS_ALLOWED_ACE>() {
+        return Err(untrusted_security_descriptor());
+    }
+    // SAFETY: a live ACE with the expected type and layout was checked above.
     let ace = unsafe { &*ace_pointer.cast::<ACCESS_ALLOWED_ACE>() };
-    if ace.Header.AceType != 0 || ace.Mask == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Windows IPC DACL contains an unexpected access rule",
-        ));
-    }
     let sid_pointer = addr_of!(ace.SidStart).cast_mut().cast::<c_void>();
-    // SAFETY: SidStart is the first word of the variable-length SID embedded in
-    // ACCESS_ALLOWED_ACE and remains live with the containing descriptor.
-    let actual_sid = unsafe { sid_to_string(sid_pointer) }?;
-    if actual_sid != expected_sid {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "Windows IPC DACL is not restricted to the current user",
-        ));
-    }
-    Ok(())
+    // SAFETY: SidStart is the first word of the variable-length SID embedded
+    // in ACCESS_ALLOWED_ACE and remains live with the containing descriptor.
+    let sid = unsafe { sid_to_string(sid_pointer) }?;
+    Ok((ace.Mask, sid))
 }
 
 unsafe fn sid_to_string(sid: PSID) -> io::Result<String> {

@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+mod core_installation;
 mod credential_vault;
 mod external_path;
 mod process;
@@ -16,6 +17,9 @@ mod unity;
 mod unity_hub;
 mod unity_hub_open;
 
+pub use core_installation::{
+    CORE_EXECUTABLE_NAME, core_installation_registration, registered_core_executable,
+};
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{

@@ -6,7 +6,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use alcomd_platform::{IpcConfig, IpcStream};
+use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
 use alcomd_protocol::{
     CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1, ClientInfo,
     EventsListParams, EventsListResult, HelloParams, HelloResult, METHOD_EVENTS_LIST,
@@ -25,6 +25,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 mod events;
 mod m8_oauth;
 mod m8_repositories;
+#[doc(hidden)]
+pub mod sdk_stdio;
 pub use events::EventSubscription;
 pub use m8_oauth::OAuthRejection;
 
@@ -39,6 +41,7 @@ pub struct ClientConfig {
     runtime_directory: Option<PathBuf>,
     data_directory: Option<PathBuf>,
     start_daemon: bool,
+    require_installation: bool,
     daemon_path: Option<PathBuf>,
     authentication: Option<alcomd_protocol::McpAuthentication>,
 }
@@ -50,6 +53,7 @@ impl Default for ClientConfig {
             runtime_directory: None,
             data_directory: None,
             start_daemon: true,
+            require_installation: false,
             daemon_path: None,
             authentication: None,
         }
@@ -57,6 +61,15 @@ impl Default for ClientConfig {
 }
 
 impl ClientConfig {
+    /// Connects to the current user's Core and starts its registered installation when needed.
+    #[must_use]
+    pub fn for_installed_core() -> Self {
+        Self {
+            require_installation: true,
+            ..Self::default()
+        }
+    }
+
     /// Dedicated protected-IPC reporting role; never native owner or business authority.
     #[must_use]
     pub fn with_transport_observer(mut self) -> Self {
@@ -121,7 +134,7 @@ impl ClientConfig {
 
 /// A connection to the per-user `alcomd` process.
 pub struct AlcomdClient {
-    capabilities: std::collections::HashSet<String>,
+    hello_result: HelloResult,
     oauth_rejection: Option<OAuthRejection>,
     stream: IpcStream,
     next_request_id: u64,
@@ -151,7 +164,16 @@ impl AlcomdClient {
             .await
     }
     pub fn supports_capability(&self, capability: &str) -> bool {
-        self.capabilities.contains(capability)
+        self.hello_result
+            .capabilities
+            .iter()
+            .any(|accepted| accepted == capability)
+    }
+
+    /// Details negotiated with the connected daemon, including the shared capabilities.
+    #[must_use]
+    pub fn hello_result(&self) -> &HelloResult {
+        &self.hello_result
     }
     pub async fn mcp_tools_catalog(
         &mut self,
@@ -175,20 +197,19 @@ impl AlcomdClient {
         self.usable
     }
 
-    /// Connects to the per-user daemon, optionally starting its sibling binary.
+    /// Connects to the per-user daemon, optionally starting its registered installation.
     pub async fn connect(config: ClientConfig) -> Result<Self, ClientError> {
         let stream = connect_with_policy(&config).await?;
         let mut client = Self {
-            capabilities: Default::default(),
+            hello_result: HelloResult::m1(),
             oauth_rejection: None,
             stream,
             next_request_id: 1,
             usable: true,
         };
-        let hello = client
+        client
             .hello(&config.client_name, config.authentication.clone())
             .await?;
-        client.capabilities = hello.capabilities.into_iter().collect();
         Ok(client)
     }
 
@@ -290,7 +311,7 @@ impl AlcomdClient {
         &mut self,
         client_name: &str,
         authentication: Option<alcomd_protocol::McpAuthentication>,
-    ) -> Result<HelloResult, ClientError> {
+    ) -> Result<(), ClientError> {
         let sequence = INSTANCE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let params = HelloParams {
             authentication,
@@ -348,7 +369,16 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1.to_owned(),
             ],
         };
-        self.call(METHOD_SYSTEM_HELLO, params).await
+        let mut hello: HelloResult = self.call(METHOD_SYSTEM_HELLO, &params).await?;
+        if hello.rpc_version != params.rpc_version || hello.validate().is_err() {
+            self.usable = false;
+            return Err(ClientError::InvalidResponse);
+        }
+        hello
+            .capabilities
+            .retain(|capability| params.capabilities.contains(capability));
+        self.hello_result = hello;
+        Ok(())
     }
 
     /// Queries the truthful minimal daemon status.
@@ -1357,7 +1387,7 @@ impl AlcomdClient {
         .await
     }
 
-    async fn call<P, T>(&mut self, method: &str, params: P) -> Result<T, ClientError>
+    pub(crate) async fn call<P, T>(&mut self, method: &str, params: P) -> Result<T, ClientError>
     where
         P: Serialize,
         T: DeserializeOwned,
@@ -1479,21 +1509,21 @@ fn read_deadline(method: &str) -> Option<Duration> {
 
 async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientError> {
     let ipc = config.ipc_config();
-    match alcomd_platform::connect(&ipc).await {
-        Ok(stream) => return Ok(stream),
-        Err(error) if is_endpoint_absent(&error) && config.start_daemon => spawn_daemon(config)?,
-        Err(error) if is_transient(&error) => {}
-        Err(error) => return Err(ClientError::Transport(error)),
-    }
-
     let deadline = Instant::now() + START_TIMEOUT;
+    let mut started = false;
     loop {
         match alcomd_platform::connect(&ipc).await {
             Ok(stream) => return Ok(stream),
-            Err(error) if is_transient(&error) && Instant::now() < deadline => {
+            Err(error) if is_transient(&error) => {
+                if Instant::now() >= deadline {
+                    return Err(ClientError::StartTimeout);
+                }
+                if is_endpoint_absent(&error) && config.start_daemon && !started {
+                    spawn_daemon(config)?;
+                    started = true;
+                }
                 tokio::time::sleep(RETRY_INTERVAL).await;
             }
-            Err(error) if is_transient(&error) => return Err(ClientError::StartTimeout),
             Err(error) => return Err(ClientError::Transport(error)),
         }
     }
@@ -1507,11 +1537,26 @@ fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
 }
 
 fn daemon_command(config: &ClientConfig) -> Result<Command, ClientError> {
-    let daemon = match &config.daemon_path {
-        Some(path) => path.clone(),
-        None => sibling_daemon_path()?,
+    let mut command = if let Some(path) = &config.daemon_path {
+        Command::new(path)
+    } else {
+        let data = config
+            .data_directory
+            .clone()
+            .map(DataConfig::isolated)
+            .unwrap_or_default();
+        match alcomd_platform::registered_core_executable(&data)
+            .map_err(ClientError::StartDaemon)?
+        {
+            Some(daemon) => {
+                let mut command = Command::new(&daemon);
+                command.current_dir(daemon.parent().ok_or(ClientError::DaemonPathUnavailable)?);
+                command
+            }
+            None if config.require_installation => return Err(ClientError::DaemonPathUnavailable),
+            None => Command::new(sibling_daemon_path()?),
+        }
     };
-    let mut command = Command::new(daemon);
     command.env_remove("ALCOMD_MCP_CLIENT_CREDENTIAL");
     if let Some(runtime_directory) = &config.runtime_directory {
         command.arg("--runtime-dir").arg(runtime_directory);
@@ -1531,11 +1576,7 @@ fn sibling_daemon_path() -> Result<PathBuf, ClientError> {
     let directory = executable
         .parent()
         .ok_or(ClientError::DaemonPathUnavailable)?;
-    #[cfg(windows)]
-    let name = "alcomd.exe";
-    #[cfg(not(windows))]
-    let name = "alcomd";
-    Ok(directory.join(name))
+    Ok(directory.join(alcomd_platform::CORE_EXECUTABLE_NAME))
 }
 
 fn is_endpoint_absent(error: &io::Error) -> bool {
@@ -1658,11 +1699,107 @@ mod connection_reuse_tests {
 
     fn client(stream: IpcStream) -> AlcomdClient {
         AlcomdClient {
-            capabilities: Default::default(),
+            hello_result: HelloResult::m1(),
             oauth_rejection: None,
             stream,
             next_request_id: 1,
             usable: true,
+        }
+    }
+
+    async fn hello_daemon(mut stream: IpcStream, result: serde_json::Value) {
+        let request: RequestEnvelope =
+            serde_json::from_slice(&read_frame(&mut stream).await.expect("hello request"))
+                .expect("decode hello");
+        assert_eq!(request.method, METHOD_SYSTEM_HELLO);
+        assert_eq!(request.params["rpcVersion"], RPC_VERSION);
+        let payload =
+            serde_json::to_vec(&json!({ "id": request.id, "result": result })).expect("JSON");
+        stream
+            .write_all(&encode_frame(&payload).expect("frame"))
+            .await
+            .expect("hello response");
+    }
+
+    #[tokio::test]
+    async fn hello_keeps_only_offered_capabilities_and_exposes_ready_versions() {
+        let (stream, server) = pair().await;
+        let mut client = client(stream);
+        let task = tokio::spawn(hello_daemon(
+            server,
+            json!({
+                "rpcVersion": RPC_VERSION,
+                "daemonVersion": "4.0.0-alpha.0",
+                "capabilities": [CAPABILITY_OPERATIONS_V1, "future.capability.v1"],
+                "dataSchema": 45,
+                "configSchema": 13,
+                "futureOptional": true
+            }),
+        ));
+        client.hello("sdk-test", None).await.expect("valid hello");
+        assert!(client.is_usable());
+        assert!(client.supports_capability(CAPABILITY_OPERATIONS_V1));
+        assert!(!client.supports_capability("future.capability.v1"));
+        assert_eq!(client.hello_result().data_schema, Some(45));
+        assert_eq!(client.hello_result().config_schema, Some(13));
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
+    async fn hello_rejects_wrong_major_and_malformed_capabilities() {
+        for result in [
+            json!({"rpcVersion": RPC_VERSION + 1, "daemonVersion": "4.0.0-alpha.0", "capabilities": []}),
+            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "capabilities": ["invalid name"]}),
+            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "capabilities": ["future.v1", "future.v1"]}),
+        ] {
+            let (stream, server) = pair().await;
+            let mut client = client(stream);
+            let task = tokio::spawn(hello_daemon(server, result));
+            assert!(matches!(
+                client.hello("sdk-test", None).await,
+                Err(ClientError::InvalidResponse)
+            ));
+            assert!(!client.is_usable());
+            task.await.expect("server task");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_invalid_or_truncated_response_makes_the_connection_unusable() {
+        let malformed = [
+            encode_frame(br#"{"id":"2","result":{}}"#).expect("wrong ID success"),
+            encode_frame(br#"{"id":"2","error":{"code":"denied","message":"denied"}}"#)
+                .expect("wrong ID error"),
+            encode_frame(br#"{"id":"1","result":{},"error":null}"#).expect("ambiguous response"),
+            0u32.to_le_bytes().to_vec(),
+            (u32::try_from(alcomd_protocol::MAX_FRAME_PAYLOAD_BYTES).expect("bounded") + 1)
+                .to_le_bytes()
+                .to_vec(),
+        ];
+        let truncated = [vec![20, 0], vec![20, 0, 0, 0, b'{']];
+        for (frame, is_truncated) in malformed
+            .into_iter()
+            .map(|frame| (frame, false))
+            .chain(truncated.into_iter().map(|frame| (frame, true)))
+        {
+            let (stream, mut server) = pair().await;
+            let mut client = client(stream);
+            let task = tokio::spawn(async move {
+                let _ = read_frame(&mut server).await.expect("request frame");
+                server.write_all(&frame).await.expect("response bytes");
+            });
+            let result = client
+                .call::<_, serde_json::Value>(METHOD_SYSTEM_STATUS, json!({}))
+                .await;
+            if is_truncated {
+                assert!(
+                    matches!(result, Err(ClientError::Transport(error)) if error.kind() == io::ErrorKind::UnexpectedEof)
+                );
+            } else {
+                assert!(matches!(result, Err(ClientError::InvalidResponse)));
+            }
+            assert!(!client.is_usable());
+            task.await.expect("server task");
         }
     }
 

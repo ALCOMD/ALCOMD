@@ -14,6 +14,7 @@ readonly EXPECTED_BINARIES=(
     alcomd-gui
     alcomd-mcp
     alcomd-migrate-v3
+    alcomd-sdk-bridge
     alcomd-updater
 )
 

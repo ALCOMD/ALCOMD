@@ -34,15 +34,15 @@ export const RPC_CAPABILITIES = {
     mcpRuntimeRead: "mcp.runtime.read.v1"
 } as const;
 
-export * from "./portable-ui";
-export * from "./mcp-runtime";
-export * from "./events";
-export * from "./operation-logs";
-export * from "./package-candidates";
-export * from "./project-inventory";
-export * from "./unity-hub";
-export * from "./repository-list";
-export * from "./templates";
+export * from "./portable-ui.js";
+export * from "./mcp-runtime.js";
+export * from "./events.js";
+export * from "./operation-logs.js";
+export * from "./package-candidates.js";
+export * from "./project-inventory.js";
+export * from "./unity-hub.js";
+export * from "./repository-list.js";
+export * from "./templates.js";
 
 export interface ClientInfo {
     name: string;
@@ -97,4 +97,7 @@ export interface HelloResponse {
     };
 }
 
-export * from "./extension-sources";
+export * from "./extension-sources.js";
+
+export type * from "./core-models.js";
+export { SDK_METHODS, type NativeRpcMethods } from "./sdk-methods.js";

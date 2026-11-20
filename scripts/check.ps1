@@ -19,6 +19,8 @@ cargo test --locked --manifest-path $mcpManifest
 
 npm run check
 npm run build
+npm run test --workspace @alcomd/sdk
 Invoke-MetadataValidator
+& $script:RepositoryPython.Executable @($script:RepositoryPython.PrefixArguments) ./scripts/check-native-sdk.py
 
 Assert-LockFileSnapshot $lockSnapshot

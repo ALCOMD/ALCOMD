@@ -106,6 +106,24 @@ fn verify_peer(
     Ok(())
 }
 
+pub(super) fn verify_local_server_user(pipe: &NamedPipeClient, sid: &str) -> io::Result<()> {
+    let handle = pipe.as_raw_handle();
+    let pid = server_pid(handle)?;
+    // SAFETY: a non-null OpenProcess result is an owned query handle for the named-pipe peer.
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if process.is_null() {
+        return Err(denied());
+    }
+    // SAFETY: ownership transfers to OwnedHandle and the query handle closes on return.
+    let process = unsafe { OwnedHandle::from_raw_handle(process) };
+    if process_user_sid_string(process.as_raw_handle()).map_err(|_| denied())? != sid
+        || server_pid(handle)? != pid
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+
 fn server_pid(pipe: HANDLE) -> io::Result<u32> {
     let mut pid = 0;
     // SAFETY: `pipe` is borrowed from a live client handle; the output points to a writable u32.

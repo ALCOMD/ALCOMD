@@ -28,7 +28,7 @@ import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/d
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
 import type { DesktopLink } from "../../src/DesktopLinkDialog";
-import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
+import type { BackupRecord, Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
@@ -1766,7 +1766,7 @@ function catalogTemplate(index: number) {
     return { ...userTemplate("com.example.catalog-" + suffix, "Catalog template " + suffix), revision: 10 + index };
 }
 
-function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
+function backup(): BackupRecord { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 3, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }

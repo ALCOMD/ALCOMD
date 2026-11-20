@@ -71,8 +71,11 @@ def validate_current_settings_contract() -> None:
     require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
             "Settings RPC updates must use the current model")
     hello = load_json("specs/rpc/system-hello.response.schema.json")
-    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == CURRENT_CONFIG_SCHEMA,
-            f"Hello must report Config{CURRENT_CONFIG_SCHEMA}")
+    hello_result = hello["properties"]["result"]
+    for field in ("dataSchema", "configSchema"):
+        require(field not in hello_result["required"] and hello_result["properties"][field] == {
+            "type": "integer", "minimum": 1, "maximum": (1 << 32) - 1
+        }, f"Hello {field} must be an optional positive u32")
     for version in (11, 12, CURRENT_CONFIG_SCHEMA):
         schema = load_json(f"specs/config/settings-v{version}.schema.json")
         active_definitions = schema["$defs"]

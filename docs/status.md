@@ -4,6 +4,8 @@
 
 ## 当前阶段
 
+**M10 实施中。** 本阶段交付同一系统用户直连的 Rust 和 TypeScript SDK，覆盖官方 GUI 使用的完整 Core 业务，并加固原生 RPC 合同。[M10 实施计划](exec-plans/M10-native-sdk-and-rpc.md)
+
 **M9 已完成。** 第一方 Discord 扩展已通过公开 Extension API 接通 Core 和 Host，并沿用 v3 的 Discord 应用身份。主仓候选 `feca8df3` 的三平台 Hosted CI 和四语言 CodeQL 全部通过，Chromium 各 738 项通过。独立扩展候选 `0ff04bc` 已通过三平台构建及 Actions、Rust 和 Python CodeQL。Windows 已完成真实 Unity 与 Discord 的 IPC 验收，Ubuntu 和 macOS 的真实桌面验收按计划延期。[M9 收尾记录](exec-plans/M9-discord-first-party-extension.md#2026-11-20-m9-收尾)
 
 M8 冻结候选为 `622cb62a`，Windows、Ubuntu 和 CodeQL 已通过。macOS 未获运行器，按所有者决定延期补验。其他遗留验收项见 [M8 收尾记录](exec-plans/M8-mcp-protocol-and-management.md#2026-11-20-m8-收尾)。

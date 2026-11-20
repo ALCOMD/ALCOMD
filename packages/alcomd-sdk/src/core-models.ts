@@ -1,0 +1,470 @@
+import type { ExtensionRecord, PackageRemovalConflict, PackageSettings } from "./index.js";
+
+export interface SystemStatus {
+    product: string;
+    daemonVersion: string;
+    rpcVersion: number;
+    state: string;
+    capabilities: string[];
+}
+
+export interface OperationProgress {
+    phase: string;
+}
+
+export interface Operation {
+    operationId: string;
+    kind: string;
+    state: string;
+    revision: number;
+    createdAtMs: number;
+    updatedAtMs: number;
+    startedAtMs?: number;
+    completedAtMs?: number;
+    result?: unknown;
+    errorCode?: string;
+    diagnosticId?: string;
+    progress?: OperationProgress;
+}
+
+export interface OperationAccepted { operationId: string; replayed: boolean }
+export interface OperationWriteResult { operation: Operation; replayed: boolean }
+
+export type AppearanceMode = "system" | "light" | "dark";
+export type AppearanceMotion = "system" | "full" | "reduced";
+export type AppearanceThemeScheme = "tonal-spot" | "fidelity" | "monochrome" | "neutral"
+    | "vibrant" | "expressive" | "content" | "rainbow" | "fruit-salad";
+export type SettingsLocale = "system" | "en-US" | "zh-CN" | "ja-JP";
+export type BackupCompressionMode = "store" | "fast" | "level3" | "level5" | "level7" | "maximum";
+
+export interface UnityHubLocation {
+    status: "available" | "not_found" | "unavailable";
+    source: "configured" | "discovered" | "none";
+    path: string | null;
+    configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
+}
+
+export type NetworkProxy = { mode: "system" } | { mode: "direct" } | { mode: "custom"; url: string };
+
+export interface OfficialSettings {
+    projects: { autoDiscover: boolean };
+    backups: { compressionMode: BackupCompressionMode; includeVpmPackages: boolean; includeLibrary: boolean };
+    paths: { projectDirectory: string | null; backupDirectory: string | null };
+    unity: { hubPath: string | null; defaultLaunchArguments: string[] | null };
+    window: { rememberState: boolean; fullscreen: boolean };
+    integrations: { handleVccLinks: boolean };
+    network: { proxy: NetworkProxy };
+    appearance: {
+        mode: AppearanceMode;
+        sourceColor: string | null;
+        scheme: AppearanceThemeScheme;
+        motion: AppearanceMotion;
+    };
+    locale: SettingsLocale;
+    packages: PackageSettings;
+}
+
+export interface SettingsGetResult {
+    directories: { projectDirectory: string; backupDirectory: string };
+    unityHub: UnityHubLocation;
+    configSchema: 13;
+    revision: number;
+    settings: OfficialSettings;
+}
+
+export interface SettingsUpdate {
+    projects?: { autoDiscover: boolean };
+    backups?: { compressionMode?: BackupCompressionMode; includeVpmPackages?: boolean; includeLibrary?: boolean };
+    paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
+    unity?: { hubPath?: string | null; defaultLaunchArguments?: string[] | null };
+    window?: { rememberState?: boolean; fullscreen?: boolean };
+    integrations?: { handleVccLinks: boolean };
+    network?: OfficialSettings["network"];
+    appearance?: {
+        mode?: AppearanceMode;
+        sourceColor?: string | null;
+        scheme?: AppearanceThemeScheme;
+        motion?: AppearanceMotion;
+    };
+    locale?: SettingsLocale;
+    packages?: Partial<PackageSettings>;
+}
+
+
+export interface DependencyIdentity {
+    packageId: string;
+    value: string;
+}
+
+export interface ReadIssue {
+    code: string;
+    component: string;
+    item: string;
+    line?: number;
+    column?: number;
+}
+
+export interface ProjectSnapshot {
+    displayName?: string;
+    projectId?: string;
+    registeredAtMs?: number;
+    favorite?: boolean;
+    rootPath: string;
+    directoryState?: "available" | "missing" | "unavailable";
+    projectType: string;
+    unityVersion: string;
+    unityRevision?: string;
+    vpmManifest: string;
+    upmManifest: string;
+    directDependencies: DependencyIdentity[];
+    lockedDependencies: DependencyIdentity[];
+    issues: ReadIssue[];
+    lastModifiedAtMs?: number;
+    revision?: number;
+}
+
+export interface ProjectResult { project: ProjectSnapshot }
+export type ProjectListSort = "name" | "type" | "unity" | "added" | "modified";
+export interface ProjectListView { search?: string; sort: ProjectListSort; descending: boolean }
+export interface ProjectsListResult { projects: ProjectSnapshot[]; nextCursor?: RegistryCursor; viewSequence?: number }
+export interface ProjectWriteResult { project: ProjectSnapshot; replayed: boolean }
+export interface ProjectUnregisterResult { projectId: string; revision: number; unregistered: boolean; replayed: boolean }
+
+export interface ProjectCopyPlan {
+    planId: string;
+    sourceProjectId: string;
+    sourceProjectRevision: number;
+    sourceCanonicalRootPath: string;
+    targetParentCanonicalPath: string;
+    normalizedTargetLeaf: string;
+    targetProjectId: string;
+    writerEvidence: { state: string; observedAtMs: number };
+    profile: {
+        id: string;
+        version: number;
+        excludes: string[];
+        quota: {
+            maxEntries: number;
+            maxSingleFileBytes: number;
+            maxTotalRegularFileBytes: number;
+            maxDepth: number;
+            maxNormalizedPathUtf8Bytes: number;
+        };
+    };
+    createdAtMs: number;
+    expiresAtMs: number;
+}
+
+export interface ProjectsPlanCopyResult { plan: ProjectCopyPlan; replayed: boolean }
+export interface ProjectsApplyCopyResult { operationId: string; targetProjectId: string; replayed: boolean }
+
+export interface ProjectDeletePlan {
+    planId: string;
+    projectId: string;
+    projectRevision: number;
+    canonicalRootPath: string;
+    normalizedLeaf: string;
+    writerEvidence: { state: string; observedAtMs: number; safeEvidence: string[] };
+    profile: { id: string; version: number; mode: string; protectedRootProfileVersion: number; progress: string };
+    createdAtMs: number;
+    expiresAtMs: number;
+}
+
+export interface ProjectsPlanDeleteDirectoryResult { plan: ProjectDeletePlan; replayed: boolean }
+export interface ProjectsApplyDeleteDirectoryResult { operationId: string; projectId: string; replayed: boolean }
+
+export interface RegistryCursor {
+    registeredAtMs: number;
+    id: string;
+}
+
+export type RepositorySource =
+    | { kind: "local"; path: string }
+    | { kind: "remote"; url: string };
+
+export interface RepositorySnapshot {
+    credentialsConfigured?: boolean;
+    builtin?: "official" | "curated";
+    actions?: { canRemove: boolean; canEditAuthentication: boolean };
+    repositoryId?: string;
+    source: RepositorySource;
+    declaredId?: string;
+    name?: string;
+    displayName?: string;
+    declaredUrl?: string;
+    issues: ReadIssue[];
+    revision?: number;
+    refreshedAtMs: number;
+}
+
+export interface RepositoryResult { repository: RepositorySnapshot }
+export interface RepositoriesListResult { repositories: RepositorySnapshot[]; nextCursor?: RegistryCursor }
+export interface RepositoryWriteResult { repository: RepositorySnapshot; replayed: boolean }
+export interface RepositoryUnregisterResult { repositoryId: string; revision: number; unregistered: boolean; replayed: boolean }
+
+export interface RepositoryPackageVersion {
+    packageId: string;
+    version: string;
+    displayName?: string;
+    description?: string;
+    yanked: boolean;
+    unity?: string;
+    prerelease?: boolean;
+    links?: {
+        documentation?: { url: string };
+        changelog?: { url: string };
+    };
+}
+
+export interface RepositoryPackagesResult {
+    packages: RepositoryPackageVersion[];
+    nextCursor?: PackageCursor;
+}
+
+export interface PackageCursor {
+    packageId: string;
+    version: string;
+}
+
+export interface RepositoryPackageSourcePin {
+    repositoryId: string;
+    repositoryRevision: number;
+    sourceIdentity: string;
+    manifestFingerprint: string;
+    packageId: string;
+    version: string;
+    artifactUrl: string;
+    archiveSha256?: string;
+}
+
+export interface UserPackageSourcePin {
+    userPackageId: string;
+    sourceRevision: number;
+    sourceIdentity: string;
+    manifestFingerprint: string;
+    packageId: string;
+    version: string;
+    archiveSha256: string;
+}
+
+export type PackageSourcePin = RepositoryPackageSourcePin | UserPackageSourcePin;
+export type PackageSourceSelector =
+    | { kind: "repository"; repositoryId: string }
+    | { kind: "user_package"; userPackageId: string };
+
+export interface PackageMutation {
+    kind: "install" | "remove" | "replace";
+    packageId: string;
+    fromVersion?: string | null;
+    toVersion?: string | null;
+    source?: PackageSourcePin;
+}
+
+export interface PackageChangeSet {
+    removalConflicts?: PackageRemovalConflict[];
+    unityCompatibilityOverrides?: { packageId: string; version: string }[];
+    formatVersion: number;
+    legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];
+    mutations: PackageMutation[];
+    dependencyEdges: Array<{ fromPackageId: string; toPackageId: string; range: string; direct: boolean }>;
+    vpmManifestSha256: string;
+}
+
+export interface PackagePlan {
+    planId: string;
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "bulk";
+    state: "unapplied" | "applied";
+    projectId: string;
+    projectRevision: number;
+    changeSetFingerprint: string;
+    changeSet: PackageChangeSet;
+}
+
+export interface PackagePlanInstallParams {
+    allowUnityIncompatible?: boolean;
+    projectId: string;
+    expectedRevision: number;
+    packageId: string;
+    versionRange?: string | null;
+    repositoryId?: string | null;
+    source?: PackageSourceSelector | null;
+    includePrerelease?: boolean;
+}
+
+export interface PackagePlanRemoveParams { projectId: string; expectedRevision: number; packageId: string }
+export interface PackagePlanDowngradeParams { allowUnityIncompatible?: boolean; projectId: string; expectedRevision: number; packageId: string; version: string; repositoryId?: string | null; source?: PackageSourceSelector | null }
+export interface PackagePlanResolveParams { projectId: string; expectedRevision: number; includePrerelease?: boolean }
+export type PackageReinstallSelection = { kind: "packages"; packageIds: string[] } | { kind: "all" };
+export interface PackageReinstallSource { packageId: string; source: PackageSourceSelector }
+export interface PackagePlanReinstallParams { projectId: string; expectedRevision: number; selection: PackageReinstallSelection; sources?: PackageReinstallSource[] }
+export type PackageBulkIntent =
+    | { kind: "install"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
+    | { kind: "upgrade"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
+    | { kind: "remove"; packageId: string }
+    | { kind: "reinstall"; packageId: string; source?: PackageSourceSelector | null };
+export interface PackagePlanBulkParams { projectId: string; expectedRevision: number; intents: PackageBulkIntent[] }
+export interface PackageApplyPlanParams { planId: string; expectedRevision: number; idempotencyKey: string }
+
+export interface UserPackageRecord {
+    userPackageId: string;
+    sourceRootPath: string;
+    packageId: string;
+    version: string;
+    displayName?: string;
+    revision: number;
+    archiveSha256: string;
+    createdAtMs: number;
+    updatedAtMs: number;
+}
+export interface UserPackageCursor { updatedAtMs: number; userPackageId: string }
+export interface UserPackagesListResult { userPackages: UserPackageRecord[]; nextCursor?: UserPackageCursor }
+export interface UserPackageResult { userPackage: UserPackageRecord }
+export interface UserPackageWriteResult { userPackage: UserPackageRecord; replayed: boolean }
+export interface UserPackageRemoveResult { userPackageId: string; revision: number; removed: boolean; replayed: boolean }
+
+export interface UnityInstallation {
+    installationId: string;
+    executablePath: string;
+    filesystemIdentity: string;
+    unityVersion: string;
+    architecture: string;
+    sourceKind: string;
+    revision: number;
+    observedAtMs: number;
+    updatedAtMs: number;
+}
+
+export interface UnityInstallationsListResult {
+    installations: UnityInstallation[];
+    nextCursor?: string;
+    replayed: boolean;
+    versionOptions?: UnityVersionOptions;
+}
+
+export interface UnityVersionOptions {
+    versions: string[];
+    defaultVersion?: string;
+}
+
+export interface UnityInstallationResult { installation: UnityInstallation; replayed: boolean }
+export interface UnityInstallationRemoveResult { installationId: string; removed: boolean; replayed: boolean }
+
+export interface ProjectUnityLaunchConfig {
+    projectId: string;
+    arguments: string[];
+    revision: number;
+    updatedAtMs: number;
+}
+
+export interface ProjectUnityLaunchConfigResult { config: ProjectUnityLaunchConfig; defaultArguments: string[]; effectiveArguments: string[] }
+export interface ProjectUnityLaunchConfigMutationResult { config: ProjectUnityLaunchConfig; changed: boolean; replayed: boolean }
+
+export interface UnityWriterState {
+    projectId: string;
+    state: string;
+    evidence: Array<{ kind: string }>;
+    checkedAtMs: number;
+}
+
+export interface UnityLaunchRecord {
+    launchId: string;
+    projectId: string;
+    installationId: string;
+    state: string;
+    spawnAccepted: boolean;
+    createdAtMs: number;
+}
+
+export interface UnityLaunchResult { launch: UnityLaunchRecord; replayed: boolean }
+
+export interface UnityLaunchOptionsResult {
+    projectId: string;
+    projectRevision: number;
+    projectUnityVersion: string;
+    exactMatchingInstallations: UnityInstallation[];
+    migrationVersionOptions?: UnityMigrationVersionOption[];
+}
+
+export interface UnityMigrationVersionOption {
+    unityVersion: string;
+    installations: Array<{ installationId: string; architecture: string }>;
+    defaultInstallationId?: string;
+}
+
+export type ProjectUnityMigrationClassificationKind =
+    | "patch_or_minor_upgrade"
+    | "major_upgrade"
+    | "patch_or_minor_downgrade"
+    | "major_downgrade"
+    | "china_variant_change";
+
+export interface ProjectUnityMigrationPlan {
+    planId: string;
+    projectId: string;
+    sourceUnityVersion: string;
+    targetUnityVersion: string;
+    targetInstallationId: string;
+    classification: {
+        kind: ProjectUnityMigrationClassificationKind;
+        supportedForApply: boolean;
+    };
+    expiresAtMs: number;
+}
+
+export type ProjectsPlanUnityMigrationResult =
+    | { kind: "no_change"; currentVersion: string }
+    | { kind: "planned"; plan: ProjectUnityMigrationPlan; replayed: boolean };
+
+export interface ProjectsApplyUnityMigrationResult { operationId: string; replayed: boolean }
+
+export interface BackupRecord {
+    backupId: string;
+    sourceProjectId: string;
+    archiveSha256: string;
+    archiveBytes: number;
+    formatVersion: number;
+    createdAtMs: number;
+    compressionMode: BackupCompressionMode;
+    excludeVpmPackages: boolean;
+}
+
+export interface BackupsListResult { backups: BackupRecord[]; nextCursor?: string }
+
+export interface BackupCreateResult { operationId: string; backupId: string; replayed: boolean }
+export interface BackupRestorePlan {
+    planId: string;
+    projectId: string;
+    backupId: string;
+    target: { parent: string; leaf: string; mustBeAbsent: boolean };
+    archiveSha256: string;
+    packagesRequireResolve: boolean;
+    excludedPackages: Array<{ packageId: string; version: string }>;
+    planFingerprint: string;
+}
+export interface BackupApplyRestoreResult { operationId: string; projectId: string; replayed: boolean }
+export interface ExtensionsListResult { extensions: ExtensionRecord[]; nextCursor?: string }
+
+export interface ExtensionPlan {
+    installationSource?: import("./index.js").ExtensionInstallationSource;
+    installationTerms?: import("./index.js").ExtensionInstallationTerms;
+    mcpTools: import("./index.js").McpToolPreview[];
+    requiredPermissions: string[];
+    optionalPermissions: string[];
+    planId: string;
+    action: string;
+    state: string;
+    sourceKind: string;
+    extensionId: string;
+    version: string;
+    apiMajor: number;
+    profileVersion: number;
+    packageDigest: string;
+    publisherFingerprint: string;
+    dataDisposition: string;
+    planFingerprint: string;
+    uiProtocol?: string;
+}
+
+export interface ExtensionPlanResult { plan: ExtensionPlan }
+export interface ExtensionOperationResult { operationId: string; replayed: boolean }
+export interface ExtensionGrantResult { extensionId: string; grantRevision: number; state: string; replayed: boolean }

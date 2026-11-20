@@ -9,7 +9,11 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 33] = [
+const SCHEMAS: [(&str, &str); 34] = [
+    (
+        "native-sdk-v1",
+        include_str!("../../../specs/rpc/native-sdk-v1.schema.json"),
+    ),
     (
         "m8-project-assets-v1",
         include_str!("../../../specs/rpc/m8-project-assets-v1.schema.json"),
@@ -143,6 +147,51 @@ const SCHEMAS: [(&str, &str); 33] = [
         include_str!("../../../specs/rpc/m8-mcp-oauth-v2.schema.json"),
     ),
 ];
+
+#[test]
+fn native_sdk_package_plans_include_current_actions_and_nullable_source_options() {
+    use alcomd_protocol::{PackagePlanAction, PackagePlanInstallParams, PackageSourceSelector};
+
+    let contract = schema("native-sdk-v1");
+    let definitions = &contract["$defs"];
+    let actions = definitions["PackagePlan"]["properties"]["action"]["enum"]
+        .as_array()
+        .expect("package action enum");
+    for action in [PackagePlanAction::Bulk, PackagePlanAction::Reinstall] {
+        assert!(actions.contains(&serde_json::to_value(action).expect("package action")));
+    }
+
+    let mut input = PackagePlanInstallParams {
+        allow_unity_incompatible: false,
+        project_id: "00000000-0000-4000-8000-000000000001".into(),
+        expected_revision: 1,
+        package_id: "com.example.package".into(),
+        version_range: None,
+        repository_id: None,
+        source: None,
+        include_prerelease: false,
+    };
+    let properties = &definitions["PackagePlanInstallParams"]["properties"];
+    let automatic = serde_json::to_value(&input).expect("automatic source");
+    for key in ["versionRange", "repositoryId", "source"] {
+        assert!(
+            automatic
+                .get(key)
+                .expect("present optional field")
+                .is_null()
+        );
+        assert_eq!(properties[key]["oneOf"][1]["type"], "null");
+    }
+    input.source = Some(PackageSourceSelector::UserPackage {
+        user_package_id: "00000000-0000-4000-8000-000000000002".into(),
+    });
+    let user_package = serde_json::to_value(input).expect("user package source");
+    assert_eq!(user_package["source"]["kind"], "user_package");
+    assert_eq!(
+        properties["source"]["oneOf"][0]["$ref"],
+        "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"
+    );
+}
 
 #[test]
 fn project_assets_wire_contract_requires_revision_confirmation_and_closed_changes() {
@@ -1711,10 +1760,8 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
 
     let hello = schema("system-hello.response");
     assert_eq!(
-        hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 27
-        ])
+        hello["properties"]["result"]["properties"]["dataSchema"],
+        json!({ "type": "integer", "minimum": 1, "maximum": u32::MAX })
     );
 }
 
@@ -1793,23 +1840,29 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 
 #[test]
 fn hello_schema_accepts_the_implemented_v14_store() {
-    let hello = schema("system-hello.response");
-    assert!(
-        hello["properties"]["result"]["properties"]["dataSchema"]["enum"]
-            .as_array()
-            .expect("supported historical data schemas")
-            .contains(&json!(14))
-    );
+    assert_historical_hello_data_schema(14);
 }
 
 #[test]
 fn hello_schema_accepts_the_project_observation_removal_v16_store() {
+    assert_historical_hello_data_schema(16);
+}
+
+fn assert_historical_hello_data_schema(version: u32) {
     let hello = schema("system-hello.response");
+    let bounds = &hello["properties"]["result"]["properties"]["dataSchema"];
+    let result = HelloResult::m7_official_gui(Vec::new(), version);
+    let wire = serde_json::to_value(result).expect("serialize historical response");
+    let reported = wire["dataSchema"]
+        .as_u64()
+        .expect("numeric historical version");
+    assert!(reported >= bounds["minimum"].as_u64().expect("schema minimum"));
+    assert!(reported <= bounds["maximum"].as_u64().expect("schema maximum"));
     assert_eq!(
-        hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 21, 22, 23, 27
-        ])
+        serde_json::from_value::<HelloResult>(wire)
+            .expect("decode historical response")
+            .data_schema,
+        Some(version)
     );
 }
 
@@ -2151,8 +2204,8 @@ fn hello_schema_adds_extension_api_and_config_schema_as_optional() {
             .any(|field| field == "configSchema")
     );
     assert_eq!(
-        response["properties"]["result"]["properties"]["configSchema"]["const"],
-        alcomd_protocol::CONFIG_SCHEMA_VERSION
+        properties["configSchema"],
+        json!({ "type": "integer", "minimum": 1, "maximum": u32::MAX })
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

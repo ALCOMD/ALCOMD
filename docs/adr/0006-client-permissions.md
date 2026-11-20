@@ -10,10 +10,11 @@
 
 ## 决策
 
-每个外部应用、MCP 客户端和扩展拥有独立 Principal 与最小权限。
+独立 MCP 客户端和扩展拥有各自的 Principal 与最小权限。M10 选择同系统用户的
+原生直连模型。能访问该账号原生端点的 GUI 和 CLI 同样以 `builtin:local-owner`
+进入 Core，无应用配对、应用级信任区分或逐应用撤销。系统账号是这一入口的信任边界。
 
-M2 引入内建 `builtin:local-owner` Principal，仅代表当前同用户官方客户端的 bootstrap
-Principal，不代表任意同用户进程已经完成可信身份认证。M2 权限名固定为：
+M2 初次引入 `builtin:local-owner` 时将其用于官方客户端的 bootstrap，权限名固定为：
 
 - `state.check`
 - `operations.read`
@@ -21,14 +22,11 @@ Principal，不代表任意同用户进程已经完成可信身份认证。M2 �
 - `events.read`
 
 每个 application 用例必须重新执行 permission 与 owner/visibility 校验。Operation、Event 可见
-范围和 idempotency scope 均绑定 Principal；client metadata、SID、pipe 名和 OperationId 都不是
-授权凭据。
+范围和 idempotency scope 均绑定 Principal。系统依据 OS 端点访问边界建立本机所有者上下文。
+自报的 client metadata、SID 字符串、pipe 名和 OperationId 均不能授予权限。
 
-M2 synthetic Principal 只用于隔离测试。真实 credential/pairing/revocation 仍属于后续里程碑，
-`access.principal-revocation` 不得因 M2 基础隔离测试而整体标为 implemented。第一个产生项目、
-包或外部文件副作用的写 RPC 出现前，必须先冻结真实 Principal credential 合同；后续业务权限
-不会自动授予 `builtin:local-owner`。
+M2 synthetic Principal 只用于隔离测试。MCP 和扩展的授权与撤销由其已批准合同验收。
 
 ## 结果
 
-授权可审计、可撤销，不提供全局万能 token。
+原生业务仍由 Core 验证权限、revision、目标及显式确认。MCP 和扩展授权可审计与撤销。

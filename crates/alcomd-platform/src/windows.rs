@@ -1,4 +1,5 @@
 use std::io;
+use std::os::windows::io::AsRawHandle;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -6,9 +7,12 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::windows::named_pipe::{
     ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
 };
+use windows_sys::Win32::Storage::FileSystem::SECURITY_IDENTIFICATION;
 
 use crate::{BindError, DataConfig, IpcConfig};
 
+#[path = "windows_core_installation.rs"]
+pub(super) mod core_installation;
 #[path = "windows_file_identity.rs"]
 mod file_identity;
 #[path = "windows_file_publish.rs"]
@@ -129,11 +133,29 @@ impl IpcListener {
     }
 }
 
-/// Opens the current-user Named Pipe.
+/// Opens and verifies the current-user Named Pipe before sending any request.
 pub async fn connect(config: &IpcConfig) -> io::Result<IpcStream> {
-    reject_runtime_override(config)?;
     let endpoint = endpoint_display(config)?;
-    ClientOptions::new().open(endpoint).map(IpcStream::Client)
+    connect_current_user_endpoint(&endpoint)
+        .await
+        .map(IpcStream::Client)
+}
+
+async fn connect_current_user_endpoint(endpoint: &str) -> io::Result<NamedPipeClient> {
+    let pipe = ClientOptions::new()
+        .security_qos_flags(SECURITY_IDENTIFICATION)
+        .open(endpoint)?;
+    let current_sid = security::current_user_sid_string()?;
+    security::validate_current_user_only_dacl(pipe.as_raw_handle().cast(), &current_sid).map_err(
+        |_| {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "untrusted Windows IPC DACL",
+            )
+        },
+    )?;
+    local_ipc::verify_local_server_user(&pipe, &current_sid)?;
+    Ok(pipe)
 }
 
 /// Returns the SID-qualified pipe name.
@@ -154,10 +176,7 @@ pub(crate) fn user_profile_directory() -> io::Result<std::path::PathBuf> {
 
 /// Creates the product data directory and returns its state database path.
 pub fn state_database_path(config: &DataConfig) -> io::Result<std::path::PathBuf> {
-    let directory = match config.data_directory() {
-        Some(directory) => directory.to_path_buf(),
-        None => local_app_data_directory()?.join("ALCOMD").join("data"),
-    };
+    let directory = data_directory_path(config)?;
     if !directory.is_absolute()
         || directory.components().any(|component| {
             matches!(
@@ -182,6 +201,15 @@ pub fn state_database_path(config: &DataConfig) -> io::Result<std::path::PathBuf
     Ok(directory.join("state.db"))
 }
 
+pub(super) fn data_directory_path(config: &DataConfig) -> io::Result<std::path::PathBuf> {
+    match config.data_directory() {
+        Some(directory) => Ok(directory.to_path_buf()),
+        None => Ok(local_app_data_directory()?
+            .join(env!("ALCOMD_PRODUCT_DIRECTORY"))
+            .join("data")),
+    }
+}
+
 fn reject_runtime_override(config: &IpcConfig) -> io::Result<()> {
     if config.runtime_directory().is_some() {
         return Err(io::Error::new(
@@ -195,6 +223,46 @@ fn reject_runtime_override(config: &IpcConfig) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[tokio::test]
+    async fn native_rpc_connect_checks_the_pipe_dacl_before_use() {
+        let endpoint = format!(
+            r"\\.\pipe\alcomd-test-rpc-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        );
+        assert_eq!(
+            connect_current_user_endpoint(&endpoint)
+                .await
+                .expect_err("absent endpoint")
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        let mut options = ServerOptions::new();
+        options
+            .first_pipe_instance(true)
+            .reject_remote_clients(true);
+        let unchecked = options.create(&endpoint).expect("non-product DACL");
+        assert_eq!(
+            connect_current_user_endpoint(&endpoint)
+                .await
+                .expect_err("untrusted DACL")
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        drop(unchecked);
+        let secure =
+            security::create_secure_pipe(&options, &endpoint).expect("private product DACL");
+        let client = connect_current_user_endpoint(&endpoint)
+            .await
+            .expect("verified pipe");
+        secure.connect().await.expect("same-account connection");
+        drop((client, secure));
+    }
 
     #[test]
     fn isolated_state_database_path_stays_inside_the_override() {

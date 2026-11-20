@@ -292,13 +292,14 @@ export class SettingsAutosave {
 }
 
 function merge(first: SettingsUpdate, second: SettingsUpdate): SettingsUpdate {
+    const projects = second.projects ?? first.projects;
     return {
         ...first, ...second,
         ...(first.appearance === undefined && second.appearance === undefined ? {} : { appearance: { ...first.appearance, ...second.appearance } }),
         ...(first.unity === undefined && second.unity === undefined ? {} : { unity: { ...first.unity, ...second.unity } }),
         ...(first.window === undefined && second.window === undefined ? {} : { window: { ...first.window, ...second.window } }),
         ...(first.paths === undefined && second.paths === undefined ? {} : { paths: { ...first.paths, ...second.paths } }),
-        ...(first.projects === undefined && second.projects === undefined ? {} : { projects: { ...first.projects, ...second.projects } }),
+        ...(projects === undefined ? {} : { projects }),
         ...(first.backups === undefined && second.backups === undefined ? {} : { backups: { ...first.backups, ...second.backups } }),
         ...(first.packages === undefined && second.packages === undefined ? {} : { packages: { ...first.packages, ...second.packages } })
     };
@@ -327,7 +328,7 @@ function difference(intent: SettingsUpdate, accepted: OfficialSettings): Setting
         const packages = Object.fromEntries(Object.entries(intent.packages).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(accepted.packages[key as keyof typeof intent.packages])));
         if (Object.keys(packages).length > 0) result.packages = packages;
     }
-    if (intent.projects?.autoDiscover !== undefined && intent.projects.autoDiscover !== accepted.projects.autoDiscover) {
+    if (intent.projects !== undefined && intent.projects.autoDiscover !== accepted.projects.autoDiscover) {
         result.projects = { autoDiscover: intent.projects.autoDiscover };
     }
     if (intent.backups !== undefined) {

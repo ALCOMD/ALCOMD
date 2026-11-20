@@ -420,13 +420,72 @@ pub struct ErrorResponse {
 }
 
 /// A typed RPC response.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Response<T> {
     /// Successful response.
     Success(SuccessResponse<T>),
     /// Structured public error.
     Error(ErrorResponse),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Response<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+
+        #[derive(Deserialize)]
+        #[serde(bound(deserialize = "T: Deserialize<'de>"))]
+        struct Envelope<T> {
+            #[serde(deserialize_with = "Deserialize::deserialize")]
+            id: Option<String>,
+            #[serde(default, deserialize_with = "deserialize_response_branch")]
+            result: Option<T>,
+            #[serde(default, deserialize_with = "deserialize_response_branch")]
+            error: Option<RpcError>,
+        }
+
+        let Envelope { id, result, error } = deserialize_rpc_object(deserializer)?;
+        if let Some(id) = &id {
+            validate_non_empty_utf8("id", id, MAX_REQUEST_ID_BYTES).map_err(D::Error::custom)?;
+        }
+        match (result, error) {
+            (Some(result), None) => Ok(Self::Success(SuccessResponse {
+                id: id
+                    .ok_or_else(|| D::Error::custom("a success response requires a request ID"))?,
+                result,
+            })),
+            (None, Some(error)) => Ok(Self::Error(ErrorResponse { id, error })),
+            _ => Err(D::Error::custom("expected exactly one of result or error")),
+        }
+    }
+}
+
+fn deserialize_response_branch<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    deserialize_rpc_object(deserializer).map(Some)
+}
+
+fn deserialize_rpc_object<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    use serde::de::{MapAccess, Visitor, value::MapAccessDeserializer};
+
+    struct Object<T>(std::marker::PhantomData<T>);
+
+    impl<'de, T: Deserialize<'de>> Visitor<'de> for Object<T> {
+        type Value = T;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("an RPC object")
+        }
+
+        fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<T, M::Error> {
+            T::deserialize(MapAccessDeserializer::new(map))
+        }
+    }
+
+    deserializer.deserialize_map(Object(std::marker::PhantomData))
 }
 
 /// Stable, non-sensitive public RPC error.
@@ -781,14 +840,28 @@ pub struct HelloResult {
     /// Capabilities accepted by both peers.
     pub capabilities: Vec<String>,
     /// Ready state-store schema version. Absent when the store is unavailable or not initialized.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_schema_version"
+    )]
     pub data_schema: Option<u32>,
     /// Public settings Config Schema version, present only once durable config RPC is ready.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_schema_version"
+    )]
     pub config_schema: Option<u32>,
     /// Extension ABI information, present only once the M6 runtime is available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension_api: Option<ExtensionApiInfo>,
+}
+
+fn deserialize_schema_version<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u32>, D::Error> {
+    std::num::NonZeroU32::deserialize(deserializer).map(|version| Some(version.get()))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -799,6 +872,12 @@ pub struct ExtensionApiInfo {
 }
 
 impl HelloResult {
+    /// Validates the daemon metadata and capability bounds.
+    pub fn validate(&self) -> Result<(), ContractViolation> {
+        validate_non_empty_utf8("daemonVersion", &self.daemon_version, 64)?;
+        validate_capabilities(&self.capabilities)
+    }
+
     /// Creates the minimal M1 hello result.
     #[must_use]
     pub fn m1() -> Self {
@@ -3768,6 +3847,69 @@ mod tests {
             panic!("expected success response");
         };
         assert_eq!(success.result.capabilities, ["future.capability"]);
+    }
+
+    #[test]
+    fn response_requires_one_branch_and_a_request_id_field() {
+        for payload in [
+            r#"{"id":"1"}"#,
+            r#"{"id":"1","result":{},"error":{"code":"denied","message":"denied"}}"#,
+            r#"{"id":"1","result":null,"error":{"code":"denied","message":"denied"}}"#,
+            r#"{"id":"1","result":{},"error":null}"#,
+            r#"{"id":"1","result":{},"result":{}}"#,
+            r#"{"id":"1","id":"2","result":{}}"#,
+            r#"{"error":{"code":"denied","message":"denied"}}"#,
+            r#"{"id":null,"result":{}}"#,
+            r#"{"id":"","result":{}}"#,
+            r#"["1",{}]"#,
+            r#"{"id":"1","result":[]}"#,
+            r#"{"id":"1","result":null}"#,
+        ] {
+            assert!(
+                serde_json::from_str::<Response<Value>>(payload).is_err(),
+                "{payload}"
+            );
+        }
+        let uncorrelated = serde_json::from_str::<Response<Value>>(
+            r#"{"id":null,"error":{"code":"invalid_request","message":"Invalid request"}}"#,
+        )
+        .expect("an invalid request may have no ID");
+        assert!(matches!(
+            uncorrelated,
+            Response::Error(ErrorResponse { id: None, .. })
+        ));
+    }
+
+    #[test]
+    fn hello_schema_versions_are_omittable_positive_u32() {
+        let legacy =
+            json!({ "rpcVersion": 1, "daemonVersion": "4.0.0-alpha.0", "capabilities": [] });
+        let decoded: HelloResult = serde_json::from_value(legacy.clone()).expect("old daemon");
+        assert_eq!((decoded.data_schema, decoded.config_schema), (None, None));
+        for field in ["dataSchema", "configSchema"] {
+            for version in [json!(1), json!(u32::MAX)] {
+                let mut wire = legacy.clone();
+                wire[field] = version;
+                assert!(
+                    serde_json::from_value::<HelloResult>(wire).is_ok(),
+                    "{field}"
+                );
+            }
+            for version in [
+                json!(0),
+                json!(-1),
+                json!(1.5),
+                json!(u64::from(u32::MAX) + 1),
+                Value::Null,
+            ] {
+                let mut wire = legacy.clone();
+                wire[field] = version;
+                assert!(
+                    serde_json::from_value::<HelloResult>(wire).is_err(),
+                    "{field}"
+                );
+            }
+        }
     }
 
     #[test]

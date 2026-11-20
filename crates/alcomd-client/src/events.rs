@@ -20,20 +20,25 @@ impl EventSubscription {
         config: ClientConfig,
         params: EventsSubscribeParams,
     ) -> Result<Self, ClientError> {
-        let connection = async {
-            let mut client = AlcomdClient::connect(config).await?;
-            let ready: EventsSubscribeResult =
-                client.call(METHOD_EVENTS_SUBSCRIBE, params.clone()).await?;
-            let state = SubscriptionState::new(ready, &params)?;
-            Ok(Self {
-                stream: client.stream,
-                state,
-                usable: true,
-            })
-        };
+        let connection =
+            async { Self::from_client(AlcomdClient::connect(config).await?, params).await };
         tokio::time::timeout(std::time::Duration::from_secs(5), connection)
             .await
             .unwrap_or(Err(ClientError::ReadTimeout))
+    }
+
+    pub(crate) async fn from_client(
+        mut client: AlcomdClient,
+        params: EventsSubscribeParams,
+    ) -> Result<Self, ClientError> {
+        let ready: EventsSubscribeResult =
+            client.call(METHOD_EVENTS_SUBSCRIBE, params.clone()).await?;
+        let state = SubscriptionState::new(ready, &params)?;
+        Ok(Self {
+            stream: client.stream,
+            state,
+            usable: true,
+        })
     }
 
     #[must_use]

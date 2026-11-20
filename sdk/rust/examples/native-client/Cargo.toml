@@ -1,0 +1,16 @@
+[package]
+name = "alcomd-native-sdk-example"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "AGPL-3.0-only"
+publish = false
+
+[workspace]
+
+[dependencies]
+alcomd-client = { path = "../../../../crates/alcomd-client" }
+alcomd-platform = { path = "../../../../crates/alcomd-platform" }
+alcomd-protocol = { path = "../../../../crates/alcomd-protocol" }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["macros", "rt"] }

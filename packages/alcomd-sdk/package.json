@@ -3,13 +3,20 @@
     "version": "0.1.0",
     "private": true,
     "license": "AGPL-3.0-only",
-    "description": "TypeScript client types for ALCOMD RPC.",
+    "description": "TypeScript SDK for the native ALCOMD RPC.",
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./node": {
+            "types": "./src/node.ts",
+            "node": "./src/node.ts"
+        }
     },
     "scripts": {
-        "check": "tsc --noEmit"
+        "check": "tsc --noEmit",
+        "build": "tsc -p tsconfig.build.json && node scripts/copy-runtime.mjs",
+        "test": "node --test tests/*.test.mjs",
+        "pack:local": "npm run build && node scripts/pack-local.mjs"
     },
     "devDependencies": {
         "typescript": "^6.0.0"
