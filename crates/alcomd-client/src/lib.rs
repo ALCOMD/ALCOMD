@@ -1713,10 +1713,13 @@ mod connection_reuse_tests {
             .expect("explicit development executable");
         assert_eq!(command.get_program(), explicit_daemon.as_os_str());
 
+        let registration_error =
+            alcomd_platform::core_installation_registration(&DataConfig::isolated(data.clone()))
+                .expect_err("relative data directory must fail installation validation");
         let installed = ClientConfig::for_installed_core().with_data_directory(data);
         assert!(matches!(
             daemon_command(&installed),
-            Err(ClientError::StartDaemon(error)) if error.kind() == io::ErrorKind::InvalidData
+            Err(ClientError::StartDaemon(error)) if error.kind() == registration_error.kind()
         ));
     }
 
