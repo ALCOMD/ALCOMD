@@ -459,16 +459,23 @@ test("stopping forwards the current import key and displays Core outcomes", asyn
     expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
 });
 
-test("transport loss shows an unresolved import without inventing per-line outcomes", async ({ page }) => {
+test("transport loss retries the same import and preserves completed additions", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&list-import=transport");
     const host = await review(page, 67);
     const readsBefore = (await requests(page, "repositories.list")).length;
     await host.getByRole("button", { name: "Add 67 repositories", exact: true }).click();
     await expect(host.getByRole("alert")).toContainText(requestErrorMessage("daemon_unavailable"));
-    await expect(host.getByText("Completed additions are kept. Check the repository list before importing again.", { exact: true })).toBeVisible();
+    await expect(host.getByText("Completed additions are kept. Retry to recover the import result.", { exact: true })).toBeVisible();
     await expect(host.getByText("Result unknown", { exact: true })).toHaveCount(0);
-    expect(await requests(page, "repositories.importListFile")).toEqual([expectedImport()]);
+    const original = await requests(page, "repositories.importListFile");
+    expect(original).toEqual([expectedImport()]);
+    expect(await requests(page, "fixture.repositoryAdded")).toHaveLength(64);
     await expect.poll(async () => (await requests(page, "repositories.list")).length).toBe(readsBefore + 1);
+    await host.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(host.getByText("Added: 67 · Failed: 0 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.importListFile")).toEqual([original[0], original[0]]);
+    const added = await requests(page, "fixture.repositoryAdded");
+    expect(added.map((row) => row.params)).toEqual(Array.from({ length: 67 }, (_, i) => ({ line: i + 1, idempotencyKey: expect.any(String) })));
 });
 
 test("cancelled list file picker performs no inspection or registration", async ({ page }) => {

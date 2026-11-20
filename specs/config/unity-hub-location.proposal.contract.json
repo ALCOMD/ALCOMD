@@ -46,7 +46,7 @@
         },
         "writer": "existing ConfigStore adapter; existing lock/CAS/recoverable publication",
         "discoveryWritesConfiguration": false,
-        "migrationOrDiscoveryAdvancesRevision": false,
+        "discoveryAdvancesRevision": false,
         "successfulUpdate": "Existing checked revision increment; only supplied fields change"
     },
     "pathRules": {
@@ -460,7 +460,7 @@
         "approval": {
             "date": "2026-10-31",
             "ownerResponse": "批准，按合同实现",
-            "scope": "Exact method/capability/permission and fixed official download fallback; initial local-owner only"
+            "scope": "Exact method/capability/permission and fixed official download fallback"
         },
         "ownerRequest": "Move Auto detect into card header and add Open Unity Hub, or Download Unity Hub if no Hub is specified",
         "layout": "Card header actions at the right: existing Auto detect plus new Open/Download; Select remains beside the editable path. Header, input and Retry share the existing focus group.",
@@ -470,7 +470,7 @@
             "settings.read",
             "unity.hub.open"
         ],
-        "principal": "Authenticated builtin:local-owner only; check principal and permissions before configuration/filesystem/process access. No new third-party/extension grants.",
+        "principal": "Core checks the authenticated interactive caller and both permissions before configuration, filesystem or process access. Extensions retain their own permission boundary.",
         "whyExistingAuthorityCannotBeReused": "unity.launch and unity.launch.v1 are Project/exact-Editor launch authority; settings.manage and unity.manage explicitly exclude process launch. Do not widen their meanings or execute the Hub inside Tauri.",
         "input": "expectedRevision is the accepted settings revision; expectedTargetToken is the accepted Core activation token or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
         "authority": [
@@ -479,7 +479,7 @@
             "available/configured and available/discovered both use the Core effective target, including the existing invalid-manual-path plus usable-default fallback. Do not alter preference or discovery precedence.",
             "Only not_found with configured hubPath=null and expectedTargetToken=null returns download_required. A broken explicit preference without a usable fallback returns hub_path_invalid; I/O inability returns hub_unavailable, never a fabricated missing-install diagnosis.",
             "Revalidate the Core-resolved target before dispatch. Use the registered application identity for MSIX or Flatpak. For a native executable pass no arguments. Do not execute any caller-supplied path, argument or URI.",
-            "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedTargetToken does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
+            "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedTargetToken does not eliminate executable replacement races. Core can execute the file selected as the Hub."
         ],
         "result": "launch_requested means only that the OS accepted the requested activation or process creation; it does not prove successful child exit, a normally running Unity Hub or Hub window readiness. Synchronous OS rejection, subsequent child exit and owned-child reaping are separate outcomes. download_required means no process was started; GUI may open only the fixed official page.",
         "errors": [

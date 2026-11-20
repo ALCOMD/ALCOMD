@@ -14,7 +14,7 @@
 
 [Progress log](#progress-log) 和 [原停止点记录](#下一停止点) 保存当时的候选、验收与授权证据。
 
-2026-11-07 主线整合候选 `213d0d2`：按所有者要求整合现有工作区并分批提交。文件选择器接入及共享弹窗关闭保持调用方控制流程；更新与现行日志、设置、模板、路径和 Material 合同不符的测试预期，State29 仍采用精确版本断言。元数据脚本分别检查当前 Config12 与历史 Config10 迁移证据，保留依赖版本和功能开关的精确门禁。完整 Rust 门禁、真实 Windows IPC、前端检查/构建、514 项 Chromium 和元数据检查通过；既有显式忽略、原生未覆盖及运行环境恢复情况见[项目状态](../status.md)。证据保留于 `target/m7-main-integration-20261107T040906Z/`。未新增产品合同、依赖、权限或持久结构，H2–H6 签收保留，M7/H7 仍待所有者最终确认。
+2026-11-07 主线整合候选 `213d0d2`：按所有者要求整合现有工作区并分批提交。文件选择器接入及共享弹窗关闭保持调用方控制流程；更新与现行日志、设置、模板、路径和 Material 合同不符的测试预期。完整 Rust 门禁、真实 Windows IPC、前端检查/构建、514 项 Chromium 和元数据检查通过；既有显式忽略、原生未覆盖及运行环境恢复情况见[项目状态](../status.md)。证据保留于 `target/m7-main-integration-20261107T040906Z/`。未新增产品合同、依赖、权限或持久结构，H2–H6 签收保留，M7/H7 仍待所有者最终确认。
 
 ## 实现依据与跨模块整改计划（2026-11-05，已批准实施）
 
@@ -84,7 +84,7 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 覆盖A07、A08、A10，可与不依赖它的格式修正分别形成候选。
 
 - 首选现有workspace TOML库的有界解析再执行closed业务字段校验；评估新增store生产依赖边、
-  锁文件和维护成本，使用已获批的store→toml生产依赖边。保留16KiB、UTF-8、重复/未知字段、枚举、revision/CAS和Config1–10迁移约束。
+  锁文件和维护成本，使用已获批的store→toml生产依赖边。保留16KiB、UTF-8、重复/未知字段、枚举、revision/CAS约束。
   另核定标准TOML数值与现有revision边界，不能因换parser悄悄缩小公开合同。
 - 同义注释/引号/转义与业务非法内容分开测试；序列化结果同时通过独立标准解析与自身读取。
   不删除原设置或损坏证据来“恢复正常”。
@@ -111,9 +111,9 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 创建Plan沿现有数据库要求保持version=1，以私有creationBasisVersion=2标识本轮完整版本冻结证据；无此标记的未接受计划stale，已接受历史计划按原冻结证据恢复，不新增数据库结构。
 
 
-- 本批保持Config10、不增加SQL迁移（起始State18；并行日志修改另行记录，不由本计划授权）。store新增既有workspace依赖边toml 1.1.4与内部alcomd-platform；前者替换手写语法解析，后者复用目录同步。无新外部解析库；替代方案手写语法无法覆盖标准TOML，重复平台同步实现会扩大维护成本。toml跟随现有锁与升级检查，平台不支持及真实掉电保证单独列证据。
+- store新增既有workspace依赖边toml 1.1.4与内部alcomd-platform；前者替换手写语法解析，后者复用目录同步。无新外部解析库；替代方案手写语法无法覆盖标准TOML，重复平台同步实现会扩大维护成本。toml跟随现有锁与升级检查，平台不支持及真实掉电保证单独列证据。
 - 必需创建输入unityVersion贯通RPC/CLI/SDK/GUI；TemplateRecord增加可选unity主次版本线以筛选已安装候选，创建Plan公开所选unityVersion及ProjectVersion摘要。新未接受Plan必须有证据，已接受历史Plan保留原冻结形状及恢复路径。这是未发布RPCmajor1的有意破坏性输入变更，不保留省略unityVersion的旧创建入口。
-- PackageChangeSet formatVersion=3标识本轮范围与完整写出依据；1/2未接受计划返回plan_stale，不重签。已接受1/2仅按原冻结摘要恢复旧输出（包括历史直接依赖字符串/对象的准确字节），不借此给新请求提供旧格式兼容入口。既有JSON列/权限/数据库结构不变。
+- PackageChangeSet 使用 `formatVersion: 1`。Apply 按冻结的项目输入和依赖图保留锁元数据，并校验清单摘要。
 - legacy 路径及 GUID 来自冻结的来源和归档清单。普通包管理确认框按 [M4 旧资产迁移合同](M4-package-transactions.md#普通安装的-vpm-旧资产迁移所有者已批准) 显示具体移除路径。清单无法安全复验时明确失败。
 
 | 格式/字段 | 来源与上下文 | 实施规则 |
@@ -154,7 +154,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 | A04 锁及冻结输出 | 未改条目保留依赖和元数据，改变条目来自冻结边；删除直接依赖保留必要传递依赖，重装不生成自依赖。真实包链5/0包含Plan/Apply/hash/重放、index权威、路径/GUID、Plan后新增目标及同Plan选中legacyPackages的拒绝。 | format3使旧未接受计划stale；已接受1/2保持原冻结摘要恢复，不能重签或删除证据。本轮未扩展遗留删除。 |
 | A05 Editor探测 | Windows PE保持；macOS/Linux显式登记/扫描才执行受限-version，列表不执行。Windows平台Unity/Hub24/0，Core输出/身份4/0；Linux/macOS平台all-targets编译和Linux严格Clippy通过。 | 未执行macOS/Linux真实Editor安装探测，编译不替代实证；Windows测试仅用自有假进程。 |
 | A06 完整创建版本 | RPC/CLI/SDK/GUI/桥接必需unityVersion；可选择安装或填写未安装版本。模板版本线、完整ProjectVersion字节/hash冻结，发布后观察核对。模板集成4/0，包含创建→发布→登记→启动选项、版本门槛、旧计划；私有Windows真实帧1/0及CLI5/0通过。 | 创建不冒充Editor已安装或已启动；启动保持exact。私有帧用生产dispatcher和独立Store，不等于完整daemon认证/生产端点验收。 |
-| A07–A08 配置与恢复 | toml 1.1.4类型化解析、各Config closed校验、16KiB、u64 revision/CAS、Config1–10迁移保持；配置单元33/0。文件/rename/目录同步和恢复覆盖，终止测试1/0覆盖9个自有写进程边界。 | 进程终止不是物理掉电；真实断电、非Windows文件系统持久性未实证。不重置或删除原数据。 |
+| A07–A08 配置与恢复 | toml 1.1.4类型化解析、各Config closed校验、16KiB、u64 revision/CAS；配置单元33/0。文件/rename/目录同步和恢复覆盖，终止测试1/0覆盖9个自有写进程边界。 | 进程终止不是物理掉电；真实断电、非Windows文件系统持久性未实证。不重置或删除原数据。 |
 | A09 unityRelease | Store到候选/求解共享数值最低版本判断；覆盖相等、低于、渠道、数值revision、缺unity与非法release的一致结果。VPM纯候选146/0。 | experimental、区域/自定义后缀保持unknown，不放宽启动exact。 |
 | A10 文档与能力 | 原位修正历史Config当前链接，撤回普通范围bare-minimum错误依据，区分官方格式和ALCOMD模板版本线、摘要/权限策略。 | 历史记录保留其真实版本及适用范围，不作为本轮通过。 |
 
@@ -162,7 +162,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 
 最终前端`npm run check`、`npm run build`通过，保留现有Vite chunk大小警告；七个相关浏览器模块一次完整61/0。覆盖完整版本输入/未安装/多Editor、模板分页与草稿、终态回调、ACK/断线/重同步、旧响应/删除后迟到、进度合并界限和健康稳态无周期读取。纯候选此前56/5→60/1的失败原始证据保留：旧预期错误要求自动重试、禁止终态失效读取或已接受未知响应任务的全局发现；修订为显式重试/单次失效/不重复Apply。剩余实际缺陷是对话框内没有可操作的重试按钮，已复用共享事件入口修正，并保持对话框打开验证，未靠恢复轮询或删除断言消除失败。备份旧字符串夹具和误含并行活动测试桩也已在独立提交中纠正。
 
-未执行完整`cargo test --workspace`、固定Windows用户端点IPC、整套浏览器、三平台CI/CodeQL或原生GUI人工验收。用户Core168708持续占用该端点，本轮不停止/替换它，不为门禁绕过授权；窄私有管道IPC不冒称这些路径已通过。包/扩展等所有历史端到端流程、并行State19与旧profile结合后的恢复、macOS/Linux真实Editor及物理掉电仍未覆盖。已有H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。原数据/profile/截图/材料、Core和Unity保持，未部署、重启或推送。
+未执行完整`cargo test --workspace`、固定Windows用户端点IPC、整套浏览器、三平台CI/CodeQL或原生GUI人工验收。用户Core168708持续占用该端点，本轮不停止/替换它，不为门禁绕过授权；窄私有管道IPC不冒称这些路径已通过。包/扩展等所有历史端到端流程、macOS/Linux真实Editor及物理掉电仍未覆盖。已有H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。原数据/profile/截图/材料、Core和Unity保持，未部署、重启或推送。
 
 ### 统一完整门禁、真实IPC与环境更新（2026-11-05）
 
@@ -174,10 +174,10 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 - **失败及修复**：首次完整测试发现3个失败目标。用户包 Plan 调用栈在默认 Windows worker 栈上溢出；崩溃夹具已登记用户包但没有Plan/任务，尚未执行删除缓存或Apply。将 `verify_object` 跨 await 的64KiB数组改为同长度堆缓冲，校验/配额不变；现成库类型量测的 `PackageCache::get` future 从66800降至2704字节，原测试在默认线程栈下及完整回归均通过。候选测试仅排除自有 `data/logs/core`（包含独占writer.lock和异步日志），继续完整核对DB/WAL、缓存、配置、项目、Events、Operations与网络零副作用。未登记UUID的实际既有错误是 `project_not_registered`，修正测试及其失败活动预期，保留原错误/活动一致性断言。定向8/0后集中重跑完整门禁；未扩大线程栈、放宽业务校验或吞读取错误。
 - **前端与产物**：根workspace `npm run check` 通过；Tauri `build --debug --no-bundle` 完成GUI check/Vite build及嵌入前端的原生GUI构建，既有chunk大小警告保留。Core、CLI和extension-host使用同一源码配套构建。最终构建与部署前后输入指纹一致；本轮未重跑整套浏览器或release/三平台CI。
 - **收尾检查**：更新后额外运行Python元数据检查，发现其严格workspace清单遗漏已批准的`alcomd-logging`，仅补齐该成员后通过，未知成员仍拒绝。最终输入SHA-256 `5e2ce8c404876fe7d380a6caf2bc137f111584d56d7f8e4436ff614db3ade276`；与上述门禁/构建输入逐项比较，唯一差异为`scripts/validate-metadata.py`，所有Rust/前端编译输入及产物不变，因此只重跑受影响元数据/文档检查，不重复IPC、完整Rust或构建。未将验证器修改描述为重新构建。
-- **真实IPC与恢复**：先复制离线原数据，关闭副本自动发现，使用新Core、认证的真实用户named pipe与每连接服务端PID核验。State18→19后31张既有表所有行保持，9组公开查询保持（副本仅autoDiscover=false；Template可选unity声明是已批准增量）。再用全新隔离数据/目标验证必需完整unityVersion、无效版本拒绝、不可变Plan字节/hash、Apply→事件终态→项目登记→launchOptions无已安装Editor，未启动Unity；同实例安全游标续传、幂等Apply及单次终态消费通过。日志实时/历史/物理JSONL的来源/会话/段/offset及正文一致；重启Core后旧事件游标明确resyncRequired，新日志session、稳定sourceId及旧会话记录可读。原生脚本首轮将.NET异步void完成值混入返回对象而误报握手，保留失败帧并仅修正验证器，产品协议未改。
-- **实际更新**：原数据、profile及旧二进制离线备份并逐字节核验；替换前再次保存原数据。现 `target/debug/alcomd.exe` Core **162992**（SHA-256 `296AEA74…26A26`）、`alcomd-gui.exe` GUI **135892**（`E3677D27…BDE8C`）及匹配CLI/host已更新。原 `target/m7-icon-acceptance-20260906/data`、`target/m7-h4-extensions-20261102/original-gui-profile` 沿用，profile启动前逐文件一致，实际WebView进程仍使用该profile，窗口有句柄且可响应。GUI打开后再次完整分页对照9组状态（3项目、1安装、15个已成功任务、2备份、3模板，其他资源为空）、Config10/revision189及配置字节保持。Core日志ready且所有故障/丢失计数为0；GUI继承原RUST_LOG=warn，正常启动INFO被过滤，未制造错误填日志。Unity/Hub六进程身份和9份项目清单/版本文件摘要保持，无隔离Core遗留。
+- **真实IPC与恢复**：先复制离线原数据，关闭副本自动发现，使用新Core、认证的真实用户named pipe与每连接服务端PID核验。9组公开查询保持（副本仅autoDiscover=false；Template可选unity声明是已批准增量）。再用全新隔离数据/目标验证必需完整unityVersion、无效版本拒绝、不可变Plan字节/hash、Apply→事件终态→项目登记→launchOptions无已安装Editor，未启动Unity；同实例安全游标续传、幂等Apply及单次终态消费通过。日志实时/历史/物理JSONL的来源/会话/段/offset及正文一致；重启Core后旧事件游标明确resyncRequired，新日志session、稳定sourceId及旧会话记录可读。原生脚本首轮将.NET异步void完成值混入返回对象而误报握手，保留失败帧并仅修正验证器，产品协议未改。
+- **实际更新**：原数据、profile及旧二进制离线备份并逐字节核验；替换前再次保存原数据。现 `target/debug/alcomd.exe` Core **162992**（SHA-256 `296AEA74…26A26`）、`alcomd-gui.exe` GUI **135892**（`E3677D27…BDE8C`）及匹配CLI/host已更新。原 `target/m7-icon-acceptance-20260906/data`、`target/m7-h4-extensions-20261102/original-gui-profile` 沿用，profile启动前逐文件一致，实际WebView进程仍使用该profile，窗口有句柄且可响应。GUI打开后再次完整分页对照9组状态（3项目、1安装、15个已成功任务、2备份、3模板，其他资源为空）、设置 revision189及配置字节保持。Core日志ready且所有故障/丢失计数为0；GUI继承原RUST_LOG=warn，正常启动INFO被过滤，未制造错误填日志。Unity/Hub六进程身份和9份项目清单/版本文件摘要保持，无隔离Core遗留。
 
-上述迁移实证覆盖本机全部15个已终态任务；不据此承诺旧State18活跃任务接续，亦不回填旧活动。原事件/任务没有删除。原生GUI仅核对启动、profile和响应，不冒称操作/视觉验收；本候选整套浏览器、真实macOS/Linux Editor、物理掉电及三平台CI/CodeQL仍未执行。H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING，最终确认由所有者完成。
+原生GUI仅核对启动、profile和响应，不冒称操作/视觉验收；本候选整套浏览器、真实macOS/Linux Editor、物理掉电及三平台CI/CodeQL仍未执行。H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING，最终确认由所有者完成。
 
 原始日志、源码清单、失败轮次、新旧库future量测、迁移逐行比较、IPC帧、物理记录及二进制hash统一保留在标准目录 `target/m7-full-gates-update-20261105/run-20261105T093004Z/`；关键结果为 `rust-test-counts.json`、`migration-row-preservation.json`、`native-pair-result.json`、`deployment-result.json`、`updated-after-gui-comparison.json` 和 `protected-final.json`。本节补齐此前独立批次声明未执行的完整Rust/固定用户端点IPC和原环境更新，不改写那些历史结果。
 
@@ -185,7 +185,7 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 
 **Core 与 GUI 职责修理。** 项目列表的搜索、排序、置顶和分页，仓库的内置身份与操作资格，项目包的批量目标和排除原因，新建及迁移项目的 Unity 版本选项，以及活动日志的筛选和操作者选项，均由既有 Core 用例返回。GUI 收集输入、呈现结果并转交用户操作。对应 RPC 原位增加可选读取参数和结果投影。日志读取新增必返的操作者选项，Core 与 GUI 配套更新。本批沿用已有权限和持久 Schema。
 
-**仓库显示名（所有者已批准）。** State29 为已登记仓库增加可清除的本地显示名，内置与用户仓库均可设置。沿用 `repositories.registry.v1` 和 `repositories.manage`，新增 `repositories.setDisplayName`，接收仓库 ID、期望修订、幂等键及字符串或 `null`，返回仓库写入结果。Core 校验并去掉首尾空白，空白或 `null` 恢复默认名称。实际变化同事务更新修订并写入仓库事件。仓库源声明、索引、凭据和包缓存保留，刷新时保留显示名。RPC 只增加方法和可选结果字段。项目包列表及其仓库元数据使用 Core 候选查询返回的来源成员关系。
+**仓库显示名（所有者已批准）。** 已登记仓库支持可清除的本地显示名，内置与用户仓库均可设置。沿用 `repositories.registry.v1` 和 `repositories.manage`，新增 `repositories.setDisplayName`，接收仓库 ID、期望修订、幂等键及字符串或 `null`，返回仓库写入结果。Core 校验并去掉首尾空白，空白或 `null` 恢复默认名称。实际变化同事务更新修订并写入仓库事件。仓库源声明、索引、凭据和包缓存保留，刷新时保留显示名。RPC 只增加方法和可选结果字段。项目包列表及其仓库元数据使用 Core 候选查询返回的来源成员关系。
 
 **Unity 版本选项归 Core。** `unity.installations.list` 的首请求可带 `includeVersionOptions`，由 Core 提供规范化、去重、有序的版本和唯一默认版本，用于无模板新建项目与手动建模板。`unity.launchOptions` 可带 `includeMigrationVersionOptions`，由 Core 提供项目迁移目标版本、各版本的登记安装和唯一默认安装，排除项目当前版本。GUI 显示结果并收集选择，迁移审阅与执行沿用原校验。两个 RPC 增加可选字段，沿用现有能力和权限，不改持久结构。
 
@@ -215,58 +215,50 @@ A01–A10已按批准范围实现并分目的本地提交。最终代码候选�
 
 本次工作树验证：全工作区 `npm run check`、`npm run build` 和差异空白检查通过；排序、包工作区与候选查询三组 Playwright 测试在真实 Windows 环境 **60/60 通过、零重试、零跳过**，含三项排序规则测试。覆盖来源优先级、同来源稳定顺序、共享来源、缺失来源、分页与筛选，以及现有 Plan/Apply 和批量操作回归。结果与输入摘要保留于 `target/m7-package-order-20261107/`。早期沙箱轮分别遇到浏览器缓存路径缺失和测试后进程回收未退出，未计为最终通过；切换已安装的浏览器缓存并在真实 Windows 环境重跑后正常退出。仅修改 GUI 显示与相关测试、文档，未替换运行中的 Core/GUI；Rust 与远端 CI 未在本批重跑，M7/H7 状态不变。
 
-**全局代理（Config12，所有者已批准）。** 「设置 → 常规 → 网络」提供跟随系统、不使用代理、自定义 HTTP(S) 代理三种模式，默认跟随系统。代理属于 ALCOMD 的 Core 权威设置，适用于应用自行发起的出站 HTTP(S) 请求。当前实际网络入口是仓库索引、软件包 ZIP 及其相关的安装、恢复和迁移用例。更新器仍是占位，后续出站入口复用同一设置合同。外部浏览器、Unity、系统代理及本地 IPC 各自管理。代理地址不含账号密码。保存完成后新请求使用已接受的偏好，在途请求沿用原客户端。有效 Config11 只补默认值并保留其余设置和 revision，沿用设置权限、RPC 方法和 CAS，不改数据库。URL 校验复用锁文件中已有的 `url` 2.5.8，在 application 增加直接依赖边，避免手写 URL 解析。
+**全局代理。** 「设置 → 常规 → 网络」提供跟随系统、不使用代理、自定义 HTTP(S) 代理三种模式，默认跟随系统。代理属于 ALCOMD 的 Core 权威设置，适用于应用自行发起的出站 HTTP(S) 请求。当前实际网络入口是仓库索引、软件包 ZIP 及其相关的安装、恢复和迁移用例。更新器仍是占位，后续出站入口复用同一设置合同。外部浏览器、Unity、系统代理及本地 IPC 各自管理。代理地址不含账号密码。保存完成后新请求使用已接受的偏好，在途请求沿用原客户端。沿用设置权限、RPC 方法和 CAS，不改数据库。URL 校验复用锁文件中已有的 `url` 2.5.8，在 application 增加直接依赖边，避免手写 URL 解析。
 
 **剩余行为对齐（所有者已批准）。** VCC 链接和列表忽略未知查询参数。ZIP 请求头按不区分大小写的 HTTP 名称合并，同名时包头覆盖。仓库和 ZIP 启用 Reqwest 的 `system-proxy` 功能，复用平台代理检测。其 macOS 传递依赖使用现成的 System Configuration 封装，随 Reqwest 锁定与维护，替代方案是分别维护各平台代理检测。无发布方摘要的 HTTP(S) ZIP 使用现有首次下载、校验和固定摘要链路。认证仓库按 v3 文本格式导出为含明文头的 VCC 链接，保留本机所有者、显式保存、无覆盖和不记录凭据的边界。现有 RPC 方法和响应结构不变，导出及可接受包来源的行为有意改变。隔离验证保留真实系统关联。
 
 普通单包计划以项目现有 VPM 锁和直接依赖为依据。保留已安装且满足约束的锁定依赖，即使当前目录已不列出该版本。选定的变更不能使保留的锁定包失去有效依赖，无解时沿用现有冲突错误。批量计划优先保留仍满足约束的非显式目标版本。Resolve 检查实际包目录及其版本，按现有锁恢复缺失或不符的包，并保留原清单中的同版本锁记录。沿用现有 Plan/Apply、权限、Schema 和事务恢复。范围以 [VRChat VCC 2.1.3 行为记录](https://vcc.docs.vrchat.com/news/release-2.1.3/) 和 [Resolver 文档](https://vcc.docs.vrchat.com/vpm/resolver/#using-it) 为依据。
 
-**认证仓库合同已获所有者批准。** 支持 [VRChat CLI 的仓库自定义请求头](https://vcc.docs.vrchat.com/vpm/cli/#add-repo)。本机所有者通过现有仓库管理权限登记、替换和清除请求头，认证接入单仓登记、列表导入、刷新和包下载。公开写入仅承载请求头，读接口只返回是否配置凭据。凭据存放在 OS 凭据库，State25 保存引用及待清理引用。Windows 使用现有 windows-sys 的 Credential Manager API，macOS 直接复用 Cargo.lock 中已有的 Security Framework 封装，Linux 使用系统 Secret Service 的 `secret-tool`。凭据库不可用时返回错误。现有匿名入口继续可用。
+**认证仓库合同已获所有者批准。** 支持 [VRChat CLI 的仓库自定义请求头](https://vcc.docs.vrchat.com/vpm/cli/#add-repo)。本机所有者通过现有仓库管理权限登记、替换和清除请求头，认证接入单仓登记、列表导入、刷新和包下载。公开写入仅承载请求头，读接口只返回是否配置凭据。凭据存放在 OS 凭据库，数据库保存引用及待清理引用。Windows 使用现有 windows-sys 的 Credential Manager API，macOS 直接复用 Cargo.lock 中已有的 Security Framework 封装，Linux 使用系统 Secret Service 的 `secret-tool`。凭据库不可用时返回错误。现有匿名入口继续可用。
 
 GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `repository inspect`、`register` 和 `set-credentials` 通过 `--credentials-stdin` 读取凭据 JSON，`set-credentials --clear` 清除。相同连接、地址和凭据的短期预览可用于确认登记。轮换先验证新凭据并使旧包计划失效，下一次成功刷新更新索引。
 
-**v3 对齐补项（所有者已批准 State26 与两个桌面依赖）。** [VRChat VCC 2.0.3](https://vcc.docs.vrchat.com/news/release-2.0.3/) 确认支持独立软件包的请求头。读取仓库索引使用仓库请求头。下载时，包清单的 `headers` 在同一请求中覆盖同名仓库请求头，按不区分大小写的 HTTP 名称比较。仓库与包分别校验各自的字段名，拒绝同一配置中仅大小写不同的重复项。仓库表单和 VCC 导入也拒绝完全同名的重复项。首跳和重定向的发送规则见下文。[State26](../../specs/storage/state-v26.md) 增加包头存在标记，冷缓存只为确有包头的条目取得并验证同一清单指纹，包头值仅在内存参与下载。已有带版本行的仓库需成功刷新一次。普通包无需额外下载索引，SQLite、清单证据缓存、计划和日志不写入包头明文。
+**v3 对齐补项。** [VRChat VCC 2.0.3](https://vcc.docs.vrchat.com/news/release-2.0.3/) 确认支持独立软件包的请求头。读取仓库索引使用仓库请求头。下载时，包清单的 `headers` 在同一请求中覆盖同名仓库请求头，按不区分大小写的 HTTP 名称比较。仓库与包分别校验各自的字段名，拒绝同一配置中仅大小写不同的重复项。仓库表单和 VCC 导入也拒绝完全同名的重复项。首跳和重定向的发送规则见下文。[数据库规范](../../specs/storage/state-v1.md) 增加包头存在标记，冷缓存只为确有包头的条目取得并验证同一清单指纹，包头值仅在内存参与下载。已有带版本行的仓库需成功刷新一次。普通包无需额外下载索引，SQLite、清单证据缓存、计划和日志不写入包头明文。
 
 桌面 `vcc://vpm/addRepo` 激活复用现有添加对话框与 Core 检查、登记，收到链接只预填，用户确认前不联网。Windows 和 Linux 由系统以进程参数交付 URI，Tauri `single-instance` 直接转发至原生队列。macOS 通过应用包声明和系统 Open URL 事件交付。应用只向主窗口发无内容唤醒信号，原始 URI 不写入日志或路由。替代方案是分别维护三平台的 URI 注册和激活转发，涉及额外 OS IPC 与权限边界。采用官方插件增加两项桌面依赖及相应的供应链维护，绑定 Tauri 2。开发验证保留原 `vcc` 默认处理器。
 
-**v3 注册偏好（已获所有者批准）。** [Config11](../../specs/config/settings-v11.md) 默认开启 `settings.integrations.handleVccLinks`。Windows 正式构建启动时从 Core 取得已接受的偏好，通过 Tauri `deep-link` 注册用户级处理器。Linux AppImage 登记桌面处理器并更新 MIME 缓存，系统保留默认应用选择。Windows 关闭时只移除能确认属于当前 ALCOMD 可执行文件的用户级登记，Linux 移除本应用的桌面处理器。设置常规页提供开关，开启时保留手动注册入口。开发构建跳过自动应用，设置 `ALCOMD_DISABLE_VCC_REGISTRATION` 的隔离会话禁用系统注册操作。
+**v3 注册偏好（已获所有者批准）。** [设置规范](../../specs/config/settings-v1.md) 默认开启 `settings.integrations.handleVccLinks`。Windows 正式构建启动时从 Core 取得已接受的偏好，通过 Tauri `deep-link` 注册用户级处理器。Linux AppImage 登记桌面处理器并更新 MIME 缓存，系统保留默认应用选择。Windows 关闭时只移除能确认属于当前 ALCOMD 可执行文件的用户级登记，Linux 移除本应用的桌面处理器。设置常规页提供开关，开启时保留手动注册入口。开发构建跳过自动应用，设置 `ALCOMD_DISABLE_VCC_REGISTRATION` 的隔离会话禁用系统注册操作。
 
-**v3 请求头发送规则（已获所有者批准）。** 索引与 ZIP 首跳直接附加请求头，ZIP 可以与索引不同源。重定向换协议、主机或端口时，按 v3 使用的 Reqwest 0.13.4 移除 `Authorization`、`Cookie`、`Cookie2`、`Proxy-Authorization` 和 `WWW-Authenticate`，后续跳不重新附加。自定义头继续发送，HTTP 可收到明文。无发布方摘要的 ZIP 可经 HTTP(S) 首次下载并固定摘要。移除公开 `allowedOrigins` 字段及相应 GUI 输入，认证仓库导出使用含请求头的 VCC 链接。旧凭据格式失效，认证仓库需重新输入凭据。State26 和权限不变。
+**v3 请求头发送规则（已获所有者批准）。** 索引与 ZIP 首跳直接附加请求头，ZIP 可以与索引不同源。重定向换协议、主机或端口时，按 v3 使用的 Reqwest 0.13.4 移除 `Authorization`、`Cookie`、`Cookie2`、`Proxy-Authorization` 和 `WWW-Authenticate`，后续跳不重新附加。自定义头继续发送，HTTP 可收到明文。无发布方摘要的 ZIP 可经 HTTP(S) 首次下载并固定摘要。移除公开 `allowedOrigins` 字段及相应 GUI 输入，认证仓库导出使用含请求头的 VCC 链接。旧凭据格式失效，认证仓库需重新输入凭据。
 
 ### 模板系统清理与重建（公共合同与删除清单已获所有者批准）
 
-分两批验收。第一批停用旧模板系统，保留资源页中的模板空页，并提供独立的新建项目。第二批启用统一的模板声明和本地管理。旧模板格式和接口在第一批切换后失效。开发期模板数据直接废弃。以下 Schema 编号以当前工作树的 State21 为基线。
+首发允许独立新建项目或选择已登记模板。模板登记和修订由 Core 维护。
 
-#### 第一批：State22 与独立新建项目
+#### 新建项目
 
-- 新增 `projects.create.v1` 和 `projects.create`。只允许已认证的本机所有者，检查现有 `projects.create` 权限。请求为 `{name, targetParent, unityVersion, idempotencyKey}`，返回 `{operationId, projectId, replayed}`。`name` 使用现有跨平台单段项目目录校验，`unityVersion` 为完整规范 Unity Editor 版本，允许尚未安装的版本。幂等作用域与现有规则一致，规范请求相同则返回原任务，不同则返回 `idempotency_conflict`。
-- 新任务 kind 为 `projects.create`。接受事务分配项目 ID 并记录请求和恢复信息。Core 在同一父目录暂存最小 Unity 工程，发布前核对父目录身份，使用平台独占重命名，目标存在时保留原目录。发布后同事务登记项目、终结任务并写入 `project.registered` 和任务变化事件。恢复只处理能核实归属的暂存或已发布目录。GUI 保留默认位置、已安装版本和自定义版本，接受后跟踪原任务，成功后打开项目详情。CLI 的 `project create` 调用同一入口。
-- 删除 `templates.*` 方法、`templates.read.v1`、`templates.manage.v1`、`templates.create-project.v1` 及 `templates.read`、`templates.manage` 权限名称，连同旧模板命令、SDK 与前端适配、Schema、包解析/生成、注册、恢复和模板变更通知。资源页的模板标签继续打开空页。其他使用 `projects.create` 的入口保留原有授权要求。
-- State22 删除 `templates`、`template_plans` 及其索引和触发器。从共享表清除 `templates.import`、`templates.derive`、`templates.create-project` 三种旧任务及其 journal，清除这些任务的幂等记录及 `templates.applyPlan`、`templates.setFavorite`、`templates.remove` 方法的幂等记录。清除 `aggregate_kind='template'` 事件和已确认旧任务 ID 对应的 operation 事件。清除 `operation_log_entries` 中关联这些旧任务 ID 或结构化 action 以 `templates.` 开头的记录，覆盖 `templates.favorite` 等独立于任务的日志。保持保留行、外键约束及事件和日志的自增水位。更新 operation kind 和 event aggregate kind 的 Schema 约束。
-- 迁移开始时若仍有未终结旧模板任务，先在升级旧库之前拒绝打开，确保旧 Core 还能正常完成或取消任务。已创建的项目、项目事件、非模板任务、设置和共享包缓存不在删除清单内。Core 首次成功升级 State4–21 后检查数据根直属的 `template-store` 与 `template-builtin-staging`。只有路径、文件系统身份和旧产物命名均可核实时才清理。无法核实的内容留在原处，Core 启动输出说明失败原因。真实 profile 切换另按运行环境授权执行。
+Core 接受项目创建请求后冻结模板修订、目标路径与包输入，以持久任务完成暂存、发布和登记。GUI 可沿用系统目录选择器，CLI 与 MCP 直接提交同一目标参数。[创建项目 RPC](../../specs/rpc/m7-project-create.schema.json)
 
-#### 第二批：State23 与统一模板声明
+#### 模板声明
 
-- 新增 `projectTemplates.v1` 及 `projectTemplates.list`、`projectTemplates.save`、`projectTemplates.remove`，初期限已认证本机所有者。`list` 按 ID 稳定分页，沿用现有有界列表参数和游标约定。记录返回 `{declaration, revision, locked}`。`save` 接收 `{declaration, expectedRevision?}`，省略修订表示创建，提供修订表示更新。创建同 ID 同内容返回已有记录，同 ID 异内容报告冲突。更新及 `{id, expectedRevision}` 删除均先验证当前修订与锁定状态。相同内容不产生新修订或变化事件。
-- 声明为 `{id, name, unity, dependencies, constraints}`。ID 必填，点分隔的非空小写 ASCII 段，每段以字母或数字开头及结尾，允许内部连字符，最多 128 字节。名称可重名。Unity 条件由允许的 major/minor 系列和精确版本预设取并集，两者为空时接受合法完整版本。依赖为 `{packageId, versionRange}`，条件约束为 `{unityVersion, packageId, versionRange}`，只限制已被求解器纳入的包，不追加直接依赖。声明统一校验并生成确定性 UTF-8 JSON，内部记录 UUID、修订、锁定标记和时间戳在 JSON 之外。
-- State23 新增模板目录和目录修订分配状态。记录保存 owner、公开模板 ID、内部 UUID、规范声明 JSON、正整数修订和锁定标记，按 owner 和公开 ID 唯一。修订在同一事务分配，跨删除和重建不重用。预置 Avatars 和 Worlds 使用与用户声明完全相同的结构和校验，分别使用 `com.vrclearn.alcomd.templates.vrchat.avatars` 和 `com.vrclearn.alcomd.templates.vrchat.worlds`。预设依次为 `2022.3.22f1`、`2022.3.6f1`、`2019.4.31f1`，2019 对应 SDK 与 Base 上限 `3.4.2` 由条件约束表达。内置锁仅影响编辑及删除。普通表单可生成与内置逐字节一致的声明，同名不同 ID 可分别保存。
-- `projects.create` 请求增加可选 `template: {id, revision}`。Core 接受任务时在事务内校验修订并冻结声明，旧修订或已删除记录提示重新选择。使用模板依赖的创建还检查现有 `packages.read`、`repositories.read` 和 `packages.manage` 权限，通过同一求解器锁定来源、版本和内容后再发布。GUI 默认选择内置 Blank，恢复规则见[空白与基础模板追加合同](M7-template-bases.md)。模板创建、更新和删除同事务写入 `project-template.changed`，沿用当前事件入口，事件 aggregate ID 用内部 UUID，GUI 按模板目录失效处理。
+Core 管理模板标识、源归档和修订。模板列表支持游标；写操作使用当前修订和幂等键。导入、导出及项目创建共享模板声明。[模板实施计划](M7-template-bases.md)
 
 #### 单文件 VCC 模板与两种创建方式（所有者已批准）
 
 每个模板为一个 `.alcomdtemplate` 文件。标准 ZIP 根层使用 VCC 的 `package.json`、`Assets/`、`Packages/` 与 `ProjectSettings/` 约定，按实际内容包含目录。根清单的 `name` 与 `displayName` 分别提供 ID 和显示名。依赖使用 `Packages/vpm-manifest.json`。参见 [VCC 用户模板](https://vcc.docs.vrchat.com/vpm/templates/#user-templates)和 [VPM 文件约定](https://vcc.docs.vrchat.com/vpm/source-control/)。
 
-- `projectTemplates.v2` 取代声明合同。本机所有者可用 `projectTemplates.list`、`save`、`export` 和 `remove`。列表记录为 `{id,name,editorVersion?,revision,locked}`。保存接收 `{source,expectedRevision?,idempotencyKey}`，来源是 `file{sourceFile}`、`project{projectId,expectedProjectRevision,id,name,includeAssets?,lockPackageVersions?}` 或 `manual{id,name,unityVersion,dependencies}`。导出接收 `{id,revision,destinationFile,idempotencyKey}`。保存和导出返回 `{operationId,replayed}`，终态成功分别返回 `{template}` 和 `{id,revision}`。同 ID 同内容复用记录，替换须提供当前修订。删除和建项目的模板引用沿用 ID 及修订。
+- `projectTemplates.v1` 取代声明合同。本机所有者可用 `projectTemplates.list`、`save`、`export` 和 `remove`。列表记录为 `{id,name,editorVersion?,revision,locked}`。保存接收 `{source,expectedRevision?,idempotencyKey}`，来源是 `file{sourceFile}`、`project{projectId,expectedProjectRevision,id,name,includeAssets?,lockPackageVersions?}` 或 `manual{id,name,unityVersion,dependencies}`。导出接收 `{id,revision,destinationFile,idempotencyKey}`。保存和导出返回 `{operationId,replayed}`，终态成功分别返回 `{template}` 和 `{id,revision}`。同 ID 同内容复用记录，替换须提供当前修订。删除和建项目的模板引用沿用 ID 及修订。
 - 从项目创建检查 `projects.read` 及项目修订，按明确来源读取 Unity 版本、工程设置、软件包清单和可移植嵌入包。默认关闭 `includeAssets` 和 `lockPackageVersions`。勾选资产才读取 `Assets/` 及其中的 `.meta`。默认将直接 VPM 依赖写为 `*`，勾选锁定才保留实际版本与传递锁。手动填写创建填写模板 ID、显示名、Unity 版本和依赖范围。
 - 除内置 Blank 外，每个模板必须指定一个完整 Unity 版本。普通导入归档必须在 `ProjectSettings/ProjectVersion.txt` 中声明版本，从模板创建项目必须精确匹配该版本。此前登记但缺少版本的模板需要补全后替换才能创建项目。
 - Core 在数据根的 `templates/` 保存验证后的 ZIP，按摘要绑定目录记录和未终结任务。删除模板后清理无引用的内部归档，仍有任务使用则在最后一个引用释放后清理。导入原件和导出副本均独立于内部归档。从模板创建冻结归档及修订，校验路径、归档上限和完整性，在现有暂存中展开工程、补齐目录、更新项目名及版本、解析或恢复 VPM 依赖，再独占发布。导出也使用独占发布。
 - 内置 Avatars 和 Worlds 各提供 2022 和 2019 两个条目，名称与 ID 均包含年份，固定版本分别为 `2022.3.22f1` 和 `2019.4.31f1`。Core 启动时按当前内置声明同步锁定记录，移除已退役的内置 ID，保留用户模板和已接受任务冻结的归档。列表显示名称、ID、来源和操作，完整 Unity 版本在详情中查看。
 - 按所有者要求，四个内置条目使用冻结 v3 对应版本的 MIT 工程数据，保留工程设置、UPM 清单、VPM `3.x` 依赖范围及完整 Unity 编辑器修订。2019 仍锁定 SDK 和 Base `3.4.2`。v4 独立生成归档元数据，创建时写入项目名和唯一 GUID，分发时保留模板许可。来源与许可见 `specs/templates/builtin-scaffolds/README.md`。
-- State28 清除旧模板记录、对应 `project-template` 事件和终态 `projects.create` 任务的旧冻结声明块。保留已创建项目、项目事件、任务、幂等记录、模板修订和事件水位。仍使用旧声明的活跃任务须先结束。新模板保存、导出加入持久任务种类。旧自建模板可通过新入口重新创建。
 
 #### 验收与交付边界
 
-第一批在隔离 profile 验证旧入口消失、空页零模板请求、State21 定向清理与中断拒绝、外键和水位保留、GUI/CLI 无模板创建、目录冲突、幂等及发布恢复，并回归登记、复制、备份还原。第二批验证权限、同名不同 ID、同 ID 的重用和冲突、删除后重建的旧修订、内置不可编辑删除、普通表单与内置字节一致、六组内置模板与 Unity 版本组合、依赖约束及事件更新。同步协议规范、Schema、SDK 和契约向量，分别记录验证。H2–H6 历史材料保留，M7/H7 最终确认由所有者完成。
+第一批在隔离 profile 验证空页零模板请求、外键和水位保留、GUI/CLI 无模板创建、目录冲突、幂等及发布恢复，并回归登记、复制、备份还原。第二批验证权限、同名不同 ID、同 ID 的重用和冲突、删除后重建的旧修订、内置不可编辑删除、普通表单与内置字节一致、六组内置模板与 Unity 版本组合、依赖约束及事件更新。同步协议规范、Schema、SDK 和契约向量，分别记录验证。H2–H6 历史材料保留，M7/H7 最终确认由所有者完成。
 
 ### 页面提示边界
 
@@ -286,7 +278,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 
 **界面**：生产`/logs`由共享Core客户端读取，沿用PageHeader、DesktopList、Material按钮、共享路径显示及三语；显示时间、操作者、操作与步骤、目标及结果，完整路径换行，实际失败详情可展开。展示组件只消费记录。浏览器专用样例与真实数据验证分开；初次读取失败可以重试，已有记录时保留列表。
 
-**已批准的最小新增合同**：State21的`operation_log_entries`、只读`logs.read`及`logs.read.v1`能力、现有events.batch的`operation-log`失效范围；不新增权限、配置、生产依赖或第二套任务状态机。所有者随后明确要求标注操作者：持久`actor`为实际发起入口，如GUI、CLI、MCP，来自现有握手客户端元数据，不用于授权；Core自主触发时标Core，未标识具体客户端的本机IPC连接标Local IPC。后台执行与恢复继承任务发起入口；取消请求自身标记提交取消的入口。不标注未建模的“用户”“AI”身份。MCP及Local API自身的业务接线仍属后续里程碑。
+**已批准的最小新增合同**：数据库的`operation_log_entries`、只读`logs.read`及`logs.read.v1`能力、现有events.batch的`operation-log`失效范围；不新增权限、配置、生产依赖或第二套任务状态机。所有者随后明确要求标注操作者：持久`actor`为实际发起入口，如GUI、CLI、MCP，来自现有握手客户端元数据，不用于授权；Core自主触发时标Core，未标识具体客户端的本机IPC连接标Local IPC。后台执行与恢复继承任务发起入口；取消请求自身标记提交取消的入口。不标注未建模的“用户”“AI”身份。MCP及Local API自身的业务接线仍属后续里程碑。
 
 1. **记录及存储**：Core唯一写入，新增一张追加表。列为`sequence INTEGER PRIMARY KEY AUTOINCREMENT`、`entry_id TEXT UNIQUE`、`owner TEXT`、`execution_id TEXT`、`actor TEXT`、可空`operation_id TEXT`、`occurred_at_ms INTEGER`、稳定`action TEXT`、稳定`step TEXT`、`outcome TEXT`（started/succeeded/failed/cancelled/waiting）、`target_json TEXT`及可空`details TEXT`。索引`(owner, sequence)`及按执行/任务关联所需索引；目标快照和正文均不可因目标改名/删除被改写，不设级联删除。任务继续由Operation决定状态；每条日志只描述一个已发生的事实，不更新成另一套活动状态。
 2. **字段边界**：公开条目使用camelCase对应字段，`target`仅含kind、可选id、name、path；Core使用闭合action/step映射，不持久化翻译整句。`details`保留实际执行处的必要结果或原始错误原因链，完整正常路径不脱敏，不打印整个请求、argv、配置或带凭据URL。单条完整JSON编码上限512KiB，details上限256KiB、单路径上限128KiB UTF-8；超限明确报告，禁止静默截断路径或伪造成功。普通业务RPC的错误字段边界保持。
@@ -312,107 +304,7 @@ GUI 在添加仓库和仓库行的认证操作中接收新请求头。CLI 的 `r
 
 ### 日志、活动记录与提示系统撤销（2026-11-05，所有者明确要求）
 
-所有者当时撤销日志重建，要求彻底删除日志、活动记录及提示系统。本节保留已完成删除及获批State20的边界；后续新增功能仅以上节单页业务操作日志为准，不恢复下方历史日志/提醒授权。
-
-- 删除日志与活动页面、导航、筛选、视图缓存、订阅/读取桥接、GUI异常日志上报、共享Reminder组件及专用样式，不以改名保留旧系统。
-- 删除Core文件日志管线、日志读取/健康RPC、独立活动RPC/DTO/事件/权限、生产日志依赖及业务结果反向补记。普通业务错误、权限校验、破坏性确认、任务与恢复、资源变化通知保留。
-- 清理SDK、Schema、方法覆盖和测试夹具；只删除被撤销功能的断言，其他业务失败、重试和完成行为继续验证。
-- 原文件日志、原数据和历史验收材料保留，不清理Git历史，不推送，不操作Unity或真实项目。
-- 存储删除边界（所有者已明确批准）：以State20在同一事务移除独立activities表、五个触发器（activities_created、activities_changed、operation_activity_created、operation_activity_required、operation_activity_changed），以及仅该功能产生的activity.changed事件；其他业务表/Operation/恢复记录/事件的内容和sequence保持。移除State19活动创建实现，空库不再建立该功能。实际原库升级前保留可核验完整副本；本删除清单已获人工审批，原库升级前仍须核验备份，不将其他持久数据纳入删除。
-- 先完成源码和合同删除、隔离存储/业务回归，再决定是否更新运行环境；不得用旧候选门禁冒称清理后通过。M7/H7仍待所有者最终确认。
-
-本轮实际交付：上述源码/合同删除完成，新增State20仅实施已批准删除清单。副本和原库真实可执行文件验证均保留31张表中其他业务原行、事件身份/水位及4份历史日志；仅删除1条活动和2条activity.changed。原数据/profile已完整备份并逐文件核验SHA-256。新版Core171196/GUI86372沿原位置运行，9组分页业务快照、配置字节与Unity进程一致，窗口可响应；无桌面控制、提交或推送。
-
-验证绑定HEAD ce59b7f加当前工作树，构建前后生产输入一致（SHA-256：1e5d881929541f8d4ff960137d1551cd40a99e7731ee449bbb6fc8faf096628b）；完整Rust706/0，8项ignored为上层驱动的子进程夹具，fmt/严格workspace Clippy/xtask、前端workspace构建、原生debug构建、定向浏览器77/0及40/0通过。覆盖State20回滚/空事件表水位、撤销接口拒绝、真实IPC、事件竞态/背压/稳态无轮询、错误/重试/未知写入结果、包/备份/模板/项目/扩展完成行为。完整浏览器试跑存在旧Theme显式保存/取消等与既有自动保存不符的断言，未宣称最终完整GUI回归或原生人工签收。证据：target/m7-remove-observability-20261105/run-20261105T145154Z/、target/remove-observability-*.log；既有历史失败轮次保留。
-
-
-- 所有者于2026-11-05明确批准完整移除手动启动状态查询：删除菜单/弹窗、GUI桥接、Core RPC/application用例和专用Store读取port、Rust SDK方法、CLI命令及专用DTO/Schema。正常打开Unity、安装选择、启动幂等记录及接受/失败反馈保持，不删除共享记录或迁移既有数据。本次为首次公开发布前已批准的接口破坏性删除，RPC major仍为1；原方法按标准未知方法处理，不提供兼容别名、替代入口或轮询，权限名称、数据库、配置与依赖不变。
-- GUI 继承 A-033 的 v3 用户模型，使用真实 Material Web 控件和共享组件。Projects、包管理及
-  已获准的其他既有页面基础可用性修正已在 H2-A 验收；H2–H6 原签收保持，当前只推进已批准 H7 最终整体验收。
-  Open Unity 保留单个 leading play 图标和 Material 按钮的 18px 图标尺寸。Projects 的视图入口
-  显示当前模式并保留视图偏好；内容包装透明，卡片和表格使用自己的表面。
-- `packages.queryProjectCandidates` / `packages.candidates.v2` 按已批准的
-  `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
-  SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
-  复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
-- State20 按本节批准撤销独立活动，保留原任务及其他业务事件。当前源码基线见 [项目状态](../status.md)。A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
-  保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
-  保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
-- 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
-  承诺长期兼容，仅为明确需要保留的数据维护迁移；当前不降回 v1、不删除现有迁移；已批准的 State17 窄增量见 A-035。
-  发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
-  本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
-  RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 设置及迁移见 [设置合同](#settings-与存储权威)。
-- 主题编辑器直接展开于外观页，与其他偏好共用串行自动保存队列；sourceColor/mode/scheme 只提交实际改动字段，保持实时显示、未知结果重读去重和显式失败重试。
-  默认种子 `#6CB6FF`、Vibrant、跟随系统及九方案不变，模式下拉顺序为“跟随系统 / 浅色 / 深色”。共享 Material HEX/拾色器/
-  Select 使用标准控件及现有设置区块间距；模式、主题色、配色方案按共享设置行纵向排列，模式与九方案均用下拉框，不保留主题专用分段和两列布局。
-  删除主题弹窗、HCT 三个调节条及独立 Save/Cancel 和草稿离开确认。HEX 仅接受完整有效颜色，未完成输入失焦回到当前有效值；保存中可继续编辑，后续改动合并排队。
-  短请求保持动作名称，不插入瞬时状态行。
-- 字体只引用本机 Noto Sans/Mono 及中日 CJK fallback，不打包或联网加载字体。三语言为
-  en-US/zh-CN/ja-JP，使用静态词条和 React 文本插值；外部内容不翻译、不解释 HTML。
-  动画三态为 system/full/reduced，默认 system；共享适配器处理 CSS/Shadow DOM/弹层及滚动条，
-  不恢复已撤除的切页动画。
-  “诊断 ID”继续表示错误排障编号。操作日志的术语与交互见单页业务操作日志合同。
-  所有页面移除通用刷新及专用承载，不保留标题刷新槽或扩展宿主刷新确认分支；仓库获取、软件包重新读取、业务完成后的数据更新及错误重试保留。
-  所有者已否定为删除按钮而增加定时业务读取，并于2026-11-04批准下方完整变化通知合同；本轮按提交后通知改造项目、任务、活动及任务详情，移除3秒/750ms轮询及旧追赶逻辑，不恢复通用刷新作为替代。
-  已有分页、去重、筛选及阅读位置保护保留；以本轮真实代码和定向证据确认事件覆盖、恢复及背压，不把旧轮询候选的通过记录当作新链路验证。
-  日志筛选复用标准 Select 动画，移除页面的强制 quick 覆盖；筛选值经已有关闭后选择流程提交，避免连续切换与前次收起动画竞争。Select 只依据统一动画偏好跳过动画，不再暴露页面专用 quick 开关。
-- 原生默认4px容器圆角的Field、TextField、Select及Menu，在共享主题中将组件默认形状统一映射到Material medium（12px），包含filled/outlined本体和选择菜单；使用点直接继承。保留extra-small=4px、small=8px及其他形状等级，不通过修改圆角等级改变组件默认。搜索框和既有共享选择器保持胶囊形状，不改变控件尺寸和间距。
-  提醒框（含浮动出口）及仓库列表导入/导出预览框共用容器28px；代码底色及跳转正文链接使用small（8px），状态标签、扩展数量徽标和拾色器使用full。删除日志搜索框的旧outlined专用覆盖，继承共享搜索控件；不将表格、字段、菜单或滚动条的既有层级改成容器圆角。
-- 操作统一使用共享 Menu（40px项高/14px字号）；来源、版本与设置项统一使用真正的共享 Select（56px选项/16px字号及同一胶囊本体），删除按钮自建的选择菜单及其类型分支。版本首次展开才按原64条页及既有限额自动续读，关闭停止续页、同快照重开续载；候选身份/校验/权限及原Plan→Apply保持，选择关闭后才打开审查，取消保留已安装值。固定宽度选择器截断长标签并保留箭头，展开列表在视口内使用原生菜单滚动，不影响按内容测量的Unity选择器。
-- 公共 DesktopList 统一列、排序、截断和稳定正文行盒；外轮廓直接引用现有Material large（16px），表头、末行及视口共用，删除自定义20px形状变量且不修改圆角等级定义；行内仍8px，外层布局不重复按28px裁切。行距仅保留在行间，表格首尾不留额外行距；边界裁切不形成滚动容器，保留横向列宽及吸顶。
-  卡片内表格按所有者确认采用表面色分层：SettingsSection内的表头和行使用surface-container-high，视口与吸顶表头底板使用卡片的surface-container-low，使间隙透出卡片底色。保留原列宽、内边距、圆角、行距和滚动，不增加组件选项；独立表格不变。平直行/分隔线嵌入方案已弃用，移除其源码备份、补丁及候选程序；历史截图和验证记录保留。
-  软件包管理工具栏与项目网格排序栏共用alcomd-filter-bar，独立显示在表格上方；外部仅保留透明布局，去除包住工具栏和表格的背景、圆角及阴影，工具栏与表格保留12px正常间距，不设置内联提示或状态承载。无更新、普通加载、候选不确定、目录不完整和批量限制不主动弹提醒，也不为这些状态新增诊断日志。候选读取失败/过期在现有版本信息列显示，重读复用工具栏按钮；仓库刷新只保留按钮忙碌状态及原有操作结果反馈，相关权限、候选校验和操作禁用保持。
-  PageHeader、SplitButton、Dialog、ScrollArea 和 SegmentedButtons 统一持有布局/生命周期。无图标分段按钮内部左右各 24px，采用 Material 自身等宽布局，
-  移除勾号选项及隐藏宽度测量层，不写死文案宽度；所有者允许过窄窗口放不下，包括本次 640px 英文设置导航，不增加滚动兜底。滚动条只在实际滚动或轨道悬停时唤出，沿用库计时和销毁语义；textarea
-  内部编辑滚动保持原生。离线页面恢复同时重新协商当前连接能力，不依赖切页刷新能力。
-- 2026-11-08 按所有者要求撤销旧文件选择器历史：删除两套组件及共享样式，所有文件/目录入口先恢复为调用方直接拼接 `PathField` 与系统选择按钮，不保留自定义拖放、订阅或组件兼容层。原生选择适配器、调用方确认/预览、操作幂等及共享弹窗动画保留；路径与业务校验继续由 Core 执行。此基线之后再按已确认外观重建唯一组件，只用于仓库列表导入、模板导入、添加已有项目和用户软件包登记。所有者明确授权本次历史重写及 `main` 强推，其他远端写入禁令保持。
-- 重建结果只保留 `FilePicker` 与其 CSS，文件/文件夹模式使用相同已确认外观；CSS SHA256 与保留样式一致。组件只选路径，调用方负责确认、预览和系统选择期间的关闭限制；取消保留路径，禁用/卸载后的旧返回不能覆盖新视图。除上述四处外均为普通路径输入框与原生选择按钮，旧 `FilePickerControl`、`chooseFile` / `onPicked` 组件 API 与共享选择器锁不再存在。检查、构建、定向回归及原生未覆盖范围见[重置与重建记录](../testing/file-picker-reset-rebuild-20261108.md)，不提升 H7 人工签收状态。
-- 异步 Plan 的触发控件通过稳定本地 origin ref 返回焦点；共享 Dialog 等待公开 closed、
-  业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
-  MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
-  Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
-- 按最新整体批准的“日志系统重建”移除全部浮动提示和日志触发提示；保留字段校验、就地失败、显式重试、确认、导航与完成回调。错误详情及诊断编号继续可读，未知结果仍先核对，不因删除提示掩盖失败或重复执行。Core/GUI不再拥有本轮删除的日志生产、读取或补记管线。此前ReminderProvider和按源弹出合同仅保留为历史。
-- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
-  有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
-  或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
-- `unity.hub.open` / `unity.hub.open.v1` 要求 settings.read 和独立 unity.hub.open，
-  初期仅认证 local-owner；application 在协调锁内重验 revision/有效路径，独立 Launcher
-  预建有界 worker 后 spawn 并回收自己的 Child，最多四个，不 kill 用户进程或自动重试未知结果。
-  仅无显式偏好且确实未找到时返回 download_required，由闭合无参数 Tauri adapter 打开固定
-  官方下载页。Auto detect/Open 位于卡片右上角、Select 留在编辑行；未确认草稿阻止启动。
-  No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
-  OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
-  身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v12.*`（Config1–11 仅为迁移历史）、
-  `specs/config/theme-controls.proposal.contract.json`、
-  `specs/config/unity-hub-location.proposal.contract.json`、
-  `specs/storage/state-v15-project-last-modified.contract.json`、
-  `specs/storage/state-v16-remove-project-observed.contract.json`、
-  `specs/storage/state-v17-empty-unity-override.md` / `.contract.json` 和对应 testing 文档。
-  名为 proposal 的已批准合同仍由这些既有文件直接维护，不建立第二份有效合同。
-
-本轮 Schema 策略与架构审查修复的逐轮证据见
-[修复验证记录](../testing/m7-architecture-review-fixes-20261031.md)；当前阶段仍统一见 `docs/status.md`。
-测试门禁使用 ready 且由测试 handle 持有端点的 daemon，Windows 占用时在创建客户端前失败；
-生产初始化顺序和每用户唯一端点保持。Chromium suite 将三个现有 fixture 静态预构建，保留
-development React/StrictMode、原断言、零重试与 30 秒门槛；不改变生产 Vite 配置、依赖版本
-或系统 TCP 参数。H2-B 资源加载专项仅在测试浏览器回移 Playwright 官方的
-`TcpPortRandomizationWin` 修正，完整保留原 16 项默认禁用列表及其他参数，并用版本 guard
-要求升级时复核。fixture 以 `Connection: close` 在响应完成后关闭连接，减少 context 销毁
-留下的客户端 TIME_WAIT；所有资源继续通过同一 Vite fixture 的真实 HTTP 加载。专项的
-原失败轮、连接对照与该候选独立完整 292/0 结果见
-[H2-B 验证记录](../testing/m7-h2-b-20261101.md#chromium-资源加载专项)。前置完整结果和真实桌面范围见
-[测试门禁与桌面验证](../testing/m7-test-gate-closure-20261031.md)。
-H2-A 本轮真实 Apply、失效 Plan、焦点、筛选、偏好重启及签收图集见
-[Visual Gate 2 材料](../testing/m7-visual-gate-2-20261031.md)。
-
-项目所有者于 2026-10-31 明确批准 P6 wire 修复：P6 source selector、reinstall selection 和
-bulk intent 的 Rust enum variant fields 使用已冻结的 camelCase；候选查询使用独立公开
-source DTO，保持已冻结的 snake_case Schema/vectors 不变。该修复会替换当前错误接受的
-P6 snake_case 字段，属于实际 wire 的破坏性纠正；按此次未发布合同审批直接修复，RPC v1、
-State16、Config3、权限和依赖保持。不添加旧字段别名、双格式支持或 GUI 回退。
+当前日志页面通过 logs.read 读取 Core 的业务操作日志。任务与事件保持独立的读取、授权和归属规则。
 
 ## 组织身份统一（2026-11-05，所有者已批准）
 
@@ -423,7 +315,7 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 - 产品身份仍以`alcomd.product.toml`为唯一来源，同步Tauri、第一方扩展派生ID/发布者、
   Discord占位backend、GUI夹具/路由、当前规范、校验和禁止旧身份回退规则。
 - Windows pipe/mutex命名空间同步为`vrclearn.ALCOMD`；这是未发布端点及第一方扩展身份的
-  破坏性替换，不增加旧值别名/双身份支持，不改RPC形状、权限、State18或Config10。
+  破坏性替换，不增加旧值别名/双身份支持，不改RPC形状、权限。
   更新运行环境时必须成套停止旧Core/客户端后替换；数据目录仍为`ALCOMD`，禁止新旧Core
   对同一数据目录并行运行。本轮只修改及验证源码，不部署或停止当前桌面程序。
 - 产品名/二进制/URI及数据目录保持；所有者进一步明确当前网站/服务基址为
@@ -458,7 +350,7 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 ### 公共合同与范围
 
 - 新增`events.subscribe`、`events.live.v1`；认证/协商后先返回带请求id的就绪响应，再发送独立无id的`events.batch`通知。`events.closed`为明确终止原因的控制通知。Notification Envelope及Schema独立于普通Request/Response；不放宽响应id，不以id:null冒充通知。
-- 就绪包含subscriptionId、instanceId、baselineCursor和resyncRequired；批次包含订阅/实例身份、batchId、现有Event、有界后续游标。游标另含resourcesRevision，批次含固定invalidatedScopes（仅extensions）：既有M6同步启停/权限/runtime缺少持久资源事件且State18不允许扩展聚合，因此仅在实际提交后发送失效标记，不伪造Event、不改数据库。仅失效批次必须推进资源版本，保持持久sequence；两种内容都空的批次非法。沿用events.read、认证和owner过滤，初期只接已认证local-owner；事件不授予资源读取权限。
+- 就绪包含subscriptionId、instanceId、baselineCursor和resyncRequired；批次包含订阅/实例身份、batchId、现有Event、有界后续游标。游标另含resourcesRevision，批次含固定invalidatedScopes（仅extensions）：既有M6同步启停/权限/runtime缺少持久资源事件且Core 未持久化扩展聚合，因此仅在实际提交后发送失效标记，不伪造Event、不改数据库。仅失效批次必须推进资源版本，保持持久sequence；两种内容都空的批次非法。沿用events.read、认证和owner过滤，初期只接已认证local-owner；事件不授予资源读取权限。
 - `operations.list`增加activeCount及默认false的activeOnly；count是当前调用者全部非终态数，与同次列表读取一致，不受分页/展示过滤影响。activeOnly复用现有分页，用于加载全部已有活跃任务，不扫描全部历史寻找活跃项。
 - 同步协议规范、Schema、向量、Rust客户端、packages/alcomd-sdk、GuiRpcClient、薄Tauri Channel及窄ACK/取消适配、浏览器harness和相关夹具。不新增数据库结构、配置字段、权限名称、生产依赖或通用消息框架；现有events.list保留回放用途，不建旧轮询兼容路径。
 - 兼容性：RPC major仍为1；订阅通过新capability显式协商，既有普通响应信封不变。activeOnly默认false，activeCount为列表响应新增字段；本仓严格Schema和客户端同时更新，不增加旧字段别名、双模型或轮询兼容层。
@@ -511,7 +403,7 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 
 所有者明确：目的是防止重复打开同一项目，其他 Unity 或无法关联项目的进程不得形成全局启动禁令。本轮据此纠正 M5 行为，不增加再次确认或绕过开关。
 
-2026-11-06 所有者报告打开项目仅出现Hub、v3可以打开。只读核对登记为实际2022.3.22f1 Editor；Editor.log记录程序和-projectPath均为`\\?\`路径，切换到Test-Avatar后立即exit0。许可更新错误后仍有entitlements resolved，不能据此认定许可是根因。[官方启动参数](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)使用直接Editor和-projectPath；本次候选仅在执行边界复用已有Hub的DOS/UNC适配，重新解析仍为同一路径时才转换，保留数据库/RPC/锁身份，普通启动和迁移共用。先红后绿，平台53/0、严格Clippy/fmt及自有假Editor真实argv两例通过，覆盖中文/空格/引号及shell字符、不同对象和verbatim语义保留。所有者选择自行实测；尚未证明本次Hub现象的现场因果，也未启动真实Unity、修改真实项目或替换Core171196，不混入并行State21候选。补丁/结果位于`target/m7-launch-hub-20261106/`，不宣称原生问题已解决。
+2026-11-06 所有者报告打开项目仅出现Hub、v3可以打开。只读核对登记为实际2022.3.22f1 Editor；Editor.log记录程序和-projectPath均为`\\?\`路径，切换到Test-Avatar后立即exit0。许可更新错误后仍有entitlements resolved，不能据此认定许可是根因。[官方启动参数](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)使用直接Editor和-projectPath；本次候选仅在执行边界复用已有Hub的DOS/UNC适配，重新解析仍为同一路径时才转换，保留数据库/RPC/锁身份，普通启动和迁移共用。先红后绿，平台53/0、严格Clippy/fmt及自有假Editor真实argv两例通过，覆盖中文/空格/引号及shell字符、不同对象和verbatim语义保留。所有者选择自行实测；尚未证明本次Hub现象的现场因果，也未启动真实Unity、修改真实项目或替换Core171196，不混入并行候选。补丁/结果位于`target/m7-launch-hub-20261106/`，不宣称原生问题已解决。
 
 Windows 路径在外部调用处统一使用平台适配。Unity 普通启动、版本迁移、Hub 以及系统目录打开和选择器使用普通 DOS 或 UNC 拼写前，须确认该拼写仍解析到同一规范路径。长路径、特殊命名空间和普通规则可能重新解释的名称保留原拼写。GUI 路径标签及 Core 或选择器提供的初始字段值使用共享展示规则，未编辑提交仍带原值。项目身份、文件写入、Plan 和 RPC 继续使用各自的原始路径。[Rust 规范化行为](https://doc.rust-lang.org/std/fs/fn.canonicalize.html) · [Windows 路径命名](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) · [Windows 路径长度](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation)
 
@@ -526,7 +418,7 @@ Windows 路径在外部调用处统一使用平台适配。Unity 普通启动、
 
 ### 本轮实现与实际验证
 
-- 代码候选`89ec908`，其中Core/协议/SDK/原生桥接为`27f8fef`；文档提交不改变产品代码。无数据库、配置、权限或生产依赖增量；RPC Event Schema补齐既有State18实际允许的八类聚合，不将extensions伪装成持久聚合。
+- 代码候选`89ec908`，其中Core/协议/SDK/原生桥接为`27f8fef`；文档提交不改变产品代码。无数据库、配置、权限或生产依赖增量；RPC Event Schema补齐当时数据库允许的八类聚合，不将extensions伪装成持久聚合。
 - 已删除项目/任务/活动3秒周期读取、OperationFollow的750ms，以及项目复制300ms/删除250ms追踪循环；改用提交通知、按需权威读取与已接受命令结果。保留业务扫描/获取、日志专用通道、显式重试和必要的事件合并/故障退避/超时，不设稳态轮询兜底。
 - 稳定Rust检查：workspace fmt/Clippy、xtask通过；2026-11-04在真实Windows用户下以隔离临时目录运行`cargo test --locked --workspace -- --test-threads=1`，**646/0、8个既有helper ignored**，82组结果、进程exit 0，包含全部既有RPC和新`m7_events_live`。串行测试函数避免每用户端点争用，Tokio用例内部并发保持，不删除或放宽断言。日志见`target/m7-live-ipc-desktop-20261104/attempt-20261103T213813Z/workspace-tests.log`；原分层日志`target/m7-live-stable-*.log`保留。
 - 可控证据覆盖检查/等待间提交、调用方已断开、回滚/重复阶段/恢复静默、owner隔离、完整4MiB分批和超限拒绝、实际填满内存传输的慢订阅者不阻塞其他命令；原生ACK绑定、超时与取消由库测试覆盖。浏览器以同GuiRpcClient抽象的权威内存流验证接纳/恢复，不冒充真实Tauri IPC。
@@ -534,7 +426,7 @@ Windows 路径在外部调用处统一使用平台适配。Unity 普通启动、
 - 相关业务合集79/81；两项旧H3夹具时序/浮层选择器修正后已在最终20项内2/2补过，不合称同轮81/0。其余覆盖包/备份/扩展完成失败、跨夹具客户端修改、旧活跃任务/分页、删除迟到，以及缓存淘汰后活动35条历史、筛选与行锚点恢复（Y误差≤1px）。原结果为`target/m7-events-gui-final-related.json`；最终57项打包GUI源码映射与工作文件一致，TypeScript通过。
 - 全workspace前端check及既有隔离GUI生产build通过；本轮最终GUI release no-bundle再次包含GUI check及生产build，Core/CLI release配套成功。共享release缓存含旧构建快照的workspace产物，最终改用标准工作目录源码及项目内独立Cargo缓存重编workspace，未改产品API迎合旧缓存；首轮缓存失配及中间前端类型检查失败日志均保留。最终685项构建输入前后一致；与完整Rust回归相比只有保留的四项GUI/浏览器文件改变，Rust/合同输入无变化。构建见`target/m7-live-ipc-desktop-20261104/build-20261103T222038Z`及`test-final-build-input-comparison.json`。上述浏览器结果保留其原候选范围，本轮并行GUI增量只补GUI check/build，不冒称已重跑浏览器。
 - 真实命名管道用例证明独立命令/订阅连接、任务创建至终态的有序revision、按已接纳游标重复补发、Core重启重新同步及协议拒绝；未读取的订阅保持时另一订阅及命令可继续。此处不将有限事件量宣称为实际填满Windows管道，也不将同用户参数拒绝宣称为跨Windows用户验证。更新后的真实release另以只读`events.subscribe`取得带ID就绪响应，保持订阅时独立连接`system.status`成功，随后释放订阅。
-- 已用配套新版原位打开Core **142980** / GUI **107944**；Core SHA-256 `48C30E64…67652E69`、GUI `3CD5AD48…64CC3D0`，窗口可响应，实际WebView profile路径保持。部署后仍有并行GUI源码继续变化，未计入本次运行产物，见`target/m7-live-ipc-desktop-20261104/post-update-source-comparison.json`。原程序、数据和profile已离线备份；六组完整公开读取与配置文件摘要一致，Config10/State18及revision **189**保持；仅允许并验证本轮批准的capability和activeCount增量。证据见`target/m7-live-ipc-desktop-20261104/update-20261103T222621Z/{desktop-verification,restoration-verification,release-subscription-probe}.json`。未触发真实业务写入、Unity或项目操作，不将窗口响应/IPC冒充原生交互验收。
+- 已用配套新版原位打开Core **142980** / GUI **107944**；Core SHA-256 `48C30E64…67652E69`、GUI `3CD5AD48…64CC3D0`，窗口可响应，实际WebView profile路径保持。部署后仍有并行GUI源码继续变化，未计入本次运行产物，见`target/m7-live-ipc-desktop-20261104/post-update-source-comparison.json`。原程序、数据和profile已离线备份；六组完整公开读取与配置文件摘要一致，设置 revision **189**保持；仅允许并验证本轮批准的capability和activeCount增量。证据见`target/m7-live-ipc-desktop-20261104/update-20261103T222621Z/{desktop-verification,restoration-verification,release-subscription-probe}.json`。未触发真实业务写入、Unity或项目操作，不将窗口响应/IPC冒充原生交互验收。
 
 隔离4175服务已关闭并验证不可连接；本轮仅按所有者授权暂停/更新/重启ALCOMD，Unity及真实项目未操作，桌面控制保持停用。原生交互、新三平台CI/CodeQL与M7/H7人工签收未执行，不借用旧技术基线；已有H2–H6签收和验收材料保持。
 
@@ -563,7 +455,7 @@ M7 完成需要：
    security/fault evidence；
 2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
 3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
-4. 实现现行 Config13 设置、Core 单页业务日志（`logs.read`）、候选读取与 Unity Hub 窄合同，并保持各自权限和版本边界；旧 Activity/Diagnostics 接口不再作为现行能力；
+4. 实现现行 Config1 设置、Core 单页业务日志（`logs.read`）、候选读取与 Unity Hub 窄合同，并保持各自权限和版本边界；旧 Activity/Diagnostics 接口不再作为现行能力；
 5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 user-model continuity、Material component
    behavior、分阶段截图和一次真实交互桌面的视觉/流程/键盘焦点签收完成；
 6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
@@ -584,7 +476,7 @@ Narrator、VoiceOver 与 Linux screen-reader smoke 由 M12 在真实目标客户
 
 ## Stop A frozen contract
 
-以下合同已获项目所有者批准。Slice B0 已原子替换 active Manifest/package/WIT，加入 State v9 migration、typed
+以下合同已获项目所有者批准。Slice B0 已原子替换 active Manifest/package/WIT，加入 UI 协议持久化、typed
 `ui_protocol`、`extensions.ui.use` 与 RPC DTO foundation；Slice B1 已完成 Session runtime 与 capability advertising；
 renderer 已在 Slice C 完成；B0/B1 状态没有被用于冒充 renderer evidence。
 
@@ -633,7 +525,7 @@ close(guest-session-id)
 ```
 
 Host embedding 继续 async；没有启用 component-model-async、WASI future/stream、wasmtime-wasi、guest thread 或新依赖。
-旧 proposal directory 已删除；没有保留 parallel world，没有创建 ABI v2，`extensionApi.major` 仍为 1。
+宿主按首发 WIT 定义加载扩展组件。
 
 ### Lifecycle 与 Host protocol
 
@@ -710,16 +602,7 @@ RPC compatible addition只有 capability 与 open/refresh/dispatch/close。DTO c
 
 ### Portable UI 存储与 renderer
 
-M6 的 v8 后，Portable UI 在 v9 为 extensions 和 immutable extension_plans 各增 nullable `ui_protocol`，合法值 NULL 或
-`portable-v1`。不保存页面常量，不建session/Snapshot/replay/action/draft/renderer/browser/cache/workflow table。v8->v9
-单事务 migration 已保留 rows/FK/revision/Event sequence，existing 默认 NULL，future schema fail closed；B1 完整接线后
-当前 hello 广告实际 State v16 与 `extensions.ui.portable.v1`；v9 是该字段的历史引入版本。
-
-官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
-name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
-keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖GUI/Tauri并输出
-确定性 semantic summary。B0/B1 不实现任何 renderer；Slice C 已实现 official renderer，Slice D 已实现独立 headless
-consumer 并用相同 public DTO/Fixture 验证全部 node/action 与 fail-closed 行为。
+扩展安装记录及安装计划记录可选的 ui_protocol。活动 UI 会话、渲染状态和重放缓存由宿主及 GUI 在当前会话维护。页面、动作、容量和会话归属检查见 [Portable UI](../../specs/extensions/portable-ui-v1.md)。
 
 ## Contract artifacts
 
@@ -729,7 +612,7 @@ consumer 并用相同 public DTO/Fixture 验证全部 node/action 与 fail-close
   `specs/extensions/host-protocol-invocation-context-v1.md`；
 - active WIT：`specs/extensions/wit/extension-v1/`；
 - RPC contract：`specs/rpc/m7-portable-ui.schema.json`、`specs/rpc/alcomd-rpc-v1.md`；
-- State v9/migration：`specs/storage/state-v9*`、`crates/alcomd-store/migrations/0009_portable_extension_ui.sql`；
+- State1 和初始化 DDL 见 `specs/storage/state-v1.md` 与 `crates/alcomd-store/src/schema.sql`。
 - threat model/consumer contract：`specs/security/extension-portable-ui-threat-model.md`、
   `specs/gui/portable-ui-renderer-v1.md`；
 - MCP/Discord/adversarial/headless fixtures：`crates/alcomd-testing/fixtures/m7/`；
@@ -752,7 +635,7 @@ Portable UI architecture reset 只替换旧 Web UI/iframe/isolated WebView 方�
 
 1. Slice E1：Core read surfaces、stable route identity、wide rail/drawer、narrow modal drawer 与统一 data-route state；
 2. Slice E2：当前既有 mutation、typed Plan review、explicit Apply、Operation progress/cancel/reconnect；
-3. Slice F1：当前 Config3、`settings.toml` 单 writer durability、ConfigStore port、settings permission/RPC；
+3. Slice F1：设置文件、`settings.toml` 单 writer durability、ConfigStore port、settings permission/RPC；
 4. Slice F2：Event/Operation 的 safe Activity projection 与 redacted Diagnostics projection；
 5. Slice F3：Settings、Activity、Diagnostics 与 About GUI；
 6. Slice G1：Chromium browser-level DOM/component accessibility automation；
@@ -1010,7 +893,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 5. **H4 Extensions/Portable UI（阶段性人工验收通过，保留非阻塞体验问题）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol。所有者于 2026-11-02 认可安装/启停/卸载、权限管理、同窗口功能页与共享错误可读性；保留表单、超时、外部断线和 M8/M9 正式业务未覆盖项，不表示整个 Visual Gate 4/M7 完成。
 6. **H5 utilities/observability（阶段性人工验收通过，保留非阻塞体验问题）**：保留 grouped Settings、Log内Activity/Diagnostics与footer About/version，
-   只补真实缺失功能及必要整改，保留 A-026 权限分离，复用共享 Material、错误显示与只读 `displayPath`；当前 Config4 窄变更见下方批准记录。
+   只补真实缺失功能及必要整改，保留 A-026 权限分离，复用共享 Material、错误显示与只读 `displayPath`。
    所有者于 2026-11-02 明确签收，认可删除紧凑模式；保留一般文案、布局与过度设计待办，不表示体验完善或 M7 完成。
 7. **H6 responsive/a11y/Playwright regression（阶段性人工验收通过，保留非阻塞体验问题）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
@@ -1022,13 +905,13 @@ Activity、Diagnostics 或 Portable UI authority。
 
 ### H5 已批准切片（2026-11-02）
 
-H4 阶段签收及实际环境恢复后直接推进 H5，不另设规划停止点。先核对 Settings/Config3、Activity/Diagnostics、
+H4 阶段签收及实际环境恢复后直接推进 H5，不另设规划停止点。先核对 设置、Activity/Diagnostics、
 About/version 已有接线、反馈、分页与权限，只补真实缺口；正常状态简洁，错误/风险准确保留，短暂反馈不撑开布局。
 只读路径统一 `displayPath`，不修改实际路径或 RPC/文件参数；公共合同确有缺口才提交最小方案并只暂停相关部分。
 日常定向检查，稳定候选集中必要验证与真实界面入口；不重复全量 Rust/Chromium/release/三平台 CI，不以旧结果替代新代码。
 已有 H2-B/H3/H4 非阻塞待办保留，不批量升为 H5 阻塞。不进入 H6/H7，不推送，不宣布 M7 完成。
 
-复用审计已确认全部 Config3 字段、普通设置串行 CAS/未知结果核对、主题预览/三方合并、日志分段/搜索/已加载项筛选/
+复用审计已确认全部设置字段、普通设置串行 CAS/未知结果核对、主题预览/三方合并、日志分段/搜索/已加载项筛选/
 keyset 分页及关于/许可证入口已有实现。只修设置丢失安全错误原因、隐藏仓库 256 项界限、日志任务详情不刷新、
 缺少 operations capability 时的操作接线、诊断原因与现有摘要翻译，以及 GUI/Core 版本区分和断线时本地信息可见性。
 复用现有 OperationFollow 与 Reminder；GUI 构建版本取已由 metadata 检查对齐产品/Tauri 的 package 元数据。
@@ -1040,34 +923,20 @@ keyset 分页及关于/许可证入口已有实现。只修设置丢失安全错
 交付 Settings、Log、About 三项真实窗口清单并等待 H5 人工确认；未执行完整 Rust/浏览器套件或远端验证，不进入 H6/H7、不推送。
 证据与未覆盖项见 [H5 候选记录](../testing/m7-h5-utilities-20261102.md)。
 
-#### H5 已批准差异：移除紧凑模式与 Config4（2026-11-02）
+#### 外观设置
 
-项目所有者已批准完整删除 GUI 紧凑模式及公开 `settings.get/update` 的 `appearance.density`，
-当前设置合同升级为 Config Schema 4；不保留隐藏开关、旧字段别名或两套当前模型。Config4 文件、完整响应及
-partial update 均不含 density，显式提供该字段作为未知字段拒绝；现有 settings.read/manage、串行 CAS、
-16 KiB 文件上限、原子发布及恢复纪律保持。无需新 RPC、capability、权限、State Schema 或生产依赖。
-
-Config1–3 仅作为既有启动迁移输入：按各自历史合同校验后丢弃旧 density，保留其余有效设置和原 revision；
-v1/v2 仍仅补各自原先缺少的 packages/scheme 默认值。迁移在 ready 前完成，不算用户更新，不推进 revision；
-Config4 当前写入与公开响应只使用新的唯一模型。当前规范及 Schema 原位转向 settings-v4，旧版本明确标为迁移历史。
-验证只覆盖字段拒绝、旧格式迁移/其余设置及 revision 保留、GUI 紧凑入口与样式移除及相关回归；不重复无关全量或远端检查。
-
-当前候选为 `6739705`：Store 19/0、application 17/0、协议合同 7/0、hello/映射/真实隔离 RPC 各 1/0，
-GUI/UI check、保存队列 15 场景、浏览器 76/0 及补充 1/0 已通过；Clippy 初轮测试初始化失败与窄修复验分别保留。
-一次 Core/GUI 必要构建后已实际恢复原环境，Config4 迁移只删除 density，revision 166 和其他偏好不变；新窗口保持打开。
-以上为 `6739705` 交付时的历史状态；所有者随后已阶段性签收 H5 并批准 H6，当前授权见下节。
-旧轮测试不冒充本轮全套，新增代码无远端验证；H7 与推送仍未授权。
+完整外观设置包含 mode、scheme、sourceColor 和 motion。设置修改使用 settings.update 和串行 revision CAS。[设置规范](../../specs/config/settings-v1.md)
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
 
 ### 当前 H6 授权（2026-11-02）
 
-H5 已阶段性人工签收，紧凑模式移除与 Config4 方向获认可；H2–H4 原签收保持，不重验已检查流程。
+H5 已阶段性人工签收，外观简化方向获认可；H2–H4 原签收保持，不重验已检查流程。
 直接推进既定 H6：先核对已有实现/测试，只修桌面宽度变化、较窄窗口、200% 可用性、键盘焦点与弹窗、
 明暗主题和减少动画的实际缺口，复用共享 Material/ScrollArea/Reminder，不重做 GUI 或新增适配体系。
 旧测试若只因可读错误/已删除密度/既有名称变化失配，应保留安全与交互断言并改为当前可观察合同，不能删断言掩盖产品缺陷。
 定向诊断与修复后集中必要浏览器回归，准确区分等效缩放与真实平台/辅助技术结果；未覆盖项留待明确验收。
-只读核对 Config4 现状复用迁移证据，不重跑 Rust/迁移/三平台 CI。H6 候选交付精简结果与人工入口，不进入 H7、不推送、不宣布 M7 完成。
+H6 候选交付精简结果与人工入口，不进入 H7、不推送、不宣布 M7 完成。
 
 本地安装的 Tauri 2.12.5 配置/类型确认缩放快捷键默认关闭。H6 复用其 `zoomHotkeysEnabled`，
 仅为本地主窗口增加 Tauri 已有的 `core:webview:allow-set-webview-zoom` UI 权限以支持 macOS/Linux 的既有缩放适配；
@@ -1078,14 +947,14 @@ Windows 使用 WebView2 原生缩放。不新增 ALCOMD RPC/权限或产品设�
 
 代码候选 `a4f12a19d5fca0692053bb281fefab472fd60b65` 修正窄窗工具/表单/扩展卡片、Portable 正文滚动、
 主题分段聚焦、Skip 锚点和 SplitButton 真实点击区域。宽屏保持原布局，日语主题保留 intrinsic 宽度，
-沿用 860px 断点在窄窗单列；默认间距和 Config4 保持，不改 Core/RPC/State/扩展合同。
+沿用 860px 断点在窄窗单列；默认间距保持，不改 Core/RPC/State/扩展合同。
 独立定向 27/11、8/4、13/1、1/0；一次集中 Chromium **383/12**（395 项，16.3m）。
 旧断言、模板公开闭合时序与真实日语列宽分别修正后，失败及受影响路径 **53/1**，剩余新测试定位窄修后仅该项 **1/0**。
 不拼成全套零失败；各轮 186 项输入及失败证据保留，最终输入与一次 GUI release no-bundle 构建一致。
 GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或三平台 CI，新增代码仍无远端验证。
 
 原 Core **143516** 持续使用原目录；仅关闭已记录旧 GUI，新 GUI **139052**（窗口 **8393506**，可响应）已打开。
-构建前后项目、Editor、Operation、settings、status 五组完整公开状态全部一致，Config4/revision166 及文件摘要不变。
+构建前后项目、Editor、Operation、settings、status 五组完整公开状态全部一致，设置 revision166 及文件摘要不变。
 没有恢复桌面控制或伪造原生截图，原生缩放/实际读屏和跨平台辅助技术仍未覆盖。
 以上为 H6 候选交付时的历史状态，所有者随后已阶段性签收 H6 并批准 H7；
 各轮结果及 12 项对应关系见 [H6 验收记录](../testing/m7-h6-accessibility-20261102.md)。H2–H6 原签收保持，推送仍未授权，M7 进行中。
@@ -1095,22 +964,7 @@ GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或�
 本轮在既有成果上按所有者反馈逐项修正，保留 H2–H6 签收及既有 H7 技术证据，不进入 M8，不重验所有历史功能。
 日常定向验证；相关整改形成稳定候选后集中必要回归，不因每条反馈重复完整门禁或发布构建。允许本地提交，不自动推送。
 
-已确认 v3 `gui.settings` 基线包含项目/备份路径，当前 Config4、Settings DTO 和设置页均未实现。
-新建及恢复项目的父目录从空值开始；Core 的 `BackupEngine` 固定绑定 `data_root/backups`，
-既有 `backup-v1:<id>` 定位和任务恢复也依赖该根。因此只加 GUI 输入框不能补齐实际行为。
-
-所有者已于本轮明确批准以下核心功能补齐范围：在设置中增加默认项目目录、默认备份目录，经既有 `settings.get/update`、
-`settings.read/manage` 和串行 CAS 保存，扩展为 Config5；默认值遵循架构中的用户主目录/ALCOMD/Projects、Backups（2026-11-10 所有者调整，取代原 Documents 基准）。
-项目目录用于新建、复制、恢复表单的初始目标，保留当次覆盖；备份目录实际控制后续新备份的保存位置。
-每个已接受备份任务须固定其目的地，历史备份继续可读取/恢复；不自动搬迁旧项目、旧备份或重定向已有任务。
-现有备份定位缺少独立目录，必须同步补足持久定位与恢复证据；真实既有数据需要的旧定位读取支持有保留价值，成本为两类定位的验证及回归。
-不新增业务权限、生产依赖或第二套设置存储；若实施需要额外数据库结构或其他合同变更，先说明具体差异。
-本次发布前扩展会增加严格 settings 消费者必读的 paths/directories，须同步协议、Schema、当前消费者与快照；RPC v1、权限、State16不变。
-平台通过既有 Known Folder 查询 Windows Profile，Unix 使用 HOME，产品目录由 `alcomd.product.toml` 派生；不覆盖发布使用 Windows MoveFileExW(flags=0) 与 Unix 既有 rustix NOREPLACE。
-Windows 的窄 FFI 保留说明与安全注释，不增加生产依赖；定向回归验证目标冲突不覆盖与旧/新目录恢复。
-本地实现、相关定向检查及一次匹配 Core/CLI/GUI 构建已完成；该批原数据目录/profile 已实际恢复为 Core130768/GUI132996。
-Config4→5 只改变 schema，revision166 和其余设置不变；四组业务状态完全一致。独立结果与原失败见
-[目录设置补齐](../testing/m7-storage-locations-20261103.md)，不以旧 CI 或浏览器证据替代当前原生/跨平台验收。
+默认项目与备份目录经 settings.get/update 和 revision CAS 保存。平台分别使用 Windows User Profile 或 Unix HOME 解析默认位置。项目创建、复制和 ZIP 恢复允许显式目的地；已接受任务固定目标目录。隔离验证见[目录设置补齐](../testing/m7-storage-locations-20261103.md)，不以旧 CI 或浏览器证据替代当前原生/跨平台验收。
 本轮本地提交，不推送；H7 最终签收仍待所有者，M7 进行中。
 
 所有者随后明确 320px 是刻意极窄状态，允许分段导航放不下；不再以该尺寸下的完整可见/横向滚动作为分段控件要求。
@@ -1143,156 +997,31 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 
 #### 主题统一自动保存（2026-11-03）
 
-所有者要求移除主题底部取消/保存特例。主题mode/sourceColor/scheme接入现有SettingsAutosave.change，仅发送实际变更字段；复用普通偏好的串行CAS、连续改动合并、失败保留意图、显式Retry先重读及未知已提交去重。输入完整合法HEX或选择颜色/模式/方案即即时显示并自动保存，非法/部分HEX不写入，失焦还原当前有效颜色。保存中允许继续编辑、切页后队列继续；没有独立草稿会话、主题成功通知或离开确认。失败采用统一设置错误与Retry，不新增主题特例。标题恢复默认仍需确认，仅恢复主题三字段，默认时禁用，成功后返回标题焦点。不改RPC、Config9、State18、权限、默认值或依赖。
+所有者要求移除主题底部取消/保存特例。主题mode/sourceColor/scheme接入现有SettingsAutosave.change，仅发送实际变更字段；复用普通偏好的串行CAS、连续改动合并、失败保留意图、显式Retry先重读及未知已提交去重。输入完整合法HEX或选择颜色/模式/方案即即时显示并自动保存，非法/部分HEX不写入，失焦还原当前有效颜色。保存中允许继续编辑、切页后队列继续；没有独立草稿会话、主题成功通知或离开确认。失败采用统一设置错误与Retry，不新增主题特例。标题恢复默认仍需确认，仅恢复主题三字段，默认时禁用，成功后返回标题焦点。不改RPC、权限、默认值或依赖。
 
 #### 项目与备份板块及默认行为（2026-11-03，已批准）
 
-所有者要求“项目”包含默认路径及默认开启的自动发现/添加项目；“备份”包含默认位置、默认压缩等级、默认开启的保留软件包和默认关闭的保留 Library 缓存。板块标题及既有目录项可直接调整；新增行为不得用占位控件冒充完成。
-
-只读审计确认原 Config7 无上述四项偏好；项目没有默认目录扫描，`projects.list` 是纯读取；备份已有 store/fast/maximum 三档压缩，但原 GUI 默认排除 VPM 包，Library 内容选择固定在已冻结 profile。项目所有者已明确选择“批准，按该合同实施”，以下为本轮有效实施合同（A-037）：
-
-- **Config8**：沿用 `paths.projectDirectory` / `paths.backupDirectory`，增加 `projects.autoDiscover: boolean = true`，以及 `backups.compressionMode: store|fast|maximum = fast`、`backups.includeVpmPackages: boolean = true`、`backups.includeLibrary: boolean = false`。四项均为严格非 nullable 字段，PATCH 可独立省略，闭合空容器/非法类型/未知字段整次拒绝。Config1–7 有效迁移保留 revision 及全部既有设置，只补四项默认值；不重置路径、主题或窗口偏好。继续原串行 CAS、16 KiB 文件上限和原子替换。
-- **权限及自动发现**：设置仍需 `settings.manage`；修改自动发现字段，或在开启自动发现时更改项目默认路径，额外要求现有 `projects.manage`。Core/application 内部任务在启动、开启或路径变更后调度，并在 Core 运行期间每30秒合并重扫；不阻塞 ready，不改 `projects.list` 的只读语义，不新增公开方法或权限名。只枚举默认根目录的直接子目录，不递归、不跟随链接/reparse；复用 `ExactRoot` 检查和 Store 文件身份查重。单轮最多4096个目录项、单个扫描任务在途，重复项目不新增记录/事件；无效项目、不可达根目录或扫描上限不删除已登记项目，也不写用户工程。关闭或切换配置后不再接受旧一轮的后续登记。默认目录中的项目若只从列表移除、文件仍在，之后扫描会重新加入；本轮不新增持久排除清单或数据库迁移。
-- **备份默认值与单次覆盖**：压缩继续现有不压缩/快速/最大三档，未另指定的默认等级沿用快速。新备份表单读取权威默认值，允许当次修改；软件包选项使用正向“保留”，映射原 `excludeVpmPackages` 的反值。CLI/其他入口未显式指定时，也由同一 application 用例解析当前默认值；已经显式指定的值优先。接受任务时固定有效目的地及各选项，后续设置更新不得改变已接受操作或同幂等键重放。
-- **兼容性与视图跟进**：本轮是已批准的发布前设置模型增加与备份可选参数增加；RPC major保持1，严格设置消费者须同步完整Config8模型，既有显式备份请求和旧已接受任务继续有效。GUI只在自动发现开启且项目页可见时，每3秒单在途重读既有projects.list，静默保留列表及焦点、切页取消跟进；不扫盘、不登记项目、不把读取变成写操作。
-- **`backups.create` 与内容选择**：新增可省略的 `includeLibrary` 布尔选项；压缩及排除包字段允许省略以使用权威默认值。显式值仍严格校验，null/非法值拒绝。Library=true 包含标准项目根目录 `Library` 的缓存内容，其他临时目录、链接、路径穿越、配额、哈希、取消及一致性门禁继续保持；false 沿用原 Library 缓存排除策略及既有 `LastSceneManagerSetup.txt` 保留规则。同步修订现有 Backup Archive v1 内容选择 profile，保持归档 manifest、已存 BackupRecord 和恢复格式形状，不新增数据库列或另立归档格式。
-- **必要的原任务保留**：原已接受任务没有 Library 字段时按原 false 语义解码；false 选择保留既有幂等 fingerprint，true 必须进入 fingerprint，防止不同内容选择错误重放。该保留用于保护当前数据库中已有任务/恢复证据，不新增旧字段别名、平行解析器或常态旧产品依赖。新增设置、可省略请求字段及此最小兼容处理均已获本次批准。
-- **验证**：Config8 默认、严格形状/迁移、字段级权限与串行保存；临时目录下自动发现开关、路径变更、身份去重、上限及链接拒绝；备份三档压缩、包/Library组合、实际归档/恢复内容、同幂等键冲突及接受后设置变化；定向真实隔离 RPC/重启与 GUI 三语/单次覆盖。只用可丢弃合成 fixture，不为测试运行自动发现或备份用户真实工程。不新增生产依赖，不进入 M8/M11，不提交、推送或启动真实数据环境。
-
-本增量已实施，最终本地完整Workspace598/0（8既有helper ignored）、严格Clippy/fmt/xtask/metadata及前端check/build通过，最终定向Chromium8/0。自动扫描复用发布锁并增加启动恢复调度前的RAII屏障；GUI读取代际保护显式刷新。回归发现的RPC派发栈溢出通过将大型future放到堆上修正，全部原测试保留。所有者另行明确批准为IPC验证临时关闭并原样恢复既有GUI/Core；只用隔离夹具，最终原程序/数据/profile及五组状态、配置hash均已核对恢复，不将本增量指向真实数据。完整证据及未覆盖范围见[验证记录](../testing/m7-project-backup-defaults-20261103.md)，不提升M7/H7人工状态。
+项目自动发现默认开启。Core 在默认项目根下扫描符合条件的直属子目录，关闭或切换配置时停止原轮登记。默认项目与备份目录取用户主目录下的产品目录。备份默认包含 VPM 包并排除 Library；GUI 发送本次显式覆盖，Core 填充其余选项并在接受任务时固定。[设置规范](../../specs/config/settings-v1.md) · [项目 ZIP](../../specs/backups/project-zip.md)
 
 #### 备份压缩等级细化（2026-11-03，所有者已选择六档）
 
-所有者反馈现有三档过少。审计确认当前仅覆盖ZIP Stored、Deflate level1和level9；数据库backups表也将compression_mode闭合限制为store/fast/maximum，且有恢复计划外键引用，因此不能只增加GUI选项。
-
-所有者明确以NanaZip截图选择六档：0-仅存储、1-极速压缩、3-快速压缩、5-标准压缩、7-最大压缩、9-极限压缩；以此替换此前未批准的0–9逐级提案。GUI设置默认值及单次备份统一使用上述六档，默认保持1。RPC/CLI/持久枚举保留store/fast/maximum分别表示0/1/9，新增level3、level5、level7三个有效值，不增加同义别名。显式非法值和null仍拒绝，已接受任务固定等级且各等级进入幂等指纹。
-
-Config9仅扩展该枚举；有效Config1–8迁移保留revision及全部偏好，现有fast默认含义不变。State18仅在原子迁移中扩展backups表该CHECK，保留所有行、列、索引、约束、备份ID及恢复计划外键，其他状态不动。同步扩展Archive v1压缩枚举及Schema/profile；保留旧归档和旧已接受任务原有含义、指纹及恢复行为。旧版本程序不承诺读取新增等级的归档，所有严格消费者同步更新，不增加依赖、权限或公开方法。
-
-验证覆盖全部六档的真实归档/恢复、24组等级×包/Library内容组合、非法值、旧配置/数据库/归档保留、接受后设置变化及重放；设置和备份弹窗一致、单次覆盖不回写默认值。所有者在已说明Schema迁移及保留成本后，以截图确定最终档位，按该合同实现并按本轮桌面查看流程集中构建更新，不执行真实工程备份或清理已有数据，不提交或推送。
+GUI 设置和单次备份共用等级 0、1、3、5、7、9。保存设置的默认等级为 5，单次显式覆盖优先。已接受任务使用冻结的等级。[备份规范](../../specs/backups/project-zip.md)
 
 #### Unity 设置截图对照与补齐（2026-11-03）
 
-只读对照 v3 设置、启动流程及当前 v4 后确认：全局默认 Unity 启动参数尚缺；已有项目参数不能替代它。
-原 `m7-v3-settings-audit-20260919.md` 已记录此缺口，未找到将其正式取消或划入后续里程碑的决定。
-当前安装列表的刷新仅重读 registry，真正 discovery/register 位于管理弹窗；这些能力已有，并非尚未实现。
-v3 旧 Hub 开关切换读取 Hub 配置与调用 Hub CLI 两种 Editor 发现策略；v4 当前只扫描平台默认安装根，
-尚未覆盖 Hub 自定义安装根及已定位 Editor。此发现缺口单独补齐，不直接复制旧开关或旧实现。
-
-**所有者已批准全局参数最小合同，并要求依据 Unity 官方规则实现：**
-
-- Config5→6，`settings.unity.defaultLaunchArguments: string[] | null`；TOML `unity.default_launch_arguments` 可省略。
-  null 使用产品内置默认（当前为空数组），`[]` 是显式空参数；settings PATCH 省略该字段表示不变。
-- 沿用 settings.get/update、settings.read/manage；修改此字段同时要求已有 unity.manage，不新增权限名或 RPC method。
-  `unity.projectLaunchConfig.get` 在现有 config 外增加 `defaultArguments: string[]`、`effectiveArguments: string[]`，
-  由 application 投影；config.arguments 仍表示项目覆盖，既有项目读取/设置/清除/启动权限不扩大。
-- 实际启动优先级：存在项目覆盖（含空数组）→全局覆盖→内置默认，整组替换而非拼接；清除项目覆盖恢复继承。
-  GUI 的默认参数组与项目参数编辑器应准确区分继承、显式空数组、取消和恢复默认，不沿用 v3 的 null/取消混淆。
-- 复用现有参数数量/长度/项目路径选择器禁用规则，拒绝 NUL，保留 ConfigStore 16 KiB 文件总上限和串行 CAS。
-  参数通过 argv 数组传递；不使用 shell，不把完整参数写入 Activity、普通错误或诊断摘要。
-- Config5 及既有迁移输入增加 null 默认，保留 revision、目录、Hub、主题及其他设置。
-  定向测试发现 State16 只允许非空数组；所有者另行批准 State17 最小迁移，仅允许该表保存 0–64 项，原样复制旧记录，
-  其他列、外键、STRICT、大小/修订约束保持，不改项目文件。此前不需 State 变更的实现假设据实际约束纠正。
-  接受启动时固定有效参数快照；全局变更不得改变已接受启动，同幂等键受影响的设置变更沿用明确冲突而非静默改参重启。
-- 新增全局参数设置 UI、Core 用例/读取投影、协议/Schema/消费者/快照及定向回归按一个独立功能提交；不新增依赖，
-  不执行真实用户项目启动、迁移或 Hub CLI。Editor 发现完整性与现有入口简化作为另一项整改，不捆绑审批。
-
-Unity 官方 2022.3 [参数说明](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)
-及 Rust 官方 [Command::args](https://doc.rust-lang.org/std/process/struct.Command.html#method.args)
-确认 flag/value 分别传入、含空格路径保持单个 argv，不做 shell 引号解析。`-openfile` 另选项目入口、
-`-createProject` 创建项目，故和 `-projectPath` 一并拒绝，保持打开所选项目的语义；不增加跨版本 flag allowlist。
-Core 共享已初始化的设置快照，启动时固定有效数组；继承非空参数使用有界私有幂等标识及响应快照绑定准确 argv，
-既有无附加参数及项目覆盖请求保留旧指纹，不改写历史记录。完整参数不进入 Activity/普通错误。
-GUI 逐项编辑参数，保留空值、空格、引号与反斜线，使用共享 Material/提醒/错误组件；保存失败、未知结果和竞争写入不冒充成功。
-
-本批定向结果：Application52/0、Protocol52/0、Store123/0，私有快照长度修正后 M5 模块4/0；隔离RPC/合同25/0、端点所有权4/0；
-GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模块补查14/0，测试预期/插槽定位修正没有改产品实现或删除断言。
-六crate Clippy、fmt/xtask/metadata及一次匹配Core/CLI/GUI构建通过；原数据/profile已恢复，Core125676/GUI144536，
-公开状态保持，Config6迁移仅改TOML版本，保留实际切换前revision168。各轮准确范围见status，不冒称完整门禁或M7签收。
+Core 依次选择项目启动参数、全局默认启动参数与内置空数组。项目的空数组是明确覆盖。GUI 通过 typed RPC 保存原始 argv 元素，启动时直接传给已验证的 Editor。Hub 与 Editor 发现见[Unity 发现](unity-application-discovery.md)。
 
 #### 持久全屏模式（2026-11-03，所有者已批准，A-039）
 
-所有者要求在“外观→窗口”增加全屏，并明确批准跨启动保留：Config10增加window.fullscreen非nullable bool，默认false；有效Config1–9严格校验后只补false，保留revision及原设置/数据。window PATCH可独立设置rememberState/fullscreen，空容器、null/非法类型/未知字段整次拒绝；沿用settings.read/manage及串行CAS，无新RPC method、State18迁移、权限、依赖或任务变更。
-
-GUI Checkbox和F11共用同一设置意图队列；已接受偏好经现有主窗口私有薄适配器应用，不以可丢弃缓存存储全屏偏好。首次普通尺寸恢复后再应用全屏；全屏切换不再次恢复旧几何，过渡尺寸和全屏尺寸不写入普通窗口缓存。窗口卡片恢复默认先确认，将两项同时置false并退出全屏；默认时禁用。原生应用失败沿用安全提醒并提供不重复写设置的原生Retry。默认关闭不会主动更改其他窗口设置。
-
-本批必要验证包含Config9迁移保留、严格读写/窄PATCH、串行/丢响应/冲突、GUI默认/持久/F11/恢复/三语、原生几何模型与桥接协调；测试真实IPC时暂时关闭原Core/GUI，结束后以配套新版、原数据/profile打开。真实原生全屏交互和三平台表现不以浏览器/模型测试冒充人工验收。
+window.fullscreen 默认 false，跨启动生效。GUI 的 F11 和外观设置使用同一持久偏好，窗口状态记忆与全屏可分别更新。非法更新整次失败，GUI 仅应用已接受的设置。[验收记录](../testing/m7-fullscreen-20261103.md)
 
 #### 窗口状态记忆：最小设置合同（2026-11-03，所有者已批准）
 
-所有者要求实现窗口状态记忆，在设置中提供默认关闭的开关。范围为普通窗口大小与最大化状态，
-不增加窗口位置、最小化启动、全屏偏好或通用窗口管理器。按所有者后续纠正，窗口开关放在外观页，使用现有设置行与 Checkbox。
-
-- Config6→7：新增 `settings.window.rememberState: boolean`，默认 false；TOML `[window] remember_state = false`。
-  `settings.get/update` 沿用 settings.read/manage；PATCH window 为闭合非空对象，只接受该 bool。
-  Config1–6 迁移补 false，保留原 revision 和其他设置，不改 State17、权限名称或 RPC method。
-- 开关是 Core 权威设置，继续经现有串行 CAS/错误反馈。窗口几何仅是可丢弃 GUI 视图缓存，
-  与现有项目视图一样可使用 localStorage；不把业务数据或权威开关放在缓存中，不新增 GUI 文件写入。
-- 默认关闭时不恢复、不记录几何并清除旧缓存；启用后记住普通窗口逻辑宽高和最大化状态。
-  下次启动恢复一次，关闭/重新打开设置或切换页面不重新套用旧窗口大小。
-  缓存丢失/损坏/不可用时使用现有默认窗口；恢复尺寸按当前显示器可用区域限制，忽略最小化临时尺寸。
-- 使用已安装 Tauri 2.11.5 的窗口/显示器 API 和闭合的本地主窗口薄适配器；不新增依赖、任意路径或任意窗口操作接口。
-  native 只处理自身窗口 UI，不访问 Core 数据库或项目。必要恢复错误沿用共享提醒，不能因读写视图缓存失败阻止应用启动/关闭。
-- 定向验证覆盖默认关闭、开关保存/失败、缓存与恢复一次、普通/最大化/最小化尺寸及显示器/DPI边界；
-  桌面控制保持停用，浏览器或纯逻辑检查不冒称原生调整窗口已验收。本批单独本地提交，不推送。
-
-窗口设置已接入现有保存队列；几何缓存只受已接受的 Core 值驱动。新主窗口适配器使用 Tauri 已有 API，
-事件目标匹配 JS Window 监听，恢复 API 请求后读取实际状态解除中间事件保护，避免依赖精确尺寸事件而长期冻结。
-本批浏览器25/0、保存队列27场景、缓存11场景、原生纯模型6/0；Application53/0、Protocol53/0、Store配置25/0、
-隔离RPC/合同8/0，六crate Clippy与原生最终补查、fmt/xtask/metadata通过。实际原生调整/关闭重开仍待所有者查看。
-匹配Core/CLI/GUI构建及所有权4/0完成，原环境恢复Core130792/GUI149024，公开状态保持，Config7仅补false且revision168不变。
-后续按所有者要求，窗口开关移至外观页（`249e6d7`）；全局成功、设置保存失败和窗口失败共用 ReminderProvider 右下出口（`76e404b`），删除独立右上定位，保留持久错误、详情、重试及迟到成功隔离。
-GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通过。该批GUI127300（`C8D8B6AE…F9424825`）使用原profile，Core130792持续运行；五组公开状态和配置摘要均保持，不增加Rust/完整浏览器/远端CI重复验证。
+window.rememberState 默认 false。启用后，GUI 可以恢复本机保存的窗口宽高和最大化状态。开关由 Core 的设置 CAS 保存，窗口几何由 GUI 管理。恢复默认通过原设置用例提交。
 
 #### 日志系统重建（2026-11-05，所有者整体批准，源码候选）
 
-本节取代下方日志/提醒窄修合同。按未发布、空环境首次启动实现；不设计旧数据转换、旧格式兼容、存量任务等待或旧系统接续。开发机原数据、截图与验收材料保留。M7/H7 未签收，不扩展 M8–M12。
-
-- 移除全部浮动提示、日志触发提示、RPC 响应补写、任务终态摘要、recordGui 及独立造记录缓存；保留就地失败、重试、确认、导航与完成回调。普通缓存仅保存真实记录。
-- 技术日志采用 tracing / tracing-subscriber 标准 JSON Lines；默认应用 INFO、第三方 WARN，RUST_LOG 显式启用 DEBUG/TRACE。保留 timestamp/level/target/fields/spans，来源、会话和诊断/任务关联不另造 formatter。
-- 错误保留路径与 source，在责任边界显式展开不重复的原因链并记录一次；逐层传播、RPC/GUI/终态订阅不补写。真实重试可新记；不承诺文件/数据库原子或恰好一次。普通 RPC/Activity 仍保持闭合安全字段；自动插桩跳过请求/配置/argv/env/凭据，网络错误先去认证 URL，正常完整路径保留。
-- 新增 tracing-appender = '=0.2.5'（default-features=false，MIT，MSRV1.63）；现有 tracing-subscriber 0.3.23 增加 json。实际锁文件新增 tracing-appender0.2.5、symlink0.1.0、tracing-serde0.2.0 与本地 alcomd-logging；复用现有外部包，未升级其版本。替代方案为重建私有队列；选择官方有界线程与 guard，项目仅维护窄大小轮转 writer 与健康观测。工程 MSRV1.97.1 保持。
-- 完整记录最大512KiB，队列64条（正文最多32MiB），非阻塞丢弃；每稳定来源跨会话最多5份且每份5MiB。独占来源租约，段ID不复用，不删除有效写入者文件。整行写完且可读后才推进位置，入队不通知内容；不静默截断路径/JSON。
-- 独立内存健康含 sourceId/sessionId/revision/state、queueDropped/oversizeRejected/writeFailed/rotationFailed/flushFailed/hasGap/lastFailure。拒收/磁盘故障直接唤醒健康读取，不依赖成功日志行，不递归记录，不依赖stderr作为唯一出口。
-- 正常退出停止业务、最后记录、关闭生产入口，再在关闭线程释放长期持有的 WorkerGuard；核对排空/flush，日志关闭总预算2秒；不承诺强杀/断电/超时零损失。
-- Core读自身受限日志；GUI原生层写/读/等待自己的受控目录，Core离线仍可用。前端异常仅窄字段上报一次，不接收业务成功、Core失败、RPC响应或任意对象。
-- 记录身份为来源/会话/段ID/字节位置；首次B建立后接续历史与实时。源端筛选覆盖保留文件，默认100/最多200条、每次扫描1MiB、完整帧≤4MiB；无匹配也推进。半行/损坏/清理/游标过期/读失败明确报告。缓存≤2000条或8MiB，无稳态周期读取。
-- diagnostics.log.read 改为基线/向前/真实变化等待（无空闲超时空页），history 改为有界筛选分页，增加 health；沿用 diagnostics.read/local-owner。删除 diagnostics.list 和 notify/提示字段。Rust/SDK/GUI/浏览器夹具同步，无旧格式兼容。
-- 独立活动保存ID/owner/revision/action/status/固定目标快照/闭合参数/起止时间/任务与诊断关联。已核对编号，State19 增加表和索引，并扩展 Events 的 activity aggregate CHECK（保留原事件、序列与索引）；不转换旧活动。Operation继续权威；接受/状态/取消/中断/恢复/终态与活动及activity.changed同事务；进度/重复状态/幂等重放不增加活动revision。
-- 同步业务与活动同事务；已授权明确执行的预检失败独立记录失败活动，业务对象/任务/幂等零副作用允许该历史例外，数据库不可用如实报告。查询/预读/无效协议/未授权无活动；Plan/预览不独立记，Apply/直接执行一次活动。
-- activity.list 使用新模型，增加按ID读取；固定按(startedAtMs,activityId)排序，目标删除不级联、不改摘要，本轮不自动删除。恢复属于新系统自身能力，不是开发数据兼容。
-
-执行顺序：合同→独立清理提示→责任边界→writer/健康→同源读取→活动事务/恢复→页面/夹具→验证闭环后删除旧实现，不长期双写。故障只在隔离目录可控注入。定向日常检查，稳定候选集中完整门禁；不操作真实Unity/项目、不推送。
-
-本轮是发布前破坏性替换：RPC major 仍为1，严格客户端必须同步更新 SDK；不保留旧 DTO/notify/diagnostics.list 别名。`events.live.v1` 和资源读取权限保持。
-搜索按解码后的字段名/值（含正文、target、span）大小写不敏感匹配，最多4096 UTF-8字节；不匹配 JSON 转义字符串、不截短查询。读取问题最多32条，更多合并为 `additional_issues`，健康最后故障最多4096字符。
-空闲 follow 无周期超时；请求写入及首字节到达后的完整帧传输各最多5秒，失败丢弃连接。取消/窗口销毁/页面重载取消旧读取，GUI 离线日志不依赖 Core。
-
-字段职责示例（示意，不是实际操作证据；完整位置身份位于读取包装）：
-
-```json
-{"timestamp":"2026-11-05T04:00:00Z","level":"INFO","target":"alcomd_vpm::repository","fields":{"message":"repository fetch completed","package_count":42},"spans":[{"name":"operation","operation_id":"33333333-3333-4333-8333-333333333333"}]}
-{"timestamp":"2026-11-05T04:01:00Z","level":"ERROR","target":"alcomd_vpm::project","fields":{"message":"failed to inspect Unity project","path":"C:\\ALCOMD-Test\\项目A\\Packages\\vpm-manifest.json","error":"invalid VPM manifest\ncaused by: expected a version object","diagnostic_id":"44444444-4444-4444-8444-444444444444"},"spans":[{"name":"request","request_method":"projects.register"}]}
-{"activityId":"55555555-5555-4555-8555-555555555555","revision":3,"action":"backups.create","status":"succeeded","startedAtMs":1793851200000,"finishedAtMs":1793851202000,"subject":{"kind":"project","id":"66666666-6666-4666-8666-666666666666","name":"项目A"},"parameters":{"compression":"level3","includeLibrary":false},"operationId":"33333333-3333-4333-8333-333333333333","result":{"code":"backups.create.succeeded"}}
-```
-
-技术记录保留技术正文，不本地化；活动只持久稳定 action/result 和闭合参数，由页面翻译。数据库事务不涵盖日志文件；关联日志缺失/已轮转时显示不可用，不合成替代记录。
-State19 的任务触发器保证接受、状态/终态及恢复与活动和独立 `activity.changed` 一起提交；活动目标/参数由相应用例在同一接受事务固定。公开进度不改活动 revision。原业务表、任务、事件和恢复数据不清理，不回填旧活动。
-
-本轮实现覆盖：M2状态检查；项目/仓库与文件观察；包、模板、备份/恢复、复制/删除、Unity迁移、用户包、扩展及Portable UI实际执行失败；配置/Hub与GUI原生连接、窗口、前端真实异常。技术错误由持有原始错误的请求或任务边界记录，不在通用响应、活动或终态订阅补写；项目发现以scan为唯一后台记录边界。未执行完整原生产品流程，不以源链覆盖表冒称每种OS故障均已注入。
-
-本候选验证（各轮原始输出在 `target/m7-logging-rebuild-20261105/`，工作树包含并行改动）：
-
-| 范围 | 实际结果 |
-| --- | --- |
-| Rust静态门禁 | workspace all-targets严格Clippy通过；后续受影响crate再次通过；xtask通过。最终全仓fmt及diff检查通过。 |
-| 单元/二进制 | 排除会激活默认Windows端点夹具的testing/CLI/host后21个目标447/0；CLI5/0、host2/0另跑。收尾改动后Core34/0、App72/0、Store69/0、GUI17/0独立复跑通过，不合称一次完整workspace通过。 |
-| 存储/合同 | Store11个集成目标分批补齐（96个用例分别保留）；Schema43/0、模拟迁移worker7/0。原空override快照先后因版本18断言和新增空activities表失败，随后保留全部旧行对比并显式断言不回填；项目/用户包事件测试保留原业务事件与幂等断言，另核对独立activity.changed。 |
-| 文件/IPC | 日志底座15/0覆盖非阻塞满队列、入队非可读、写入/轮转/flush故障、健康独立唤醒、检查等待竞态、跨会话五段、损坏/超大行跨扫描边界、游标/筛选。私有Windows管道真实帧验证1/0包含hello/read/history/health/取消/空闲无空页，不使用用户Core端点。 |
-| 路径/责任边界 | 真实坏清单及缺Editor/缺发现目录均保留中文完整路径/原因；一次失败一条、已有DID传播/真实重试新DID、扩展伪造DID拒绝。GUI17个单元包含离线真实异常写入读取、连接原因与不补记Core业务失败。 |
-| 前端 | SDK/GUI check通过，1122三语消息；最终Vite build通过（保留既有chunk大小提示）。模型7/0；长中文及emoji异常入口最终4/0，按128/4096/16384/2048 UTF-8字节限额，不切破字符。 |
-| 浏览器轮次 | 135轮134过/1失败；126轮60过/10失败/56未执行；后续68轮65/3、26轮24/2、21轮20/1、13轮12/1，最后长查询边界1/0，前端UTF8异常4/0。旧浮动断言、真实就地遮挡/代际/菜单问题与夹具/选择器分别修复后专项补验；不拼成全套通过。 |
-| 未执行/环境 | 完整cargo test --workspace、现有固定Windows端点集成、整个浏览器套件、三平台CI/CodeQL和原生人工观察未执行。未操作真实Unity/项目、未迁移原数据库、未重启或替换运行Core168708，无GUI进程；原数据/profile/材料保留，未提交日志候选或推送，M7/H7仍由所有者签收。 |
+业务步骤由 Core 记录。GUI 读取日志并就地呈现操作结果。普通 RPC 错误保持稳定的错误码、受限字段与诊断号。
 
 #### 以下为已撤回的旧日志候选证据（不再定义当前实现）
 
@@ -1354,7 +1083,7 @@ H7 本地候选已形成，冻结执行 SHA `a6c9bd5568f8bffb26fe531a58fe4286c77
 完整 Workspace **526/0，8 个既有 helper ignored**，独立完整 Chromium **396/0（14.9m，1 worker、0 retries）**，
 fmt/Clippy/xtask、GUI/独立 backend 检查、全部前端 check/build、metadata/lockfile、并发启动、release bins 与 Tauri release 均通过。
 首次磁盘不足链接失败和 Chromium 354 项后会话中断分别保留；前者定位容量后续跑未完成门禁，后者另取一轮完整结果，不拼接。
-589 项非文档输入及验证期间 108 项文档均未变，之后只做文档收尾。原环境真实恢复为 Core131912/GUI153004，最终五组公开状态一致，Config4/revision166 保留。
+589 项非文档输入及验证期间 108 项文档均未变，之后只做文档收尾。原环境真实恢复为 Core131912/GUI153004，最终五组公开状态一致，设置 revision166 保留。
 实际窗口保持打开；Computer Use 未恢复、无新增原生截图。窗口记忆、仓库凭据及 Portable UI/平台未覆盖边界均在
 [H7 候选记录](../testing/m7-h7-final-20261102.md) 列明；两项人工清单等待所有者，远端 CI/CodeQL 等待独立推送安排，M7 进行中。
 
@@ -1363,7 +1092,7 @@ Ubuntu 仅 Chromium 395/1，其他 Rust/合同/构建/平台检查通过；CodeQ
 唯一失败为 640px Settings 的外层滚轮测试：固定中心可命中嵌套水平条。本地确定性回归修前 0/1、修后 1/0，窄修提交 **`46eb6dfa8ad1f8514cd5056dac1f22faa436bc7d`**
 只改测试命中点与单轮截图输出，保留全部原断言；最终受影响模块 13/0，生产及构建输入/产物未变，不重复全量本地门禁。
 原远端未上传 artifacts，精确命中仍为推断。以上为修复推送前状态，原 CI 失败与各轮证据分别保留，不能用本地 13/0 代替远端通过。
-原 Core 131912 持续运行，现有产物复开 GUI 157348（窗口 9966488、可响应）；五组公开状态与上次验证结束一致，Config4/revision166 保持。
+原 Core 131912 持续运行，现有产物复开 GUI 157348（窗口 9966488、可响应）；五组公开状态与上次验证结束一致，设置 revision166 保持。
 一般体验待办不升级为阻塞，窗口记忆未定归属、Portable UI 原生状态与 M11/M12 未覆盖边界继续原样保留。
 
 2026-11-03，所有者明确批准 `46eb6df` 和文档 `c273c76` 的普通快进推送，最终技术候选为 **`c273c76976c711590f6ce0f131bab572019caa50`**。
@@ -1371,7 +1100,7 @@ Ubuntu 仅 Chromium 395/1，其他 Rust/合同/构建/平台检查通过；CodeQ
 （Windows 11.2m、Ubuntu 8.9m、macOS 15.2m）；**CodeQL 41477413640 / attempt 1 / success** 四语言全部通过。
 只收集本次获批 push 自动产生的运行，没有手动触发或重跑。旧 395/1、修前 0/1 和各轮定向结果保留，不拼接或回写。
 原测试技术阻塞已收束；准确本地证据继续引用 `a6c9bd5` 的完整门禁和 `46eb6df` 的 13/0，没有重复完整本地验证或构建。
-原 Core/GUI 保留，最终五组公开状态一致、Config4/revision166 不变；无新增原生自动交互/截图，Computer Use 保持停用。
+原 Core/GUI 保留，最终五组公开状态一致、设置 revision166 不变；无新增原生自动交互/截图，Computer Use 保持停用。
 最终技术结论与分类见 [H7 验收记录](../testing/m7-h7-final-20261102.md#当前候选技术结论2026-11-03)。
 当前只等待所有者 H7 两项最终确认及剩余事项处理；窗口记忆未实现且归属未定、Portable UI 原生补验阶段未另定，不擅自划入 M12。
 M7 继续进行中，不进入 M8，不自动推送纯状态文档提交，也不为它再制造一轮全量验证。
@@ -1792,10 +1521,10 @@ check 和必要 GUI 构建通过，Core/协议/依赖未变，不重跑 Rust、�
   probe，保留历史evidence与普通Tauri gates。
 - 2026-08-25：形成本Portable UI Stop A proposal、synthetic fixtures与contract tests；active/production未修改。
 - 2026-08-25：项目所有者认可Stop A总体架构方向，并要求完成单一隐式页面、required guest-ui、exact replay/form/tree、
-  InvocationContext分类、State v9最小列与EOF格式的窄review closure；production仍未批准。
+  InvocationContext分类、UI 协议列与EOF格式的窄review closure；production仍未批准。
 - 2026-08-25：项目所有者最终批准 Portable UI Stop A production implementation；独立执行语义补充 commit
   `41f049365894f347d59b44eb7a41ac41c95e64df` 冻结 InvocationContext、render purity、close/replay/race/locale 与脱敏边界。
-- 2026-08-25：Slice B0 完成 active Manifest/package profile/WIT ABI v1 direct replacement、State v9、immutable typed
+- 2026-08-25：Slice B0 完成 active Manifest/package profile/WIT ABI v1 direct replacement、持久化与 immutable typed
   `ui_protocol`、`extensions.ui.use` 与四个 RPC DTO foundation；backend fixture 使用同一 mandatory guest-ui world，未保留
   Web UI compatibility path。
 - 2026-08-26：Slice B1 完成 daemon-memory-only `UiSessionCoordinator`、InvocationContext exact echo/capability matrix、
@@ -1901,7 +1630,7 @@ check 和必要 GUI 构建通过，Core/协议/依赖未变，不重跑 Rust、�
   primary navigation 因此整体使用真实 24px/opsz24 SVG，并把 host icon-label gap 从 16px 调整为 12px，使标签起点、
   48px item height 与其他 v3-derived shell geometry 保持不变；没有裁边、scale、weight override 或 per-icon 特例。
 - 2026-08-27：项目所有者批准 Projects 列表移除低价值 package count，并以 v3 的添加日期体验恢复真实注册时间。
-  RPC v1 只兼容增加可选 `ProjectSnapshot.registeredAtMs`：注册项目返回 store 中既有的 registration timestamp，
+  RPC v1 的 `ProjectSnapshot.registeredAtMs` 为可选字段，注册项目返回 store 中既有的 registration timestamp，
   未注册 `projects.inspect` snapshot 省略；不新增 method、capability、permission 或 State Schema，GUI 不得以
   `observedAtMs` 伪造添加日期。
 - 2026-08-28：项目所有者在真实 release GUI 中逐项复看 Projects 列表后认可当前局部实现。列表模式只通过表头排序，
@@ -1913,24 +1642,24 @@ check 和必要 GUI 构建通过，Core/协议/依赖未变，不重跑 Rust、�
   entries 只有 Open Project Directory 与 Copy Project，但 Add/Register chooser、Create、Restore、Favorite、Unity
   preference clear、package reinstall/bulk/source/local/prerelease/hidden/docs/changelog、Remove Directory 与 M11 VCC migration
   等真实缺口不能被 fake-entry grep 覆盖。H2 visual work暂停，形成独立 Project/Package Functional Closure Stop A proposal、
-  State v10 Copy-only migration contract、fixtures/tests、dependency evaluation 与 milestone ownership；active RPC、production
+  项目复制持久化合同、fixtures/tests、dependency evaluation 与 milestone ownership；active RPC、production
   migration/implementation和依赖均未改变。
 - 2026-08-28：项目所有者附合同修正批准 Functional Closure P0-P4 production。exact opener/dialog dependency、closed
-  ProjectId opener/native picker、active Project Copy RPC/State v10、durable inventory/two-pass content verification、forward
+  ProjectId opener/native picker、active Project Copy RPC/持久化、durable inventory/two-pass content verification、forward
   recovery、CLI 与 list/grid/workspace GUI flow 已形成 local candidate；每个 durable Copy phase 的真实 kill/restart matrix 已通过。
   H2 visual 与 P5-P8 继续暂停，完整聚合 feature 状态未提升。
 - 2026-08-30：P6 remote checkpoint 已由项目所有者验收为 PASS，sealed HEAD
   `0f83536bdeb74116e4f8d533c9fc3bf5bea529fb`。随后只创建 P7 Delete Project Directory proposal-only Stop A：完成 v3
   exact behavior、现有 v4 primitive、Windows/Linux/macOS delete primitive 与 Rust `remove_dir_all` 审计，提出 ProjectId-only
-  Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、State v13 durable evidence 与 recovery/path vectors；
+  Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、持久任务证据 与 recovery/path vectors；
   active RPC、State、Permission、production source、dependency、unsafe 与平台 API 均未改变。
 - 2026-08-31：Visual Gate 2 期间重新冻结 Project Unity Version / Open Unity 产品模型。v3 exact behavior 与当前 v4
   Automatic/Explicit preference model 已完成源码审计；Stop A 提出 canonical exact version、0/1/>1 Open Unity、one-shot
-  installation chooser、独立 migration Plan/Apply/Operation、State v14 preference removal/launch-config split 与 crash recovery。
+  installation chooser、独立 migration Plan/Apply/Operation、项目启动配置 与 crash recovery。
   VRChat 2019 -> 2022 当时识别为 secondary preparation 缺口，未扩展 P6。P8 historical PASS
   保留，但当前 completeness 为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`；H2-A 暂停而非拒绝。
 - 2026-08-31：Unity model proposal chain `a3faa7b…`、`baa4768…` 的最终 owner review 为
-  `PASS WITH IMPLEMENTATION AMENDMENTS`；State v14、exact launch、migration Plan/Operation、private preparation 与窄平台进程
+  `PASS WITH IMPLEMENTATION AMENDMENTS`；项目启动配置、exact launch、migration Plan/Operation、private preparation 与窄平台进程
   合同已 seal。contract-only remote checkpoint 全绿后 production 自动获准开始；H2 visual 仍暂停。final amendment 补齐
   Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、downgrade fail-closed、
   `vrchat-2019-to-2022-v1` bounded private preparation、final phases 与窄 UnityMigrationProcess platform contract；
@@ -2012,7 +1741,7 @@ GUI 的 155 项输入仍与 `88c3f69` 一致，复用该构建和 36/0；原环�
 H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证，不用旧 CI 替代。
 上述“只推进 H5、不进入 H6/H7”为当时交接边界；此后 H5、H6 已阶段性签收，H7 已获批准并形成本地候选。
 最终 `c273c76` 已获批推送且同 SHA 三平台 CI/CodeQL 全绿；当前停止点只等待 H7 最终人工确认及剩余事项处理，详见本计划“当前 H7 授权与收束”。不进入 M8/M9/M11，不擅自推送或宣布 M7 完成。
-候选读取、exact Unity、Hub 和 State16 的既有合同保持；Config3 已由获批 Config4 迁移替代，删除 density、保留其他偏好及 revision。
+候选读取、Unity 和 Hub 的相关测试独立记录。
 完整 GUI/Rust/三平台技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
 
 ## 2026-11-10 移除按钮错误色

@@ -1,8 +1,8 @@
 # MCP Core observation Host interface v1
 
 Owner-approved on2026-11-17. The additive interface is
-`alcomd:mcp-runtime/observations@1.0.0`; `runtime-v1` includes the unchanged
-management-v1 and frozen extension-v1 worlds. Old WIT and Portable UI are unchanged.
+`alcomd:mcp-runtime/observations@1.0.0`. The `runtime-v1` world includes the
+management-v1 and extension-v1 interfaces.
 The single `snapshot` reads the same bounded projection as mcp.runtime.snapshot;
 its fields and65536-byte budget are frozen in the adjacent Schema.
 

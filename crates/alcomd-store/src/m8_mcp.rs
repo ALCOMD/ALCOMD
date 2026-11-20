@@ -397,6 +397,21 @@ mod tests {
         )
         .expect("client")
         .client;
+        let hash = mcp_credential_hash("isolated-mcp-credential");
+        let client = write(
+            &mut db,
+            owner.clone().into(),
+            "issue".into(),
+            W::Issue {
+                id: client.client_id,
+                expected: client.revision,
+                hash,
+            },
+            3,
+        )
+        .expect("issue connection credential")
+        .client;
+        let authentication = alcomd_application::ToolAuthentication::Credential(hash);
         let draft = || PackagePlanDraft {
             project_id: project.project_id,
             action: PlanAction::Remove,
@@ -417,35 +432,41 @@ mod tests {
                 unity_compatibility_overrides: vec![],
             },
         };
-        let plan = crate::m4::create_package_plan(&mut db, &client.principal_id, draft(), 3)
-            .expect("actual caller plan");
+        let plan = crate::m4::create_package_plan_inner(
+            &mut db,
+            &client.principal_id,
+            draft(),
+            3,
+            Some(&authentication),
+        )
+        .expect("authenticated caller plan");
         let key = IdempotencyKey::parse("apply").expect("key");
-        let accepted = crate::m4::accept_package_plan(
-            &mut db,
-            &client.principal_id,
-            plan.plan_id,
-            project.revision,
-            &key,
-            4,
-        )
-        .expect("authorized acceptance");
-        let replay = crate::m4::accept_package_plan(
-            &mut db,
-            &client.principal_id,
-            plan.plan_id,
-            project.revision,
-            &key,
-            5,
-        )
-        .expect("same-key replay");
+        let apply = |db: &mut Connection, now| {
+            crate::m4::accept_package_plan_inner(
+                db,
+                &client.principal_id,
+                plan.plan_id,
+                project.revision,
+                &key,
+                now,
+                None,
+                Some(&authentication),
+            )
+        };
+        let accepted = apply(&mut db, 4).expect("authorized acceptance");
+        let replay = apply(&mut db, 5).expect("same-key replay");
         assert_eq!(accepted.operation_id, replay.operation_id);
         assert!(replay.replayed);
         let mut nonremoval = draft();
         nonremoval.action = PlanAction::Install;
-        let install = crate::m4::create_package_plan(&mut db, &client.principal_id, nonremoval, 5);
-        assert!(
-            matches!(install,Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
-        );
+        crate::m4::create_package_plan_inner(
+            &mut db,
+            &client.principal_id,
+            nonremoval,
+            5,
+            Some(&authentication),
+        )
+        .expect("authenticated caller can also create an install plan");
         write(
             &mut db,
             owner.clone().into(),
@@ -458,7 +479,7 @@ mod tests {
         )
         .expect("revoke before task runs");
         assert!(
-            matches!(crate::m4::accept_package_plan(&mut db,&client.principal_id,plan.plan_id,project.revision,&key,7),Err(e) if e.code()==alcomd_application::M4ErrorCode::PermissionDenied)
+            matches!(apply(&mut db, 7), Err(error) if error.code() == alcomd_application::M4ErrorCode::PermissionDenied)
         );
         assert_eq!(
             crate::m4::operation_project(&db, accepted.operation_id)

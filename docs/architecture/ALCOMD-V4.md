@@ -244,9 +244,8 @@ ExternalConfig(provider_id)
         "instanceId": "..."
     },
     "capabilities": [
-        "events",
-        "operations",
-        "interactive-approval"
+        "events.replay.v1",
+        "operations.v1"
     ]
 }
 ```
@@ -257,14 +256,17 @@ ExternalConfig(provider_id)
 {
     "rpcVersion": 1,
     "daemonVersion": "4.0.0-alpha.0",
-    "capabilities": []
+    "dataSchema": 1,
+    "configSchema": 1,
+    "extensionApi": {"major": 1, "world": "alcomd:extension/extension-v1@1.0.0"},
+    "capabilities": ["events.replay.v1", "operations.v1"]
 }
 ```
 
-核心在 state store 成功初始化并完成恢复后，返回可选 `dataSchema` 和 `configSchema`。
+核心在 state store 成功初始化并完成恢复后，返回必填的 `dataSchema: 1` 和 `configSchema: 1`。
 `dataSchema` 由 daemon 报告已打开的存储结构版本，`configSchema` 报告支持的配置格式版本。
-`extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。当前源码基线见 [项目状态](../status.md)。
-这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
+握手必填的 `extensionApi` 报告运行实例的 ABI 主版本和基础 WIT world。宿主在加载扩展时校验组件接口与 WIT world。当前源码基线见 [项目状态](../status.md)。
+每个握手字段的必填性和含义以首发 RPC Schema 为准，capability 由 Core 单独公布。
 
 公共 DTO 与内部领域对象必须分离。已发布公共合同的破坏性变化提升对应协议大版本，
 而不是仅提升应用版本。未发布合同的直接修订仍须项目所有者明确批准；数据库的开发兼容
@@ -385,8 +387,7 @@ stdout 只输出结果，stderr 输出日志和进度。非 TTY 环境不得突�
 ALCOMD Extension 是 Core Extension，不是 `alcomd-gui` plugin。Extension Runtime compatibility 与
 Extension UI compatibility 相互独立。Extension ABI v1 使用 WASI 0.2 Component Model 和版本化 WIT；后台运行在
 `alcomd-extension-host`。运行时采用实现时合适的 Wasmtime
-LTS 并固定其主版本线，兼容的安全与关键正确性补丁必须升级。WASI 0.3 不阻塞 4.0.0，后续
-只通过兼容层或 Extension ABI v2 评估，不直接破坏 ABI v1。禁止原生 DLL、`.so` 与 `.dylib`
+LTS 并固定其主版本线，兼容的安全与关键正确性补丁必须升级。采用其他 WASI 版本须独立评估运行时与宿主边界。首发前 Extension ABI 和 WIT 变更直接修订唯一的版本 1 定义。禁止原生 DLL、`.so` 与 `.dylib`
 扩展。
 
 ADR 0024 接受基础 Extension UI 的 GUI-neutral Portable UI Surface 方向。扩展只描述 bounded semantic UI tree、state 与 typed
@@ -584,7 +585,7 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 - 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
 - Bridge 运行 `alcomd-bootstrap`，由独立 `alcomd-migrate-v3` 生成原生数据包，Core 写入暂存环境并重新打开对账。经签名候选健康验收后才发布 v4 状态。产品部署与正式安装登记由 M12 接线。
 
-v4 首次发布直接初始化 State46 和 Config13。项目备份是普通 ZIP，恢复使用 Core 主机的绝对文件路径。具体合同和验收见 [M11 实施计划](../exec-plans/M11-v3-migration-and-zip.md)。
+v4 首次发布直接初始化 State1 和 Config1。项目备份是普通 ZIP，恢复使用 Core 主机的绝对文件路径。具体合同和验收见 [M11 实施计划](../exec-plans/M11-v3-migration-and-zip.md)。
 
 上述地址记录冻结 v3 配置的请求源，当前组织站点/服务基址为 `https://alcomd.vrclearn.com/`；
 旧请求源与新部署入口的衔接由 M11 验证。原频道映射、v4 迁移桥接安装器的 JSON Schema、

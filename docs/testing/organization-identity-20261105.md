@@ -11,7 +11,7 @@
 - v4 自有 Schema 的 `$id`/`$ref` 统一新域名；57 份 Schema、6 个跨文件引用闭合校验通过。
   v3 source-lock、迁移 artifacts 和 Windows collection fixture 与 HEAD 内容一致。
 - Windows IPC/第一方扩展 ID 是未发布身份的破坏性替换，不增加兼容别名。数据目录、
-  RPC 形状、State18、Config10、权限和依赖不变。更新时须成套停旧换新，禁止同一数据目录双 Core。
+  RPC 形状、权限和依赖不变。更新时须成套停旧换新，禁止同一数据目录双 Core。
 - Windows AUMID 已按下方原生接入补齐；Inno AppId 和安装器快捷方式仍待 M12。
   新站首页只读访问返回 ALCOMD3 页面，不据此宣称 Schema 托管或旧更新地址衔接已验证。
 

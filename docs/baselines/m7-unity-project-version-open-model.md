@@ -107,7 +107,7 @@ XR UPM dependency、四个固定 VRChat package ID 与有界 legacy/unlocked cle
 | `legacyFiles`/`legacyFolders` path/GUID cleanup | B | private bounded metadata parser + 既有 path/link/identity/quarantine 原语；不暴露 P6 surface |
 | 新 generic package semantic | C | 未发现 |
 
-结论：当前不需要修改 `packages.plan.v2` 或 P6 public contract。上述 A/B 复用规则已获 owner seal；若 production 审计证明
+结论：当前不需要修改 `packages.plan.v1` 或 P6 public contract。上述 A/B 复用规则已获 owner seal；若 production 审计证明
 B 类无法在既有 M4 transaction/journal primitives 内安全表达，必须停止并报告
 `UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER`。
 
@@ -124,22 +124,9 @@ Open Unity 与 migration 的核心区别是：它只需要为当前项目版本�
 
 新的 v4 模型保留 custom arguments，但拒绝 alternative-version fallback 和持久 installation preference。
 
-## 当前 v4 model
+## 项目版本与启动参数
 
-当前 State v11 的 `project_editor_preferences` 同时存储：
-
-- `automatic` / `explicit` selection mode；
-- optional installation ID；
-- project launch arguments；
-- preference revision 与 timestamp。
-
-当前 RPC/DTO/CLI/GUI 暴露 `ProjectEditorPreference`、`ProjectEditorSelection`、
-`ProjectEditorSelectionState`、`unity.projectEditor.get/set/selection.get/clear` 以及 Automatic/Explicit/Forget UI。当前
-automatic launch 以 Unity `major.minor` compatibility 选候选，而不是项目版本 exact match；一个候选启动，多个候选返回
-`unity_editor_selection_required`。explicit installation 也只要求 major.minor compatible。
-
-这与新产品模型冲突：用户看到的项目 Unity Version 应是项目事实，不应与“偏好的 Editor installation”并列成为第二个版本
-权威。
+Core 读取项目实际版本，独立保存项目启动参数。调用方可为本次启动选择目标安装。
 
 ## v4 已存在且可复用的 primitives
 
@@ -149,8 +136,8 @@ automatic launch 以 Unity `major.minor` compatibility 选候选，而不是项�
 - launch adapter 已使用独立 argv 调用验证后的 executable，并禁止 caller 提供 `-projectPath`。
 - M2 Operation/Event/revision/idempotency、M4 filesystem journal、M5 backup/copy、P7 project locks 可复用。
 - `Project(ProjectId)` 已是资源锁，不需要新通用 lock kind。
-- M4/P6 `packages.plan.v2`/Apply、package cache/integrity 与 recovery 可在 secondary contract 获批后被组合，但当前不能改写
-  UPM manifest；State v13 继续是完整历史基线，不回改旧 migration。
+- M4/P6 `packages.plan.v1`/Apply、package cache/integrity 与 recovery 可在 secondary contract 获批后被组合，但当前不能改写
+  UPM manifest。
 
 ## Launch arguments disposition
 
@@ -164,7 +151,7 @@ bounded arguments，不传路径、executable 或完整 command line；普通日
 
 1. Project observation 是唯一用户级 Unity version authority。
 2. Project header selector 表示 version migration，不是 Editor preference。
-3. Automatic/Explicit installation preference 应在 State v14 移除。
+3. 一次启动的安装选择由当前项目版本和已验证的安装决定。
 4. Open Unity 使用 canonical exact version：0 个不启动、1 个直接启动、多个 one-shot chooser。
 5. one-shot installation ID 只绑定当前 launch/idempotency，不持久保存。
 6. migration success 必须由 target Unity exit 与 project reobservation 共同证明。

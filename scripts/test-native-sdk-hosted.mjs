@@ -138,6 +138,7 @@ function probeResult(output) {
     assert.equal(probe.hello.rpcVersion, 1);
     assert.equal(probe.hello.dataSchema, 1);
     assert.equal(probe.hello.configSchema, 1);
+    assert.deepEqual(probe.hello.extensionApi, { major: 1, world: "alcomd:extension/extension-v1@1.0.0" });
     assert.equal(probe.status.state, "ready");
     assert.equal(probe.projectCount, 0);
     assert.equal(typeof probe.instanceId, "string");

@@ -37,7 +37,7 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 - M3 最终提交为 `2082b5596d246975ca7a48dab20826899103e03d`；GitHub Actions run
   `32174028968` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，项目所有者
   已确认人工验收通过。
-- M1 RPC v1 framing/hello/error 与 M2 Operation/Revision/Event/idempotency 合同只能兼容增加。
+- M1 RPC v1 framing/hello/error 与 M2 Operation/Revision/Event/idempotency 遵守首发定义。
 - M3 Project/Repository ID、normalized snapshot、source identity 和只读 parser 继续是 M4 输入；
   M4 不另建第二套项目发现或 repository registry。
 - `alcomd` 仍是唯一数据库和 Unity 项目写入者；CLI、GUI、MCP、扩展及其他 adapter 不得绕过
@@ -57,7 +57,7 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 6. `Packages/` 与 `Packages/vpm-manifest.json` 的可恢复项目事务；`Packages/manifest.json` 保持不变。
 7. 在 M2 journal 上增加明确 filesystem transaction phase、补偿证据和 daemon restart recovery。
 8. Project/PackageCache/Repository resource lock、Operation progress/cancellation 与稳定错误。
-9. RPC v1 的兼容新增 method/capability/DTO/Schema；仅提供证明切片所需的最小 CLI 驱动入口。
+9. RPC v1 的软件包 method/capability/DTO/Schema；仅提供证明切片所需的最小 CLI 驱动入口。
 10. synthetic/public compatibility Fixture、事务故障注入、并发与三平台 hosted 验收。
 
 ## 完成定义
@@ -66,11 +66,11 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 
 项目所有者批准：仓库提供有效的 `zipSHA256` 时严格比对，接受大小写混合的 64 个十六进制字符。缺省或格式无效时，仅为已求解选中的 HTTP(S) 归档执行有界首次下载，验证 ZIP 和包身份后计算摘要，确认安装前固定摘要。仓库读取对忽略的无效值记录有界技术日志，包含仓库和受影响的包版本，不记录无效值。已有仓库在下一次完整读取索引时采用新规则。后续读取及 Apply 按固定摘要验证。`author.email` 缺省只影响展示。权限、来源与项目重验、旧资产检查、缓存完整性及恢复规则继续生效。
 
-项目所有者批准 State24。放宽现有 resolver-ready 触发器对 `zip_sha256` 和 `author_email` 的非空约束，增加 `local_zip_sha256` 存放首次取得且验证过的摘要。只在同一 owner、仓库、包 ID、版本、归档 URL 与清单指纹的记录上复用，仓库刷新时仅保留仍匹配的绑定。仓库增加 `resolver_indexed`，区分已按新规则解析的快照和需要重新索引的旧快照，避免 HTTP 304 保留旧判定，也避免个别已知无效版本阻塞整库。新登记直接使用同次下载的索引。现有 Plan 与 RPC DTO 仍使用必填的已锁定摘要。迁移保留全部旧行，不新增表、权限或依赖。
+放宽现有 resolver-ready 触发器对 `zip_sha256` 和 `author_email` 的非空约束，增加 `local_zip_sha256` 存放首次取得且验证过的摘要。只在同一 owner、仓库、包 ID、版本、归档 URL 与清单指纹的记录上复用，仓库刷新时仅保留仍匹配的绑定。`resolver_indexed` 表示仓库的求解目录已准备就绪。Core 可在仓库登记后安排刷新，未就绪的目录不作为完整候选集。新登记直接使用同次下载的索引。现有 Plan 与 RPC DTO 仍使用必填的已锁定摘要。
 
-M7 获批的 [State26](../../specs/storage/state-v26.md) 在包索引中标识包级 `headers`。冷缓存从固定包声明取得请求头，同时保留原 ZIP 校验和计划边界。ZIP 首跳同名包头覆盖仓库头。跨来源重定向按当前 M7 认证合同处理，首次无摘要下载支持 HTTP(S)，校验后固定摘要。
+[State1](../../specs/storage/state-v1.md) 在包索引中标识包级 `headers`。冷缓存从固定包声明取得请求头，同时保留原 ZIP 校验和计划边界。ZIP 首跳同名包头覆盖仓库头。跨来源重定向按当前 M7 认证合同处理，首次无摘要下载支持 HTTP(S)，校验后固定摘要。
 
-项目所有者批准 [State27](../../specs/storage/state-v27.md)。将 State24 遗留的 HTTPS 限制扩展到 HTTP(S)，覆盖无有效发布方摘要的 resolver-ready 写入和本地摘要绑定。事务保留现有记录及摘要。新 Core 报告 State27，旧 Core 拒绝打开该数据库。
+无有效发布方摘要的 HTTP(S) 包固定首次验证的本地摘要，仓库刷新保留仍匹配的绑定。
 
 归档网络传输与仓库读取、刷新共用 Core 全进程 64 路 HTTP 额度，ZIP 解压及包身份校验独立最多 32 路。归档按固定摘要校验，同摘要对象共用缓存保护，缓存发布仍执行配额检查。各阶段等已启动工作结束后再进入下一阶段或处理失败。项目提交顺序、单事务、journal 与回滚保持原有语义。
 
@@ -79,7 +79,7 @@ M7 获批的 [State26](../../specs/storage/state-v26.md) 在包索引中标识�
 [VRChat 官方 VPM 包清单](https://vcc.docs.vrchat.com/vpm/packages/#vpm-manifest-additions) 定义 `legacyFiles`、`legacyFolders` 用于迁移并移除匹配的旧资产，GUID 可定位移动后的资产，`legacyPackages` 用于从项目及清单移除被替代的旧包。此合同限于包 Plan/Apply 中由所选包清单声明的旧项。
 
 - Plan 并行获取拟安装或替换包的归档，读取固定摘要对应的包清单，与冻结的来源清单共同确定清理范围。Apply 复用缓存。按声明的项目相对路径匹配文件和目录，原路径未匹配时在 `Assets` 内按声明 GUID 查找移动后的资产。冻结实际命中的项目相对路径、类型、声明来源、目标身份与内容证据，包含随资产移走的 `.meta`。拒绝项目根外路径、链接或挂载跳转、歧义匹配、无法复验的对象和与写入目标重叠的清理路径。
-- 含旧资产清理的 ChangeSet 使用 `formatVersion: 4`。公共 `legacyRemovals` 显示 `path`、`kind`、`packageId`，安装确认列明拟移走项。`legacyPackages` 通过现有 remove mutation 更新包目录和清单。沿用现有 Plan/Apply、权限及 SQLite 表；身份与内容证据只保存在 Core。
+- 含旧资产清理的 ChangeSet 使用 `formatVersion: 1`。公共 `legacyRemovals` 显示 `path`、`kind`、`packageId`，安装确认列明拟移走项。`legacyPackages` 通过现有 remove mutation 更新包目录和清单。沿用现有 Plan/Apply、权限及 SQLite 表；身份与内容证据只保存在 Core。
 - Apply 先按冻结清单重新核对，再在现有事务中把旧项移入同卷隔离区。任何条目变化时重新生成 Plan。失败或中断按事务恢复，提交后再清理隔离区。用隔离项目验证声明路径、GUID 移动、旧包替换、确认取消、迟到变化与失败回滚。
 
 - 同一个 catalog、项目 snapshot 和请求在任意运行中产生 byte-stable、顺序稳定的 ChangeSet；同
@@ -125,14 +125,14 @@ apps/alcomd/                         # M4 RPC adapter、Operation worker 与启�
 apps/alcomd-cli/                     # 仅测试垂直切片所需的最小 Plan/Apply 驱动入口
 crates/alcomd-domain/                # package/plan/change/resource key 的纯类型与不变量
 crates/alcomd-application/           # resolver/Plan/Apply 用例、ports、权限与锁协调
-crates/alcomd-protocol/              # 仅获批的 RPC v1 兼容 DTO
+crates/alcomd-protocol/              # 仅获批的 RPC v1 DTO
 crates/alcomd-client/                # 仅对应类型化调用
-crates/alcomd-store/                 # Schema v3、Plan/transaction journal/Operation 持久化
+crates/alcomd-store/                 # Plan、事务日志及 Operation 持久化
 crates/alcomd-platform/              # 仅缺失且获批的 fsync/atomic replace 平台原语
 crates/alcomd-vpm/                   # manifest/range/resolver/download/archive/project transaction adapter
 crates/alcomd-testing/               # public/synthetic Fixture、fault gate 与进程测试
 specs/rpc/                           # M4 Schema、method/capability/error 合同
-specs/storage/                       # state Schema v3 与 migration 合同
+specs/storage/                       # State1 与持久化合同
 specs/extensions/permissions-v1.md   # 仅获批 packages.read/manage 精确定义
 docs/adr/                            # M4 package transaction ADR
 docs/exec-plans/M4-package-transactions.md
@@ -233,12 +233,11 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - 2026-11-09 按所有者纠正收窄包计划输入：项目 snapshot 指纹覆盖项目身份、VPM/UPM 清单、
   已锁定包目录身份及有界 `package.json`，不遍历/散列安装目录内的脚本、贴图等 payload。
   payload 独立编辑不再作计划失效依据；清单、包元数据和目录身份仍在 Apply 复验。
-  旧资产清理的具体路径/内容证据、归档及缓存摘要继续按各自合同验证。旧未执行计划因指纹域
-  改变而失效，须重新 Plan；不增持久列或旧指纹兼容分支。
+  旧资产清理的具体路径/内容证据、归档及缓存摘要继续按各自合同验证。Apply 以计划的项目元数据指纹复验。
 - 单包卸载及纯移除批量意图使用现有锁定依赖图，不重选仓库版本、不要求保留包具有来源，
   不读取仓库索引；保留版本和未修改清单字段。安装/更新及混合意图仍需要其来源证据。
 - 2026-11-09 所有者另批准[卸载确认修正](M7-package-removal-confirmation.md)：目标按locked判断，
-  传递包可卸载，明确目标实际移除；保留依赖方不级联删除，以formatVersion 4的可选
+  传递包可卸载，明确目标实际移除；保留依赖方不级联删除，以`formatVersion: 1`的可选
   removalConflicts冻结并显示仍需该依赖的包，明确Apply后执行。该条取代此前单包仅撤直接
   声明及纯批量冲突拒绝的语义，不放宽混合意图、安装/解析、来源或其他验证。
 
@@ -324,7 +323,7 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 ## Filesystem recovery journal
 
 M2 `operation_journal` 只证明 DB-only `state.check` 可恢复，不能直接作为 M4 文件事务安全证明。
-M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
+软件包事务的状态记录和文件系统日志包括以下内容。
 
 - durable record 保存 operation/plan/project IDs、versioned operation kind、ChangeSet fingerprint、
   project/source revisions、各路径的 opaque project-relative identity、old/new digest、phase 与取消意图。
@@ -399,7 +398,7 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 - 永久 idempotency scope 继续是 `(PrincipalId, method, idempotencyKey)`；fingerprint 包含 planId、
   project/source revisions 与 action，不包含 credential/完整 path。
 
-### RPC v1 兼容增加
+### RPC v1 软件包事务
 
 - capability 固定为 `packages.plan.v1` 与 `packages.apply.v1`，作为 RPC major 1 的兼容新增。
 - 旧客户端继续忽略未知 capability/可选字段。M4 不删除或改变 M1-M3 字段和方法语义。
@@ -512,7 +511,7 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
 
 1. 冻结 M4 ADR：package/source/precedence、Plan/Apply、cache/archive quotas、filesystem commit、
    recovery、lock/cancel 与 unsupported metadata。
-2. 冻结 RPC Schema/error/capability/permission 和 State Schema v3/migration；先通过 JSON/SQL snapshot
+2. 冻结 RPC Schema/error/capability/permission 和 State1 持久化合同；先通过 JSON/SQL snapshot
    与破坏性兼容测试。
 3. ZIP/SHA-256/Unicode normalization 与 `semver 1.0.28` 精确依赖均已批准并锁定；私有 range
    parser 只实现冻结 vectors，并以永久回归测试约束。
@@ -544,7 +543,7 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
 
 ## 需要人工审批的决策点
 
-M4 业务合同、Schema v3、RPC/permission、quota、文件事务和恢复决定已于 2026-08-19 获批；
+M4 软件包事务、RPC/permission、quota、文件操作和恢复决定已于 2026-08-19 获批，
 `semver 1.0.28`、ZIP、SHA-256 与 Unicode normalization 精确依赖也已获批。当前没有未决的 M4
 合同或依赖审批点。
 
@@ -587,12 +586,10 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   filesystem transaction 与 recovery 垂直切片；未修改 RPC/State Schema、permission、migration、
   Cargo 依赖或生产代码，等待项目所有者审批。
 - 2026-08-19：项目所有者批准 M4 总体方向与 contract-first 决定。开始冻结 ADR 0017、RPC/permission、
-  State Schema v3、migration、public/synthetic Fixture 与合同测试；生产依赖和生产实现仍未批准，合同
+  持久化、public/synthetic Fixture 与合同测试。生产依赖和生产实现仍未批准，合同
   测试完成后必须停在精确依赖/Cargo.lock 审批点。
 - 2026-08-19：contract-first 本地验收通过：Rust format、Workspace Clippy/test、`cargo xtask check`、
-  metadata、冻结基线与 diff gate 均成功；Schema v3 测试覆盖 v1->v2->v3、v2->v3、rollback、既有
-  row/foreign key 保留、deterministic priority、resolver-ready gate、immutable Plan 与 append-only
-  filesystem journal。生产 store 仍只启用 Schema v2。
+  metadata、冻结基线与 diff gate 均成功。事务测试覆盖外键、deterministic priority、resolver-ready gate、immutable Plan 与 append-only filesystem journal。
 - 2026-08-19：隔离完整 Workspace resolver probe 表明 `nodejs-semver 5.0.0` 唯一不一致为 VPM bare
   version：range `1.2.3` 对 version `1.4.0` 的冻结期望为 true，crate 实际为 false。因此按批准条件
   拒绝该候选，不加入生产 manifest/Cargo.lock，也不在其上增加语义补丁。2026-11-05已确认该普通range的旧预期错误；此处只保留当时执行事实，不作为当前淘汰依据。

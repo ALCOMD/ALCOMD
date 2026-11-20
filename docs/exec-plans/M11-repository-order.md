@@ -35,9 +35,9 @@
 
 - Store 单元 153 项通过，VPM 单元 192 项通过、3 项沿用原忽略条件，RPC/SDK Schema 合同 54 项通过。VPM 集成 26 项通过，其中调序回归验证顺序 CAS、游标失效、幂等重试、无变化操作、关闭和重新启用、独立数据库重开，以及同版本来源切换后的实际安装。
 - 前端检查及构建、Rust 格式检查、受影响 crate 的严格 Clippy 与 `cargo xtask check` 通过。相关 Chromium 三模块一轮 81 项通过、1 项菜单禁用断言失败。改用 Material 元素的 `disabled` 属性后，拖拽与键盘焦点、冲突读回两项在独立轮次通过。
-- Windows 真 IPC 用例两次在创建隔离 daemon 时返回 `AlreadyRunning`，同一用户的单实例锁仍被占用，未进入用例。真实 daemon 重启读回待复验，独立数据库重开已覆盖持久化。验证期间 `main` 前进到 M11 首发运行时基线 `98a8ed92`。已核对该提交的 State46 仍保留排序列。当前工作树的验证绑定创建时的 `cdbecce5`，M11 合并后的验证及 Hosted CI 待执行。
+- Windows 真 IPC 用例两次在创建隔离 daemon 时返回 `AlreadyRunning`，同一用户的单实例锁仍被占用，未进入用例。真实 daemon 重启读回待复验，独立数据库重开已覆盖持久化。验证期间 `main` 前进到 M11 首发运行时基线 `98a8ed92`。已核对该提交的数据库含有排序列。当前工作树的验证绑定创建时的 `cdbecce5`，M11 合并后的验证及 Hosted CI 待执行。
 
 ## M11 合并复验
 
-- 2026-11-21，在 M11 基线 cb842779 的合并候选上，State46 的 28 项 VPM 集成和 52 项协议 Schema 测试通过。前端检查和构建、格式检查及仓库门禁通过。Windows 真实 IPC 重试在启动隔离 daemon 时仍返回 AlreadyRunning。
+- 2026-11-21，在 M11 基线 cb842779 的合并候选上，28 项 VPM 集成和 52 项协议 Schema 测试通过。前端检查和构建、格式检查及仓库门禁通过。Windows 真实 IPC 重试在启动隔离 daemon 时仍返回 AlreadyRunning。
 - main 前进到 b0c386ff 后，已比对 Rust 测试输入，前端检查和 Chromium 调序回归 2 项通过。6296a6ae 只调整回归测试，最终候选重新运行 28 项 VPM 集成，全部通过。

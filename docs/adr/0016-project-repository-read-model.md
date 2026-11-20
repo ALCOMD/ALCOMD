@@ -76,11 +76,9 @@ framework。
 
 ## 状态、revision、Event 与幂等
 
-Schema v2 只增加 `projects`、`repositories`、`repository_package_versions` 三张业务表；不修改
-`0001_state.sql`。migration 原子重建 `events` 与 `idempotency_records`：
+State1 保存项目、仓库、候选索引、Event 和幂等回执。完整表和外键见[持久化合同](../../specs/storage/state-v1.md)。
 
-- Event aggregate kind 兼容增加 `project` 和 `repository`，保留 sequence、索引、排序和原
-  `sqlite_sequence`。
+- 项目和仓库 Event 使用各自的 aggregate kind 和持久化 sequence。
 - completed 同步 command 的 `operation_id` 可以为 null；pending 记录仍必须绑定 Operation。
 - aggregate semantic state 真正改变时 revision 才递增并写 Event；no-op、304、validator-only 更新
   和失败不递增、不发 Event。
@@ -95,9 +93,9 @@ method、key、fingerprint 重放原结果；同 key 不同 fingerprint 返回 `
 
 ## RPC 与权限
 
-RPC v1 兼容增加 capability：`projects.read.v1`、`projects.registry.v1`、
+首发 RPC 的能力包括 `projects.read.v1`、`projects.registry.v1`、
 `repositories.read.v1`、`repositories.registry.v1`，以及经批准的 `projects.*`、
-`repositories.*` 方法。新增字段和 capability 是兼容增加；既有 M1/M2 方法不变。
+`repositories.*` 方法。具体字段和能力按当前 RPC Schema 校验。
 
 权限固定为 `projects.read/manage` 与 `repositories.read/manage`。`manage` 只允许 ALCOMD registry
 与 normalized cache，不允许写项目、下载包或使用 credential。M3 的 `builtin:local-owner` 获得

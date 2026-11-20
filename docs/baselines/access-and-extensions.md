@@ -36,7 +36,7 @@ ALCOMD 的入口共享同一个 `alcomd-application` 用例层，但不共享万
   `alcomd-extension-host`，不加载 DLL、`.so` 或 `.dylib`。
 - 运行时采用实现时合适的 Wasmtime LTS，固定主版本线；兼容的安全与关键正确性补丁必须
   升级，不能把“固定版本”解释成拒绝安全维护。
-- WASI 0.3 不阻塞 4.0.0；后续只能经 ABI v1 兼容层或 Extension ABI v2 引入。
+- 首发采用 WASI 0.2。采用其他 WASI 版本时单独评估宿主支持；首发前直接修订唯一的 Extension ABI v1。
 - 宿主只暴露窄 Host Capability；扩展不能获得裸文件系统、命名管道、数据库或凭据句柄。
 - 禁用扩展或撤销权限时必须关闭 UI 实例、后台租约和已授予句柄。
 

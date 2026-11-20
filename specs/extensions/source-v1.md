@@ -10,7 +10,7 @@
 
 | RPC / capability | 行为 |
 | --- | --- |
-| `extensions.inspectSource({url})` | 认证 local-owner＋extensions.manage；仅读取清单，返回URL、身份、名称/描述、版本/API及sourceFingerprint。无下载包、安装或授权。 |
+| `extensions.inspectSource({url})` | 认证客户端和 `extensions.manage`；仅读取清单，返回URL、身份、名称/描述、版本/API及sourceFingerprint。无下载包、安装或授权。 |
 | `extensions.planInstallFromSource({url,version,expectedSourceFingerprint})` | 同上；重新读取完整索引，先比较指纹，变化即既有revision_conflict，尚未下载。下载所选版本，复验ZIP摘要、现有签名/内容树/包/API及ID/版本/发布者一致，生成原不可变安装Plan。 |
 | `extensions.remote-install.v1` | 两个新RPC的协商能力；不改现有WIT、权限名或扩展联网能力。 |
 

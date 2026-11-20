@@ -1728,6 +1728,7 @@ mod connection_reuse_tests {
                 "capabilities": [CAPABILITY_OPERATIONS_V1, "future.capability.v1"],
                 "dataSchema": 1,
                 "configSchema": 1,
+                "extensionApi": {"major":1,"world":"alcomd:extension/extension-v1@1.0.0"},
                 "futureOptional": true
             }),
         ));
@@ -1741,12 +1742,35 @@ mod connection_reuse_tests {
     }
 
     #[tokio::test]
+    async fn incomplete_handshake_prevents_business_calls() {
+        let mut reply = serde_json::to_value(alcomd_protocol::HelloResult::ready(Vec::new(), 1))
+            .expect("valid handshake fixture");
+        reply
+            .as_object_mut()
+            .expect("handshake fields")
+            .remove("extensionApi");
+        let (stream, server) = pair().await;
+        let mut client = client(stream);
+        let task = tokio::spawn(hello_daemon(server, reply));
+        assert!(matches!(
+            client.hello("sdk-test", None).await,
+            Err(ClientError::InvalidResponse)
+        ));
+        assert!(!client.is_usable());
+        task.await.expect("server task");
+    }
+
+    #[tokio::test]
     async fn hello_rejects_wrong_major_and_malformed_capabilities() {
-        for result in [
-            json!({"rpcVersion": RPC_VERSION + 1, "daemonVersion": "4.0.0-alpha.0", "capabilities": []}),
-            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "dataSchema": 1, "configSchema": 1, "capabilities": ["invalid name"]}),
-            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "dataSchema": 1, "configSchema": 1, "capabilities": ["future.v1", "future.v1"]}),
+        for (field, invalid) in [
+            ("rpcVersion", json!(RPC_VERSION + 1)),
+            ("capabilities", json!(["invalid name"])),
+            ("capabilities", json!(["future.v1", "future.v1"])),
         ] {
+            let mut result =
+                serde_json::to_value(alcomd_protocol::HelloResult::ready(Vec::new(), 1))
+                    .expect("valid handshake fixture");
+            result[field] = invalid;
             let (stream, server) = pair().await;
             let mut client = client(stream);
             let task = tokio::spawn(hello_daemon(server, result));

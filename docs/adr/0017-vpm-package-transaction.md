@@ -9,8 +9,7 @@ M4 只实现首个 package transaction 垂直切片：确定性 `Plan`、显式 
 实现只允许 install/remove；upgrade/downgrade/resolve 复用同一个 model 与 `ChangeSet`，不得建立
 通用 package manager 或 workflow engine。
 
-合同、State Schema v3 与 migration 可以先落盘并接受兼容测试；在生产依赖方案获得独立人工批准前，
-daemon/store/VPM 生产路径仍停留在 M3/Schema v2，不广告 M4 capability，也不执行 Schema v3 migration。
+软件包计划、任务和恢复日志使用 [State1 持久化合同](../../specs/storage/state-v1.md)。
 
 ## Package、版本与来源
 
@@ -18,9 +17,7 @@ daemon/store/VPM 生产路径仍停留在 M3/Schema v2，不广告 M4 capability
   `author.name` 与 `author.email`；repository map key 必须分别等于 manifest 的 name/version。
 - `legacyFolders`、`legacyFiles`、`legacyPackages` 只解析 presence。M4 不清理 legacy；需要清理的
   计划返回 `package_legacy_cleanup_required`。
-- VPM range 对齐 SemanticVersioning.NET/npm 风格的 exact、bare、comparator、x/`*`、tilde、caret、
-  hyphen、OR、prerelease、build metadata 与约束交集。prerelease 默认排除，只有请求显式
-  `includePrerelease` 或 comparator 本身含 prerelease 时允许。
+- VPM range 支持 exact、bare、comparator、x/`*`、tilde、caret、hyphen、OR、prerelease、build metadata 与约束交集。Core 按包设置过滤候选并选择可见的兼容版本，详见[软件包设置](../../specs/config/settings-v1.md)。
 - `unity` 是最低 Unity major.minor；`unityRelease` 是可选补充。缺失 `unity` 表示无限制，不把该字段
   当 SemVer range。任何 VRChat 特例必须另有具名、版本化 ADR；M4 当前没有这类隐藏策略。
 - yanked 版本不参与新选择，也不能新 install/upgrade/downgrade；已安装的 exact yanked 版本在
@@ -33,8 +30,7 @@ daemon/store/VPM 生产路径仍停留在 M3/Schema v2，不广告 M4 capability
 
 ## Repository snapshot 与 Plan
 
-Schema v3 把 M3 raw repository snapshot 扩展为 resolver-ready metadata。由 v2 升级的既有 row
-全部是 `resolver_ready = 0`；只有显式 `repositories.refresh` 经 M4 parser 完整成功后才可置为 ready。
+State1 保存仓库索引和 `resolver_indexed`。成功的完整刷新会建立解析索引。
 Plan 本身不访问网络、不刷新 repository，只使用 last-known-good resolver-ready snapshot；否则返回
 `repository_refresh_required`。
 
@@ -42,7 +38,7 @@ Plan 是 durable、immutable record，状态只有 `unapplied` 与 `applied`，�
 一个 Plan 最多绑定一个成功接受的 Apply Operation。`ChangeSet` 最多 1,024 个 package mutation 与
 4,096 条 dependency edge，且仍受 RPC 单帧 4 MiB 上限；超限返回 `plan_too_large`，不得截断。
 
-RPC v1 兼容增加以下方法与 capability：
+软件包事务使用以下首发 RPC 方法与能力。
 
 ```text
 packages.planInstall

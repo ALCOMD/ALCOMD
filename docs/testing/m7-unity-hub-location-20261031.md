@@ -285,7 +285,7 @@ Core result fields, alongside existing appearance/packages/locale:
 
 ```json
 {
-    "configSchema": 3,
+    "configSchema": 1,
     "revision": 9,
     "settings": {
         "unity": {"hubPath": "C:\\Tools\\Unity Hub\\Unity Hub.exe"}
@@ -313,11 +313,11 @@ distinction between a missing manual choice and a broken saved path even when a 
 is found. Available means a usable filesystem executable at inspection time, not a vendor,
 signature, future execution or Editor discovery guarantee.
 
-Use the current unreleased Config3 optional `[unity] hub_path` string. Existing files with
-no section mean null; do not rewrite on detection, do not create Config4 or a second model.
+Use the optional `[unity] hub_path` string. Existing files with
+no section mean null; do not rewrite on detection, discovery does not write settings.
 Preserve revision and all other fields. Extend the store's parser/serializer to round-trip
 escaped backslashes, quotes and Unicode rather than interpolating a raw Windows path into
-TOML. Keep the 16 KiB file limit; path limit is 4096 UTF-8 bytes. This is a pre-release public
+TOML. Keep the 16 KiB base-settings limit and the 1 MiB complete-file limit; path limit is 4096 UTF-8 bytes. This is a pre-release public
 response extension that strict clients must update for, not a claim of strict old-client
 compatibility.
 
@@ -379,7 +379,7 @@ Local evidence is in ignored `target/m7-unity-hub-location-20261031/`:
 | fmt / xtask / metadata / diff check | Passed |
 
 The storage adapter includes durable path/clear/reopen/recovery, escaped Unicode/quotes/
-backslashes, old Config3 defaults, frozen old-schema rejection and a serialized 16 KiB
+backslashes, default settings, strict field validation and a serialized 16 KiB
 bound that cannot replace the accepted file. The contract-stage baseline freeze check passed in the real-user
 environment; frozen v3 remains `4aa98ae4f18d42c10137278997180dbede991e88`, tag `v3.4.0`.
 

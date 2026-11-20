@@ -10,7 +10,7 @@
 
 - Core PID279216，SHA256 `E1590ED9C3A9C0ACA4782147928586E3E1FEADAC1758B2333FE77AA77E6DAE65`。
 - GUI PID271640，SHA256 `508C082BC83ED1397986450703EF6A8DC6BDCF5929F9F14B7EF1BDF872C90F6E`，窗口ALCOMD3响应正常。
-- Core ready / State31 / Config12，2项目、2仓库；保留原数据目录和WebView profile，项目ID/路径、仓库ID和设置摘要均保持。新程序包括卸载确认修正、提前表头及加载条裁切修正。
+- Core ready，2项目、2仓库；保留原数据目录和WebView profile，项目ID/路径、仓库ID和设置摘要均保持。新程序包括卸载确认修正、提前表头及加载条裁切修正。
 - 证据、前后状态和备份：`target/m7-package-removal-update-20261109/`。没有恢复旧数据库或修改Unity项目包；既有后台仓库维护仍可更新检查时间等运行记录，不声称数据库字节不变。未操作原生页面按钮，不将窗口响应代替包操作人工验收。
 
 ## 对照依据与范围

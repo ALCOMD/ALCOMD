@@ -89,7 +89,7 @@ stage = "M11"
 kind = "persistence"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "覆盖 State46 和 Config13 原子初始化、重复启动、现行 Schema 检验、旧版本和未知状态在写入前拒绝。"
+description = "验证 State1 和 Config1 原子初始化、重复启动与现行结构校验，格式无效时保全源文件。"
 evidence = ["crates/alcomd-store/src/schema.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
 
 [[test]]
@@ -146,7 +146,7 @@ stage = "M3"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "以 synthetic Unity Fixture 验证 exact/parent discovery、bounded VPM/UPM/ProjectVersion 读取、平台对象身份、真实 RPC、Schema v2 registry、revision/Event/幂等以及读取前后外部文件字节不变。"
+description = "以 synthetic Unity Fixture 验证 exact/parent discovery、bounded VPM/UPM/ProjectVersion 读取、平台对象身份、真实 RPC、项目和仓库注册表、revision/Event/幂等以及读取前后外部文件字节不变。"
 
 [[test]]
 id = "repositories.vpm-parity"
@@ -162,7 +162,7 @@ stage = "M3"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "implemented"
-description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、Schema v2 registry、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
+description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、项目和仓库注册表、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
 
 [[test]]
 id = "packages.m4-contract"
@@ -170,7 +170,7 @@ stage = "M4"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 M4 RPC/permission、State Schema v3/migration、immutable Plan、source pin、filesystem phase、quota 与 public/synthetic Fixture，并以生产垂直切片验证合同；不代表完整 GUI/CLI/MCP 或 v3 parity 已完成。"
+description = "冻结 M4 RPC/permission、State1 SQLite 结构、immutable Plan、source pin、filesystem phase、quota 与 public/synthetic Fixture，并以生产垂直切片验证合同；不代表完整 GUI/CLI/MCP 或 v3 parity 已完成。"
 evidence = ["crates/alcomd-testing/tests/m4_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -232,7 +232,7 @@ stage = "M5"
 kind = "contract-persistence"
 platforms = ["all"]
 status = "implemented"
-description = "验证内置及用户模板、清单和许可证、模板 ID 冲突，以及 State46 模板登记与持久化。"
+description = "验证内置及用户模板、清单和许可证、模板 ID 冲突，以及 State1 模板登记与持久化。"
 evidence = ["specs/templates/builtin-inventory-v1.toml", "crates/alcomd-store/src/schema.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
 
 [[test]]
@@ -311,7 +311,7 @@ stage = "M5"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与已接线 State Schema v4 migration；不代表完整 CLI/Unity 或真实 Editor parity。"
+description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与已接线 State1 持久化；不代表完整 CLI/Unity 或真实 Editor parity。"
 evidence = ["crates/alcomd-testing/tests/m5_contract.rs", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -382,7 +382,7 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "验证 Portable UI v1 Manifest/package/WIT/ABI、State46、权限和 RPC DTO，以及节点、动作、单页、表单、配额、重放、错误和渲染合同。"
+description = "验证 Portable UI v1 Manifest/package/WIT/ABI、State1、权限和 RPC DTO，以及节点、动作、单页、表单、配额、重放、错误和渲染合同。"
 evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/host-protocol-invocation-context-v1.md", "specs/rpc/m7-portable-ui.schema.json", "crates/alcomd-store/src/schema.sql", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
 
 [[test]]
@@ -400,7 +400,7 @@ stage = "M7"
 kind = "integration"
 platforms = ["all"]
 status = "implemented"
-description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault production tests及完整本地 gate；最终三平台/a11y证据与人工验收仍未完成。"
+description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/持久化、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault production tests及完整本地 gate；最终三平台/a11y证据与人工验收仍未完成。"
 evidence = ["crates/alcomd-testing/tests/m7_contract.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-testing/tests/m7_official_renderer.rs", "crates/alcomd-testing/tests/m7_headless_conformance.rs", "crates/alcomd-testing/tests/m7_security_conformance.rs"]
 
 [[test]]
@@ -553,7 +553,7 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "implemented"
-description = "验证 Package workspace 使用完整分页 repository refresh、source-kind presentation filter、Config v2 prerelease/hidden/local presentation、closed documentation/changelog opener、source choice、Reinstall/Bulk单一Plan review与User Package enrollment管理；不代表P7 Delete Directory、P8 completeness或完整VPM聚合功能已完成。"
+description = "验证 Package workspace 使用完整分页 repository refresh、source-kind presentation filter、Config1 prerelease/hidden/local presentation、closed documentation/changelog opener、source choice、Reinstall/Bulk单一Plan review与User Package enrollment管理；不代表P7 Delete Directory、P8 completeness或完整VPM聚合功能已完成。"
 evidence = ["apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src-tauri/src/lib.rs", "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts::settings_are_labeled_revisioned_dirty_aware_and_applied_through_the_typed_client", "docs/baselines/m7-project-package-functional-closure.md"]
 
 [[test]]
@@ -562,7 +562,7 @@ stage = "M7"
 kind = "contract-integration"
 platforms = ["all"]
 status = "implemented"
-description = "验证Config Schema 2、State Schema 12、兼容plan.v2 source pin、exact-version Reinstall、四类atomic Bulk intent、256/257边界、deterministic ordering、单Plan/Apply/Operation及既有filesystem recovery不变。"
+description = "验证Config1、State1、Plan 来源证据、exact-version Reinstall、四类atomic Bulk intent、256/257边界、deterministic ordering、单Plan/Apply/Operation及既有filesystem recovery不变。"
 evidence = ["specs/rpc/m7-p6-package-closure.proposal.schema.json", "specs/rpc/m7-p6-package-closure.contract-vectors.json", "crates/alcomd-store/src/schema.sql", "crates/alcomd-vpm/src/engine.rs::tests", "crates/alcomd-testing/tests/m7_p6_package_closure.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::install_and_remove_round_trip_through_rpc_without_network", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -571,7 +571,7 @@ stage = "M7"
 kind = "security-integration"
 platforms = ["all"]
 status = "implemented"
-description = "验证loose-directory enrollment、strict manifest、filesystem identity、link/reparse/hardlink/special/non-UTF8/collision/quota边界、deterministic owned cache、revision/idempotency/Event、v1排除/v2纳入、源变化后Plan不可变及cache miss禁止回读mutable source。"
+description = "验证loose-directory enrollment、strict manifest、filesystem identity、link/reparse/hardlink/special/non-UTF8/collision/quota边界、deterministic owned cache、revision/idempotency/Event、首发 Plan 可选择本地用户包、源变化后Plan不可变及cache miss禁止回读mutable source。"
 evidence = ["crates/alcomd-vpm/src/user_package.rs", "crates/alcomd-store/tests/user_packages.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_uses_owned_cache_after_source_mutation_and_registry_removal", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_missing", "crates/alcomd-vpm/src/resolver.rs::tests::repository_and_user_package_require_explicit_source_without_hidden_priority"]
 
 [[test]]
@@ -615,7 +615,7 @@ stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 .alcomdextension/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
+description = "冻结并验证 .alcomdextension/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、State1/RPC contract、keyset cursor、KV/runtime quota 与 hostile vectors；M6 backend evidence 保持有效，未发布 UI-specific contract 已由 M7 Portable UI 方向 supersede。"
 evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/m6_runtime.rs"]
 
 [[test]]
@@ -1017,3 +1017,11 @@ kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "v3.4.0 启动完整 v4 bridge installer 后，在各平台 bridge/bootstrap 的每个故障点证明 v3 数据不丢且 3.4.0 可重启；不得把 v3.4.0 当作迁移执行器。"
+
+[[test]]
+id = "contracts.first-release"
+stage = "M11"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "在 cargo xtask check 核对自有首发版本号、实际 RPC 与 capability 唯一性、SDK 目录、操作矩阵、WIT 引用以及有效文档链接。"

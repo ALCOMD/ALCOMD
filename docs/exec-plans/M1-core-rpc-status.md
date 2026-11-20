@@ -164,8 +164,7 @@ alcomd-application -> alcomd-protocol / IPC / Tokio transport
 7. `alcomd-cli system status` 的成功 stdout、人类/JSON 输出、错误 stderr 和退出码；这不是完整
    M5 CLI 合同的提前冻结。
 
-破坏上述合同必须提升 RPC major，或在项目所有者批准后提供有时限的兼容路径；不能只提升
-应用版本后静默改变。
+首发前 RPC major 固定为 1。公共差异经所有者逐项批准后，同步修订唯一的合同、客户端和验证用例。
 
 ## 最小实施路径
 

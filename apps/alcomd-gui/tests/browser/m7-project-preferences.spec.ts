@@ -5,9 +5,9 @@ import { expectRequestError } from "./request-error-assertions";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 
-test("Projects grid keeps compact aligned cards with long names and scrollable rows", async ({ page }, testInfo) => {
-    await page.addInitScript(() => { Date.now = () => 1_700_000_120_000; });
-    for (const width of [1180, 1280, 1440, 1600]) {
+for (const width of [1180, 1280, 1440, 1600]) {
+    test(`Projects grid keeps compact aligned cards with long names and scrollable rows at ${width}px`, async ({ page }, testInfo) => {
+        await page.addInitScript(() => { Date.now = () => 1_700_000_120_000; });
         await page.setViewportSize({ width, height: width === 1180 ? 760 : 900 });
         await page.goto("/browser-harness.html?route=%2Fprojects&state=favorite-pages");
         await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
@@ -67,8 +67,8 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
         await last.getByRole("button", { name: "Backups", exact: true }).click();
         await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000107\/backups$/);
         await expect(page.getByRole("heading", { name: "Backups", exact: true })).toBeVisible();
-    }
-});
+    });
+}
 
 test("Projects grid retains shared launch, directory, copy review and removal cancellation", async ({ page }) => {
     await page.setViewportSize({ width: 1180, height: 760 });

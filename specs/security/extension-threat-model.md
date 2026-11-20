@@ -5,7 +5,7 @@
 ## Assets 与 trust boundaries
 
 M8 client management uses bounded Core operations
-(`../extensions/mcp-management-v2.md`). Test forged or stale leases and UI contexts, missing
+(`../extensions/mcp-management-v1.md`). Test forged or stale leases and UI contexts, missing
 permissions on either side, revocation during paging or writes, idempotent replay, lost responses
 and credential disclosure. Permission checks, acceptance and replay share one Store transaction.
 The first-party guest uses the same interface and sandbox as other extensions.
@@ -96,17 +96,17 @@ Drop/restart clears ephemeral records and changes the Core instance binding.
 A displayed IPC connection is not a current-authorization or online assertion;
 HTTP sockets, adapter queues and protocol subscriptions remain unobserved.
 Observation cleanup and request cancellation never cancel accepted Operations.
-State40 preserves all old rows/constraints and grants nothing automatically.
+Observation requires a current grant.
 
-## State41 install consent and complete permission catalogue
+## Install consent and complete permission catalogue
 
 Manifest declarations are disclosure and startup requirements, not a grant ceiling. Explicit owner-controlled grants may include any currently grantable undeclared extension permission. No owner-only permission, missing WIT interface or tool declaration is synthesized. Each Host request still checks the calling Client, Extension, lease, lifecycle and current grant revision. Required tool publication is allowed only with valid signed tool declarations; it does not grant invoking MCP clients business authority.
 
 Author terms are bounded signed plain text, frozen with the Plan and shown as untrusted text. GUI consent order has no separate persisted workflow; Core validates one final consent against the exact Plan fingerprint and caller grant authority. Denial cannot submit Apply. Durable consent is part of the existing idempotent Operation request, not a publisher trust decision. Install registry and initial required grants commit together; crash recovery uses the accepted evidence and must not restore grants revoked after state_committed. Missing, false or changed consent is rejected before Operation acceptance. Existing installations receive no implicit new authority.
 
-## 单扩展源在线准备（M8 / State42）
+## 单扩展源在线准备
 
-清单及下载地址均不可信。仅认证local-owner＋extensions.manage可触发，不能由扩展Host、MCP客户端或来源自报身份提升。匿名HTTPS策略禁止凭据、Referer、用户信息及降级重定向；合法query保持但不记入错误链或日志。索引实际1MiB/256版本/唯一ID、包实际64MiB、已有代理/全局下载并发与GUI独立2连接池限制资源；清单只是来源证据，不是授权。签名/内容树、ZIP SHA及扩展ID/版本/发布者同时匹配；版本变动在下载前以revision_conflict拒绝，Apply再次验证固定包。来源证据受Plan不可变触发器保护并在重启后保留；State42按连接临时停用外键重建，提交前完整检查并恢复外键。取消准备仅丢弃GUI结果，不制造回滚，关闭动画期间也不得自动Apply。测试TLS根限test-kill-gates构造器，不提供生产命令行或环境变量旁路。
+清单及下载地址均不可信。Core 要求实际调用主体拥有 extensions.manage；扩展 Host 和来源自报的身份不构成授权。匿名HTTPS策略禁止凭据、Referer、用户信息及降级重定向；合法query保持但不记入错误链或日志。索引实际1MiB/256版本/唯一ID、包实际64MiB、已有代理/全局下载并发与GUI独立2连接池限制资源；清单只是来源证据，不是授权。签名/内容树、ZIP SHA及扩展ID/版本/发布者同时匹配；版本变动在下载前以revision_conflict拒绝，Apply再次验证固定包。来源证据受Plan不可变触发器保护并在重启后保留。取消准备仅丢弃GUI结果，不制造回滚，关闭动画期间也不得自动Apply。测试TLS根限test-kill-gates构造器，不提供生产命令行或环境变量旁路。
 
 ## Read-only transport observation bridge
 
@@ -118,7 +118,7 @@ current ownership, active invocation, deadline, lease, lifecycle and grant revis
 Each unreadable group is omitted; none allowed returns permission_denied. Revocation
 invalidates old UI authority and does not turn stale data into successful empty data.
 The new subscription-stream read is Global/* and may be required or optional, with
-existing explicit consent. State43 only extends the CHECK and never grants it.
+existing explicit consent. An explicit grant is required.
 MCP business connections cannot read administrative projections.
 
 ## M9 local IPC and session projection

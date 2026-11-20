@@ -224,8 +224,14 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         panic!("distinct editor versions must produce a plan");
     };
     assert_eq!(
-        actor.project_plan_unity_migration(migration_request).await.expect("replay original request"),
-        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan: plan.clone(), replayed: true },
+        actor
+            .project_plan_unity_migration(migration_request)
+            .await
+            .expect("replay original request"),
+        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
+            plan: plan.clone(),
+            replayed: true
+        },
     );
     assert_eq!(
         actor

@@ -30,7 +30,7 @@
 
 功能提交为 `87edbfbeb12b0025055af0b0e3a9119220f31fd0`，独立Core构建通过后仅替换Core，GUI沿用上一轮已验证的同一文件。新Core经正常恢复入口将原任务 `da9ef751-4c88-466f-b3a0-0b956c733202` 记为failed、project_delete_source_missing、revision9，completedAt已写入，活动任务数0。Core清理了自有空wrapper；源目录/载荷仍不存在，未手工删除项目内容、修改数据库或虚报删除成功。
 
-真实关闭本次GUI后，仅监视进程、没有RPC轮询/手工终止Core，观测Core在1314ms内自动结束。原数据入口再次启动后，失败任务的revision和completedAt保持，未重新执行；Core PID **126408**、GUI PID **114740**，ready/State32/Config13、0活动任务，窗口响应及实际GUI连接正常。未获取到已退出进程的退出码，不将此观察表述为退出码0；正常结果另由6项隔离生命周期回归覆盖。
+真实关闭本次GUI后，仅监视进程、没有RPC轮询/手工终止Core，观测Core在1314ms内自动结束。原数据入口再次启动后，失败任务的revision和completedAt保持，未重新执行；Core PID **126408**、GUI PID **114740**，ready、0活动任务，窗口响应及实际GUI连接正常。未获取到已退出进程的退出码，不将此观察表述为退出码0；正常结果另由6项隔离生命周期回归覆盖。
 
 - Core SHA-256：`F5468E4ECB89D9659C2F6BB057D9A6363315E7AD4C931D17942A6887246B0490`。
 - GUI SHA-256保持：`E5157666C099571E1EA9FA3D2722D6BB644DC0D7913FBBA018AF6F9C5DF040F1`。

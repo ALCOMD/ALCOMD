@@ -161,7 +161,7 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::模板", "docs/adr/0020-native-template-bundle.md", "specs/templates/vrchat-avatars.json", "specs/templates/vrchat-worlds.json"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::模板", "docs/exec-plans/M7-template-bases.md", "specs/rpc/m7-project-create.schema.json", "specs/templates/vrchat-avatars.json", "specs/templates/vrchat-worlds.json"]
 coverage = ["GUI", "file association", "conflicts", "round trip"]
 tests = ["templates.v3-parity", "templates.m5-bundle", "templates.m5-registry", "templates.m5-import-export", "templates.m5-derive", "templates.m5-create-project", "templates.m5-transaction-faults", "migration.fixture-chain"]
 
@@ -175,7 +175,7 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup", "docs/adr/0021-native-backup-archive.md", "specs/backups/project-zip.md"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup", "specs/rpc/zip-backup.schema.json", "specs/backups/project-zip.md"]
 coverage = ["GUI", "progress", "partial archive", "restore target"]
 tests = ["backups.v3-parity", "backups.project-zip", "migration.fixture-chain"]
 

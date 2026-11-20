@@ -24,5 +24,5 @@
 所有者随后要求“更新GUI，让我看看效果”。核对全部7项已验证前端/测试/产物摘要一致，独立构建嵌入生产前端的GUI通过，保留显式rustc输出路径的两条提示。证据与旧程序备份位于`target/m7-package-display-names-update-20261109/`。
 
 - 已备份旧GUI并更新、重新打开：PID294004，SHA256 `A563B2D4B45D0C4E473282BB3A2DCE7CB35E65DB0E9880FABBEDA28A9F4C36FF`，窗口响应，原WebView profile已核对。
-- Core PID285544及程序/启动参数保持，ready/State31，0活动任务；原2项目、2仓库、数据路径及设置摘要保持。没有更新Core或操作用户项目软件包。
+- Core PID285544及程序/启动参数保持，ready，0活动任务；原2项目、2仓库、数据路径及设置摘要保持。没有更新Core或操作用户项目软件包。
 - Computer Use的原生UIA读取确认项目列表及两项目正常。画面捕获与目标不符，不作为截图验收；置前失败后按规则刷新选择并重试，返回`user input was detected in this window`，后续只读状态确认`window is minimized`，停止自动输入并保留用户窗口状态。未自动进入管理页或执行包操作，不声称实际项目确认弹窗已经端到端验证。

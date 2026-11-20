@@ -4,7 +4,7 @@
 
 ## 决策
 
-M5 在 State Schema v4 增加最小 Unity installation registry 与 project Editor preference。manual
+Core 在 State1 保存 Unity 安装登记和项目启动配置。manual
 registration 和 automatic discovery 必须经过同一个 executable validator；Hub config、known install
 root 与 Unity CLI 只能提供 advisory candidate，最终记录必须对应本机真实、可验证的 Editor
 executable。deprecated Hub CLI 不成为依赖或权威来源。
@@ -46,13 +46,12 @@ writer，不能宣称约束任意 Unity/外部进程。
 
 ## RPC 与权限
 
-RPC v1 兼容增加 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，method/DTO 由
+RPC v1 注册 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，method/DTO 由
 `specs/rpc/m5-unity.schema.json` 冻结。`unity.read` 只查询 registry/writer state；`unity.manage`
 管理 installation、refresh 与 project preference，不包含 launch；`unity.launch` 只允许启动/观察
 已验证 Editor。capability、path、PID、launchId 与 client metadata 都不是身份凭据。
 
-Schema/permission/RPC 合同可以先落盘；在生产实现、进程发现依赖/平台 API 与测试获得后续批准前，
-daemon 保持 Data Schema v3，不执行 0004 migration、不广告 M5 capability，也不接受这些 method。
+daemon 在实际用例可用时广告对应能力。
 
 ## 结果与限制
 

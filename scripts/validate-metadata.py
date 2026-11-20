@@ -351,7 +351,7 @@ def main() -> int:
     require(len(artifact_ids) == len(set(artifact_ids)), "Duplicate migration artifact IDs")
 
     source_lock = load_toml("docs/baselines/source-lock.toml")
-    require(source_lock["schema"] == 5, "Unsupported source lock schema")
+    require(source_lock["schema"] == 1, "Unsupported source lock schema")
     require(source_lock["frozen"] is True, "Source/spec inputs are not frozen")
 
     for section_name in [

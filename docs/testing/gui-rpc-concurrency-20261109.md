@@ -36,4 +36,4 @@ Rust/native 证据：`target/m7-gui-rpc-concurrency-20261109/`。
 
 ## 后续运行更新
 
-所有者随后明确要求更新Core/GUI并重新打开。独立构建输入摘要核对一致后，已备份旧程序和完整数据，更新为Core PID288700、GUI PID283656，ready/State31/Config12。原数据、WebView profile、2项目、2仓库及设置摘要保持；运行证据见`target/m7-core-gui-runtime-update-20261109/runtime-after.json`。UIA确认实际项目列表后，所有者Esc中断桌面操作，未继续原生管理页或安装/卸载验证。该部署不包含其后软件包加载样式的修改。
+所有者随后明确要求更新Core/GUI并重新打开。独立构建输入摘要核对一致后，已备份旧程序和完整数据，更新为Core PID288700、GUI PID283656，ready。原数据、WebView profile、2项目、2仓库及设置摘要保持；运行证据见`target/m7-core-gui-runtime-update-20261109/runtime-after.json`。UIA确认实际项目列表后，所有者Esc中断桌面操作，未继续原生管理页或安装/卸载验证。该部署不包含其后软件包加载样式的修改。

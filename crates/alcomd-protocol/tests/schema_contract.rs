@@ -2149,7 +2149,7 @@ fn zip_backup_contract_uses_file_paths_and_shared_task_receipts() {
 }
 
 #[test]
-fn hello_schema_requires_storage_contracts_and_describes_extension_api() {
+fn hello_schema_requires_current_storage_contracts() {
     let response = schema("system-hello.response");
     let properties = response["properties"]["result"]["properties"]
         .as_object()
@@ -2165,14 +2165,7 @@ fn hello_schema_requires_storage_contracts_and_describes_extension_api() {
             "rpcVersion"
         ]
     );
-    assert!(
-        !response["properties"]["result"]["required"]
-            .as_array()
-            .expect("hello required fields")
-            .iter()
-            .any(|field| field == "extensionApi")
-    );
-    for field in ["configSchema", "dataSchema"] {
+    for field in ["configSchema", "dataSchema", "extensionApi"] {
         assert!(
             response["properties"]["result"]["required"]
                 .as_array()
@@ -2488,13 +2481,21 @@ fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
 #[test]
 fn repository_exchange_defaults_to_native_and_preserves_explicit_vcc_text() {
     use alcomd_protocol::*;
-    let native: RepositoryListPreviewParams = serde_json::from_value(json!({})).expect("parse default native preview");
+    let native: RepositoryListPreviewParams =
+        serde_json::from_value(json!({})).expect("parse default native preview");
     assert_eq!(native.format, RepositoryListFormat::Native);
-    assert_eq!(serde_json::to_value(native).expect("serialize default preview"), json!({}));
+    assert_eq!(
+        serde_json::to_value(native).expect("serialize default preview"),
+        json!({})
+    );
     let text = json!({"format":"legacy"});
-    let explicit: RepositoryListPreviewParams = serde_json::from_value(text.clone()).expect("parse explicit format");
+    let explicit: RepositoryListPreviewParams =
+        serde_json::from_value(text.clone()).expect("parse explicit format");
     assert_eq!(explicit.format, RepositoryListFormat::Legacy);
-    assert_eq!(serde_json::to_value(explicit).expect("serialize explicit format"), text);
+    assert_eq!(
+        serde_json::to_value(explicit).expect("serialize explicit format"),
+        text
+    );
     assert_eq!(
         serde_json::to_value(RepositoryListImportItem::Updated { line: 1 }).expect("updated wire"),
         json!({"line":1,"status":"updated"})

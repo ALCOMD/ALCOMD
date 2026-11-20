@@ -823,7 +823,7 @@ state 分离，公开 record 不返回 PID、Host pipe、lease nonce、安装路
 扩展安装支持 `local_owner_selected`、`first_party_packaged` 和 `remote_extension_source`。在线安装使用[单扩展来源合同](../extensions/source-v1.md)读取清单和验证包。retained data namespace 绑定 ExtensionId + publisher fingerprint；publisher 不同返回
 `extension_data_owner_mismatch`。uninstall 总是撤销全部 grants/lease/session/handle，reinstall 不恢复旧 grant。
 
-扩展宿主可用时，`system.hello.result.extensionApi` 报告 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。
+握手必填的 `extensionApi` 报告运行实例的 ABI 主版本和基础 WIT world。扩展宿主加载组件时按照 [ABI 首发规范](../extensions/abi-compatibility-v1.json) 校验 WIT world。
 
 M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
 不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、

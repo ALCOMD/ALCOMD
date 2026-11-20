@@ -31,10 +31,12 @@ Input/Output：
 
 第一方和第三方走完全相同的 WIT/interface/permission/scope/use case。扩展不得读取 `state.db` 或 Project filesystem。
 
-## Planned、未实现能力
+## MCP 客户端管理
 
-M8 的 `host-mcp-clients.list/create/revoke` 是独立的客户端管理接口。
+ `host-mcp-clients.list/create/revoke` 是独立的客户端管理接口。
 分页、事务、双 Principal、错误与秘密边界见 `mcp-management-v1.md`。
+
+## 尚未实现的宿主能力
 
 以下名称在 M6 Stop A 不进入 WIT world、不链接、不广告，未来每项需要独立 permission、Schema、scope、quota、
 redaction、revocation 和人工审批：

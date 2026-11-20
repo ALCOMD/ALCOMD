@@ -2188,7 +2188,7 @@
                 {
                     "kind": "rust-test",
                     "file": "crates/alcomd-application/src/m7_candidates.rs",
-                    "symbol": "all_four_permissions_and_exact_project_scope_are_required_before_reads"
+                    "symbol": "all_four_capabilities_and_valid_target_are_required_before_reads"
                 }
             ]
         },
@@ -2222,14 +2222,14 @@
         },
         {
             "id": "permission",
-            "given": "each proper subset of four read permissions; other principal project",
-            "expected": "existing permission denial/isolation, no evidence leakage",
+            "given": "each required read permission omitted in turn, or an invalid project target",
+            "expected": "reject the request before reading project evidence",
             "status": "implemented-test-reference",
             "testReferences": [
                 {
                     "kind": "rust-test",
                     "file": "crates/alcomd-application/src/m7_candidates.rs",
-                    "symbol": "all_four_permissions_and_exact_project_scope_are_required_before_reads"
+                    "symbol": "all_four_capabilities_and_valid_target_are_required_before_reads"
                 },
                 {
                     "kind": "rust-test",
@@ -2343,13 +2343,13 @@
         {
             "id": "bulk-remove",
             "given": "selected direct A and transitive-only B",
-            "expected": "disabled; remove desired direct dependencies only",
+            "expected": "Core provides removal review and reports dependency conflicts before a mutation can be applied",
             "status": "implemented-test-reference",
             "testReferences": [
                 {
                     "kind": "playwright-test",
                     "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
-                    "symbol": "Transitive selection cannot be silently removed but can be reinstalled"
+                    "symbol": "Transitive selection supports explicit removal review and reinstall without an automatic mutation"
                 }
             ]
         },
@@ -2423,7 +2423,7 @@
                 {
                     "kind": "playwright-test",
                     "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
-                    "symbol": "Summary pages share the first fingerprint while versions are read only after opening a row"
+                    "symbol": "Summary pages share the first fingerprint while versions are prepared only for an intended row"
                 },
                 {
                     "kind": "playwright-test",
@@ -2446,7 +2446,7 @@
                 {
                     "kind": "playwright-test",
                     "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
-                    "symbol": "Incomplete catalog keeps versions readable and disables Plan actions including bulk remove"
+                    "symbol": "Incomplete catalog blocks version changes while allowing a locally evidenced bulk removal"
                 }
             ],
             "evidenceLimit": "The referenced browser test verifies the Material host disabled property and click guard only. No screen-reader announcement test or manual assistive-technology evidence has been obtained; this vector remains open."
@@ -2454,7 +2454,7 @@
         {
             "id": "bulk-remove-incomplete",
             "given": "all selected IDs direct; principal catalog incomplete",
-            "expected": "existing planBulk remains blocked even when all intents remove; do not change to multiple single planRemove calls",
+            "expected": "planBulk can review a locally evidenced removal-only set against the project state when the catalog is incomplete",
             "status": "implemented-test-reference",
             "testReferences": [
                 {
@@ -2465,7 +2465,7 @@
                 {
                     "kind": "playwright-test",
                     "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
-                    "symbol": "Incomplete catalog keeps versions readable and disables Plan actions including bulk remove"
+                    "symbol": "Incomplete catalog blocks version changes while allowing a locally evidenced bulk removal"
                 }
             ]
         }

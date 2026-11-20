@@ -22,7 +22,8 @@
                 "daemonVersion",
                 "capabilities",
                 "dataSchema",
-                "configSchema"
+                "configSchema",
+                "extensionApi"
             ],
             "properties": {
                 "rpcVersion": {
@@ -67,7 +68,8 @@
                         "world": {
                             "const": "alcomd:extension/extension-v1@1.0.0"
                         }
-                    }
+                    },
+                    "description": "Extension ABI major and base WIT world supported by the running Core."
                 }
             }
         }

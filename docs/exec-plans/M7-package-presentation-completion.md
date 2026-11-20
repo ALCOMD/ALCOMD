@@ -12,14 +12,14 @@
 
 ## 公开合同与清理范围
 
-沿用 packages.candidates.v2 与同一查询方法、四项读权限。summary 的可选 requestedRange（最长 256 字节）表达当前清单的依赖声明；GUI 版本列按所有者后续要求对齐 v3，仅展示本次正常读取的 installed 版本或“未安装”，不额外展示依赖声明。已撤回标记跟随已安装版本显示，不放在名称列。既有 presentationState/presentationComplete 只表示本次可读信息的质量，不再对应数据库观测或补采流程；缺失已安装撤回信息仍表示未知。
+沿用 packages.candidates.v1 与同一查询方法、四项读权限。summary 的可选 requestedRange（最长 256 字节）表达当前清单的依赖声明；GUI 版本列按所有者后续要求对齐 v3，仅展示本次正常读取的 installed 版本或“未安装”，不额外展示依赖声明。已撤回标记跟随已安装版本显示，不放在名称列。既有 presentationState/presentationComplete 只表示本次可读信息的质量，不再对应数据库观测或补采流程；缺失已安装撤回信息仍表示未知。
 
 按所有者明确的撤除要求删除以下两张表及其读写模块、观察 revision、缓存失效记录和所有项目发布钩子：
 
 - project_package_presentations
 - project_presentation_observations
 
-保留既有项目登记/事务/Plan/历史和仓库索引；repository_package_versions.presentation_json 属于仓库规范化索引，继续供搜索与展示使用。State30 新建结构不再创建项目副本；State31 只清理已有开发数据中的上述两表，随后只有一种正常读取实现。编号为内部数据格式序号，不是产品发布版本。真实数据操作遵循已授权范围，启动前保留备份，不恢复旧数据库覆盖用户修改。
+保留既有项目登记/事务/Plan/历史和仓库索引；repository_package_versions.presentation_json 属于仓库规范化索引，继续供搜索与展示使用。Core 直接查询项目与来源，使用进程内缓存。真实数据操作遵循已授权范围，启动前保留备份，不恢复旧数据库覆盖用户修改。
 
 ## 验收
 

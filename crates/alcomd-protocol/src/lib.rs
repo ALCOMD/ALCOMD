@@ -842,9 +842,9 @@ pub struct HelloResult {
     /// Schema of the public configuration.
     #[serde(deserialize_with = "deserialize_schema_version")]
     pub config_schema: u32,
-    /// Extension ABI information, present only once the M6 runtime is available.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extension_api: Option<ExtensionApiInfo>,
+    /// Extension ABI major and base world supported by the running Core.
+    #[serde(deserialize_with = "current_extension_api")]
+    pub extension_api: ExtensionApiInfo,
 }
 
 fn deserialize_schema_version<'de, D: serde::Deserializer<'de>>(
@@ -867,11 +867,23 @@ fn package_change_set_version<'de, D: serde::Deserializer<'de>>(
     }
 }
 
+const BASE_EXTENSION_WORLD: &str = "alcomd:extension/extension-v1@1.0.0";
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionApiInfo {
     pub major: u32,
     pub world: String,
+}
+
+fn current_extension_api<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ExtensionApiInfo, D::Error> {
+    let info = ExtensionApiInfo::deserialize(deserializer)?;
+    if info.major != 1 || info.world != BASE_EXTENSION_WORLD {
+        return Err(serde::de::Error::custom("invalid extension ABI metadata"));
+    }
+    Ok(info)
 }
 
 impl HelloResult {
@@ -890,10 +902,10 @@ impl HelloResult {
             capabilities,
             data_schema,
             config_schema: CONFIG_SCHEMA_VERSION,
-            extension_api: Some(ExtensionApiInfo {
+            extension_api: ExtensionApiInfo {
                 major: 1,
-                world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
-            }),
+                world: BASE_EXTENSION_WORLD.to_owned(),
+            },
         }
     }
 }
@@ -3736,7 +3748,6 @@ mod tests {
         let hello = HelloResult::ready(Vec::new(), 1);
         assert_eq!(hello.data_schema, 1);
         assert_eq!(hello.config_schema, CONFIG_SCHEMA_VERSION);
-        assert_eq!(hello.extension_api.expect("extension ABI").major, 1);
     }
 
     #[test]
@@ -3761,6 +3772,7 @@ mod tests {
                 "capabilities": ["future.capability"],
                 "dataSchema": 1,
                 "configSchema": 1,
+                "extensionApi": {"major":1,"world":BASE_EXTENSION_WORLD},
                 "futureOptional": true
             },
             "futureEnvelopeField": true
@@ -3806,10 +3818,25 @@ mod tests {
 
     #[test]
     fn hello_requires_current_schema_versions() {
-        let hello = serde_json::to_value(HelloResult::ready(Vec::new(), 1)).expect("serialize handshake");
+        let hello =
+            serde_json::to_value(HelloResult::ready(Vec::new(), 1)).expect("serialize handshake");
+        let mut missing_abi = hello.clone();
+        missing_abi
+            .as_object_mut()
+            .expect("handshake fields")
+            .remove("extensionApi");
+        assert!(serde_json::from_value::<HelloResult>(missing_abi).is_err());
+        for (field, value) in [("major", json!(2)), ("world", json!("invalid"))] {
+            let mut wire = hello.clone();
+            wire["extensionApi"][field] = value;
+            assert!(serde_json::from_value::<HelloResult>(wire).is_err());
+        }
         for field in ["dataSchema", "configSchema"] {
             let mut missing = hello.clone();
-            missing.as_object_mut().expect("handshake fields").remove(field);
+            missing
+                .as_object_mut()
+                .expect("handshake fields")
+                .remove(field);
             assert!(serde_json::from_value::<HelloResult>(missing).is_err());
             for invalid in [json!(0), json!(2), json!(-1), Value::Null, json!(1.5)] {
                 let mut wire = hello.clone();

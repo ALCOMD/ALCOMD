@@ -196,6 +196,7 @@ export const actionMessages: TranslationTable = {
     "Append repositories from a UTF-8 list. One HTTP(S) URL per line; # starts a comment. Existing repositories are kept.": { "zh-CN": "从 UTF-8 列表追加存储库。每行一个 HTTP(S) 网址，# 后为注释。保留现有存储库。", "ja-JP": "UTF-8の一覧から追加します。1行に1つのHTTP(S) URLを記載し、#以降はコメントです。既存の登録は保持します。" },
     "{count} entries · {ignored} blank or comment lines": { "zh-CN": "{count} 条记录 · {ignored} 行空白或注释", "ja-JP": "{count}件 · 空行・コメント{ignored}行" },
     "Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}": { "zh-CN": "已添加：{added} · 失败：{failed} · 未知：{unknown} · 未处理：{pending}", "ja-JP": "追加済み：{added} · 失敗：{failed} · 不明：{unknown} · 未処理：{pending}" },
+    "Completed additions are kept. Retry to recover the import result.": { "zh-CN": "已添加的仓库会保留。重试可取回这次导入的结果。", "ja-JP": "追加済みのリポジトリは保持されます。再試行して今回のインポート結果を取得できます。" },
     "Completed additions are kept. Check the repository list before importing again.": { "zh-CN": "已添加的存储库会保留。再次导入前请核对存储库列表。", "ja-JP": "追加済みのリポジトリは保持されます。再インポートの前にリポジトリ一覧を確認してください。" },
     "Line {line}": { "zh-CN": "第 {line} 行", "ja-JP": "{line}行目" },
     "To import": { "zh-CN": "待导入", "ja-JP": "インポート対象" },

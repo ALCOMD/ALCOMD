@@ -38,7 +38,7 @@ alcomd-store -> data/state.db
 1. `alcomd-store` 中单一 `state.db` 连接所有者、Schema v1、迁移与短事务 API。
 2. transport-neutral 的 Operation、Event、Revision、幂等和 Resource Key 领域合同。
 3. `state.check`、Operation 查询/取消和 Event 断点读取 application 用例。
-4. RPC v1 的兼容新增 method、capability、DTO、稳定错误、JSON Schema 与合同快照。
+4. RPC v1 的 method、capability、DTO、稳定错误、JSON Schema 与合同快照。
 5. daemon 启动时的迁移、未完成 Operation 扫描和确定性恢复。
 6. Windows、Ubuntu 与 macOS 上真实 SQLite/IPC/崩溃恢复集成测试。
 7. 更新后的测试元数据、feature parity 实现状态、ExecPlan 进度和 `docs/status.md`。
@@ -193,17 +193,9 @@ JSON 字段是版本化的内部持久 DTO，不是第三方 API。每个字段�
 - Operation worker 在 transaction 外运行；每次状态转换使用一个短 `BEGIN IMMEDIATE`
   transaction。
 
-## Schema 版本与 migration
+## State1 初始化与校验
 
-- `PRAGMA user_version` 是 M2 数据 Schema 当前版本的唯一数值来源；M2 从 `0 -> 1`。
-- migration 以按版本排序的内嵌 SQL 随二进制发布，禁止从 data directory 动态加载 SQL。
-- 每次 migration 在一个排他 transaction 中执行，最后才更新 `user_version`；失败完整回滚并
-  阻止 daemon 对外报告 ready。
-- 数据库版本高于二进制支持值时返回 `data_schema_unsupported` 并拒绝写入，不自动降级。
-- M2 不实现 down migration。未来兼容程序升级只能追加严格递增 migration；破坏性或不可逆
-  数据变更必须另行审批并先定义备份/恢复策略。
-- Schema v1 真实存在后，`system.hello` 可兼容增加可选 `dataSchema: 1`，但不得让旧客户端必须
-  理解该字段，也不得加入仍未实现的 `configSchema`/`extensionApi`。
+空数据库在一个事务中按内嵌的完整 State1 DDL 创建，并设置 `PRAGMA user_version = 1`。重开时校验当前完整结构。结构或版本不符合要求时返回现行错误，保留源文件内容。成功打开存储后，握手报告 `dataSchema: 1`、`configSchema: 1` 以及当前 Extension API。
 
 ## Operation 生命周期
 
@@ -344,13 +336,13 @@ M2 第一次引入写 RPC，不能继续把 `client.name/version/instanceId`、S
 授权管理 UI 不属于 M2。它们分别在后续里程碑实现；在这些合同完成前，M2 不向任意外部应用
 宣传写接口安全。上述 Principal 形态和四个权限名称属于公共合同，实施前必须人工批准。
 
-## RPC v1 兼容新增
+## RPC v1 状态管理
 
-M2 只以 M1 已允许的方式增加 method、capability、DTO 和可选字段，不提升 RPC major：
+状态管理的原生方法和能力纳入首发 RPC 合同。
 
 - capabilities：`state.check.v1`、`operations.v1`、`events.replay.v1`。方法只有在本连接 hello
   协商到所需 capability 后才可调用，否则返回 `capability_required`。
-- `system.hello.result` 兼容增加可选 `dataSchema: 1`。
+- `system.hello.result` 报告必填的 `dataSchema: 1`。
 - methods：`state.check`、`operations.get`、`operations.list`、`operations.cancel`、`events.list`。
 - DTO：`OperationSummary`/`OperationDetail`、`EventRecord`、分页 cursor、`Revision`、
   `IdempotencyKey` 与命令接受结果。
@@ -405,7 +397,7 @@ crates/alcomd-domain/                # Operation/Event/Revision/Principal/Resour
 crates/alcomd-application/           # M2 用例、ports、权限与锁协调
 crates/alcomd-store/                 # SQLite、migration、journal、短事务
 crates/alcomd-platform/              # 仅安全 data directory/权限适配
-crates/alcomd-protocol/              # 仅批准的 RPC v1 兼容新增 DTO
+crates/alcomd-protocol/              # 已核定的 RPC v1 DTO
 crates/alcomd-client/                # 仅 M2 类型化调用
 crates/alcomd-testing/               # 隔离 store、fault gate、跨进程测试
 specs/rpc/                            # M2 method/error Schema 与快照
@@ -561,7 +553,7 @@ Schema/RPC/permission，或进入 M3 时重新停止审批。
 
 ## 与 M1、M3、M12 的关系
 
-- M2 复用 M1 的 endpoint、framing、hello 与按需启动；只做 RPC v1 兼容增加。
+- M2 复用 M1 的 endpoint、framing、hello 与按需启动，状态管理接口沿用 RPC v1。
 - M2 使 `alcomd` 第一次成为持久状态唯一写入者，但不写 Unity 项目。
 - M3 项目/仓库只读切片复用 state store、revision 和 Event；M3 不应再另建数据库或事件总线。
 - M4 包事务复用 Operation/Lock/journal 基础，但文件 fsync/rename/rollback 必须另行冻结，不能把

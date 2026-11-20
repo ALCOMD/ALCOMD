@@ -42,8 +42,8 @@ M3 中“只读”的精确定义是：不得修改 Unity 项目、`Packages/vpm
 2. VPM/UPM/ProjectVersion 的最小读取模型，不做 dependency resolve、版本选择或修复写回。
 3. 本地文件与匿名远程 HTTP(S) repository 共用的文档加载/解析边界。
 4. repository 顶层元数据、包 ID/版本身份和解析 issue 的确定性读取模型；不实现包安装元数据语义。
-5. `state.db` Schema v2 的最小项目/仓库注册状态、成功快照、revision 与 Event。
-6. RPC v1 的兼容新增方法、capability、DTO、稳定错误与 JSON Schema 草案。
+5. 项目与仓库注册状态、成功快照、revision 与 Event。
+6. RPC v1 的项目与仓库方法、capability、DTO、稳定错误与 JSON Schema 草案。
 7. CLI 的最小 project/repository human/JSON 入口；不宣称完整 CLI 已实现。
 8. 合成公开 Fixture、SQLite migration、只读无写入、本地 mock HTTP 和三平台集成测试。
 
@@ -63,7 +63,7 @@ M3 中“只读”的精确定义是：不得修改 Unity 项目、`Packages/vpm
   不建立 M4 package cache。
 - Project/Repository revision 只在成功提交的注册状态或 normalized snapshot 实际变化时递增；
   no-op、HTTP 304 和失败不递增也不发 Event。
-- M2 Operation/Event 查询仍兼容；Schema v1 -> v2 migration 原子、可重复启动、失败完整回滚。
+- Operation 与 Event 从同一份 State1 读取。仓库和项目登记随事务提交，启动时验证完整结构。
 - M3 所需 RPC、权限、Schema、依赖和网络边界先经项目所有者批准，再开始生产实现。
 - 本地完整门禁和 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 hosted CI 全部通过，
   工作树干净，并停止在 M4 之前等待人工验收。
@@ -75,7 +75,7 @@ M3 中“只读”的精确定义是：不得修改 Unity 项目、`Packages/vpm
 - M2 状态文档收尾提交为 `54e13fc2b228ad26919b1f8a7efe2893cd60c965`；它只记录验收事实，
   不改变 M2 生产合同。
 - A-004/A-005 唯一写入者和 application 边界、A-015/A-016 独立实现与只读参考边界保持有效。
-- M1 RPC v1 与 M2 data Schema/Revision/Event/Principal 合同只能兼容增加，不能被 M3 静默改写。
+- M1 RPC v1 与 M2 data Schema/Revision/Event/Principal 合同按首发定义同步修订并验收。
 - `projects.v3-parity` 所需 M11 脱敏真实 Fixture 仍不存在；该测试保持 `blocked`。
 
 ## 允许修改范围
@@ -89,12 +89,12 @@ crates/alcomd-domain/                # Project/Repository ID、revision/resource
 crates/alcomd-application/           # M3 ports、queries、低影响 registry use cases
 crates/alcomd-protocol/              # 已批准的 M3 RPC DTO
 crates/alcomd-client/                # 已批准的类型化 M3 调用
-crates/alcomd-store/                 # Schema v2、migration 与 M3 repository implementation
+crates/alcomd-store/                 # 项目和仓库注册、revision、Event 与幂等回执
 crates/alcomd-vpm/                   # 只读 project/repository parser 与 document loader
 crates/alcomd-platform/              # 仅确有需要的跨平台路径身份检查；不扩大 unsafe
 crates/alcomd-testing/               # 合成 Fixture、mock HTTP、真实 IPC 测试支持
 specs/rpc/                           # M3 方法、DTO、错误 Schema
-specs/storage/                       # state Schema v2 与 migration 合同
+specs/storage/                       # State1 与持久化合同
 docs/adr/                            # 新 M3 read-model ADR 或既有 ADR 的最小兼容补充
 docs/exec-plans/M3-project-repository-readonly.md
 docs/testing/test-plan.toml
@@ -259,47 +259,11 @@ hash、headers、legacy replacement 或 Unity compatibility。map key 与 manife
   HTTP gateway、认证框架或完整 SSRF policy。外部 Principal 真正可添加 URL 前，仍需后续权限/
   配对威胁模型复核。
 
-## SQLite / state.db 最小 Schema v2
+## SQLite 项目与仓库注册
 
-contract-first 阶段建议在 `0001_state.sql` 之后新增单独的 `0002` migration，不修改已发布的 v1
-快照。最小逻辑表：
+State1 在同一份 DDL 中定义项目、仓库、仓库候选、Event 和幂等回执。[持久化合同](../../specs/storage/state-v1.md) 定义完整结构及启动校验。
 
-```text
-projects
-├─ project_id / root_path / path_identity_key (unique)
-├─ normalized snapshot fields or bounded snapshot_json
-├─ revision
-└─ registered_at_ms / observed_at_ms / updated_at_ms
-
-repositories
-├─ repository_id / source_kind / source_locator / source_identity_key (unique)
-├─ declared_id / name / etag / last_modified
-├─ revision
-└─ registered_at_ms / refreshed_at_ms / updated_at_ms
-
-repository_package_versions
-├─ repository_id (FK)
-├─ package_id / version_text
-├─ bounded display fields / yanked / unity_text
-└─ PRIMARY KEY(repository_id, package_id, version_text)
-```
-
-不增加 package ZIP/cache、dependency、Plan、Unity install、template、credential、activity 或 v3
-migration 表。项目 snapshot 只存 ALCOMD normalized DTO；repository 不保存原始不可信 JSON 或
-header。所有路径/URL/JSON/字符串/行数有 CHECK limit。
-
-M2 `events.aggregate_kind` 当前只允许 `operation`。Schema v2 如需要 project/repository Event，
-必须在同一原子 migration 中安全重建该表，将允许集合兼容扩展为 `operation/project/repository`，
-完整保留既有 sequence、索引和 `sqlite_sequence`；迁移失败回滚全部变化。
-
-低影响同步 registry command 的幂等不能伪装成 Operation。M2 `idempotency_records.operation_id`
-当前必需，因此合同阶段必须人工选择并冻结以下之一：
-
-1. 推荐：兼容扩展记录，使 completed synchronous command 可没有 OperationId，同时保留 M2
-   pending/Operation 不变量；或
-2. M3 不提供 registry command，只提供无持久状态的 inspect query。
-
-不得为绕过此决策创建重复的临时幂等系统，也不得把普通 register/refresh 虚构为高影响工作流。
+Core 保存有界的项目快照及仓库包索引。成功更新的 revision 与 Event 一起提交。同步登记、刷新和注销将业务结果写入幂等回执，长任务保存 OperationId。
 
 ## Revision、Event、资源锁与事务
 
@@ -315,7 +279,7 @@ M2 `events.aggregate_kind` 当前只允许 `operation`。Schema v2 如需要 pro
 - M3 仅支持用户显式、低频 refresh，继续保留 M2 Event 不清理策略。引入 background watcher、
   自动 refresh 或高频事件前，必须另行冻结 retention/compaction 与 `event_cursor_expired`。
 
-## RPC v1 兼容新增草案
+## RPC v1 项目与仓库读取
 
 建议 capability 分为：
 
@@ -373,8 +337,7 @@ permission_denied
 internal_error + diagnostic_id
 ```
 
-错误 data 只能包含对应 Schema 明确允许的非敏感字段。新增 method、capability 和可选 DTO 字段是
-RPC v1 兼容增加；改变既有 M1/M2 字段或语义仍属于破坏性变化。
+错误 data 只能包含对应 Schema 明确允许的非敏感字段。变更 method、capability 或 DTO 须经审批，直接修订同一份首发定义。
 
 ## Principal 与权限
 
@@ -479,7 +442,7 @@ resolver、watcher、credential、cache framework 或 async SQL crate。
 - exact-root/parent search、type precedence、路径 identity 与 snapshot deterministic serialization。
 - repository 顶层失败与单 entry 隔离、stable package/version ordering、无 SemVer/latest 选择。
 - RPC Schema/golden、capability、permission、pagination/cursor、错误 data 与未知可选字段兼容。
-- state Schema v1 -> v2、events table 保序重建、较新版本拒绝、重复启动与失败回滚。
+- State1 完整结构、重开后事件顺序、结构校验与失败回滚。
 
 ### 集成测试
 
@@ -511,7 +474,7 @@ M3 实施时应在 `test-plan.toml` 增加或细化 synthetic readonly/registry/
 - **大 repository**：必须在读取与 parse 前后都有界，RPC 使用分页，不能整库塞入单帧。
 - **旧 cache 污染**：失败/partial refresh 不能覆盖最后成功快照或错误提升 revision。
 - **秘密持久化**：raw JSON/header/userinfo 不进入 state.db、日志、Event 或普通 DTO。
-- **Schema v2 迁移**：重建 Event table 必须保持 M2 sequence/Operation 可恢复性。
+- **Event 持久化**：重开后保留 sequence 与 Operation 恢复能力。
 - **幂等模型偏离**：同步 registry command 不能绕过 M2 command retry 契约或伪造 Operation。
 - **parity 证据缺口**：synthetic Fixture 不能冒充 M11 的真实 v3 差异证据。
 - **过度实现 VPM**：SemVer、resolver、package URL/hash、download/ZIP 与 Plan/Apply 必须留在 M4。
@@ -524,7 +487,7 @@ M3 实施时应在 `test-plan.toml` 增加或细化 synthetic readonly/registry/
 1. “外部源只读、state.db registry 可写”的 M3 定义，以及 register/refresh/unregister 是否纳入。
 2. ProjectSnapshot、project type 枚举、发现模式、路径 identity 与 non-Unicode/symlink 政策。
 3. RepositorySource、normalized catalog、单 entry error isolation 与 refresh/cache 边界。
-4. Schema v2 的精确 SQL、Event table 兼容重建和同步 command 幂等方案。
+4. 项目与仓库注册、Event 顺序和同步命令幂等回执的精确 SQL。
 5. RPC method/capability/DTO/error、pagination 与兼容快照。
 6. `projects.read/manage`、`repositories.read/manage` 的名称、scope 和 builtin local-owner 授权。
 7. HTTP(S) scheme、size/timeout/redirect/validator 行为，以及 remote refresh 是否是 M3 blocker。
@@ -540,7 +503,7 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
 1. 冻结 M3 ADR、RPC/storage Schema、错误、权限、路径与网络/依赖合同。
 2. 先写 synthetic project/repository parser、readonly 与 migration failure 合同测试。
 3. 实现纯 parser 与 application ports，不接 daemon、不写 DB。
-4. 实现 Schema v2/store registry/revision/Event，并验证 migration 与 transaction。
+4. 实现注册、revision 和 Event，验证事务原子性和重开。
 5. 接入 local project/local repository 的 RPC/client/CLI 端到端切片。
 6. 获批 HTTP 依赖后接入 remote refresh、validator 和 last-known-good cache。
 7. 运行完整本地与三平台验收，更新真实状态，提交推送最终候选。
@@ -559,7 +522,7 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
 
 ## M3 完成后的停止条件
 
-1. 所有获批合同、Schema v2、migration、readonly、registry/cache 和三平台测试通过。
+1. 项目与仓库合同、持久化、只读检查、索引缓存和三平台测试通过。
 2. `feature-parity.toml` 与 `test-plan.toml` 只标记 M3 实际实现子集；上述四个完整功能面和
    `projects.v3-parity`/credential/revocation 等保持真实未完成状态。
 3. 提交并推送最终候选，确认 HEAD、`origin/main` 与 CI head SHA 一致且工作树干净。
@@ -572,9 +535,9 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
   run `32144082427` 已由项目所有者人工验收；M2 正式完成。
 - 2026-08-18：创建本 M3 ExecPlan 草案，只规划项目与 VPM Repository 只读垂直切片；未修改
   RPC/storage Schema、permission、Cargo 依赖、migration 或生产代码，等待项目所有者审批。
-- 2026-08-18：项目所有者批准 M3 总体方向、Schema v2、同步幂等、RPC/权限、路径身份、bounded
+- 2026-08-18：项目所有者批准 M3 总体方向、项目与仓库注册、同步幂等、RPC/权限、路径身份、bounded
   parser、anonymous HTTP(S) refresh 与精确 `reqwest 0.13.4` 配置；进入 contract-first 阶段。
-- 2026-08-19：ADR 0016、RPC/storage Schema、权限、错误、Schema v2 migration 与合同测试完成；
+- 2026-08-19：ADR 0016、RPC/storage Schema、权限、错误与合同测试完成。
   随后实现 bounded project/repository reader、平台文件身份、SQLite registry、RPC/client/CLI 和
   synthetic 真实 IPC 测试。外部项目与 repository 文件保持只读，M3 未实现任何 M4 package 操作。
 - 2026-08-19：项目所有者批准 `reqwest 0.13.4 + rustls` 的 38 个传递锁定项。feature graph 实测

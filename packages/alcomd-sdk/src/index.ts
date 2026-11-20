@@ -92,9 +92,9 @@ export interface HelloResponse {
     capabilities: string[];
     dataSchema: 1;
     configSchema: 1;
-    extensionApi?: {
-        major: number;
-        world: string;
+    extensionApi: {
+        major: 1;
+        world: "alcomd:extension/extension-v1@1.0.0";
     };
 }
 

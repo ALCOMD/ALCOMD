@@ -317,6 +317,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? `C:/fixture/repositories.${query.has("native-list") ? "alcomdrepositories" : "txt"}` : `C:/fixture/${fileName}`);
     }
     private listImportStopped = false;
+    private readonly importedThroughLine = new Map<string, number>();
     private listFixtureCount(): number {
         const mode = query.get("list-import");
         return mode === "invalid" ? 0 : ["large", "hold", "transport"].includes(mode ?? "") ? 67 : 3;
@@ -340,7 +341,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.has("native-list")) return this.value({items:[{line:1,status:overwriteExisting === false ? "existing" : "updated"},{line:2,status:"added"}]});
         const mode = query.get("list-import");
         if (mode === "hold") await new Promise<void>((resolve) => window.addEventListener("test-list-register-ready", () => resolve(), { once: true }));
-        if (mode === "transport") throw { code: "daemon_unavailable" };
+        if (mode === "transport") {
+            const previous = this.importedThroughLine.get(idempotencyKey);
+            const through = previous === undefined ? 64 : this.listFixtureCount();
+            for (let line = (previous ?? 0) + 1; line <= through; line++) {
+                window.resourceRequests.push({ method: "fixture.repositoryAdded", params: { line, idempotencyKey } });
+            }
+            this.importedThroughLine.set(idempotencyKey, through);
+            if (previous === undefined) throw { code: "daemon_unavailable" };
+        }
         if (mode === "changed") throw { code: "repository_list_changed" };
         return this.value({ items: Array.from({ length: this.listFixtureCount() }, (_, index): RepositoryListImportItem => {
             const line = index + 1;

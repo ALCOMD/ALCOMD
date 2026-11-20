@@ -218,6 +218,15 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_derived_identity(root, &product, &mut errors)?;
     check_unsafe_boundary(root, &mut errors)?;
     check_builtin_templates(root, &mut errors)?;
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    if !Command::new(python)
+        .arg(root.join("scripts/check-first-release-contracts.py"))
+        .current_dir(root)
+        .status()?
+        .success()
+    {
+        errors.push("first-release contract registry check failed".to_owned());
+    }
 
     for relative in PRODUCTION_ROOTS {
         scan_forbidden_tokens(&root.join(relative), &mut errors)?;
@@ -281,7 +290,7 @@ fn check_unsafe_boundary(
         "crates/alcomd-platform/src/windows_unity_window.rs",
         // M9: outbound named-pipe peer, process token, and Authenticode inspection.
         "crates/alcomd-platform/src/windows_local_ipc.rs",
-        // Config5: one documented MoveFileExW(flags=0) call; never replaces a destination.
+        // Storage directories use one documented MoveFileExW(flags=0) call; never replaces a destination.
         "crates/alcomd-platform/src/windows_file_publish.rs",
         "crates/alcomd-platform/src/credential_vault/windows.rs",
     ];

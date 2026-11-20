@@ -23,9 +23,7 @@
         "sameValueNoOp": true,
         "sameValueNoUpdatedAtChange": true,
         "idempotent": true,
-        "coreListOrderingChanges": false,
-        "cursorChanges": false,
-        "guiStableFavoriteFirst": true,
+        "coreViewSortsFavoritesBeforePagination": true,
         "stateSchema": 1
     },
     "v3UnityClear": {

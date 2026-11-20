@@ -143,11 +143,12 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
     const counts = { added: 0, updated: 0, failed: 0, unknown: 0, unprocessed: 0 };
     for (const { status } of results ?? []) if (status !== "existing") counts[status] += 1;
     const labels = { candidate: "To import", duplicate: "Duplicate", invalid: "Invalid", unsupported: "Unsupported", failed: "Failed", updated: "Updated", added: "Added", unknown: "Result unknown", existing: "Already added", unprocessed: "Not processed" } as const;
+    const retryImport = unacknowledgedImport.current !== undefined;
     const actions = busy ? <Button disabled={stopping} onClick={() => void stop()} type="button" variant="text">{busyAction === "adding" ? t("Stop import") : t("Stop after current request")}</Button>
         : finished ? <DialogCloseButton variant="text">{t("Close")}</DialogCloseButton>
         : inspection ? <>
             <Button onClick={() => { unacknowledgedImport.current = undefined; setPreview(undefined); }} type="button" variant="text">{t("Back")}</Button>
-            <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{t(native ? "Apply {count} repository configurations" : "Add {count} repositories", { count: candidateCount })}</Button>
+            <Button disabled={candidateCount === 0} onClick={() => void register()} type="button">{retryImport ? t("Retry") : t(native ? "Apply {count} repository configurations" : "Add {count} repositories", { count: candidateCount })}</Button>
         </> : <>
             <DialogCloseButton disabled={choosing} variant="text">{t("Cancel")}</DialogCloseButton>
             <Button disabled={choosing || path.trim() === ""} onClick={() => void read(path)} type="button">{t("Confirm")}</Button>
@@ -166,6 +167,7 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
             {results === undefined ? null : <div aria-live="polite" data-notification-result="repositoryListImportFile repositoryRegister">
                 <p>{t(native ? "Added: {added} · Updated: {updated} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}" : "Added: {added} · Failed: {failed} · Unknown: {unknown} · Not processed: {pending}", { added: counts.added, updated: counts.updated, failed: counts.failed, unknown: counts.unknown, pending: counts.unprocessed })}</p>
             </div>}
+            {retryImport ? <p>{t("Completed additions are kept. Retry to recover the import result.")}</p> : null}
             {finished && (counts.unknown > 0 || results === undefined) ? <p>{t("Completed additions are kept. Check the repository list before importing again.")}</p> : null}
             <ScrollArea className="repository-list-entries"><ul>{entries.map((entry) => {
                 const outcome = byLine.get(entry.line);

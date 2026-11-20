@@ -113,10 +113,6 @@ class NativeClient implements AlcomdClient {
     }
 }
 
-function positiveU32(value: unknown): boolean {
-    return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= 0xffff_ffff;
-}
-
 function helloResult(value: unknown): HelloResponse {
     if (!isRecord(value) || value.rpcVersion !== RPC_VERSION
         || typeof value.daemonVersion !== "string" || value.daemonVersion.length === 0
@@ -124,8 +120,9 @@ function helloResult(value: unknown): HelloResponse {
         || value.capabilities.some((capability) => typeof capability !== "string")
         || value.dataSchema !== 1
         || value.configSchema !== 1
-        || (value.extensionApi !== undefined && (!isRecord(value.extensionApi)
-            || !positiveU32(value.extensionApi.major) || typeof value.extensionApi.world !== "string"))) {
+        || !isRecord(value.extensionApi)
+        || value.extensionApi.major !== 1
+        || value.extensionApi.world !== "alcomd:extension/extension-v1@1.0.0") {
         throw new AlcomdSdkError("protocol", "The SDK bridge sent an invalid hello result.");
     }
     return value as unknown as HelloResponse;

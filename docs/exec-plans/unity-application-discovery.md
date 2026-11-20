@@ -2,7 +2,7 @@
 
 所有者授权在独立工作树实施三平台发现。Hub 使用系统登记，Editor 先查询 Unity 官方安装清单，再用同一套系统登记补齐。未登记的安装通过手动添加。三平台不扫描固定安装目录。
 
-Hub 启动协商 `unity.hub.open.v2`。设置位置证据包含可空 `targetToken`，打开请求以 `expectedTargetToken` 替换 `expectedPath`，成功结果为 `launch_requested`。严格使用旧版 Hub 合同的测试期客户端需更新。配置、数据库及权限保持现有结构。
+Hub 启动协商 `unity.hub.open.v1`。设置位置证据包含可空 `targetToken`，打开请求以 `expectedTargetToken` 替换 `expectedPath`，成功结果为 `launch_requested`。严格使用旧版 Hub 合同的测试期客户端需更新。配置、数据库及权限保持现有结构。
 
 ## 系统查询与验证
 
@@ -21,4 +21,4 @@ Hub 启动协商 `unity.hub.open.v2`。设置位置证据包含可空 `targetTok
 
 审查修正了 Linux 的包查询回退。桌面登记指向不可执行文件时，继续检查包管理器登记。新增回归用例已通过 Linux x64 交叉 Clippy，尚未在 Linux 桌面执行。
 
-本地整合保留 Hub v2 与 ZIP 备份、恢复 v2 能力。整合树通过格式、定向严格 Clippy、仓库检查、52 项 RPC Schema、14 项 Hub Core 单元、69 项 Windows 平台单元、2 项设置 IPC、6 项 ZIP 回归、48 项 Chromium 和前端生产构建。Windows 平台和 ZIP 套件各保留原有忽略用例。macOS 平台和测试源码通过交叉编译。
+本地整合包含 Unity Hub 应用定位、打开前复验，以及 ZIP 备份和恢复。整合树通过格式、定向严格 Clippy、仓库检查、52 项 RPC Schema、14 项 Hub Core 单元、69 项 Windows 平台单元、2 项设置 IPC、6 项 ZIP 回归、48 项 Chromium 和前端生产构建。Windows 平台和 ZIP 套件各保留原有忽略用例。macOS 平台和测试源码通过交叉编译。

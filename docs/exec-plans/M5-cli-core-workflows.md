@@ -26,7 +26,7 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
 
 - M4 最终提交 `20a86d674b480981d269088cf0615ffdcd9b8e70` 与 GitHub Actions run
   `32289522274` 已通过 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 和项目所有者人工验收。
-- M1 RPC v1 只能兼容增加；M2 Operation/Event/Revision/idempotency/Resource Lock/recovery 语义继续
+- 公共 RPC 在首发前始终采用版本 1；M2 Operation/Event/Revision/idempotency/Resource Lock/recovery 语义继续
   是唯一状态基础。
 - M3 Project/Repository identity、只读解析与 anonymous/no-proxy repository 边界继续复用。
 - M4 immutable Plan/Apply、SHA-256 cache、bounded archive、Project lock、filesystem journal 与真实
@@ -45,8 +45,7 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
 4. versioned template registry、内建/导入/派生模板和从模板创建项目的 Plan/Apply Operation。
 5. backup create 与高影响 restore：bounded archive、Plan/Apply、ProjectCreate lock、staging、journal、
    rollback、取消和真实 kill/restart recovery。
-6. State Schema v4 的 Unity/registry、Schema v5 的窄 Template Plan、Schema v6 Backup Create kind 与
-   Schema v7 Restore Plan/journal authority；不为未来 GUI/MCP/扩展预建字段。
+6. State1 持久化安装登记、模板修订和备份任务。
 7. public/synthetic engineering Fixture、CLI subprocess golden、跨平台 process/filesystem 测试和三个
    hosted 平台验收；真实 v3 differential 项保持 blocked。
 
@@ -93,15 +92,15 @@ apps/alcomd/                         # RPC adapter、Operation worker、M5 recov
 apps/alcomd-cli/                     # CLI contract 与命令实现；只能依赖 client/protocol
 crates/alcomd-domain/                # 纯 Unity/template/backup/plan identity 与不变量
 crates/alcomd-application/           # 用例、ports、权限、锁、Plan/Apply 编排
-crates/alcomd-protocol/              # 获批的 RPC v1 兼容 DTO
+crates/alcomd-protocol/              # 获批的 RPC v1 DTO
 crates/alcomd-client/                # 类型化 RPC 调用与 Operation follow
-crates/alcomd-store/                 # 获批的 Schema v4-v7 migration、registry/Plan/journal
+crates/alcomd-store/                 # registry、Plan 和持久化日志
 crates/alcomd-platform/              # 三平台发现、进程、路径/权限与启动原语
 crates/alcomd-vpm/                   # 复用既有 bounded archive/project transaction adapter
 crates/alcomd-testing/               # synthetic/public Fixture、CLI/daemon/kill tests
 specs/rpc/                           # M5 RPC/error/output Schema 与兼容快照
 specs/cli/                           # CLI v1 进程合同、machine Schema 与 command catalog
-specs/storage/                       # State Schema v4-v7 migration
+specs/storage/                       # State1 完整 DDL
 specs/extensions/permissions-v1.md   # 仅精化既有 M5 权限语义
 docs/adr/                            # CLI、Unity writer、template/backup transaction ADR
 docs/exec-plans/M5-cli-core-workflows.md
@@ -152,22 +151,11 @@ Operation 创建完整新项目；dependency resolution 必须在首次目标写
 
 ### Slice 3：Backup create
 
-原生 Backup Archive v1、Schema v6 的精确 `backups.create` Operation kind 与
-`ResourceKey::Project(ProjectId)` 已完成生产实现：流式压缩、SHA-256、partial cleanup、Operation
-progress/cancel 和六点 kill/restart recovery 均已接入。不同 Project 可并行，同一 Project 的 package/
-template/backup 窗口串行。只对 `running_confirmed` hard reject，suspected/unknown 产生 advisory 并继续
-一致性复验；不把 best-effort ZIP 或 observable checks 描述为 filesystem snapshot。
+`backups.create` 将项目内容直接写入目标 ZIP。Core 读取有效备份设置，保留显式选项，在同一项目的写入锁下校验文件身份并原子发布。
 
 ### Slice 4：Backup restore
 
-M5 只支持把已注册且重新验证的 Backup Archive v1 恢复为全新、不存在目标的 Plan/Apply restore；不支持
-已有目标、覆盖、merge、先删除再恢复、legacy backup 或 arbitrary ZIP。Plan 预分配 ProjectId，固定
-archive/manifest/parent/target/Project summary evidence；Apply 返回 OperationId 并复用同一 authority。
-Template persisted checkpoint 明确为 Template-specific，因此 Restore 使用 Schema v7 的窄
-`backup_restore_filesystem_journal`，同时复用现有 archive/path/new-project publish primitive 和
-`ProjectCreate(parent_identity,target_leaf)` 锁。worker、dispatcher、client、CLI confirmation/`--yes`、
-artifact/target race、同目标并发、post-publish external mutation 与真实 kill/restart matrix 已完成；Restore
-不是普通 unzip，也不执行隐藏 package resolve。
+`backups.restore` 校验普通项目 ZIP 的结构和内容，在目标父目录创建同卷暂存区，发布到尚不存在的目标并登记项目。目标可以显式给定，也可以使用 Core 的项目目录与建议名。[ZIP 合同](../../specs/backups/project-zip.md)
 
 ### Slice 5：CLI surface 收敛
 
@@ -313,32 +301,11 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
   的 codec。Restore 完整复用 Backup Archive v1 profile 与同一安全 engine，ZIP 根只能是
   `backup.json + project/`。
 
-## State Schema v4-v7 与 RPC v1
+## State1 与 RPC
 
-M5 的 durable registry 需求使用已批准的 Schema v4：
+Core 在 State1 的 `unity_installations` 中保存已验证的 Editor 身份、路径、Unity 版本和架构，在 `project_unity_launch_config` 中保存项目启动参数。模板登记和修订由同一数据库管理。备份是普通项目 ZIP，创建、恢复、取消及写入失败的对账均使用持久任务。
 
-- `unity_installations`：InstallationId、validated executable path、platform file identity、Unity version、
-  architecture/unknown、source kind、revision 与 observed/updated timestamp。
-- `project_editor_preferences`：ProjectId、InstallationId、bounded argv array、revision。
-- `templates`：TemplateId、builtin/user source、versioned bounded manifest、payload locator/digest、favorite、
-  revision。完整 template bundle/operation 合同留在 Slice 2。
-- `backups`：BackupId、可选历史 source ProjectId、archive locator、file identity/digest/size、format version、
-  createdAt、compression 与 exclude-VPM flag。它不是复杂 aggregate/Event 状态机。
-
-Template immutable Plan 使用获批的 Schema v5 窄表 `template_plans`，只允许 import/derive/
-create-project 和一次性 `unapplied -> applied + OperationId` transition；M4 `package_plans` 不泛化。
-Schema v6 精确增加 `backups.create`。Schema v7 精确增加 `backups.restore`、窄
-`backup_restore_plans` 与 Restore 专用 append-only filesystem journal；不改写 Template checkpoint，
-不泛化 package/template Plan，也不建立 generic workflow。migration 覆盖 v1->...->v7、v6->v7、rollback、
-future schema fail closed，并保留 Operation/journal/idempotency/Event sequence、package/template Plan、
-Backup rows、Project/Repository revision 与 Unity registry。
-
-不新增 CLI 设置表、通用 workflow 表、Hub mirror 数据库、process history 日志或未来 GUI state。
-
-Slice 1 RPC v1 兼容增加已冻结为 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，准确 method、
-DTO、collection limit 与 enum 见 `specs/rpc/m5-unity.schema.json`。Template 与 Backup Create capability 已
-实现；Restore contract-only 冻结 `backups.restore.v1`，生产 adapter 存在前不得广告。新增
-method/capability/可选字段不提升 RPC major，删除/改义才提升 major。
+CLI 经 RPC 使用已实现的启动、模板和备份能力。完整数据库、启动 DTO 和 ZIP 边界分别见 [State1](../../specs/storage/state-v1.md)、[Unity RPC](../../specs/rpc/m5-unity.schema.json) 和[项目 ZIP](../../specs/backups/project-zip.md)。
 
 既有权限名优先直接精化：
 
@@ -364,7 +331,7 @@ implemented，动态/生产测试继续 planned：
 
 - `cli.command-contract`、`cli.help-output-exit`、`cli.non-tty`：由 planned 变为 implemented 仅在完整
   subprocess/golden/EOF 覆盖后。
-- `m5.cli-unity-contract` 绑定 CLI/Unity Schema、Schema v4 migration 与权限合同。
+- `m5.cli-unity-contract` 绑定 CLI/Unity Schema、SQLite 持久化 与权限合同。
 - `unity.m5-registry-launch` 与 `unity.m5-writer-gate` 使用 synthetic layout/fake process provider。
 - `templates.m5-bundle` 与 `templates.m5-registry` 只在 Schema/quota/security/migration snapshot 有真实
   evidence 后标 implemented；import/export/derive/create-project/fault engineering tests 在生产实现前保持
@@ -395,20 +362,15 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 ### M5 内部停止点
 
-- **A（已通过）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
-  migration 和合同测试；`sysinfo 0.39.6` 精确依赖已经批准。
+- **A** 冻结 CLI、Unity、RPC、错误、权限和持久化合同，批准 `sysinfo 0.39.6`。
 - **B（已通过）**：Unity production slice 已作为提交
-  `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。Template bundle、库存/许可证、权限、RPC 与
-  create-project transaction contract 已获批并冻结；项目所有者已进一步批准 Schema v5 closure 与
-  Template production。严格按 parser/inventory/object/registry/import-export/derive/create-project 推进。
+  `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。模板用例包括登记、导入、导出和创建项目。
 - **C（已通过）**：Backup Create contract-first 与 production worker/RPC/CLI/真实 recovery matrix 已完成。
-- **D（已通过）**：全新目标 Backup Restore Plan/Apply、Schema v7、RPC/permission/error、已发布 CLI、
-  专用 journal、forward recovery 与 production/fault implementation 已完成。
+- **D** 项目恢复覆盖目标校验、持久化日志和发布后的恢复。
 - **E（本地已通过）**：Backup Restore 与完整 M5 CLI surface 已收敛，本地全量门禁通过；等待最终提交
   对应的三个 Hosted job，之后停止在 M6 前等待人工验收。
 
-不得因 Schema migration 文件存在就越过后端真实性门禁；capability 和 method 只有
-对应 adapter/use case 真正实现并通过当前 slice 验收后才能接线或广告。
+只有已实现并通过验收的用例才能接入 adapter 并广告 capability。
 
 ## 单元、集成、故障与跨平台验收
 
@@ -418,7 +380,7 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 - injected IO/terminal state 覆盖 TTY/non-TTY、EOF、unknown input、拒绝/同意、`--yes` 和 Ctrl+C。
 - Unity version/architecture/identity/config bounded parser；argv 不经 shell。
 - template/backup manifest、path profile、include/exclude、collision/quota 和 canonical digest。
-- Schema v4/v5/v6/v7 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
+- State1 完整性、RPC 字段约束、业务权限和资源归属。
 
 ### 集成/故障
 
@@ -457,18 +419,15 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 ## 人工审批点
 
-项目所有者已经批准 Slice 0/1 的 CLI、Unity、RPC/错误/权限与 State Schema v4 结构合同；这些合同
-由 A-030/A-031、`specs/cli/`、`specs/rpc/m5-unity.schema.json`、`specs/storage/state-v4.md` 和两个
+项目所有者已经批准 Slice 0/1 的 CLI、Unity、RPC/错误/权限与 存储结构合同；这些合同
+由 A-030/A-031、`specs/cli/`、`specs/rpc/m5-unity.schema.json`、`specs/storage/state-v1.md` 和两个
 ADR 冻结。process discovery production dependency 已按精确配置批准；后续 slice 仍分别审批：
 
 1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
 2. v4 template contract-first、production registry/import/export/derive/create-project 与窄 M4 staging
    package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
-3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同与 production
-   slice 已批准并实现。
-4. Backup Restore contract-first 与 production slice 已批准并实现；M5 仅限全新目标的
-   Plan/Apply/recovery，覆盖已有目标不在 M5。下一停止点是 M5 最终本地与 Hosted CI 验收，不得进入 M6。
-5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
+3. 备份与恢复的生产入口、选项和恢复日志见[项目 ZIP](../../specs/backups/project-zip.md)。
+4. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
 审批后仍需在以下情况重新停止：新增未批准 production dependency；扩大 unsafe/平台 API；改变 RPC/
 State/permission/CLI public contract；放宽 archive/path/recovery/Unity writer safety；进入 M6 或其他后续
@@ -498,7 +457,7 @@ pwsh -NoProfile -File scripts/freeze-baselines.ps1 -Check
 git diff --check
 ```
 
-并执行 `scripts/setup/check/test`、CLI subprocess/golden、Schema v4 migration、template/backup kill matrix、
+并执行 `scripts/setup/check/test`、CLI subprocess/golden、SQLite 持久化、template/backup kill matrix、
 Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature graph，以及三个 hosted job。
 
 ## M5 完成后的停止条件
@@ -519,7 +478,7 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
 - 2026-08-20：创建本 M5 ExecPlan 草案。只规划完整 CLI 合同、Unity、本地模板和备份工作流；未修改
   RPC/State Schema、权限、生产依赖、生产代码或 M5 feature/test 状态，等待项目所有者审批。
 - 2026-08-20：项目所有者批准 M5 总体方向并进入 contract-first。已冻结 Slice 0 CLI v1 与 Slice 1
-  Unity RPC/capability/error/permission、State Schema v4 结构 migration 和 writer gate ADR；Schema v4
+  Unity RPC/capability/error/permission、存储结构和 writer gate ADR；该开发切片
   仍未接入 daemon，Unity method 仍未广告，未开始生产实现。
 - 2026-08-20：完成 `sysinfo 0.39.6`（defaults off，仅 `system`）隔离 feature/Cargo.lock 评估，未修改
   Workspace manifest/lockfile。按内部停止点 A 等待 process discovery production dependency 审批。
@@ -531,43 +490,15 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   idempotency 与预分配 ProjectId，且修复了 M2 通用恢复器误接管 Template Operation 的缺陷。
 - 2026-08-20：项目所有者批准 `sysinfo 0.39.6`，并纠正其官方 MSRV 为 Rust 1.95。依赖仅接入
   `alcomd-platform`；完成最小 process evidence、Unity executable registry/writer gate/launch adapter、
-  State Schema v4 自动 migration、RPC v1 capability/method 和 client 接线，进入 Slice 1 本地验收。
+  持久化结构初始化、RPC v1 capability/method 和 client 接线，进入 Slice 1 本地验收。
 - 2026-08-20：Slice 1 本地验收通过：统一 `scripts/check.ps1`、全 Workspace test/clippy、Discord、
-  TypeScript/Vite、Tauri release `--no-bundle`、Schema v4 migration、真实 daemon RPC、fake-provider 四态、
+  TypeScript/Vite、Tauri release `--no-bundle`、SQLite 持久化、真实 daemon RPC、fake-provider 四态、
   Windows 短生命周期子进程、冻结基线、metadata 与 diff 门禁均成功。停在内部停止点 B；Linux/macOS
   真实子进程结果须由后续 hosted CI 取得，不得据 Windows 本机结果宣称三平台已通过。
 - 2026-08-21：Unity production slice 以独立提交 `8b63c6923b178a6ebb12bd5964412b2db7268e04`
-  保存。随后按项目所有者批准冻结 ADR 0020、`.alcomdtemplate` Bundle/manifest/quota、三个 native
-  builtin inventory/AGPL provenance、Template RPC/permission/error、planned CLI、Schema v4 compatibility、
-  synthetic Fixture 与 contract/security/migration snapshot；未开始任何 Template production adapter。
-- 2026-08-21：项目所有者批准 Template contract-first 总体审核与 production slice。先增加
-  `0005_template_plans.sql`：窄 immutable Plan authority、三个精确 Template Operation kind、Schema v5
-  hello compatibility，并以 migration/rollback/foreign-key/state-preservation 测试闭环；随后无需再次
-  停止，按 parser -> inventory -> object store -> registry -> import/export -> derive -> create-project 实施。
-- 2026-08-24：项目所有者批准 Backup Create contract-first。冻结 `ALCOMD Backup Archive v1`、严格
-  manifest/profile、精确排除表、locked VPM 排除、Project Resource Lock、一致性证据、七阶段 Operation、
-  六点 recovery、RPC/permission/error 与 planned CLI；Schema v6 只增加 `backups.create` 并完整保留
-  v5 外键依赖。CLI non-TTY confirmation 已改为本地 `confirmation_required`，未开始 Backup production。
-- 2026-08-24：Backup Create production slice 完成。daemon-owned `BackupEngine` 以稳定 inventory、逐文件
-  identity/size/mtime revalidation、精确 locked VPM 排除、流式 bounded ZIP/SHA-256、atomic managed publish
-  和 Schema v6 registry commit 实现 `backups.list/get/create`；CLI 只经 official client/RPC 调用。真实
-  daemon 子进程在 inventory_ready、archiving、archive_ready、publish_intent、archive_published 与
-  state_committed 被父进程强制终止，重启后复用原 OperationId、预分配 BackupId 与 idempotency，最终
-  只存在一个完整 archive 且 partial 清空。未新增 production crate、feature、unsafe 或平台 API；停止在
-  Backup Restore contract-first 前。
-- 2026-08-24：项目所有者批准 Backup Restore contract-first。ADR 0022 冻结只恢复到不存在的新 Project、
-  durable immutable Plan/Apply、预分配 ProjectId、`ProjectCreate(parent_identity,leaf)` 锁、Backup Archive
-  v1 hostile validation、同卷 sibling staging/atomic publish 与 publish 后 forward recovery。Schema v7 只
-  增加 `backups.restore`、`backup_restore_plans` 和 Restore 专用 append-only filesystem journal；Template
-  checkpoint 继续保持 Template-specific。RPC/permission/error/planned CLI、六点 recovery 与 hostile/race
-  synthetic vectors 已冻结；`backups.m5-restore` 在生产实现前保持 planned，停止等待 production 审批。
-- 2026-08-24：Backup Restore contract-first 以提交 `65ad5fe18a868d79bef689445aaae833dee2a7a4`
-  独立保存。随后完成 `backups.planRestore/applyRestore`、Schema v7 immutable Plan/append-only journal、
-  archive identity/SHA/profile revalidation、同卷 sibling staging、`ProjectCreate` 锁、原子 publish、预分配
-  ProjectId 注册和 forward recovery；RPC/client/CLI `backup restore` 已发布。真实 daemon kill/restart
-  覆盖 archive_verified、extracting、staging_complete、publish_intent、target_published、
-  project_registry_commit_intent 与 state_committed；artifact/target race、同目标并发和 publish 后外部修改
-  fail-closed 测试通过。未新增 production dependency、unsafe 或平台 API，进入 M5 最终 CLI/验收收尾。
+  保存。随后验证模板的来源、库存、导入导出、创建项目和 CLI 确认。
+- 2026-08-24：备份测试覆盖逐文件 identity/size/mtime 复验、流式 ZIP、原子发布与进程重启。
+- 2026-08-24：恢复测试覆盖 hostile ZIP、同目标并发、同卷暂存、原子发布以及外部修改后的保守恢复。
 - 2026-08-24：Backup Restore 与 M5 CLI surface 生产实现以提交
   `50d76ba301ff9190f0d01d3c80f229e0a4c654d9` 保存。Restore 真实 daemon kill/restart 覆盖
   `archive_verified`、`extracting`、`staging_complete`、`publish_intent`、`target_published`、
