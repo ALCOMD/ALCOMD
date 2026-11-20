@@ -44,6 +44,7 @@ const REPOSITORY_REGISTER: &str = "repositories.register";
 const REPOSITORY_REFRESH: &str = "repositories.refresh";
 const REPOSITORY_UNREGISTER: &str = "repositories.unregister";
 const REPOSITORY_SET_CREDENTIALS: &str = "repositories.setCredentials";
+const REPOSITORY_MOVE: &str = "repositories.move";
 const REPOSITORY_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 
 struct RepositoryWriteScope<'a> {
@@ -219,10 +220,10 @@ pub(super) fn repository_list_snapshot(
 ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
     let transaction = connection.transaction().map_err(sql_failure)?;
     let mut statement = transaction
-        .prepare(
-            "SELECT repository_id, revision, source_kind, source_locator, credential_reference, display_name, priority FROM repositories
-         WHERE owner_principal_id=?1 ORDER BY repository_id",
-        )
+        .prepare(&ordered_repository_query(
+            "SELECT r.repository_id, r.revision, r.source_kind, r.source_locator, r.credential_reference, r.display_name, r.priority
+             FROM repository_order o JOIN repositories r USING(repository_id) ORDER BY o.list_rank",
+        ))
         .map_err(sql_failure)?;
     let rows = statement
         .query_map([owner.as_str()], |row| {
@@ -249,11 +250,11 @@ pub(super) fn repository_list_snapshot(
         repositories.push(alcomd_application::RepositoryListRecord {
             repository_id,
             revision: revision(rev)?.get(),
+            order_key: u64::try_from(priority).map_err(|_| internal())?,
             source,
             credential_reference,
             configuration: alcomd_application::RepositoryConfiguration {
                 display_name,
-                priority: u64::try_from(priority).map_err(|_| internal())?,
                 enabled: true,
                 disabled_package_ids: Vec::new(),
             },
@@ -1755,80 +1756,176 @@ pub(super) fn set_credential_reference(
     Ok(response)
 }
 
+pub(super) fn ordered_repository_query(select: &str) -> String {
+    format!(
+        "WITH repository_order AS (
+            SELECT repository_id, ROW_NUMBER() OVER (ORDER BY
+                CASE repository_id
+                    WHEN '{VRCHAT_OFFICIAL_REPOSITORY_ID}' THEN 0
+                    WHEN '{VRCHAT_CURATED_REPOSITORY_ID}' THEN 1
+                    ELSE 2
+                END, priority, repository_id) AS list_rank
+            FROM repositories WHERE owner_principal_id=?1
+        ) {select}"
+    )
+}
+
+struct OrderedRepository {
+    id: String,
+    registered_at_ms: i64,
+    order_key: i64,
+}
+
+fn repository_order(
+    connection: &Connection,
+    owner: &PrincipalId,
+) -> Result<Vec<OrderedRepository>, M3Error> {
+    let mut statement = connection
+        .prepare(&ordered_repository_query(
+            "SELECT r.repository_id, r.registered_at_ms, r.priority
+         FROM repository_order o JOIN repositories r USING(repository_id) ORDER BY o.list_rank",
+        ))
+        .map_err(sql_failure)?;
+    statement
+        .query_map([owner.as_str()], |row| {
+            Ok(OrderedRepository {
+                id: row.get(0)?,
+                registered_at_ms: row.get(1)?,
+                order_key: row.get(2)?,
+            })
+        })
+        .map_err(sql_failure)?
+        .collect::<Result<_, _>>()
+        .map_err(sql_failure)
+}
+
 pub(super) fn list_repositories(
     connection: &Connection,
     owner: &PrincipalId,
-    cursor: Option<RegistryCursor<RepositoryId>>,
+    cursor: Option<app::RepositoryCursor>,
     limit: u32,
 ) -> Result<RepositoryPage, M3Error> {
-    let cursor_key = cursor
-        .map(|value| {
-            connection
-                .query_row(
-                    "SELECT priority FROM repositories
-                     WHERE owner_principal_id=?1 AND repository_id=?2 AND registered_at_ms=?3",
-                    params![
-                        owner.as_str(),
-                        value.id.to_string(),
-                        integer(value.registered_at_ms)?
-                    ],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()
-                .map_err(sql_failure)?
-                .map(|priority| (priority, value.id.to_string()))
-                .ok_or_else(|| M3Error::new(M3ErrorCode::RevisionConflict))
-        })
-        .transpose()?;
-    let (cursor_priority, cursor_id) = cursor_key.unzip();
-    let mut statement = connection
-        .prepare(
-            "WITH ordered AS (
-                SELECT repository_id, priority,
-                       CASE repository_id WHEN ?5 THEN 0 WHEN ?6 THEN 1 ELSE 2 END AS source_rank
-                FROM repositories WHERE owner_principal_id=?1
-             )
-             SELECT repository_id FROM ordered
-             WHERE ?2 IS NULL OR (source_rank, priority, repository_id) >
-                 (CASE ?3 WHEN ?5 THEN 0 WHEN ?6 THEN 1 ELSE 2 END, ?2, ?3)
-             ORDER BY source_rank, priority, repository_id LIMIT ?4",
-        )
-        .map_err(sql_failure)?;
-    let rows = statement
-        .query_map(
-            params![
-                owner.as_str(),
-                cursor_priority,
-                cursor_id,
-                i64::from(limit) + 1,
-                VRCHAT_OFFICIAL_REPOSITORY_ID,
-                VRCHAT_CURATED_REPOSITORY_ID,
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .map_err(sql_failure)?;
-    let mut repositories = Vec::new();
-    for row in rows {
-        let id = RepositoryId::parse(&row.map_err(sql_failure)?).map_err(|_| internal())?;
+    let order = repository_order(connection, owner)?;
+    let order_fingerprint = app::repository_order_fingerprint(order.iter().map(|entry| &entry.id));
+    let conflict = || M3Error::new(M3ErrorCode::RevisionConflict);
+    let start = match cursor {
+        Some(cursor) => {
+            if cursor.order_fingerprint != order_fingerprint {
+                return Err(conflict());
+            }
+            let id = cursor.id.to_string();
+            let registered_at_ms = integer(cursor.registered_at_ms)?;
+            order
+                .iter()
+                .position(|entry| entry.id == id && entry.registered_at_ms == registered_at_ms)
+                .ok_or_else(conflict)?
+                + 1
+        }
+        None => 0,
+    };
+    let end = (start + limit as usize).min(order.len());
+    let mut repositories = Vec::with_capacity(end - start);
+    for entry in &order[start..end] {
+        let id = RepositoryId::parse(&entry.id).map_err(|_| internal())?;
         repositories.push(load_repository_summary(connection, owner, id)?);
     }
-    let has_more = repositories.len() > limit as usize;
-    if has_more {
-        repositories.pop();
-    }
-    let next_cursor = has_more
-        .then(|| {
-            repositories.last().map(|record| RegistryCursor {
-                registered_at_ms: record.registered_at_ms,
-                id: record.repository_id,
-                authorization_binding: None,
-            })
+    let next_cursor = if end < order.len() {
+        repositories.last().map(|record| app::RepositoryCursor {
+            registered_at_ms: record.registered_at_ms,
+            id: record.repository_id,
+            order_fingerprint: order_fingerprint.clone(),
         })
-        .flatten();
+    } else {
+        None
+    };
     Ok(RepositoryPage {
         repositories,
         next_cursor,
+        order_fingerprint,
     })
+}
+
+pub(super) fn move_repository(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    movement: app::RepositoryMove,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<app::RepositoryMoveResult, M3Error> {
+    let id = movement.id.to_string();
+    let before = movement.before.map(|value| value.to_string());
+    let request = json(&serde_json::json!([
+        id,
+        before,
+        movement.expected_order_fingerprint
+    ]))?;
+    let transaction = begin(connection)?;
+    if let Some(mut result) = existing_response::<app::RepositoryMoveResult>(
+        &transaction,
+        owner,
+        REPOSITORY_MOVE,
+        key,
+        &request,
+    )? {
+        result.replayed = true;
+        transaction.commit().map_err(sql_failure)?;
+        return Ok(result);
+    }
+    let mut order = repository_order(&transaction, owner)?;
+    let fingerprint = app::repository_order_fingerprint(order.iter().map(|entry| &entry.id));
+    if fingerprint != movement.expected_order_fingerprint {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+    let missing = || M3Error::new(M3ErrorCode::RepositoryNotRegistered);
+    let from = order
+        .iter()
+        .position(|entry| entry.id == id)
+        .ok_or_else(missing)?;
+    let target = match before {
+        Some(before) => order
+            .iter()
+            .position(|entry| entry.id == before)
+            .ok_or_else(missing)?,
+        None => order.len(),
+    };
+    let to = if target > from { target - 1 } else { target };
+    let changed = from != to;
+    if changed {
+        let entry = order.remove(from);
+        order.insert(to, entry);
+        for (index, entry) in order.into_iter().enumerate() {
+            let order_key = index as u64 + 1;
+            if integer(order_key)? == entry.order_key {
+                continue;
+            }
+            let id = RepositoryId::parse(&entry.id).map_err(|_| internal())?;
+            let current = load_repository_summary(&transaction, owner, id)?;
+            write_repository_metadata(
+                &transaction,
+                owner,
+                &current,
+                current.display_name.as_deref(),
+                order_key,
+                "repository.order-changed",
+                now_ms,
+            )?;
+        }
+    }
+    let result = app::RepositoryMoveResult {
+        changed,
+        replayed: false,
+    };
+    save_response(
+        &transaction,
+        owner,
+        REPOSITORY_MOVE,
+        key,
+        &request,
+        &result,
+        now_ms,
+    )?;
+    transaction.commit().map_err(sql_failure)?;
+    Ok(result)
 }
 
 pub(super) fn list_repository_packages(
@@ -2320,10 +2417,15 @@ fn unregister_repository_scoped(
 pub(super) fn apply_repository_list_metadata(
     connection: &mut Connection,
     owner: &PrincipalId,
+    expected_order: &str,
     changes: Vec<alcomd_application::RepositoryListMetadata>,
     now_ms: u64,
 ) -> Result<(), M3Error> {
     let transaction = begin(connection)?;
+    let order = repository_order(&transaction, owner)?;
+    if app::repository_order_fingerprint(order.iter().map(|entry| &entry.id)) != expected_order {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
     for change in changes {
         let id = RepositoryId::parse(&change.repository_id).map_err(|_| internal())?;
         let current = load_repository_summary(&transaction, owner, id)?;
@@ -2337,17 +2439,43 @@ pub(super) fn apply_repository_list_metadata(
         {
             return Err(M3Error::new(M3ErrorCode::RevisionConflict));
         }
-        let next = current.revision.checked_next().ok_or_else(internal)?;
-        transaction.execute("UPDATE repositories SET display_name=?1, priority=?2, revision=?3, updated_at_ms=?4 WHERE owner_principal_id=?5 AND repository_id=?6",params![change.display_name,integer(change.priority)?,integer(next.get())?,integer(now_ms)?,owner.as_str(),id.to_string()]).map_err(sql_failure)?;
-        insert_event(
+        write_repository_metadata(
             &transaction,
             owner,
-            "repository",
-            &id.to_string(),
-            next,
+            &current,
+            change.display_name.as_deref(),
+            change.priority,
             "repository.configuration-imported",
             now_ms,
         )?;
     }
     transaction.commit().map_err(sql_failure)
+}
+
+fn write_repository_metadata(
+    transaction: &Transaction<'_>,
+    owner: &PrincipalId,
+    current: &RepositoryRecord,
+    name: Option<&str>,
+    order_key: u64,
+    event: &str,
+    now_ms: u64,
+) -> Result<(), M3Error> {
+    let next = current.revision.checked_next().ok_or_else(internal)?;
+    let id = current.repository_id.to_string();
+    transaction
+        .execute(
+            "UPDATE repositories SET display_name=?1, priority=?2, revision=?3, updated_at_ms=?4
+         WHERE owner_principal_id=?5 AND repository_id=?6",
+            params![
+                name,
+                integer(order_key)?,
+                integer(next.get())?,
+                integer(now_ms)?,
+                owner.as_str(),
+                id
+            ],
+        )
+        .map_err(sql_failure)?;
+    insert_event(transaction, owner, "repository", &id, next, event, now_ms)
 }

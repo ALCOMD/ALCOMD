@@ -48,21 +48,19 @@ pub(super) async fn dispatch(
             else {
                 return invalid(id);
             };
-            let cursor = match params.cursor {
-                Some(cursor) => {
-                    let Ok(cursor_id) = app::RepositoryId::parse(&cursor.id) else {
-                        return invalid(id);
-                    };
-                    if cursor.registered_at_ms > MAX_SAFE {
-                        return invalid(id);
-                    }
-                    Some(app::RegistryCursor {
-                        registered_at_ms: cursor.registered_at_ms,
-                        id: cursor_id,
-                        authorization_binding: None,
-                    })
-                }
-                None => None,
+            if params
+                .cursor
+                .as_ref()
+                .is_some_and(|cursor| cursor.registered_at_ms > MAX_SAFE)
+            {
+                return invalid(id);
+            }
+            let Ok(cursor) = params
+                .cursor
+                .map(super::m3_rpc::repository_cursor)
+                .transpose()
+            else {
+                return invalid(id);
             };
             return match registry
                 .mcp_repositories_list(access, cursor, params.limit.unwrap_or(100))
@@ -76,10 +74,9 @@ pub(super) async fn dispatch(
                             .into_iter()
                             .map(|record| entry(record.into()))
                             .collect(),
-                        next_cursor: page.next_cursor.map(|cursor| rpc::RegistryCursor {
-                            registered_at_ms: cursor.registered_at_ms,
-                            id: cursor.id.to_string(),
-                        }),
+                        next_cursor: page
+                            .next_cursor
+                            .map(super::m3_rpc::repository_cursor_to_rpc),
                     },
                     None,
                 ),

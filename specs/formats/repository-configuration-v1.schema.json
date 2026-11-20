@@ -46,11 +46,10 @@
                 "configuration": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["priority", "enabled", "disabledPackageIds"],
+                    "required": ["enabled", "disabledPackageIds"],
                     "properties": {
                         "displayName": { "type": ["string", "null"], "maxLength": 128 },
-                        "priority": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
-                        "enabled": { "type": "boolean" },
+                                "enabled": { "type": "boolean" },
                         "disabledPackageIds": {
                             "type": "array",
                             "maxItems": 4096,

@@ -469,7 +469,7 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | `projects.refresh` | `projects.registry.v1` | `projects.manage` | 刷新 normalized snapshot，不写项目 |
 | `projects.unregister` | `projects.registry.v1` | `projects.manage` | 只删 registry row，不删目录 |
 | `repositories.inspect` | `repositories.read.v1` | `repositories.read` | 读取 local/remote source，不修改 registry；远程预览可供同一连接确认登记时复用 |
-| `repositories.list` | `repositories.read.v1` | `repositories.read` | 官方、精选内置仓库在前，其余按登记顺序分页 |
+| `repositories.list` | `repositories.read.v1` | `repositories.read` | 按实际来源优先级分页，官方及精选仓库固定在前 |
 | `repositories.get` | `repositories.read.v1` | `repositories.read` | 读取一个 last-known-good snapshot |
 | `repositories.packages` | `repositories.read.v1` | `repositories.read` | raw package/version identity 分页 |
 | `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 完整读取成功后写 registry/cache；同一连接可复用 60 秒内同一规范化远程来源的预览 |
@@ -477,10 +477,18 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 | `repositories.refreshAll` | `repositories.registry.v1` | `repositories.read` + `repositories.manage` | Core 滚动刷新调用者已登记的仓库，复用共享下载额度 |
 | `repositories.setCredentials` | `repositories.registry.v1` | 本机所有者及 `repositories.manage` | 用仓库 revision 和幂等键替换认证引用，显式 `credentials: null` 清除 |
 | `repositories.setDisplayName` | `repositories.registry.v1` | `repositories.manage` | 设置已登记仓库的本地显示名，显式 `displayName: null` 清除 |
+| `repositories.move` | `repositories.registry.v1` | 本机所有者及 `repositories.manage` | 按顺序指纹移动普通仓库 |
 | `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，保留 local source；Core 的内置仓库返回 `permission_denied` |
 
-仓库列表继续使用返回的 `nextCursor`。若游标对应的仓库在分页期间被移除，
-Core 返回 `revision_conflict`，客户端可从首页重读。
+仓库列表响应包含 `orderFingerprint` 及可选 `nextCursor`。继续分页时传入返回的游标，
+其中的顺序指纹绑定完整仓库列表。列表成员或顺序变化后，Core 对旧游标返回
+`revision_conflict`，客户端从首页重读。
+
+`repositories.move` 接收 `repositoryId`、`beforeRepositoryId`、`expectedOrderFingerprint`
+和 `idempotencyKey`。显式传 `beforeRepositoryId: null` 可移动到末尾。移动目标和锚点限普通仓库。
+Core 在一个事务中核对顺序指纹、保存顺序并写入幂等回执。返回 `changed` 和 `replayed`。
+新请求的指纹过期时返回 `revision_conflict`。仓库顺序变更可通过 `repository.order-changed` 事件刷新相关视图。
+Core 在同一版本的合格仓库来源之间按列表顺序选择，已关闭来源仍保留列表位置。
 
 显示名适用于内置与用户仓库。输入最多 128 个 Unicode 标量值，拒绝控制字符。
 Core 去掉首尾空白，空值恢复默认名称。读取及写入结果中的 `displayName` 仅在设置覆盖值时出现。
@@ -1072,7 +1080,7 @@ Plan/Apply DTO/结果/错误及 permissions 全部保留。候选 capability 缺
 
 候选摘要按 Core 的包 ID 顺序分页，并从同一快照返回可选的 `displayName` 和 `links`。
 Core 优先选取可见来源中与已锁定版本完全一致的记录，否则按项目候选、一般候选选择名称。
-已锁定包的链接仅取自精确版本，同优先级有多个来源时省略链接。未安装包使用所选候选的链接。
+已锁定包的链接仅取自精确版本，并按仓库列表顺序选择合格的仓库来源。无法确定来源时省略链接。未安装包使用所选候选的链接。
 Core 校验 HTTP(S) 地址，去掉含凭据或无效的链接。
 
 摘要请求可带 `view.filter`。Core 对 `search`（最多 256 个 Unicode 标量值）按包 ID、包显示名和可见来源的登记名称做不区分大小写的匹配，也可按 `status` 和 `source` 筛选。各条件同时生效。来源匹配覆盖完整的可见提供者，包括未被选中的提供者。`missing` 要求包未安装、没有可见提供者且 Core 明确返回无候选。Core 在分页前筛选，保留摘要原顺序。游标绑定筛选条件，快照标识仍与完整清单一致。
@@ -1129,7 +1137,7 @@ repository_list_io_error；普通错误与日志均不包含原始秘密。
 GUI 默认显式发送 native，兼容按钮发送 legacy。native 预览/导出额外要求 local-owner 和
 `settings.read`；native 导入在原有权限外要求 `settings.read`、`settings.manage`。
 格式见 [存储库配置文件 v1](../formats/repository-configuration-v1.md)：包含全部内置/本地/远程来源、
-自定义显示名、优先级、仓库开关、包开关及文件内认证。
+自定义显示名、数组顺序、仓库开关、包开关及文件内认证。
 `inspectListFile` 按内容识别，native 结果带 `format: native`，每项可带 `configuration`，
 source 另支持 `{kind: local, path}`；认证仍仅预览 `credentialsConfigured`，不返回值。
 native 导入按来源映射本机 ID 并恢复已有项，保留文件未包含的仓库，逐项结果新增 `updated`。

@@ -357,15 +357,13 @@ async fn repository_configuration_round_trip_restores_names_switches_and_remaps_
         imported.configuration.display_name.as_deref(),
         Some("Renamed configuration source")
     );
-    assert!(
-        imported.configuration.priority
-            < snapshot
-                .repositories
-                .iter()
-                .find(|record| record.repository_id == target.repository.to_string())
-                .expect("retained source")
-                .configuration
-                .priority
+    assert_eq!(
+        snapshot.repositories[0].repository_id,
+        imported.repository_id
+    );
+    assert_eq!(
+        snapshot.repositories[1].repository_id,
+        target.repository.to_string()
     );
     let settings = target
         .config
@@ -567,7 +565,8 @@ async fn repository_configuration_round_trip_restores_names_switches_and_remaps_
         .find(|record| record.repository_id != original.repository_id)
         .expect("added");
     assert!(
-        added.configuration.priority > retained.configuration.priority,
+        after.repositories[0].repository_id == retained.repository_id
+            && after.repositories[1].repository_id == added.repository_id,
         "new sources append when overwrite is disabled"
     );
     assert_eq!(
@@ -736,16 +735,22 @@ async fn repository_configuration_permissions_early_stop_and_preview_changes_do_
         )
         .await
         .expect("ordinary index refresh");
+    let order = repository_order_fingerprint([&metadata.repository_id]);
     let change = RepositoryListMetadata {
         repository_id: metadata.repository_id,
         expected_display_name: metadata.configuration.display_name,
-        expected_priority: metadata.configuration.priority,
+        expected_priority: metadata.order_key,
         display_name: Some("Configuration after index refresh".into()),
-        priority: metadata.configuration.priority,
+        priority: metadata.order_key,
     };
     fixture
         .store
-        .apply_repository_list_metadata(PrincipalId::local_owner(), vec![change.clone()], 1)
+        .apply_repository_list_metadata(
+            PrincipalId::local_owner(),
+            order.clone(),
+            vec![change.clone()],
+            1,
+        )
         .await
         .expect("index revision is irrelevant to configuration");
     let mut conflict = change;
@@ -753,12 +758,155 @@ async fn repository_configuration_permissions_early_stop_and_preview_changes_do_
     assert_eq!(
         fixture
             .store
-            .apply_repository_list_metadata(PrincipalId::local_owner(), vec![conflict], 2)
+            .apply_repository_list_metadata(PrincipalId::local_owner(), order, vec![conflict], 2)
             .await
             .expect_err("actual name change conflicts")
             .code(),
         M3ErrorCode::RevisionConflict
     );
+}
+
+#[tokio::test]
+async fn repository_order_selects_the_same_source_for_candidates_and_install_plans() {
+    let f = fixture(
+        "repository-order",
+        empty(),
+        vec![package(A, "1.0.0", json!({}))],
+        None,
+    )
+    .await;
+    let mut mirror: Value =
+        serde_json::from_slice(&fs::read(f.directory.join("index.json")).expect("index"))
+            .expect("JSON");
+    mirror["id"] = json!("owned.order.mirror");
+    let mirror_path = f.directory.join("mirror.json");
+    fs::write(&mirror_path, serde_json::to_vec(&mirror).expect("JSON")).expect("mirror file");
+    let access = AccessContext::local_owner();
+    let registry = M3Application::new(f.store.clone(), f.reader.clone());
+    let mirror = registry
+        .register_repository(
+            &access,
+            RepositorySource::Local {
+                path: mirror_path.to_string_lossy().into_owned(),
+            },
+            key("register-order-mirror"),
+        )
+        .await
+        .expect("register mirror")
+        .value;
+    registry
+        .refresh_repository(
+            &access,
+            mirror.repository_id,
+            mirror.revision,
+            key("refresh-order-mirror"),
+        )
+        .await
+        .expect("refresh mirror");
+    let first_page = registry
+        .list_repositories(&access, None, 1)
+        .await
+        .expect("first page");
+    let movement = RepositoryMove {
+        id: mirror.repository_id,
+        before: Some(f.repository),
+        expected_order_fingerprint: first_page.order_fingerprint.clone(),
+    };
+    for preferred in [f.repository, mirror.repository_id] {
+        if preferred == mirror.repository_id {
+            let moved = registry
+                .move_repository(&access, movement.clone(), key("prefer-mirror"))
+                .await
+                .expect("change order");
+            assert!(moved.changed && !moved.replayed);
+            let replayed = registry
+                .move_repository(&access, movement.clone(), key("prefer-mirror"))
+                .await
+                .expect("recover the original receipt");
+            assert!(replayed.changed && replayed.replayed);
+            assert_eq!(
+                registry
+                    .move_repository(&access, movement.clone(), key("stale-order"))
+                    .await
+                    .expect_err("stale move")
+                    .code(),
+                M3ErrorCode::RevisionConflict
+            );
+            assert_eq!(
+                registry
+                    .list_repositories(&access, first_page.next_cursor.clone(), 1)
+                    .await
+                    .expect_err("stale cursor")
+                    .code(),
+                M3ErrorCode::RevisionConflict
+            );
+        }
+        let preferred = preferred.to_string();
+        let CandidatePageItems::Summary { items } = f.summary().await.page else {
+            panic!("summary")
+        };
+        let row = items
+            .iter()
+            .find(|row| row.package_id == A)
+            .expect("candidate row");
+        assert!(
+            matches!(&row.project_latest, CandidateChoice::Candidate { candidate }
+            if matches!(&candidate.source, PackageSourceSelector::Repository { repository_id } if repository_id == &preferred))
+        );
+        let plan = f
+            .packages
+            .plan(&access, install(&f, A, "1.0.0"))
+            .await
+            .expect("plan uses the earlier repository");
+        assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == preferred)));
+    }
+    let ordered = registry
+        .list_repositories(&access, None, 2)
+        .await
+        .expect("confirmed order");
+    assert_eq!(ordered.repositories[0].repository_id, mirror.repository_id);
+    let no_op = registry
+        .move_repository(
+            &access,
+            RepositoryMove {
+                expected_order_fingerprint: ordered.order_fingerprint.clone(),
+                ..movement
+            },
+            key("same-position"),
+        )
+        .await
+        .expect("same position");
+    assert!(!no_op.changed && !no_op.replayed);
+    f.settings(|settings| settings.hidden_repository_ids = vec![mirror.repository_id.to_string()])
+        .await;
+    let hidden = registry
+        .list_repositories(&access, None, 2)
+        .await
+        .expect("hidden remains registered");
+    assert_eq!(hidden.order_fingerprint, ordered.order_fingerprint);
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("fall back to enabled source");
+    assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == f.repository.to_string())));
+    f.settings(|settings| settings.hidden_repository_ids.clear())
+        .await;
+    let reopened =
+        StateStoreHandle::open(f.directory.join("state.db")).expect("independent database open");
+    let restored = reopened
+        .list_repositories(PrincipalId::local_owner(), None, 2)
+        .await
+        .expect("read persisted order");
+    assert_eq!(restored.order_fingerprint, ordered.order_fingerprint);
+    assert_eq!(restored.repositories[0].repository_id, mirror.repository_id);
+    let plan = f
+        .packages
+        .plan(&access, install(&f, A, "1.0.0"))
+        .await
+        .expect("reopened source keeps its place");
+    assert!(plan.source_set.iter().any(|source| matches!(source, PackageSourcePin::Repository(pin) if pin.package_id == A && pin.repository_id == mirror.repository_id.to_string())));
+    assert_eq!(apply(&f, plan).await.state, OperationState::Succeeded);
 }
 
 #[tokio::test]

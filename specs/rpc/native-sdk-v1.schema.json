@@ -611,6 +611,9 @@
         "RepositoriesListResult": {
             "type": "object",
             "properties": {
+                "orderFingerprint": {
+                    "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m3-project-repository.json#/$defs/repositoryOrderFingerprint"
+                },
                 "repositories": {
                     "type": "array",
                     "items": {
@@ -622,8 +625,18 @@
                 }
             },
             "required": [
-                "repositories"
+                "repositories",
+                "orderFingerprint"
             ]
+        },
+        "RepositoryMoveResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "changed": {"type": "boolean"},
+                "replayed": {"type": "boolean"}
+            },
+            "required": ["changed", "replayed"]
         },
         "RepositoryPackagesResult": {
             "type": "object",

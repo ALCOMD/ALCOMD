@@ -38,19 +38,20 @@ pub(super) fn catalog_entries(
         .map(|v| serde_json::to_string(&v))
         .transpose()
         .map_err(|_| Error::Unavailable)?;
-    let mut statement = transaction.prepare(
-        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,r.priority,p.yanked,p.unity_text,
+    let mut statement = transaction.prepare(&crate::m3::ordered_repository_query(
+        "SELECT p.package_id,p.version_text,r.repository_id,r.revision,o.list_rank,p.yanked,p.unity_text,
                 (r.resolver_indexed AND p.resolver_ready),p.legacy_metadata_present,p.unity_release_text,
                 p.display_name,p.documentation_url,p.changelog_url,p.description,p.presentation_json,p.dependencies_json
          FROM repository_package_versions p JOIN repositories r ON r.repository_id=p.repository_id
-         WHERE r.owner_principal_id=?1 AND (r.resolver_indexed=0 OR p.resolver_ready=1)
+         JOIN repository_order o ON o.repository_id=r.repository_id
+         WHERE (r.resolver_indexed=0 OR p.resolver_ready=1)
          AND r.repository_id NOT IN (SELECT value FROM json_each(?3))
          AND (r.repository_id,p.package_id) NOT IN (SELECT json_extract(g.value,'$.repository_id'),disabled.value
                  FROM json_each(?5) g, json_each(g.value,'$.package_ids') disabled)
          AND (?4 OR p.semantic_version IS NULL OR instr(substr(p.semantic_version,1,instr(p.semantic_version||'+','+')-1),'-')=0)
          AND (?2 IS NULL OR p.package_id IN (SELECT value FROM json_each(?2)))
          ORDER BY r.repository_id,p.package_id,p.version_text LIMIT 100001"
-    ).map_err(|_| Error::Unavailable)?;
+    )).map_err(|_| Error::Unavailable)?;
     let mut entries = statement
         .query_map(
             params![
@@ -187,43 +188,35 @@ fn source_metadata(
     let hidden =
         serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let mut result = std::collections::HashMap::new();
-    let mut statement = transaction.prepare(
-        "SELECT repository_id,source_kind,display_name,coalesce(name,declared_id,source_locator),coalesce(display_name,name,declared_id,source_locator)
-         FROM repositories WHERE owner_principal_id=?1
-         AND repository_id NOT IN (SELECT value FROM json_each(?4))
-         ORDER BY CASE repository_id WHEN ?2 THEN 0 WHEN ?3 THEN 1 ELSE 2 END,priority,repository_id"
-    ).map_err(|_| Error::Unavailable)?;
+    let mut statement = transaction.prepare(&crate::m3::ordered_repository_query(
+        "SELECT r.repository_id,source_kind,display_name,coalesce(name,declared_id,source_locator),coalesce(display_name,name,declared_id,source_locator)
+         FROM repository_order o JOIN repositories r USING(repository_id)
+         WHERE r.repository_id NOT IN (SELECT value FROM json_each(?2))
+         ORDER BY o.list_rank"
+    )).map_err(|_| Error::Unavailable)?;
     let repositories = statement
-        .query_map(
-            params![
-                owner.as_str(),
-                alcomd_application::VRCHAT_OFFICIAL_REPOSITORY_ID,
-                alcomd_application::VRCHAT_CURATED_REPOSITORY_ID,
-                hidden
-            ],
-            |row| {
-                let id: String = row.get(0)?;
-                let kind = match row.get::<_, String>(1)?.as_str() {
-                    "local" => CandidateFilterSource::Local,
-                    "remote" => CandidateFilterSource::Remote,
-                    _ => return Err(rusqlite::Error::InvalidQuery),
-                };
-                let builtin = alcomd_application::RepositoryId::parse(&id)
-                    .ok()
-                    .and_then(alcomd_application::builtin_repository);
-                Ok((
-                    id,
-                    CandidateSourceMetadata {
-                        kind,
-                        display_name: row.get(2)?,
-                        name: row.get(3)?,
-                        builtin,
-                        search_name: row.get::<_, String>(4)?.to_lowercase(),
-                        display_order: 0,
-                    },
-                ))
-            },
-        )
+        .query_map(params![owner.as_str(), hidden], |row| {
+            let id: String = row.get(0)?;
+            let kind = match row.get::<_, String>(1)?.as_str() {
+                "local" => CandidateFilterSource::Local,
+                "remote" => CandidateFilterSource::Remote,
+                _ => return Err(rusqlite::Error::InvalidQuery),
+            };
+            let builtin = alcomd_application::RepositoryId::parse(&id)
+                .ok()
+                .and_then(alcomd_application::builtin_repository);
+            Ok((
+                id,
+                CandidateSourceMetadata {
+                    kind,
+                    display_name: row.get(2)?,
+                    name: row.get(3)?,
+                    builtin,
+                    search_name: row.get::<_, String>(4)?.to_lowercase(),
+                    display_order: 0,
+                },
+            ))
+        })
         .map_err(|_| Error::Unavailable)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| Error::Unavailable)?;
@@ -291,11 +284,11 @@ fn read_authority(
         serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
             .map_err(|_| Error::Unavailable)?,
     ];
-    let mut statement = transaction.prepare(
-        "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key),resolver_indexed) FROM repositories WHERE owner_principal_id=?1 AND repository_id NOT IN (SELECT value FROM json_each(?2))
+    let mut statement = transaction.prepare(&crate::m3::ordered_repository_query(
+        "SELECT json_array('repository',r.repository_id,revision,o.list_rank,hex(source_identity_key),resolver_indexed) FROM repository_order o JOIN repositories r USING(repository_id) WHERE r.repository_id NOT IN (SELECT value FROM json_each(?2))
          UNION ALL SELECT json_array('user_package',user_package_id,revision,0,hex(source_identity_key),hex(manifest_fingerprint),archive_sha256) FROM user_package_sources WHERE owner_principal_id=?1 AND ?3=0
          ORDER BY 1 LIMIT 4097"
-    ).map_err(|_| Error::Unavailable)?;
+    )).map_err(|_| Error::Unavailable)?;
     let hidden =
         serde_json::to_string(&settings.hidden_repository_ids).map_err(|_| Error::Unavailable)?;
     let inventory = statement

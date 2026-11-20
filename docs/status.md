@@ -1,8 +1,10 @@
 # 项目状态
 
-最后更新：2026-11-20
+最后更新：2026-11-21
 
 ## 当前阶段
+
+M11 仓库调序已在独立 `repository-order` 工作树实现。Windows 真实 IPC 用例受单实例锁阻塞。本地证据见[仓库顺序与来源优先级](exec-plans/M11-repository-order.md)。
 
 **M10 已完成。** 签名候选 `dab76fcd` 的三平台 Hosted CI 和四项 CodeQL 均通过，Chromium 每平台 738 项通过。Rust 与 TypeScript SDK 共覆盖 94 个公开方法，含官方 GUI 的全部 93 个 Core 方法。三个平台的 npm 开发包已完成外部安装和真实 IPC 验收。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 

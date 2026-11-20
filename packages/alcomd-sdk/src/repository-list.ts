@@ -1,5 +1,5 @@
 export type RepositoryListFormat = "native" | "legacy";
-export interface RepositoryConfiguration { displayName: string | null; priority: number; enabled: boolean; disabledPackageIds: string[] }
+export interface RepositoryConfiguration { displayName: string | null; enabled: boolean; disabledPackageIds: string[] }
 /** Bounded repository configuration and legacy text-list exchange. */
 export interface RepositoryListEntry {
     credentialsConfigured?: boolean;

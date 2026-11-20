@@ -116,6 +116,7 @@ pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
 pub const METHOD_REPOSITORIES_REFRESH_ALL: &str = "repositories.refreshAll";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
 pub const METHOD_REPOSITORIES_SET_CREDENTIALS: &str = "repositories.setCredentials";
+pub const METHOD_REPOSITORIES_MOVE: &str = "repositories.move";
 pub const METHOD_REPOSITORIES_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
 pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
@@ -1394,6 +1395,7 @@ pub struct RepositoryPackageLink {
 pub struct RegistryCursor {
     pub registered_at_ms: u64,
     pub id: String,
+    pub order_fingerprint: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1573,6 +1575,23 @@ pub struct RepositorySetDisplayNameParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryMoveParams {
+    pub repository_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    pub before_repository_id: Option<String>,
+    pub expected_order_fingerprint: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryMoveResult {
+    pub changed: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryMutationParams {
     pub repository_id: String,
     pub expected_revision: u64,
@@ -1644,6 +1663,7 @@ pub struct RepositoryResult {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositoriesListResult {
+    pub order_fingerprint: String,
     pub repositories: Vec<RepositorySnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<RegistryCursor>,

@@ -30,6 +30,39 @@ async function review(page: Page, candidateCount = 3) {
     return host;
 }
 
+test("repository order uses pointer and keyboard actions with built-ins pinned", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&builtin-repositories&repository-order");
+    const names = page.getByRole("table", { name: "Repositories" }).locator("tbody strong");
+    await expect(names).toHaveText(["Official", "Curated", "Example packages", "Local packages", "Last repository"]);
+    const last = page.getByRole("button", { name: "Reorder Last repository" });
+    const first = page.getByRole("button", { name: "Reorder Example packages" });
+    const from = (await last.boundingBox())!;
+    const to = (await first.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + 2, { steps: 8 });
+    await page.mouse.up();
+    await expect(names).toHaveText(["Official", "Curated", "Last repository", "Example packages", "Local packages"]);
+
+    await last.focus();
+    await page.keyboard.press("Enter");
+    const moveUp = page.getByRole("row").filter({ hasText: "Last repository" }).locator("md-menu-item").filter({ hasText: "Move up" });
+    await expect(moveUp).toHaveJSProperty("disabled", true);
+    const down = page.getByRole("menuitem", { name: "Move down" });
+    await down.focus();
+    await page.keyboard.press("Enter");
+    await expect(names).toHaveText(["Official", "Curated", "Example packages", "Last repository", "Local packages"]);
+    await expect(last).toBeFocused();
+    expect(await requests(page, "repositories.move")).toHaveLength(2);
+});
+
+test("a stale move reports the conflict and reloads repository order", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&builtin-repositories&repository-order&repository-order-conflict");
+    await selectActionMenuItem(page.getByRole("button", { name: "Reorder Example packages" }), page.getByRole("menuitem", { name: "Move down" }));
+    await expect(page.getByRole("alert")).toContainText("The repository list changed");
+    await expect(page.getByRole("table", { name: "Repositories" }).locator("tbody strong")).toHaveText(["Official", "Curated", "Last repository", "Local packages", "Example packages"]);
+});
+
 test("repository rows show only browse, manage and remove, including disabled built-in removal", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&builtin-repositories=1");
     const official = page.getByRole("row").filter({ hasText: "Official" });

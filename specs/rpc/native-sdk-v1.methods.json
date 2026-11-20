@@ -1373,6 +1373,20 @@
                 "repositoryRegistry"
             ]
         },
+        "repositories.move": {
+            "kind": "write",
+            "capabilities": [
+                "repositories.registry.v1"
+            ],
+            "rustMethod": "repository_move",
+            "requestType": "RepositoryMoveParams",
+            "resultType": "RepositoryMoveResult",
+            "requestSchema": "m3-project-repository.schema.json#/$defs/repositoryMoveParams",
+            "resultSchema": "native-sdk-v1.schema.json#/$defs/RepositoryMoveResult",
+            "errorProfiles": [
+                "repositoryRegistry"
+            ]
+        },
         "repositories.setDisplayName": {
             "kind": "write",
             "capabilities": [

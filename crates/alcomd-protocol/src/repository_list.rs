@@ -30,7 +30,6 @@ impl RepositoryListFormat {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryConfiguration {
     pub display_name: Option<String>,
-    pub priority: u64,
     pub enabled: bool,
     pub disabled_package_ids: Vec<String>,
 }
