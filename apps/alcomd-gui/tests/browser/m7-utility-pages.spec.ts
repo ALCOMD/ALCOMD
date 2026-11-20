@@ -13,7 +13,6 @@ const listRoutes = [
     ["Templates", "/templates", "ready"],
     ["Unity installations", "/unity", "ready"],
     ["Unity installations", "/settings", "ready"],
-    ["Backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
     ["Tasks", "/operations", "ready"],
     ["Logs", "/logs", "ready"]
 ] as const;
@@ -413,7 +412,6 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["settings", "/settings", "Settings"],
         ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
-        ["backup", "/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["tasks", "/operations", "Tasks"],
         ["task", "/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["extensions", "/extensions", "Extensions"],

@@ -1117,19 +1117,17 @@ pub(super) fn finish_install(
             )
             .map_err(store_error)?;
         let request: serde_json::Value = serde_json::from_str(&request).map_err(|_| internal())?;
-        // Pre-State41 accepted work retains its original zero-initial-grant result.
-        if let Some(consent) = request.get("consent") {
-            let consent: alcomd_application::ExtensionInstallConsent =
-                serde_json::from_value(consent.clone()).map_err(|_| internal())?;
-            validate_install_consent(&plan, &consent)?;
-            for permission in &p.required_permissions {
-                let (kind, resource) = if permission == "background.run" {
-                    ("Extension", p.extension_id.as_str())
-                } else {
-                    ("Global", "*")
-                };
-                transaction.execute("INSERT INTO extension_grants (extension_id, permission_name, resource_kind, resource_id, state, grant_revision, updated_at_ms) VALUES (?1,?2,?3,?4,'granted',1,?5)", params![p.extension_id, permission, kind, resource, now]).map_err(store_error)?;
-            }
+        let consent: alcomd_application::ExtensionInstallConsent =
+            serde_json::from_value(request.get("consent").ok_or_else(internal)?.clone())
+                .map_err(|_| internal())?;
+        validate_install_consent(&plan, &consent)?;
+        for permission in &p.required_permissions {
+            let (kind, resource) = if permission == "background.run" {
+                ("Extension", p.extension_id.as_str())
+            } else {
+                ("Global", "*")
+            };
+            transaction.execute("INSERT INTO extension_grants (extension_id, permission_name, resource_kind, resource_id, state, grant_revision, updated_at_ms) VALUES (?1,?2,?3,?4,'granted',1,?5)", params![p.extension_id, permission, kind, resource, now]).map_err(store_error)?;
         }
     }
     transaction

@@ -2,11 +2,8 @@ import type * as Types from "./index.js";
 
 /** Execution semantics for supported native RPC methods. */
 export const SDK_METHODS = {
-    "backups.applyRestore": "write",
     "backups.create": "write",
-    "backups.get": "read",
-    "backups.list": "read",
-    "backups.planRestore": "write",
+    "backups.restore": "write",
     "events.list": "read",
     "events.subscribe": "stream",
     "extensions.applyInstall": "write",
@@ -98,18 +95,21 @@ export const SDK_METHODS = {
     "unity.writerState": "read",
 } as const;
 
-export type BackupApplyRestoreParams = { planId: string; idempotencyKey: string };
 export type BackupCreateParams = {
     projectId: string;
     expectedRevision: number;
     compressionMode?: Types.BackupCompressionMode;
     excludeVpmPackages?: boolean;
     includeLibrary?: boolean;
+    destinationPath?: string;
     idempotencyKey: string;
 };
-export type BackupGetParams = { backupId: string };
-export type BackupPlanRestoreParams = { backupId: string; targetParent: string; targetLeaf: string };
-export type BackupsListParams = { projectId?: string; cursor?: string; limit?: number };
+export type BackupRestoreParams = {
+    archivePath: string;
+    projectName?: string;
+    destinationPath?: string;
+    idempotencyKey: string;
+};
 export type EmptyParams = Record<string, never>;
 export type EventsListParams = { afterSequence: number; limit?: number };
 export type EventsListResult = { events: Types.CoreEvent[]; nextSequence: number };
@@ -197,11 +197,8 @@ type NativeRepositoriesListResult = Omit<Types.RepositoriesListResult, "reposito
 
 /** The wire DTOs accepted and returned by Core over native RPC v1. */
 export interface NativeRpcMethods {
-    "backups.applyRestore": { params: BackupApplyRestoreParams; result: Types.BackupApplyRestoreResult };
-    "backups.create": { params: BackupCreateParams; result: Types.BackupCreateResult };
-    "backups.get": { params: BackupGetParams; result: Types.BackupRecord };
-    "backups.list": { params: BackupsListParams; result: Types.BackupsListResult };
-    "backups.planRestore": { params: BackupPlanRestoreParams; result: Types.BackupRestorePlan };
+    "backups.create": { params: BackupCreateParams; result: Types.OperationAccepted };
+    "backups.restore": { params: BackupRestoreParams; result: Types.OperationAccepted };
     "events.list": { params: EventsListParams; result: EventsListResult };
     "events.subscribe": { params: Types.EventsSubscribeParams; result: Types.EventsSubscribeResult };
     "extensions.applyInstall": { params: ExtensionInstallApplyParams; result: Types.ExtensionOperationResult };

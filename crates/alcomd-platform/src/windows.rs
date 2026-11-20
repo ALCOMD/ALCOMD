@@ -24,6 +24,7 @@ mod local_ipc;
 #[path = "windows_security.rs"]
 mod security;
 
+pub(crate) use file_identity::file_identity_from_file;
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 pub(crate) use file_publish::publish_path_no_replace;
 pub use local_ipc::connect_verified_local_pipe;

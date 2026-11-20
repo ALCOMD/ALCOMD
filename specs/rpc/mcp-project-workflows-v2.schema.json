@@ -1,13 +1,9 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "MCP project and backup workflows",
-    "x-capability": "mcp.project-workflows.v1",
-    "$id": "https://alcomd.vrclearn.com/schema/rpc/m8-mcp-project-workflows-v1.json",
+    "x-capability": "mcp.project-workflows.v2",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/mcp-project-workflows-v2.json",
     "x-methods": {
-        "mcp.projectPaths.approve": {
-            "params": "approvePath",
-            "result": "approval"
-        },
         "mcp.projects.register": {
             "params": "register",
             "result": "registration"
@@ -28,25 +24,13 @@
             "params": "applyCopy",
             "result": "copyAccepted"
         },
-        "backups.list": {
-            "params": "listBackups",
-            "result": "backups"
-        },
-        "backups.get": {
-            "params": "getBackup",
-            "result": "backup"
-        },
         "backups.create": {
             "params": "createBackup",
             "result": "backupAccepted"
         },
-        "mcp.backups.planRestore": {
-            "params": "planRestore",
-            "result": "restorePlan"
-        },
-        "mcp.backups.applyRestore": {
-            "params": "applyRestore",
-            "result": "projectAccepted"
+        "mcp.backups.restore": {
+            "params": "restoreBackup",
+            "result": "backupAccepted"
         }
     },
     "$defs": {
@@ -98,15 +82,18 @@
                     "additionalProperties": false,
                     "properties": {
                         "kind": {
-                            "const": "approved"
+                            "const": "absolute"
                         },
-                        "approvalId": {
-                            "$ref": "#/$defs/id"
+                        "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "description": "Absolute project directory path on the Core machine."
                         }
                     },
                     "required": [
                         "kind",
-                        "approvalId"
+                        "path"
                     ]
                 }
             ]
@@ -136,15 +123,18 @@
                     "additionalProperties": false,
                     "properties": {
                         "kind": {
-                            "const": "approved"
+                            "const": "absolute"
                         },
-                        "approvalId": {
-                            "$ref": "#/$defs/id"
+                        "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "description": "Absolute path to the new project directory on the Core machine."
                         }
                     },
                     "required": [
                         "kind",
-                        "approvalId"
+                        "path"
                     ]
                 }
             ]
@@ -244,53 +234,6 @@
             "required": [
                 "project",
                 "replayed"
-            ]
-        },
-        "approvePath": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "clientId": {
-                    "$ref": "#/$defs/id"
-                },
-                "purpose": {
-                    "enum": [
-                        "register",
-                        "create",
-                        "copy",
-                        "restore"
-                    ]
-                },
-                "path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4096
-                },
-                "confirm": {
-                    "const": true
-                }
-            },
-            "required": [
-                "clientId",
-                "purpose",
-                "path",
-                "confirm"
-            ]
-        },
-        "approval": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "approvalId": {
-                    "$ref": "#/$defs/id"
-                },
-                "expiresAtMs": {
-                    "$ref": "#/$defs/integer"
-                }
-            },
-            "required": [
-                "approvalId",
-                "expiresAtMs"
             ]
         },
         "listTemplates": {
@@ -451,9 +394,6 @@
                 },
                 "idempotencyKey": {
                     "$ref": "#/$defs/key"
-                },
-                "pathApprovalId": {
-                    "$ref": "#/$defs/id"
                 }
             },
             "required": [
@@ -635,98 +575,6 @@
                 "maximum"
             ]
         },
-        "listBackups": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "projectId": {
-                    "$ref": "#/$defs/id"
-                },
-                "cursor": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
-                }
-            }
-        },
-        "backups": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/backup"
-                    },
-                    "maxItems": 1000
-                },
-                "nextCursor": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                }
-            },
-            "required": [
-                "backups"
-            ]
-        },
-        "getBackup": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backupId": {
-                    "$ref": "#/$defs/id"
-                }
-            },
-            "required": [
-                "backupId"
-            ]
-        },
-        "backup": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backupId": {
-                    "$ref": "#/$defs/id"
-                },
-                "sourceProjectId": {
-                    "$ref": "#/$defs/id"
-                },
-                "archiveSha256": {
-                    "$ref": "#/$defs/fingerprint"
-                },
-                "archiveBytes": {
-                    "$ref": "#/$defs/integer"
-                },
-                "formatVersion": {
-                    "$ref": "#/$defs/revision"
-                },
-                "createdAtMs": {
-                    "$ref": "#/$defs/integer"
-                },
-                "compressionMode": {
-                    "$ref": "#/$defs/compression"
-                },
-                "excludeVpmPackages": {
-                    "type": "boolean"
-                }
-            },
-            "required": [
-                "backupId",
-                "sourceProjectId",
-                "archiveSha256",
-                "archiveBytes",
-                "formatVersion",
-                "createdAtMs",
-                "compressionMode",
-                "excludeVpmPackages"
-            ]
-        },
         "createBackup": {
             "type": "object",
             "additionalProperties": false,
@@ -748,6 +596,10 @@
                 },
                 "idempotencyKey": {
                     "$ref": "#/$defs/key"
+                },
+                "destinationPath": {
+                    "type": "string",
+                    "minLength": 1
                 }
             },
             "required": [
@@ -763,120 +615,49 @@
                 "operationId": {
                     "$ref": "#/$defs/id"
                 },
-                "backupId": {
-                    "$ref": "#/$defs/id"
-                },
                 "replayed": {
                     "type": "boolean"
                 }
             },
             "required": [
                 "operationId",
-                "backupId",
                 "replayed"
             ]
         },
-        "planRestore": {
+        "restoreBackup": {
             "type": "object",
             "additionalProperties": false,
-            "properties": {
-                "backupId": {
-                    "$ref": "#/$defs/id"
-                },
-                "target": {
-                    "$ref": "#/$defs/target"
-                }
-            },
             "required": [
-                "backupId",
-                "target"
-            ]
-        },
-        "restorePlan": {
-            "type": "object",
-            "additionalProperties": false,
+                "archivePath",
+                "idempotencyKey",
+                "confirm"
+            ],
             "properties": {
-                "planId": {
-                    "$ref": "#/$defs/id"
-                },
-                "projectId": {
-                    "$ref": "#/$defs/id"
-                },
-                "backupId": {
-                    "$ref": "#/$defs/id"
-                },
-                "targetName": {
+                "archivePath": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
+                    "minLength": 1
                 },
-                "archiveSha256": {
-                    "$ref": "#/$defs/fingerprint"
+                "projectName": {
+                    "type": "string",
+                    "minLength": 1
                 },
-                "packagesRequireResolve": {
-                    "type": "boolean"
-                },
-                "excludedPackages": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "packageId": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 128
-                            },
-                            "version": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 128
-                            }
-                        },
-                        "required": [
-                            "packageId",
-                            "version"
-                        ]
-                    },
-                    "maxItems": 4096
-                },
-                "planFingerprint": {
-                    "$ref": "#/$defs/fingerprint"
-                }
-            },
-            "required": [
-                "planId",
-                "projectId",
-                "backupId",
-                "targetName",
-                "archiveSha256",
-                "packagesRequireResolve",
-                "excludedPackages",
-                "planFingerprint"
-            ]
-        },
-        "applyRestore": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "planId": {
-                    "$ref": "#/$defs/id"
-                },
-                "confirm": {
-                    "const": true
+                "destinationPath": {
+                    "type": "string",
+                    "minLength": 1
                 },
                 "idempotencyKey": {
                     "$ref": "#/$defs/key"
                 },
-                "pathApprovalId": {
-                    "$ref": "#/$defs/id"
+                "confirm": {
+                    "const": true
                 }
             },
-            "required": [
-                "planId",
-                "confirm",
-                "idempotencyKey"
-            ]
+            "not": {
+                "required": [
+                    "projectName",
+                    "destinationPath"
+                ]
+            }
         }
     }
 }

@@ -28,7 +28,7 @@ import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/d
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
 import type { DesktopLink } from "../../src/DesktopLinkDialog";
-import type { BackupRecord, Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
+import type { Operation, PackagePlan, ProjectListView, ProjectsListResult, ProjectSnapshot, RegistryCursor, RepositorySnapshot, SettingsGetResult } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { FileDrag, GuiRpcClient, NativeFileKind } from "../../src/rpc";
 import type { GuiUnityWindows, UnityWindowSnapshot, UnityWindowState, UnityWindowTarget } from "../../src/unity-window-observation";
@@ -160,9 +160,8 @@ type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "s
 const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.extensionsRemoteInstall,
     RPC_CAPABILITIES.logsRead,
-    "backups.create.v1",
-    "backups.read.v1",
-    "backups.restore.v1",
+    "backups.create.v2",
+    "backups.restore.v2",
     RPC_CAPABILITIES.extensionsLifecycle,
     RPC_CAPABILITIES.extensionsPermissions,
     RPC_CAPABILITIES.extensionsPermissionsRead,
@@ -196,7 +195,6 @@ const SUPPORTED_CAPABILITIES = [
 
 const CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING = [
     "events.live.v1",
-    "backups.read.v1",
     RPC_CAPABILITIES.extensionsLifecycle,
     "projects.read.v1",
     "repositories.read.v1",
@@ -306,7 +304,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (query.has("unity-picker-path")) return this.value(query.get("unity-picker-path")!);
         }
         return this.value({ repositoryManifest: "C:/fixture/repository.json", unityEditor: "C:/Editors/Unity.exe",
-            extensionPackage: "C:/fixture/test.alcomdextension", templateAttachment: "C:/fixture/attachment.txt" }[kind]);
+            extensionPackage: "C:/fixture/test.alcomdextension", templateAttachment: "C:/fixture/attachment.txt", backupZip: "C:/Outside/Unity Project.zip", backupZipDestination: "C:/Outside/Archive.zip" }[kind]);
     }
     async subscribeFileDrag(receive: (event: FileDrag) => void) {
         const listener = (event: Event) => receive((event as CustomEvent<FileDrag>).detail);
@@ -407,7 +405,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US",
             packages: {
-                showPrerelease: false,
+                showPrerelease: !query.has("hidePrerelease"),
+                preferPrerelease: query.has("preferPrerelease"),
                 hiddenRepositoryIds: [], hiddenRepositoryPackages: [],
                 hideLocalUserPackages: false
             }
@@ -573,7 +572,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (window.h3ReadError !== undefined) return Promise.reject({ code: window.h3ReadError });
             const reads = window.h3Requests.filter((request) => request.method === "operations.get").length;
             if (String(reads) === query.get("h3-read-error-at") || reads <= Number(query.get("h3-read-error-until") ?? "0")) return Promise.reject({ code: "daemon_unavailable" });
-            return this.value({ ...window.h3Operation, operationId, ...(window.h3Operation.state === "succeeded" ? { result: this.pendingProject === undefined ? { backupId: BACKUP_ID } : { projectId: this.pendingProject.projectId } } : {}) });
+            return this.value({ ...window.h3Operation, operationId, ...(window.h3Operation.state === "succeeded" ? { result: this.pendingProject === undefined ? { archiveName: "Archive.zip", archiveBytes: 4096 } : { projectId: this.pendingProject.projectId } } : {}) });
         }
         return this.value(this.genericTasks.get(operationId) ?? runningOperation());
     }
@@ -681,7 +680,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 network: update.network ?? this.settings.settings.network,
                 appearance: { ...this.settings.settings.appearance, ...update.appearance },
                 locale: update.locale ?? this.settings.settings.locale,
-                packages: { ...this.settings.settings.packages, ...update.packages }
+                packages: { ...this.settings.settings.packages, ...update.packages, ...(update.packages?.showPrerelease === false ? { preferPrerelease: false } : {}) }
             }
         };
         window.settingsWrites.push({ expectedRevision, revision: this.settings.revision });
@@ -1157,7 +1156,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? { documentation: "https://fixture.example/docs" } : undefined;
             const latest: CandidateChoice = query.has("incompatibleLatest") && installed && visibleRemote
                 ? { kind: "candidate", candidate: { ...target, version: "3.0.0", unity: "incompatible", eligibility: "blocked", reasons: ["unity_incompatible"] } } : choice;
-            return { packageId, requestedRange: installed && query.get("transitive") !== "1" ? query.has("freshProjectPackage") ? "^1.2.4" : "^1.2.0" : undefined, presentationState: "complete", description: query.has("presentation") ? "Package description from Core" : undefined, installedYanked: installed && query.has("installedYanked") ? true : undefined, displayName, links, providers, direct: (installed && packageId !== "com.vrchat.base" && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: query.has("removal-sdk") ? "3.10.6" : query.has("freshProjectPackage") ? "1.2.4" : "1.2.3" } : { kind: "absent" }, latest, latestStable: query.has("incompatibleLatest") ? latest : stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+            return { packageId, requestedRange: installed && query.get("transitive") !== "1" ? query.has("freshProjectPackage") ? "^1.2.4" : "^1.2.0" : undefined, presentationState: "complete", description: query.has("presentation") ? "Package description from Core" : undefined, installedYanked: installed && query.has("installedYanked") ? true : undefined, displayName, links, providers, direct: (installed && packageId !== "com.vrchat.base" && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: query.has("removal-sdk") ? "3.10.6" : query.has("freshProjectPackage") ? "1.2.4" : "1.2.3" } : { kind: "absent" }, latest, latestStable: query.has("incompatibleLatest") ? latest : stableChoice, recommended: this.settings.settings.packages.preferPrerelease || stableChoice.kind === "none" ? choice : stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update: this.settings.settings.packages.preferPrerelease ? update : stableUpdate, stableUpdate };
         });
         if (query.has("reverse-candidate-order")) items.reverse();
         if (params.view.bulkPackageIds !== undefined) {
@@ -1166,7 +1165,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             const validSelection = selected.size > 0 && selected.size <= 256 && selectedItems.length === selected.size;
             const completeSelection = base.catalogComplete && validSelection;
             const intent = (item: PackageCandidateSummary, stable: boolean): CandidateBulkIntent[] => {
-                const choice = stable ? item.projectLatestStable : item.projectLatest;
+                const choice = stable ? item.projectLatestStable : item.recommended;
                 const update = stable ? item.stableUpdate : item.update;
                 const installed = item.installed.kind === "locked";
                 const target = installed && update.kind === "target" ? update.candidate
@@ -1174,7 +1173,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 if (target?.eligibility !== "eligible" || target.relation === "unknown") return [];
                 return [{
                     kind: installed ? "upgrade" : "install", packageId: item.packageId,
-                    versionRange: `=${target.version}`, source: target.source, includePrerelease: target.classification === "prerelease"
+                    versionRange: `=${target.version}`, source: target.source, includePrerelease: !stable
                 }];
             };
             const updateAllFor = (stable: boolean): CandidateBulkAction => {
@@ -1185,7 +1184,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                     return update.kind === "target" ? [] : [{ packageId: item.packageId, update }];
                 });
                 const blocked = installed.some((item) => {
-                    const choice = stable ? item.projectLatestStable : item.projectLatest;
+                    const choice = stable ? item.projectLatestStable : item.recommended;
                     return item.installed.kind === "unknown" || choice.kind === "unknown" || choice.kind === "ambiguous";
                 });
                 return {
@@ -1201,7 +1200,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             const updateAllStable = updateAllFor(true);
             const installUpdate = installUpdateFor(false);
             const installUpdateStable = installUpdateFor(true);
-            const differs = (left: CandidateBulkAction, right: CandidateBulkAction) => left.targetCount !== right.targetCount || JSON.stringify(left.intents) !== JSON.stringify(right.intents);
+            const differs = (left: CandidateBulkAction, right: CandidateBulkAction) => left.targetCount !== right.targetCount || JSON.stringify(left.intents, (key, value) => key === "includePrerelease" ? undefined : value) !== JSON.stringify(right.intents, (key, value) => key === "includePrerelease" ? undefined : value);
             const sources = params.view.sources;
             const bulk: CandidateBulkActions = {
                 updateAll, ...(differs(updateAll, updateAllStable) ? { updateAllStable } : {}),
@@ -1604,31 +1603,23 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId, projectId, replayed: false });
     }
 
-    async backupsList(projectId?: string, cursor?: string): ReturnType<GuiRpcClient["backupsList"]> {
-        if (query.has("h3")) {
-            window.h3Requests.push({ method: "backups.list", params: { projectId, cursor } });
-            if (query.has("h3-list-error") && window.h3Requests.filter((request) => request.method === "backups.list").length === 1) throw { code: "daemon_unavailable" };
-            return this.value({ backups: query.has("h3-create") && window.h3Operation.state !== "succeeded" ? [] : [{ ...backup(), backupId: cursor === undefined ? BACKUP_ID : "00000000-0000-4000-8000-000000000611" }], ...(cursor === undefined && query.has("h3-pages") ? { nextCursor: "older-backups" } : {}) });
-        }
-        if (query.has("holdBackups")) await new Promise<void>((resolve) => window.addEventListener("test-backups-ready", () => resolve(), { once: true }));
-        return this.value({ backups: this.mode === "empty" ? [] : [backup()] });
-    }
-    backupGet(backupId: string): ReturnType<GuiRpcClient["backupGet"]> { return this.value({ ...backup(), backupId }); }
-    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): ReturnType<GuiRpcClient["backupCreate"]> {
-        window.h3Requests.push({ method: "backups.create", params: { projectId, expectedRevision, compressionMode, excludeVpmPackages, includeLibrary } });
+    backupCreate(params: Parameters<GuiRpcClient["backupCreate"]>[0]): ReturnType<GuiRpcClient["backupCreate"]> {
+        window.h3Requests.push({ method: "backups.create", params });
         if (query.has("h3-backup-create-error")) return Promise.reject({ code: query.get("h3-backup-create-error") });
-        return this.value({ operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.create"), backupId: BACKUP_ID, replayed: false });
+        return this.value({ operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.create"), replayed: false });
     }
-    backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
-        window.h3Requests.push({ method: "backups.planRestore", params: { backupId, targetParent, targetLeaf } });
+    backupRestore(params: Parameters<GuiRpcClient["backupRestore"]>[0]): ReturnType<GuiRpcClient["backupRestore"]> {
+        window.h3Requests.push({ method: "backups.restore", params });
         if (this.mode === "restore-error") return Promise.reject({ code: "backup_target_exists" });
-        this.pendingProject = project(RESTORED_PROJECT_ID, targetLeaf);
-        return this.value({ planId: PLAN_ID, projectId: RESTORED_PROJECT_ID, backupId, target: { parent: targetParent, leaf: targetLeaf, mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: query.has("h3-excluded-packages"), excludedPackages: [], planFingerprint: HASH });
-    }
-    backupApplyRestore(planId: string): ReturnType<GuiRpcClient["backupApplyRestore"]> {
-        window.h3Requests.push({ method: "backups.applyRestore", params: { planId } });
-        if (query.has("h3-restore-unknown")) return Promise.reject({ code: "daemon_unavailable" });
-        return this.value({ operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.restore"), projectId: RESTORED_PROJECT_ID, replayed: false });
+        const attempts = window.h3Requests.filter((request) => request.method === "backups.restore").length;
+        if (query.has("h3-restore-unknown") && attempts === 1) return Promise.reject({ code: "daemon_unavailable" });
+        const fileName = (params.destinationPath ?? params.archivePath).split(/[\\/]/).at(-1)!;
+        const target = project(RESTORED_PROJECT_ID, params.projectName ?? fileName.replace(/\.zip$/i, ""));
+        this.pendingProject = target;
+        return this.value({
+            operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.restore", undefined, target),
+            replayed: attempts > 1,
+        });
     }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
@@ -1693,7 +1684,6 @@ const USER_TEMPLATE_ID = "com.example.fixture";
 const TEMPLATE_EVENT_ID = "00000000-0000-4000-8000-000000000301";
 const NEW_HASH = "b".repeat(64);
 const TEMPLATE_PAGE_CURSOR = "opaque template cursor:100/+=";
-const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 const PLAN_ID = "00000000-0000-4000-8000-000000000106";
 const DISCORD_ID = "com.vrclearn.discord";
@@ -1766,7 +1756,6 @@ function catalogTemplate(index: number) {
     return { ...userTemplate("com.example.catalog-" + suffix, "Catalog template " + suffix), revision: 10 + index };
 }
 
-function backup(): BackupRecord { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 3, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }

@@ -124,8 +124,7 @@ test("Projects grid keeps shared capability restrictions and missing-Editor hand
     const card = page.locator(".project-card").first();
     await expect(card.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
     await expect(card.getByRole("button", { name: "Add to favorites", exact: true })).toBeDisabled();
-    // This fixture retains backups.read.v1; the grid must match the table's enabled action.
-    await expect(card.getByRole("button", { name: "Backups", exact: true })).toBeEnabled();
+    await expect(card.getByRole("button", { name: "Backups", exact: true })).toBeDisabled();
     await card.getByRole("button", { name: /^More actions for/ }).click();
     await expect(card.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
     await expect(card.locator("md-menu-item").filter({ hasText: "Remove Project" })).toHaveJSProperty("disabled", true);

@@ -171,13 +171,12 @@ export function requestErrorMessage(code: string): string {
             return "The template packages could not be resolved. Check the package ranges, repositories and Unity version.";
         case "package_integrity_mismatch":
         case "backup_integrity_mismatch":
+        case "backup_source_changed":
             return "The content failed its integrity check. Use a verified source before continuing.";
 
         case "plan_not_found":
         case "plan_stale":
         case "extension_plan_stale":
-        case "backup_restore_plan_not_found":
-        case "backup_restore_plan_stale":
         case "project_copy_plan_not_found":
         case "project_copy_plan_stale":
         case "project_delete_plan_not_found":
@@ -188,6 +187,7 @@ export function requestErrorMessage(code: string): string {
         case "extension_recovery_required":
         case "recovery_required":
         case "project_transaction_recovery_required":
+        case "backup_unavailable":
         case "backup_restore_recovery_required":
         case "project_copy_recovery_required":
         case "project_delete_recovery_required":
@@ -226,9 +226,10 @@ export function requestErrorMessage(code: string): string {
             return "The selected location did not pass safety checks. Review it or choose another valid location.";
         case "project_copy_source_missing":
             return "The source project folder does not exist. Check the source project's path before copying.";
+        case "backup_invalid_archive":
+            return "The ZIP must contain a valid Unity project at its root.";
         case "backup_not_found":
-        case "backup_unavailable":
-            return "This backup is unavailable. Refresh the backup list and check that its archive is accessible.";
+            return "The ZIP file is missing or inaccessible.";
         case "project_changed_during_backup":
             return "The project changed while backing up. Check the task result before creating another backup.";
         case "backup_archive_limit_exceeded":

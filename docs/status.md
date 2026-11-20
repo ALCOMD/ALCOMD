@@ -1,8 +1,12 @@
 # 项目状态
 
-最后更新：2026-11-20
+最后更新：2026-11-21
 
 ## 当前阶段
+
+**M11 实施中。** 普通 ZIP、Core 主机绝对路径、State46 和 Config13 已接通。Windows 已通过绝对路径 IPC、MCP HTTP/OAuth、Core 重开后的配置和项目对账，以及普通 ZIP 的定向验证。真实 3.4.0 样本和跨平台验收待完成。[M11 实施计划](exec-plans/M11-v3-migration-and-zip.md)
+
+软件包默认显示预发布版，安装和升级优先兼容稳定版。CLI 和 MCP 安装、升级均可省略版本。Windows 已通过真实 Core 的候选与设置重启测试、MCP 安装升级、27 项 VPM 回归和 74 项软件包浏览器测试。[配置规范](../specs/config/settings-v13.md)
 
 **M10 已完成。** 签名候选 `dab76fcd` 的三平台 Hosted CI 和四项 CodeQL 均通过，Chromium 每平台 738 项通过。Rust 与 TypeScript SDK 共覆盖 94 个公开方法，含官方 GUI 的全部 93 个 Core 方法。三个平台的 npm 开发包已完成外部安装和真实 IPC 验收。[M10 验收记录](exec-plans/M10-native-sdk-and-rpc.md#2026-11-20-验收结果)
 

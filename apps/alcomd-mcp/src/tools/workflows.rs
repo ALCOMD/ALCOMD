@@ -17,11 +17,8 @@ pub(super) fn recognized(name: &str) -> bool {
             | "alcomd_create_project"
             | "alcomd_plan_project_copy"
             | "alcomd_apply_project_copy"
-            | "alcomd_list_backups"
-            | "alcomd_get_backup"
             | "alcomd_create_backup"
-            | "alcomd_plan_backup_restore"
-            | "alcomd_apply_backup_restore"
+            | "alcomd_restore_backup"
     )
 }
 
@@ -67,27 +64,18 @@ struct SavedTemplate {
     template: rpc::ProjectTemplateRecord,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StoredBackup {
-    backup_id: String,
-    source_project_id: String,
-    archive_sha256: [u8; 32],
+struct CreatedBackup {
+    archive_name: String,
     archive_bytes: u64,
-    format_version: u32,
-    created_at_ms: u64,
-    compression_mode: rpc::BackupCompression,
-    exclude_vpm_packages: bool,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RestoredProject {
-    backup_id: String,
     project_id: String,
     target_name: String,
-    packages_require_resolve: bool,
-    excluded_packages: Vec<rpc::BackupRestoreExcludedPackage>,
 }
 
 fn project_receipt<T: Serialize + DeserializeOwned>(result: Value) -> Result<Value, Failure> {
@@ -102,25 +90,7 @@ pub(super) fn operation_result(kind: &str, result: Value) -> Result<Value, Failu
         "projectTemplates.save" => project_receipt::<SavedTemplate>(result),
         "projectTemplates.export" => project_receipt::<rpc::ProjectTemplateRef>(result),
         "backups.restore" => project_receipt::<RestoredProject>(result),
-        "backups.create" => {
-            let backup: StoredBackup =
-                serde_json::from_value(result).map_err(|_| Failure::InvalidCore)?;
-            serde_json::to_value(rpc::BackupRecord {
-                backup_id: backup.backup_id,
-                source_project_id: backup.source_project_id,
-                archive_sha256: backup
-                    .archive_sha256
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect(),
-                archive_bytes: backup.archive_bytes,
-                format_version: backup.format_version,
-                created_at_ms: backup.created_at_ms,
-                compression_mode: backup.compression_mode,
-                exclude_vpm_packages: backup.exclude_vpm_packages,
-            })
-            .map_err(|_| Failure::InvalidCore)
-        }
+        "backups.create" => project_receipt::<CreatedBackup>(result),
         _ => Err(Failure::InvalidCore),
     }
 }
@@ -165,36 +135,18 @@ pub(super) async fn execute(
                 false,
             )
         }
-        "alcomd_list_backups" => (
-            reply(client.backups_list(params(value)?).await, false),
-            "Managed project backups.",
-            false,
-        ),
-        "alcomd_get_backup" => {
-            let input: rpc::BackupGetParams = params(value)?;
-            (
-                reply(client.backup_get(input.backup_id).await, false),
-                "Managed backup details.",
-                false,
-            )
-        }
         "alcomd_create_backup" => (
             reply(client.backup_create(params(value)?).await, true),
             "Backup creation accepted. Check the operation.",
             false,
         ),
-        "alcomd_plan_backup_restore" => (
-            reply(client.mcp_backup_plan_restore(params(value)?).await, false),
-            "Review the restore plan before confirming.",
-            true,
-        ),
-        "alcomd_apply_backup_restore" => {
-            let input: rpc::McpBackupApplyRestoreParams = params(value)?;
+        "alcomd_restore_backup" => {
+            let input: rpc::McpBackupRestoreParams = params(value)?;
             if !input.confirm {
                 return Err(invalid());
             }
             (
-                reply(client.mcp_backup_apply_restore(input).await, true),
+                reply(client.mcp_backup_restore(input).await, true),
                 "Backup restore accepted. Check the operation.",
                 false,
             )
@@ -215,11 +167,8 @@ mod tests {
     #[test]
     fn restore_result_does_not_accept_the_native_absolute_target() {
         let mut result = json!({
-            "backupId": "00000000-0000-4000-8000-000000000001",
             "projectId": "00000000-0000-4000-8000-000000000002",
-            "targetName": "Restored project",
-            "packagesRequireResolve": true,
-            "excludedPackages": []
+            "targetName": "Restored project"
         });
         assert!(matches!(
             operation_result("backups.restore", result.clone()),

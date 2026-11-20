@@ -145,11 +145,15 @@
             "additionalProperties": false,
             "required": [
                 "showPrerelease",
+                "preferPrerelease",
                 "hiddenRepositoryIds",
                 "hideLocalUserPackages",
                 "hiddenRepositoryPackages"
             ],
             "properties": {
+                "preferPrerelease": {
+                    "type": "boolean"
+                },
                 "showPrerelease": {
                     "type": "boolean"
                 },
@@ -263,6 +267,9 @@
             "additionalProperties": false,
             "minProperties": 1,
             "properties": {
+                "preferPrerelease": {
+                    "type": "boolean"
+                },
                 "showPrerelease": {
                     "type": "boolean"
                 },
@@ -703,56 +710,6 @@
             }
         }
     },
-    "x-alcomd-migration": {
-        "from": [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12
-        ],
-        "to": 13,
-        "legacyInputs": "validate-each-historical-schema-before-discarding-density",
-        "removedFields": [
-            "appearance.density"
-        ],
-        "v1Defaults": "packages-and-scheme",
-        "v2Defaults": "scheme",
-        "defaultScheme": "vibrant",
-        "preserveRevision": true,
-        "preserveExistingSettingsExceptDensity": true,
-        "runBeforeReady": true,
-        "failure": "restore-valid-input-authority-and-fail-closed",
-        "pathsDefaults": {
-            "projectDirectory": null,
-            "backupDirectory": null
-        },
-        "unityDefaults": {
-            "defaultLaunchArguments": null
-        },
-        "windowDefaults": {
-            "rememberState": false,
-            "fullscreen": false
-        },
-        "projectDefaults": {
-            "autoDiscover": true
-        },
-        "backupDefaults": {
-            "compressionMode": "fast",
-            "includeVpmPackages": true,
-            "includeLibrary": false
-        },
-        "packageDefaults": {
-            "hiddenRepositoryPackages": []
-        }
-    },
     "x-alcomd-storage": {
         "path": "config/settings.toml",
         "writer": "alcomd",
@@ -761,9 +718,9 @@
         "unknownFields": "fail-closed",
         "replacement": "same-directory-synced-temp-then-recoverable-rename",
         "maxBaseUtf8BytesExcludingHiddenRepositoryPackages": 16384,
-        "maxLegacyFileUtf8Bytes": 16384,
         "maxHiddenRepositoryPackageGroups": 256,
-        "maxHiddenRepositoryPackageIds": 4096
+        "maxHiddenRepositoryPackageIds": 4096,
+        "acceptedVersion": 13
     },
     "x-alcomd-launch-inheritance": {
         "precedence": [

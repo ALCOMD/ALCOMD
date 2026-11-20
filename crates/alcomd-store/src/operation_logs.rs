@@ -402,37 +402,27 @@ fn completed_backup_target(
     owner: &PrincipalId,
     operation: OperationId,
 ) -> Result<Option<LogTarget>, StoreError> {
-    let result: Option<String> = connection
+    let archive: Option<(String, String)> = connection
         .query_row(
-            "SELECT result_json FROM operations WHERE owner_principal_id=?1 AND operation_id=?2",
+            "SELECT json_extract(request_json,'$.destination.directory'),
+                    json_extract(result_json,'$.archiveName')
+             FROM operations WHERE owner_principal_id=?1 AND operation_id=?2
+               AND kind='backups.create' AND result_json IS NOT NULL",
             params![owner.as_str(), operation.to_string()],
-            |row| row.get(0),
-        )
-        .map_err(failure)?;
-    let Some(result) = result else {
-        return Ok(None);
-    };
-    let record: alcomd_application::BackupRecord =
-        serde_json::from_str(&result).map_err(failure)?;
-    let locator: Option<String> = connection
-        .query_row(
-            "SELECT archive_locator FROM backups WHERE owner_principal_id=?1 AND backup_id=?2",
-            params![owner.as_str(), record.backup_id.to_string()],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
         .map_err(failure)?;
-    Ok(locator.map(|locator| {
-        let path = std::path::Path::new(&locator);
-        LogTarget {
-            kind: "backup".to_owned(),
-            id: Some(record.backup_id.to_string()),
-            name: path
-                .file_name()
-                .and_then(std::ffi::OsStr::to_str)
-                .map(str::to_owned),
-            path: path.is_absolute().then_some(locator),
-        }
+    Ok(archive.map(|(directory, name)| LogTarget {
+        kind: "backup".to_owned(),
+        id: None,
+        path: Some(
+            std::path::Path::new(&directory)
+                .join(&name)
+                .to_string_lossy()
+                .into_owned(),
+        ),
+        name: Some(name),
     }))
 }
 
@@ -646,81 +636,6 @@ mod tests {
         AccessContext, Application, EventInvalidation, Permission, StateStore,
     };
     use std::time::Duration;
-
-    #[test]
-    fn state21_upgrade_preserves_preexisting_state20_and_does_not_create_old_log_facts() {
-        let directory = crate::events_tests::Directory::new();
-        let path = directory.database();
-        let mut connection = crate::sqlite::state21_fixture(&path);
-        let owner = PrincipalId::local_owner();
-        let operation = crate::sqlite::create_state_check(
-            &mut connection,
-            &owner,
-            &alcomd_application::IdempotencyKey::parse("state21-existing-operation")
-                .expect("fixture key"),
-            25,
-        )
-        .expect("pre-existing operation");
-        let snapshot = |connection: &Connection| {
-            let row = connection
-                .query_row(
-                    "SELECT state,revision,request_json FROM operations WHERE operation_id=?1",
-                    [operation.operation_id.to_string()],
-                    |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, i64>(1)?,
-                            r.get::<_, String>(2)?,
-                        ))
-                    },
-                )
-                .expect("snapshot operation");
-            let event = connection
-                .query_row(
-                    "SELECT sequence,event_id,payload_json FROM events WHERE aggregate_id=?1",
-                    [operation.operation_id.to_string()],
-                    |r| {
-                        Ok((
-                            r.get::<_, i64>(0)?,
-                            r.get::<_, String>(1)?,
-                            r.get::<_, String>(2)?,
-                        ))
-                    },
-                )
-                .expect("snapshot event");
-            (row, event)
-        };
-        let before = snapshot(&connection);
-        connection
-            .execute_batch("DROP TABLE operation_log_entries; PRAGMA user_version=20;")
-            .expect("simulate previous isolated schema");
-        drop(connection);
-        let updated = crate::sqlite::initialize_connection(&path)
-            .expect("migrate State20 through Core's Store");
-        assert_eq!(snapshot(&updated), before);
-        assert_eq!(
-            updated
-                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
-                .expect("current schema"),
-            i64::from(crate::CURRENT_DATA_SCHEMA)
-        );
-        assert_eq!(
-            updated
-                .query_row("SELECT count(*) FROM operation_log_entries", [], |r| r
-                    .get::<_, i64>(0))
-                .expect("new log table is empty"),
-            0
-        );
-        assert_eq!(
-            updated
-                .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r
-                    .get::<_, i64>(
-                    0
-                ))
-                .expect("foreign key check"),
-            0
-        );
-    }
 
     fn fact(actor: &str, details: Option<String>) -> OperationLogEntry {
         OperationLogEntry {

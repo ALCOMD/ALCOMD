@@ -473,57 +473,6 @@ mod tests {
     }
 
     #[test]
-    fn retired_development_copy_is_removed_without_changing_project_authority_or_history() {
-        let f = Fixture::new();
-        f.repository();
-        let before: String = f
-            .connection
-            .query_row("SELECT snapshot_json FROM projects", [], |row| row.get(0))
-            .expect("project snapshot");
-        let events: i64 = f
-            .connection
-            .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
-            .expect("history");
-        f.connection.execute_batch("CREATE TABLE project_presentation_observations(project_id TEXT PRIMARY KEY, revision INTEGER, project_revision INTEGER, state TEXT, fingerprint TEXT); CREATE TABLE project_package_presentations(project_id TEXT,package_id TEXT,presentation_json TEXT); PRAGMA user_version=30;").expect("old development copy");
-        f.connection
-            .execute(
-                "INSERT INTO project_package_presentations VALUES(?1,'com.example.obsolete','{}')",
-                [f.project.to_string()],
-            )
-            .expect("obsolete cache");
-        f.connection
-            .execute_batch(include_str!(
-                "../migrations/0031_remove_project_presentations.sql"
-            ))
-            .expect("approved removal");
-        assert_eq!(f.connection.query_row::<i64,_,_>("SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('project_package_presentations','project_presentation_observations')",[],|row|row.get(0)).expect("absence"),0);
-        assert_eq!(
-            f.connection
-                .query_row::<String, _, _>("SELECT snapshot_json FROM projects", [], |row| row
-                    .get(0))
-                .expect("project after removal"),
-            before
-        );
-        assert_eq!(
-            f.connection
-                .query_row::<i64, _, _>("SELECT COUNT(*) FROM events", [], |row| row.get(0))
-                .expect("history after removal"),
-            events
-        );
-        assert_eq!(
-            f.connection
-                .query_row::<i64, _, _>("PRAGMA user_version", [], |row| row.get(0))
-                .expect("format"),
-            31
-        );
-        assert_eq!(
-            f.connection
-                .query_row::<i64, _, _>("SELECT COUNT(*) FROM repositories", [], |row| row.get(0))
-                .expect("repository retained"),
-            1
-        );
-    }
-    #[test]
     fn project_activity_time_is_returned_without_changing_candidate_evidence() {
         let mut f = Fixture::new();
         let before = snapshot(

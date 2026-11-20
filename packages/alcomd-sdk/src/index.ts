@@ -9,6 +9,7 @@ export interface RepositoryPackageSettings {
 /** Config13 package source preferences. Core normalizes and validates writes. */
 export interface PackageSettings {
     showPrerelease: boolean;
+    preferPrerelease: boolean;
     hiddenRepositoryIds: string[];
     hiddenRepositoryPackages: RepositoryPackageSettings[];
     hideLocalUserPackages: boolean;
@@ -100,4 +101,4 @@ export interface HelloResponse {
 export * from "./extension-sources.js";
 
 export type * from "./core-models.js";
-export { SDK_METHODS, type NativeRpcMethods } from "./sdk-methods.js";
+export { SDK_METHODS, type NativeRpcMethods, type BackupCreateParams, type BackupRestoreParams } from "./sdk-methods.js";

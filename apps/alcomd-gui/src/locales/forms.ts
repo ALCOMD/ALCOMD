@@ -205,10 +205,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "选择目录",
         "ja-JP": "フォルダを選択"
     },
-    "Create a project backup before restoring a project.": {
-        "zh-CN": "请先创建项目备份，再恢复项目。",
-        "ja-JP": "復元する前にプロジェクトのバックアップを作成してください。"
-    },
     "Create project name": {
         "zh-CN": "新建项目的名称",
         "ja-JP": "作成するプロジェクト名"
@@ -249,10 +245,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "加载更多 Unity 安装",
         "ja-JP": "インストール済みの Unity をさらに読み込む"
     },
-    "Loading backups…": {
-        "zh-CN": "正在加载备份…",
-        "ja-JP": "バックアップを読み込み中…"
-    },
     "Loading Unity installations…": {
         "zh-CN": "正在加载已安装的 Unity…",
         "ja-JP": "インストール済みの Unity を読み込み中…"
@@ -260,10 +252,6 @@ export const formMessages: TranslationTable = {
     "Manual": {
         "zh-CN": "手动安装",
         "ja-JP": "手動登録"
-    },
-    "No managed backups available": {
-        "zh-CN": "没有可用的已管理备份",
-        "ja-JP": "利用可能な管理対象のバックアップがありません"
     },
     "Not required": {
         "zh-CN": "不需要",
@@ -293,18 +281,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "产品默认",
         "ja-JP": "製品のデフォルト"
     },
-    "Project backup": {
-        "zh-CN": "项目备份",
-        "ja-JP": "プロジェクトのバックアップ"
-    },
-    "Project restore {state}: {phase}.": {
-        "zh-CN": "项目恢复：{state}，阶段：{phase}。",
-        "ja-JP": "プロジェクトの復元: {state}、段階: {phase}。"
-    },
-    "Project restore {state}.": {
-        "zh-CN": "项目恢复：{state}。",
-        "ja-JP": "プロジェクトの復元: {state}。"
-    },
     "Project restore failed: {code}": {
         "zh-CN": "恢复项目失败：{code}",
         "ja-JP": "プロジェクトの復元に失敗しました: {code}"
@@ -328,14 +304,6 @@ export const formMessages: TranslationTable = {
     "Restore project": {
         "zh-CN": "恢复项目",
         "ja-JP": "プロジェクトを復元"
-    },
-    "Restore project name": {
-        "zh-CN": "恢复项目的名称",
-        "ja-JP": "復元するプロジェクト名"
-    },
-    "Restore target parent": {
-        "zh-CN": "恢复项目的父目录",
-        "ja-JP": "復元先の親フォルダ"
     },
     "Review restore": {
         "zh-CN": "审阅恢复计划",

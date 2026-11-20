@@ -307,6 +307,7 @@ pub trait UnityHubLauncher: Send + Sync + 'static {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfigPackageSettings {
     pub show_prerelease: bool,
+    pub prefer_prerelease: bool,
     pub hidden_repository_ids: Vec<String>,
     pub hidden_repository_packages: Vec<ConfigRepositoryPackages>,
     pub hide_local_user_packages: bool,
@@ -439,6 +440,7 @@ pub struct ConfigUpdate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfigPackageSettingsUpdate {
     pub show_prerelease: Option<bool>,
+    pub prefer_prerelease: Option<bool>,
     pub hidden_repository_ids: Option<Vec<String>>,
     pub hidden_repository_packages: Option<Vec<ConfigRepositoryPackages>>,
     pub hide_local_user_packages: Option<bool>,
@@ -890,7 +892,8 @@ fn default_snapshot() -> ConfigSnapshot {
             },
             locale: ConfigLocale::System,
             packages: ConfigPackageSettings {
-                show_prerelease: false,
+                show_prerelease: true,
+                prefer_prerelease: false,
                 hidden_repository_ids: Vec::new(),
                 hidden_repository_packages: Vec::new(),
                 hide_local_user_packages: false,
@@ -1004,6 +1007,10 @@ fn apply_update(
         if let Some(value) = packages.show_prerelease {
             settings.packages.show_prerelease = value;
         }
+        settings.packages.prefer_prerelease = settings.packages.show_prerelease
+            && packages
+                .prefer_prerelease
+                .unwrap_or(settings.packages.prefer_prerelease);
         if let Some(value) = packages.hidden_repository_ids {
             settings.packages.hidden_repository_ids = validate_hidden_repository_ids(value)?;
         }
@@ -1065,6 +1072,7 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
         })
         && update.packages.as_ref().is_none_or(|value| {
             value.show_prerelease.is_none()
+                && value.prefer_prerelease.is_none()
                 && value.hidden_repository_ids.is_none()
                 && value.hidden_repository_packages.is_none()
                 && value.hide_local_user_packages.is_none()
@@ -1241,6 +1249,7 @@ mod tests {
                 hidden_repository_packages: Some(groups),
                 hidden_repository_ids: None,
                 show_prerelease: None,
+                prefer_prerelease: None,
                 hide_local_user_packages: None,
             }),
             ..ConfigUpdate::default()

@@ -13,7 +13,7 @@ pub const CONTRACT: &str = include_str!("../../../specs/mcp/package-removal-v1.s
 const PACKAGE_CONTRACT: &str =
     include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json");
 const REPOSITORY_CONTRACT: &str = include_str!("../../../specs/mcp/repositories-v1.schema.json");
-const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v1.schema.json");
+const WORKFLOW_CONTRACT: &str = include_str!("../../../specs/mcp/project-workflows-v2.schema.json");
 const ENVIRONMENT_CONTRACT: &str = include_str!("../../../specs/mcp/environment-v1.schema.json");
 const INVENTORY_CONTRACT: &str =
     include_str!("../../../specs/mcp/project-inventory-v1.schema.json");
@@ -675,7 +675,7 @@ pub async fn execute(
         return repositories::execute(client, params).await;
     }
     if workflows::recognized(params.name.as_ref()) {
-        if !client.supports_capability(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1) {
+        if !client.supports_capability(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2) {
             return Err(super::unsupported_method());
         }
         return workflows::execute(client, params).await;

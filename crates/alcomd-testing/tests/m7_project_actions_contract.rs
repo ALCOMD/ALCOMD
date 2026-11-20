@@ -1,28 +1,15 @@
+#[path = "support/state.rs"]
+mod state;
+
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 const COPY_SCHEMA: &str = include_str!("../../../specs/rpc/m7-project-copy.proposal.schema.json");
-const STATE_V10: &str = include_str!("../../../specs/storage/state-v10.md");
-const STATE_V10_MIGRATION: &str =
-    include_str!("../../../specs/storage/state-v10-migration.proposal.contract.json");
 const COPY_VECTORS: &str = include_str!("../fixtures/m7/project-copy-contract-vectors.json");
 const ACTION_GATE: &str = include_str!("../fixtures/m7/visible-action-completeness-v1.json");
-const P5_PREFERENCE_SCHEMA: &str =
-    include_str!("../../../specs/rpc/m7-project-preferences.proposal.schema.json");
-const P5_PREFERENCE_VECTORS: &str =
-    include_str!("../fixtures/m7/project-preferences-contract-vectors.json");
-const STATE_V11: &str = include_str!("../../../specs/storage/state-v11.md");
-const STATE_V11_MIGRATION: &str =
-    include_str!("../../../specs/storage/state-v11-migration.proposal.contract.json");
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/alcomd-rpc-v1.md");
 const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
 const ACTIVE_UNITY_SCHEMA: &str = include_str!("../../../specs/rpc/m5-unity.schema.json");
-const ACTIVE_UNITY_MIGRATION: &str =
-    include_str!("../../alcomd-store/migrations/0014_unity_project_version.sql");
-const ACTIVE_COPY_MIGRATION: &str =
-    include_str!("../../alcomd-store/migrations/0010_project_copy.sql");
-const ACTIVE_DELETE_MIGRATION: &str =
-    include_str!("../../alcomd-store/migrations/0013_project_directory_delete.sql");
 const ROOT_MANIFEST: &str = include_str!("../../../Cargo.toml");
 const GUI_MANIFEST: &str = include_str!("../../../apps/alcomd-gui/src-tauri/Cargo.toml");
 const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
@@ -38,8 +25,6 @@ const GUI_CAPABILITY: &str =
     include_str!("../../../apps/alcomd-gui/src-tauri/capabilities/main.json");
 const P7_DELETE_SCHEMA: &str =
     include_str!("../../../specs/rpc/m7-project-delete.proposal.schema.json");
-const P7_STATE_V13: &str =
-    include_str!("../../../specs/storage/state-v13-project-delete.proposal.contract.json");
 const P7_DELETE_VECTORS: &str =
     include_str!("../../../specs/security/m7-project-delete-path-vectors.json");
 const ACTIVE_PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
@@ -99,7 +84,6 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
 }
 
 #[test]
@@ -181,34 +165,28 @@ fn project_copy_profile_phases_and_recovery_are_exact() {
 }
 
 #[test]
-fn state_v10_remains_copy_only_and_is_implemented() {
-    let migration: Value =
-        serde_json::from_str(STATE_V10_MIGRATION).expect("state v10 migration proposal");
-    assert_eq!(migration["status"], "implemented");
-    assert_eq!(migration["from"], 9);
-    assert_eq!(migration["to"], 10);
-    assert_eq!(
-        migration["productionMigration"],
-        "crates/alcomd-store/migrations/0010_project_copy.sql"
-    );
-    assert_eq!(migration["productionWiringCreated"], true);
-    assert_eq!(migration["operationKindsAdded"], json!(["projects.copy"]));
-    assert_eq!(
-        migration["tablesAdded"],
-        json!(["project_copy_plans", "project_copy_filesystem_journal"])
-    );
-    assert_eq!(migration["plan"]["fullInventoryStored"], false);
-    assert_eq!(migration["plan"]["expiryMs"], 900_000);
-    assert_eq!(migration["journal"]["appendOnly"], true);
-    assert_eq!(
-        migration["privateInventoryManifest"]["storedInStateDb"],
-        false
-    );
-    assert!(STATE_V10.contains("daemon 广告 `dataSchema: 10`"));
-    assert!(STATE_V10.contains("不包含 Favorite"));
-    assert!(ACTIVE_COPY_MIGRATION.contains("PRAGMA user_version = 10;"));
-    assert!(ACTIVE_COPY_MIGRATION.contains("project_copy_plans"));
-    assert!(ACTIVE_COPY_MIGRATION.contains("project_copy_filesystem_journal"));
+fn copy_uses_bounded_state_and_an_append_only_journal() {
+    let db = state::current();
+    let plans = state::definition(&db, "table", "project_copy_plans");
+    assert!(plans.contains("expires_at_ms = created_at_ms + 900000"));
+    assert!(plans.contains("length(CAST(plan_json AS BLOB)) <= 4194304"));
+    assert!(!plans.contains("inventory_json"));
+    let journal = state::definition(&db, "table", "project_copy_filesystem_journal");
+    assert!(journal.contains("inventory_locator TEXT"));
+    assert!(journal.contains("inventory_sha256 BLOB"));
+    assert!(journal.contains("inventory_byte_length INTEGER"));
+    assert!(!journal.contains("inventory_json"));
+    for (action, trigger) in [
+        ("UPDATE", "project_copy_filesystem_journal_no_update"),
+        ("DELETE", "project_copy_filesystem_journal_no_delete"),
+    ] {
+        let sql = state::definition(&db, "trigger", trigger);
+        assert!(sql.contains(&format!(
+            "BEFORE {action} ON project_copy_filesystem_journal"
+        )));
+        assert!(sql.contains("RAISE(ABORT,"));
+    }
+    assert!(state::definition(&db, "table", "operations").contains("'projects.copy'"));
 }
 
 #[test]
@@ -362,7 +340,6 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
 #[test]
 fn p7_delete_directory_contract_is_implemented_and_active() {
     let schema: Value = serde_json::from_str(P7_DELETE_SCHEMA).expect("P7 delete proposal schema");
-    let state: Value = serde_json::from_str(P7_STATE_V13).expect("P7 State v13 proposal");
 
     assert_eq!(schema["x-alcomd-publication"], "implemented");
     assert_eq!(schema["x-alcomd-approval"], "owner-approved");
@@ -416,53 +393,50 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
     }
     assert!(!plan_required.contains("recursiveInventory"));
 
-    assert_eq!(state["status"], "implemented");
-    assert_eq!(state["approval"], "owner-approved");
-    assert_eq!(state["from"], 12);
-    assert_eq!(state["to"], 13);
-    assert_eq!(
-        state["productionMigration"],
-        "crates/alcomd-store/migrations/0013_project_directory_delete.sql"
-    );
-    assert_eq!(state["productionWiringCreated"], true);
-    assert_eq!(
-        state["tablesAdded"],
-        json!(["project_delete_plans", "project_delete_filesystem_journal"])
-    );
-    assert_eq!(state["journal"]["appendOnly"], true);
-    assert_eq!(
-        state["registryCommit"]["event"],
-        "project.directory_deleted"
-    );
-    assert_eq!(state["registryCommit"]["eventCount"], 1);
-    assert_eq!(
-        state["registryCommit"]["projectUnregisteredEventAlsoWritten"],
-        false
-    );
-    assert_eq!(state["durableProjectReferenceCorrection"]["required"], true);
-    assert_eq!(
-        state["durableProjectReferenceCorrection"]["tablesToRebuild"],
-        json!([
-            "package_plans",
-            "package_filesystem_journal",
-            "project_copy_plans",
-            "project_copy_filesystem_journal"
-        ])
-    );
-    assert_eq!(
-        state["durableProjectReferenceCorrection"]["ephemeralCurrentProjectRowsRetainingCascade"],
-        json!(["project_editor_preferences"])
-    );
+    let db = state::current();
+    let plans = state::definition(&db, "table", "project_delete_plans");
+    assert!(plans.contains("expires_at_ms = created_at_ms + 900000"));
+    assert!(plans.contains("deletion_mode = 'sibling-quarantine-permanent-v1'"));
+    let journal = state::definition(&db, "table", "project_delete_filesystem_journal");
+    assert!(journal.contains("REFERENCES project_delete_plans(plan_id)"));
+    assert!(journal.contains("'registry_commit_intent', 'state_committed'"));
+    for (action, trigger) in [
+        ("UPDATE", "project_delete_filesystem_journal_no_update"),
+        ("DELETE", "project_delete_filesystem_journal_no_delete"),
+    ] {
+        let sql = state::definition(&db, "trigger", trigger);
+        assert!(sql.contains(&format!(
+            "BEFORE {action} ON project_delete_filesystem_journal"
+        )));
+        assert!(sql.contains("RAISE(ABORT,"));
+    }
+    for table in [
+        "package_plans",
+        "package_filesystem_journal",
+        "project_copy_plans",
+        "project_copy_filesystem_journal",
+    ] {
+        let project_foreign_keys: i64 = db
+            .query_row(
+                "SELECT count(*) FROM pragma_foreign_key_list(?1) WHERE \"table\"='projects'",
+                [table],
+                |row| row.get(0),
+            )
+            .expect("read live project foreign keys");
+        assert_eq!(
+            project_foreign_keys, 0,
+            "{table} must survive project removal"
+        );
+    }
+    let launch = state::definition(&db, "table", "project_unity_launch_config");
+    assert!(launch.contains("REFERENCES projects(project_id) ON DELETE CASCADE"));
 
     assert!(ACTIVE_RPC.contains("projects.planDeleteDirectory"));
     assert!(ACTIVE_RPC.contains("projects.applyDeleteDirectory"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_DELETE_DIRECTORY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_DELETE_DIRECTORY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_DELETE_V1"));
-    assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
-    assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
     assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
 }
 
 #[test]
@@ -575,47 +549,28 @@ fn official_gui_local_project_affordances_remain_closed() {
 }
 
 #[test]
-fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection() {
-    let _schema: Value =
-        serde_json::from_str(P5_PREFERENCE_SCHEMA).expect("P5 preference historical schema");
-    let vectors: Value =
-        serde_json::from_str(P5_PREFERENCE_VECTORS).expect("P5 preference vectors");
-    let migration: Value = serde_json::from_str(STATE_V11_MIGRATION).expect("State v11 proposal");
+fn current_project_preferences_keep_favorite_and_launch_arguments() {
     let active_unity: Value =
         serde_json::from_str(ACTIVE_UNITY_SCHEMA).expect("active Unity schema");
-
-    assert_eq!(vectors["status"], "implemented-active-contract-evidence");
-    assert_eq!(vectors["v3Favorite"]["favoriteOnlyFilter"], false);
-    assert_eq!(vectors["v3Favorite"]["survivesUnregister"], false);
-    assert_eq!(
-        vectors["favoriteProposal"]["event"],
-        "project.favorite_changed"
-    );
-    assert_eq!(
-        vectors["favoriteProposal"]["coreListOrderingChanges"],
-        false
-    );
-    assert_eq!(vectors["favoriteProposal"]["cursorChanges"], false);
-    assert_eq!(
-        vectors["favoriteProposal"]["capability"],
-        "projects.registry.v1"
-    );
-    assert_eq!(
-        vectors["favoriteProposal"]["compareRevisionBeforeState"],
-        true
-    );
-    assert_eq!(migration["status"], "implemented-active-contract-evidence");
-    assert_eq!(migration["from"], 10);
-    assert_eq!(migration["to"], 11);
-    assert_eq!(
-        migration["productionMigration"],
-        "crates/alcomd-store/migrations/0011_project_preferences.sql"
-    );
-    assert_eq!(migration["productionWiringCreated"], true);
-    assert_eq!(migration["userVersionSetLast"], true);
-    assert_eq!(migration["rollbackAuthorityOnFailure"], 10);
-    assert_eq!(migration["tablesAdded"], json!([]));
-    assert!(STATE_V11.contains("`dataSchema: 11`"));
+    let db = state::current();
+    let default_favorite: String = db
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('projects') WHERE name='favorite'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("favorite has a dedicated default");
+    assert_eq!(default_favorite, "0");
+    let projects = state::definition(&db, "table", "projects");
+    assert!(projects.contains("CHECK (favorite IN (0, 1))"));
+    let launch = state::definition(&db, "table", "project_unity_launch_config");
+    assert!(launch.contains("json_array_length(arguments_json) BETWEEN 0 AND 64"));
+    let obsolete: i64 = db.query_row(
+        "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_editor_preferences'",
+        [],
+        |row| row.get(0),
+    ).expect("check obsolete storage");
+    assert_eq!(obsolete, 0);
 
     assert!(ACTIVE_RPC.contains("projects.setFavorite"));
     assert!(ACTIVE_RPC.contains("unity.projectLaunchConfig.get"));
@@ -623,8 +578,6 @@ fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection(
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR"));
     assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
-    assert!(ACTIVE_UNITY_MIGRATION.contains("DROP TABLE project_editor_preferences"));
     assert_eq!(
         active_unity["$defs"]["projectUnityLaunchConfig"]["required"],
         json!(["projectId", "arguments", "revision", "updatedAtMs"])

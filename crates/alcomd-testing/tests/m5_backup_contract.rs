@@ -1,186 +1,59 @@
-use serde_json::{Value, json};
-
-const MANIFEST_SCHEMA: &str = include_str!("../../../specs/backups/backup-v1.schema.json");
-const PROFILE: &str = include_str!("../../../specs/backups/backup-profile-v1.json");
-const RPC_SCHEMA: &str = include_str!("../../../specs/rpc/m5-backup-create.schema.json");
-const CLI_CATALOG: &str = include_str!("../../../specs/cli/m5-backup-commands-v1.json");
-const ERROR_SCHEMA: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
-const VECTORS: &str = include_str!("../fixtures/m5/backup-contract-vectors.json");
-const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
-const MIGRATION_V6: &str = include_str!("../../alcomd-store/migrations/0006_backup_create.sql");
+use alcomd_protocol::{
+    BackupCompression, BackupCreateParams, CAPABILITY_BACKUPS_CREATE_V2, METHOD_BACKUPS_CREATE,
+    OperationAccepted,
+};
+use alcomd_vpm::ArchiveLimits;
+use serde_json::json;
 
 #[test]
-fn native_backup_manifest_and_quota_are_frozen() {
-    let schema: Value = serde_json::from_str(MANIFEST_SCHEMA).expect("Backup manifest Schema");
-    let profile: Value = serde_json::from_str(PROFILE).expect("Backup profile");
-    let vectors: Value = serde_json::from_str(VECTORS).expect("Backup vectors");
-
-    assert_eq!(schema["additionalProperties"], false);
-    assert_eq!(schema["properties"]["formatVersion"]["const"], 1);
+fn backup_create_wire_contract_has_optional_absolute_destination_and_operation_receipt() {
+    assert_eq!(METHOD_BACKUPS_CREATE, "backups.create");
+    assert_eq!(CAPABILITY_BACKUPS_CREATE_V2, "backups.create.v2");
+    let request = json!({
+        "projectId": "abc",
+        "expectedRevision": 1,
+        "compressionMode": "level7",
+        "excludeVpmPackages": true,
+        "includeLibrary": true,
+        "destinationPath": "/external folder/项目.zip",
+        "idempotencyKey": "retry-backup",
+    });
+    let params: BackupCreateParams = serde_json::from_value(request.clone()).expect("wire request");
+    assert_eq!(params.compression_mode, Some(BackupCompression::Level7));
     assert_eq!(
-        schema["properties"]["packagesRequireResolve"]["const"],
-        true
+        serde_json::to_value(params).expect("valid isolated fixture or result"),
+        request
     );
-    assert_eq!(vectors["manifest"]["formatVersion"], 1);
-    assert_eq!(vectors["manifest"]["packagesRequireResolve"], true);
-    assert_eq!(profile["archiveRoots"], json!(["backup.json", "project/"]));
-    assert_eq!(profile["zip64"], true);
-    assert_eq!(profile["compressionMethods"], json!(["stored", "deflate"]));
+    let mut default = request;
+    default
+        .as_object_mut()
+        .expect("valid isolated fixture or result")
+        .remove("destinationPath");
+    let params: BackupCreateParams =
+        serde_json::from_value(default.clone()).expect("default destination");
+    assert_eq!(params.destination_path, None);
     assert_eq!(
-        profile["compressionModes"],
-        json!(["store", "fast", "level3", "level5", "level7", "maximum"])
-    );
-    assert_eq!(profile["limits"]["archiveBytes"], 68_719_476_736_u64);
-    assert_eq!(profile["limits"]["entries"], 500_000);
-    assert_eq!(
-        profile["limits"]["singleRegularFileBytes"],
-        34_359_738_368_u64
-    );
-    assert_eq!(
-        profile["limits"]["totalUncompressedBytes"],
-        137_438_953_472_u64
-    );
-    assert_eq!(profile["limits"]["pathDepth"], 128);
-    assert_eq!(profile["limits"]["normalizedPathUtf8Bytes"], 1_024);
-    assert_eq!(profile["limits"]["expansionRatio"], 10_000);
-}
-
-#[test]
-fn exclusion_table_and_vpm_semantics_are_exact() {
-    let profile: Value = serde_json::from_str(PROFILE).expect("Backup profile");
-    let vectors: Value = serde_json::from_str(VECTORS).expect("Backup vectors");
-    assert_eq!(
-        profile["pathPolicy"]["rootDirectoriesExcluded"],
-        json!(["Logs", "Obj", "Temp"])
+        serde_json::to_value(params).expect("valid isolated fixture or result"),
+        default
     );
     assert_eq!(
-        profile["pathPolicy"]["directoriesExcludedAtAnyDepth"],
-        json!([".git"])
-    );
-    assert_eq!(
-        profile["pathPolicy"]["rootDirectoryPrefixesExcludedAsciiCaseInsensitive"],
-        json!(["Library"])
-    );
-    assert_eq!(
-        profile["pathPolicy"]["libraryCacheOverride"],
-        json!({
-            "requestField": "includeLibrary",
-            "default": false,
-            "includedRootDirectoryAsciiCaseInsensitive": "Library",
-            "otherPrefixesStillExcluded": true
+        serde_json::to_value(OperationAccepted {
+            operation_id: "operation".to_owned(),
+            replayed: true
         })
+        .expect("valid isolated fixture or result"),
+        json!({"operationId": "operation", "replayed": true}),
     );
-    assert_eq!(
-        profile["pathPolicy"]["directFileExceptions"][0],
-        json!({
-            "underRootPrefix": "Library",
-            "relativeFile": "LastSceneManagerSetup.txt",
-            "recursive": false
-        })
-    );
-    for required in [
-        "ProjectSettings/ProjectVersion.txt",
-        "Packages/vpm-manifest.json",
-        "Packages/manifest.json",
-    ] {
-        assert!(
-            profile["pathPolicy"]["alwaysIncludedFiles"]
-                .as_array()
-                .expect("always included")
-                .iter()
-                .any(|value| value == required),
-            "missing {required}"
-        );
-    }
-    let cases = vectors["pathCases"].as_array().expect("path cases");
-    for required in [
-        "Logs/Editor.log",
-        "Obj/cache.bin",
-        "Temp/work",
-        "Assets/Nested/.git/config",
-        "Library/cache",
-        "Library-foo/cache",
-        "Library/LastSceneManagerSetup.txt",
-        "Library/Sub/LastSceneManagerSetup.txt",
-        "MemoryCaptures/capture.bin",
-        "UserSettings/EditorUserSettings.asset",
-        ".vscode/settings.json",
-        ".idea/workspace.xml",
-    ] {
-        assert!(
-            cases.iter().any(|case| case["path"] == required),
-            "missing {required}"
-        );
-    }
-    assert_eq!(profile["vpmExclusion"]["networkAccess"], false);
-    assert_eq!(profile["vpmExclusion"]["manifestFilesAlwaysIncluded"], true);
-    assert_eq!(
-        profile["vpmExclusion"]["preserveUnlockedEmbeddedAndUnknownChildren"],
-        true
-    );
-    assert_eq!(profile["vpmExclusion"]["mismatch"], "fail-closed");
 }
 
 #[test]
-fn rpc_permissions_errors_phases_and_cli_publication_are_narrow() {
-    let rpc: Value = serde_json::from_str(RPC_SCHEMA).expect("Backup RPC Schema");
-    let cli: Value = serde_json::from_str(CLI_CATALOG).expect("Backup CLI catalog");
-    let errors: Value = serde_json::from_str(ERROR_SCHEMA).expect("RPC error Schema");
-    let vectors: Value = serde_json::from_str(VECTORS).expect("Backup vectors");
-
-    assert_eq!(
-        rpc["$defs"]["capability"]["enum"],
-        json!(["backups.read.v1", "backups.create.v1"])
-    );
-    assert_eq!(
-        rpc["$defs"]["methodName"]["enum"],
-        json!(["backups.list", "backups.get", "backups.create"])
-    );
-    assert_eq!(
-        rpc["$defs"]["progressPhase"]["enum"],
-        vectors["progressPhases"]
-    );
-    assert_eq!(
-        rpc["$defs"]["createResult"]["required"],
-        json!(["operationId", "backupId", "replayed"])
-    );
-    assert_eq!(cli["status"], "implemented");
-    assert_eq!(cli["commands"][2]["planApply"], false);
-    assert_eq!(
-        cli["commands"][2]["forbiddenOptions"],
-        json!(["--yes", "--dry-run", "--output"])
-    );
-    assert!(PERMISSIONS.contains("`backups.manage` 与 `projects.read` 能力，另复验目标项目归属"));
-    for code in [
-        "backup_not_found",
-        "backup_unavailable",
-        "backup_source_unsafe",
-        "backup_archive_limit_exceeded",
-        "backup_integrity_mismatch",
-        "project_changed_during_backup",
-    ] {
-        assert!(
-            errors["properties"]["code"]["enum"]
-                .as_array()
-                .expect("error enum")
-                .iter()
-                .any(|value| value == code),
-            "missing {code}"
-        );
-    }
-}
-
-#[test]
-fn schema_v6_is_only_the_strict_backup_create_kind() {
-    assert!(MIGRATION_V6.starts_with("BEGIN IMMEDIATE;"));
-    assert!(MIGRATION_V6.ends_with("COMMIT;\n"));
-    assert!(MIGRATION_V6.contains("'backups.create'"));
-    for forbidden in [
-        "CREATE TABLE backups",
-        "backup_plans",
-        "backups.restore",
-        "workflow",
-    ] {
-        assert!(!MIGRATION_V6.contains(forbidden), "unexpected {forbidden}");
-    }
+fn project_zip_keeps_approved_archive_quotas() {
+    let limits = ArchiveLimits::backup();
+    assert_eq!(limits.archive_bytes, 68_719_476_736);
+    assert_eq!(limits.entries, 500_000);
+    assert_eq!(limits.entry_bytes, 34_359_738_368);
+    assert_eq!(limits.total_uncompressed_bytes, 137_438_953_472);
+    assert_eq!(limits.path_depth, 128);
+    assert_eq!(limits.normalized_path_bytes, 1_024);
+    assert_eq!(limits.expansion_ratio, 10_000);
 }

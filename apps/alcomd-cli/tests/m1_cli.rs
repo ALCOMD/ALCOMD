@@ -60,7 +60,6 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
         (&["project", "list"][..], "project list"),
         (&["repository", "list"][..], "repository list"),
         (&["unity", "list"][..], "unity list"),
-        (&["backup", "list"][..], "backup list"),
     ] {
         let output = run_group_cli(runtime.clone(), arguments);
         assert!(output.status.success(), "{expected_command}");
@@ -100,6 +99,64 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert!(
         project_parent
             .join("CLI Project/ProjectSettings/ProjectVersion.txt")
+            .is_file()
+    );
+    let archive = project_parent.join("CLI archive.zip");
+    let archive = archive.to_str().expect("UTF-8 archive path");
+    let created_id = created["result"]["result"]["projectId"]
+        .as_str()
+        .expect("new project ID");
+    let backup = run_group_cli(
+        runtime.clone(),
+        &[
+            "backup",
+            "create",
+            created_id,
+            "--expected-revision",
+            "1",
+            "--destination",
+            archive,
+            "--idempotency-key",
+            "cli-backup-file",
+        ],
+    );
+    assert!(
+        backup.status.success(),
+        "{}",
+        String::from_utf8_lossy(&backup.stderr)
+    );
+    let saved: serde_json::Value =
+        serde_json::from_slice(&backup.stdout).expect("backup create JSON");
+    assert_eq!(saved["command"], "backup create");
+    assert_eq!(saved["result"]["state"], "succeeded");
+    assert_eq!(saved["result"]["result"]["archiveName"], "CLI archive.zip");
+
+    let restored = project_parent.join("CLI Restored");
+    let restore = run_group_cli(
+        runtime.clone(),
+        &[
+            "backup",
+            "restore",
+            archive,
+            "--destination",
+            restored.to_str().expect("UTF-8 project path"),
+            "--idempotency-key",
+            "cli-restore-file",
+            "--yes",
+        ],
+    );
+    assert!(
+        restore.status.success(),
+        "{}",
+        String::from_utf8_lossy(&restore.stderr)
+    );
+    let restore: serde_json::Value =
+        serde_json::from_slice(&restore.stdout).expect("backup restore JSON");
+    assert_eq!(restore["command"], "backup restore");
+    assert_eq!(restore["result"]["state"], "succeeded");
+    assert!(
+        restored
+            .join("ProjectSettings/ProjectVersion.txt")
             .is_file()
     );
     std::fs::remove_dir_all(&project_parent).expect("remove owned project fixture directory");

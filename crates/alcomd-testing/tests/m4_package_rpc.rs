@@ -41,7 +41,6 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         .expect("manifest");
     zip.finish().expect("ZIP");
     let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("archive bytes")).into();
-    publish_cache_object(&data, &archive, &digest);
     let mut index: serde_json::Value =
         serde_json::from_str(&repository_document(&hex(&digest))).expect("index");
     index["packages"]["com.example.fixture"]["versions"]["1.0.0"]["unity"] =
@@ -52,11 +51,12 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
-        DataConfig::isolated(data),
+        DataConfig::isolated(data.clone()),
         wait_for_shutdown(Arc::clone(&shutdown)),
     )
     .await
     .expect("owned daemon");
+    publish_cache_object(&data, &archive, &digest);
     let mut client = connect_with_retry(config).await;
     let registered_project = client
         .project_register(
@@ -144,7 +144,6 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let archive = fixture.path().join("package.zip");
     create_package_archive(&archive);
     let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
-    publish_cache_object(&data, &archive, &digest);
     let repository = fixture.path().join("repository.json");
     let mut document: serde_json::Value =
         serde_json::from_str(&repository_document(&hex(&digest))).expect("fixture repository");
@@ -165,11 +164,12 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let server_shutdown = Arc::clone(&shutdown);
     let daemon = alcomd_daemon::test_support::start_with_data_until(
         ipc,
-        DataConfig::isolated(data),
+        DataConfig::isolated(data.clone()),
         wait_for_shutdown(server_shutdown),
     )
     .await
     .expect("start owned test daemon");
+    publish_cache_object(&data, &archive, &digest);
     let mut client = connect_with_retry(config).await;
 
     let registered_project = client
@@ -635,7 +635,6 @@ fn subprocess_runs_package_apply_until_killed() {
         let archive = root.join("package.zip");
         create_large_package_archive(&archive);
         let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
-        publish_cache_object(&data, &archive, &digest);
         let repository = root.join("repository.json");
         fs::write(&repository, repository_document(&hex(&digest))).expect("write repository");
 
@@ -644,11 +643,12 @@ fn subprocess_runs_package_apply_until_killed() {
         let daemon_shutdown = Arc::clone(&shutdown);
         let _daemon = alcomd_daemon::test_support::start_with_data_until(
             ipc,
-            DataConfig::isolated(data),
+            DataConfig::isolated(data.clone()),
             wait_for_shutdown(daemon_shutdown),
         )
         .await
         .expect("start owned test daemon");
+        publish_cache_object(&data, &archive, &digest);
         let mut client = connect_with_retry(config).await;
         let project_result = client
             .project_register(

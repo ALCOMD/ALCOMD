@@ -417,31 +417,6 @@ export type ProjectsPlanUnityMigrationResult =
 
 export interface ProjectsApplyUnityMigrationResult { operationId: string; replayed: boolean }
 
-export interface BackupRecord {
-    backupId: string;
-    sourceProjectId: string;
-    archiveSha256: string;
-    archiveBytes: number;
-    formatVersion: number;
-    createdAtMs: number;
-    compressionMode: BackupCompressionMode;
-    excludeVpmPackages: boolean;
-}
-
-export interface BackupsListResult { backups: BackupRecord[]; nextCursor?: string }
-
-export interface BackupCreateResult { operationId: string; backupId: string; replayed: boolean }
-export interface BackupRestorePlan {
-    planId: string;
-    projectId: string;
-    backupId: string;
-    target: { parent: string; leaf: string; mustBeAbsent: boolean };
-    archiveSha256: string;
-    packagesRequireResolve: boolean;
-    excludedPackages: Array<{ packageId: string; version: string }>;
-    planFingerprint: string;
-}
-export interface BackupApplyRestoreResult { operationId: string; projectId: string; replayed: boolean }
 export interface ExtensionsListResult { extensions: ExtensionRecord[]; nextCursor?: string }
 
 export interface ExtensionPlan {

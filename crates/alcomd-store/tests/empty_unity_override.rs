@@ -1,11 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use alcomd_store::{CURRENT_DATA_SCHEMA, StateStoreHandle, StoreOpenError};
+use alcomd_store::{CURRENT_DATA_SCHEMA, StateStoreHandle};
 use rusqlite::{Connection, params, types::Value};
 use uuid::Uuid;
 
-const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
 const PROJECT_ID: &str = "00000000-0000-4000-8000-000000000301";
 const INHERITING_PROJECT_ID: &str = "00000000-0000-4000-8000-000000000302";
 
@@ -13,7 +12,8 @@ struct TestDirectory(PathBuf);
 
 impl TestDirectory {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("alcomd-state17-test-{}", Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("alcomd-unity-override-test-{}", Uuid::new_v4()));
         fs::create_dir(&path).expect("isolated fixture directory");
         Self(path)
     }
@@ -30,7 +30,7 @@ impl Drop for TestDirectory {
 }
 
 #[test]
-fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reopen() {
+fn empty_override_and_event_sequence_survive_reopen() {
     let directory = TestDirectory::new();
     let path = directory.database();
     let connection = fixture(&path);
@@ -41,41 +41,13 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     );
     drop(connection);
 
-    let store = StateStoreHandle::open(path.clone()).expect("registered State16 to latest upgrade");
-    let connection = Connection::open(&path).expect("inspect upgraded fixture");
+    let store = StateStoreHandle::open(path.clone()).expect("reopen current authority");
+    let connection = Connection::open(&path).expect("inspect current fixture");
     assert_eq!(
         integer(&connection, "PRAGMA user_version"),
         i64::from(CURRENT_DATA_SCHEMA)
     );
-    let mut retained = row_snapshot(&connection);
-    let cleanup = retained
-        .iter()
-        .position(|(name, _)| name == "repository_credential_cleanup")
-        .expect("State25 credential cleanup table");
-    assert!(retained.remove(cleanup).1.is_empty());
-    assert!(
-        !retained
-            .iter()
-            .any(|(name, _)| name == "project_package_presentations"
-                || name == "project_presentation_observations")
-    );
-    for table in [
-        "mcp_clients",
-        "mcp_client_credentials",
-        "mcp_oauth_registrations",
-        "mcp_oauth_tokens",
-        "extension_mcp_calls",
-    ] {
-        let index = retained
-            .iter()
-            .position(|(name, _)| name == table)
-            .expect("approved MCP/OAuth authority table");
-        assert!(
-            retained.remove(index).1.is_empty(),
-            "legacy upgrade must not invent {table} authority"
-        );
-    }
-    assert_eq!(retained, before, "every pre-existing row remains unchanged");
+    assert_eq!(row_snapshot(&connection), before);
     assert_eq!(
         integer(
             &connection,
@@ -120,10 +92,9 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
 }
 
 #[test]
-fn state17_keeps_strict_array_bounds_revision_clock_and_cascading_foreign_key() {
+fn current_schema_keeps_strict_array_bounds_revision_clock_and_cascading_foreign_key() {
     let directory = TestDirectory::new();
     let connection = fixture(&directory.database());
-    connection.execute_batch(MIGRATION_V17).expect("State17");
     assert_eq!(integer(&connection, "PRAGMA foreign_keys"), 1);
     assert_eq!(
         integer(
@@ -196,76 +167,12 @@ fn state17_keeps_strict_array_bounds_revision_clock_and_cascading_foreign_key() 
     );
 }
 
-#[test]
-fn failed_state17_copy_rolls_back_without_replacing_legacy_authority() {
-    let directory = TestDirectory::new();
-    let path = directory.database();
-    let connection = fixture(&path);
-    connection
-        .execute_batch("PRAGMA ignore_check_constraints=ON;")
-        .expect("inject corrupt fixture");
-    connection
-        .execute(
-            "UPDATE project_unity_launch_config SET arguments_json='{}'",
-            [],
-        )
-        .expect("corrupt legacy array");
-    connection
-        .execute_batch("PRAGMA ignore_check_constraints=OFF;")
-        .expect("restore checks");
-    let before = row_snapshot(&connection);
-    drop(connection);
-    assert!(matches!(
-        StateStoreHandle::open(path.clone()),
-        Err(StoreOpenError::Unavailable)
-    ));
-    let connection = Connection::open(&path).expect("inspect failed upgrade");
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 16);
-    assert_eq!(row_snapshot(&connection), before);
-    assert_eq!(
-        integer(
-            &connection,
-            "SELECT count(*) FROM sqlite_schema WHERE name='project_unity_launch_config_v17'"
-        ),
-        0
-    );
-    let ddl: String = connection
-        .query_row(
-            "SELECT sql FROM sqlite_schema WHERE name='project_unity_launch_config'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("legacy table authority");
-    assert!(ddl.contains("BETWEEN 1 AND 64"));
-}
-
 fn fixture(path: &Path) -> Connection {
-    let connection = Connection::open(path).expect("isolated State16 fixture");
+    drop(StateStoreHandle::open(path.to_owned()).expect("initialize isolated fixture"));
+    let connection = Connection::open(path).expect("isolated authority fixture");
     connection
         .execute_batch("PRAGMA foreign_keys=ON;")
         .expect("foreign keys");
-    for migration in [
-        include_str!("../migrations/0001_state.sql"),
-        include_str!("../migrations/0002_projects_repositories.sql"),
-        include_str!("../migrations/0003_package_transactions.sql"),
-        include_str!("../migrations/0004_local_workflows.sql"),
-        include_str!("../migrations/0005_template_plans.sql"),
-        include_str!("../migrations/0006_backup_create.sql"),
-        include_str!("../migrations/0007_backup_restore.sql"),
-        include_str!("../migrations/0008_extension_runtime.sql"),
-        include_str!("../migrations/0009_portable_extension_ui.sql"),
-        include_str!("../migrations/0010_project_copy.sql"),
-        include_str!("../migrations/0011_project_preferences.sql"),
-        include_str!("../migrations/0012_package_functional_closure.sql"),
-        include_str!("../migrations/0013_project_directory_delete.sql"),
-        include_str!("../migrations/0014_unity_project_version.sql"),
-        include_str!("../migrations/0015_project_last_modified.sql"),
-        include_str!("../migrations/0016_remove_project_observed.sql"),
-    ] {
-        connection
-            .execute_batch(migration)
-            .expect("authentic historical migration");
-    }
     for (id, identity, path) in [
         (PROJECT_ID, vec![1_u8], "X:/fixture/custom"),
         (INHERITING_PROJECT_ID, vec![2_u8], "X:/fixture/inherited"),
@@ -285,7 +192,10 @@ fn fixture(path: &Path) -> Connection {
         INSERT INTO events (event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,principal_id,occurred_at_ms,payload_json) VALUES ('00000000-0000-4000-8000-000000000321','state.check.succeeded','operation','00000000-0000-4000-8000-000000000311',1,'builtin:local-owner',2,'{}');
         INSERT INTO idempotency_records (principal_id,method,idempotency_key,request_fingerprint,state,operation_id,response_json,created_at_ms) VALUES ('builtin:local-owner','unity.projectLaunchConfig.set','retained-key','{}','completed',NULL,'{ "retained": true }',1);
         UPDATE sqlite_sequence SET seq=99 WHERE name='events';"#).expect("unrelated operation event and replay authority");
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 16);
+    assert_eq!(
+        integer(&connection, "PRAGMA user_version"),
+        i64::from(CURRENT_DATA_SCHEMA)
+    );
     connection
 }
 

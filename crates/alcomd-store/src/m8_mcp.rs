@@ -313,11 +313,7 @@ mod tests {
         use alcomd_application::{
             PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PlanAction, Revision,
         };
-        let mut db = crate::sqlite::mcp_state32_fixture();
-        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-            .expect("State33");
-        db.execute_batch(include_str!("../migrations/0034_mcp_grant_snapshots.sql"))
-            .expect("State34");
+        let mut db = crate::sqlite::current_schema_fixture();
         let owner = PrincipalId::local_owner();
         let observation = ProjectObservation {
             root_path: "C:/owned-registry-fixture".into(),

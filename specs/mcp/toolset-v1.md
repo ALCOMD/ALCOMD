@@ -67,7 +67,7 @@ OAuth续页必须原样回传；缺失、篡改、换token或授权快照变化�
 
 获批的增量工具见[工具 Schema](package-catalog-plan-v1.schema.json)与 [Core RPC Schema](../rpc/m8-mcp-packages-v1.schema.json)。目录按当前 `repositories.read`、`packages.read` 展示可访问的包和来源，可选项目上下文另需 `projects.read`。`alcomd_search_packages` 可浏览全局包或按仓库筛选，`alcomd_get_package` 可查版本详情，`alcomd_list_package_sources` 提供选源所需的稳定 ID 和可用状态。受保护来源当前无需向客户端透露设置或凭据。
 
-`alcomd_plan_package_install` 可按最新兼容版本或精确版本生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 使用相同读取能力、`packages.manage`、原 Plan、显式确认和既有幂等规则。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称。
+`alcomd_plan_package_install` 和通用安装、升级意图均建议省略 `version_selector`，由 Core 推荐兼容版本。调用者也可指定精确版本或范围生成真实 Plan，`alcomd_plan_package_reinstall` 保持已安装的锁定版本。两项均需项目、仓库、包读取能力。`alcomd_apply_package_changes` 使用相同读取能力、`packages.manage`、原 Plan、显式确认和既有幂等规则。来源和版本均由 Core 冻结、重新核对，输出使用稳定来源 ID 和名称。
 
 `alcomd_plan_package_changes` 复用相同项目与修订输入，支持安装、升级、降级、卸载、重新解析、选定包或全部重装，以及最多 256 项的批量意图。可在安装或升级中指定版本范围及预发布策略。精确安装、升级或降级可明确选择 Unity 兼容性例外，Core 在 Plan 中列出风险并沿用原确认规则。
 
@@ -79,14 +79,15 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 ## 项目和备份
 
-`mcp.project-workflows.v1` 接通同一份 Core 项目和备份登记。工具、参数及结果见[工具 Schema](project-workflows-v1.schema.json)和 [Core RPC Schema](../rpc/m8-mcp-project-workflows-v1.schema.json)。
+`mcp.project-workflows.v2` 提供项目操作和备份文件操作。路径使用 Core 所在机器的文件系统。工具、参数及结果见[工具 Schema](project-workflows-v2.schema.json)和 [Core RPC Schema](../rpc/mcp-project-workflows-v2.schema.json)。
 
-- `alcomd_register_project` 登记现有项目。默认来源使用当前项目目录内的相对路径。根外登记需要本机所有者对该目录单独批准。
-- `alcomd_list_project_templates` 读取可用于创建的模板。创建可指定模板 ID 和修订。含包的模板依然需要现有包与仓库能力。
-- `alcomd_plan_project_copy` 冻结源项目修订和目标后供审阅。确认后用 `alcomd_apply_project_copy` 提交原 Plan。
-- `alcomd_list_backups`、`alcomd_get_backup`、`alcomd_create_backup` 使用现有备份目录和归档规则。恢复从已登记备份生成 Plan，并在确认后恢复到新项目。
+- `alcomd_register_project` 接收现有项目目录的绝对路径，也可用相对路径在默认项目目录中选择项目。
+- `alcomd_create_project` 接收完整的新项目目录路径，也可给出默认项目目录下的目录名。`alcomd_list_project_templates` 提供可用于创建的模板 ID 和修订。含包的模板沿用现有包与仓库能力。
+- `alcomd_plan_project_copy` 冻结源项目修订和目标父目录身份。目标可填写完整目录路径或默认项目目录下的目录名。确认后用 `alcomd_apply_project_copy` 提交原 Plan。
+- `alcomd_create_backup` 生成 Unity 工程根目录结构的普通 ZIP。可指定完整的 `destination_path`，也可使用默认备份位置。
+- `alcomd_restore_backup` 接收 `archive_path` 和显式确认，可恢复默认备份目录之外的文件。可以用 `destination_path` 指定完整的新项目目录，也可以用 `project_name` 在默认项目目录中命名。两项均省略时使用 ZIP 文件名。
 
-默认发布目标使用当前项目目录和单一目录名。根外操作由本机所有者运行 `alcomd-cli mcp approve-path --client <id> --purpose <register|create|copy|restore> --path <absolute-path>` 核对并确认。仅把得到的不透明审批 ID 交给该 MCP 客户端。复制和恢复的 Apply 需再次提供原审批 ID。Core 在接受任务前核对授权、目的地和原 Plan。已接受任务通过现有 Operation 查询或取消。写响应丢失时按原参数同键恢复。
+Core 在接受任务前核对当前授权、路径身份及目的地可用性。已接受任务通过现有 Operation 查询或取消。写响应丢失时按原参数同键恢复。
 
 四项能力 `projects.manage`、`projects.create`、`backups.read` 和 `backups.manage` 默认关闭。工具目录按当前客户端授权及 OAuth 上限生成。共享资源归 Core 的本机所有者，Plan、Operation 和幂等记录归发起请求的实际客户端。对外结果只返回稳定 ID、必要的摘要和目标名称。
 

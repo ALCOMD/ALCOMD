@@ -535,6 +535,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
                 locale: None,
                 packages: Some(ConfigPackageSettingsUpdate {
                     hidden_repository_packages: None,
+                    prefer_prerelease: None,
                     show_prerelease: Some(!initial.settings.packages.show_prerelease),
                     hidden_repository_ids: None,
                     hide_local_user_packages: None,

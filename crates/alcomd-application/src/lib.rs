@@ -11,9 +11,8 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 pub use alcomd_domain::{
-    BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
-    ProjectId, RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId,
-    UserPackageId,
+    IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
+    RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId, UserPackageId,
 };
 use serde::{Deserialize, Serialize};
 
@@ -212,8 +211,7 @@ pub struct ProjectRecord {
     /// Historical records without reliable activity evidence remain unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_modified_at_ms: Option<u64>,
-    /// User-controlled registry metadata; absent in durable v10 JSON means false.
-    #[serde(default)]
+    /// User-controlled registry metadata.
     pub favorite: bool,
 }
 
@@ -348,7 +346,6 @@ pub struct RepositoryRecord {
     pub display_name: Option<String>,
     pub revision: Revision,
     pub registered_at_ms: u64,
-    #[serde(default)]
     pub credentials_configured: bool,
     #[serde(skip)]
     pub resolver_indexed: bool,

@@ -698,8 +698,16 @@ async fn oauth_backup_write_works_after_consent_until_revoked() {
         accepted["operation_id"].as_str().expect("operation"),
     )
     .await;
-    assert_eq!(result["state"], "succeeded");
-    assert_eq!(result["result"]["backup_id"], accepted["backup_id"]);
+    assert_eq!(result["state"], "succeeded", "{result}");
+    let archive = result["result"]["archive_name"]
+        .as_str()
+        .expect("public archive name");
+    let file = archives.join(archive);
+    assert!(file.is_file());
+    assert_eq!(
+        result["result"]["archive_bytes"].as_u64(),
+        Some(std::fs::metadata(file).expect("published archive").len())
+    );
     let replay = data(
         call(&writer, &mut trace, "create_backup", args.clone())
             .await

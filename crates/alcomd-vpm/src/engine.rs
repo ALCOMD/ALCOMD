@@ -150,6 +150,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                     &requests,
                     &protected,
                     Some(&rules),
+                    catalog.prefer_prerelease,
                 )
                 .await?
             };
@@ -284,7 +285,15 @@ async fn prepare_reinstall(
             dependency_edges: Vec::new(),
         }
     } else {
-        resolve_migrating_packages(cache, &candidates, &requests, &targets, None).await?
+        resolve_migrating_packages(
+            cache,
+            &candidates,
+            &requests,
+            &targets,
+            None,
+            catalog.prefer_prerelease,
+        )
+        .await?
     };
     build_reinstall_plan(snapshot, &resolution, &targets)
 }
@@ -418,8 +427,15 @@ async fn prepare_bulk(
         let mut rules = snapshot.resolution_rules(explicit, true)?;
         rules.locked.retain(|id, _| !removed.contains(id));
         rules.direct.retain(|id, _| !removed.contains(id));
-        resolve_migrating_packages(cache, &candidates, &requests, &rules.explicit, Some(&rules))
-            .await?
+        resolve_migrating_packages(
+            cache,
+            &candidates,
+            &requests,
+            &rules.explicit,
+            Some(&rules),
+            catalog.prefer_prerelease,
+        )
+        .await?
     };
     let direct_ids = project
         .observation
@@ -648,6 +664,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             .await;
         let catalog = if plan.source_set.is_empty() {
             ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             }
@@ -1302,9 +1319,11 @@ pub(crate) async fn resolve_project_packages(
     root: &Path,
     candidates: &[crate::PackageCandidate],
     requests: &[ResolveRequest],
+    prefer_prerelease: bool,
 ) -> Result<crate::Resolution, M4Error> {
-    let mut resolved = crate::resolver::resolve_unity_migration_packages(candidates, requests)
-        .map_err(map_resolve_error)?;
+    let mut resolved =
+        crate::resolver::resolve_project_change(candidates, requests, None, prefer_prerelease)
+            .map_err(map_resolve_error)?;
     let selected_ids = resolved
         .resolution
         .packages
@@ -1349,15 +1368,18 @@ async fn resolve_migrating_packages(
     requests: &[ResolveRequest],
     protected: &BTreeSet<String>,
     rules: Option<&crate::resolver::ProjectResolutionRules>,
+    prefer_prerelease: bool,
 ) -> Result<crate::Resolution, M4Error> {
     let mut remaining = requests.to_vec();
     let mut omitted = BTreeSet::new();
     let mut first_error = None;
     loop {
-        let result = match rules {
-            Some(rules) => crate::resolver::resolve_project_change(candidates, &remaining, rules),
-            None => crate::resolver::resolve_unity_migration_packages(candidates, &remaining),
-        };
+        let result = crate::resolver::resolve_project_change(
+            candidates,
+            &remaining,
+            rules,
+            prefer_prerelease,
+        );
         let solved = match result {
             Ok(solved) => solved,
             Err(error) => {
@@ -2561,6 +2583,7 @@ mod tests {
             &VpmReader::new().expect("reader"),
             &project,
             &ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             },
@@ -2804,7 +2827,8 @@ mod tests {
                     include_prerelease: false,
                     unity_version: None,
                 }],
-                &rules,
+                Some(&rules),
+                false,
             )
             .expect_err("local package blocks an incompatible selected version");
             assert!(matches!(error, ResolveError::DependencyConflict { .. }));
@@ -2916,6 +2940,7 @@ mod tests {
             &empty_snapshot,
             &empty_project,
             &ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             },
@@ -3102,6 +3127,7 @@ mod tests {
             &snapshot,
             &project,
             &ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             },
@@ -3122,6 +3148,7 @@ mod tests {
             &snapshot,
             &project,
             &ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             },
@@ -3147,6 +3174,7 @@ mod tests {
                 &snapshot,
                 &project,
                 &ResolverCatalog {
+                    prefer_prerelease: false,
                     entries: Vec::new(),
                     complete: true,
                 },
@@ -3177,6 +3205,7 @@ mod tests {
             &over_snapshot,
             &over_project,
             &ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             },
@@ -3392,6 +3421,7 @@ mod tests {
 
     fn catalog(values: &[(&str, &str)]) -> ResolverCatalog {
         ResolverCatalog {
+            prefer_prerelease: false,
             entries: values
                 .iter()
                 .enumerate()

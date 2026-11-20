@@ -222,14 +222,6 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn mcp_project_path_approve(
-        &mut self,
-        params: alcomd_protocol::McpProjectPathApproveParams,
-    ) -> Result<alcomd_protocol::McpProjectPathApproveResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE, params)
-            .await
-    }
-
     pub async fn mcp_project_create(
         &mut self,
         params: alcomd_protocol::McpProjectsCreateParams,
@@ -262,19 +254,11 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn mcp_backup_plan_restore(
+    pub async fn mcp_backup_restore(
         &mut self,
-        params: alcomd_protocol::McpBackupPlanRestoreParams,
-    ) -> Result<alcomd_protocol::McpBackupRestorePlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE, params)
-            .await
-    }
-
-    pub async fn mcp_backup_apply_restore(
-        &mut self,
-        params: alcomd_protocol::McpBackupApplyRestoreParams,
-    ) -> Result<alcomd_protocol::BackupApplyRestoreResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE, params)
+        params: alcomd_protocol::McpBackupRestoreParams,
+    ) -> Result<OperationAccepted, ClientError> {
+        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_RESTORE, params)
             .await
     }
 
@@ -329,7 +313,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_OAUTH_V2.to_owned(),
@@ -360,9 +344,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_BACKUPS_READ_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1.to_owned(),
@@ -945,46 +928,19 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn backups_list(
-        &mut self,
-        params: alcomd_protocol::BackupsListParams,
-    ) -> Result<alcomd_protocol::BackupsListResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_BACKUPS_LIST, params)
-            .await
-    }
-
-    pub async fn backup_get(
-        &mut self,
-        backup_id: String,
-    ) -> Result<alcomd_protocol::BackupRecord, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_BACKUPS_GET,
-            alcomd_protocol::BackupGetParams { backup_id },
-        )
-        .await
-    }
-
     pub async fn backup_create(
         &mut self,
         params: alcomd_protocol::BackupCreateParams,
-    ) -> Result<alcomd_protocol::BackupCreateResult, ClientError> {
+    ) -> Result<OperationAccepted, ClientError> {
         self.call(alcomd_protocol::METHOD_BACKUPS_CREATE, params)
             .await
     }
 
-    pub async fn backup_plan_restore(
+    pub async fn backup_restore(
         &mut self,
-        params: alcomd_protocol::BackupPlanRestoreParams,
-    ) -> Result<alcomd_protocol::BackupRestorePlan, ClientError> {
-        self.call(alcomd_protocol::METHOD_BACKUPS_PLAN_RESTORE, params)
-            .await
-    }
-
-    pub async fn backup_apply_restore(
-        &mut self,
-        params: alcomd_protocol::BackupApplyRestoreParams,
-    ) -> Result<alcomd_protocol::BackupApplyRestoreResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_BACKUPS_APPLY_RESTORE, params)
+        params: alcomd_protocol::BackupRestoreParams,
+    ) -> Result<OperationAccepted, ClientError> {
+        self.call(alcomd_protocol::METHOD_BACKUPS_RESTORE, params)
             .await
     }
 
@@ -1498,8 +1454,6 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_PROJECT_TEMPLATES_LIST
             | alcomd_protocol::METHOD_PROJECT_INVENTORY
             | alcomd_protocol::METHOD_TEMPLATE_GET
-            | METHOD_BACKUPS_LIST
-            | METHOD_BACKUPS_GET
             | METHOD_EXTENSIONS_LIST
             | METHOD_EXTENSIONS_GET
             | METHOD_EXTENSIONS_PERMISSIONS_LIST

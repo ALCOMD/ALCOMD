@@ -687,27 +687,39 @@ async fn public_package_phase_is_atomic_and_duplicate_phase_is_not_a_new_change(
 #[test]
 fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io() {
     use alcomd_application::{
-        BackupRestorePhase, BackupRestorePlanDraft, BackupRestoreTarget, ManifestState, ProjectType,
+        BackupRestoreInput, BackupRestorePhase, BackupRestoreRequest, ManifestState, ProjectType,
     };
     let directory = Directory::new();
     let mut connection =
         sqlite::initialize_connection(&directory.database()).expect("isolated database");
     let owner = PrincipalId::local_owner();
-    let backup = BackupId::new();
-    connection.execute("INSERT INTO backups(backup_id,owner_principal_id,source_project_id,archive_locator,file_identity_key,archive_sha256,byte_size,format_version,created_at_ms,compression_mode,exclude_vpm_packages) VALUES(?1,'builtin:local-owner',NULL,'backup:isolated-stages',x'01',zeroblob(32),42,1,1,'fast',1)", [backup.to_string()]).expect("backup metadata fixture");
     let project = ProjectId::new();
-    let plan = m5_backup_restore::create_plan(&mut connection, &owner, BackupRestorePlanDraft {
-        plan_id: PlanId::new(), project_id: project, backup_id: backup,
-        archive_sha256: [0;32], archive_file_identity: vec![1], archive_bytes: 42,
-        manifest_fingerprint: [0;32], exclude_vpm_packages: true, excluded_packages: vec![],
-        target: BackupRestoreTarget { parent: directory.0.to_string_lossy().into_owned(), leaf: "Restored".to_owned(), must_be_absent: true },
-        target_parent_identity: vec![2], expected_unity_project_json: "{}".to_owned(),
-        plan_fingerprint: [0;32], plan_json: serde_json::json!({"version":1,"backupId":backup,"preallocatedProjectId":project,"targetMustBeAbsent":true}).to_string(),
-    }, 1).expect("immutable plan fixture");
+    let input = BackupRestoreInput {
+        archive_path: directory
+            .0
+            .join("project.zip")
+            .to_string_lossy()
+            .into_owned(),
+        project_name: None,
+        destination_path: Some(directory.0.join("Restored").to_string_lossy().into_owned()),
+    };
+    let request = BackupRestoreRequest {
+        project_id: project,
+        archive_path: directory.0.join("project.zip"),
+        archive_parent_identity: vec![1],
+        archive_directory_fingerprint: [0; 32],
+        archive_file_identity: vec![5],
+        archive_bytes: 42,
+        archive_modified_at: std::time::UNIX_EPOCH,
+        target_parent: directory.0.clone(),
+        target_parent_identity: vec![2],
+        target_name: "Restored".to_owned(),
+    };
     let accepted = m5_backup_restore::accept(
         &mut connection,
         &owner,
-        plan.draft.plan_id,
+        &input,
+        request,
         &key("restore-stages"),
         2,
     )
@@ -728,7 +740,6 @@ fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io()
             locked_dependencies: vec![],
             issues: vec![],
         },
-        target_identity: vec![3],
         project_fingerprint: [0; 32],
     };
     let phases = [
@@ -789,6 +800,11 @@ fn restore_stages_publish_revisions_once_without_an_ipc_endpoint_or_project_io()
     m5_backup_restore::finish_success(&mut connection, operation, 14).expect("repeat finish");
     let complete =
         sqlite::load_owned_operation(&connection, &owner, operation).expect("terminal task");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(complete.result_json.as_deref().expect("result"))
+            .expect("valid task JSON"),
+        serde_json::json!({"projectId": project, "targetName": "Restored"}),
+    );
     assert_eq!(complete.revision.get(), 10);
     assert_eq!(
         complete.state,

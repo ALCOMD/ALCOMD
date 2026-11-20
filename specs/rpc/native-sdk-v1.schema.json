@@ -3,23 +3,6 @@
     "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/native-sdk-v1.schema.json",
     "title": "ALCOMD native SDK v1 additional wire shapes",
     "$defs": {
-        "BackupsListResult": {
-            "type": "object",
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m5-backup-create.json#/$defs/backupRecord"
-                    }
-                },
-                "nextCursor": {
-                    "type": "string"
-                }
-            },
-            "required": [
-                "backups"
-            ]
-        },
         "EmptyParams": {
             "type": "object",
             "additionalProperties": false
@@ -539,7 +522,7 @@
                 },
                 "includePrerelease": {
                     "type": "boolean",
-                    "default": false
+                    "default": true
                 },
                 "allowUnityIncompatible": {
                     "type": "boolean",

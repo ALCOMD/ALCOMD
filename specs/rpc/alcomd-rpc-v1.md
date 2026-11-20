@@ -783,41 +783,32 @@ Core 校验目标父目录的身份，只向不存在的目标发布，并在同
 公开任务失败可通过结果的 `packageId` 标识受影响的软件包。
 State28 替换 State23 的模板声明和能力。精确 DTO 见 `m7-project-create.schema.json`。
 
-### M8 项目与备份委托
+### MCP project and backup workflows
 
-`mcp.project-workflows.v1` 增加固定的登记、创建、复制 Plan/Apply、恢复 Plan/Apply 和本机路径审批。项目创建所需的模板列表以及备份列表、详情和创建复用现有方法。既有本机参数和结果保持原合同。精确形状见 [M8 项目与备份 Schema](m8-mcp-project-workflows-v1.schema.json)。
+The current MCP workflow capability is `mcp.project-workflows.v2`. Project registration,
+creation and copy accept absolute paths on the Core host. Copy retains its Plan/Apply and
+confirmation contract. Each accepted write binds the authenticated principal and checks the
+current business permissions again on replay. [MCP workflow Schema](mcp-project-workflows-v2.schema.json)
 
-本机所有者明示批准外部路径时，Core 冻结用途、实际客户端、目录身份和目标名称。审批有效期为十分钟，最多保留六十四条有效审批，未接受的外部路径审批在重启时失效。计划记录只持久保存审批摘要或默认位置类型。在接受和同键补收结果时重验客户端权限、凭据和 OAuth 限制。已接受操作沿用原任务与恢复规则。
+## 21. Unity project ZIP
 
-## 21. M5 兼容增加：Backup Create
+`backups.create` negotiates `backups.create.v2`. It accepts `projectId`, `expectedRevision`,
+`idempotencyKey`, and optional `compressionMode`, `excludeVpmPackages`, `includeLibrary`, and
+`destinationPath`. Core freezes the effective defaults at acceptance. The compression choices are
+`store`, `fast`, `level3`, `level5`, `level7`, and `maximum`, with levels 0, 1, 3, 5, 7, and 9.
+`destinationPath` specifies a new absolute ZIP file. With no explicit destination, Core uses its
+configured backup directory and naming rules.
 
-Backup Create 在 RPC major 1 上冻结并发布两项 capability：`backups.read.v1` 与
-`backups.create.v1`。完整 DTO 与 bounds 由 `m5-backup-create.schema.json` 冻结：`backups.list/get`
-要求 `backups.read`；`backups.create` 要求 `backups.manage`和`projects.read`能力、复验目标项目归属，并直接返回预分配
-且可幂等重放的 `operationId`/`backupId`。它没有 Plan/Apply，不接收任意 output path。
+`backups.restore` negotiates `backups.restore.v2`. It accepts `archivePath`, `idempotencyKey`,
+and optional `projectName` or `destinationPath`. `archivePath` identifies an absolute ZIP file
+on the Core host. The archive must have a Unity project at its root. Core restores into a
+new directory and registers it. MCP uses `mcp.backups.restore` with explicit confirmation.
 
-请求必须提供 `projectId`、`expectedRevision`、`idempotencyKey`。`compressionMode`、`excludeVpmPackages`、`includeLibrary`
-可分别省略，由 application 从同一权威设置快照解析默认值和目的地；显式值优先，null/非法值拒绝。`compressionMode`合法值为store/fast/level3/level5/level7/maximum，分别对应0/1/3/5/7/9级，旧值含义保持。
-接受后持久固定有效选项，省略参数的同幂等键重放沿用原选项、不重读变动默认；显式改变已接受选项返回幂等冲突。
-旧已接受请求省略 Library 时保持 false；false 选择保留既有指纹，true 加入内容选择指纹。
-Library=true 只启用标准根 Library 缓存，false 保留原排除和 LastSceneManagerSetup 规则；其他路径/链接/配额门禁保持。
-Archive v1 manifest、BackupRecord形状保持；State18仅扩展备份压缩等级约束，不增加平行归档格式。
-Operation phase 固定为 `accepted`、`inventory_ready`、`archiving`、`archive_ready`、`publish_intent`、
-`archive_published`、`state_committed`。进入 publish intent 后，取消不能产生 ambiguous final artifact；
-恢复必须复用原 OperationId、BackupId 和幂等请求。
-
-新增稳定错误为 `backup_not_found`、`backup_unavailable`、`backup_source_unsafe`、
-`backup_archive_limit_exceeded`、`backup_integrity_mismatch` 与 `project_changed_during_backup`。普通错误、
-Event 和 activity 不得包含完整 source/archive path、内部 locator、原始 argv、credential 或 journal。
-Backup Archive v1/profile 由 `specs/backups/` 冻结。Create method 已进入 dispatcher、official client 默认
-capability 与 CLI help。
-
-Backup Restore contract-first 在 RPC major 1 上兼容冻结 `backups.planRestore`、
-`backups.applyRestore` 与 `backups.restore.v1`，完整 DTO 由 `m5-backup-restore.schema.json` 冻结。Plan
-要求 `backups.read + projects.create`；Apply 另需 `backups.manage`，返回固定 OperationId 与 Plan 预分配的
-ProjectId。公共 Plan/result 只含 target/Backup 安全摘要，不返回 archive/staging path、DB locator 或 journal
-detail。Restore dispatcher/worker/client/CLI 已实现并按协商广告，仍只支持注册且重新验证的原生归档恢复到不存在的新项目目标，
-不支持 overwrite/merge 或任意ZIP。当前State18保留原恢复证据，Library缓存按归档内容恢复，不替代M11真实迁移或v3对齐验收。
+Both methods return `operationId` and `replayed`. Recover an interrupted reply using the original
+input and idempotency key. A successful create task returns `archiveName` and `archiveBytes`. A
+successful restore task returns `projectId` and `targetName`. Filesystem identity checks, quotas,
+and no-replace publication run in Core. Ordinary responses and errors expose bounded result fields.
+[ZIP RPC Schema](zip-backup.schema.json)
 
 ## 22. M6 兼容增加：Extension Runtime
 

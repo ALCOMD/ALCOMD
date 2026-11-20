@@ -4,31 +4,20 @@ use std::future::Future;
 
 tokio::task_local! {
     static WORKFLOW_AUTHENTICATION: ToolAuthentication;
-    static WORKFLOW_PATH: (WorkflowPlanPath, Option<Vec<u8>>);
+    static WORKFLOW_PARENT_IDENTITY: Vec<u8>;
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
-pub enum WorkflowPlanPath {
-    Default,
-    Approved { digest: String },
-}
-
-pub async fn with_workflow_plan_path<T>(
-    path: WorkflowPlanPath,
-    expected_parent: Option<Vec<u8>>,
+/// Binds a delegated plan to the parent checked by its RPC entry point.
+pub async fn with_workflow_parent_identity<T>(
+    expected_parent: Vec<u8>,
     work: impl Future<Output = T>,
 ) -> T {
-    WORKFLOW_PATH.scope((path, expected_parent), work).await
-}
-
-pub fn workflow_plan_path() -> Option<WorkflowPlanPath> {
-    WORKFLOW_PATH.try_with(|(path, _)| path.clone()).ok()
+    WORKFLOW_PARENT_IDENTITY.scope(expected_parent, work).await
 }
 
 pub(crate) fn workflow_parent_matches(identity: &[u8]) -> bool {
-    WORKFLOW_PATH
-        .try_with(|(_, parent)| parent.as_deref() == Some(identity))
+    WORKFLOW_PARENT_IDENTITY
+        .try_with(|parent| parent == identity)
         .unwrap_or(false)
 }
 

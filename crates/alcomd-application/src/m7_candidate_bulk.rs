@@ -1,7 +1,6 @@
 use super::{
-    CandidateChoice, CandidateClassification, CandidateEligibility, CandidateInstalled,
-    CandidateRelation, CandidateSourceOverride, CandidateSummary, CandidateUpdate,
-    PackageSourceSelector,
+    CandidateChoice, CandidateEligibility, CandidateInstalled, CandidateRelation,
+    CandidateSourceOverride, CandidateSummary, CandidateUpdate, PackageSourceSelector,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -70,7 +69,7 @@ fn update_choice(row: &CandidateSummary, stable: bool) -> (&CandidateChoice, &Ca
     if stable {
         (&row.project_latest_stable, &row.stable_update)
     } else {
-        (&row.project_latest, &row.update)
+        (&row.recommended, &row.update)
     }
 }
 
@@ -89,7 +88,7 @@ fn intent(row: &CandidateSummary, stable: bool) -> Option<CandidateBulkIntent> {
     let package_id = row.package_id.clone();
     let version_range = format!("={}", candidate.version);
     let source = candidate.source.clone();
-    let include_prerelease = candidate.classification == CandidateClassification::Prerelease;
+    let include_prerelease = !stable;
     Some(if matches!(row.installed, CandidateInstalled::Absent) {
         CandidateBulkIntent::Install {
             package_id,
@@ -146,6 +145,26 @@ fn update_all(
     action
 }
 
+fn version_targets(
+    action: &CandidateBulkAction,
+) -> impl Iterator<Item = (&str, &str, &PackageSourceSelector)> {
+    action.intents.iter().filter_map(|intent| match intent {
+        CandidateBulkIntent::Install {
+            package_id,
+            version_range,
+            source,
+            ..
+        }
+        | CandidateBulkIntent::Upgrade {
+            package_id,
+            version_range,
+            source,
+            ..
+        } => Some((package_id.as_str(), version_range.as_str(), source)),
+        _ => None,
+    })
+}
+
 pub(super) fn bulk_actions(
     items: &[CandidateSummary],
     selected_ids: &[String],
@@ -155,8 +174,8 @@ pub(super) fn bulk_actions(
     let update_all = update_all(items, false, catalog_complete);
     let stable = self::update_all(items, true, catalog_complete);
     let update_all_stable = (update_all.target_count != stable.target_count
-        || update_all.intents != stable.intents)
-        .then_some(stable);
+        || version_targets(&update_all).ne(version_targets(&stable)))
+    .then_some(stable);
     let ids: HashSet<&str> = selected_ids.iter().map(String::as_str).collect();
     let selected: Vec<_> = items
         .iter()
@@ -183,8 +202,8 @@ pub(super) fn bulk_actions(
     let latest = install_update(false);
     let stable = install_update(true);
     let install_update_stable = (latest.target_count != stable.target_count
-        || latest.intents != stable.intents)
-        .then_some(stable);
+        || version_targets(&latest).ne(version_targets(&stable)))
+    .then_some(stable);
     let remove = if selection_valid
         && selected
             .iter()
@@ -255,6 +274,7 @@ mod tests {
             },
             latest: empty.clone(),
             latest_stable: empty.clone(),
+            recommended: empty.clone(),
             project_latest: empty.clone(),
             project_latest_stable: empty,
             update: CandidateUpdate::NoUpdate {

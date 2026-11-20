@@ -321,7 +321,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
                 package_id: dependency.package_id.clone(),
                 range: dependency.version_range.clone(),
                 source: None,
-                include_prerelease: false,
+                include_prerelease: true,
                 unity_version,
             })
             .collect::<Vec<_>>();
@@ -359,6 +359,7 @@ impl<S: RepositoryArchivePinStore> ProjectCreateAdapter for ProjectCreateEngine<
             &stage.root,
             &candidates,
             &requests,
+            catalog.prefer_prerelease,
         )
         .await
         .map_err(map_template_resolve_error)?;
@@ -1567,6 +1568,7 @@ mod tests {
             }
         }
         ResolverCatalog {
+            prefer_prerelease: false,
             entries,
             complete: true,
         }

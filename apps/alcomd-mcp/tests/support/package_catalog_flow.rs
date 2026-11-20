@@ -127,6 +127,11 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
         "source":selector, "version_selector":{"kind":"exact", "version":"1.0.0"},
     })).await.expect("exact install plan"));
     assert!(!installed.exists());
+    let recommended = data(call(&sa, &mut trace, "plan_package_install", json!({
+        "project_id":project_id, "expected_revision":revision, "package_id":"com.example.catalog",
+        "source":selector,
+    })).await.expect("recommended install plan"));
+    assert_eq!(recommended["sources"], plan["sources"]);
     let public = plan.to_string();
     assert!(
         !public.contains("artifact_url")
@@ -286,6 +291,16 @@ async fn frozen_sdk_catalog_install_and_reinstall_real_core() {
                 .await
         }
         .expect("original native package use case");
+        if action == "upgrade" {
+            let recommended = data(call(&sa, &mut trace, "plan_package_changes", json!({
+                "project_id":project_id, "expected_revision":revision, "package_id":"com.example.catalog",
+                "source":selected, "intent":{"kind":"upgrade"},
+            })).await.expect("recommended upgrade plan"));
+            assert_eq!(
+                recommended["plan"]["change_set_fingerprint"],
+                native.change_set_fingerprint
+            );
+        }
         let intent = if action == "upgrade" {
             json!({"kind":action,"version_selector":{"kind":"range","range":"^2.0.0"},"include_prerelease":false})
         } else {

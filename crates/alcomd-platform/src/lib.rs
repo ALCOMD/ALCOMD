@@ -23,8 +23,8 @@ pub use core_installation::{
 pub use credential_vault::{delete_credential, read_credential, write_credential};
 pub use external_path::external_filesystem_path;
 pub use storage_directories::{
-    default_storage_directories, normalize_storage_directory, prepare_storage_directory,
-    publish_path_no_replace, resolve_plain_storage_directory,
+    default_storage_directories, normalize_storage_directory, open_plain_file,
+    prepare_storage_directory, publish_path_no_replace, resolve_plain_storage_directory,
 };
 pub use unity_hub_open::{UnityHubLaunchError, UnityHubLaunchErrorKind, UnityHubProcessLauncher};
 
@@ -96,6 +96,28 @@ pub use windows::{
     connect_verified_local_pipe, endpoint_display, file_identity, file_link_count,
     local_app_data_directory, start_core_process, state_database_path,
 };
+
+/// Locates the state database without creating or changing the data directory.
+pub fn state_database_location(config: &DataConfig) -> std::io::Result<std::path::PathBuf> {
+    #[cfg(unix)]
+    let directory = unix::data_directory_path(config)?;
+    #[cfg(windows)]
+    let directory = windows::data_directory_path(config)?;
+    if !directory.is_absolute()
+        || directory.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "state data directory must be an absolute normalized path",
+        ));
+    }
+    Ok(directory.join("state.db"))
+}
 
 #[cfg(windows)]
 /// Returns the fixed 24-byte Windows filesystem-object identity key.

@@ -1,10 +1,16 @@
-# Config13 存储库内软件包开关
+# Config13 设置
 
-状态：2026-11-09，所有者已批准公开设置字段、Config13 升级和容量边界，已实施并通过定向验证，范围见 ExecPlan。Config1–12 仅保留为迁移输入；运行实例已于2026-11-10按所有者要求升级，验证见[记录](../../docs/testing/runtime-update-20261110.md)。
+Config13 是 v4 首次发布的设置基线。Core 首次初始化时创建现行设置，重开时验证文件版本、完整字段与容量。
+
+## 软件包版本
+
+新配置使用 `packages.showPrerelease = true` 和 `packages.preferPrerelease = false`。TOML 使用 `show_prerelease`、`prefer_prerelease`。已有配置和 v3 导入保留显示设置，缺少的偏好字段取 false。关闭显示会在同一次保存中清除偏好，再次开启只恢复可见性。
+
+项目候选和解析目录只读取可见版本，包括仓库和本地用户包。默认安装和升级优先兼容稳定版，无合适稳定版时可选兼容预发布版。开启偏好后在兼容候选中选 SemVer 最高者。升级保留已安装版本下限。仓库管理清单和项目安装记录仍可展示预发布版。
 
 ## 设置形状
 
-既有 settings DTO 的 `packages` 新增必填 `hiddenRepositoryPackages`，默认 `[]`：
+`packages.hiddenRepositoryPackages` 为设置快照的必填字段，默认 `[]`。
 
 ```json
 {
@@ -27,11 +33,11 @@
 
 Core的普通候选/提供方/求解/计划与提交前复验使用同一配置权威。旧计划和手工来源不能绕过。已安装包仍由项目提供事实；没有其他开启来源即来源未知，本地卸载资格保持。raw仓库浏览与包详情是筛选管理入口，可以显示和重新开启关闭项；该管理例外不扩散到项目候选。
 
-## 持久化与兼容边界
+## 持久化
 
-Config13 TOML的 `[packages]` 增加 `hidden_repository_packages` 分组，保存相同的仓库/包ID偏好，不存名称、版本或元数据。完整文件有界读取及保存上限为1MiB；排除新字段后的旧字段仍保留16KiB基线体积预算与原有字段限制。Config1–12文件仍按原16KiB上限检查，不能借升级放宽旧格式校验。
+Config13 TOML 使用 `[packages]` 的 `hidden_repository_packages` 保存仓库和包 ID。完整文件读取及保存上限为 1 MiB，去除该列表后其余设置的编码上限为 16 KiB。
 
-已有合法配置升级时仅增加空清单并写入新Schema，原设置及revision保持；旧Schema中夹带新字段拒绝。`system.hello.configSchema`及设置成功结果报告13；严格客户端须同步新增字段。不增加SQL Schema、RPC major、能力名、权限或迁移删除项；不双写、不维护Config12运行实现。旧Core不支持读取Config13，回退运行版本须使用升级前备份，不静默删去新偏好。
+`system.hello.configSchema` 和设置结果报告 13。未知版本、未知字段或无当前权威的中断文件在写入前拒绝。有效 Config13 的写入使用同目录暂存和可恢复的替换。首次发布初始化和迁移边界见 [M11 实施计划](../../docs/exec-plans/M11-v3-migration-and-zip.md)。
 
 实施和回归边界见[ExecPlan](../../docs/exec-plans/M7-repository-package-switches.md)。
 
@@ -39,10 +45,10 @@ Config13 TOML的 `[packages]` 增加 `hidden_repository_packages` 分组，保�
 
 ## 默认保存目录（2026-11-10 所有者调整）
 
-`settings.paths.projectDirectory` / `backupDirectory` 为 null 时，使用用户主目录下由产品身份派生的 `ALCOMD/Projects`、`ALCOMD/Backups`。Windows 查询 User Profile Known Folder；macOS/Linux 使用 HOME，不再使用 Documents 或 XDG 文档目录。此规则取代历史 Config5–7 说明中的 Documents 基准；旧版本仅为迁移输入。
+`settings.paths.projectDirectory` 或 `backupDirectory` 为空时，使用用户主目录下由产品身份派生的 `ALCOMD/Projects` 和 `ALCOMD/Backups`。Windows 查询 User Profile Known Folder，macOS 和 Linux 使用 HOME。
 
 显式路径继续优先，`directories` 仍只投影当前有效值，不回写默认路径；保留设置修订、既有资源及已接受任务的固定目的地，不自动搬迁。内部状态/配置目录不受影响，Config13 形状及版本不变。验证见[默认存储根记录](../../docs/testing/home-storage-defaults-20261110.md)。
 
 ## 默认备份压缩（2026-11-12 所有者调整）
 
-新配置及没有备份选项的旧配置采用 `level5`（真实Deflate等级5）；替代此前的 `fast` 默认。已经保存的压缩选项保持，已接受任务和幂等重放不重新解析默认值，显式单次选择仍优先。0/1/3/5/7/9档位及Config13形状、版本保持。新备份文件名与验证范围见[备份修正计划](../../docs/exec-plans/M7-backup-names-default-compression.md)。
+新配置使用 `level5`（Deflate 等级 5）。显式单次选择优先于已保存的压缩选项，已接受任务和幂等重放使用冻结的选项。可用等级是 0、1、3、5、7 和 9。文件格式见 [Unity 项目 ZIP](../backups/project-zip.md)。

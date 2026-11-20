@@ -3,9 +3,8 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Translate } from "./i18n";
 
 export const capabilities = {
-    backupsCreate: "backups.create.v1",
-    backupsRead: "backups.read.v1",
-    backupsRestore: "backups.restore.v1",
+    backupsCreate: "backups.create.v2",
+    backupsRestore: "backups.restore.v2",
     extensionsRemoteInstall: RPC_CAPABILITIES.extensionsRemoteInstall,
     extensionsLifecycle: RPC_CAPABILITIES.extensionsLifecycle,
     extensionsPermissions: RPC_CAPABILITIES.extensionsPermissions,

@@ -207,7 +207,7 @@
                         "packageId": {"$ref": "#/$defs/packageId"},
                         "versionRange": {"$ref": "#/$defs/versionText"},
                         "repositoryId": {"$ref": "#/$defs/uuid"},
-                        "includePrerelease": {"type": "boolean", "default": false},
+                        "includePrerelease": {"type": "boolean", "default": true},
                         "allowUnityIncompatible": {"type": "boolean", "default": false}
                     }
                 }
@@ -246,7 +246,7 @@
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "includePrerelease": {"type": "boolean", "default": false}
+                "includePrerelease": {"type": "boolean", "default": true}
             }
         },
         "applyPlanParams": {

@@ -12,72 +12,24 @@ pub(super) async fn dispatch(
     application: &BackupApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    match request.method.as_str() {
-        rpc::METHOD_BACKUPS_LIST => {
-            if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_READ_V1)
-            {
-                return action;
-            }
-            let params: rpc::BackupsListParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            let project_id = match params
-                .project_id
-                .map(|value| app::ProjectId::parse(&value))
-                .transpose()
-            {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            let cursor = match params.cursor.map(parse_cursor).transpose() {
-                Ok(value) => value,
-                Err(()) => return invalid(request.id),
-            };
-            match application
-                .list(access, project_id, cursor, params.limit.unwrap_or(100))
-                .await
-            {
-                Ok(page) => success_action(
-                    request.id,
-                    rpc::BackupsListResult {
-                        backups: page.backups.into_iter().map(record).collect(),
-                        next_cursor: page.next_cursor.map(format_cursor),
-                    },
-                    None,
-                ),
-                Err(source) => backup_error(request.id, source),
-            }
+    let capability = match request.method.as_str() {
+        rpc::METHOD_BACKUPS_CREATE => rpc::CAPABILITY_BACKUPS_CREATE_V2,
+        rpc::METHOD_BACKUPS_RESTORE if !access.is_mcp_client() => {
+            rpc::CAPABILITY_BACKUPS_RESTORE_V2
         }
-        rpc::METHOD_BACKUPS_GET => {
-            if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_READ_V1)
-            {
-                return action;
-            }
-            let params: rpc::BackupGetParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            let backup_id = match app::BackupId::parse(&params.backup_id) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            match application.get(access, backup_id).await {
-                Ok(value) => success_action(request.id, record(value), None),
-                Err(source) => backup_error(request.id, source),
-            }
+        rpc::METHOD_MCP_BACKUPS_RESTORE if access.is_mcp_client() => {
+            rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2
         }
+        _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
+    };
+    if let Some(action) = require_capability(&request.id, state, capability) {
+        return action;
+    }
+    let outcome = match request.method.as_str() {
         rpc::METHOD_BACKUPS_CREATE => {
-            if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_CREATE_V1)
-            {
-                return action;
-            }
-            let params: rpc::BackupCreateParams = match serde_json::from_value(request.params) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
+            let Ok(params) = serde_json::from_value::<rpc::BackupCreateParams>(request.params)
+            else {
+                return invalid(request.id);
             };
             let parsed = app::ProjectId::parse(&params.project_id)
                 .ok()
@@ -86,159 +38,80 @@ pub(super) async fn dispatch(
             let Some(((project_id, revision), key)) = parsed else {
                 return invalid(request.id);
             };
-            let compression = params.compression_mode.map(|value| match value {
-                rpc::BackupCompression::Store => app::BackupCompression::Store,
-                rpc::BackupCompression::Fast => app::BackupCompression::Fast,
-                rpc::BackupCompression::Level3 => app::BackupCompression::Level3,
-                rpc::BackupCompression::Level5 => app::BackupCompression::Level5,
-                rpc::BackupCompression::Level7 => app::BackupCompression::Level7,
-                rpc::BackupCompression::Maximum => app::BackupCompression::Maximum,
-            });
-            match application
+            application
                 .create(
                     access,
                     project_id,
                     revision,
                     app::BackupCreateOptions {
-                        compression_mode: compression,
+                        compression_mode: params.compression_mode.map(compression_mode),
                         exclude_vpm_packages: params.exclude_vpm_packages,
                         include_library: params.include_library,
+                        destination_path: params.destination_path,
                     },
                     key,
                 )
                 .await
-            {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::BackupCreateResult {
-                        operation_id: value.operation_id.to_string(),
-                        backup_id: value.backup_id.to_string(),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
-                Err(source) => backup_error(request.id, source),
-            }
         }
-        rpc::METHOD_BACKUPS_PLAN_RESTORE => {
-            if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_RESTORE_V1)
-            {
-                return action;
-            }
-            let params: rpc::BackupPlanRestoreParams = match serde_json::from_value(request.params)
-            {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
+        _ => {
+            let params = if access.is_mcp_client() {
+                let Ok(params) =
+                    serde_json::from_value::<rpc::McpBackupRestoreParams>(request.params)
+                else {
+                    return invalid(request.id);
+                };
+                if !params.confirm {
+                    return invalid(request.id);
+                }
+                rpc::BackupRestoreParams {
+                    archive_path: params.archive_path,
+                    destination_path: params.destination_path,
+                    project_name: params.project_name,
+                    idempotency_key: params.idempotency_key,
+                }
+            } else {
+                let Ok(params) = serde_json::from_value::<rpc::BackupRestoreParams>(request.params)
+                else {
+                    return invalid(request.id);
+                };
+                params
             };
-            let backup_id = match app::BackupId::parse(&params.backup_id) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            match application
-                .plan_restore(
-                    access,
-                    backup_id,
-                    std::path::PathBuf::from(params.target_parent),
-                    params.target_leaf,
-                )
-                .await
-            {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::BackupRestorePlan {
-                        plan_id: value.plan_id.to_string(),
-                        project_id: value.project_id.to_string(),
-                        backup_id: value.backup_id.to_string(),
-                        target: rpc::BackupRestoreTarget {
-                            parent: value.target.parent,
-                            leaf: value.target.leaf,
-                            must_be_absent: value.target.must_be_absent,
-                        },
-                        archive_sha256: hex(&value.archive_sha256),
-                        packages_require_resolve: value.packages_require_resolve,
-                        excluded_packages: value
-                            .excluded_packages
-                            .into_iter()
-                            .map(|package| rpc::BackupRestoreExcludedPackage {
-                                package_id: package.package_id,
-                                version: package.version,
-                            })
-                            .collect(),
-                        plan_fingerprint: hex(&value.plan_fingerprint),
-                    },
-                    None,
-                ),
-                Err(source) => backup_error(request.id, source),
-            }
-        }
-        rpc::METHOD_BACKUPS_APPLY_RESTORE => {
-            if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_RESTORE_V1)
-            {
-                return action;
-            }
-            let params: rpc::BackupApplyRestoreParams = match serde_json::from_value(request.params)
-            {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            let parsed = app::PlanId::parse(&params.plan_id)
-                .ok()
-                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
-            let Some((plan_id, key)) = parsed else {
+            let Ok(key) = IdempotencyKey::parse(params.idempotency_key) else {
                 return invalid(request.id);
             };
-            match application.apply_restore(access, plan_id, key).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::BackupApplyRestoreResult {
-                        operation_id: value.operation_id.to_string(),
-                        project_id: value.project_id.to_string(),
-                        replayed: value.replayed,
-                    },
-                    None,
-                ),
-                Err(source) => backup_error(request.id, source),
-            }
+            application
+                .restore(
+                    access,
+                    params.archive_path,
+                    params.project_name,
+                    params.destination_path,
+                    key,
+                )
+                .await
         }
-        _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
+    };
+    match outcome {
+        Ok(value) => success_action(
+            request.id,
+            rpc::OperationAccepted {
+                operation_id: value.operation_id.to_string(),
+                replayed: value.replayed,
+            },
+            None,
+        ),
+        Err(source) => backup_error(request.id, source),
     }
 }
 
-fn record(value: app::BackupRecord) -> rpc::BackupRecord {
-    rpc::BackupRecord {
-        backup_id: value.backup_id.to_string(),
-        source_project_id: value.source_project_id.to_string(),
-        archive_sha256: hex(&value.archive_sha256),
-        archive_bytes: value.archive_bytes,
-        format_version: value.format_version,
-        created_at_ms: value.created_at_ms,
-        compression_mode: match value.compression_mode {
-            app::BackupCompression::Store => rpc::BackupCompression::Store,
-            app::BackupCompression::Fast => rpc::BackupCompression::Fast,
-            app::BackupCompression::Level3 => rpc::BackupCompression::Level3,
-            app::BackupCompression::Level5 => rpc::BackupCompression::Level5,
-            app::BackupCompression::Level7 => rpc::BackupCompression::Level7,
-            app::BackupCompression::Maximum => rpc::BackupCompression::Maximum,
-        },
-        exclude_vpm_packages: value.exclude_vpm_packages,
+fn compression_mode(value: rpc::BackupCompression) -> app::BackupCompression {
+    match value {
+        rpc::BackupCompression::Store => app::BackupCompression::Store,
+        rpc::BackupCompression::Fast => app::BackupCompression::Fast,
+        rpc::BackupCompression::Level3 => app::BackupCompression::Level3,
+        rpc::BackupCompression::Level5 => app::BackupCompression::Level5,
+        rpc::BackupCompression::Level7 => app::BackupCompression::Level7,
+        rpc::BackupCompression::Maximum => app::BackupCompression::Maximum,
     }
-}
-
-fn parse_cursor(value: String) -> Result<app::BackupCursor, ()> {
-    let (time, id) = value.split_once(':').ok_or(())?;
-    Ok(app::BackupCursor {
-        created_at_ms: time.parse().map_err(|_| ())?,
-        backup_id: app::BackupId::parse(id).map_err(|_| ())?,
-    })
-}
-
-fn format_cursor(value: app::BackupCursor) -> String {
-    format!("{}:{}", value.created_at_ms, value.backup_id)
-}
-fn hex(value: &[u8; 32]) -> String {
-    value.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 pub(super) fn backup_error(id: String, source: app::M5BackupError) -> DispatchAction {

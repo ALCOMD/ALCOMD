@@ -4,8 +4,6 @@
     "title": "ALCOMD M7 P6 Package Functional Closure proposal",
     "x-alcomd-publication": "implemented-candidate",
     "x-alcomd-production-wiring-created": true,
-    "x-alcomd-config-schema": 2,
-    "x-alcomd-state-schema": 12,
     "$defs": {
         "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
         "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},

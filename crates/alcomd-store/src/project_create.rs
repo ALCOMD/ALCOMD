@@ -875,7 +875,7 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         let authentication = alcomd_application::workflow_authentication();
         self.request_worker(
             move |connection| {
-                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
+                let _context = super::m8_workflows::ContextGuard::install(authentication);
                 project_template_jobs::edit_replay(connection, &owner, &key, &fingerprint)
             },
             unavailable,
@@ -1025,7 +1025,7 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         let authentication = alcomd_application::workflow_authentication();
         self.request_worker(
             move |connection| {
-                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
+                let _context = super::m8_workflows::ContextGuard::install(authentication);
                 project_templates::remove_idempotent(
                     connection,
                     &owner,
@@ -1085,7 +1085,7 @@ impl ProjectCreateStore for crate::StateStoreHandle {
         let authentication = alcomd_application::workflow_authentication();
         self.request_worker(
             move |connection| {
-                let _context = super::m8_workflows::ContextGuard::install(authentication, None);
+                let _context = super::m8_workflows::ContextGuard::install(authentication);
                 project_template_jobs::accept(
                     connection,
                     &owner,

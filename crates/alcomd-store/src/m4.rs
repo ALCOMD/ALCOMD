@@ -234,6 +234,7 @@ pub(super) fn resolver_catalog(
         entries.extend(rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?);
     }
     Ok(ResolverCatalog {
+        prefer_prerelease: settings.prefer_prerelease,
         entries,
         complete: !incomplete,
     })

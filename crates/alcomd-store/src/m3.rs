@@ -583,6 +583,15 @@ fn insert_project(
     if duplicate {
         return Err(M3Error::new(M3ErrorCode::ProjectAlreadyRegistered));
     }
+    if super::m5_backup_restore::target_reserved(
+        transaction,
+        std::path::Path::new(&observation.root_path),
+    )
+    .map_err(|cause| M3Error::new(M3ErrorCode::StoreUnavailable).with_source(cause))?
+    {
+        return Err(M3Error::new(M3ErrorCode::ProjectInaccessible)
+            .with_reason("project destination belongs to an unfinished restore"));
+    }
     let id = ProjectId::new();
     transaction
         .execute(

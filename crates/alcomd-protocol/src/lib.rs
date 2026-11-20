@@ -146,11 +146,8 @@ pub const METHOD_PROJECT_TEMPLATES_LIST: &str = "projectTemplates.list";
 pub const METHOD_PROJECT_TEMPLATES_SAVE: &str = "projectTemplates.save";
 pub const METHOD_PROJECT_TEMPLATES_EXPORT: &str = "projectTemplates.export";
 pub const METHOD_PROJECT_TEMPLATES_REMOVE: &str = "projectTemplates.remove";
-pub const METHOD_BACKUPS_LIST: &str = "backups.list";
-pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
-pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
-pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
+pub const METHOD_BACKUPS_RESTORE: &str = "backups.restore";
 pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
 pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
 pub const METHOD_PROJECTS_PLAN_DELETE_DIRECTORY: &str = "projects.planDeleteDirectory";
@@ -203,9 +200,8 @@ pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 pub const METHOD_UNITY_HUB_OPEN: &str = "unity.hub.open";
 pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
-pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
-pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
-pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
+pub const CAPABILITY_BACKUPS_CREATE_V2: &str = "backups.create.v2";
+pub const CAPABILITY_BACKUPS_RESTORE_V2: &str = "backups.restore.v2";
 pub const CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1: &str = "extensions.remote-install.v1";
 pub const CAPABILITY_EXTENSIONS_LIFECYCLE_V1: &str = "extensions.lifecycle.v1";
 pub const CAPABILITY_EXTENSIONS_PERMISSIONS_V1: &str = "extensions.permissions.v1";
@@ -325,8 +321,8 @@ pub mod error_code {
     pub const BACKUP_ARCHIVE_LIMIT_EXCEEDED: &str = "backup_archive_limit_exceeded";
     pub const PROJECT_CHANGED_DURING_BACKUP: &str = "project_changed_during_backup";
     pub const BACKUP_INTEGRITY_MISMATCH: &str = "backup_integrity_mismatch";
-    pub const BACKUP_RESTORE_PLAN_NOT_FOUND: &str = "backup_restore_plan_not_found";
-    pub const BACKUP_RESTORE_PLAN_STALE: &str = "backup_restore_plan_stale";
+    pub const BACKUP_INVALID_ARCHIVE: &str = "backup_invalid_archive";
+    pub const BACKUP_SOURCE_CHANGED: &str = "backup_source_changed";
     pub const BACKUP_TARGET_EXISTS: &str = "backup_target_exists";
     pub const BACKUP_TARGET_INVALID: &str = "backup_target_invalid";
     pub const BACKUP_RESTORE_RECOVERY_REQUIRED: &str = "backup_restore_recovery_required";
@@ -1807,6 +1803,10 @@ pub struct PackagePlan {
     pub change_set: PackageChangeSet,
 }
 
+fn include_visible_prereleases() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackagePlanInstallParams {
@@ -1821,7 +1821,7 @@ pub struct PackagePlanInstallParams {
     pub repository_id: Option<String>,
     #[serde(default)]
     pub source: Option<PackageSourceSelector>,
-    #[serde(default)]
+    #[serde(default = "include_visible_prereleases")]
     pub include_prerelease: bool,
 }
 
@@ -1855,7 +1855,7 @@ pub struct PackagePlanDowngradeParams {
 pub struct PackagePlanResolveParams {
     pub project_id: String,
     pub expected_revision: u64,
-    #[serde(default)]
+    #[serde(default = "include_visible_prereleases")]
     pub include_prerelease: bool,
 }
 
@@ -2317,44 +2317,6 @@ pub enum BackupCompression {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRecord {
-    pub backup_id: String,
-    pub source_project_id: String,
-    pub archive_sha256: String,
-    pub archive_bytes: u64,
-    pub format_version: u32,
-    pub created_at_ms: u64,
-    pub compression_mode: BackupCompression,
-    pub exclude_vpm_packages: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupsListParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupsListResult {
-    pub backups: Vec<BackupRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupGetParams {
-    pub backup_id: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BackupCreateParams {
     pub project_id: String,
@@ -2377,66 +2339,32 @@ pub struct BackupCreateParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub include_library: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub destination_path: Option<String>,
     pub idempotency_key: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupCreateResult {
-    pub operation_id: String,
-    pub backup_id: String,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupPlanRestoreParams {
-    pub backup_id: String,
-    pub target_parent: String,
-    pub target_leaf: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreExcludedPackage {
-    pub package_id: String,
-    pub version: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestoreTarget {
-    pub parent: String,
-    pub leaf: String,
-    pub must_be_absent: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupRestorePlan {
-    pub plan_id: String,
-    pub project_id: String,
-    pub backup_id: String,
-    pub target: BackupRestoreTarget,
-    pub archive_sha256: String,
-    pub packages_require_resolve: bool,
-    pub excluded_packages: Vec<BackupRestoreExcludedPackage>,
-    pub plan_fingerprint: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BackupApplyRestoreParams {
-    pub plan_id: String,
+pub struct BackupRestoreParams {
+    pub archive_path: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub project_name: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub destination_path: Option<String>,
     pub idempotency_key: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BackupApplyRestoreResult {
-    pub operation_id: String,
-    pub project_id: String,
-    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2971,6 +2899,7 @@ pub struct UnityHubOpenResult {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageSettings {
     pub show_prerelease: bool,
+    pub prefer_prerelease: bool,
     pub hidden_repository_ids: Vec<String>,
     pub hidden_repository_packages: Vec<RepositoryPackageSettings>,
     pub hide_local_user_packages: bool,
@@ -3205,6 +3134,12 @@ pub struct PackageSettingsUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub show_prerelease: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub prefer_prerelease: Option<bool>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",

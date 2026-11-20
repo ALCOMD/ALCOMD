@@ -15,7 +15,7 @@ const initial: SettingsGetResult = {
         network: { proxy: { mode: "system" } },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
-        packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [], hiddenRepositoryPackages: [] }
+        packages: { showPrerelease: false, preferPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [], hiddenRepositoryPackages: [] }
     }
 };
 
@@ -465,7 +465,7 @@ function customizedModel() {
         network: { proxy: { mode: "system" } },
         locale: "zh-CN",
         appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive", motion: "full" },
-        packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"], hiddenRepositoryPackages: [] }
+        packages: { showPrerelease: true, preferPrerelease: false, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"], hiddenRepositoryPackages: [] }
     };
     current.directories = { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" };
     fixture.writer.seed(structuredClone(current));

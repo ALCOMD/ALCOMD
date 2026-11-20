@@ -215,6 +215,7 @@ async fn query(
         catalog.complete,
         source_revisions,
         settings.show_prerelease,
+        settings.prefer_prerelease,
         settings.hidden_repository_ids,
         settings.hidden_repository_packages,
         settings.hide_local_user_packages,
@@ -428,7 +429,7 @@ fn summary(
                 app::CandidateInstalled::Locked { version } => Some(version.clone()),
                 _ => None,
             });
-            let (version, compatibility) = match existing.map(|row| &row.project_latest) {
+            let (version, compatibility) = match existing.map(|row| &row.recommended) {
                 Some(app::CandidateChoice::Candidate { candidate }) => {
                     (candidate.version.clone(), compatibility(candidate.clone()))
                 }

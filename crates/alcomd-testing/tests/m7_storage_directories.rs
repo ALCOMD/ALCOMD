@@ -10,11 +10,11 @@ use alcomd_application::{
     AccessContext, BackupCompression, BackupCreateOptions, BackupDefaults, BackupDirectoryProvider,
     ConfigBackupUpdate, ConfigNullableUpdate, ConfigPathUpdate, ConfigStore, ConfigUpdate,
     IdempotencyKey, M3RegistryStore, M5BackupApplication, M5BackupError, M5BackupErrorCode,
-    M5BackupStore, M5BackupWriterGate, M7OfficialApplication, ManifestState, OfficialGuiError,
-    OperationId, OperationState, Permission, PrincipalId, ProjectId, ProjectObservation,
-    ProjectType, ResourceKey, ResourceLockCoordinator, StateStore, StorageDirectories,
-    StorageDirectoryPlatform, UnityHubLauncher, UnityHubLocation, UnityHubOpenError,
-    UnityHubPlatform, UnityWriterState, UnityWriterStateKind,
+    M5BackupWriterGate, M7OfficialApplication, ManifestState, OfficialGuiError, OperationId,
+    OperationState, Permission, PrincipalId, ProjectId, ProjectObservation, ProjectType,
+    ResourceKey, ResourceLockCoordinator, StateStore, StorageDirectories, StorageDirectoryPlatform,
+    UnityHubLauncher, UnityHubLocation, UnityHubOpenError, UnityHubPlatform, UnityWriterState,
+    UnityWriterStateKind,
 };
 use alcomd_store::{FileConfigStore, StateStoreHandle};
 use alcomd_vpm::BackupEngine;
@@ -131,6 +131,8 @@ impl BackupDirectoryProvider for ConfiguredDirectory {
                 .map_err(|_| M5BackupError::new(M5BackupErrorCode::StoreUnavailable))?;
             Ok(BackupDefaults {
                 directory: Some(directories.backup_directory),
+                project_directory: Some(directories.project_directory),
+                create_default_backup_directory: false,
                 compression_mode: snapshot.settings.backups.compression_mode,
                 include_vpm_packages: snapshot.settings.backups.include_vpm_packages,
                 include_library: snapshot.settings.backups.include_library,
@@ -165,7 +167,7 @@ fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("key")
 }
 
-async fn succeeded(store: &StateStoreHandle, operation_id: OperationId) {
+async fn succeeded(store: &StateStoreHandle, operation_id: OperationId) -> serde_json::Value {
     tokio::time::timeout(Duration::from_secs(10), async {
         loop {
             let operation = store
@@ -179,18 +181,18 @@ async fn succeeded(store: &StateStoreHandle, operation_id: OperationId) {
                     "operation error: {:?}",
                     operation.error_code
                 );
-                return;
+                return serde_json::from_str(&operation.result_json.expect("task receipt"))
+                    .expect("receipt JSON");
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("backup or restore completed");
+    .expect("backup or restore completed")
 }
 
 #[tokio::test]
-async fn actual_configured_directory_controls_new_backups_without_redirecting_accepted_or_legacy_data()
- {
+async fn actual_configured_directory_controls_new_zip_without_redirecting_accepted_operations() {
     let fixture = Fixture::new();
     let store = StateStoreHandle::open(fixture.0.join("data/state.db")).expect("store");
     let config = Arc::new(FileConfigStore::new(
@@ -208,7 +210,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
     settings
         .initialize_settings()
         .await
-        .expect("Config5 initialized");
+        .expect("Config13 initialized");
     let access = AccessContext::new(
         PrincipalId::local_owner(),
         [
@@ -245,31 +247,13 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         .value;
     let engine = BackupEngine::new(fixture.0.join("data/backups")).expect("engine");
     let locks = Arc::new(ResourceLockCoordinator::default());
-    let legacy_service =
-        M5BackupApplication::with_locks(store.clone(), engine.clone(), NoWriter, locks.clone());
-    let legacy = legacy_service
-        .create(
-            &access,
-            project.project_id,
-            project.revision,
-            BackupCreateOptions {
-                compression_mode: Some(BackupCompression::Fast),
-                exclude_vpm_packages: Some(true),
-                include_library: Some(false),
-            },
-            key("legacy"),
-        )
-        .await
-        .expect("legacy create");
-    succeeded(&store, legacy.operation_id).await;
+    let service = M5BackupApplication::with_locks(store.clone(), engine, NoWriter, locks.clone());
     let provider = Arc::new(ConfiguredDirectory {
         settings: settings.clone(),
         unavailable: AtomicBool::new(false),
         reads: AtomicUsize::new(0),
     });
-    let service = legacy_service
-        .clone()
-        .with_directory_provider(provider.clone());
+    let service = service.with_directory_provider(provider.clone());
 
     // Hold the source lock so this accepted task cannot archive before the preference changes.
     let source_lock = locks
@@ -316,19 +300,12 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         .expect("save new backup directory");
     assert_eq!(config.load().expect("persisted settings"), changed);
     drop(source_lock);
-    succeeded(&store, accepted.operation_id).await;
-    let accepted_record = store
-        .get_backup(PrincipalId::local_owner(), accepted.backup_id)
-        .await
-        .expect("accepted backup");
-    let accepted_path = PathBuf::from(
-        accepted_record
-            .archive_locator
-            .strip_prefix("backup-file-v1:")
-            .expect("configured locator"),
-    );
-    let accepted_name = accepted_path.file_name().expect("archive name");
-    assert!(fixture.0.join("Backups").join(accepted_name).is_file());
+    let accepted_receipt = succeeded(&store, accepted.operation_id).await;
+    let accepted_name = accepted_receipt["archiveName"]
+        .as_str()
+        .expect("archive name");
+    let accepted_path = fixture.0.join("Backups").join(accepted_name);
+    assert!(accepted_path.is_file());
     assert!(!fixture.0.join("OtherBackups").join(accepted_name).exists());
 
     let later = service
@@ -341,24 +318,12 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         )
         .await
         .expect("second create");
-    succeeded(&store, later.operation_id).await;
-    let later_record = store
-        .get_backup(PrincipalId::local_owner(), later.backup_id)
-        .await
-        .expect("later backup");
-    let later_path = PathBuf::from(
-        later_record
-            .archive_locator
-            .strip_prefix("backup-file-v1:")
-            .expect("configured locator"),
-    );
-    assert!(
-        fixture
-            .0
-            .join("OtherBackups")
-            .join(later_path.file_name().expect("archive name"))
-            .is_file()
-    );
+    let later_receipt = succeeded(&store, later.operation_id).await;
+    let later_path = fixture
+        .0
+        .join("OtherBackups")
+        .join(later_receipt["archiveName"].as_str().expect("archive name"));
+    assert!(later_path.is_file());
     provider.unavailable.store(true, Ordering::SeqCst);
     let reads = provider.reads.load(Ordering::SeqCst);
     let replayed = service
@@ -375,35 +340,18 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
     assert_eq!(replayed.operation_id, accepted.operation_id);
     assert_eq!(provider.reads.load(Ordering::SeqCst), reads);
 
-    for (index, backup_id) in [legacy.backup_id, accepted.backup_id, later.backup_id]
-        .into_iter()
-        .enumerate()
-    {
-        let record = store
-            .get_backup(PrincipalId::local_owner(), backup_id)
-            .await
-            .expect("backup metadata");
-        assert_eq!(record.archive_locator.starts_with("backup-v1:"), index == 0);
-        assert_eq!(
-            record.record.compression_mode,
-            if index == 2 {
-                BackupCompression::Maximum
-            } else if index == 1 {
-                BackupCompression::Level5
-            } else {
-                BackupCompression::Fast
-            }
-        );
-        assert_eq!(record.record.exclude_vpm_packages, index != 1);
+    for (index, archive_path) in [accepted_path, later_path].into_iter().enumerate() {
         let leaf = format!("Restored-{index}");
-        let plan = service
-            .plan_restore(&access, backup_id, fixture.0.join("Projects"), leaf.clone())
-            .await
-            .expect("restore frozen backup");
         let restore = service
-            .apply_restore(&access, plan.plan_id, key(&format!("restore-{index}")))
+            .restore(
+                &access,
+                text(&archive_path),
+                None,
+                Some(text(&fixture.0.join("Projects").join(&leaf))),
+                key(&format!("restore-{index}")),
+            )
             .await
-            .expect("apply restore");
+            .expect("restore saved ZIP by file path");
         succeeded(&store, restore.operation_id).await;
         assert_eq!(
             fs::read(
@@ -421,8 +369,8 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             .join("Projects")
             .join(format!("Restored-{index}"))
             .join("Library/Cache/artifact.bin");
-        assert_eq!(restored_cache.exists(), index == 2);
-        if index == 2 {
+        assert_eq!(restored_cache.exists(), index == 1);
+        if index == 1 {
             assert_eq!(
                 fs::read(restored_cache).expect("restored cache"),
                 b"retained cache"
@@ -430,7 +378,6 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         }
     }
     drop(service);
-    drop(legacy_service);
     drop(provider);
     drop(settings);
     drop(store);

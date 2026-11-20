@@ -45,12 +45,17 @@ pub struct McpPackageQuery {
     pub limit: Option<u32>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum McpPackageVersionSelector {
+    #[default]
     LatestCompatible,
-    Exact { version: String },
-    Range { range: String },
+    Exact {
+        version: String,
+    },
+    Range {
+        range: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,6 +67,7 @@ pub enum McpPackageVersionSelector {
 )]
 pub enum McpPackageIntent {
     Install {
+        #[serde(default)]
         version_selector: McpPackageVersionSelector,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         include_prerelease: Option<bool>,
@@ -69,6 +75,7 @@ pub enum McpPackageIntent {
         allow_unity_incompatible: bool,
     },
     Upgrade {
+        #[serde(default)]
         version_selector: McpPackageVersionSelector,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         include_prerelease: Option<bool>,

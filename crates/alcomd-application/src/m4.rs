@@ -449,6 +449,7 @@ pub struct ResolverCatalogEntry {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolverCatalog {
+    pub prefer_prerelease: bool,
     pub entries: Vec<ResolverCatalogEntry>,
     pub complete: bool,
 }
@@ -1145,6 +1146,7 @@ where
         }
         let catalog = if request.is_removal_only() {
             ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             }
@@ -1299,6 +1301,7 @@ where
         };
         let catalog = if plan.source_set.is_empty() {
             ResolverCatalog {
+                prefer_prerelease: false,
                 entries: Vec::new(),
                 complete: true,
             }

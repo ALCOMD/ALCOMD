@@ -40,6 +40,8 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
+    assert!(defaults.settings.packages.show_prerelease);
+    assert!(!defaults.settings.packages.prefer_prerelease);
     assert_eq!(defaults.config_schema, 13);
     assert_eq!(defaults.revision, 1);
     assert!(defaults.settings.projects.auto_discover);
@@ -108,6 +110,7 @@ async fn official_settings_round_trip_preserves_business_errors_without_removed_
                             package_ids: vec!["com.example.z".into(), "com.example.a".into()],
                         },
                     ]),
+                    prefer_prerelease: Some(true),
                     show_prerelease: Some(true),
                     hidden_repository_ids: Some(vec![
                         "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
@@ -581,6 +584,7 @@ motion = "full"
 [packages]
 hidden_repository_packages = [{ repository_id = "00000000-0000-4000-8000-000000000102", package_ids = ["com.example.a", "com.example.z"] }]
 show_prerelease = true
+prefer_prerelease = true
 hidden_repository_ids = ["00000000-0000-0000-0000-000000000000", "ffffffff-ffff-ffff-ffff-ffffffffffff"]
 hide_local_user_packages = true
 
@@ -606,16 +610,33 @@ handle_vcc_links = false
 proxy_mode = "direct"
 "#
     );
-    let (legacy_settings, _) = settings_file
-        .split_once("\n[integrations]\n")
-        .expect("Config12-only suffix");
-    // Config9 has no fullscreen, VCC link, or proxy preferences.
-    let config9 = legacy_settings
-        .replacen("schema = 13\n", "schema = 9\n", 1)
-        .replacen("hidden_repository_packages = [{ repository_id = \"00000000-0000-4000-8000-000000000102\", package_ids = [\"com.example.a\", \"com.example.z\"] }]\n", "", 1)
-        .replacen("fullscreen = false\n", "", 1);
     let settings_path = data.join("config/settings.toml");
-    fs::write(&settings_path, config9).expect("isolated Config9 migration input");
+    let unsupported = settings_file.replacen("schema = 13\n", "schema = 9\n", 1);
+    fs::write(&settings_path, &unsupported).expect("isolated unsupported settings");
+    let database_path = data.join("state.db");
+    let database_before = fs::read(&database_path).expect("database before refusing settings");
+    assert!(
+        alcomd_daemon::test_support::start_with_data_until(
+            raw_ipc.clone(),
+            DataConfig::isolated(data.clone()),
+            std::future::pending(),
+        )
+        .await
+        .is_err(),
+        "startup must refuse unsupported settings"
+    );
+    assert_eq!(
+        fs::read_to_string(&settings_path).expect("unchanged unsupported settings"),
+        unsupported
+    );
+    assert_eq!(
+        fs::read(&database_path).expect("unchanged database"),
+        database_before
+    );
+    assert!(!data.join("state.db-wal").exists());
+    assert!(!data.join("state.db-shm").exists());
+
+    fs::write(&settings_path, &settings_file).expect("restore current fixture settings");
     let restarted_shutdown = Arc::new(AtomicBool::new(false));
     let restarted = alcomd_daemon::test_support::start_with_data_until(
         raw_ipc,
@@ -623,28 +644,16 @@ proxy_mode = "direct"
         wait_for_shutdown(Arc::clone(&restarted_shutdown)),
     )
     .await
-    .expect("migrate owned Config9 daemon to Config13");
+    .expect("reopen current daemon");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
     assert_eq!(persisted.config_schema, 13);
     assert_eq!(persisted.revision, 14);
-    let mut expected_settings = hub_cleared.settings;
-    expected_settings.integrations = defaults.settings.integrations;
-    expected_settings.network = defaults.settings.network;
-    expected_settings
-        .packages
-        .hidden_repository_packages
-        .clear();
-    assert_eq!(persisted.settings, expected_settings);
+    assert_eq!(persisted.settings, hub_cleared.settings);
     assert!(!persisted.settings.window.fullscreen);
-    let expected_file = settings_file
-        .replacen("hidden_repository_packages = [{ repository_id = \"00000000-0000-4000-8000-000000000102\", package_ids = [\"com.example.a\", \"com.example.z\"] }]", "hidden_repository_packages = []", 1)
-        .replacen("handle_vcc_links = false", "handle_vcc_links = true", 1)
-        .replacen("proxy_mode = \"direct\"", "proxy_mode = \"system\"", 1);
     assert_eq!(
-        fs::read_to_string(&settings_path).expect("migrated canonical settings"),
-        expected_file,
-        "migration adds only newer defaults without incrementing the revision"
+        fs::read_to_string(&settings_path).expect("current settings"),
+        settings_file
     );
     restarted_shutdown.store(true, Ordering::Relaxed);
     restarted
@@ -672,6 +681,8 @@ async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_
     .expect("owned daemon");
     let mut client = connect_with_retry(config.clone()).await;
     let defaults = client.settings_get().await.expect("defaults");
+    assert!(defaults.settings.packages.show_prerelease);
+    assert!(!defaults.settings.packages.prefer_prerelease);
     assert_eq!(defaults.config_schema, 13);
     assert!(!defaults.settings.window.fullscreen);
     let enabled = client

@@ -366,7 +366,7 @@ test("Candidate quota failure is unavailable evidence, never empty/latest or a P
 });
 
 test("Summary pages share the first fingerprint while versions are prepared only for an intended row", async ({ page }) => {
-    await open(page, "paged=1&versions=1");
+    await open(page, "paged=1&versions=1&hidePrerelease");
     const requests = await page.evaluate(() => window.candidateRequests);
     expect(requests.filter((request) => request.view.kind === "versions")).toHaveLength(0);
     expect(requests.filter((request) => request.cursor).every((request) => request.expectedSnapshot === request.cursor?.snapshotFingerprint)).toBe(true);
@@ -384,7 +384,7 @@ test("Summary pages share the first fingerprint while versions are prepared only
 });
 
 test("A slow version menu has a non-option loading status from its first opening frame", async ({ page }) => {
-    await open(page, "delayVersions=1");
+    await open(page, "delayVersions=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     // Check before opening: Material must not need a later React commit to
     // populate the menu it is about to display.
@@ -409,7 +409,7 @@ test("A slow version menu has a non-option loading status from its first opening
 });
 
 test("Fast paged versions are complete at opening without a loading menu", async ({ page }) => {
-    await open(page, "paged=1");
+    await open(page, "paged=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     const first = await select.evaluateHandle((element) => {
         const state = { labels: [] as string[], loading: false };
@@ -428,7 +428,7 @@ test("Fast paged versions are complete at opening without a loading menu", async
 });
 
 test("A pending continuation page keeps the menu loading until the complete version list is ready", async ({ page }) => {
-    await open(page, "paged=1&delayVersionContinuation=1");
+    await open(page, "paged=1&delayVersionContinuation=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     await select.getByRole("combobox").click();
     await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateVersions)).toBe("function");
@@ -442,7 +442,7 @@ test("A pending continuation page keeps the menu loading until the complete vers
 
 for (const cancel of [false, true]) {
     test(`Version opening waits at most 100ms and ${cancel ? "Escape cancels a pending opening" : "shows loading only at the deadline"}`, async ({ page }) => {
-        await open(page, "delayVersions=1");
+        await open(page, "delayVersions=1&hidePrerelease");
         await page.clock.install();
         await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
         const field = page.locator(".package-version-picker").first().getByRole("combobox");
@@ -468,7 +468,7 @@ for (const cancel of [false, true]) {
 }
 
 test("Closing a loading version selector stops paging and reopening resumes without a package change", async ({ page }) => {
-    await open(page, "paged=1&delayVersions=1&versions=1");
+    await open(page, "paged=1&delayVersions=1&versions=1&hidePrerelease");
     const select = page.locator(".package-version-picker").first();
     const opened = await select.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
     await select.getByRole("combobox").click();
@@ -638,7 +638,7 @@ test("No-update and empty selection create no Plan", async ({ page }) => {
 });
 
 test("Stable bulk actions use the distinct Core stable target and one explicit Apply", async ({ page }) => {
-    await open(page, "stableAlternate=1");
+    await open(page, "stableAlternate=1&preferPrerelease");
     await page.getByRole("button", { name: "Update All Stable (1)", exact: true }).click();
     const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(review).toBeVisible();

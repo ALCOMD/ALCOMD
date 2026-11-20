@@ -659,6 +659,9 @@
                 "latestStable": {
                     "$ref": "#/$defs/Choice"
                 },
+                "recommended": {
+                    "$ref": "#/$defs/Choice"
+                },
                 "projectLatest": {
                     "$ref": "#/$defs/Choice"
                 },
@@ -723,6 +726,7 @@
                 "installed",
                 "latest",
                 "latestStable",
+                "recommended",
                 "projectLatest",
                 "projectLatestStable",
                 "update",

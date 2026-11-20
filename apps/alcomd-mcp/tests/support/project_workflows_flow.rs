@@ -151,8 +151,11 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     let root = root.canonicalize().expect("canonical fixture root");
     let projects = root.join("projects");
     let archives = root.join("archives");
+    let external = root.join("外部 路径");
+    std::fs::create_dir(&projects).expect("isolated projects");
     std::fs::create_dir(&archives).expect("isolated archives");
-    project(&projects.join("Source"), false);
+    let source = external.join("源 工程");
+    project(&source, false);
     let (stop_core, stopped) = tokio::sync::oneshot::channel();
     let core = CoreConfiguration::new();
     let daemon = alcomd_daemon::test_support::start_with_data_until(
@@ -194,7 +197,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     let sdk = sdk(&credential.credential, Some(&http.url), &core).await;
     let mut trace = Vec::new();
     let register = json!({
-        "source":{"kind":"default","relative_path":"Source"},
+        "source":{"kind":"absolute","path":source},
         "idempotency_key":"workflow-register"
     });
     let registered = data(
@@ -215,7 +218,7 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
             json!({
                 "source_project_id": project_id,
                 "expected_revision": registered["project"]["revision"],
-                "target": {"kind":"default","name":"Source"},
+                "target": {"kind":"absolute","path":source},
                 "idempotency_key":"copy-existing-target"
             }),
         )
@@ -223,7 +226,13 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         .expect("Core copy rejection"),
         "project_copy_target_exists",
     );
-    let backup = json!({"project_id":project_id,"expected_revision":registered["project"]["revision"],"idempotency_key":"workflow-backup"});
+    let archive = external.join("第一份 备份.zip");
+    let backup = json!({
+        "project_id": project_id,
+        "expected_revision": registered["project"]["revision"],
+        "destination_path": archive,
+        "idempotency_key": "workflow-backup"
+    });
     let held_backup = daemon.hold_next_mcp_backup_response().await;
     let mut pending = sdk
         .send_cancellable_request(
@@ -279,31 +288,55 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         accepted["operation_id"].as_str().expect("operation"),
     )
     .await;
-    assert_eq!(receipt["state"], "succeeded");
-    assert_eq!(receipt["result"]["backup_id"], accepted["backup_id"]);
+    assert_eq!(receipt["state"], "succeeded", "{receipt}");
+    assert_eq!(receipt["result"]["archive_name"], "第一份 备份.zip");
     assert_eq!(
-        receipt["result"]["archive_sha256"].as_str().map(str::len),
-        Some(64)
+        receipt["result"]["archive_bytes"].as_u64(),
+        Some(std::fs::metadata(&archive).expect("explicit archive").len())
     );
-    let record = data(
+    assert!(!receipt["result"].to_string().contains("外部 路径"));
+
+    let restored_target = external.join("已 恢复 工程");
+    let restored = data(
         call(
             &sdk,
             &mut trace,
-            "get_backup",
-            json!({"backup_id":accepted["backup_id"]}),
+            "restore_backup",
+            json!({
+                "archive_path":archive,
+                "destination_path":restored_target,
+                "idempotency_key":"workflow-restore",
+                "confirm":true
+            }),
         )
         .await
-        .expect("backup details"),
+        .expect("restore from a ZIP outside the default backup directory"),
     );
-    assert_eq!(record, receipt["result"]);
-    assert_eq!(
-        std::fs::read_dir(&archives)
-            .expect("archive published")
-            .count(),
-        1
+    let restored_task = terminal(
+        &sdk,
+        &mut trace,
+        restored["operation_id"]
+            .as_str()
+            .expect("restore operation"),
+    )
+    .await;
+    assert_eq!(restored_task["state"], "succeeded", "{restored_task}");
+    assert_eq!(restored_task["result"]["target_name"], "已 恢复 工程");
+    assert!(!restored_task["result"].to_string().contains("外部 路径"));
+    assert!(
+        restored_target
+            .join("ProjectSettings/ProjectVersion.txt")
+            .is_file()
     );
+    let restored_id = restored_task["result"]["project_id"]
+        .as_str()
+        .expect("restored project ID");
+    assert!(owner.project_get(restored_id.to_owned()).await.is_ok());
+
+    let lost_archive = external.join("第二份 备份.zip");
     let mut lost_response = backup.clone();
     lost_response["idempotency_key"] = json!("workflow-backup-lost-response");
+    lost_response["destination_path"] = json!(lost_archive);
     let (fault_sdk, fault) = HttpResponseFault::start(&credential.credential, &http.url).await;
     fault.armed.store(true, std::sync::atomic::Ordering::SeqCst);
     assert!(
@@ -321,38 +354,19 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
         !fault.armed.load(std::sync::atomic::Ordering::SeqCst),
         "the injector must truncate a real response"
     );
-    let committed = tokio::time::timeout(Duration::from_secs(20), async {
-        loop {
-            let page = owner
-                .backups_list(BackupsListParams {
-                    project_id: Some(project_id.to_owned()),
-                    cursor: None,
-                    limit: None,
-                })
-                .await
-                .expect("authoritative backup list");
-            if page.backups.len() == 2 {
-                break page
-                    .backups
-                    .into_iter()
-                    .find(|record| {
-                        record.backup_id
-                            != accepted["backup_id"].as_str().expect("original backup ID")
-                    })
-                    .expect("backup committed despite lost HTTP response");
-            }
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !lost_archive.is_file() {
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
     })
     .await
-    .expect("accepted backup must complete before replay");
+    .expect("backup publishes despite the lost HTTP response");
     let recovered = data(
         call(&sdk, &mut trace, "create_backup", lost_response)
             .await
             .expect("explicit same-key recovery"),
     );
     assert_eq!(recovered["replayed"], true);
-    assert_eq!(recovered["backup_id"], committed.backup_id);
     let recovered_task = terminal(
         &sdk,
         &mut trace,
@@ -362,11 +376,21 @@ async fn frozen_sdk_http_project_and_backup_workflows_use_core() {
     )
     .await;
     assert_eq!(recovered_task["state"], "succeeded");
+    assert_eq!(recovered_task["result"]["archive_name"], "第二份 备份.zip");
+    assert!(archive.is_file() && lost_archive.is_file());
     assert_eq!(
-        std::fs::read_dir(&archives)
+        std::fs::read_dir(&external)
             .expect("no duplicate archive")
+            .map(|entry| entry.expect("external fixture entry").path())
+            .filter(|path| path.extension().is_some_and(|extension| extension == "zip"))
             .count(),
         2
+    );
+    assert_eq!(
+        std::fs::read_dir(&archives)
+            .expect("default archives")
+            .count(),
+        0
     );
     stop(fault_sdk).await;
     drop(fault);

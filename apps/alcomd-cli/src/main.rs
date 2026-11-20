@@ -163,15 +163,6 @@ enum SystemCommand {
 
 #[derive(Debug, Subcommand)]
 enum McpCommand {
-    /// Approve one exact external path for a registered MCP client.
-    ApprovePath {
-        #[arg(long = "client")]
-        client_id: String,
-        #[arg(long, value_enum)]
-        purpose: McpPathPurpose,
-        #[arg(long)]
-        path: PathBuf,
-    },
     Oauth {
         #[command(subcommand)]
         command: m8_oauth::OAuthCommand,
@@ -183,24 +174,6 @@ enum McpCommand {
     },
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-enum McpPathPurpose {
-    Register,
-    Create,
-    Copy,
-    Restore,
-}
-
-impl From<McpPathPurpose> for alcomd_protocol::McpProjectPathPurpose {
-    fn from(value: McpPathPurpose) -> Self {
-        match value {
-            McpPathPurpose::Register => Self::Register,
-            McpPathPurpose::Create => Self::Create,
-            McpPathPurpose::Copy => Self::Copy,
-            McpPathPurpose::Restore => Self::Restore,
-        }
-    }
-}
 #[derive(Debug, Subcommand)]
 enum McpClientCommand {
     /// List non-secret client records.
@@ -461,11 +434,12 @@ enum PackageCommand {
         package_id: String,
         #[arg(long)]
         expected_revision: u64,
+        /// Omit to let Core select the recommended compatible version.
         #[arg(long)]
         version_range: Option<String>,
         #[arg(long)]
         repository_id: Option<String>,
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
         include_prerelease: bool,
         #[arg(long)]
         idempotency_key: String,
@@ -485,11 +459,12 @@ enum PackageCommand {
         package_id: String,
         #[arg(long)]
         expected_revision: u64,
+        /// Omit to let Core select the recommended compatible version.
         #[arg(long)]
         version_range: Option<String>,
         #[arg(long)]
         repository_id: Option<String>,
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
         include_prerelease: bool,
         #[arg(long)]
         idempotency_key: String,
@@ -511,7 +486,7 @@ enum PackageCommand {
         project_id: String,
         #[arg(long)]
         expected_revision: u64,
-        #[arg(long)]
+        #[arg(long, action = clap::ArgAction::Set, num_args = 0..=1, require_equals = true, default_missing_value = "true", default_value_t = true)]
         include_prerelease: bool,
         #[arg(long)]
         idempotency_key: String,
@@ -606,16 +581,6 @@ enum BackupCompression {
 
 #[derive(Debug, Subcommand)]
 enum BackupCommand {
-    List {
-        #[arg(long)]
-        project_id: Option<String>,
-        #[arg(long)]
-        cursor: Option<String>,
-        #[arg(long)]
-        limit: Option<u32>,
-    },
-    #[command(visible_alias = "info")]
-    Get { backup_id: String },
     Create {
         project_id: String,
         #[arg(long)]
@@ -627,12 +592,16 @@ enum BackupCommand {
         #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
         include_library: Option<bool>,
         #[arg(long)]
+        destination: Option<PathBuf>,
+        #[arg(long)]
         idempotency_key: String,
     },
     Restore {
-        backup_id: String,
-        target_parent: PathBuf,
-        target_leaf: String,
+        archive: PathBuf,
+        #[arg(long, conflicts_with = "destination")]
+        name: Option<String>,
+        #[arg(long)]
+        destination: Option<PathBuf>,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -738,15 +707,6 @@ fn validate_mcp_output(
     stdout_is_terminal: bool,
 ) -> Result<(), CliError> {
     if let Command::Mcp {
-        command: McpCommand::ApprovePath { path, .. },
-    } = command
-        && (options.dry_run || options.no_wait || !path.is_absolute())
-    {
-        return Err(CliError::Usage(
-            "approve-path requires an exact absolute path and a confirmed request",
-        ));
-    }
-    if let Command::Mcp {
         command: McpCommand::Oauth { command },
     } = command
     {
@@ -781,17 +741,6 @@ async fn execute(
     validate_mcp_output(&command, options, io::stdout().is_terminal())?;
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
-        Command::Mcp { command: McpCommand::ApprovePath { client_id, purpose, path } } => {
-            if !client.supports_capability(alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1) {
-                return Err(CliError::Usage("the connected Core does not support project path approvals"));
-            }
-            let path = path.to_str().ok_or(CliError::Usage("path encoding is unsupported"))?.to_owned();
-            eprintln!("Approve {:?} at {} for MCP client {} for ten minutes.", purpose, path.escape_debug(), client_id.escape_debug());
-            confirm_high_impact(options)?;
-            serde_json::to_value(client.mcp_project_path_approve(alcomd_protocol::McpProjectPathApproveParams {
-                client_id, purpose: purpose.into(), path, confirm: true
-            }).await?)
-        }
         Command::Mcp{command:McpCommand::Oauth{command}}=>return m8_oauth::execute(&mut client,command,options).await,
         Command::Mcp { command: McpCommand::Client { command } } => match command {
             McpClientCommand::List { cursor, limit } => serde_json::to_value(client.mcp_clients_list(alcomd_protocol::McpClientsListParams { cursor, limit }).await?),
@@ -1462,30 +1411,18 @@ async fn execute(
             ),
         },
         Command::Backup { command } => match command {
-            BackupCommand::List {
-                project_id,
-                cursor,
-                limit,
-            } => serde_json::to_value(
-                client
-                    .backups_list(alcomd_protocol::BackupsListParams {
-                        project_id,
-                        cursor,
-                        limit,
-                    })
-                    .await?,
-            ),
-            BackupCommand::Get { backup_id } => {
-                serde_json::to_value(client.backup_get(backup_id).await?)
-            }
             BackupCommand::Create {
                 project_id,
                 expected_revision,
                 compression,
                 exclude_vpm_packages,
                 include_library,
+                destination,
                 idempotency_key,
             } => {
+                if options.dry_run {
+                    return Err(CliError::Usage("backup create does not support --dry-run"));
+                }
                 let accepted = client
                     .backup_create(alcomd_protocol::BackupCreateParams {
                         project_id,
@@ -1502,6 +1439,7 @@ async fn execute(
                         }),
                         exclude_vpm_packages,
                         include_library,
+                        destination_path: destination.map(absolute_path).transpose().map_err(CliError::LocalIo)?,
                         idempotency_key,
                     })
                     .await?;
@@ -1514,41 +1452,25 @@ async fn execute(
                     )
                 }
             }
-            BackupCommand::Restore {
-                backup_id,
-                target_parent,
-                target_leaf,
-                idempotency_key,
-            } => {
-                let plan = client
-                    .backup_plan_restore(alcomd_protocol::BackupPlanRestoreParams {
-                        backup_id,
-                        target_parent: absolute_path(target_parent).map_err(CliError::LocalIo)?,
-                        target_leaf,
-                    })
-                    .await?;
+            BackupCommand::Restore { archive, name, destination, idempotency_key } => {
                 if options.dry_run {
-                    serde_json::to_value(plan)
+                    return Err(CliError::Usage("backup restore does not support --dry-run"));
+                }
+                let archive_path = absolute_path(archive).map_err(CliError::LocalIo)?;
+                let destination_path = destination.map(absolute_path).transpose().map_err(CliError::LocalIo)?;
+                confirm_high_impact(options)?;
+                let accepted = client.backup_restore(alcomd_protocol::BackupRestoreParams {
+                    archive_path,
+                    project_name: name,
+                    destination_path,
+                    idempotency_key,
+                }).await?;
+                if options.no_wait {
+                    serde_json::to_value(accepted)
                 } else {
-                    confirm_high_impact(options)?;
-                    let accepted = client
-                        .backup_apply_restore(alcomd_protocol::BackupApplyRestoreParams {
-                            plan_id: plan.plan_id,
-                            idempotency_key,
-                        })
-                        .await?;
-                    if options.no_wait {
-                        serde_json::to_value(accepted)
-                    } else {
-                        serde_json::to_value(
-                            wait_for_operation(
-                                &mut client,
-                                accepted.operation_id,
-                                options.output_mode,
-                            )
-                            .await?,
-                        )
-                    }
+                    serde_json::to_value(
+                        wait_for_operation(&mut client, accepted.operation_id, options.output_mode).await?,
+                    )
                 }
             }
         },
@@ -1561,9 +1483,6 @@ async fn execute(
 impl Command {
     fn name(&self) -> &'static str {
         match self {
-            Self::Mcp {
-                command: McpCommand::ApprovePath { .. },
-            } => "mcp approve-path",
             Self::Mcp {
                 command: McpCommand::Oauth { command },
             } => m8_oauth::name(command),
@@ -1635,8 +1554,6 @@ impl Command {
                 UnityCommand::LaunchOptions { .. } => "unity launch-options",
             },
             Self::Backup { command } => match command {
-                BackupCommand::List { .. } => "backup list",
-                BackupCommand::Get { .. } => "backup get",
                 BackupCommand::Create { .. } => "backup create",
                 BackupCommand::Restore { .. } => "backup restore",
             },
@@ -2207,39 +2124,7 @@ mod tests {
     }
 
     #[test]
-    fn backup_commands_publish_exact_surface_and_info_alias() {
-        let list = Arguments::try_parse_from([
-            "alcomd-cli",
-            "backup",
-            "list",
-            "--project-id",
-            "00000000-0000-4000-8000-000000000001",
-            "--limit",
-            "10",
-        ])
-        .expect("backup list");
-        assert!(matches!(
-            list.command,
-            Command::Backup {
-                command: BackupCommand::List {
-                    limit: Some(10),
-                    ..
-                }
-            }
-        ));
-        let info = Arguments::try_parse_from([
-            "alcomd-cli",
-            "backup",
-            "info",
-            "00000000-0000-4000-8000-000000000002",
-        ])
-        .expect("info alias");
-        assert!(matches!(
-            info.command,
-            Command::Backup {
-                command: BackupCommand::Get { .. }
-            }
-        ));
+    fn backup_commands_accept_file_paths_and_options() {
         let create = Arguments::try_parse_from([
             "alcomd-cli",
             "backup",
@@ -2315,8 +2200,8 @@ mod tests {
             "alcomd-cli",
             "backup",
             "restore",
-            "00000000-0000-4000-8000-000000000002",
-            ".",
+            "C:\\Users\\Fixture\\external\\Unity Test.zip",
+            "--name",
             "RestoredProject",
             "--idempotency-key",
             "restore-fixture",
@@ -2367,6 +2252,38 @@ mod tests {
         .expect_err("removed manual launch query is not a CLI command");
         assert_eq!(removed.kind(), clap::error::ErrorKind::InvalidSubcommand);
         assert!(Arguments::try_parse_from(["alcomd-cli", "completion", "powershell"]).is_ok());
+    }
+
+    #[test]
+    fn package_install_and_upgrade_accept_core_recommendations() {
+        for action in ["install", "upgrade"] {
+            let args = Arguments::try_parse_from([
+                "alcomd-cli",
+                "package",
+                action,
+                "project",
+                "pkg",
+                "--expected-revision",
+                "1",
+                "--idempotency-key",
+                "example",
+            ])
+            .expect("optional version");
+            assert!(matches!(
+                args.command,
+                Command::Package {
+                    command: PackageCommand::Install {
+                        version_range: None,
+                        include_prerelease: true,
+                        ..
+                    } | PackageCommand::Upgrade {
+                        version_range: None,
+                        include_prerelease: true,
+                        ..
+                    }
+                }
+            ));
+        }
     }
 
     #[test]

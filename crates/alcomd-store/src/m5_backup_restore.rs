@@ -1,103 +1,41 @@
 use alcomd_application::{
-    BackupRestoreApplyOutcome, BackupRestoreOperationRecord, BackupRestorePhase,
-    BackupRestorePlanDraft, BackupRestorePlanRecord, IdempotencyKey, M5BackupError,
-    M5BackupErrorCode, OperationId, PlanId, PrincipalId, RestoredProject, Revision,
+    BackupCreateOutcome, BackupRestoreInput, BackupRestoreOperationRecord, BackupRestorePhase,
+    BackupRestoreRequest, IdempotencyKey, M5BackupError, M5BackupErrorCode, OperationId,
+    PrincipalId, RestoredProject, Revision,
 };
-use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
-
-pub(super) fn create_plan(
-    connection: &mut Connection,
-    owner: &PrincipalId,
-    draft: BackupRestorePlanDraft,
-    created_at_ms: u64,
-) -> Result<BackupRestorePlanRecord, M5BackupError> {
-    let transaction = transaction(connection)?;
-    require_mcp_restore(&transaction, owner, false)?;
-    transaction
-        .execute(
-            "INSERT INTO backup_restore_plans (
-                plan_id,owner_principal_id,state,backup_id,preallocated_project_id,
-                backup_archive_sha256,backup_file_identity,backup_byte_size,
-                backup_format_version,backup_manifest_fingerprint,exclude_vpm_packages,
-                excluded_packages_json,target_parent_path,target_parent_identity,target_leaf,
-                target_must_be_absent,expected_unity_project_json,plan_fingerprint,plan_json,
-                created_at_ms
-             ) VALUES (?1,?2,'unapplied',?3,?4,?5,?6,?7,1,?8,?9,?10,?11,?12,?13,1,?14,?15,?16,?17)",
-            params![
-                draft.plan_id.to_string(),
-                owner.as_str(),
-                draft.backup_id.to_string(),
-                draft.project_id.to_string(),
-                draft.archive_sha256.as_slice(),
-                draft.archive_file_identity,
-                integer(draft.archive_bytes)?,
-                draft.manifest_fingerprint.as_slice(),
-                i64::from(draft.exclude_vpm_packages),
-                serde_json::to_string(&draft.excluded_packages).map_err(|_| internal())?,
-                draft.target.parent,
-                draft.target_parent_identity,
-                draft.target.leaf,
-                draft.expected_unity_project_json,
-                draft.plan_fingerprint.as_slice(),
-                draft.plan_json,
-                integer(created_at_ms)?,
-            ],
-        )
-        .map_err(failure)?;
-    let target =
-        super::operation_logs::destination_target(&draft.target.parent, &draft.target.leaf);
-    super::operation_logs::plan(
-        &transaction,
-        owner,
-        draft.plan_id,
-        "backups.restore",
-        Some(target),
-        created_at_ms,
-    )
-    .map_err(|error| unavailable().with_source(error))?;
-    let record = load_plan(&transaction, owner, draft.plan_id)?;
-    super::m8_workflows::install_plan_proof(&transaction, owner, draft.plan_id, created_at_ms)
-        .map_err(permission)?;
-    transaction.commit().map_err(failure)?;
-    Ok(record)
-}
 
 fn permission(cause: alcomd_application::ToolError) -> M5BackupError {
     error(M5BackupErrorCode::PermissionDenied).with_source(cause)
 }
 
-fn require_mcp_restore(
-    db: &Connection,
-    owner: &PrincipalId,
-    apply: bool,
-) -> Result<(), M5BackupError> {
+fn require_mcp_restore(db: &Connection, owner: &PrincipalId) -> Result<(), M5BackupError> {
     use alcomd_application::Permission;
-    let permissions: &[_] = if apply {
+    super::m8_workflows::require(
+        db,
+        owner,
         &[
             Permission::ProjectsCreate,
             Permission::BackupsRead,
             Permission::BackupsManage,
-        ]
-    } else {
-        &[Permission::ProjectsCreate, Permission::BackupsRead]
-    };
-    super::m8_workflows::require(db, owner, permissions).map_err(permission)
+        ],
+    )
+    .map_err(permission)
 }
 
 pub(super) fn replay(
     connection: &Connection,
     owner: &PrincipalId,
-    plan_id: PlanId,
+    input: &BackupRestoreInput,
     key: &IdempotencyKey,
-) -> Result<Option<BackupRestoreApplyOutcome>, M5BackupError> {
-    let fingerprint = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
-    require_mcp_restore(connection, owner, true)?;
-    super::m8_workflows::check_plan_proof(connection, owner, plan_id).map_err(permission)?;
+) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
+    let fingerprint = serde_json::to_string(input).map_err(|_| internal())?;
+    require_mcp_restore(connection, owner)?;
     let Some((saved, response)) = connection
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
-             WHERE principal_id=?1 AND method='backups.applyRestore' AND idempotency_key=?2",
+             WHERE principal_id=?1 AND method='backups.restore' AND idempotency_key=?2",
             params![owner.as_str(), key.as_str()],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
         )
@@ -109,7 +47,7 @@ pub(super) fn replay(
     if saved != fingerprint {
         return Err(error(M5BackupErrorCode::IdempotencyConflict));
     }
-    let mut outcome: BackupRestoreApplyOutcome =
+    let mut outcome: BackupCreateOutcome =
         serde_json::from_str(&response).map_err(|_| internal())?;
     outcome.replayed = true;
     outcome.schedule = false;
@@ -119,61 +57,41 @@ pub(super) fn replay(
 pub(super) fn accept(
     connection: &mut Connection,
     owner: &PrincipalId,
-    plan_id: PlanId,
+    input: &BackupRestoreInput,
+    request: BackupRestoreRequest,
     key: &IdempotencyKey,
     created_at_ms: u64,
-) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
-    let fingerprint = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
+) -> Result<BackupCreateOutcome, M5BackupError> {
+    let fingerprint = serde_json::to_string(input).map_err(|_| internal())?;
     let transaction = transaction(connection)?;
-    if let Some(outcome) = replay(&transaction, owner, plan_id, key)? {
+    if let Some(outcome) = replay(&transaction, owner, input, key)? {
         return Ok(outcome);
     }
-    let plan = load_plan(&transaction, owner, plan_id)?;
-    let already_applied = transaction
-        .query_row(
-            "SELECT apply_operation_id FROM backup_restore_plans WHERE plan_id=?1",
-            [plan_id.to_string()],
-            |row| row.get::<_, Option<String>>(0),
-        )
-        .map_err(failure)?;
-    if already_applied.is_some() {
-        return Err(error(M5BackupErrorCode::BackupRestorePlanStale));
-    }
     let operation_id = OperationId::new();
-    let request_json = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
     transaction
         .execute(
             "INSERT INTO operations (
                 operation_id,kind,state,revision,owner_principal_id,request_json,
                 created_at_ms,updated_at_ms
-             ) VALUES (?1,'backups.restore','queued',1,?2,?3,?4,?4)",
+             ) VALUES (?1,'backups.restore','queued',1,?2,'{}',?3,?3)",
             params![
                 operation_id.to_string(),
                 owner.as_str(),
-                request_json,
                 integer(created_at_ms)?,
             ],
-        )
-        .map_err(failure)?;
-    transaction
-        .execute(
-            "UPDATE backup_restore_plans SET state='applied',apply_operation_id=?1
-             WHERE plan_id=?2 AND state='unapplied' AND apply_operation_id IS NULL",
-            params![operation_id.to_string(), plan_id.to_string()],
         )
         .map_err(failure)?;
     insert_journal(
         &transaction,
         operation_id,
         1,
-        &plan,
+        Some(&request),
         BackupRestorePhase::Accepted,
         None,
         created_at_ms,
     )?;
-    let outcome = BackupRestoreApplyOutcome {
+    let outcome = BackupCreateOutcome {
         operation_id,
-        project_id: plan.draft.project_id,
         replayed: false,
         schedule: true,
     };
@@ -182,7 +100,7 @@ pub(super) fn accept(
             "INSERT INTO idempotency_records (
                 principal_id,method,idempotency_key,request_fingerprint,state,
                 operation_id,response_json,created_at_ms
-             ) VALUES (?1,'backups.applyRestore',?2,?3,'completed',?4,?5,?6)",
+             ) VALUES (?1,'backups.restore',?2,?3,'completed',?4,?5,?6)",
             params![
                 owner.as_str(),
                 key.as_str(),
@@ -211,7 +129,7 @@ pub(super) fn begin(
     updated_at_ms: u64,
 ) -> Result<BackupRestoreOperationRecord, M5BackupError> {
     let transaction = transaction(connection)?;
-    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "queued" | "recovering") {
         return Err(internal());
     }
@@ -235,10 +153,10 @@ pub(super) fn begin(
         "operation.state_changed",
         updated_at_ms,
     )?;
-    let plan = load_plan(&transaction, &owner, plan_id)?;
+    let request = load_request(&transaction, operation_id)?;
     let phase = latest_phase(&transaction, operation_id)?;
     transaction.commit().map_err(failure)?;
-    Ok(BackupRestoreOperationRecord { plan, phase })
+    Ok(BackupRestoreOperationRecord { request, phase })
 }
 
 pub(super) fn checkpoint(
@@ -249,11 +167,10 @@ pub(super) fn checkpoint(
     updated_at_ms: u64,
 ) -> Result<(), M5BackupError> {
     let transaction = transaction(connection)?;
-    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
-    let plan = load_plan(&transaction, &owner, plan_id)?;
     let step = phase_step(phase);
     if latest_step(&transaction, operation_id)? >= step {
         return Ok(());
@@ -262,7 +179,7 @@ pub(super) fn checkpoint(
         &transaction,
         operation_id,
         step,
-        &plan,
+        None,
         phase,
         restored.as_ref(),
         updated_at_ms,
@@ -304,19 +221,34 @@ pub(super) fn complete(
     completed_at_ms: u64,
 ) -> Result<(), M5BackupError> {
     let transaction = transaction(connection)?;
-    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
-    let plan = load_plan(&transaction, &owner, plan_id)?;
-    if plan.draft.project_id != restored.project_id
-        || plan.draft.target.parent.is_empty()
+    let request = load_request(&transaction, operation_id)?;
+    if request.project_id != restored.project_id
         || restored.observation.root_path
-            != std::path::Path::new(&plan.draft.target.parent)
-                .join(&plan.draft.target.leaf)
+            != request
+                .target_parent
+                .join(&request.target_name)
                 .to_string_lossy()
     {
-        return Err(error(M5BackupErrorCode::BackupRestorePlanStale));
+        return Err(error(M5BackupErrorCode::BackupRestoreRecoveryRequired));
+    }
+    let evidence: String = transaction
+        .query_row(
+            "SELECT payload_json FROM operation_journal
+         WHERE operation_id=?1 AND kind='backups.restore' AND step=?2",
+            params![
+                operation_id.to_string(),
+                integer(phase_step(BackupRestorePhase::ProjectRegistryCommitIntent))?
+            ],
+            |row| row.get(0),
+        )
+        .map_err(failure)?;
+    let evidence: serde_json::Value = serde_json::from_str(&evidence).map_err(|_| internal())?;
+    if evidence["restoredFingerprint"] != serde_json::json!(restored.project_fingerprint) {
+        return Err(error(M5BackupErrorCode::BackupRestoreRecoveryRequired));
     }
     let resource_owner = alcomd_application::workflow_resource_owner(&owner);
     let existing = transaction
@@ -382,7 +314,7 @@ pub(super) fn complete(
         &transaction,
         operation_id,
         phase_step(BackupRestorePhase::StateCommitted),
-        &plan,
+        None,
         BackupRestorePhase::StateCommitted,
         Some(&restored),
         completed_at_ms,
@@ -423,7 +355,7 @@ pub(super) fn finish_success(
     completed_at_ms: u64,
 ) -> Result<(), M5BackupError> {
     let transaction = transaction(connection)?;
-    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision) = operation_context(&transaction, operation_id)?;
     if state == "succeeded" {
         transaction.commit().map_err(failure)?;
         return Ok(());
@@ -433,20 +365,13 @@ pub(super) fn finish_success(
     {
         return Err(internal());
     }
-    let plan = load_plan(&transaction, &owner, plan_id)?;
+    let request = load_request(&transaction, operation_id)?;
     let next = revision.checked_add(1).ok_or_else(internal)?;
-    let mut result = serde_json::json!({
-        "backupId": plan.draft.backup_id,
-        "projectId": plan.draft.project_id,
-        "packagesRequireResolve": plan.draft.exclude_vpm_packages,
-        "excludedPackages": plan.draft.excluded_packages,
-    });
-    if owner.as_str().starts_with("mcp:") {
-        result["targetName"] = serde_json::json!(plan.draft.target.leaf);
-    } else {
-        result["target"] = serde_json::json!(plan.draft.target);
-    }
-    let result = result.to_string();
+    let result = serde_json::json!({
+        "projectId": request.project_id,
+        "targetName": request.target_name,
+    })
+    .to_string();
     transaction
         .execute(
             "UPDATE operations SET state='succeeded',revision=?1,result_json=?2,error_code=NULL,
@@ -457,6 +382,12 @@ pub(super) fn finish_success(
                 integer(completed_at_ms)?,
                 operation_id.to_string()
             ],
+        )
+        .map_err(failure)?;
+    transaction
+        .execute(
+            "UPDATE operation_journal SET state='applied',updated_at_ms=?1 WHERE operation_id=?2",
+            params![integer(completed_at_ms)?, operation_id.to_string()],
         )
         .map_err(failure)?;
     insert_event(
@@ -482,7 +413,7 @@ pub(super) fn fail(
         return Err(internal());
     }
     let transaction = transaction(connection)?;
-    let (owner, state, revision, _) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision) = operation_context(&transaction, operation_id)?;
     if matches!(state.as_str(), "succeeded" | "failed" | "cancelled") {
         transaction.commit().map_err(failure)?;
         return Ok(());
@@ -493,7 +424,9 @@ pub(super) fn fail(
         BackupRestorePhase::PublishIntent
             | BackupRestorePhase::TargetPublished
             | BackupRestorePhase::ProjectRegistryCommitIntent
-    ) {
+            | BackupRestorePhase::StateCommitted
+    ) && error_code != "backup_target_exists"
+    {
         "recovering"
     } else {
         "failed"
@@ -581,210 +514,123 @@ pub(super) fn recover(
     Ok(result)
 }
 
-pub(super) fn completed(
+/// A restore can publish its directory before the registration transaction commits.
+pub(super) fn target_reserved(
     connection: &Connection,
-) -> Result<Vec<(OperationId, BackupRestorePlanRecord)>, M5BackupError> {
-    let rows = {
-        let mut statement = connection
-            .prepare(
-                "SELECT o.operation_id,o.owner_principal_id,p.plan_id
-                 FROM operations o JOIN backup_restore_plans p
-                   ON p.apply_operation_id=o.operation_id
-                 WHERE o.kind='backups.restore' AND o.state='succeeded'
-                   AND EXISTS (SELECT 1 FROM backup_restore_filesystem_journal j
-                     WHERE j.operation_id=o.operation_id AND j.phase='state_committed')",
-            )
-            .map_err(failure)?;
-        statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .map_err(failure)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(failure)?
-    };
-    rows.into_iter()
-        .map(|(operation, owner, plan)| {
-            let operation = OperationId::parse(&operation).map_err(|_| internal())?;
-            let owner = PrincipalId::parse(owner).map_err(|_| internal())?;
-            let plan = PlanId::parse(&plan).map_err(|_| internal())?;
-            Ok((operation, load_plan(connection, &owner, plan)?))
-        })
-        .collect()
-}
-
-pub(super) fn load_plan(
-    connection: &Connection,
-    owner: &PrincipalId,
-    plan_id: PlanId,
-) -> Result<BackupRestorePlanRecord, M5BackupError> {
-    connection
-        .query_row(
-            "SELECT plan_id,owner_principal_id,backup_id,preallocated_project_id,
-                backup_archive_sha256,backup_file_identity,backup_byte_size,
-                backup_manifest_fingerprint,exclude_vpm_packages,excluded_packages_json,
-                target_parent_path,target_parent_identity,target_leaf,expected_unity_project_json,
-                plan_fingerprint,plan_json,created_at_ms
-             FROM backup_restore_plans WHERE plan_id=?1 AND owner_principal_id=?2",
-            params![plan_id.to_string(), owner.as_str()],
-            plan_from_row,
+    root: &std::path::Path,
+) -> Result<bool, M5BackupError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT json_extract(j.payload_json,'$.request.targetParent'),
+                json_extract(j.payload_json,'$.request.targetName')
+         FROM operations o JOIN operation_journal j
+           ON j.operation_id=o.operation_id AND j.kind='backups.restore' AND j.step=1
+         WHERE o.kind='backups.restore' AND o.state NOT IN ('succeeded','failed','cancelled')",
         )
-        .optional()
-        .map_err(failure)?
-        .ok_or_else(|| error(M5BackupErrorCode::BackupRestorePlanNotFound))
+        .map_err(failure)?;
+    let candidates = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(failure)?;
+    for candidate in candidates {
+        let (parent, name) = candidate.map_err(failure)?;
+        if std::path::Path::new(&parent).join(name) == root {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
-fn plan_from_row(row: &Row<'_>) -> rusqlite::Result<BackupRestorePlanRecord> {
-    let digest = |index| -> rusqlite::Result<[u8; 32]> {
-        row.get::<_, Vec<u8>>(index)?
-            .try_into()
-            .map_err(|_| rusqlite::Error::InvalidQuery)
-    };
-    let owner =
-        PrincipalId::parse(row.get::<_, String>(1)?).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    Ok(BackupRestorePlanRecord {
-        draft: BackupRestorePlanDraft {
-            plan_id: PlanId::parse(&row.get::<_, String>(0)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            backup_id: alcomd_application::BackupId::parse(&row.get::<_, String>(2)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            project_id: alcomd_application::ProjectId::parse(&row.get::<_, String>(3)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            archive_sha256: digest(4)?,
-            archive_file_identity: row.get(5)?,
-            archive_bytes: u64::try_from(row.get::<_, i64>(6)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            manifest_fingerprint: digest(7)?,
-            exclude_vpm_packages: row.get::<_, i64>(8)? == 1,
-            excluded_packages: serde_json::from_str(&row.get::<_, String>(9)?)
-                .map_err(|_| rusqlite::Error::InvalidQuery)?,
-            target: alcomd_application::BackupRestoreTarget {
-                parent: row.get(10)?,
-                leaf: row.get(12)?,
-                must_be_absent: true,
-            },
-            target_parent_identity: row.get(11)?,
-            expected_unity_project_json: row.get(13)?,
-            plan_fingerprint: digest(14)?,
-            plan_json: row.get(15)?,
-        },
-        owner,
-        created_at_ms: u64::try_from(row.get::<_, i64>(16)?)
-            .map_err(|_| rusqlite::Error::InvalidQuery)?,
-    })
+fn load_request(
+    connection: &Connection,
+    operation_id: OperationId,
+) -> Result<BackupRestoreRequest, M5BackupError> {
+    let value = connection
+        .query_row(
+            "SELECT payload_json FROM operation_journal
+         WHERE operation_id=?1 AND step=1 AND kind='backups.restore'",
+            [operation_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(failure)?;
+    let mut payload: serde_json::Value = serde_json::from_str(&value).map_err(|_| internal())?;
+    serde_json::from_value(payload["request"].take()).map_err(|_| internal())
 }
 
 fn operation_context(
     connection: &Connection,
     operation_id: OperationId,
-) -> Result<(PrincipalId, String, u64, PlanId), M5BackupError> {
-    connection
+) -> Result<(PrincipalId, String, u64), M5BackupError> {
+    let (owner, state, revision) = connection
         .query_row(
-            "SELECT o.owner_principal_id,o.state,o.revision,p.plan_id FROM operations o
-         JOIN backup_restore_plans p ON p.apply_operation_id=o.operation_id
-         WHERE o.operation_id=?1 AND o.kind='backups.restore'",
+            "SELECT owner_principal_id,state,revision FROM operations
+         WHERE operation_id=?1 AND kind='backups.restore'",
             [operation_id.to_string()],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            },
+            |row| Ok((row.get::<_, String>(0)?, row.get(1)?, row.get::<_, i64>(2)?)),
         )
-        .map_err(failure)
-        .and_then(|(owner, state, revision, plan)| {
-            Ok((
-                PrincipalId::parse(owner).map_err(|_| internal())?,
-                state,
-                u64::try_from(revision).map_err(|_| internal())?,
-                PlanId::parse(&plan).map_err(|_| internal())?,
-            ))
-        })
+        .map_err(failure)?;
+    Ok((
+        PrincipalId::parse(owner).map_err(|_| internal())?,
+        state,
+        u64::try_from(revision).map_err(|_| internal())?,
+    ))
 }
 
 fn insert_journal(
     connection: &Connection,
     operation_id: OperationId,
     step: u64,
-    plan: &BackupRestorePlanRecord,
+    request: Option<&BackupRestoreRequest>,
     phase: BackupRestorePhase,
     restored: Option<&RestoredProject>,
     updated_at_ms: u64,
 ) -> Result<(), M5BackupError> {
-    let evidence = restored.map_or_else(
-        || "{}".to_owned(),
-        |value| {
-            serde_json::json!({
-                "targetIdentity": hex(&value.target_identity),
-                "projectFingerprint": hex(&value.project_fingerprint),
-            })
-            .to_string()
-        },
-    );
-    let state = if matches!(
-        phase,
-        BackupRestorePhase::PublishIntent | BackupRestorePhase::ProjectRegistryCommitIntent
-    ) {
-        "intent"
-    } else {
-        "completed"
-    };
-    connection
-        .execute(
-            "INSERT INTO backup_restore_filesystem_journal (
-            operation_id,step,plan_id,preallocated_project_id,phase,state,
-            target_parent_identity,target_identity,project_fingerprint,evidence_json,updated_at_ms
-         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-            params![
-                operation_id.to_string(),
-                integer(step)?,
-                plan.draft.plan_id.to_string(),
-                plan.draft.project_id.to_string(),
-                phase.as_str(),
-                state,
-                plan.draft.target_parent_identity,
-                restored.map(|value| value.target_identity.clone()),
-                restored.map(|value| value.project_fingerprint.to_vec()),
-                evidence,
-                integer(updated_at_ms)?,
-            ],
-        )
-        .map_err(failure)?;
+    let payload = serde_json::json!({
+        "phase": phase,
+        "request": request,
+        "restoredFingerprint": restored.map(|value| value.project_fingerprint),
+    })
+    .to_string();
+    connection.execute(
+        "INSERT INTO operation_journal (operation_id,step,kind,state,payload_json,updated_at_ms)
+         VALUES (?1,?2,'backups.restore','prepared',?3,?4)",
+        params![
+            operation_id.to_string(),
+            integer(step)?,
+            payload,
+            integer(updated_at_ms)?,
+        ],
+    ).map_err(failure)?;
     Ok(())
 }
 
 fn latest_step(connection: &Connection, operation_id: OperationId) -> Result<u64, M5BackupError> {
-    connection.query_row(
-        "SELECT coalesce(max(step),0) FROM backup_restore_filesystem_journal WHERE operation_id=?1",
-        [operation_id.to_string()], |row| row.get::<_, i64>(0),
-    ).map_err(failure).and_then(|value| u64::try_from(value).map_err(|_| internal()))
+    connection
+        .query_row(
+            "SELECT coalesce(max(step),0) FROM operation_journal
+         WHERE operation_id=?1 AND kind='backups.restore'",
+            [operation_id.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(failure)
+        .and_then(|value| u64::try_from(value).map_err(|_| internal()))
 }
 
 fn latest_phase(
     connection: &Connection,
     operation_id: OperationId,
 ) -> Result<BackupRestorePhase, M5BackupError> {
-    let value = connection.query_row(
-        "SELECT phase FROM backup_restore_filesystem_journal WHERE operation_id=?1 ORDER BY step DESC LIMIT 1",
-        [operation_id.to_string()], |row| row.get::<_, String>(0),
-    ).map_err(failure)?;
-    match value.as_str() {
-        "accepted" => Ok(BackupRestorePhase::Accepted),
-        "archive_verified" => Ok(BackupRestorePhase::ArchiveVerified),
-        "extracting" => Ok(BackupRestorePhase::Extracting),
-        "staging_complete" => Ok(BackupRestorePhase::StagingComplete),
-        "publish_intent" => Ok(BackupRestorePhase::PublishIntent),
-        "target_published" => Ok(BackupRestorePhase::TargetPublished),
-        "project_registry_commit_intent" => Ok(BackupRestorePhase::ProjectRegistryCommitIntent),
-        "state_committed" => Ok(BackupRestorePhase::StateCommitted),
-        _ => Err(internal()),
-    }
+    let value = connection
+        .query_row(
+            "SELECT payload_json FROM operation_journal
+         WHERE operation_id=?1 AND kind='backups.restore' ORDER BY step DESC LIMIT 1",
+            [operation_id.to_string()],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(failure)?;
+    let mut payload: serde_json::Value = serde_json::from_str(&value).map_err(|_| internal())?;
+    serde_json::from_value(payload["phase"].take()).map_err(|_| internal())
 }
 
 const fn phase_step(phase: BackupRestorePhase) -> u64 {
@@ -845,9 +691,6 @@ fn integer(value: u64) -> Result<i64, M5BackupError> {
 }
 fn revision_value(value: u64) -> Result<Revision, M5BackupError> {
     Revision::new(value).ok_or_else(internal)
-}
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 fn failure(source: rusqlite::Error) -> M5BackupError {
     error(M5BackupErrorCode::StoreUnavailable).with_source(source)

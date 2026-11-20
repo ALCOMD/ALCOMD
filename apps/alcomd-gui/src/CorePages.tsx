@@ -1,6 +1,5 @@
 import { ExtensionToolPreview } from "./ExtensionPermissions";
 import { Translated, useTranslation } from "./i18n";
-import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { OperationItems } from "./OperationItems";
@@ -34,7 +33,7 @@ import { flushSync } from "react-dom";
 
 import type {
     OfficialSettings,
-    BackupCreateResult,
+    OperationAccepted,
     Operation,
     PackageSourceSelector,
     ProjectCopyPlan,
@@ -251,17 +250,16 @@ export function routePreloadRead(client: GuiRpcClient, events: CoreEvents, path:
         const value = await loadPackageWorkspace(client, project[1]!, has(capabilities.packagesCandidates), {}, performance.now() + 100, signal);
         return withPreloadWork(value, value.candidateRead ?? Promise.resolve());
     } };
-    const detail = /^\/(repositories|backups|operations|extensions)\/([^/]+)$/.exec(path);
+    const detail = /^\/(repositories|operations|extensions)\/([^/]+)$/.exec(path);
     if (detail) {
         let id: string;
         try { id = decodeURIComponent(detail[2]!); } catch { return undefined; }
         if (detail[1] === "repositories" && has(capabilities.repositoriesRead)) return { scopes: ["repositories"], load: () => client.repositoryGet(id) };
-        if (detail[1] === "backups" && has(capabilities.backupsRead)) return { scopes: ["backups"], load: () => client.backupGet(id) };
         if (detail[1] === "operations" && has(capabilities.operations)) return { scopes: ["operations"], load: () => client.operationGet(id) };
         if (detail[1] === "extensions" && has(capabilities.extensionsLifecycle)) return { scopes: ["extensions"], load: () => client.extensionGet(id) };
     }
     const backups = /^\/projects\/([0-9a-f-]+)\/backups$/.exec(path);
-    if (backups && has(capabilities.backupsRead) && has(capabilities.projectsRead)) return { scopes: ["projects", "backups"], load: async () => ({ project: (await client.projectGet(backups[1]!)).project }) };
+    if (backups && has(capabilities.backupsCreate) && has(capabilities.projectsRead)) return { scopes: ["projects"], load: async () => ({ project: (await client.projectGet(backups[1]!)).project }) };
     switch (path) {
         case "/projects": {
             if (!has(capabilities.projectsRead)) return;
@@ -577,7 +575,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const canManageProjects = useCapability(capabilities.projectsRegistry);
     const canCopyProjects = useCapability(capabilities.projectsCopy);
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
-    const canReadBackups = useCapability(capabilities.backupsRead);
+    const canCreateBackups = useCapability(capabilities.backupsCreate);
     const canManageUnity = useCapability(capabilities.unityManage);
     const [argumentsOpen, setArgumentsOpen] = useState(false);
     const [copyOpen, setCopyOpen] = useState(false);
@@ -702,7 +700,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
         <MenuItem disabled={!canReadProjects || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} />
         <MenuItem disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
         {workspace ? <>
-            <MenuItem disabled={!canReadBackups} label={t("Backups")} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead, t)} />
+            <MenuItem disabled={!canCreateBackups} label={t("Backups")} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canCreateBackups, capabilities.backupsCreate, t)} />
             <MenuItem className="project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label={t("Remove from list")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />
             <MenuItem className="project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label={t("Delete Project Directory…")} onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete, t)} />
         </> : <MenuItem className="project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label={t("Remove Project")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />}
@@ -716,7 +714,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                     {unityLaunchLabel}
                 </Button>}
                 {workspace ? null : <NavigationButton to={`/projects/${projectId}`} disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} type="button" variant="tonal">{t("Manage")}</NavigationButton>}
-                {workspace ? null : <NavigationButton to={`/projects/${projectId}/backups`} disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead, t)} type="button" variant="tonal">{t("Backups")}</NavigationButton>}
+                {workspace ? null : <NavigationButton to={`/projects/${projectId}/backups`} disabled={!canCreateBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canCreateBackups, capabilities.backupsCreate, t)} type="button" variant="tonal">{t("Backups")}</NavigationButton>}
                 {launchAction === undefined ? <><IconButton className="project-more-actions" label={t("More actions for {value0}", { value0: projectName(t, locale, project) })} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
@@ -1230,7 +1228,7 @@ function PackageVersionPicker({ client, project, snapshot, source, disabled, can
 function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, onSelect, onRemove, row }: { canPlanV1: boolean; canPlanV2: boolean; catalogReady: boolean; evidence?: PackageCandidateSummary; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onRemove(origin: DialogOrigin): void; row: PackageWorkspaceRow }) {
     const { t } = useTranslation();
     const origin = useRef<HTMLElement>(null);
-    const installChoice = evidence?.projectLatest;
+    const installChoice = evidence?.recommended;
     if (row.installedVersion !== undefined) return <IconButton className="package-primary-action material-button--danger" disabled={!canPlanV1} label={t("Remove")} onClick={() => onRemove(origin)} ref={origin} title={t("Remove {value0}", { value0: row.displayName })} type="button"><Icon asset={cancelIcon} /></IconButton>;
     return <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") onSelect(installChoice.candidate, origin); }} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={addCircleIcon} /></IconButton>;
 }
@@ -1432,6 +1430,7 @@ function PackageFilters({ client, settings, onChanged, filter, setFilter, source
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Other filters")}</legend>
                 <Checkbox checked={snapshot.settings.packages.showPrerelease} disabled={busy} label={t("Show prerelease versions")} onChange={(checked) => { if (checked) { setOpen(false); setConfirmPrerelease(true); } else void save({ showPrerelease: false }); }} />
+                <Checkbox checked={snapshot.settings.packages.preferPrerelease} disabled={busy || !snapshot.settings.packages.showPrerelease} label={t("Prefer prerelease versions")} onChange={(checked) => void save({ preferPrerelease: checked })} />
                 <Select disabled={busy} label={t("Status")} onChange={(value) => setFilter(value as "all" | NonNullable<CandidateFilter["status"]>)} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
                 <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
@@ -1724,7 +1723,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin, automaticSource = false) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !(actionableVersion(option) || option.manualUnityOverrideAllowed === true)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
-                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, ...(automaticSource ? {} : { source: candidateSource(option.source) }), includePrerelease: option.classification === "prerelease", ...(option.manualUnityOverrideAllowed ? { allowUnityIncompatible: true } : {}), candidateSnapshot: candidates.snapshot.fingerprint });
+                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, ...(automaticSource ? {} : { source: candidateSource(option.source) }), ...(option.classification === "prerelease" ? { includePrerelease: true } : {}), ...(option.manualUnityOverrideAllowed ? { allowUnityIncompatible: true } : {}), candidateSnapshot: candidates.snapshot.fingerprint });
             };
             const bulkReady = (intents: CandidateBulkIntent[] | undefined) => intents?.length && intents.every((intent) => intent.kind === "remove") ? currentEvidence && !candidatesPending && !packageMutationBusy : catalogReady;
             const bulkDisabled = (intents: CandidateBulkIntent[] | undefined) => !canPlanPackagesV2 || !bulkReady(intents) || !intents?.length;
@@ -2150,38 +2149,13 @@ async function loadAllUnityInstallations(client: GuiRpcClient, signal?: AbortSig
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
-    const [accepted, setAccepted] = useState<BackupCreateResult>();
-    const initialBackups = usePageReadPromise("backups.list", () => client.backupsList(projectId));
-    const [listVersion, setListVersion] = useState(0);
+    const [accepted, setAccepted] = useState<OperationAccepted>();
     const load = useCallback(async () => ({ project: (await client.projectGet(projectId)).project }), [client, projectId]);
-    return <UtilityWorkspace changes={["backups"]} title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
-        action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} navigate={navigate} onAccepted={setAccepted} project={value.project} /> }}>
-        {(value, refresh) => <>
+    return <UtilityWorkspace changes={["projects"]} title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
+        action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} onAccepted={setAccepted} project={value.project} /> }}>
+        {(value) => <>
             <p>{projectName(t, locale, value.project)}</p>
-            {accepted === undefined ? null : <OperationFollow client={client} key={accepted.operationId} onTerminal={() => { refresh(); setListVersion((version) => version + 1); }} operationId={accepted.operationId} background />}
-            <LocalPageReadContext.Provider value={true}><ProjectBackupList client={client} initial={initialBackups} projectId={projectId} listVersion={listVersion} navigate={navigate} /></LocalPageReadContext.Provider>
-        </>}
-    </UtilityWorkspace>;
-}
-
-function ProjectBackupList({ client, initial, projectId, listVersion, navigate }: { client: GuiRpcClient; initial: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["backupsList"]>>>>; projectId: string; listVersion: number; navigate(path: string): void }) {
-    const { t, locale } = useTranslation();
-    const load = useCallback(() => client.backupsList(projectId), [client, projectId, listVersion]);
-    return <ResourcePage initialRequest={initial} load={load} changes={["backups"]} loading={<TableLoading label={t("Backups")} headers={[t("Created"), t("Size"), t("Packages"), t("Actions")]} />}>{(value) =>
-        <PagedItems initialItems={value.backups} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.backupsList(projectId, cursor); return { items: page.backups, nextCursor: page.nextCursor }; }}>
-            {(backups) => backups.length === 0 ? <RouteState kind="empty" title={t("No backups for this project")} /> : <UtilityTable label={t("Backups")} headers={[t("Created"), t("Size"), t("Packages"), t("Actions")]} rows={backups.map((backup) => ({ key: backup.backupId, cells: [formatTime(t, locale, backup.createdAtMs), formatBytes(t, locale, backup.archiveBytes), backup.excludeVpmPackages ? t("VPM packages excluded") : t("VPM packages included"), <NavigationButton to={"/backups/" + backup.backupId} onClick={() => navigate("/backups/" + backup.backupId)} type="button" variant="text">{t("View backup")}</NavigationButton>] }))} />}
-        </PagedItems>}
-    </ResourcePage>;
-}
-
-export function BackupDetailPage({ client, navigate, backupId }: PageProps & { backupId: string }) {
-    const { t, locale } = useTranslation();
-    const canRestore = useCapability(capabilities.backupsRestore);
-    const [restoreOpen, setRestoreOpen] = useState(false);
-    const load = useCallback(() => client.backupGet(backupId), [client, backupId]);
-    return <UtilityWorkspace changes={["backups"]} title={t("Backup detail")} load={load} tools={() => <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} type="button">{t("Restore backup")}</Button>}>
-        {(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backupCompressionLabel(t, backup.compressionMode)} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl>
-            {restoreOpen ? <RestoreProjectDialog backup={backup} client={client} onClose={() => setRestoreOpen(false)} onCompleted={(projectId) => navigate(`/projects/${projectId}`)} onViewOperation={(operationId) => navigate(`/operations/${operationId}`)} open /> : null}
+            {accepted === undefined ? null : <OperationFollow client={client} key={accepted.operationId} operationId={accepted.operationId} background />}
         </>}
     </UtilityWorkspace>;
 }
@@ -2214,7 +2188,6 @@ function OperationResultLinks({ navigate, operation }: { navigate(path: string):
     const id = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
     return <div className="action-row">
         {!id(result.projectId) ? null : <NavigationButton to={`/projects/${result.projectId}`} onClick={() => navigate(`/projects/${result.projectId}`)} type="button" variant="tonal">{t("Open project")}</NavigationButton>}
-        {!id(result.backupId) ? null : <NavigationButton to={`/backups/${result.backupId}`} onClick={() => navigate(`/backups/${result.backupId}`)} type="button" variant="tonal">{t("View backup")}</NavigationButton>}
     </div>;
 }
 
@@ -2352,7 +2325,6 @@ function UtilityTable({ headers, label, rows }: { headers: string[]; label: stri
 
 function sourceText(t: Translate, locale: SupportedLocale, repository: RepositorySnapshot): string { return repository.source.kind === "local" ? t("Local repository") : repository.source.url; }
 function formatTime(t: Translate, locale: SupportedLocale, value: number): string { return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC"; }
-function formatBytes(t: Translate, locale: SupportedLocale, value: number): string { return value < 1024 * 1024 ? t("{value0} KiB", { value0: Math.ceil(value / 1024) }) : t("{value0} MiB", { value0: (value / (1024 * 1024)).toFixed(1) }); }
 function shortHash(value: string): string { return value.length <= 24 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`; }
 function humanize(t: Translate, value: string): string {
     const labels: Readonly<Record<string, string>> = {

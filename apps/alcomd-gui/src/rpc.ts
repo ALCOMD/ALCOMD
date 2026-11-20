@@ -1,3 +1,4 @@
+import type { BackupCreateParams, BackupRestoreParams } from "@alcomd/sdk";
 import type { ProjectsCreateParams, ProjectsCreateResult, ProjectTemplatesExportParams, ProjectTemplatesExportResult, ProjectTemplatesListResult, ProjectTemplatesSaveParams, ProjectTemplatesSaveResult, ProjectTemplatesRemoveParams, ProjectTemplatesRemoveResult } from "@alcomd/sdk";
 import type { LogsReadParams, LogsReadResult } from "@alcomd/sdk";
 import type { ProjectInventoryParams, ProjectInventoryResult, ProjectTemplateEditParams, ProjectTemplateGetParams, ProjectTemplateGetResult } from "@alcomd/sdk";
@@ -10,10 +11,10 @@ import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./
 import type { GuiUnityWindows, UnityWindowSnapshot } from "./unity-window-observation";
 import type { ProjectListView } from "./core-models";
 
-import type { BackupApplyRestoreResult, BackupCreateResult, BackupRecord, BackupRestorePlan, BackupsListResult, ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
+import type { ExtensionGrantResult, ExtensionOperationResult, ExtensionPlanResult, ExtensionsListResult, Operation, OperationAccepted, OperationWriteResult, OperationsListResult, PackageApplyPlanParams, PackageCursor, PackagePlan, PackagePlanBulkParams, PackagePlanDowngradeParams, PackagePlanInstallParams, PackagePlanRemoveParams, PackagePlanResolveParams, PackagePlanReinstallParams, ProjectUnityLaunchConfigMutationResult, ProjectUnityLaunchConfigResult, ProjectResult, ProjectsApplyCopyResult, ProjectsApplyDeleteDirectoryResult, ProjectsPlanCopyResult, ProjectsPlanDeleteDirectoryResult, ProjectsApplyUnityMigrationResult, ProjectsPlanUnityMigrationResult, ProjectUnregisterResult, ProjectWriteResult, ProjectsListResult, RegistryCursor, RepositoriesListResult, RepositoryPackagesResult, RepositoryResult, RepositorySource, RepositoryUnregisterResult, RepositoryWriteResult, SettingsGetResult, SettingsUpdate, SystemStatus, UnityInstallationResult, UnityInstallationRemoveResult, UnityInstallationsListResult, UnityLaunchResult, UnityLaunchOptionsResult, UnityWriterState, UserPackageCursor, UserPackageRemoveResult, UserPackageResult, UserPackagesListResult, UserPackageWriteResult } from "./core-models";
 
 export type FileDrag = { type: "leave" } | { type: "hover"; x: number; y: number } | { type: "drop"; x: number; y: number; paths: string[] };
-export type NativeFileKind = "repositoryManifest" | "unityEditor" | "extensionPackage" | "templateAttachment";
+export type NativeFileKind = "backupZip" | "backupZipDestination" | "repositoryManifest" | "unityEditor" | "extensionPackage" | "templateAttachment";
 
 export interface GuiRpcClient {
     readonly unityWindows?: GuiUnityWindows;
@@ -97,11 +98,8 @@ export interface GuiRpcClient {
     projectTemplatesSave(params: ProjectTemplatesSaveParams): Promise<ProjectTemplatesSaveResult>;
     projectTemplatesExport(params: ProjectTemplatesExportParams): Promise<ProjectTemplatesExportResult>;
     projectTemplatesRemove(params: ProjectTemplatesRemoveParams): Promise<ProjectTemplatesRemoveResult>;
-    backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
-    backupGet(backupId: string): Promise<BackupRecord>;
-    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "level3" | "level5" | "level7" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): Promise<BackupCreateResult>;
-    backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan>;
-    backupApplyRestore(planId: string): Promise<BackupApplyRestoreResult>;
+    backupCreate(params: BackupCreateParams): Promise<OperationAccepted>;
+    backupRestore(params: BackupRestoreParams): Promise<OperationAccepted>;
     extensionsList(cursor?: string): Promise<ExtensionsListResult>;
     extensionGet(extensionId: string): Promise<ExtensionResult>;
     extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult>;
@@ -461,28 +459,12 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_templates_remove", { params });
     }
 
-    backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult> {
-        return invokeTyped("gui_backups_list", { params: { projectId, cursor, limit: 100 } });
+    backupCreate(params: BackupCreateParams): Promise<OperationAccepted> {
+        return invokeTyped("gui_backup_create", { params });
     }
 
-    backupGet(backupId: string): Promise<BackupRecord> {
-        return invokeTyped("gui_backup_get", { backupId });
-    }
-
-    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "level3" | "level5" | "level7" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): Promise<BackupCreateResult> {
-        return invokeTyped("gui_backup_create", { params: { projectId, expectedRevision,
-            ...(compressionMode === undefined ? {} : { compressionMode }),
-            ...(excludeVpmPackages === undefined ? {} : { excludeVpmPackages }),
-            ...(includeLibrary === undefined ? {} : { includeLibrary }),
-            idempotencyKey: crypto.randomUUID() } });
-    }
-
-    backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan> {
-        return invokeTyped("gui_backup_plan_restore", { params: { backupId, targetParent, targetLeaf } });
-    }
-
-    backupApplyRestore(planId: string): Promise<BackupApplyRestoreResult> {
-        return invokeTyped("gui_backup_apply_restore", { params: { planId, idempotencyKey: crypto.randomUUID() } });
+    backupRestore(params: BackupRestoreParams): Promise<OperationAccepted> {
+        return invokeTyped("gui_backup_restore", { params });
     }
 
     extensionsList(cursor?: string): Promise<ExtensionsListResult> {

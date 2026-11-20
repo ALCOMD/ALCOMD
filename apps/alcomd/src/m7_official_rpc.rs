@@ -133,6 +133,7 @@ pub(super) async fn dispatch(
                     .packages
                     .map(|value| app::ConfigPackageSettingsUpdate {
                         show_prerelease: value.show_prerelease,
+                        prefer_prerelease: value.prefer_prerelease,
                         hidden_repository_ids: value.hidden_repository_ids,
                         hidden_repository_packages: value.hidden_repository_packages.map(
                             |groups| {
@@ -290,6 +291,7 @@ fn settings_result(
             },
             packages: rpc::PackageSettings {
                 show_prerelease: value.settings.packages.show_prerelease,
+                prefer_prerelease: value.settings.packages.prefer_prerelease,
                 hidden_repository_ids: value.settings.packages.hidden_repository_ids,
                 hidden_repository_packages: value
                     .settings

@@ -1,13 +1,13 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "MCP project and backup workflows",
-    "x-capability": "mcp.project-workflows.v1",
-    "$id": "https://alcomd.vrclearn.com/schema/mcp/project-workflows-v1.json",
+    "x-capability": "mcp.project-workflows.v2",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/project-workflows-v2.json",
     "x-alcomd-tools": [
         {
             "name": "alcomd_register_project",
             "title": "Register an existing project",
-            "description": "Register a project under the default project directory or use its owner-approved path.",
+            "description": "Register a project under the default project directory or by its absolute path on the Core machine.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/register"
@@ -89,7 +89,7 @@
         {
             "name": "alcomd_create_project",
             "title": "Create a project",
-            "description": "Create a project at the selected destination. A template with packages requires the existing package and repository permissions.",
+            "description": "Create a project under the default project directory or at an absolute destination on the Core machine. A template with packages requires the existing package and repository permissions.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/create"
@@ -130,7 +130,7 @@
         {
             "name": "alcomd_plan_project_copy",
             "title": "Review a project copy",
-            "description": "Freeze the source revision and selected destination for review.",
+            "description": "Freeze the source revision and selected destination for review. Choose a name under the default project directory or supply an absolute destination on the Core machine.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/planCopy"
@@ -212,91 +212,9 @@
             ]
         },
         {
-            "name": "alcomd_list_backups",
-            "title": "List managed backups",
-            "description": "Read the shared backup catalog, optionally filtered by source project.",
-            "inputSchema": {
-                "type": "object",
-                "$ref": "#/$defs/listBackups"
-            },
-            "outputSchema": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "data": {
-                                "$ref": "#/$defs/backups"
-                            }
-                        },
-                        "required": [
-                            "data"
-                        ]
-                    },
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "error": {
-                                "$ref": "#/$defs/toolError"
-                            }
-                        },
-                        "required": [
-                            "error"
-                        ]
-                    }
-                ]
-            },
-            "effect": "read",
-            "requiredPermissions": [
-                "backups.read"
-            ]
-        },
-        {
-            "name": "alcomd_get_backup",
-            "title": "Get a managed backup",
-            "description": "Read a registered backup by its ID.",
-            "inputSchema": {
-                "type": "object",
-                "$ref": "#/$defs/getBackup"
-            },
-            "outputSchema": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "data": {
-                                "$ref": "#/$defs/backup"
-                            }
-                        },
-                        "required": [
-                            "data"
-                        ]
-                    },
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "error": {
-                                "$ref": "#/$defs/toolError"
-                            }
-                        },
-                        "required": [
-                            "error"
-                        ]
-                    }
-                ]
-            },
-            "effect": "read",
-            "requiredPermissions": [
-                "backups.read"
-            ]
-        },
-        {
             "name": "alcomd_create_backup",
             "title": "Create a project backup",
-            "description": "Create a managed native backup at the effective backup directory.",
+            "description": "Write a ZIP to a new absolute file path on the Core host, or use the configured backup directory.",
             "inputSchema": {
                 "type": "object",
                 "$ref": "#/$defs/createBackup"
@@ -336,12 +254,12 @@
             ]
         },
         {
-            "name": "alcomd_plan_backup_restore",
-            "title": "Review a backup restore",
-            "description": "Freeze a plan to recover a managed archive to a new project.",
+            "name": "alcomd_restore_backup",
+            "title": "Restore a Unity project from ZIP",
+            "description": "Restore a ZIP whose root is a Unity project. Supply an absolute archive path on the Core host and confirm the restore. An optional destination is a new absolute project directory.",
             "inputSchema": {
                 "type": "object",
-                "$ref": "#/$defs/planRestore"
+                "$ref": "#/$defs/restoreBackup"
             },
             "outputSchema": {
                 "oneOf": [
@@ -350,49 +268,7 @@
                         "additionalProperties": false,
                         "properties": {
                             "data": {
-                                "$ref": "#/$defs/restorePlan"
-                            }
-                        },
-                        "required": [
-                            "data"
-                        ]
-                    },
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "error": {
-                                "$ref": "#/$defs/toolError"
-                            }
-                        },
-                        "required": [
-                            "error"
-                        ]
-                    }
-                ]
-            },
-            "effect": "plan",
-            "requiredPermissions": [
-                "backups.read",
-                "projects.create"
-            ]
-        },
-        {
-            "name": "alcomd_apply_backup_restore",
-            "title": "Apply a reviewed backup restore",
-            "description": "Restore the original plan to a new project after explicit confirmation.",
-            "inputSchema": {
-                "type": "object",
-                "$ref": "#/$defs/applyRestore"
-            },
-            "outputSchema": {
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "data": {
-                                "$ref": "#/$defs/projectAccepted"
+                                "$ref": "#/$defs/backupAccepted"
                             }
                         },
                         "required": [
@@ -470,15 +346,18 @@
                     "additionalProperties": false,
                     "properties": {
                         "kind": {
-                            "const": "approved"
+                            "const": "absolute"
                         },
-                        "approval_id": {
-                            "$ref": "#/$defs/id"
+                        "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "description": "Absolute project directory path on the Core machine."
                         }
                     },
                     "required": [
                         "kind",
-                        "approval_id"
+                        "path"
                     ]
                 }
             ]
@@ -508,15 +387,18 @@
                     "additionalProperties": false,
                     "properties": {
                         "kind": {
-                            "const": "approved"
+                            "const": "absolute"
                         },
-                        "approval_id": {
-                            "$ref": "#/$defs/id"
+                        "path": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "description": "Absolute path to the new project directory on the Core machine."
                         }
                     },
                     "required": [
                         "kind",
-                        "approval_id"
+                        "path"
                     ]
                 }
             ]
@@ -776,9 +658,6 @@
                 },
                 "idempotency_key": {
                     "$ref": "#/$defs/key"
-                },
-                "path_approval_id": {
-                    "$ref": "#/$defs/id"
                 }
             },
             "required": [
@@ -960,98 +839,6 @@
                 "maximum"
             ]
         },
-        "listBackups": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "project_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "cursor": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
-                }
-            }
-        },
-        "backups": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/backup"
-                    },
-                    "maxItems": 1000
-                },
-                "next_cursor": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
-                }
-            },
-            "required": [
-                "backups"
-            ]
-        },
-        "getBackup": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backup_id": {
-                    "$ref": "#/$defs/id"
-                }
-            },
-            "required": [
-                "backup_id"
-            ]
-        },
-        "backup": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backup_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "source_project_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "archive_sha256": {
-                    "$ref": "#/$defs/fingerprint"
-                },
-                "archive_bytes": {
-                    "$ref": "#/$defs/integer"
-                },
-                "format_version": {
-                    "$ref": "#/$defs/revision"
-                },
-                "created_at_ms": {
-                    "$ref": "#/$defs/integer"
-                },
-                "compression_mode": {
-                    "$ref": "#/$defs/compression"
-                },
-                "exclude_vpm_packages": {
-                    "type": "boolean"
-                }
-            },
-            "required": [
-                "backup_id",
-                "source_project_id",
-                "archive_sha256",
-                "archive_bytes",
-                "format_version",
-                "created_at_ms",
-                "compression_mode",
-                "exclude_vpm_packages"
-            ]
-        },
         "createBackup": {
             "type": "object",
             "additionalProperties": false,
@@ -1073,6 +860,10 @@
                 },
                 "idempotency_key": {
                     "$ref": "#/$defs/key"
+                },
+                "destination_path": {
+                    "type": "string",
+                    "minLength": 1
                 }
             },
             "required": [
@@ -1088,119 +879,13 @@
                 "operation_id": {
                     "$ref": "#/$defs/id"
                 },
-                "backup_id": {
-                    "$ref": "#/$defs/id"
-                },
                 "replayed": {
                     "type": "boolean"
                 }
             },
             "required": [
                 "operation_id",
-                "backup_id",
                 "replayed"
-            ]
-        },
-        "planRestore": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "backup_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "target": {
-                    "$ref": "#/$defs/target"
-                }
-            },
-            "required": [
-                "backup_id",
-                "target"
-            ]
-        },
-        "restorePlan": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "plan_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "project_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "backup_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "target_name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                },
-                "archive_sha256": {
-                    "$ref": "#/$defs/fingerprint"
-                },
-                "packages_require_resolve": {
-                    "type": "boolean"
-                },
-                "excluded_packages": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "package_id": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 128
-                            },
-                            "version": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 128
-                            }
-                        },
-                        "required": [
-                            "package_id",
-                            "version"
-                        ]
-                    },
-                    "maxItems": 4096
-                },
-                "plan_fingerprint": {
-                    "$ref": "#/$defs/fingerprint"
-                }
-            },
-            "required": [
-                "plan_id",
-                "project_id",
-                "backup_id",
-                "target_name",
-                "archive_sha256",
-                "packages_require_resolve",
-                "excluded_packages",
-                "plan_fingerprint"
-            ]
-        },
-        "applyRestore": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "plan_id": {
-                    "$ref": "#/$defs/id"
-                },
-                "confirm": {
-                    "const": true
-                },
-                "idempotency_key": {
-                    "$ref": "#/$defs/key"
-                },
-                "path_approval_id": {
-                    "$ref": "#/$defs/id"
-                }
-            },
-            "required": [
-                "plan_id",
-                "confirm",
-                "idempotency_key"
             ]
         },
         "toolError": {
@@ -1238,7 +923,9 @@
                             "pattern": "^[a-zA-Z0-9_]*$"
                         }
                     },
-                    "required": ["subreason"]
+                    "required": [
+                        "subreason"
+                    ]
                 }
             },
             "required": [
@@ -1246,6 +933,41 @@
                 "message",
                 "retryable"
             ]
+        },
+        "restoreBackup": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "archive_path",
+                "idempotency_key",
+                "confirm"
+            ],
+            "properties": {
+                "archive_path": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "project_name": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "destination_path": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "idempotency_key": {
+                    "$ref": "#/$defs/key"
+                },
+                "confirm": {
+                    "const": true
+                }
+            },
+            "not": {
+                "required": [
+                    "project_name",
+                    "destination_path"
+                ]
+            }
         }
     }
 }

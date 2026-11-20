@@ -40,8 +40,6 @@ pub(super) fn create_plan(
         }
         let mut outcome: ProjectCopyPlanOutcome = if owner.as_str().starts_with("mcp:") {
             let plan_id = serde_json::from_str(&response).map_err(|_| internal())?;
-            super::m8_workflows::check_plan_proof(&transaction, owner, plan_id)
-                .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
             ProjectCopyPlanOutcome {
                 plan: load_plan(&transaction, owner, plan_id)?,
                 replayed: true,
@@ -86,13 +84,6 @@ pub(super) fn create_plan(
         )
         .map_err(failure)?;
     let plan = load_plan(&transaction, owner, draft.plan_id)?;
-    super::m8_workflows::install_plan_proof(
-        &transaction,
-        owner,
-        draft.plan_id,
-        draft.created_at_ms,
-    )
-    .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     let target =
         super::operation_logs::destination_target(&draft.target_parent_path, &draft.target_leaf);
     super::operation_logs::plan(
@@ -148,8 +139,6 @@ pub(super) fn replay_apply(
     key: &IdempotencyKey,
 ) -> Result<Option<ProjectCopyApplyOutcome>, M7CopyError> {
     require_mcp_copy(connection, owner)?;
-    super::m8_workflows::check_plan_proof(connection, owner, plan_id)
-        .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     let expected_fingerprint = apply_request_fingerprint(plan_id, expected_revision)?;
     let Some((stored_fingerprint, response)) = connection
         .query_row(
@@ -184,8 +173,6 @@ pub(super) fn accept(
     let fingerprint = apply_request_fingerprint(plan_id, expected_revision)?;
     let transaction = begin(connection)?;
     require_mcp_copy(&transaction, owner)?;
-    super::m8_workflows::check_plan_proof(&transaction, owner, plan_id)
-        .map_err(|cause| error(M7CopyErrorCode::PermissionDenied).with_source(cause))?;
     if let Some((stored, response)) = transaction
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records

@@ -85,8 +85,8 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     fs::write(
         project.join("Packages/vpm-manifest.json"),
         json!({
-            "dependencies":{"com.example.candidate":{"version":"1.9.0"}},
-            "locked":{"com.example.candidate":{"version":"1.9.0"}}
+            "dependencies":{"com.example.candidate":{"version":"1.8.0-beta.1"}},
+            "locked":{"com.example.candidate":{"version":"1.8.0-beta.1"}}
         })
         .to_string(),
     )
@@ -95,7 +95,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         .expect("installed package directory");
     fs::write(
         project.join("Packages/com.example.candidate/package.json"),
-        json!({"name":"com.example.candidate","version":"1.9.0"}).to_string(),
+        json!({"name":"com.example.candidate","version":"1.8.0-beta.1"}).to_string(),
     )
     .expect("installed manifest");
     let network = TcpListener::bind("127.0.0.1:0").expect("network tripwire");
@@ -106,6 +106,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     );
     let mut versions = serde_json::Map::new();
     for (version, unity) in [
+        ("1.8.0-beta.1", "2022.3"),
         ("1.9.0", "2022.3"),
         ("1.10.0", "2022.3"),
         ("2.0.0", "2023.1"),
@@ -295,7 +296,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             update: alcomd_protocol::SettingsUpdate {
                 window: None,
                 packages: Some(alcomd_protocol::PackageSettingsUpdate {
-                    show_prerelease: Some(true),
+                    show_prerelease: Some(false),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -311,6 +312,50 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
                 .expect_err("config stale")
         ),
         "package_candidate_evidence_stale"
+    );
+    let hidden = wire(
+        client
+            .package_query_project_candidates(request(
+                &project_id,
+                1,
+                json!({"kind":"versions","packageId":"com.example.candidate"}),
+                64,
+            ))
+            .await
+            .expect("hidden versions"),
+    );
+    assert_eq!(hidden["items"].as_array().unwrap().len(), 3);
+    assert!(
+        hidden["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["version"] != "1.8.0-beta.1")
+    );
+    let installed = wire(
+        client
+            .package_query_project_candidates(request(
+                &project_id,
+                1,
+                json!({"kind":"summary","packageIds":["com.example.candidate"]}),
+                1,
+            ))
+            .await
+            .expect("installed facts after hiding prereleases"),
+    );
+    assert_eq!(
+        installed["items"][0]["installed"],
+        json!({"kind":"locked", "version":"1.8.0-beta.1"})
+    );
+    let inventory = client
+        .repository_packages(repository_id.clone(), None, Some(64))
+        .await
+        .expect("repository inventory");
+    assert!(
+        inventory
+            .packages
+            .iter()
+            .any(|row| row.version == "1.8.0-beta.1")
     );
     let mut fresh = request(
         &project_id,

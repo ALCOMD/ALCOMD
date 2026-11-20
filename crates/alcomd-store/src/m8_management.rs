@@ -414,9 +414,7 @@ mod tests {
 
     #[test]
     fn management_create_and_revoke_keep_replay_bound_to_the_actual_actor() {
-        let mut db = crate::sqlite::mcp_state32_fixture();
-        db.execute_batch(include_str!("../migrations/0033_mcp_clients.sql"))
-            .expect("State33 fixture");
+        let mut db = crate::sqlite::current_schema_fixture();
         let actor = alcomd_application::PrincipalId::parse("extension:dev.alcomd.manager")
             .expect("extension principal");
         let other = alcomd_application::PrincipalId::local_owner();

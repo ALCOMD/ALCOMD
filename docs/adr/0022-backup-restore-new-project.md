@@ -1,6 +1,6 @@
 # ADR 0022：Backup Restore 只创建全新项目
 
-状态：Accepted / Implemented（2026-08-24；Restore 生产切片已接入，等待 M5 最终验收）
+历史决策。现行合同见 [Unity 项目 ZIP](../../specs/backups/project-zip.md)。
 
 ## 决定
 

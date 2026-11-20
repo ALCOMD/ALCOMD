@@ -1,0 +1,409 @@
+use std::{fs, path::Path, path::PathBuf, time::Duration};
+
+use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
+use alcomd_platform::{DataConfig, IpcConfig};
+use alcomd_protocol::{
+    McpClientMutationParams, McpClientsCreateParams, McpProjectSource, McpProjectTarget,
+    McpProjectsApplyCopyParams, McpProjectsCreateParams, McpProjectsPlanCopyParams,
+    McpProjectsRegisterParams, OperationState, ProjectTemplateRef,
+};
+use tokio::sync::oneshot;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mcp_project_paths_are_direct_and_copy_rechecks_its_persisted_destination() {
+    let fixture = Fixture::new();
+    let configured = fixture.0.join("configured");
+    let external = fixture.0.join("外部 路径");
+    let runtime = fixture.0.join("runtime");
+    let state = fixture.0.join("state");
+    for path in [&configured, &external, &runtime, &state] {
+        fs::create_dir(path).expect("isolated path");
+    }
+    #[cfg(unix)]
+    let (ipc, config) = (
+        IpcConfig::isolated(runtime.clone()),
+        ClientConfig::default()
+            .without_daemon_start()
+            .with_runtime_directory(runtime),
+    );
+    #[cfg(windows)]
+    let (ipc, config) = (
+        IpcConfig::default(),
+        ClientConfig::default().without_daemon_start(),
+    );
+
+    let (stop, stopped) = oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc.clone(),
+        DataConfig::isolated(state.clone()),
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("bind an isolated data daemon");
+    let mut owner = AlcomdClient::connect(config.clone())
+        .await
+        .expect("owner IPC");
+    let settings = owner.settings_get().await.expect("read settings");
+    owner
+        .settings_update(
+            serde_json::from_value(serde_json::json!({
+                "expectedRevision": settings.revision,
+                "update": {
+                    "paths": {"projectDirectory": configured},
+                    "projects": {"autoDiscover": false}
+                }
+            }))
+            .expect("settings update"),
+        )
+        .await
+        .expect("configured projects root");
+    let issued = issue_actor(&mut owner, "first").await;
+    let other = issue_actor(&mut owner, "second").await;
+    let actor_config = config.clone().with_mcp_credential(issued.credential);
+    let mut actor = AlcomdClient::connect(actor_config.clone())
+        .await
+        .expect("actor IPC");
+    let mut second = AlcomdClient::connect(config.clone().with_mcp_credential(other.credential))
+        .await
+        .expect("second actor IPC");
+
+    let source = external.join("源 工程");
+    write_project(&source);
+    let register = McpProjectsRegisterParams {
+        source: McpProjectSource::Absolute {
+            path: text(&source),
+        },
+        idempotency_key: "register-absolute".into(),
+    };
+    for path in [
+        "relative/source".to_owned(),
+        text(&external.join("..").join("configured")),
+    ] {
+        let error = actor
+            .mcp_project_register(McpProjectsRegisterParams {
+                source: McpProjectSource::Absolute { path },
+                ..register.clone()
+            })
+            .await
+            .expect_err("require an unambiguous absolute path");
+        assert_code(error, "invalid_request");
+    }
+    let project = actor
+        .mcp_project_register(register.clone())
+        .await
+        .expect("register absolute");
+    assert!(
+        !serde_json::to_string(&project)
+            .expect("public response")
+            .contains("外部 路径")
+    );
+    assert!(
+        actor
+            .mcp_project_register(register)
+            .await
+            .expect("register replay")
+            .replayed
+    );
+    assert!(
+        owner
+            .project_get(project.project.project_id.clone())
+            .await
+            .is_ok()
+    );
+
+    write_project(&configured.join("Default project"));
+    assert!(
+        actor
+            .mcp_project_register(McpProjectsRegisterParams {
+                source: McpProjectSource::Default {
+                    relative_path: "Default project".into()
+                },
+                idempotency_key: "register-default".into(),
+            })
+            .await
+            .is_ok()
+    );
+
+    let templates = actor
+        .project_templates_list(Default::default())
+        .await
+        .expect("templates");
+    let blank = templates
+        .templates
+        .iter()
+        .find(|template| template.locked && template.editor_version.is_none())
+        .expect("built-in blank template");
+    let create_path = external.join("新 工程");
+    let create = McpProjectsCreateParams {
+        target: McpProjectTarget::Absolute {
+            path: text(&create_path),
+        },
+        unity_version: "2022.3.22f1".into(),
+        template: Some(ProjectTemplateRef {
+            id: blank.id.clone(),
+            revision: blank.revision,
+        }),
+        idempotency_key: "create-absolute".into(),
+    };
+    let created = actor
+        .mcp_project_create(create.clone())
+        .await
+        .expect("create absolute");
+    succeeded(&mut actor, &created.operation_id).await;
+    assert!(
+        create_path
+            .join("ProjectSettings/ProjectVersion.txt")
+            .exists()
+    );
+    assert_eq!(
+        actor
+            .mcp_project_create(create.clone())
+            .await
+            .expect("create replay")
+            .operation_id,
+        created.operation_id
+    );
+    assert!(owner.project_get(created.project_id).await.is_ok());
+    let occupied = actor
+        .mcp_project_create(McpProjectsCreateParams {
+            idempotency_key: "create-over-existing".into(),
+            ..create
+        })
+        .await
+        .expect_err("must not replace existing project");
+    assert_code(occupied, "project_create_target_exists");
+
+    let plan_copy = McpProjectsPlanCopyParams {
+        source_project_id: project.project.project_id,
+        expected_revision: project.project.revision,
+        target: McpProjectTarget::Absolute {
+            path: text(&external.join("已 复制")),
+        },
+        idempotency_key: "plan-absolute-copy".into(),
+    };
+    let plan = actor
+        .mcp_project_plan_copy(plan_copy.clone())
+        .await
+        .expect("plan");
+    assert!(
+        !serde_json::to_string(&plan)
+            .expect("public response")
+            .contains("外部 路径")
+    );
+    assert_eq!(
+        actor
+            .mcp_project_plan_copy(plan_copy.clone())
+            .await
+            .expect("plan replay")
+            .plan_id,
+        plan.plan_id
+    );
+    let mut apply = McpProjectsApplyCopyParams {
+        plan_id: plan.plan_id,
+        expected_revision: plan.expected_revision,
+        confirm: false,
+        idempotency_key: "apply-absolute-copy".into(),
+    };
+    assert_code(
+        actor
+            .mcp_project_apply_copy(apply.clone())
+            .await
+            .expect_err("confirmation"),
+        "invalid_request",
+    );
+    apply.confirm = true;
+    assert!(
+        second.mcp_project_apply_copy(apply.clone()).await.is_err(),
+        "plan owner binding"
+    );
+
+    let movable = external.join("replaceable parent");
+    fs::create_dir(&movable).expect("replaceable parent");
+    let target = movable.join("never created");
+    let changed = actor
+        .mcp_project_plan_copy(McpProjectsPlanCopyParams {
+            target: McpProjectTarget::Absolute {
+                path: text(&target),
+            },
+            idempotency_key: "parent-change-plan".into(),
+            ..plan_copy.clone()
+        })
+        .await
+        .expect("freeze parent identity");
+    let original = external.join("previous parent");
+    fs::rename(&movable, &original).expect("move original parent");
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&original, &movable).expect("link to original parent");
+        assert_code(
+            actor
+                .mcp_project_apply_copy(McpProjectsApplyCopyParams {
+                    plan_id: changed.plan_id.clone(),
+                    expected_revision: changed.expected_revision,
+                    confirm: true,
+                    idempotency_key: "linked-parent".into(),
+                })
+                .await
+                .expect_err("reject a link even to the original parent"),
+            "permission_denied",
+        );
+        fs::remove_file(&movable).expect("remove test link");
+    }
+    fs::create_dir(&movable).expect("replace parent");
+    assert_code(
+        actor
+            .mcp_project_apply_copy(McpProjectsApplyCopyParams {
+                plan_id: changed.plan_id,
+                expected_revision: changed.expected_revision,
+                confirm: true,
+                idempotency_key: "parent-change-apply".into(),
+            })
+            .await
+            .expect_err("reject changed parent identity"),
+        "revision_conflict",
+    );
+    assert!(!target.exists() && !original.join("never created").exists());
+
+    drop(second);
+    drop(actor);
+    drop(owner);
+    stop.send(()).expect("stop");
+    daemon.await.expect("join").expect("shutdown");
+    let (stop, stopped) = oneshot::channel();
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(state),
+        async {
+            let _ = stopped.await;
+        },
+    )
+    .await
+    .expect("reopen durable plan");
+    let mut actor = AlcomdClient::connect(actor_config)
+        .await
+        .expect("reconnect actor");
+    let copied = actor
+        .mcp_project_apply_copy(apply.clone())
+        .await
+        .expect("apply persisted plan");
+    succeeded(&mut actor, &copied.operation_id).await;
+    assert_eq!(
+        fs::read(external.join("已 复制/Assets/source.bin")).expect("copied content"),
+        b"fixture source"
+    );
+    let replay = actor
+        .mcp_project_apply_copy(apply.clone())
+        .await
+        .expect("apply replay");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, copied.operation_id);
+    let mut owner = AlcomdClient::connect(config)
+        .await
+        .expect("owner reconnect");
+    owner
+        .mcp_client_revoke(McpClientMutationParams {
+            client_id: issued.client_id,
+            expected_revision: issued.revision,
+            idempotency_key: "revoke-copy".into(),
+        })
+        .await
+        .expect("revoke actor");
+    assert_code(
+        actor
+            .mcp_project_apply_copy(apply)
+            .await
+            .expect_err("recheck authorization"),
+        "permission_denied",
+    );
+    stop.send(()).expect("stop");
+    daemon.await.expect("join").expect("shutdown");
+}
+
+async fn issue_actor(
+    owner: &mut AlcomdClient,
+    name: &str,
+) -> alcomd_protocol::McpClientCredentialResult {
+    let record = owner
+        .mcp_client_create(McpClientsCreateParams {
+            display_name: name.to_owned(),
+            idempotency_key: format!("create-{name}"),
+        })
+        .await
+        .expect("create MCP client");
+    owner
+        .mcp_client_issue_credential(McpClientMutationParams {
+            client_id: record.client_id,
+            expected_revision: record.revision,
+            idempotency_key: format!("issue-{name}"),
+        })
+        .await
+        .expect("issue credential")
+}
+
+async fn succeeded(client: &mut AlcomdClient, id: &str) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let result = client
+            .operation_get(id.to_owned())
+            .await
+            .expect("operation");
+        match result.state {
+            OperationState::Succeeded => return,
+            OperationState::Failed | OperationState::Cancelled => panic!("{result:?}"),
+            _ => {}
+        }
+        assert!(tokio::time::Instant::now() < deadline, "{result:?}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn assert_code(error: ClientError, expected: &str) {
+    assert!(
+        matches!(error, ClientError::Remote(ref failure) if failure.code == expected),
+        "expected {expected}, got {error:?}"
+    );
+}
+
+fn write_project(path: &Path) {
+    for directory in ["Assets", "Packages", "ProjectSettings"] {
+        fs::create_dir_all(path.join(directory)).expect("Unity directory");
+    }
+    fs::write(path.join("Assets/source.bin"), b"fixture source").expect("content");
+    fs::write(
+        path.join("Packages/manifest.json"),
+        br#"{"dependencies":{}}"#,
+    )
+    .expect("manifest");
+    fs::write(
+        path.join("ProjectSettings/ProjectVersion.txt"),
+        "m_EditorVersion: 2022.3.22f1\n",
+    )
+    .expect("Unity version");
+}
+
+fn text(path: &Path) -> String {
+    path.to_str().expect("Unicode fixture path").to_owned()
+}
+
+struct Fixture(PathBuf);
+impl Fixture {
+    fn new() -> Self {
+        #[cfg(target_os = "macos")]
+        let base = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = std::env::temp_dir();
+        // Keep the Unix IPC socket name within the native sockaddr bound.
+        let unique = uuid::Uuid::new_v4().simple().to_string();
+        let path = base.join(format!("a11-{}", &unique[..12]));
+        fs::create_dir(&path).expect("fixture root");
+        Self(path)
+    }
+}
+
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}

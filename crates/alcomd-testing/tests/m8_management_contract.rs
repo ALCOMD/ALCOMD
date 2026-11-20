@@ -139,7 +139,7 @@ fn runtime_observation_interface_preserves_frozen_worlds_and_projects_only_bound
         }
         assert_eq!(rpc["$defs"][row]["additionalProperties"], false);
     }
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 45);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 46);
 }
 
 #[test]

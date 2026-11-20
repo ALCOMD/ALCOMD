@@ -1,12 +1,12 @@
+#[path = "support/state.rs"]
+mod state;
+
 use serde_json::{Value, json};
 
 const CLI_SCHEMA: &str = include_str!("../../../specs/cli/alcomd-cli-v1.schema.json");
 const COMMAND_CATALOG: &str = include_str!("../../../specs/cli/command-catalog-v1.json");
 const UNITY_SCHEMA: &str = include_str!("../../../specs/rpc/m5-unity.schema.json");
 const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
-const STATE_V4: &str = include_str!("../../../specs/storage/state-v4.md");
-const STATE_V5: &str = include_str!("../../../specs/storage/state-v5.md");
-const STATE_V6: &str = include_str!("../../../specs/storage/state-v6.md");
 
 #[test]
 fn cli_machine_contract_freezes_modes_options_records_and_exit_codes() {
@@ -117,8 +117,22 @@ fn unity_contract_keeps_permissions_capabilities_and_writer_states_narrow() {
             "{permission}"
         );
     }
-    assert!(STATE_V4.contains("广告 `dataSchema: 4`"));
-    assert!(STATE_V4.contains("不增加通用 settings/property/value"));
-    assert!(STATE_V5.contains("广告 `dataSchema: 5`"));
-    assert!(STATE_V6.contains("广告 `dataSchema: 6`"));
+    let db = state::current();
+    let installations = state::definition(&db, "table", "unity_installations");
+    assert!(installations.contains("filesystem_identity_key BLOB NOT NULL UNIQUE"));
+    assert!(
+        installations.contains("'manual', 'hub_config', 'known_install_root', 'unity_cli_hint'")
+    );
+    let launch = state::definition(&db, "table", "project_unity_launch_config");
+    assert!(launch.contains("REFERENCES projects(project_id) ON DELETE CASCADE"));
+    assert!(launch.contains("json_array_length(arguments_json) BETWEEN 0 AND 64"));
+    let generic_state: i64 = db
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema WHERE type='table'
+         AND name IN ('settings','properties','property_values')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("check State tables");
+    assert_eq!(generic_state, 0);
 }

@@ -7,11 +7,13 @@
 repository、package cache 或备份文件，也不直接启动 Unity。命令只有在对应 daemon
 capability 已真实实现时才可进入 help；合同中存在名称不等于后端已经可用。
 
+`package install` 和 `package upgrade` 默认建议省略 `--version-range`，由 Core 推荐兼容版本。指定范围时，Core 在范围内选择。
+
 权威 machine-readable 工件：
 
 - `alcomd-cli-v1.schema.json`：machine output、stream record、退出码与全局选项。
 - `command-catalog-v1.json`：已发布的命令和 alias。只列出已有真实 daemon capability 的入口。
-- `m5-backup-commands-v1.json`：已发布的 Backup list/get/create/restore 命令合同。
+- [ZIP 备份与恢复命令](backup-commands-v2.json)定义 `backup create` 和 `backup restore` 的参数、确认及任务回执。
 
 ## 输出模式
 

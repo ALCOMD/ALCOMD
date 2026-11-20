@@ -11,10 +11,10 @@
         "backup": [
             "backup_archive_limit_exceeded",
             "backup_integrity_mismatch",
+            "backup_invalid_archive",
             "backup_not_found",
-            "backup_restore_plan_not_found",
-            "backup_restore_plan_stale",
             "backup_restore_recovery_required",
+            "backup_source_changed",
             "backup_source_unsafe",
             "backup_target_exists",
             "backup_target_invalid",
@@ -305,72 +305,30 @@
         ]
     },
     "methods": {
-        "backups.applyRestore": {
-            "kind": "write",
-            "capabilities": [
-                "backups.restore.v1"
-            ],
-            "rustMethod": "backup_apply_restore",
-            "requestType": "BackupApplyRestoreParams",
-            "resultType": "BackupApplyRestoreResult",
-            "requestSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreParams",
-            "resultSchema": "m5-backup-restore.schema.json#/$defs/applyRestoreResult",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
         "backups.create": {
             "kind": "write",
             "capabilities": [
-                "backups.create.v1"
+                "backups.create.v2"
             ],
             "rustMethod": "backup_create",
             "requestType": "BackupCreateParams",
-            "resultType": "BackupCreateResult",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/createParams",
-            "resultSchema": "m5-backup-create.schema.json#/$defs/createResult",
+            "resultType": "OperationAccepted",
+            "requestSchema": "zip-backup.schema.json#/$defs/createParams",
+            "resultSchema": "state-check.response.schema.json#/properties/result",
             "errorProfiles": [
                 "backup"
             ]
         },
-        "backups.get": {
-            "kind": "read",
-            "capabilities": [
-                "backups.read.v1"
-            ],
-            "rustMethod": "backup_get",
-            "requestType": "BackupGetParams",
-            "resultType": "BackupRecord",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/getParams",
-            "resultSchema": "m5-backup-create.schema.json#/$defs/backupRecord",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
-        "backups.list": {
-            "kind": "read",
-            "capabilities": [
-                "backups.read.v1"
-            ],
-            "rustMethod": "backups_list",
-            "requestType": "BackupsListParams",
-            "resultType": "BackupsListResult",
-            "requestSchema": "m5-backup-create.schema.json#/$defs/listParams",
-            "resultSchema": "native-sdk-v1.schema.json#/$defs/BackupsListResult",
-            "errorProfiles": [
-                "backup"
-            ]
-        },
-        "backups.planRestore": {
+        "backups.restore": {
             "kind": "write",
             "capabilities": [
-                "backups.restore.v1"
+                "backups.restore.v2"
             ],
-            "rustMethod": "backup_plan_restore",
-            "requestType": "BackupPlanRestoreParams",
-            "resultType": "BackupRestorePlan",
-            "requestSchema": "m5-backup-restore.schema.json#/$defs/planRestoreParams",
-            "resultSchema": "m5-backup-restore.schema.json#/$defs/restorePlan",
+            "rustMethod": "backup_restore",
+            "requestType": "BackupRestoreParams",
+            "resultType": "OperationAccepted",
+            "requestSchema": "zip-backup.schema.json#/$defs/restoreParams",
+            "resultSchema": "state-check.response.schema.json#/properties/result",
             "errorProfiles": [
                 "backup"
             ]

@@ -165,6 +165,22 @@
                                 "reasons": []
                             }
                         },
+                        "recommended": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
                         "projectLatest": {
                             "kind": "candidate",
                             "candidate": {
@@ -348,6 +364,12 @@
                                 "reasons": []
                             }
                         },
+                        "recommended": {
+                            "kind": "unknown",
+                            "reasons": [
+                                "project_unity_unknown"
+                            ]
+                        },
                         "projectLatest": {
                             "kind": "unknown",
                             "reasons": [
@@ -417,6 +439,10 @@
                             "reason": "source_ambiguous"
                         },
                         "latestStable": {
+                            "kind": "ambiguous",
+                            "reason": "source_ambiguous"
+                        },
+                        "recommended": {
                             "kind": "ambiguous",
                             "reason": "source_ambiguous"
                         },
@@ -949,6 +975,22 @@
                                 "reasons": []
                             }
                         },
+                        "recommended": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
                         "projectLatest": {
                             "kind": "candidate",
                             "candidate": {
@@ -1225,6 +1267,22 @@
                                 "reasons": []
                             }
                         },
+                        "recommended": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
                         "projectLatest": {
                             "kind": "candidate",
                             "candidate": {
@@ -1347,6 +1405,22 @@
                             }
                         },
                         "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "recommended": {
                             "kind": "candidate",
                             "candidate": {
                                 "version": "1.10.0",
@@ -1489,6 +1563,22 @@
                             }
                         },
                         "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "recommended": {
                             "kind": "candidate",
                             "candidate": {
                                 "version": "1.10.0",

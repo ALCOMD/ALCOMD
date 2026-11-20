@@ -6,7 +6,7 @@ import { normalizeRequestError } from "./request-errors";
 
 export const EVENT_LIMITS = { mergeMs: 100, intervalMs: 250, maxWaitMs: 500, concurrency: 4, normalConcurrency: 3, dirtyKeys: 512,
     cachedRows: 5_000, cachedBytes: 8 * 1024 * 1024 } as const;
-export type ChangeScope = "projects" | "operations" | "repositories" | "user-packages" | "templates" | "unity" | "extensions" | "backups";
+export type ChangeScope = "projects" | "operations" | "repositories" | "user-packages" | "templates" | "unity" | "extensions";
 export interface EventConnectionState { kind: "connecting" | "ready" | "resyncing" | "disconnected" | "failed"; error?: RpcError; retained?: boolean }
 interface Job { key: string; scopes: readonly string[]; run(): Promise<void>; dirty: boolean; blocked: boolean; urgent: boolean; version: number;
     first: number; last: number; running: boolean; retired: boolean }
@@ -15,10 +15,10 @@ interface ViewRecord { data?: unknown; rows: number; bytes: number; visit: numbe
 
 const terminal = (value: Operation) => ["succeeded", "failed", "cancelled"].includes(value.state);
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "project-template", "user-package"]);
+const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-unity-launch-config", "project-template", "user-package"]);
 const READS = new Set(["operationsList", "logsRead", "operationGet", "projectsList", "projectGet", "repositoriesList",
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
-    "unityWriterState", "unityLaunchOptions", "projectTemplatesList", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
+    "unityWriterState", "unityLaunchOptions", "projectTemplatesList", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
 export const TASK_TITLES = {
     stateCheck: "Check state",
@@ -28,11 +28,11 @@ export const TASK_TITLES = {
     projectApplyDeleteDirectory: "Delete project directory",
     projectApplyUnityMigration: "Unity migration",
     backupCreate: "Create backup",
-    backupApplyRestore: "Restore project",
+    backupRestore: "Restore project",
     extensionApplyInstall: "Install extension",
     extensionApplyUninstall: "Uninstall extension"
 } satisfies Partial<Record<keyof GuiRpcClient, string>>;
-export interface AcceptedGuiTask { operationId: string; title: string; resultPath?: string; resultLabel?: string; replayed?: boolean }
+export interface AcceptedGuiTask { operationId: string; title: string; resultPath?: string; resultLabel?: string; replayed?: boolean; progressShownInForm?: boolean }
 
 /** One disposable notification/read coordinator per GUI connection. It owns no business state. */
 export class CoreEvents {
@@ -101,12 +101,11 @@ export class CoreEvents {
                     const result: unknown = await Reflect.apply(value, target, args);
                     if (typeof result === "object" && result !== null && "operationId" in result && uuid(result.operationId)) {
                         const projectId = key === "projectApplyCopy" && "targetProjectId" in result ? result.targetProjectId
-                            : ["projectsCreate", "backupApplyRestore"].includes(String(key)) && "projectId" in result ? result.projectId : undefined;
-                        const backupId = key === "backupCreate" && "backupId" in result ? result.backupId : undefined;
+                            : key === "projectsCreate" && "projectId" in result ? result.projectId : undefined;
                         this.acceptedTaskListeners.forEach((listener) => listener({ operationId: result.operationId as string, title: taskTitle,
                             ...("replayed" in result && result.replayed === true ? { replayed: true } : {}),
+                            ...(key === "backupRestore" ? { progressShownInForm: true } : {}),
                             ...(uuid(projectId) ? { resultPath: `/projects/${projectId}`, resultLabel: "Open project" } : {}),
-                            ...(uuid(backupId) ? { resultPath: `/backups/${backupId}`, resultLabel: "View backup" } : {}),
                             ...(key === "projectApplyDeleteDirectory" ? { resultPath: "/projects", resultLabel: "Projects" } : {}),
                             ...(key === "extensionApplyUninstall" ? { resultPath: "/extensions", resultLabel: "Extensions" } : {}) }));
                     }
@@ -299,13 +298,13 @@ export class CoreEvents {
             return;
         }
         const scopes: Record<string, ChangeScope> = { project: "projects", repository: "repositories", "project-template": "templates",
-            "user-package": "user-packages", "unity-installation": "unity", "project-editor-preference": "projects", "project-unity-launch-config": "projects" };
+            "user-package": "user-packages", "unity-installation": "unity", "project-unity-launch-config": "projects" };
         const scope = scopes[event.aggregateKind];
         if (scope !== undefined) this.invalidate(scope, /registered|removed|unregistered|deleted/.test(event.kind));
     }
     private lookupResourceImpact(id: string) {
         if (this.jobs.has(`operation:${id}`) || this.lookups.has(id)) return;
-        const scopes = ["extensions", "backups", "templates"].filter((scope) => [...this.jobs.values()].some((job) => job.scopes.includes(scope)));
+        const scopes = ["extensions", "templates"].filter((scope) => [...this.jobs.values()].some((job) => job.scopes.includes(scope)));
         if (!scopes.length) return;
         if (this.lookups.size >= EVENT_LIMITS.dirtyKeys) { scopes.forEach((scope) => this.invalidate(scope)); return; }
         this.lookups.add(id);
@@ -492,8 +491,7 @@ export class CoreEvents {
             : method === "operationGet" ? ["operation-progress"] : method.startsWith("operations") ? ["operations"]
             : method === "logsRead" ? ["operation-log"]
             : method === "projectTemplatesList" ? ["templates"] : method.startsWith("project") ? ["projects"] : method.startsWith("repositor") ? ["repositories"]
-            : method.startsWith("userPackage") ? ["user-packages"] : method.startsWith("unity") ? ["unity", "projects"]
-            : method.startsWith("backup") ? ["backups"] : ["extensions"];
+            : method.startsWith("userPackage") ? ["user-packages"] : method.startsWith("unity") ? ["unity", "projects"] : ["extensions"];
         return scopes.map((scope) => this.categoryVersions.get(scope) ?? 0).join(":");
     }
     private pumpReads() {
@@ -547,10 +545,7 @@ export class CoreEvents {
             if (!removable) break;
             this.operations.delete(removable[0]);
         }
-        if (stateChanged && terminal(value)) {
-            if (value.kind.startsWith("extensions.")) this.invalidate("extensions", terminal(value));
-            if (value.kind.startsWith("backups.")) this.invalidate("backups", terminal(value));
-        }
+        if (stateChanged && terminal(value) && value.kind.startsWith("extensions.")) this.invalidate("extensions", true);
         if (terminal(value)) {
             this.urgentOperations.delete(value.operationId);
         }

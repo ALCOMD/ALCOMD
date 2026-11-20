@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 34] = [
+const SCHEMAS: [(&str, &str); 33] = [
     (
         "native-sdk-v1",
         include_str!("../../../specs/rpc/native-sdk-v1.schema.json"),
@@ -123,12 +123,8 @@ const SCHEMAS: [(&str, &str); 34] = [
         include_str!("../../../specs/rpc/m7-project-create.schema.json"),
     ),
     (
-        "m5-backup-create",
-        include_str!("../../../specs/rpc/m5-backup-create.schema.json"),
-    ),
-    (
-        "m5-backup-restore",
-        include_str!("../../../specs/rpc/m5-backup-restore.schema.json"),
+        "zip-backup",
+        include_str!("../../../specs/rpc/zip-backup.schema.json"),
     ),
     (
         "m7-official-gui",
@@ -442,7 +438,6 @@ fn live_events_contract_separates_ready_responses_and_closed_bounded_notificatio
             "project",
             "repository",
             "unity-installation",
-            "project-editor-preference",
             "project-unity-launch-config",
             "project-template",
             "user-package"
@@ -633,18 +628,6 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         contract["$defs"]["settingsGetResult"]["properties"]["settings"]["$ref"],
         "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/settings"
     );
-    for historical in [
-        include_str!("../../../specs/config/settings-v1.schema.json"),
-        include_str!("../../../specs/config/settings-v2.schema.json"),
-    ] {
-        let historical: Value =
-            serde_json::from_str(historical).expect("historical migration input");
-        assert!(
-            historical["$defs"]["appearance"]["properties"]
-                .get("scheme")
-                .is_none()
-        );
-    }
 }
 
 #[test]
@@ -846,20 +829,10 @@ fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_i
             serde_json::from_value::<AppearanceSettingsUpdate>(json!({"motion": invalid})).is_err()
         );
     }
-    for historical in [
-        include_str!("../../../specs/config/settings-v1.schema.json"),
-        include_str!("../../../specs/config/settings-v2.schema.json"),
-    ] {
-        let historical: Value = serde_json::from_str(historical).expect("historical Config schema");
-        assert_eq!(
-            historical["$defs"]["motion"]["enum"],
-            json!(["system", "reduced"])
-        );
-    }
 }
 
 #[test]
-fn config_v5_public_settings_and_updates_omit_and_reject_removed_density() {
+fn config13_appearance_snapshot_and_update_reject_unknown_fields() {
     use alcomd_protocol::{AppearanceSettings, AppearanceSettingsUpdate, SettingsUpdateParams};
 
     assert_eq!(alcomd_protocol::CONFIG_SCHEMA_VERSION, 13);
@@ -875,38 +848,26 @@ fn config_v5_public_settings_and_updates_omit_and_reject_removed_density() {
         "../../../specs/config/settings-v13.schema.json"
     ))
     .expect("Config13 schema");
-    for properties in [
-        &schema["$defs"]["appearance"]["properties"],
-        &schema["$defs"]["partialUpdate"]["properties"]["appearance"]["properties"],
+    for object in [
+        &schema["$defs"]["appearance"],
+        &schema["$defs"]["partialUpdate"]["properties"]["appearance"],
     ] {
-        assert!(properties.get("density").is_none());
+        assert_eq!(object["additionalProperties"], false);
+        let properties = object["properties"].as_object().expect("appearance fields");
+        assert_eq!(properties.len(), 4);
+        for key in ["mode", "scheme", "sourceColor", "motion"] {
+            assert!(properties.contains_key(key));
+        }
     }
-    assert!(schema["$defs"].get("density").is_none());
-    for density in [json!("default"), json!("compact"), Value::Null, json!(true)] {
-        let mut with_removed_field = appearance.clone();
-        with_removed_field["density"] = density.clone();
-        assert!(serde_json::from_value::<AppearanceSettings>(with_removed_field).is_err());
+    for invalid in [json!("unknown"), Value::Null, json!(true)] {
+        let mut with_unknown = appearance.clone();
+        with_unknown["unexpectedField"] = invalid.clone();
+        assert!(serde_json::from_value::<AppearanceSettings>(with_unknown).is_err());
         assert!(
-            serde_json::from_value::<AppearanceSettingsUpdate>(json!({"density":density})).is_err()
+            serde_json::from_value::<AppearanceSettingsUpdate>(json!({"unexpectedField":invalid}))
+                .is_err()
         );
-        assert!(serde_json::from_value::<SettingsUpdateParams>(json!({"expectedRevision":1,"update":{"appearance":{"density":density},"locale":"ja-JP"}})).is_err());
-    }
-    for historical in [
-        include_str!("../../../specs/config/settings-v1.schema.json"),
-        include_str!("../../../specs/config/settings-v2.schema.json"),
-        include_str!("../../../specs/config/settings-v3.schema.json"),
-    ] {
-        let historical: Value = serde_json::from_str(historical).expect("frozen migration shape");
-        assert_eq!(
-            historical["$defs"]["density"]["enum"],
-            json!(["default", "compact"])
-        );
-        assert!(
-            historical["$defs"]["appearance"]["required"]
-                .as_array()
-                .expect("legacy required fields")
-                .contains(&json!("density"))
-        );
+        assert!(serde_json::from_value::<SettingsUpdateParams>(json!({"expectedRevision":1,"update":{"appearance":{"unexpectedField":invalid},"locale":"ja-JP"}})).is_err());
     }
 }
 
@@ -918,9 +879,12 @@ fn config13_package_preferences_are_required_closed_nonnullable_and_bounded() {
     ))
     .expect("schema");
     assert_eq!(schema["properties"]["schema"]["const"], 13);
-    assert_eq!(schema["x-alcomd-migration"]["to"], 13);
     assert_eq!(schema["x-alcomd-storage"]["maxUtf8Bytes"], 1048576);
-    assert_eq!(schema["x-alcomd-storage"]["maxLegacyFileUtf8Bytes"], 16384);
+    assert_eq!(schema["x-alcomd-storage"]["acceptedVersion"], 13);
+    assert_eq!(
+        schema["x-alcomd-storage"]["maxBaseUtf8BytesExcludingHiddenRepositoryPackages"],
+        16384
+    );
     assert_eq!(schema["$defs"]["hiddenRepositoryPackages"]["maxItems"], 256);
     assert_eq!(
         schema["$defs"]["hiddenRepositoryPackages"]["x-alcomd-maxTotalPackageIds"],
@@ -982,20 +946,10 @@ fn config13_package_preferences_are_required_closed_nonnullable_and_bounded() {
             .is_err()
         );
     }
-    let legacy: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v12.schema.json"
-    ))
-    .expect("frozen migration schema");
-    assert_eq!(legacy["properties"]["schema"]["const"], 12);
-    assert!(
-        legacy["$defs"]["packages"]["properties"]
-            .get("hiddenRepositoryPackages")
-            .is_none()
-    );
 }
 
 #[test]
-fn config5_directory_updates_are_closed_nullable_and_snapshot_complete() {
+fn config13_directory_updates_are_closed_nullable_and_snapshot_complete() {
     use alcomd_protocol::{NullableUpdate, PathSettings, SettingsGetResult, SettingsUpdateParams};
     for invalid in [
         json!({"paths": null, "locale": "ja-JP"}),
@@ -1091,7 +1045,7 @@ fn settings_partial_updates_reject_explicit_null_except_nullable_values() {
 }
 
 #[test]
-fn config6_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
+fn config13_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
     use alcomd_protocol::{NullableUpdate, SettingsUpdate, UnitySettings};
     for arguments in [
         Value::Null,
@@ -1137,7 +1091,7 @@ fn config6_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
     let current: Value = serde_json::from_str(include_str!(
         "../../../specs/config/settings-v13.schema.json"
     ))
-    .expect("Config6");
+    .expect("Config13 schema");
     assert_eq!(
         current["$defs"]["unitySettings"]["required"],
         json!(["hubPath", "defaultLaunchArguments"])
@@ -1154,16 +1108,6 @@ fn config6_default_arguments_distinguish_omitted_null_empty_and_literal_argv() {
     assert_eq!(
         schema("m7-official-gui")["x-alcomd-field-permissions"]["settings.update.unity.defaultLaunchArguments"],
         json!(["settings.manage", "unity.manage"])
-    );
-    let historical: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v5.schema.json"
-    ))
-    .expect("frozen Config5");
-    assert_eq!(historical["properties"]["schema"]["const"], 5);
-    assert!(
-        historical["$defs"]["unitySettings"]["properties"]
-            .get("defaultLaunchArguments")
-            .is_none()
     );
 }
 
@@ -1192,7 +1136,7 @@ fn project_launch_config_get_requires_default_and_effective_projection() {
 }
 
 #[test]
-fn config7_window_settings_are_closed_required_bool_and_false_is_an_explicit_update() {
+fn config13_window_settings_are_closed_required_bool_and_false_is_an_explicit_update() {
     use alcomd_protocol::{Settings, SettingsUpdate, WindowSettings};
     for remember_state in [false, true] {
         let window = json!({"rememberState":remember_state,"fullscreen":false});
@@ -1244,33 +1188,10 @@ fn config7_window_settings_are_closed_required_bool_and_false_is_an_explicit_upd
         .expect("settings object")
         .remove("window");
     assert!(serde_json::from_value::<Settings>(missing).is_err());
-    for legacy in vectors["legacyInputs"]
-        .as_array()
-        .expect("historical vectors")
-    {
-        let normalized: Settings = serde_json::from_value(legacy["expectedSettings"].clone())
-            .expect("normalized migration output");
-        assert_eq!(
-            normalized.window.remember_state,
-            legacy["expectedSettings"]["window"]["rememberState"]
-                .as_bool()
-                .expect("window preference")
-        );
-    }
-    let historical: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v6.schema.json"
-    ))
-    .expect("frozen Config6");
-    assert_eq!(historical["properties"]["schema"]["const"], 6);
-    assert!(
-        historical["$defs"]["settings"]["properties"]
-            .get("window")
-            .is_none()
-    );
 }
 
 #[test]
-fn config9_projects_and_backups_are_complete_closed_and_partial_updates_are_non_nullable() {
+fn config13_projects_and_backups_are_complete_closed_and_partial_updates_are_non_nullable() {
     use alcomd_protocol::{Settings, SettingsUpdate};
     let vectors: Value = serde_json::from_str(include_str!(
         "../../../specs/config/settings-v13.contract-vectors.json"
@@ -1839,30 +1760,19 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn hello_schema_accepts_the_implemented_v14_store() {
-    assert_historical_hello_data_schema(14);
-}
-
-#[test]
-fn hello_schema_accepts_the_project_observation_removal_v16_store() {
-    assert_historical_hello_data_schema(16);
-}
-
-fn assert_historical_hello_data_schema(version: u32) {
+fn hello_schema_accepts_current_storage_versions() {
     let hello = schema("system-hello.response");
     let bounds = &hello["properties"]["result"]["properties"]["dataSchema"];
-    let result = HelloResult::m7_official_gui(Vec::new(), version);
-    let wire = serde_json::to_value(result).expect("serialize historical response");
-    let reported = wire["dataSchema"]
-        .as_u64()
-        .expect("numeric historical version");
+    let result = HelloResult::m7_official_gui(Vec::new(), 46);
+    let wire = serde_json::to_value(result).expect("serialize current response");
+    let reported = wire["dataSchema"].as_u64().expect("numeric data version");
     assert!(reported >= bounds["minimum"].as_u64().expect("schema minimum"));
     assert!(reported <= bounds["maximum"].as_u64().expect("schema maximum"));
+    let decoded = serde_json::from_value::<HelloResult>(wire).expect("decode current response");
+    assert_eq!(decoded.data_schema, Some(46));
     assert_eq!(
-        serde_json::from_value::<HelloResult>(wire)
-            .expect("decode historical response")
-            .data_schema,
-        Some(version)
+        decoded.config_schema,
+        Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
     );
 }
 
@@ -2122,23 +2032,19 @@ fn project_creation_and_template_archives_round_trip() {
 }
 
 #[test]
-fn m5_backup_create_contract_is_additive_and_published() {
-    let contract = schema("m5-backup-create");
+fn zip_backup_contract_uses_file_paths_and_shared_task_receipts() {
+    let contract = schema("zip-backup");
     assert_eq!(
-        contract["x-alcomd-publication"],
-        "implemented-additive-rpc-v1"
+        contract["$defs"]["restoreParams"]["required"],
+        json!(["archivePath", "idempotencyKey"])
     );
     assert_eq!(
-        contract["$defs"]["methodName"]["enum"],
-        json!(["backups.list", "backups.get", "backups.create"])
+        contract["$defs"]["createParams"]["properties"]["destinationPath"]["type"],
+        "string"
     );
     assert_eq!(
-        contract["$defs"]["capability"]["enum"],
-        json!(["backups.read.v1", "backups.create.v1"])
-    );
-    assert_eq!(
-        contract["$defs"]["createResult"]["required"],
-        json!(["operationId", "backupId", "replayed"])
+        contract["x-alcomd-method-permissions"]["backups.restore"],
+        json!(["backups.manage", "backups.read", "projects.create"])
     );
     let choices = json!(["store", "fast", "level3", "level5", "level7", "maximum"]);
     assert_eq!(contract["$defs"]["compressionMode"]["enum"], choices);
@@ -2152,24 +2058,6 @@ fn m5_backup_create_contract_is_additive_and_published() {
             choices
         );
     }
-}
-
-#[test]
-fn m5_backup_restore_contract_is_additive_and_published() {
-    let contract = schema("m5-backup-restore");
-    assert_eq!(contract["x-alcomd-publication"], "implemented-published");
-    assert_eq!(
-        contract["$defs"]["methodName"]["enum"],
-        json!(["backups.planRestore", "backups.applyRestore"])
-    );
-    assert_eq!(
-        contract["$defs"]["capability"]["const"],
-        "backups.restore.v1"
-    );
-    assert_eq!(
-        contract["$defs"]["applyRestoreResult"]["required"],
-        json!(["operationId", "projectId", "replayed"])
-    );
 }
 
 #[test]
@@ -2603,7 +2491,7 @@ fn repository_display_name_contract_requires_an_explicit_value_or_clear() {
 }
 
 #[test]
-fn config10_fullscreen_is_required_in_snapshots_and_optional_nonnullable_in_narrow_updates() {
+fn config13_fullscreen_is_required_in_snapshots_and_optional_nonnullable_in_narrow_updates() {
     use alcomd_protocol::{SettingsUpdate, WindowSettings};
     for fullscreen in [false, true] {
         let wire = json!({"window": {"fullscreen": fullscreen}});
@@ -2638,16 +2526,18 @@ fn config10_fullscreen_is_required_in_snapshots_and_optional_nonnullable_in_narr
     ] {
         assert!(serde_json::from_value::<WindowSettings>(invalid).is_err());
     }
-    let historical: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v9.schema.json"
+    let current: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v13.schema.json"
     ))
-    .expect("frozen Config9");
-    assert_eq!(historical["properties"]["schema"]["const"], 9);
-    assert!(
-        historical["$defs"]["windowSettings"]["properties"]
-            .get("fullscreen")
-            .is_none()
-    );
+    .expect("Config13 schema");
+    let complete = &current["$defs"]["windowSettings"];
+    assert_eq!(complete["required"], json!(["rememberState", "fullscreen"]));
+    assert_eq!(complete["properties"]["fullscreen"]["type"], "boolean");
+    let update = &current["$defs"]["partialUpdate"]["properties"]["window"];
+    assert_eq!(update["$ref"], "#/$defs/partialWindowUpdate");
+    let partial = &current["$defs"]["partialWindowUpdate"];
+    assert_eq!(partial["properties"]["fullscreen"]["type"], "boolean");
+    assert_eq!(partial["additionalProperties"], false);
 }
 
 #[test]

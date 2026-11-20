@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 
 use alcomd_application::{
@@ -29,11 +30,56 @@ use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+fn preflight_data_layout(database: &Path) -> io::Result<()> {
+    let directory = database
+        .parent()
+        .ok_or_else(|| io::Error::other("state path has no parent"))?;
+    let config = directory.join("config");
+    for path in [directory, config.as_path()] {
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => {
+                alcomd_platform::resolve_plain_storage_directory(path)?;
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    alcomd_store::preflight_state_database(database).map_err(io::Error::other)?;
+    alcomd_store::preflight_config(&config.join("settings.toml")).map_err(io::Error::other)?;
+    if !database.try_exists()? && directory.try_exists()? {
+        let data = DataConfig::isolated(directory.to_owned());
+        let registration = alcomd_platform::core_installation_registration(&data)?;
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            if entry.file_name() == "config" {
+                continue;
+            }
+            if entry.path() == registration
+                && alcomd_platform::registered_core_executable(&data)?.is_some()
+            {
+                continue;
+            }
+            return Err(io::Error::other("unrecognized state directory contents"));
+        }
+        if config.try_exists()? {
+            for entry in std::fs::read_dir(&config)? {
+                let name = entry?.file_name();
+                if name != "settings.toml"
+                    && name != "settings.toml.new"
+                    && name != "settings.toml.bak"
+                {
+                    return Err(io::Error::other("unrecognized config directory contents"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 mod builtin_repositories;
 mod events_rpc;
 mod hub_platform;
 mod idle_shutdown;
-mod legacy_template_cleanup;
 mod logs_rpc;
 mod m3_rpc;
 mod m4_rpc;
@@ -124,7 +170,6 @@ struct Applications {
     locks: Arc<ResourceLockCoordinator>,
     tools_cursor_key: [u8; 32],
     mcp_runtime: alcomd_application::McpRuntimeObservations,
-    workflow_paths: m8_workflows_rpc::PathApprovals,
     mcp_transport: alcomd_application::McpTransportObservations,
     #[cfg(feature = "test-kill-gates")]
     runtime_call_gate: tokio::sync::Mutex<Option<Arc<test_support::RuntimeCallGate>>>,
@@ -230,30 +275,26 @@ async fn initialize_daemon_with_adapters(
     #[cfg(feature = "test-kill-gates")] vpm_reader: Option<alcomd_vpm::VpmReader>,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
+    let candidate = alcomd_platform::state_database_location(&data)?;
+    preflight_data_layout(&candidate)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
         .parent()
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
     let cache_root = data_root.join("package-cache");
+    let settings_path = data_root.join("config").join("settings.toml");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
         )))
     })?;
-    if store.retired_legacy_template_state()
-        && let Err(error) = legacy_template_cleanup::retire(&data_root)
-    {
-        eprintln!("Legacy template file cleanup incomplete: {error}");
-    }
     let m2 = M2Application::new(store.clone());
     m2.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
     let official_gui = M7OfficialApplication::new(
-        Arc::new(alcomd_store::FileConfigStore::new(
-            data_root.join("config").join("settings.toml"),
-        )),
+        Arc::new(alcomd_store::FileConfigStore::new(settings_path)),
         Arc::new(hub_platform::PlatformUnityHubAdapter),
         Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
         directory_platform,
@@ -430,7 +471,6 @@ async fn initialize_daemon_with_adapters(
         locks: Arc::clone(&locks),
         tools_cursor_key: oauth_cursor_key,
         mcp_runtime: alcomd_application::McpRuntimeObservations::new(),
-        workflow_paths: Default::default(),
         mcp_transport: alcomd_application::McpTransportObservations::new(),
         #[cfg(feature = "test-kill-gates")]
         runtime_call_gate: tokio::sync::Mutex::new(None),
@@ -904,13 +944,10 @@ async fn dispatch_payload(
     }
     if matches!(
         request.method.as_str(),
-        alcomd_protocol::METHOD_MCP_PROJECT_PATH_APPROVE
-            | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
+        alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
             | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
             | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
             | alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY
-            | alcomd_protocol::METHOD_MCP_BACKUPS_PLAN_RESTORE
-            | alcomd_protocol::METHOD_MCP_BACKUPS_APPLY_RESTORE
     ) {
         return m8_workflows_rpc::dispatch(request, state, applications, &access).await;
     }
@@ -927,7 +964,11 @@ async fn dispatch_payload(
     if request.method.starts_with("mcp.oauth.") {
         return m8_oauth_rpc::dispatch(request, state, &applications.oauth, &access).await;
     }
-    if access.is_mcp_client() && request.method == alcomd_protocol::METHOD_BACKUPS_CREATE {
+    if matches!(
+        request.method.as_str(),
+        alcomd_protocol::METHOD_MCP_BACKUPS_RESTORE | alcomd_protocol::METHOD_BACKUPS_CREATE
+    ) && access.is_mcp_client()
+    {
         let Ok(authentication) = m8_tools_rpc::auth(state, &access) else {
             return error_action(Some(request.id), RpcError::permission_denied(), false);
         };
@@ -1064,7 +1105,7 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
         alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1,
         alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1,
-        alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
+        alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1,
         alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1,
         alcomd_protocol::CAPABILITY_MCP_OAUTH_V2,
@@ -1095,9 +1136,8 @@ async fn dispatch_hello(
         alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1,
         alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2,
         alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1,
-        alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
-        alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
-        alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
+        alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V2,
+        alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V2,
         alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1,

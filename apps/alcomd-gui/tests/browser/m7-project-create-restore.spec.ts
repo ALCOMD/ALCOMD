@@ -81,20 +81,16 @@ test("creation prefills one compatible Editor but requires a choice for multiple
     await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
 });
 
-test("Projects Restore uses a managed Backup Plan Apply Operation and opens the registered result", async ({ page }) => {
+test("Projects restores a ZIP outside the default directory and opens the registered project", async ({ page }) => {
     await openHarness(page, "/projects");
 
     await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
-    const dialog = page.getByRole("dialog", { name: "Restore project" });
-    await expect(dialog).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Project backup", exact: true })).toContainText("11/14/2023");
-    await page.getByRole("button", { name: "Choose directory" }).click();
-    await expect(page.getByLabel("Restore target parent")).toHaveValue("C:\\Fixture\\Avatar");
-    await page.getByLabel("Restore project name").fill("Restored Project");
-    await page.getByRole("button", { name: "Review restore" }).click();
-    await expect(page.getByText(/Destination/).locator("..")).toContainText("Restored Project");
-    await expect(page.getByText(/ALCOMD Core will validate the managed archive/)).toBeVisible();
-    await page.locator("md-dialog[open]").getByRole("button", { name: "Restore project" }).click();
+    await expect(page.getByRole("dialog", { name: "Restore project", exact: true })).toBeVisible();
+    const dialog = page.locator("md-dialog[open]");
+    await dialog.getByRole("button", { name: "Select", exact: true }).click();
+    await expect(dialog.getByLabel("Backup", { exact: true })).toHaveValue("C:/Outside/Unity Project.zip");
+    await dialog.getByLabel("Project name", { exact: true }).fill("Restored Project");
+    await dialog.getByRole("button", { name: "Restore project", exact: true }).click();
 
     await expect(page.getByText("Task completed.", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/projects$/);
@@ -104,7 +100,7 @@ test("Projects Restore uses a managed Backup Plan Apply Operation and opens the 
     await expect(page.getByRole("row").filter({ hasText: "Restored Project" })).toBeVisible();
 });
 
-test("Create and Restore expose cancel, empty, and structured planning failure states", async ({ page }) => {
+test("Create and Restore expose cancellation, missing input, and structured conflict errors", async ({ page }) => {
     await openHarness(page, "/projects");
     await page.getByRole("button", { name: "Create project" }).click();
     await page.getByRole("button", { name: "Cancel" }).click();
@@ -112,9 +108,9 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
 
     await openHarness(page, "/projects", "empty");
     await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
-    await expect(page.getByText("No managed backups available")).toBeVisible();
+    await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Restore project", exact: true })).toBeDisabled();
     const restoreDialogBox = await page.getByRole("dialog", { name: "Restore project" }).boundingBox();
-    const closeBox = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
+    const closeBox = await page.getByRole("button", { name: "Cancel", exact: true }).boundingBox();
     expect(restoreDialogBox).not.toBeNull();
     expect(closeBox).not.toBeNull();
     expect(closeBox!.x + closeBox!.width).toBeLessThanOrEqual(restoreDialogBox!.x + restoreDialogBox!.width);
@@ -128,9 +124,9 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
 
     await openHarness(page, "/projects", "restore-error");
     await selectActionMenuItem(page.getByRole("button", { name: "More project creation options" }), page.getByRole("menuitem", { name: "Restore from backup", exact: true }));
-    await page.getByRole("button", { name: "Choose directory" }).click();
-    await page.getByLabel("Restore project name").fill("Conflict");
-    await page.getByRole("button", { name: "Review restore" }).click();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Select", exact: true }).click();
+    await page.getByLabel("Project name", { exact: true }).fill("Conflict");
+    await page.getByRole("button", { name: "Restore project", exact: true }).click();
     await expectRequestError(page.getByRole("alert"), "backup_target_exists");
 });
 

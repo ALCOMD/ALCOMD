@@ -467,6 +467,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
                     ConfigUpdate {
                         packages: Some(ConfigPackageSettingsUpdate {
                             show_prerelease: None,
+                            prefer_prerelease: None,
                             hide_local_user_packages: None,
                             hidden_repository_ids: Some(hidden),
                             hidden_repository_packages: Some(package_groups),

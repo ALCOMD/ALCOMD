@@ -77,3 +77,9 @@ Four streams/auth context, 600-second lifetime, one pending invalidation and bou
 blocked writes prevent notification backlog. Normal HTTP limits and no-session
 authentication remain. Cancelling a protocol stream does not cancel accepted Core
 Operations. No session recovery, automatic business retry or credential logging.
+
+## M11 文件操作与数据基线
+
+备份、恢复以及 MCP 项目工作流的绝对路径均在 Core 主机上解析。请求权限来自连接身份与现行业务权限，路径文本不赋予权限。Core 冻结源和目标父目录的文件身份，执行配额、取消、独占同卷发布和持久恢复。解压仅接受根部构成 Unity 工程的 ZIP。恢复目标在任务提交前保留给该任务，后台项目发现遵守同一保留。
+
+新运行时在打开 WAL 和恢复持久任务前预检现行 State46 和 Config13。未知文件、旧版本和不受信任的目录在写入前拒绝。已验证的安装登记可支撑原生 SDK 的首次连接。

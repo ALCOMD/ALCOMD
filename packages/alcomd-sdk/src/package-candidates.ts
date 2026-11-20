@@ -44,6 +44,7 @@ export interface PackageCandidateSummary {
     installed: { kind: "absent" } | { kind: "locked"; version: string } | { kind: "unknown"; reason: "installed_evidence_unknown" };
     latest: CandidateChoice;
     latestStable: CandidateChoice;
+    recommended: CandidateChoice;
     projectLatest: CandidateChoice;
     projectLatestStable: CandidateChoice;
     update: PackageUpdateEvidence;

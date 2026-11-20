@@ -1,3 +1,4 @@
+import type { BackupCreateParams } from "@alcomd/sdk";
 import { requestErrorMessage } from "./request-errors";
 import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
@@ -7,7 +8,6 @@ import { useUtilityDialogComplete, useUtilityDialogBusy, useUtilityDialogClose, 
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
-    BackupCreateResult,
     ExtensionPlan,
     Operation,
     OfficialSettings,
@@ -303,7 +303,7 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
     const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease = false, allowUnityIncompatible = false) => {
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, includePrerelease?: boolean, allowUnityIncompatible = false) => {
         if (revision === undefined || projectId === undefined) return;
         const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-candidates" || action === "downgrade";
         if ((requiresV2 && !canPlanV2) || (!requiresV2 && !canPlanV1)) {
@@ -326,12 +326,12 @@ export function PackageActions({ client, project, packageNames, onChanged, selec
                 result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: selection.intents });
             }
             else if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
-            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
+            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision });
             else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
             else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
             else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
-                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease, ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
+                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, ...(includePrerelease === undefined ? {} : { includePrerelease }), ...(allowUnityIncompatible ? { allowUnityIncompatible: true } : {}), ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
                 result = action === "upgrade" ? await client.packagePlanUpgrade(params) : await client.packagePlanInstall(params);
             }
             setPlan(result);
@@ -780,11 +780,14 @@ export function useActionScope(client: GuiRpcClient, active = true) {
     return () => scope.active && holder.current === scope && visible.current;
 }
 
-export function BackupCreatePanel({ client, navigate, onAccepted, project }: { client: GuiRpcClient; navigate(path: string): void; onAccepted(result: BackupCreateResult): void; project: ProjectSnapshot }) {
+export function BackupCreatePanel({ client, onAccepted, project }: { client: GuiRpcClient; onAccepted(result: { operationId: string; replayed: boolean }): void; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const completeDialog = useUtilityDialogComplete();
     const available = useCapability(capabilities.backupsCreate);
     const [options, setOptions] = useState<OfficialSettings["backups"]>();
+    const [backupDirectory, setBackupDirectory] = useState<string>();
+    const [destinationPath, setDestinationPath] = useState("");
+    const attempt = useRef<BackupCreateParams | undefined>(undefined);
     const [readGeneration, setReadGeneration] = useState(0);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const showLoading = useDelayedPending(options === undefined && feedback.error === undefined);
@@ -797,15 +800,45 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
         setOptions(undefined);
         setFeedback(INITIAL_FEEDBACK);
         void client.settingsGet().then((snapshot) => {
-            if (active) setOptions(snapshot.settings.backups);
+            if (active) {
+                setOptions(snapshot.settings.backups);
+                setBackupDirectory(snapshot.directories.backupDirectory);
+            }
         }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
         return () => { active = false; };
     }, [client, readGeneration]);
-    const create = async () => {
-        if (!available || pending.current || unknown || options === undefined || project.projectId === undefined || project.revision === undefined) return;
-        pending.current = true; setFeedback({ busy: true });
+    const chooseDestination = async () => {
+        if (pending.current || unknown) return;
+        pending.current = true;
+        setFeedback({ busy: true });
         try {
-            const result = await client.backupCreate(project.projectId, project.revision, options.compressionMode, !options.includeVpmPackages, options.includeLibrary);
+            const selected = await client.selectFile("backupZipDestination", destinationPath || backupDirectory);
+            if (!isCurrent()) return;
+            if (selected !== undefined) setDestinationPath(selected);
+            setFeedback(INITIAL_FEEDBACK);
+        } catch (caught: unknown) {
+            if (isCurrent()) setFeedback({ busy: false, error: safeError(caught) });
+        } finally {
+            pending.current = false;
+        }
+    };
+    const create = async () => {
+        if (!available || pending.current || options === undefined || project.projectId === undefined || project.revision === undefined) return;
+        const params = unknown ? attempt.current : {
+            projectId: project.projectId,
+            expectedRevision: project.revision,
+            compressionMode: options.compressionMode,
+            excludeVpmPackages: !options.includeVpmPackages,
+            includeLibrary: options.includeLibrary,
+            ...(destinationPath.trim().length === 0 ? {} : { destinationPath }),
+            idempotencyKey: crypto.randomUUID(),
+        };
+        if (params === undefined) return;
+        attempt.current = params;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.backupCreate(params);
             if (!isCurrent()) return;
             setFeedback(INITIAL_FEEDBACK); onAccepted(result); completeDialog?.();
         }
@@ -820,9 +853,13 @@ export function BackupCreatePanel({ client, navigate, onAccepted, project }: { c
                 options={backupCompressionOptions(t)} value={options.compressionMode} />
             <Checkbox disabled={feedback.busy || unknown} checked={options.includeVpmPackages} label={t("Keep packages in backups")} onChange={(includeVpmPackages) => setOptions({ ...options, includeVpmPackages })} />
             <Checkbox disabled={feedback.busy || unknown} checked={options.includeLibrary} label={t("Keep Library cache in backups")} onChange={(includeLibrary) => setOptions({ ...options, includeLibrary })} />
+            <div className="project-target-picker">
+                <PathField disabled={feedback.busy || unknown} label={t("Destination")} onInput={setDestinationPath} value={destinationPath} />
+                <Button disabled={feedback.busy || unknown} onClick={() => void chooseDestination()} type="button" variant="tonal">{t("Select")}</Button>
+            </div>
         </>}
         <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} label={options !== undefined && unknown ? t("Close") : undefined} />
-            <Button disabled={!available || feedback.busy || unknown || options === undefined || project.revision === undefined} onClick={() => void create()} type="button">{t("Create backup")}</Button>
+            <Button disabled={!available || feedback.busy || options === undefined || project.revision === undefined} onClick={() => void create()} type="button">{t(unknown ? "Retry" : "Create backup")}</Button>
         </div>
         {feedback.error === undefined ? null : options === undefined ? <div role="alert"><strong>{t("Backup defaults could not be loaded.")}</strong><p>{t(requestErrorMessage((feedback.error).code))}</p><code>{(feedback.error).code}</code>{feedback.error.diagnosticId === undefined ? null : <p><code>{feedback.error.diagnosticId}</code></p>}
             <Button onClick={() => setReadGeneration((value) => value + 1)} type="button" variant="text">{t("Retry")}</Button>

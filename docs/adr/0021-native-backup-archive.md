@@ -1,6 +1,6 @@
 # ADR 0021：原生备份归档与一致性边界
 
-状态：Accepted（Backup Create contract-first；生产实现尚未批准）
+历史决策。现行合同见 [Unity 项目 ZIP](../../specs/backups/project-zip.md)。
 
 ## 决定
 

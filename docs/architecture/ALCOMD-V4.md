@@ -586,6 +586,8 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 - ALCOMD v4 bridge installer 安装完整 v4 产品，包含或调用 `alcomd-bootstrap`；bootstrap 再
   协调临时 `alcomd-migrate-v3`、健康检查、回滚、v3 清理与 Commit。
 
+v4 首次发布直接初始化 State46 和 Config13。项目备份是普通 ZIP，恢复使用 Core 主机的绝对文件路径。具体合同和验收见 [M11 实施计划](../exec-plans/M11-v3-migration-and-zip.md)。
+
 上述地址记录冻结 v3 配置的请求源，当前组织站点/服务基址为 `https://alcomd.vrclearn.com/`；
 旧请求源与新部署入口的衔接由 M11 验证。原频道映射、v4 迁移桥接安装器的 JSON Schema、
 版本推进、签名验证和错误行为仍按 M-1 基线冻结。

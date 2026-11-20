@@ -1079,6 +1079,7 @@ impl Fixture {
                 ConfigUpdate {
                     packages: Some(ConfigPackageSettingsUpdate {
                         hidden_repository_packages: Some(value.hidden_repository_packages),
+                        prefer_prerelease: Some(value.prefer_prerelease),
                         show_prerelease: Some(value.show_prerelease),
                         hidden_repository_ids: Some(value.hidden_repository_ids),
                         hide_local_user_packages: Some(value.hide_local_user_packages),
@@ -1090,6 +1091,12 @@ impl Fixture {
             .expect("owned VPM regression fixture succeeds");
     }
     async fn summary(&self) -> ProjectCandidatePage {
+        self.summary_with_bulk(None).await
+    }
+    async fn summary_with_bulk(
+        &self,
+        bulk_package_ids: Option<Vec<String>>,
+    ) -> ProjectCandidatePage {
         ProjectCandidateApplication::new(
             self.store.clone(),
             ProjectCandidateEngine,
@@ -1105,7 +1112,7 @@ impl Fixture {
                     package_ids: None,
                     sources: None,
                     filter: None,
-                    bulk_package_ids: None,
+                    bulk_package_ids,
                 },
                 limit: None,
                 expected_snapshot: None,
@@ -1591,16 +1598,143 @@ async fn closed_local_source_is_excluded_and_invalidates_a_prepared_plan() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn default_package_plans_follow_the_visible_version_preference() {
+    let f = fixture(
+        "version-preference",
+        empty(),
+        vec![
+            package(A, "1.0.0", json!({})),
+            package(A, "2.0.0-beta.1", json!({})),
+            package(B, "1.0.0-beta.1", json!({})),
+            package(B, "2.0.0", json!({})),
+            package(C, "1.0.0-beta.1", json!({})),
+            package(D, "1.0.0", json!({A:">=2.0.0-beta.1"})),
+        ],
+        None,
+    )
+    .await;
+    for (prefer, id, expected) in [
+        (false, A, "1.0.0"),
+        (true, A, "2.0.0-beta.1"),
+        (true, B, "2.0.0"),
+        (false, C, "1.0.0-beta.1"),
+    ] {
+        f.settings(|p| p.prefer_prerelease = prefer).await;
+        let CandidatePageItems::Summary { items } = f.summary().await.page else {
+            panic!("summary")
+        };
+        let row = items.iter().find(|row| row.package_id == id).unwrap();
+        assert!(
+            matches!(&row.recommended, CandidateChoice::Candidate { candidate } if candidate.version == expected)
+        );
+        let mut intent = request(&f, PlanAction::Install, Some(id));
+        intent.include_prerelease = true;
+        let plan = f
+            .packages
+            .plan(&AccessContext::local_owner(), intent)
+            .await
+            .unwrap();
+        assert_eq!(
+            plan.change_set.mutations[0].to_version.as_deref(),
+            Some(expected)
+        );
+    }
+    f.settings(|p| p.prefer_prerelease = false).await;
+    let mut intent = request(&f, PlanAction::Install, Some(D));
+    intent.include_prerelease = true;
+    let plan = f
+        .packages
+        .plan(&AccessContext::local_owner(), intent)
+        .await
+        .unwrap();
+    assert!(
+        plan.change_set
+            .mutations
+            .iter()
+            .any(|m| m.package_id == A && m.to_version.as_deref() == Some("2.0.0-beta.1"))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn bulk_recommendations_match_single_upgrades_with_an_installed_prerelease() {
+    let f = fixture("bulk-preference",
+        json!({"dependencies":{A:{"version":"1.1.0-beta.1"}},"locked":{A:{"version":"1.1.0-beta.1","dependencies":{}}}}),
+        vec![package(A,"1.0.0",json!({})), package(A,"1.2.0",json!({})),
+             package(A,"2.0.0-beta.1",json!({B:">=2.0.0-beta.1"})),
+             package(B,"2.0.0-beta.1",json!({}))], None).await;
+    for (prefer, expected) in [(false, "1.2.0"), (true, "2.0.0-beta.1")] {
+        f.settings(|p| p.prefer_prerelease = prefer).await;
+        let summary = f.summary_with_bulk(Some(vec![A.into()])).await;
+        let actions = summary.bulk.expect("bulk recommendations");
+        let intents = serde_json::to_value(actions.update_all.intents).unwrap();
+        let [target] = intents.as_array().unwrap().as_slice() else {
+            panic!("one upgrade")
+        };
+        assert_eq!(target["kind"], "upgrade");
+        assert_eq!(target["versionRange"], format!("={expected}"));
+        assert_eq!(target["includePrerelease"], true);
+        let batch = bulk(
+            &f,
+            vec![PackageBulkIntent::Upgrade {
+                package_id: target["packageId"].as_str().unwrap().into(),
+                version_range: Some(target["versionRange"].as_str().unwrap().into()),
+                source: Some(serde_json::from_value(target["source"].clone()).unwrap()),
+                include_prerelease: target["includePrerelease"].as_bool().unwrap(),
+            }],
+        );
+        let mut single = request(&f, PlanAction::Upgrade, Some(A));
+        single.include_prerelease = true;
+        for req in [single, batch] {
+            let plan = f
+                .packages
+                .plan(&AccessContext::local_owner(), req)
+                .await
+                .expect("compatible upgrade");
+            assert!(
+                plan.change_set
+                    .mutations
+                    .iter()
+                    .any(|m| m.package_id == A && m.to_version.as_deref() == Some(expected))
+            );
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_plan() {
     let f = fixture(
         "closed-prerelease",
         empty(),
-        vec![package(A, "1.0.0-beta.1", json!({}))],
+        vec![package(A, "1.8.0-beta.1", json!({}))],
         None,
     )
     .await;
-    f.settings(|settings| settings.show_prerelease = true).await;
-    let mut request = install(&f, A, "1.0.0-beta.1");
+    f.settings(|settings| settings.prefer_prerelease = true)
+        .await;
+    enroll_local(&f, package(B, "1.8.0-beta.1", json!({}))).await;
+    let catalog = || async {
+        let settings = f
+            .config
+            .candidate_settings()
+            .await
+            .unwrap()
+            .settings
+            .packages;
+        f.store
+            .resolver_catalog(PrincipalId::local_owner(), true, settings)
+            .await
+            .unwrap()
+            .entries
+    };
+    for id in [A, B] {
+        assert!(
+            catalog()
+                .await
+                .iter()
+                .any(|entry| entry.package_id == id && entry.version == "1.8.0-beta.1")
+        );
+    }
+    let mut request = install(&f, A, "1.8.0-beta.1");
     request.include_prerelease = true;
     let plan = f
         .packages
@@ -1609,6 +1743,7 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
         .expect("owned VPM regression fixture succeeds");
     f.settings(|settings| settings.show_prerelease = false)
         .await;
+    assert!(catalog().await.is_empty());
     assert_eq!(
         f.packages
             .plan(&AccessContext::local_owner(), request)
@@ -1633,6 +1768,12 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
     assert!(
         matches!(f.summary().await.page,CandidatePageItems::Summary{items} if items.is_empty())
     );
+    f.settings(|settings| settings.show_prerelease = true).await;
+    let persisted = alcomd_store::FileConfigStore::new(f.directory.join("settings.toml"))
+        .load()
+        .unwrap();
+    assert!(persisted.settings.packages.show_prerelease);
+    assert!(!persisted.settings.packages.prefer_prerelease);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

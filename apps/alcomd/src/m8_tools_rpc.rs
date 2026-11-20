@@ -150,7 +150,7 @@ fn builtin_entries(
     if workflow_tools {
         append_builtin_tools(
             &mut entries,
-            include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
+            include_str!("../../../specs/mcp/project-workflows-v2.schema.json"),
         )?;
     }
     if inventory_tools {
@@ -527,7 +527,7 @@ pub(super) async fn dispatch(
                         .contains(rpc::CAPABILITY_MCP_REPOSITORIES_V1),
                     state
                         .capabilities
-                        .contains(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1),
+                        .contains(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2),
                     state
                         .capabilities
                         .contains(rpc::CAPABILITY_PROJECT_INVENTORY_V1),

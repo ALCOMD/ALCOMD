@@ -189,10 +189,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "模型",
         "ja-JP": "アバター"
     },
-    "Backup detail": {
-        "zh-CN": "备份详情",
-        "ja-JP": "バックアップの詳細"
-    },
     "Backups": {
         "zh-CN": "备份",
         "ja-JP": "バックアップ"
@@ -565,10 +561,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "不会自动创建备份。此操作与仅从列表中移除项目不同。",
         "ja-JP": "バックアップは自動作成されません。一覧からのみ削除する操作とは異なります。"
     },
-    "No backups for this project": {
-        "zh-CN": "此项目暂无备份",
-        "ja-JP": "このプロジェクトのバックアップはありません"
-    },
     "No extensions installed": {
         "zh-CN": "尚未安装扩展",
         "ja-JP": "拡張機能はインストールされていません"
@@ -728,10 +720,6 @@ export const pageMessages: TranslationTable = {
     "Project added to favorites.": {
         "zh-CN": "已收藏项目。",
         "ja-JP": "プロジェクトをお気に入りに追加しました。"
-    },
-    "Project backups": {
-        "zh-CN": "项目备份",
-        "ja-JP": "プロジェクトのバックアップ"
     },
     "Project copy completed.": {
         "zh-CN": "项目复制完成。",
@@ -1005,6 +993,10 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "显示详情",
         "ja-JP": "詳細を表示"
     },
+    "Prefer prerelease versions": {
+        "zh-CN": "优先选择预发布版本",
+        "ja-JP": "プレリリースバージョンを優先"
+    },
     "Show prerelease versions": {
         "zh-CN": "显示预发布版本",
         "ja-JP": "プレリリースバージョンを表示"
@@ -1260,10 +1252,6 @@ export const pageMessages: TranslationTable = {
     "Versions unavailable: {value0}": {
         "zh-CN": "版本不可用：{value0}",
         "ja-JP": "バージョンを利用できません：{value0}"
-    },
-    "View backup": {
-        "zh-CN": "查看备份",
-        "ja-JP": "バックアップを表示"
     },
     "View operation": {
         "zh-CN": "查看任务",
