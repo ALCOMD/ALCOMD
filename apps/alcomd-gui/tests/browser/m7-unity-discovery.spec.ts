@@ -15,6 +15,7 @@ async function open(page: Page, query = "h3-unity-discovery=1") {
 const discoveryRequests = (page:Page) => page.evaluate(()=>window.unityRequests.filter((request)=>request.method==="unityInstallationsRefresh").length);
 const removals = (page:Page) => page.evaluate(()=>window.h3Requests.filter((request)=>request.method==="unity.installations.remove"));
 const registrations = (page:Page) => page.evaluate(()=>window.h3Requests.filter((request)=>request.method==="unity.installations.register"));
+const removalDialog = (page: Page) => page.locator('md-dialog[data-aria-label="Remove Unity installation"]');
 
 test("Unity discovery directly populates the list without a management dialog or success popup",async ({page})=>{
     const host=await open(page);
@@ -92,14 +93,16 @@ test("row removal confirms the exact Editor and only unregisters that installati
     const rows=host.getByRole("table").locator("tbody tr");
     await expect(rows).toHaveCount(2);
     await rows.nth(1).getByRole("button",{name:"Remove",exact:true}).click();
-    let dialog=page.locator("md-dialog[open]");
+    const modal=removalDialog(page);
+    const dialog=modal.and(page.locator("md-dialog[open]"));
     await expect(dialog).toContainText("Only the ALCOMD registry entry is removed. The editor remains installed.");
     await expect(dialog).toContainText("\\\\builds\\Editors\\Unity.exe");
     expect(await removals(page)).toEqual([]);
     await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+    // The dialog owner clears the selection after Material finishes closing.
+    await expect(modal).toHaveCount(0);
     await expect(rows).toHaveCount(2);
     await rows.nth(1).getByRole("button",{name:"Remove",exact:true}).click();
-    dialog=page.locator("md-dialog[open]");
     await dialog.getByRole("button",{name:"Remove installation",exact:true}).click();
     await expect(dialog).toHaveCount(0);
     await expect(rows).toHaveCount(1);
@@ -112,12 +115,14 @@ test("row removal confirms the exact Editor and only unregisters that installati
 test("a refused row removal preserves the record and retries only after confirmation",async ({page})=>{
     const host=await open(page,"state=ready&unity-remove=error");
     await host.getByRole("button",{name:"Remove",exact:true}).click();
-    const dialog=page.locator("md-dialog[open]");
+    const modal=removalDialog(page);
+    const dialog=modal.and(page.locator("md-dialog[open]"));
     await dialog.getByRole("button",{name:"Remove installation",exact:true}).click();
     await expectRequestError(dialog.getByRole("alert"),"revision_conflict");
     await expect(host.getByRole("table").locator("tbody tr")).toHaveCount(1);
     expect((await removals(page)).length).toBe(1);
     await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+    await expect(modal).toHaveCount(0);
     await host.getByRole("button",{name:"Remove",exact:true}).click();
     await dialog.getByRole("button",{name:"Remove installation",exact:true}).click();
     await expect(host.getByText("No Unity installations registered",{exact:true})).toBeVisible();
