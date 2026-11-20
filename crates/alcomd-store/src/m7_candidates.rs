@@ -280,7 +280,7 @@ fn read_authority(
             _ => Error::Unavailable,
         })?;
     let mut fingerprint_records = vec![
-        "project-candidates-snapshot-v3".to_owned(),
+        "project-candidates-snapshot-v1".to_owned(),
         serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
             .map_err(|_| Error::Unavailable)?,
     ];

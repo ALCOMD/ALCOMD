@@ -15,14 +15,14 @@ pub const REPOSITORY_CONFIGURATION_EXTENSION: &str = "alcomdrepositories";
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RepositoryListFormat {
-    Native,
     #[default]
+    Native,
     Legacy,
 }
 
 impl RepositoryListFormat {
-    fn is_legacy(&self) -> bool {
-        *self == Self::Legacy
+    fn is_native(&self) -> bool {
+        *self == Self::Native
     }
 }
 
@@ -82,14 +82,14 @@ pub struct RepositoryListInspectParams {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepositoryListPreviewParams {
-    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
+    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_native")]
     pub format: RepositoryListFormat,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListExportParams {
-    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
+    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_native")]
     pub format: RepositoryListFormat,
     pub target_path: String,
     pub expected_fingerprint: String,
@@ -129,7 +129,6 @@ pub struct RepositoryListEntry {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryListInspection {
-    #[serde(default, skip_serializing_if = "RepositoryListFormat::is_legacy")]
     pub format: RepositoryListFormat,
     pub entries: Vec<RepositoryListEntry>,
     pub ignored_lines: u32,

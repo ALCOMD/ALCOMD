@@ -10,7 +10,7 @@ struct Directory(PathBuf);
 
 impl Directory {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("alcomd-state46-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("alcomd-state1-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).expect("isolated state directory");
         Self(root)
     }
@@ -45,13 +45,13 @@ fn bundled_sqlite_version_is_frozen() {
 }
 
 #[test]
-fn state46_initializes_and_reopens_preserving_current_rows_and_sequence() {
+fn state1_initializes_and_reopens_preserving_current_rows_and_sequence() {
     let fixture = Directory::new();
     let path = fixture.database();
     preflight_state_database(&path).expect("blank state");
     assert!(fixture.snapshot().is_empty());
 
-    let store = StateStoreHandle::open(path.clone()).expect("new State46");
+    let store = StateStoreHandle::open(path.clone()).expect("new State1");
     drop(store);
     let db = Connection::open(&path).expect("read structure");
     let version: u32 = db
@@ -171,39 +171,8 @@ fn state46_initializes_and_reopens_preserving_current_rows_and_sequence() {
 }
 
 #[test]
-fn fresh_state_has_no_removed_authority_or_transitional_schema() {
-    let fixture = Directory::new();
-    let path = fixture.database();
-    drop(StateStoreHandle::open(path.clone()).expect("fresh state"));
-    let db = Connection::open(path).expect("inspect state");
-    let objects = db
-        .prepare("SELECT lower(sql) FROM sqlite_schema WHERE sql IS NOT NULL")
-        .expect("schema objects")
-        .query_map([], |row| row.get::<_, String>(0))
-        .expect("query")
-        .collect::<Result<Vec<_>, _>>()
-        .expect("object definitions")
-        .join("\n");
-    for name in [
-        "operation_activity",
-        "project_editor_preferences",
-        "project_presentations",
-        "publisher_trust",
-        "trust_decision",
-        "backup_restore_plans",
-        "backup_restore_filesystem_journal",
-        "create table backups ",
-        "mcp_client_grants",
-        "templates.derive",
-        "templates.import",
-    ] {
-        assert!(!objects.contains(name), "retired authority {name}");
-    }
-}
-
-#[test]
-fn rejects_older_and_future_state_without_starting_sqlite_recovery() {
-    for version in [0, 1, 18, 32, 45, 47, i32::MAX] {
+fn rejects_unsupported_schema_without_starting_sqlite_recovery() {
+    for version in [0, 2, i32::MAX] {
         let fixture = Directory::new();
         let path = fixture.database();
         let old = Connection::open(&path).expect("isolated prior file");

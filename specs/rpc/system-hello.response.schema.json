@@ -20,7 +20,9 @@
             "required": [
                 "rpcVersion",
                 "daemonVersion",
-                "capabilities"
+                "capabilities",
+                "dataSchema",
+                "configSchema"
             ],
             "properties": {
                 "rpcVersion": {
@@ -45,13 +47,11 @@
                 },
                 "dataSchema": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4294967295
+                    "const": 1
                 },
                 "configSchema": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 4294967295
+                    "const": 1
                 },
                 "extensionApi": {
                     "type": "object",

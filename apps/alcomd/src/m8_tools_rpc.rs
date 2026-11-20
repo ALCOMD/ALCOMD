@@ -3,7 +3,10 @@ use super::{Applications, ConnectionState, DispatchAction, error_action, success
 use alcomd_application::{self as app, ToolError as E};
 use alcomd_protocol as rpc;
 use serde_json::{Value, json};
-use std::sync::{Arc, atomic::AtomicBool};
+use std::{
+    collections::HashSet,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 fn now() -> Result<u64, E> {
     super::current_time_ms().map_err(|_| E::Unavailable)
@@ -116,19 +119,13 @@ fn append_builtin_tools(entries: &mut Vec<Entry>, contract: &str) -> Result<(), 
     Ok(())
 }
 
-fn builtin_entries(
-    package_tools: bool,
-    repository_tools: bool,
-    workflow_tools: bool,
-    inventory_tools: bool,
-    template_tools: bool,
-) -> Result<Vec<Entry>, E> {
+fn builtin_entries(capabilities: &HashSet<String>) -> Result<Vec<Entry>, E> {
     let mut entries = builtin()?;
     append_builtin_tools(
         &mut entries,
         include_str!("../../../specs/mcp/environment-v1.schema.json"),
     )?;
-    if package_tools {
+    if capabilities.contains(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1) {
         append_builtin_tools(
             &mut entries,
             include_str!("../../../specs/mcp/package-catalog-plan-v1.schema.json"),
@@ -141,52 +138,44 @@ fn builtin_entries(
             entry.descriptor.description = "Only call after the operator has reviewed and confirmed the entire original plan. Applies that plan without replanning and returns an operation to check.".into();
         }
     }
-    if repository_tools {
-        append_builtin_tools(
-            &mut entries,
-            include_str!("../../../specs/mcp/repositories-v1.schema.json"),
-        )?;
-    }
-    if workflow_tools {
-        append_builtin_tools(
-            &mut entries,
-            include_str!("../../../specs/mcp/project-workflows-v2.schema.json"),
-        )?;
-    }
-    if inventory_tools {
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/repositories-v1.schema.json"),
+    )?;
+    append_builtin_tools(
+        &mut entries,
+        include_str!("../../../specs/mcp/project-workflows-v1.schema.json"),
+    )?;
+    if capabilities.contains(rpc::CAPABILITY_PROJECT_INVENTORY_V1) {
         append_builtin_tools(
             &mut entries,
             include_str!("../../../specs/mcp/project-inventory-v1.schema.json"),
         )?;
     }
-    if template_tools {
+    if capabilities.contains(rpc::CAPABILITY_TEMPLATE_EDIT_V1) {
         append_builtin_tools(
             &mut entries,
             include_str!("../../../specs/mcp/template-edit-v1.schema.json"),
         )?;
     }
+    entries.retain(|entry| {
+        let name = &entry.descriptor.name;
+        rpc::mcp_workflows_tool_capability(name)
+            .or_else(|| rpc::mcp_repositories_tool_capability(name))
+            .is_none_or(|capability| capabilities.contains(capability))
+    });
     Ok(entries)
 }
 
 async fn entries(
     apps: &Applications,
     authentication: app::ToolAuthentication,
-    package_tools: bool,
-    repository_tools: bool,
-    workflow_tools: bool,
-    inventory_tools: bool,
-    template_tools: bool,
+    capabilities: &HashSet<String>,
 ) -> Result<(Vec<Entry>, String), E> {
     let snapshot = apps.store.tool_snapshot(authentication.clone()).await?;
     let mut evidence =
         json!({"auth":authentication.binding(),"client":snapshot.client.revision,"providers":[]});
-    let mut entries = builtin_entries(
-        package_tools,
-        repository_tools,
-        workflow_tools,
-        inventory_tools,
-        template_tools,
-    )?;
+    let mut entries = builtin_entries(capabilities)?;
     for provider in snapshot.providers {
         let path = std::path::PathBuf::from(&provider.locator);
         let verified = tokio::task::spawn_blocking(move || {
@@ -343,16 +332,7 @@ async fn call(
             return Ok(saved);
         }
     }
-    let (items, _) = entries(
-        apps,
-        authentication.clone(),
-        false,
-        false,
-        false,
-        false,
-        false,
-    )
-    .await?;
+    let (items, _) = entries(apps, authentication.clone(), &HashSet::new()).await?;
     let entry = items
         .into_iter()
         .find(|e| e.descriptor.name == request.name)
@@ -516,26 +496,8 @@ pub(super) async fn dispatch(
         match request.method.as_str() {
             rpc::METHOD_MCP_TOOLS_CATALOG => {
                 let params = serde_json::from_value(request.params).map_err(|_| E::InvalidInput)?;
-                let (items, fingerprint) = entries(
-                    apps,
-                    authentication,
-                    state
-                        .capabilities
-                        .contains(rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1),
-                    state
-                        .capabilities
-                        .contains(rpc::CAPABILITY_MCP_REPOSITORIES_V1),
-                    state
-                        .capabilities
-                        .contains(rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2),
-                    state
-                        .capabilities
-                        .contains(rpc::CAPABILITY_PROJECT_INVENTORY_V1),
-                    state
-                        .capabilities
-                        .contains(rpc::CAPABILITY_TEMPLATE_EDIT_V1),
-                )
-                .await?;
+                let (items, fingerprint) =
+                    entries(apps, authentication, &state.capabilities).await?;
                 serde_json::to_value(catalog(items, fingerprint, params, &apps.tools_cursor_key)?)
                     .map_err(|_| E::Unavailable)
             }
@@ -706,7 +668,25 @@ mod connection_access_tests {
             revoked_at_ms: None,
         };
         let access = app::mcp_access(&client).expect("authenticated client");
-        for tool in builtin_entries(true, true, true, true, true).expect("published tools") {
+        for tool in builtin_entries(
+            &[
+                rpc::CAPABILITY_BACKUPS_CREATE_V1,
+                rpc::CAPABILITY_BACKUPS_RESTORE_V1,
+                rpc::CAPABILITY_MCP_PACKAGES_CATALOG_PLAN_V1,
+                rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1,
+                rpc::CAPABILITY_MCP_REPOSITORIES_V1,
+                rpc::CAPABILITY_PROJECTS_COPY_V1,
+                rpc::CAPABILITY_PROJECT_INVENTORY_V1,
+                rpc::CAPABILITY_PROJECT_TEMPLATES_V1,
+                rpc::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+                rpc::CAPABILITY_TEMPLATE_EDIT_V1,
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        )
+        .expect("published tools")
+        {
             assert!(
                 app::require_tool_permissions(&access, &tool.descriptor.required_permissions)
                     .is_ok(),

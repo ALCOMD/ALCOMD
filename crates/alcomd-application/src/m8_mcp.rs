@@ -72,24 +72,7 @@ pub fn mcp_access(client: &McpClient) -> Result<AccessContext, McpIdentityError>
     {
         return Err(McpIdentityError::PermissionDenied);
     }
-    let permissions = [
-        Permission::ProjectsRead,
-        Permission::ProjectsManage,
-        Permission::ProjectsCreate,
-        Permission::RepositoriesRead,
-        Permission::RepositoriesManage,
-        Permission::PackagesRead,
-        Permission::PackagesManage,
-        Permission::BackupsRead,
-        Permission::BackupsManage,
-        Permission::OperationsRead,
-        Permission::OperationsCancel,
-        Permission::StateCheck,
-        Permission::EventsRead,
-        Permission::SettingsRead,
-        Permission::UnityRead,
-    ];
-    Ok(AccessContext::new(client.principal_id.clone(), permissions).with_mcp_identity())
+    Ok(AccessContext::interactive_client(client.principal_id.clone()).with_mcp_identity())
 }
 
 #[derive(Clone)]
@@ -171,6 +154,9 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
         access
             .require(Permission::McpClientsManage)
             .map_err(|_| McpIdentityError::PermissionDenied)?;
+        if matches!(&command, McpIdentityWrite::Issue { .. }) && !access.is_interactive_client() {
+            return Err(McpIdentityError::PermissionDenied);
+        }
         if crate::IdempotencyKey::parse(key.clone()).is_err() || now > i64::MAX as u64 {
             return Err(McpIdentityError::InvalidInput);
         }
@@ -180,19 +166,12 @@ impl<S: McpIdentityStore> McpIdentityApplication<S> {
         {
             return Err(McpIdentityError::InvalidInput);
         }
-        match &command {
-            McpIdentityWrite::Create { name } => {
-                if name.trim().is_empty()
-                    || name.chars().count() > 128
-                    || name.chars().any(char::is_control)
-                {
-                    return Err(McpIdentityError::InvalidInput);
-                }
-            }
-            McpIdentityWrite::Issue { .. } if access.principal() != &PrincipalId::local_owner() => {
-                return Err(McpIdentityError::PermissionDenied);
-            }
-            _ => {}
+        if let McpIdentityWrite::Create { name } = &command
+            && (name.trim().is_empty()
+                || name.chars().count() > 128
+                || name.chars().any(char::is_control))
+        {
+            return Err(McpIdentityError::InvalidInput);
         }
         self.store
             .mcp_write(access.principal().clone(), key, command, now)
@@ -205,7 +184,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn connected_client_gets_tools_without_owner_authority() {
+    fn connected_client_shares_interactive_permissions_and_has_its_own_identity() {
         let id = McpClientId::new();
         let mut client = McpClient {
             client_id: id,
@@ -224,7 +203,7 @@ mod tests {
         ] {
             assert!(access.require(permission).is_ok());
         }
-        assert!(access.require(Permission::McpClientsManage).is_err());
+        assert_eq!(access.permissions, AccessContext::local_owner().permissions);
         client.revoked_at_ms = Some(2);
         assert!(matches!(
             mcp_access(&client),

@@ -462,8 +462,7 @@
             "additionalProperties": false,
             "properties": {
                 "formatVersion": {
-                    "type": "integer",
-                    "minimum": 1
+                    "const": 1
                 },
                 "mutations": {
                     "type": "array",
@@ -1319,8 +1318,7 @@
                     },
                     "required": [
                         "kind",
-                        "packageId",
-                        "includePrerelease"
+                        "packageId"
                     ]
                 },
                 {
@@ -1359,8 +1357,7 @@
                     },
                     "required": [
                         "kind",
-                        "packageId",
-                        "includePrerelease"
+                        "packageId"
                     ]
                 },
                 {

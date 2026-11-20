@@ -244,10 +244,6 @@ fn authorize_permission(
             .require(permission)
             .map_err(|_| ManagementError::from(E::PermissionDenied))?;
     }
-    // MCP clients cannot possess administration/UI authority. Never reinterpret them as owner.
-    if authority.client_access.is_mcp_client() {
-        return Err(E::PermissionDenied.into());
-    }
     crate::m6::validate_lease(db, lease, now)
         .map_err(|_| ManagementError::from(E::LeaseRevoked))?;
     let extension =

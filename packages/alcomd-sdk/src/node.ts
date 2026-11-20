@@ -122,8 +122,8 @@ function helloResult(value: unknown): HelloResponse {
         || typeof value.daemonVersion !== "string" || value.daemonVersion.length === 0
         || !Array.isArray(value.capabilities)
         || value.capabilities.some((capability) => typeof capability !== "string")
-        || (value.dataSchema !== undefined && !positiveU32(value.dataSchema))
-        || (value.configSchema !== undefined && !positiveU32(value.configSchema))
+        || value.dataSchema !== 1
+        || value.configSchema !== 1
         || (value.extensionApi !== undefined && (!isRecord(value.extensionApi)
             || !positiveU32(value.extensionApi.major) || typeof value.extensionApi.world !== "string"))) {
         throw new AlcomdSdkError("protocol", "The SDK bridge sent an invalid hello result.");

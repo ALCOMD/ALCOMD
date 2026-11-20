@@ -13,13 +13,8 @@ pub(super) async fn dispatch(
     access: &AccessContext,
 ) -> DispatchAction {
     let capability = match request.method.as_str() {
-        rpc::METHOD_BACKUPS_CREATE => rpc::CAPABILITY_BACKUPS_CREATE_V2,
-        rpc::METHOD_BACKUPS_RESTORE if !access.is_mcp_client() => {
-            rpc::CAPABILITY_BACKUPS_RESTORE_V2
-        }
-        rpc::METHOD_MCP_BACKUPS_RESTORE if access.is_mcp_client() => {
-            rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2
-        }
+        rpc::METHOD_BACKUPS_CREATE => rpc::CAPABILITY_BACKUPS_CREATE_V1,
+        rpc::METHOD_BACKUPS_RESTORE => rpc::CAPABILITY_BACKUPS_RESTORE_V1,
         _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     };
     if let Some(action) = require_capability(&request.id, state, capability) {
@@ -54,27 +49,9 @@ pub(super) async fn dispatch(
                 .await
         }
         _ => {
-            let params = if access.is_mcp_client() {
-                let Ok(params) =
-                    serde_json::from_value::<rpc::McpBackupRestoreParams>(request.params)
-                else {
-                    return invalid(request.id);
-                };
-                if !params.confirm {
-                    return invalid(request.id);
-                }
-                rpc::BackupRestoreParams {
-                    archive_path: params.archive_path,
-                    destination_path: params.destination_path,
-                    project_name: params.project_name,
-                    idempotency_key: params.idempotency_key,
-                }
-            } else {
-                let Ok(params) = serde_json::from_value::<rpc::BackupRestoreParams>(request.params)
-                else {
-                    return invalid(request.id);
-                };
-                params
+            let Ok(params) = serde_json::from_value::<rpc::BackupRestoreParams>(request.params)
+            else {
+                return invalid(request.id);
             };
             let Ok(key) = IdempotencyKey::parse(params.idempotency_key) else {
                 return invalid(request.id);

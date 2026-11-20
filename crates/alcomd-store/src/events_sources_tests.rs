@@ -789,7 +789,7 @@ fn metadata_event_failure_rolls_back_the_public_value_and_does_not_consume_the_k
     assert!(
         m3::update_repository_validators(
             &mut connection,
-            &owner,
+            &m3::RepositoryRefreshAccess::new(owner.clone()).expect("refresh authority"),
             repository.repository_id,
             repository.revision,
             RepositoryValidators::default(),
@@ -826,7 +826,7 @@ fn metadata_event_failure_rolls_back_the_public_value_and_does_not_consume_the_k
     .expect("failed key was not consumed");
     m3::update_repository_validators(
         &mut connection,
-        &owner,
+        &m3::RepositoryRefreshAccess::new(owner.clone()).expect("refresh authority"),
         repository.repository_id,
         repository.revision,
         RepositoryValidators::default(),

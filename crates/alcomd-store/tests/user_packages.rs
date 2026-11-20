@@ -97,12 +97,12 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
                     .packages
             )
             .await
-            .expect("v1 catalog")
+            .expect("repository-only lookup")
             .entries
             .is_empty(),
-        "v1 resolver must exclude User Packages"
+        "archive pin lookup scans repository artifacts"
     );
-    let v2_catalog = store
+    let catalog = store
         .resolver_catalog(
             owner.clone(),
             true,
@@ -111,10 +111,10 @@ async fn enrollment_refresh_noop_change_and_remove_are_durable() {
                 .packages,
         )
         .await
-        .expect("v2 catalog");
-    assert_eq!(v2_catalog.entries.len(), 1);
+        .expect("package catalog");
+    assert_eq!(catalog.entries.len(), 1);
     assert!(matches!(
-        v2_catalog.entries[0].source,
+        catalog.entries[0].source,
         ResolverCatalogSource::UserPackage { .. }
     ));
     drop(store);

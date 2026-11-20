@@ -308,7 +308,7 @@
         "backups.create": {
             "kind": "write",
             "capabilities": [
-                "backups.create.v2"
+                "backups.create.v1"
             ],
             "rustMethod": "backup_create",
             "requestType": "BackupCreateParams",
@@ -322,7 +322,7 @@
         "backups.restore": {
             "kind": "write",
             "capabilities": [
-                "backups.restore.v2"
+                "backups.restore.v1"
             ],
             "rustMethod": "backup_restore",
             "requestType": "BackupRestoreParams",
@@ -670,7 +670,7 @@
         "packages.planBulk": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_bulk",
             "requestType": "PackagePlanBulkParams",
@@ -685,7 +685,7 @@
             "kind": "write",
             "capabilities": [
                 "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_downgrade",
             "requestType": "PackagePlanDowngradeParams",
@@ -700,7 +700,7 @@
             "kind": "write",
             "capabilities": [
                 "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_install",
             "requestType": "PackagePlanInstallParams",
@@ -714,7 +714,7 @@
         "packages.planReinstall": {
             "kind": "write",
             "capabilities": [
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_reinstall",
             "requestType": "PackagePlanReinstallParams",
@@ -729,7 +729,7 @@
             "kind": "write",
             "capabilities": [
                 "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_remove",
             "requestType": "PackagePlanRemoveParams",
@@ -744,7 +744,7 @@
             "kind": "write",
             "capabilities": [
                 "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_resolve",
             "requestType": "PackagePlanResolveParams",
@@ -759,7 +759,7 @@
             "kind": "write",
             "capabilities": [
                 "packages.plan.v1",
-                "packages.plan.v2"
+                "packages.plan.v1"
             ],
             "rustMethod": "package_plan_upgrade",
             "requestType": "PackagePlanUpgradeParams",
@@ -787,7 +787,7 @@
         "packages.queryProjectCandidates": {
             "kind": "read",
             "capabilities": [
-                "packages.candidates.v2"
+                "packages.candidates.v1"
             ],
             "rustMethod": "package_query_project_candidates",
             "requestType": "ProjectCandidateRequest",
@@ -885,7 +885,7 @@
         "projectTemplates.export": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_export",
             "requestType": "ProjectTemplatesExportParams",
@@ -914,7 +914,7 @@
         "projectTemplates.list": {
             "kind": "read",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_list",
             "requestType": "ProjectTemplatesListParams",
@@ -928,7 +928,7 @@
         "projectTemplates.remove": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_remove",
             "requestType": "ProjectTemplatesRemoveParams",
@@ -942,7 +942,7 @@
         "projectTemplates.save": {
             "kind": "write",
             "capabilities": [
-                "projectTemplates.v2"
+                "projectTemplates.v1"
             ],
             "rustMethod": "project_templates_save",
             "requestType": "ProjectTemplatesSaveParams",
@@ -1424,7 +1424,7 @@
         "unity.hub.open": {
             "kind": "write",
             "capabilities": [
-                "unity.hub.open.v2"
+                "unity.hub.open.v1"
             ],
             "rustMethod": "unity_hub_open",
             "requestType": "UnityHubOpenParams",

@@ -15,7 +15,7 @@
         "new-independent-optional-interface",
         "new-negotiated-capability",
         "new-optional-function-group",
-        "new-world-or-version"
+        "new-independent-world"
     ],
     "breakingChanges": [
         "record-field-add", "record-field-remove", "record-field-change",

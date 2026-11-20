@@ -58,8 +58,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
             if !matches!(
                 request.action,
                 PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade
-            ) || request.plan_version != alcomd_application::PackagePlanVersion::V2
-            {
+            ) {
                 return Err(M4Error::new(M4ErrorCode::InvalidInput));
             }
             let version = request
@@ -162,7 +161,6 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         };
         let mut draft = prepare_legacy_removals(&self.cache, &snapshot, &catalog, draft).await?;
         if let Some(target) = override_target {
-            draft.change_set.format_version = 4;
             draft.change_set.unity_compatibility_overrides = vec![target];
             draft.change_set.validate_bounds()?;
             draft.change_set_fingerprint = Sha256::digest(
@@ -705,9 +703,6 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             crate::plan::preserves_repaired_locks(plan.action),
         )?;
         if Sha256::digest(&new_manifest).as_slice() != plan.change_set.vpm_manifest_sha256 {
-            if plan.change_set.format_version < 3 {
-                return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
-            }
             return Err(M4Error::with_subreason(
                 M4ErrorCode::PlanStale,
                 "project_snapshot_changed",
@@ -1074,10 +1069,6 @@ async fn revalidate(
     catalog: &ResolverCatalog,
     plan: &PackagePlanRecord,
 ) -> Result<crate::ProjectPackageSnapshot, M4Error> {
-    if plan.state == alcomd_application::PlanState::Unapplied && plan.change_set.format_version < 3
-    {
-        return stale("implementation_basis_changed");
-    }
     if project.revision != plan.project_revision {
         return Err(M4Error::with_subreason(
             M4ErrorCode::PlanStale,
@@ -1093,7 +1084,7 @@ async fn revalidate(
     }
     for source in &plan.source_set {
         if matches!(source, alcomd_application::PackageSourcePin::UserPackage(_)) {
-            // A v2 User Package plan is authorized by its immutable owned cache digest.
+            // A User Package plan is authorized by its immutable owned cache digest.
             // Registry refresh/removal must not rewrite or invalidate an existing plan.
             continue;
         }
@@ -1826,9 +1817,6 @@ fn verify_plan_legacy(
     installed: &BTreeMap<String, LegacyMetadata>,
     after_replace: bool,
 ) -> Result<(), M4Error> {
-    if plan.change_set.format_version < 3 {
-        return Ok(());
-    }
     verify_archive_plan_metadata(payload_root, catalog, plan)?;
     let mut declarations = pinned_legacy_declarations(cache, catalog, &plan.source_set)?;
     for mutation in &plan.change_set.mutations {
@@ -1838,25 +1826,20 @@ fn verify_plan_legacy(
         }
     }
     exclude_installed_legacy_paths(&mut declarations, installed)?;
-    if plan.change_set.format_version == 3 {
-        crate::legacy::verify_all_absent(root, declarations.values())?;
-    }
-    if plan.change_set.format_version == 4 {
-        let actual = crate::legacy::collect_removals(root, &declarations)?;
-        let expected = if after_replace {
-            &[][..]
-        } else {
-            &plan.change_set.legacy_removals[..]
-        };
-        if actual != expected
-            || !legacy_package_ids(&declarations)?.into_iter().eq(plan
-                .change_set
-                .legacy_packages
-                .iter()
-                .cloned())
-        {
-            return stale("project_snapshot_changed");
-        }
+    let actual = crate::legacy::collect_removals(root, &declarations)?;
+    let expected = if after_replace {
+        &[][..]
+    } else {
+        &plan.change_set.legacy_removals[..]
+    };
+    if actual != expected
+        || !legacy_package_ids(&declarations)?.into_iter().eq(plan
+            .change_set
+            .legacy_packages
+            .iter()
+            .cloned())
+    {
+        return stale("project_snapshot_changed");
     }
     Ok(())
 }
@@ -2574,30 +2557,10 @@ mod tests {
         std::fs::remove_dir_all(root).expect("fixture cleanup");
     }
 
-    #[tokio::test]
-    async fn old_unaccepted_plan_is_stale_before_filesystem_or_source_reads() {
-        let mut old = plan(PackageMutationKind::Install);
-        old.state = PlanState::Unapplied;
-        let project = project_with_locked_version("1.0.0");
-        let error = revalidate(
-            &VpmReader::new().expect("reader"),
-            &project,
-            &ResolverCatalog {
-                prefer_prerelease: false,
-                entries: Vec::new(),
-                complete: true,
-            },
-            &old,
-        )
-        .await
-        .expect_err("old basis is stale");
-        assert_eq!(error.code(), M4ErrorCode::PlanStale);
-        assert_eq!(error.subreason(), Some("implementation_basis_changed"));
-    }
     use alcomd_application::{
         DependencyIdentity, ManifestState, PackageChangeSet, PackageMutation, PackagePlanRecord,
-        PackagePlanVersion, PlanState, PrincipalId, ProjectId, ProjectObservation, ProjectType,
-        ResolverCatalogEntry, ResolverCatalogSource, Revision,
+        PlanState, PrincipalId, ProjectId, ProjectObservation, ProjectType, ResolverCatalogEntry,
+        ResolverCatalogSource, Revision,
     };
 
     #[test]
@@ -2686,7 +2649,6 @@ mod tests {
             std::fs::write(assets.join(name), name.as_bytes()).expect("seed a legacy asset");
         }
         let mut plan = plan(PackageMutationKind::Install);
-        plan.change_set.format_version = 4;
         plan.change_set.mutations.clear();
         plan.change_set.legacy_removals = crate::legacy::collect_removals(
             &root,
@@ -2847,7 +2809,6 @@ mod tests {
             std::fs::create_dir_all(path).expect("owned directories");
         }
         let mut plan = plan(PackageMutationKind::Remove);
-        plan.change_set.format_version = 4;
         plan.change_set.absent_removal_packages = vec!["com.example.fixture".into()];
         plan.change_set
             .validate_bounds()
@@ -2890,7 +2851,6 @@ mod tests {
         ]);
 
         let mut request = package_request(PlanAction::Reinstall);
-        request.plan_version = PackagePlanVersion::V2;
         request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
             "com.example.transitive".to_owned(),
         ]));
@@ -2994,7 +2954,6 @@ mod tests {
         ]);
         catalog.entries[0].dependencies_json = r#"{"com.example.beta":"1.0.0"}"#.to_owned();
         let mut request = package_request(PlanAction::Bulk);
-        request.plan_version = PackagePlanVersion::V2;
         request.bulk_intents = vec![PackageBulkIntent::Reinstall {
             package_id: "com.example.beta".to_owned(),
             source: None,
@@ -3040,7 +2999,6 @@ mod tests {
             ("com.example.gamma", "1.0.0"),
         ]);
         let mut request = package_request(PlanAction::Bulk);
-        request.plan_version = PackagePlanVersion::V2;
         request.bulk_intents = vec![
             PackageBulkIntent::Reinstall {
                 package_id: "com.example.beta".to_owned(),
@@ -3115,7 +3073,6 @@ mod tests {
         let (root, project, snapshot) = planning_fixture(&installed, &installed);
         let cache = PackageCache::new(root.join("owned-cache")).expect("cache");
         let mut request = package_request(PlanAction::Bulk);
-        request.plan_version = PackagePlanVersion::V2;
         request.bulk_intents = installed
             .iter()
             .map(|(package_id, _)| PackageBulkIntent::Remove {
@@ -3198,7 +3155,6 @@ mod tests {
         let (over_root, over_project, over_snapshot) =
             planning_fixture(&installed_over, &installed_over);
         let mut reinstall = package_request(PlanAction::Reinstall);
-        reinstall.plan_version = PackagePlanVersion::V2;
         reinstall.reinstall_selection = Some(ReinstallSelection::All);
         let too_many = prepare_reinstall(
             &cache,
@@ -3241,7 +3197,6 @@ mod tests {
         ]);
         catalog.entries[0].dependencies_json = r#"{"com.example.beta":"1.0.0"}"#.into();
         let mut request = package_request(PlanAction::Bulk);
-        request.plan_version = PackagePlanVersion::V2;
         request.bulk_intents = vec![
             PackageBulkIntent::Remove {
                 package_id: "com.example.beta".into(),
@@ -3297,7 +3252,6 @@ mod tests {
             version_range: None,
             repository_id: None,
             include_prerelease: false,
-            plan_version: alcomd_application::PackagePlanVersion::V1,
             source_selector: None,
             reinstall_selection: None,
             reinstall_sources: Vec::new(),

@@ -718,7 +718,7 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
     ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send;
     fn list_project_view(
         &self,
-        owner: PrincipalId,
+        access: AccessContext,
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
         view: ProjectListView,
@@ -791,6 +791,13 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         cursor: Option<PackageCursor>,
         limit: u32,
     ) -> impl Future<Output = Result<PackagePage, M3Error>> + Send;
+    fn replay_repository_refresh(
+        &self,
+        caller: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<SyncWrite<RepositoryRecord>>, M3Error>> + Send;
     fn refresh_repository(
         &self,
         owner: PrincipalId,
@@ -1178,8 +1185,13 @@ impl AccessContext {
     /// Creates the M2 built-in official-client context.
     #[must_use]
     pub fn local_owner() -> Self {
+        Self::interactive_client(PrincipalId::local_owner())
+    }
+
+    /// Business permissions shared by the GUI, CLI and authenticated MCP clients.
+    pub(crate) fn interactive_client(principal: PrincipalId) -> Self {
         let mut access = Self::new(
-            PrincipalId::local_owner(),
+            principal,
             [
                 Permission::McpClientsRead,
                 Permission::McpClientsManage,
@@ -1223,6 +1235,10 @@ impl AccessContext {
     }
     pub fn is_mcp_client(&self) -> bool {
         self.mcp_identity
+    }
+
+    pub(crate) fn is_interactive_client(&self) -> bool {
+        self.is_mcp_client() || self.principal == PrincipalId::local_owner()
     }
 
     /// Returns the authenticated transport-neutral Principal.
@@ -1688,8 +1704,12 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         expected_sequence: Option<u64>,
     ) -> Result<ProjectViewPage, M3Error> {
         require_m3(access, Permission::ProjectsRead)?;
-        if access.is_mcp_client() {
-            return Err(M3Error::new(M3ErrorCode::PermissionDenied));
+        if access.oauth_guard().is_none()
+            && cursor
+                .as_ref()
+                .is_some_and(|c| c.authorization_binding.is_some())
+        {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
         }
         validate_m3_limit(limit)?;
         if cursor.is_some() != expected_sequence.is_some()
@@ -1702,13 +1722,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         }
         let mut view_page = self
             .store
-            .list_project_view(
-                access.principal().clone(),
-                cursor,
-                limit,
-                view,
-                expected_sequence,
-            )
+            .list_project_view(access.clone(), cursor, limit, view, expected_sequence)
             .await?;
         self.observe_project_directories(&mut view_page.page).await;
         Ok(view_page)
@@ -2129,7 +2143,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         key: IdempotencyKey,
     ) -> Result<RepositoryMoveResult, M3Error> {
         require_m3(access, Permission::RepositoriesManage)?;
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_interactive_client() {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         if builtin_repository(movement.id).is_some()
@@ -2320,7 +2334,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         const REORDER_WINDOW: usize = 2 * DOWNLOAD_CONCURRENCY;
 
         require_m3(access, Permission::RepositoriesManage)?;
-        if access.principal() != &PrincipalId::local_owner() {
+        if !access.is_interactive_client() {
             return Err(M3Error::new(M3ErrorCode::PermissionDenied));
         }
         let invalid = || M3Error::new(M3ErrorCode::RepositorySourceInvalid);
@@ -2538,15 +2552,20 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
         expected: Revision,
         key: IdempotencyKey,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
-        let current = self
+        if let Some(receipt) = self
             .store
-            .get_repository(access.principal().clone(), id)
-            .await?;
-        let current_revision = current.revision;
-        match self
-            .fetch_repository_refresh(access.principal().clone(), id, current)
+            .replay_repository_refresh(access.principal().clone(), id, expected, key.clone())
             .await?
         {
+            return Ok(receipt);
+        }
+        let owner = workflow_resource_owner(access.principal());
+        let current = self.store.get_repository(owner.clone(), id).await?;
+        if current.revision != expected {
+            return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+        }
+        let indexed = current.resolver_indexed;
+        match self.fetch_repository_refresh(owner, id, current).await? {
             RepositoryReadOutcome::Fresh(observation) => {
                 self.store
                     .refresh_repository(
@@ -2560,8 +2579,8 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                     .await
             }
             RepositoryReadOutcome::NotModified(validators) => {
-                if current_revision != expected {
-                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+                if !indexed {
+                    return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
                 }
                 self.store
                     .update_repository_validators(
@@ -2737,7 +2756,7 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
 
 fn require_repository_credentials(access: &AccessContext) -> Result<(), M3Error> {
     require_m3(access, Permission::RepositoriesManage)?;
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(M3Error::new(M3ErrorCode::PermissionDenied));
     }
     Ok(())

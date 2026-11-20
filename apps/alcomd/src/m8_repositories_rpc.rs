@@ -123,23 +123,6 @@ pub(super) async fn dispatch(
                 params.idempotency_key,
             )
         }
-        rpc::METHOD_MCP_REPOSITORIES_REFRESH => {
-            let Ok(params) = serde_json::from_value::<rpc::RepositoryMutationParams>(params) else {
-                return invalid(id);
-            };
-            let Some((id_target, expected)) =
-                target(&params.repository_id, params.expected_revision)
-            else {
-                return invalid(id);
-            };
-            (
-                app::McpRepositoryCommand::Refresh {
-                    id: id_target,
-                    expected,
-                },
-                params.idempotency_key,
-            )
-        }
         rpc::METHOD_MCP_REPOSITORIES_REMOVE => {
             let Ok(params) = serde_json::from_value::<rpc::McpRepositoryRemoveParams>(params)
             else {

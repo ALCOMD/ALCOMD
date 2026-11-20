@@ -186,6 +186,7 @@ pub trait OAuthStore: McpIdentityStore {
     ) -> impl Future<Output = Result<OAuthRegistrationPage, OAuthError>> + Send;
     fn oauth_set_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationSetParams,
         id: String,
         secret_hash: Option<[u8; 32]>,
@@ -193,6 +194,7 @@ pub trait OAuthStore: McpIdentityStore {
     ) -> impl Future<Output = Result<OAuthRegistration, OAuthError>> + Send;
     fn oauth_revoke_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationRevokeParams,
         now: u64,
     ) -> impl Future<Output = Result<OAuthRegistration, OAuthError>> + Send;
@@ -253,7 +255,7 @@ struct Pending {
     code_hash: Option<[u8; 32]>,
     code_expires: u64,
     consumed: bool,
-    decision: Option<(String, [u8; 32])>,
+    decision: Option<(PrincipalId, String, [u8; 32])>,
     approval_fingerprint: Option<String>,
 }
 
@@ -291,7 +293,7 @@ fn hash(secret: &str) -> [u8; 32] {
     mcp_credential_hash(secret)
 }
 fn owner(access: &AccessContext, write: bool) -> Result<(), OAuthError> {
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(OAuthError::Denied);
     }
     access
@@ -459,7 +461,13 @@ impl<S: OAuthStore> OAuthApplication<S> {
         let secret = input.confidential.then_some(entropy.secret);
         let registration = self
             .store
-            .oauth_set_registration(input, entropy.id, secret.as_deref().map(hash), now)
+            .oauth_set_registration(
+                access.principal().clone(),
+                input,
+                entropy.id,
+                secret.as_deref().map(hash),
+                now,
+            )
             .await?;
         Ok(OAuthRegistrationResult {
             registration,
@@ -475,7 +483,9 @@ impl<S: OAuthStore> OAuthApplication<S> {
         owner(access, true)?;
         key(&input.idempotency_key)?;
         validate_id(&input.oauth_client_id)?;
-        self.store.oauth_revoke_registration(input, now).await
+        self.store
+            .oauth_revoke_registration(access.principal().clone(), input, now)
+            .await
     }
     pub async fn list(
         &self,
@@ -622,8 +632,8 @@ impl<S: OAuthStore> OAuthApplication<S> {
             return Err(OAuthError::Expired);
         }
         let digest = hash(&serde_json::to_string(&input).map_err(|_| OAuthError::InvalidInput)?);
-        if let Some((key, fp)) = &p.decision {
-            if key == &input.idempotency_key && fp == &digest {
+        if let Some((caller, key, fp)) = &p.decision {
+            if caller == access.principal() && key == &input.idempotency_key && fp == &digest {
                 return Ok(OAuthRequestDecision {
                     request_id: p.id.clone(),
                     status: if input.approve { "approved" } else { "denied" }.into(),
@@ -642,7 +652,7 @@ impl<S: OAuthStore> OAuthApplication<S> {
         p.denied = !input.approve;
         p.approval_fingerprint = Some(fp);
         p.approved = input.approve;
-        p.decision = Some((input.idempotency_key, digest));
+        p.decision = Some((access.principal().clone(), input.idempotency_key, digest));
         Ok(OAuthRequestDecision {
             request_id: p.id.clone(),
             status: status(p).into(),

@@ -398,7 +398,7 @@ async fn runtime_observations_use_real_authenticated_connections_and_revocable_h
         "Core activity fixture",
         &profile,
         &[
-            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
             "alcomd:mcp-transport/observations@1.0.0",
         ],
@@ -837,7 +837,7 @@ async fn optional_management_permissions_allow_zero_grant_start_and_restrict_dat
         "MCP management fixture",
         &profile,
         &[
-            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
             "alcomd:mcp-transport/observations@1.0.0",
         ],
@@ -1041,7 +1041,7 @@ async fn management_component_uses_real_core_grants_and_loses_access_after_revoc
         "MCP management fixture",
         "[permissions]\nrequired = [\"mcp.clients.read\"]\noptional = [\"mcp.clients.manage\",\"projects.read\"]\n\n[ui]\nprotocol = \"portable-v1\"\n",
         &[
-            "alcomd:mcp-management/clients@2.0.0",
+            "alcomd:mcp-management/clients@1.0.0",
             "alcomd:mcp-runtime/observations@1.0.0",
             "alcomd:mcp-transport/observations@1.0.0",
         ],
@@ -1653,7 +1653,7 @@ async fn native_ui_connection(ipc: &IpcConfig) -> alcomd_platform::IpcStream {
         },
         capabilities: vec![
             alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1.into(),
-            alcomd_protocol::CAPABILITY_MCP_CLIENTS_V2.into(),
+            alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.into(),
         ],
     };
     send_ui_request(

@@ -23,7 +23,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 13;
+    pub const SCHEMA_VERSION: u32 = 1;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -182,7 +182,6 @@ struct RawAppearance {
 struct RawPackages {
     hidden_repository_packages: Vec<ConfigRepositoryPackages>,
     show_prerelease: bool,
-    #[serde(default)]
     prefer_prerelease: bool,
     hidden_repository_ids: Vec<String>,
     hide_local_user_packages: bool,
@@ -304,7 +303,7 @@ fn parse_settings(text: &str) -> Result<ConfigSnapshot, ConfigStoreError> {
             packages: ConfigPackageSettings {
                 hidden_repository_packages: raw.packages.hidden_repository_packages,
                 show_prerelease: raw.packages.show_prerelease,
-                prefer_prerelease: raw.packages.show_prerelease && raw.packages.prefer_prerelease,
+                prefer_prerelease: raw.packages.prefer_prerelease,
                 hidden_repository_ids: raw.packages.hidden_repository_ids,
                 hide_local_user_packages: raw.packages.hide_local_user_packages,
             },
@@ -753,7 +752,7 @@ mod tests {
             Some(vec!["sensitive-argv-marker".to_owned()]);
         let text = String::from_utf8(serialize_settings(&snapshot))
             .expect("settings UTF-8")
-            .replace("schema = 13", "schema = 'sensitive-schema-marker'");
+            .replace("schema = 1", "schema = 'sensitive-schema-marker'");
         fs::write(&path, text).expect("isolated malformed settings");
         let error = FileConfigStore::new(path.clone())
             .load()
@@ -815,7 +814,7 @@ mod tests {
         let canonical = String::from_utf8(serialize_settings(&snapshot)).expect("UTF-8");
         let variants = [
             canonical
-                .replace("schema = 13", "schema = 13 # current schema")
+                .replace("schema = 1", "schema = 1 # current schema")
                 .replace("mode = \"system\"", "mode = 'system' # same value"),
             canonical
                 .replace("[appearance]", "[\"appearance\"]")
@@ -998,7 +997,7 @@ mod tests {
 
     #[test]
     fn backup_defaults_and_discovery_roundtrip_reopen_and_reject_invalid_files() {
-        let root = temporary_path("config8-project-backup-defaults");
+        let root = temporary_path("config-project-backup-defaults");
         let path = root.join("settings.toml");
         let store = FileConfigStore::new(path.clone());
         let original = store.initialize().expect("current defaults");
@@ -1054,7 +1053,7 @@ mod tests {
                 .replace("fullscreen = false\n", "")
                 .replace("fullscreen = true\n", "")
                 .replace("hidden_repository_packages = []\n", "")
-                .replace("schema = 13", "schema = 7")
+                .replace("schema = 1", "schema = 7")
                 .replace("\n[network]\nproxy_mode = \"system\"\n", "")
                 .replace("\n[integrations]\nhandle_vcc_links = true\n", ""),
         ] {
@@ -1071,7 +1070,7 @@ mod tests {
     #[tokio::test]
     async fn window_preference_is_durable_and_invalid_mixed_updates_leave_accepted_file() {
         use alcomd_application::{ConfigUnityUpdate, ConfigWindowUpdate};
-        let root = temporary_path("config7-window-save");
+        let root = temporary_path("config-window-save");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let mut expected = default_snapshot();
@@ -1197,7 +1196,7 @@ mod tests {
     #[tokio::test]
     async fn arguments_reopen_empty_clear_and_atomic_failure() {
         use alcomd_application::ConfigUnityUpdate;
-        let root = temporary_path("config6-default-arguments");
+        let root = temporary_path("config-default-arguments");
         let path = root.join("settings.toml");
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let app = M7OfficialApplication::new(
@@ -1284,7 +1283,7 @@ mod tests {
 
     #[test]
     fn paths_roundtrip_and_reject_invalid_storage() {
-        let root = temporary_path("config5-paths");
+        let root = temporary_path("config-paths");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let store = FileConfigStore::new(path.clone());
@@ -1322,7 +1321,7 @@ mod tests {
     #[tokio::test]
     async fn directory_changes_are_durable_and_combined_byte_overflow_keeps_accepted_file() {
         use alcomd_application::ConfigPathUpdate;
-        let root = temporary_path("config5-durable-directory-update");
+        let root = temporary_path("config-durable-directory-update");
         let path = root.join("settings.toml");
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let make_app = || {
@@ -1514,7 +1513,7 @@ mod tests {
         fs::rename(&path, path.with_extension("toml.bak")).expect("interrupted replacement");
         fs::write(
             path.with_extension("toml.new"),
-            b"schema = 13
+            b"schema = 1
 part",
         )
         .expect("partial temporary");
@@ -1562,7 +1561,7 @@ part",
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 13\n"));
+            assert!(encoded.starts_with("schema = 1\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1691,7 +1690,7 @@ part",
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 13\n"));
+            assert!(encoded.starts_with("schema = 1\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1795,8 +1794,8 @@ part",
         let current = String::from_utf8(serialize_settings(&snapshot)).expect("current settings");
         for (file, other) in [(&path, &backup), (&backup, &temporary), (&temporary, &path)] {
             fs::write(other, &current).expect("current evidence");
-            for version in (0..=12).chain([14, u64::MAX]) {
-                let old = current.replace("schema = 13", &format!("schema = {version}"));
+            for version in [0, 2, u64::MAX] {
+                let old = current.replace("schema = 1", &format!("schema = {version}"));
                 fs::write(file, &old).expect("noncurrent evidence");
                 assert_eq!(preflight_config(&path), Err(ConfigStoreError::Corrupt));
                 assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -1831,8 +1830,8 @@ part",
     }
 
     #[test]
-    fn current_config_rejects_removed_density_and_future_versions_without_rewriting() {
-        let root = temporary_path("density-current-rejection");
+    fn invalid_settings_leave_the_complete_file_intact() {
+        let root = temporary_path("invalid-settings");
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create fixture");
@@ -1842,11 +1841,17 @@ part",
             .map(|value| {
                 current.replace(
                     "motion = \"system\"\n",
-                    &format!("density = {value}\nmotion = \"system\"\n"),
+                    &format!("unrecognized_key = {value}\nmotion = \"system\"\n"),
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 13", "schema = 14"));
+        invalid.push(current.replace("prefer_prerelease = false\n", ""));
+        invalid.push(
+            current
+                .replace("show_prerelease = true", "show_prerelease = false")
+                .replace("prefer_prerelease = false", "prefer_prerelease = true"),
+        );
+        invalid.push(current.replace("schema = 1", "schema = 2"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -2075,7 +2080,7 @@ part",
 
     #[test]
     fn package_preferences_keep_independent_base_limit_and_total_file_limit() {
-        let root = temporary_path("config13-package-preferences");
+        let root = temporary_path("config1-package-preferences");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let store = FileConfigStore::new(path.clone());
@@ -2097,7 +2102,7 @@ part",
             Ok(saved.clone())
         );
         let bytes = fs::read_to_string(&path).expect("saved");
-        let invalid = bytes.replace("schema = 13", "schema = 12");
+        let invalid = bytes.replace("schema = 1", "schema = 12");
         assert!(parse_settings(&invalid).is_err());
         let mut extra = saved.clone();
         extra.settings.unity.default_launch_arguments = Some(vec!["x".repeat(4096); 5]);
@@ -2168,7 +2173,7 @@ part",
 
     #[test]
     fn fullscreen_roundtrips_and_is_required() {
-        let root = temporary_path("config10-fullscreen");
+        let root = temporary_path("config-fullscreen");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let store = FileConfigStore::new(path.clone());
@@ -2194,7 +2199,7 @@ part",
 
     #[test]
     fn vcc_opt_out_is_strict_and_durable() {
-        let root = temporary_path("config11-vcc-links");
+        let root = temporary_path("config-vcc-links");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let store = FileConfigStore::new(path.clone());
@@ -2224,7 +2229,7 @@ part",
 
     #[test]
     fn global_proxy_is_strict_and_durable() {
-        let root = temporary_path("config12-proxy");
+        let root = temporary_path("config-proxy");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let store = FileConfigStore::new(path.clone());

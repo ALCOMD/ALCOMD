@@ -553,8 +553,8 @@ impl Steps {
             .context("Core did not report a valid native migration check")?;
         ensure!(
             health.schema == 1
-                && health.data_schema == 46
-                && health.config_schema == 13
+                && health.data_schema == 1
+                && health.config_schema == 1
                 && health.records == export.records,
             "native state check or reconciliation is incomplete"
         );

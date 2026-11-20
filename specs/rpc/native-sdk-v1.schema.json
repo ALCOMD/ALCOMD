@@ -14,8 +14,7 @@
                     "additionalProperties": false,
                     "required": [
                         "kind",
-                        "packageId",
-                        "includePrerelease"
+                        "packageId"
                     ],
                     "properties": {
                         "kind": {
@@ -54,8 +53,7 @@
                     "additionalProperties": false,
                     "required": [
                         "kind",
-                        "packageId",
-                        "includePrerelease"
+                        "packageId"
                     ],
                     "properties": {
                         "kind": {
@@ -143,56 +141,23 @@
                 "vpmManifestSha256"
             ],
             "if": {
-                "required": [
-                    "legacyRemovals"
-                ]
-            },
-            "then": {
-                "properties": {
-                    "formatVersion": {
-                        "const": 4
-                    }
-                }
-            },
-            "allOf": [
-                {
-                    "if": {
-                        "required": [
-                            "unityCompatibilityOverrides"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "formatVersion": {
-                                "const": 4
-                            }
-                        }
-                    }
+                    "required": [
+                        "removalConflicts"
+                    ]
                 },
-                {
-                    "if": {
-                        "required": [
-                            "removalConflicts"
-                        ]
-                    },
-                    "then": {
-                        "properties": {
-                            "formatVersion": {
-                                "const": 4
-                            },
-                            "mutations": {
-                                "items": {
-                                    "properties": {
-                                        "kind": {
-                                            "const": "remove"
-                                        }
+                "then": {
+                    "properties": {
+                        "mutations": {
+                            "items": {
+                                "properties": {
+                                    "kind": {
+                                        "const": "remove"
                                     }
                                 }
                             }
                         }
                     }
-                }
-            ],
+                },
             "properties": {
                 "removalConflicts": {
                     "type": "array",
@@ -255,12 +220,7 @@
                     }
                 },
                 "formatVersion": {
-                    "enum": [
-                        1,
-                        2,
-                        3,
-                        4
-                    ]
+                    "const": 1
                 },
                 "mutations": {
                     "type": "array",
@@ -351,9 +311,6 @@
                     "oneOf": [
                         {
                             "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json#/$defs/sourcePin"
-                        },
-                        {
-                            "$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/userPackageSourcePinV2"
                         },
                         {
                             "type": "null"
@@ -701,19 +658,19 @@
             ],
             "properties": {
                 "configSchema": {
-                    "const": 13
+                    "const": 1
                 },
                 "revision": {
                     "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-official-gui.json#/$defs/revision"
                 },
                 "settings": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/settings"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v1.json#/$defs/settings"
                 },
                 "unityHub": {
                     "$ref": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-official-gui.json#/$defs/unityHubLocation"
                 },
                 "directories": {
-                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v13.json#/$defs/storageDirectories"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v1.json#/$defs/storageDirectories"
                 }
             }
         },

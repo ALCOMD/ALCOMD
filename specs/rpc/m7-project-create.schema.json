@@ -21,13 +21,13 @@
     "x-alcomd-project-create-dependency-permissions": ["packages.read", "repositories.read", "packages.manage"],
     "x-alcomd-method-capabilities": {
         "projects.create": "projects.create.v1",
-        "projectTemplates.list": "projectTemplates.v2",
-        "projectTemplates.save": "projectTemplates.v2",
-        "projectTemplates.remove": "projectTemplates.v2",
-        "projectTemplates.export": "projectTemplates.v2"
+        "projectTemplates.list": "projectTemplates.v1",
+        "projectTemplates.save": "projectTemplates.v1",
+        "projectTemplates.remove": "projectTemplates.v1",
+        "projectTemplates.export": "projectTemplates.v1"
     },
     "x-alcomd-mcp-method-capabilities": {
-        "projectTemplates.list": "projectTemplates.v2",
+        "projectTemplates.list": "projectTemplates.v1",
         "projectTemplates.save": "project-templates.edit.v1",
         "projectTemplates.remove": "project-templates.edit.v1",
         "projectTemplates.export": "project-templates.edit.v1"

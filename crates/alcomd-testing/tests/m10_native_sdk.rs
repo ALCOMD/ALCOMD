@@ -43,11 +43,11 @@ async fn native_sdk_projects_packages_tasks_and_live_events_agree_on_real_core()
     assert_eq!(rust.hello_result().rpc_version, RPC_VERSION);
     assert_eq!(
         rust.hello_result().data_schema,
-        Some(alcomd_store::CURRENT_DATA_SCHEMA)
+        alcomd_store::CURRENT_DATA_SCHEMA
     );
     assert_eq!(
         rust.hello_result().config_schema,
-        Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
+        alcomd_protocol::CONFIG_SCHEMA_VERSION
     );
 
     let mut identities = Vec::new();

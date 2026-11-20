@@ -448,7 +448,7 @@ where
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityRead)?;
         require(access, Permission::ProjectsUnityMigrate)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         let project = self
             .store
             .get_project(access.principal().clone(), project_id)
@@ -515,7 +515,7 @@ where
         key: IdempotencyKey,
     ) -> Result<UnityMigrationApplyOutcome, M7UnityMigrationError> {
         require(access, Permission::ProjectsUnityMigrate)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         if let Some(outcome) = self
             .store
             .replay_unity_migration_apply(access.principal().clone(), plan_id, key.clone())
@@ -604,7 +604,7 @@ where
             return Ok(());
         }
         if record.phase == UnityMigrationPhase::Accepted {
-            let access = AccessContext::local_owner();
+            let access = AccessContext::new(record.plan.owner.clone(), []);
             let project = match self
                 .store
                 .get_project(
@@ -847,7 +847,7 @@ where
                 | UnityMigrationPhase::UnityExited
         ) {
             loop {
-                let access = AccessContext::local_owner();
+                let access = AccessContext::new(record.plan.owner.clone(), []);
                 let writer = match self
                     .writer
                     .observe_backup_source(&access, record.plan.draft.project.project_id)
@@ -957,7 +957,7 @@ where
             }
         }
         if record.phase == UnityMigrationPhase::ProjectReobserved {
-            let access = AccessContext::local_owner();
+            let access = AccessContext::new(record.plan.owner.clone(), []);
             let writer = match self
                 .writer
                 .observe_backup_source(&access, record.plan.draft.project.project_id)
@@ -1244,8 +1244,9 @@ fn require(access: &AccessContext, permission: Permission) -> Result<(), M7Unity
         .map_err(|cause| error(M7UnityMigrationErrorCode::PermissionDenied).with_source(cause))
 }
 
-fn local_owner(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
-    (access.principal().as_str() == PrincipalId::LOCAL_OWNER)
+fn require_interactive_client(access: &AccessContext) -> Result<(), M7UnityMigrationError> {
+    access
+        .is_interactive_client()
         .then_some(())
         .ok_or_else(|| error(M7UnityMigrationErrorCode::PermissionDenied))
 }

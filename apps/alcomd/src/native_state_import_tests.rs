@@ -84,8 +84,8 @@ async fn restores_into_a_new_state_and_reconciles_after_reopen() {
             .await
             .expect("reconcile reopened state")
     );
-    assert_eq!(imported["dataSchema"], 46);
-    assert_eq!(imported["configSchema"], 13);
+    assert_eq!(imported["dataSchema"], 1);
+    assert_eq!(imported["configSchema"], 1);
     let settings =
         fs::read_to_string(destination.join("config/settings.toml")).expect("imported settings");
     assert!(settings.contains("show_prerelease = false"));

@@ -1,6 +1,7 @@
 use super::{
-    CandidateChoice, CandidateEligibility, CandidateInstalled, CandidateRelation,
-    CandidateSourceOverride, CandidateSummary, CandidateUpdate, PackageSourceSelector,
+    CandidateChoice, CandidateEligibility, CandidateEvidence, CandidateInstalled,
+    CandidateRelation, CandidateSourceOverride, CandidateSummary, CandidateUpdate,
+    PackageSourceSelector,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -16,15 +17,17 @@ const MAX_TARGETS: usize = 256;
 pub enum CandidateBulkIntent {
     Install {
         package_id: String,
-        version_range: String,
-        source: PackageSourceSelector,
-        include_prerelease: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<PackageSourceSelector>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
     },
     Upgrade {
         package_id: String,
-        version_range: String,
-        source: PackageSourceSelector,
-        include_prerelease: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        source: Option<PackageSourceSelector>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include_prerelease: Option<bool>,
     },
     Remove {
         package_id: String,
@@ -73,7 +76,7 @@ fn update_choice(row: &CandidateSummary, stable: bool) -> (&CandidateChoice, &Ca
     }
 }
 
-fn intent(row: &CandidateSummary, stable: bool) -> Option<CandidateBulkIntent> {
+fn target(row: &CandidateSummary, stable: bool) -> Option<&CandidateEvidence> {
     let (choice, update) = update_choice(row, stable);
     let candidate = match (&row.installed, choice, update) {
         (CandidateInstalled::Locked { .. }, _, CandidateUpdate::Target { candidate })
@@ -85,21 +88,29 @@ fn intent(row: &CandidateSummary, stable: bool) -> Option<CandidateBulkIntent> {
     {
         return None;
     }
+    Some(candidate)
+}
+
+fn intent(
+    row: &CandidateSummary,
+    stable: bool,
+    sources: &HashMap<&str, &PackageSourceSelector>,
+) -> Option<CandidateBulkIntent> {
+    target(row, stable)?;
     let package_id = row.package_id.clone();
-    let version_range = format!("={}", candidate.version);
-    let source = candidate.source.clone();
-    let include_prerelease = !stable;
+    let source = sources
+        .get(package_id.as_str())
+        .map(|source| (*source).clone());
+    let include_prerelease = stable.then_some(false);
     Some(if matches!(row.installed, CandidateInstalled::Absent) {
         CandidateBulkIntent::Install {
             package_id,
-            version_range,
             source,
             include_prerelease,
         }
     } else {
         CandidateBulkIntent::Upgrade {
             package_id,
-            version_range,
             source,
             include_prerelease,
         }
@@ -109,6 +120,7 @@ fn intent(row: &CandidateSummary, stable: bool) -> Option<CandidateBulkIntent> {
 fn update_all(
     items: &[CandidateSummary],
     stable: bool,
+    sources: &HashMap<&str, &PackageSourceSelector>,
     catalog_complete: bool,
 ) -> CandidateBulkAction {
     let mut action = CandidateBulkAction::default();
@@ -123,7 +135,7 @@ fn update_all(
                 choice,
                 CandidateChoice::Unknown { .. } | CandidateChoice::Ambiguous { .. }
             );
-        if let Some(intent) = intent(row, stable) {
+        if let Some(intent) = intent(row, stable, sources) {
             action.target_count += 1;
             if action.target_count <= MAX_TARGETS {
                 action.intents.push(intent);
@@ -145,23 +157,10 @@ fn update_all(
     action
 }
 
-fn version_targets(
-    action: &CandidateBulkAction,
-) -> impl Iterator<Item = (&str, &str, &PackageSourceSelector)> {
-    action.intents.iter().filter_map(|intent| match intent {
-        CandidateBulkIntent::Install {
-            package_id,
-            version_range,
-            source,
-            ..
-        }
-        | CandidateBulkIntent::Upgrade {
-            package_id,
-            version_range,
-            source,
-            ..
-        } => Some((package_id.as_str(), version_range.as_str(), source)),
-        _ => None,
+fn targets_differ<'a>(mut rows: impl Iterator<Item = &'a CandidateSummary>) -> bool {
+    rows.any(|row| {
+        let identity = |stable| target(row, stable).map(|item| (&item.version, &item.source));
+        identity(false) != identity(true)
     })
 }
 
@@ -171,10 +170,19 @@ pub(super) fn bulk_actions(
     source_overrides: &[CandidateSourceOverride],
     catalog_complete: bool,
 ) -> CandidateBulkActions {
-    let update_all = update_all(items, false, catalog_complete);
-    let stable = self::update_all(items, true, catalog_complete);
+    let sources: HashMap<_, _> = source_overrides
+        .iter()
+        .map(|item| (item.package_id.as_str(), &item.source))
+        .collect();
+    let update_all = update_all(items, false, &sources, catalog_complete);
+    let stable = self::update_all(items, true, &sources, catalog_complete);
     let update_all_stable = (update_all.target_count != stable.target_count
-        || version_targets(&update_all).ne(version_targets(&stable)))
+        || (!update_all.intents.is_empty() || !stable.intents.is_empty())
+            && targets_differ(
+                items
+                    .iter()
+                    .filter(|row| !matches!(row.installed, CandidateInstalled::Absent)),
+            ))
     .then_some(stable);
     let ids: HashSet<&str> = selected_ids.iter().map(String::as_str).collect();
     let selected: Vec<_> = items
@@ -187,7 +195,7 @@ pub(super) fn bulk_actions(
     let install_update = |stable| {
         let intents: Vec<_> = selected
             .iter()
-            .filter_map(|row| intent(row, stable))
+            .filter_map(|row| intent(row, stable, &sources))
             .collect();
         CandidateBulkAction {
             target_count: intents.len(),
@@ -202,7 +210,8 @@ pub(super) fn bulk_actions(
     let latest = install_update(false);
     let stable = install_update(true);
     let install_update_stable = (latest.target_count != stable.target_count
-        || version_targets(&latest).ne(version_targets(&stable)))
+        || (!latest.intents.is_empty() || !stable.intents.is_empty())
+            && targets_differ(selected.iter().copied()))
     .then_some(stable);
     let remove = if selection_valid
         && selected
@@ -223,10 +232,6 @@ pub(super) fn bulk_actions(
             .iter()
             .all(|row| matches!(row.installed, CandidateInstalled::Locked { .. }))
     {
-        let sources: HashMap<_, _> = source_overrides
-            .iter()
-            .map(|item| (item.package_id.as_str(), &item.source))
-            .collect();
         selected
             .iter()
             .map(|row| CandidateBulkIntent::Reinstall {

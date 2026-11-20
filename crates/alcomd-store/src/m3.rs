@@ -49,24 +49,26 @@ const REPOSITORY_SET_DISPLAY_NAME: &str = "repositories.setDisplayName";
 
 struct RepositoryWriteScope<'a> {
     owner: &'a PrincipalId,
-    delegation: Option<(&'a app::McpRepositoryAuthority, app::McpRepositoryCommand)>,
+    authority: Option<&'a app::McpRepositoryAuthority>,
+    command: Option<app::McpRepositoryCommand>,
 }
 
 impl<'a> RepositoryWriteScope<'a> {
     fn owner(owner: &'a PrincipalId) -> Self {
         Self {
             owner,
-            delegation: None,
+            authority: None,
+            command: None,
         }
     }
 
     fn caller(&self) -> &PrincipalId {
-        self.delegation
-            .map_or(self.owner, |(authority, _)| &authority.caller)
+        self.authority
+            .map_or(self.owner, |authority| &authority.caller)
     }
 
     fn require(&self, connection: &Connection) -> Result<(), M3Error> {
-        if let Some((authority, _)) = self.delegation {
+        if let Some(authority) = self.authority {
             let denied = || M3Error::new(M3ErrorCode::PermissionDenied);
             let client = super::m8_tools::authenticate(connection, &authority.authentication)
                 .map_err(|_| denied())?;
@@ -88,11 +90,65 @@ impl<'a> RepositoryWriteScope<'a> {
         owner_method: &'static str,
         owner_fingerprint: impl FnOnce() -> Result<String, M3Error>,
     ) -> Result<(&'static str, String), M3Error> {
-        self.delegation.map_or_else(
+        self.command.map_or_else(
             || Ok((owner_method, owner_fingerprint()?)),
-            |(_, command)| repository_command_identity(command),
+            repository_command_identity,
         )
     }
+}
+
+pub(super) struct RepositoryRefreshAccess {
+    owner: PrincipalId,
+    authority: Option<app::McpRepositoryAuthority>,
+}
+
+impl RepositoryRefreshAccess {
+    // Capture the authenticated credential on the calling task before handing work to SQLite.
+    pub(super) fn new(caller: PrincipalId) -> Result<Self, M3Error> {
+        let owner = app::workflow_resource_owner(&caller);
+        let authority = if owner == caller {
+            None
+        } else {
+            Some(app::McpRepositoryAuthority {
+                caller,
+                authentication: app::workflow_authentication()
+                    .ok_or_else(|| M3Error::new(M3ErrorCode::PermissionDenied))?,
+            })
+        };
+        Ok(Self { owner, authority })
+    }
+
+    fn scope(&self) -> RepositoryWriteScope<'_> {
+        RepositoryWriteScope {
+            owner: &self.owner,
+            authority: self.authority.as_ref(),
+            command: None,
+        }
+    }
+}
+
+pub(super) fn replay_repository_refresh(
+    connection: &Connection,
+    access: &RepositoryRefreshAccess,
+    id: RepositoryId,
+    expected: Revision,
+    key: &IdempotencyKey,
+) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+    let scope = access.scope();
+    let transaction = connection.unchecked_transaction().map_err(sql_failure)?;
+    scope.require(&transaction)?;
+    let mut result = existing_response::<SyncWrite<RepositoryRecord>>(
+        &transaction,
+        scope.caller(),
+        REPOSITORY_REFRESH,
+        key,
+        &aggregate_fingerprint(id, expected)?,
+    )?;
+    if let Some(receipt) = &mut result {
+        receipt.replayed = true;
+    }
+    transaction.commit().map_err(sql_failure)?;
+    Ok(result)
 }
 
 fn repository_command_identity(
@@ -103,10 +159,6 @@ fn repository_command_identity(
         Register { preview_id } => (
             "mcp.repositories.register",
             json(&serde_json::json!({"previewId":preview_id,"version":1}))?,
-        ),
-        Refresh { id, expected } => (
-            "mcp.repositories.refresh",
-            aggregate_fingerprint(id, expected)?,
         ),
         Remove { id, expected } => (
             "mcp.repositories.remove",
@@ -124,7 +176,8 @@ pub(super) fn mcp_repository_replay(
     let owner = PrincipalId::local_owner();
     let scope = RepositoryWriteScope {
         owner: &owner,
-        delegation: Some((authority, command)),
+        authority: Some(authority),
+        command: Some(command),
     };
     let tx = connection.transaction().map_err(sql_failure)?;
     scope.require(&tx)?;
@@ -171,22 +224,13 @@ pub(super) fn mcp_repository_commit(
     let owner = PrincipalId::local_owner();
     let scope = RepositoryWriteScope {
         owner: &owner,
-        delegation: Some((authority, command)),
+        authority: Some(authority),
+        command: Some(command),
     };
     match (command, observation) {
         (Register { .. }, Some(Fresh(observation))) => {
             register_repository_projected(connection, scope, observation, None, key, now_ms)
                 .map(repository_receipt)
-        }
-        (Refresh { id, expected }, Some(Fresh(observation))) => {
-            refresh_repository_projected(connection, scope, id, expected, observation, key, now_ms)
-                .map(repository_receipt)
-        }
-        (Refresh { id, expected }, Some(NotModified(validators))) => {
-            update_repository_validators_projected(
-                connection, scope, id, expected, validators, key, now_ms,
-            )
-            .map(repository_receipt)
         }
         (Remove { id, expected }, None) if app::builtin_repository(id).is_none() => {
             unregister_repository_scoped(connection, scope, id, expected, key, now_ms)
@@ -715,13 +759,30 @@ struct ProjectListRow {
 
 pub(super) fn list_project_view(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &app::AccessContext,
+    authentication: Option<&app::ToolAuthentication>,
     cursor: Option<RegistryCursor<ProjectId>>,
     limit: u32,
     view: &ProjectListView,
     expected_sequence: Option<u64>,
 ) -> Result<ProjectViewPage, M3Error> {
     let transaction = connection.transaction().map_err(sql_failure)?;
+    let owner = &app::workflow_resource_owner(access.principal());
+    if access.is_mcp_client() {
+        let denied = || M3Error::new(M3ErrorCode::PermissionDenied);
+        let client =
+            super::m8_tools::authenticate(&transaction, authentication.ok_or_else(denied)?)
+                .map_err(|_| denied())?;
+        if &client.principal_id != access.principal() {
+            return Err(denied());
+        }
+    }
+    super::m8_mcp::validate_project_cursor(
+        &transaction,
+        access.principal(),
+        cursor.as_ref(),
+        access.oauth_guard(),
+    )?;
     let sequence: i64 = transaction
         .query_row(
             "SELECT COALESCE(MAX(sequence),0) FROM events
@@ -828,7 +889,7 @@ pub(super) fn list_project_view(
         let id = ProjectId::parse(&row.id).map_err(|_| internal())?;
         projects.push(load_project(&transaction, owner, id)?);
     }
-    let next_cursor = if rows.len() > offset + projects.len() {
+    let mut next_cursor = if rows.len() > offset + projects.len() {
         projects.last().map(|record| RegistryCursor {
             registered_at_ms: record.registered_at_ms,
             id: record.project_id,
@@ -837,6 +898,7 @@ pub(super) fn list_project_view(
     } else {
         None
     };
+    super::m8_mcp::bind_project_cursor(&transaction, access.oauth_guard(), next_cursor.as_mut())?;
     Ok(ProjectViewPage {
         page: ProjectPage {
             projects,
@@ -2086,7 +2148,7 @@ fn restore_repository_archive_pins(
 
 pub(super) fn refresh_repository(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryRefreshAccess,
     id: RepositoryId,
     expected: Revision,
     observation: RepositoryObservation,
@@ -2095,7 +2157,7 @@ pub(super) fn refresh_repository(
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
     refresh_repository_projected(
         connection,
-        RepositoryWriteScope::owner(owner),
+        access.scope(),
         id,
         expected,
         observation,
@@ -2239,7 +2301,7 @@ fn refresh_repository_projected<T: From<RepositoryRecord> + Serialize + Deserial
 
 pub(super) fn update_repository_validators(
     connection: &mut Connection,
-    owner: &PrincipalId,
+    access: &RepositoryRefreshAccess,
     id: RepositoryId,
     expected: Revision,
     validators: RepositoryValidators,
@@ -2248,7 +2310,7 @@ pub(super) fn update_repository_validators(
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
     update_repository_validators_projected(
         connection,
-        RepositoryWriteScope::owner(owner),
+        access.scope(),
         id,
         expected,
         validators,

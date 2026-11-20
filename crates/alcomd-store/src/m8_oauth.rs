@@ -118,11 +118,12 @@ fn registration_page(
 }
 fn replay(
     db: &Connection,
+    caller: &PrincipalId,
     method: &str,
     key: &str,
     fp: &str,
 ) -> Result<Option<OAuthRegistration>, OAuthError> {
-    let row=db.query_row("SELECT request_fingerprint,response_json FROM idempotency_records WHERE principal_id='builtin:local-owner' AND method=?1 AND idempotency_key=?2",params![method,key],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(unavailable)?;
+    let row=db.query_row("SELECT request_fingerprint,response_json FROM idempotency_records WHERE principal_id=?1 AND method=?2 AND idempotency_key=?3",params![caller.as_str(),method,key],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(unavailable)?;
     let fp = serde_json::to_string(fp).map_err(unavailable)?;
     row.map(|(saved, json)| {
         if saved != fp {
@@ -134,17 +135,19 @@ fn replay(
 }
 fn remember(
     db: &Connection,
+    caller: &PrincipalId,
     method: &str,
     key: &str,
     fp: &str,
     record: &OAuthRegistration,
     now: u64,
 ) -> Result<(), OAuthError> {
-    db.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES ('builtin:local-owner',?1,?2,?3,'completed',?4,?5)",params![method,key,serde_json::to_string(fp).map_err(unavailable)?,serde_json::to_string(record).map_err(unavailable)?,integer(now)?]).map_err(unavailable)?;
+    db.execute("INSERT INTO idempotency_records(principal_id,method,idempotency_key,request_fingerprint,state,response_json,created_at_ms) VALUES (?1,?2,?3,?4,'completed',?5,?6)",params![caller.as_str(),method,key,serde_json::to_string(fp).map_err(unavailable)?,serde_json::to_string(record).map_err(unavailable)?,integer(now)?]).map_err(unavailable)?;
     Ok(())
 }
 fn set(
     db: &mut Connection,
+    actor: &super::m8_mcp::AdministrativeActor,
     input: OAuthRegistrationSetParams,
     id: String,
     secret_hash: Option<[u8; 32]>,
@@ -154,9 +157,12 @@ fn set(
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
+    actor.verify(&tx).map_err(|_| OAuthError::Denied)?;
+    let caller = &actor.principal;
     let fp = oauth_fingerprint(&input)?;
     if let Some(record) = replay(
         &tx,
+        caller,
         "mcp.oauth.registrations.set",
         &input.idempotency_key,
         &fp,
@@ -193,6 +199,7 @@ fn set(
     let result = registration(&tx, &id)?.registration;
     remember(
         &tx,
+        caller,
         "mcp.oauth.registrations.set",
         &input.idempotency_key,
         &fp,
@@ -204,15 +211,19 @@ fn set(
 }
 fn revoke_registration(
     db: &mut Connection,
+    actor: &super::m8_mcp::AdministrativeActor,
     input: OAuthRegistrationRevokeParams,
     now: u64,
 ) -> Result<OAuthRegistration, OAuthError> {
     let tx = db
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(unavailable)?;
+    actor.verify(&tx).map_err(|_| OAuthError::Denied)?;
+    let caller = &actor.principal;
     let fp = oauth_fingerprint(&input)?;
     if let Some(record) = replay(
         &tx,
+        caller,
         "mcp.oauth.registrations.revoke",
         &input.idempotency_key,
         &fp,
@@ -230,6 +241,7 @@ fn revoke_registration(
     let result = registration(&tx, &input.oauth_client_id)?.registration;
     remember(
         &tx,
+        caller,
         "mcp.oauth.registrations.revoke",
         &input.idempotency_key,
         &fp,
@@ -414,24 +426,28 @@ impl OAuthStore for StateStoreHandle {
     }
     async fn oauth_set_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationSetParams,
         id: String,
         secret_hash: Option<[u8; 32]>,
         now: u64,
     ) -> Result<OAuthRegistration, OAuthError> {
+        let caller = super::m8_mcp::AdministrativeActor::from(caller);
         self.request_worker(
-            move |db| set(db, input, id, secret_hash, now),
+            move |db| set(db, &caller, input, id, secret_hash, now),
             || OAuthError::Unavailable,
         )
         .await
     }
     async fn oauth_revoke_registration(
         &self,
+        caller: PrincipalId,
         input: OAuthRegistrationRevokeParams,
         now: u64,
     ) -> Result<OAuthRegistration, OAuthError> {
+        let caller = super::m8_mcp::AdministrativeActor::from(caller);
         self.request_worker(
-            move |db| revoke_registration(db, input, now),
+            move |db| revoke_registration(db, &caller, input, now),
             || OAuthError::Unavailable,
         )
         .await

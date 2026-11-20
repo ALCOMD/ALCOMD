@@ -14,7 +14,7 @@ component = "component/extension.wasm"
 protocol = "portable-v1"
 
 [interfaces]
-required = ["alcomd:mcp-management/clients@2.0.0", "alcomd:mcp-runtime/observations@1.0.0", "alcomd:mcp-transport/observations@1.0.0"]
+required = ["alcomd:mcp-management/clients@1.0.0", "alcomd:mcp-runtime/observations@1.0.0", "alcomd:mcp-transport/observations@1.0.0"]
 optional = []
 
 [permissions]

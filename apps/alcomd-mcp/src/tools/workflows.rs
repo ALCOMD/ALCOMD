@@ -10,20 +10,22 @@ use serde_json::Value;
 use super::{Failure, failure, invalid, ipc_fields, read, snake, success, write};
 
 pub(super) fn recognized(name: &str) -> bool {
-    matches!(
-        name,
-        "alcomd_register_project"
-            | "alcomd_list_project_templates"
-            | "alcomd_create_project"
-            | "alcomd_plan_project_copy"
-            | "alcomd_apply_project_copy"
-            | "alcomd_create_backup"
-            | "alcomd_restore_backup"
-    )
+    rpc::mcp_workflows_tool_capability(name).is_some()
 }
 
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {
     serde_json::from_value(value).map_err(|_| invalid())
+}
+
+fn confirmed<T: DeserializeOwned>(mut value: Value) -> Result<T, ErrorData> {
+    if value
+        .as_object_mut()
+        .and_then(|fields| fields.remove("confirm"))
+        != Some(Value::Bool(true))
+    {
+        return Err(invalid());
+    }
+    params(value)
 }
 
 fn reply<T: Serialize>(value: Result<T, ClientError>, writing: bool) -> Result<Value, Failure> {
@@ -125,12 +127,9 @@ pub(super) async fn execute(
             true,
         ),
         "alcomd_apply_project_copy" => {
-            let input: rpc::McpProjectsApplyCopyParams = params(value)?;
-            if !input.confirm {
-                return Err(invalid());
-            }
+            let input = confirmed(value)?;
             (
-                reply(client.mcp_project_apply_copy(input).await, true),
+                reply(client.project_apply_copy(input).await, true),
                 "Project copy accepted. Check the operation.",
                 false,
             )
@@ -141,12 +140,9 @@ pub(super) async fn execute(
             false,
         ),
         "alcomd_restore_backup" => {
-            let input: rpc::McpBackupRestoreParams = params(value)?;
-            if !input.confirm {
-                return Err(invalid());
-            }
+            let input = confirmed(value)?;
             (
-                reply(client.mcp_backup_restore(input).await, true),
+                reply(client.backup_restore(input).await, true),
                 "Backup restore accepted. Check the operation.",
                 false,
             )
@@ -163,6 +159,23 @@ pub(super) async fn execute(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn apply_requires_confirmation_before_building_the_native_request() {
+        for confirm in [Value::Null, json!(false), json!("true"), json!(true)] {
+            let fields = json!({"planId": "plan", "expectedRevision": 1, "idempotencyKey": "key", "confirm": confirm});
+            assert_eq!(
+                confirmed::<rpc::ProjectsApplyCopyParams>(fields).is_ok(),
+                confirm == json!(true)
+            );
+        }
+        assert!(
+            confirmed::<rpc::BackupRestoreParams>(
+                json!({"archivePath":"archive.zip","idempotencyKey":"key"})
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn restore_result_does_not_accept_the_native_absolute_target() {

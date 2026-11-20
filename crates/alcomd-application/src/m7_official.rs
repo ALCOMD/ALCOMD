@@ -3,7 +3,9 @@ use std::sync::{Arc, OnceLock};
 
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
-use crate::{AccessContext, Permission, PrincipalId};
+#[cfg(test)]
+use crate::PrincipalId;
+use crate::{AccessContext, Permission};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigAppearanceMode {
@@ -400,6 +402,7 @@ impl ConfigSettings {
             .source_color
             .as_ref()
             .is_some_and(|value| !valid_source_color(value))
+            || (self.packages.prefer_prerelease && !self.packages.show_prerelease)
             || validate_hidden_repository_ids(self.packages.hidden_repository_ids.clone())?
                 != self.packages.hidden_repository_ids
             || validate_hidden_repository_packages(
@@ -637,7 +640,7 @@ impl M7OfficialApplication {
         expected_revision: u64,
         expected_target_token: Option<String>,
     ) -> Result<UnityHubOpenOutcome, UnityHubOpenError> {
-        if access.principal() != &PrincipalId::local_owner()
+        if !access.is_interactive_client()
             || access.require(Permission::SettingsRead).is_err()
             || access.require(Permission::UnityHubOpen).is_err()
         {
@@ -1473,7 +1476,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hub_open_requires_local_owner_and_both_permissions_before_any_io() {
+    async fn hub_open_requires_an_authenticated_client_and_both_permissions_before_io() {
         let (app, config, platform, launcher) = open_fixture(no_hub());
         let owner = PrincipalId::local_owner();
         for access in [
@@ -1924,7 +1927,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn config8_project_discovery_permissions_and_backup_partial_updates_preserve_authority() {
+    async fn config_project_discovery_permissions_and_backup_partial_updates_preserve_authority() {
         let config = Arc::new(MemoryConfig::default());
         let app = M7OfficialApplication::new(
             config.clone(),

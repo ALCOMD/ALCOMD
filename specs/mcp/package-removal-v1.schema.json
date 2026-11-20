@@ -811,8 +811,7 @@
                 "manifest_fingerprint_changed",
                 "artifact_url_changed",
                 "archive_digest_changed",
-                "plan_already_applied",
-                "implementation_basis_changed"
+                "plan_already_applied"
             ]
         },
         "operationProgress": {

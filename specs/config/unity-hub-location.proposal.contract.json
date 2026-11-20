@@ -1,20 +1,37 @@
 {
     "status": "owner-approved-for-implementation",
-    "approval": {"date": "2026-10-31", "ownerResponse": "是", "scope": "Exact reviewed minimum contract and explicit parity boundaries", "followup": "Owner requested removal of the Windows internal prefix, a clickable Auto detect button and direct path editing; reuse existing path-set/null-clear and settings read contracts"},
+    "approval": {
+        "date": "2026-10-31",
+        "ownerResponse": "是",
+        "scope": "Exact reviewed minimum contract and explicit parity boundaries",
+        "followup": "Owner requested removal of the Windows internal prefix, a clickable Auto detect button and direct path editing; reuse existing path-set/null-clear and settings read contracts"
+    },
     "scope": "M7 H2-A: Unity Hub location selection and approved Open/Download action in Settings",
     "authority": "alcomd-application; daemon-only configuration writer",
     "interfaces": {
-        "methods": ["settings.get", "settings.update", "unity.hub.open"],
-        "permissions": {"settings.get": ["settings.read"], "settings.update": ["settings.manage"], "unity.hub.open": ["settings.read", "unity.hub.open"]},
+        "methods": [
+            "settings.get",
+            "settings.update",
+            "unity.hub.open"
+        ],
+        "permissions": {
+            "settings.get": [
+                "settings.read"
+            ],
+            "settings.update": [
+                "settings.manage"
+            ],
+            "unity.hub.open": [
+                "settings.read",
+                "unity.hub.open"
+            ]
+        },
         "newMethod": "unity.hub.open",
-        "newCapability": "unity.hub.open.v2",
+        "newCapability": "unity.hub.open.v1",
         "newPermission": "unity.hub.open",
-        "newConfigVersion": null,
-        "configSchema": 10,
-        "newStateMigration": null,
+        "configSchema": 1,
         "configField": "settings.unity.hubPath",
-        "responseEvidence": "settingsGetResult.unityHub; also returned by settings.update",
-        "compatibility": "Current Config7 has no density, preserves separate default-directory preferences, and preserves nullable default launch arguments while adding a default-false window preference. Valid Config1/2/3/4/5/6 inputs migrate before ready, discard legacy density where applicable, retain existing default additions, and preserve revision and other settings. Existing Config3 without [unity] keeps hubPath=null. No aliases or parallel current response model."
+        "responseEvidence": "settingsGetResult.unityHub; also returned by settings.update"
     },
     "storage": {
         "file": "config/settings.toml",
@@ -22,7 +39,11 @@
         "default": null,
         "nullEncoding": "Omit hub_path and empty unity section",
         "pathEncoding": "TOML basic string with reversible escaping for quotes and backslashes; Unicode round-trips",
-        "limits": {"pathUtf8Bytes": 4096, "fileUtf8Bytes": 16384},
+        "limits": {
+            "pathUtf8Bytes": 4096,
+            "fileUtf8Bytes": 1048576,
+            "baseUtf8Bytes": 16384
+        },
         "writer": "existing ConfigStore adapter; existing lock/CAS/recoverable publication",
         "discoveryWritesConfiguration": false,
         "migrationOrDiscoveryAdvancesRevision": false,
@@ -39,18 +60,36 @@
         "identityGuarantee": "Filesystem usability at observation time only; not proof that the file is genuine Unity Hub or remains unchanged"
     },
     "discovery": {
-        "precedence": ["usable configured executable", "first usable registered desktop application"],
-        "windows": ["current-user MSIX package", "current-user and machine Win32 registrations"],
-        "macos": ["Launch Services application bundle registrations"],
-        "linux": ["XDG desktop registrations", "Debian and RPM installation databases", "installed Flatpak application"],
+        "precedence": [
+            "usable configured executable",
+            "first usable registered desktop application"
+        ],
+        "windows": [
+            "current-user MSIX package",
+            "current-user and machine Win32 registrations"
+        ],
+        "macos": [
+            "Launch Services application bundle registrations"
+        ],
+        "linux": [
+            "XDG desktop registrations",
+            "Debian and RPM installation databases",
+            "installed Flatpak application"
+        ],
         "invalidConfiguredPath": "Keep the preference and try system registrations",
         "inspectionFailure": "Unresolved I/O failures are unavailable",
-        "constraints": ["No default installation directory scan", "Read-only"
+        "constraints": [
+            "No default installation directory scan",
+            "Read-only"
         ]
     },
     "ui": {
         "position": "Unity Hub Path section before Unity installations, using existing Settings section and MD3 controls",
-        "translations": {"en-US": "Unity Hub Path", "zh-CN": "Unity Hub 路径", "ja-JP": "Unity Hubの場所"},
+        "translations": {
+            "en-US": "Unity Hub Path",
+            "zh-CN": "Unity Hub 路径",
+            "ja-JP": "Unity Hubの場所"
+        },
         "contents": "Editable path draft initialized from accepted effective path; not-found/unavailable text is a placeholder, never the input value. Auto detect and Select buttons remain; no Open location button",
         "directEdit": "No RPC while typing. Enter or leaving the entire setting action group commits through existing serial settings writer and Core path validation; Escape restores latest accepted value. Unchanged automatic evidence is not converted into a manual preference. Moving focus to the local action buttons must not first save unfinished text. IME composition Enter is not a commit. Empty edited text is a local required-style error without RPC; Auto detect explicitly clears the preference. Validation failure retains the draft with explicit error/retry; successful commit adopts Core-normalized path. Concurrent reads cannot overwrite an active draft, and old connection results cannot submit to a replacement client.",
         "autoDetect": "Explicit action switches to automatic discovery with existing hubPath:null in the serial CAS queue. Already-null preference forces settings.get for fresh same-revision evidence with no write or Editor refresh. Lost replies reconcile before retry; concurrent unseen manual preference is not silently overwritten.",
@@ -73,53 +112,342 @@
         "snapshot": "Observe from the exact ConfigSnapshot used for the response; do not store evidence in ConfigSnapshot or candidate settings authority; configured path status may change without revision",
         "redaction": "Absolute paths only in explicitly authorized settings payloads and native picker; never in Activity/Event or ordinary errors. Document the explicit settings-payload exception to the generic redaction list.",
         "packageEvidence": "Existing config revision already participates in package fingerprints. Path save can invalidate old candidate cursors exactly like any settings update; do not change that policy. Discovery alone cannot invalidate them.",
-        "unchanged": ["resolver", "source priority", "package Plan/Apply", "Unity launch", "Unity registry ownership", "project files", "ConfigStore publication discipline"]
+        "unchanged": [
+            "resolver",
+            "source priority",
+            "package Plan/Apply",
+            "Unity launch",
+            "Unity registry ownership",
+            "project files",
+            "ConfigStore publication discipline"
+        ]
     },
     "schemaFragments": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
-            "hubPath": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]+$"},
-            "unitySettings": {"type": "object", "additionalProperties": false, "required": ["hubPath"], "properties": {"hubPath": {"$ref": "#/$defs/hubPath"}}},
-            "partialUnityUpdate": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {"hubPath": {"$ref": "#/$defs/hubPath"}}},
-            "hubLocation": {
-                "type": "object", "additionalProperties": false,
-                "required": ["status", "source", "path", "targetToken", "configuredPathStatus"],
+            "hubPath": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "minLength": 1,
+                "maxLength": 4096,
+                "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+            },
+            "unitySettings": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "hubPath"
+                ],
                 "properties": {
-                    "status": {"enum": ["available", "not_found", "unavailable"]},
-                    "source": {"enum": ["configured", "discovered", "none"]},
-                    "path": {"$ref": "#/$defs/hubPath"},
-                    "targetToken": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
-                    "configuredPathStatus": {"enum": ["unset", "available", "invalid", "unavailable"]}
+                    "hubPath": {
+                        "$ref": "#/$defs/hubPath"
+                    }
+                }
+            },
+            "partialUnityUpdate": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                    "hubPath": {
+                        "$ref": "#/$defs/hubPath"
+                    }
+                }
+            },
+            "hubLocation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "status",
+                    "source",
+                    "path",
+                    "targetToken",
+                    "configuredPathStatus"
+                ],
+                "properties": {
+                    "status": {
+                        "enum": [
+                            "available",
+                            "not_found",
+                            "unavailable"
+                        ]
+                    },
+                    "source": {
+                        "enum": [
+                            "configured",
+                            "discovered",
+                            "none"
+                        ]
+                    },
+                    "path": {
+                        "$ref": "#/$defs/hubPath"
+                    },
+                    "targetToken": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "configuredPathStatus": {
+                        "enum": [
+                            "unset",
+                            "available",
+                            "invalid",
+                            "unavailable"
+                        ]
+                    }
                 },
                 "allOf": [
-                    {"if": {"properties": {"status": {"const": "available"}}}, "then": {"properties": {"source": {"enum": ["configured", "discovered"]}, "targetToken": {"type": "string"}}}, "else": {"properties": {"source": {"const": "none"}, "path": {"type": "null"}, "targetToken": {"type": "null"}}}},
-                    {"if": {"properties": {"source": {"const": "configured"}}}, "then": {"properties": {"configuredPathStatus": {"const": "available"}, "path": {"type": "string"}}}},
-                    {"if": {"properties": {"configuredPathStatus": {"const": "available"}}}, "then": {"properties": {"source": {"const": "configured"}, "status": {"const": "available"}}}},
-                    {"if": {"properties": {"configuredPathStatus": {"const": "unavailable"}}}, "then": {"properties": {"status": {"const": "unavailable"}}}}
+                    {
+                        "if": {
+                            "properties": {
+                                "status": {
+                                    "const": "available"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "source": {
+                                    "enum": [
+                                        "configured",
+                                        "discovered"
+                                    ]
+                                },
+                                "targetToken": {
+                                    "type": "string"
+                                }
+                            }
+                        },
+                        "else": {
+                            "properties": {
+                                "source": {
+                                    "const": "none"
+                                },
+                                "path": {
+                                    "type": "null"
+                                },
+                                "targetToken": {
+                                    "type": "null"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "source": {
+                                    "const": "configured"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "configuredPathStatus": {
+                                    "const": "available"
+                                },
+                                "path": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "configuredPathStatus": {
+                                    "const": "available"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "source": {
+                                    "const": "configured"
+                                },
+                                "status": {
+                                    "const": "available"
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {
+                                "configuredPathStatus": {
+                                    "const": "unavailable"
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "status": {
+                                    "const": "unavailable"
+                                }
+                            }
+                        }
+                    }
                 ]
             }
         }
     },
     "shapeVectors": [
-        {"id": "path", "definition": "unitySettings", "value": {"hubPath": "C:\\Tools\\Unity Hub\\Unity Hub.exe"}, "valid": true},
-        {"id": "clear", "definition": "partialUnityUpdate", "value": {"hubPath": null}, "valid": true},
-        {"id": "empty-path", "definition": "unitySettings", "value": {"hubPath": ""}, "valid": false},
-        {"id": "control", "definition": "unitySettings", "value": {"hubPath": "/tmp/a\nb"}, "valid": false},
-        {"id": "null-container", "definition": "partialUnityUpdate", "value": null, "valid": false},
-        {"id": "empty-container", "definition": "partialUnityUpdate", "value": {}, "valid": false},
-        {"id": "unknown-field", "definition": "partialUnityUpdate", "value": {"hubPath": null, "launch": true}, "valid": false},
-        {"id": "manual", "definition": "hubLocation", "value": {"status": "available", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "available"}, "valid": true},
-        {"id": "automatic", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "unset"}, "valid": true},
-        {"id": "stale-fallback", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "invalid"}, "valid": true},
-        {"id": "absent", "definition": "hubLocation", "value": {"status": "not_found", "source": "none", "path": null, "targetToken": null, "configuredPathStatus": "unset"}, "valid": true},
-        {"id": "io-error", "definition": "hubLocation", "value": {"status": "unavailable", "source": "none", "path": null, "targetToken": null, "configuredPathStatus": "unavailable"}, "valid": true},
-        {"id": "false-available", "definition": "hubLocation", "value": {"status": "available", "source": "none", "path": null, "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "unset"}, "valid": false},
-        {"id": "false-source", "definition": "hubLocation", "value": {"status": "not_found", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "targetToken": null, "configuredPathStatus": "invalid"}, "valid": false},
-        {"id": "contradictory-config", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "configuredPathStatus": "available"}, "valid": false}
+        {
+            "id": "path",
+            "definition": "unitySettings",
+            "value": {
+                "hubPath": "C:\\Tools\\Unity Hub\\Unity Hub.exe"
+            },
+            "valid": true
+        },
+        {
+            "id": "clear",
+            "definition": "partialUnityUpdate",
+            "value": {
+                "hubPath": null
+            },
+            "valid": true
+        },
+        {
+            "id": "empty-path",
+            "definition": "unitySettings",
+            "value": {
+                "hubPath": ""
+            },
+            "valid": false
+        },
+        {
+            "id": "control",
+            "definition": "unitySettings",
+            "value": {
+                "hubPath": "/tmp/a\nb"
+            },
+            "valid": false
+        },
+        {
+            "id": "null-container",
+            "definition": "partialUnityUpdate",
+            "value": null,
+            "valid": false
+        },
+        {
+            "id": "empty-container",
+            "definition": "partialUnityUpdate",
+            "value": {},
+            "valid": false
+        },
+        {
+            "id": "unknown-field",
+            "definition": "partialUnityUpdate",
+            "value": {
+                "hubPath": null,
+                "launch": true
+            },
+            "valid": false
+        },
+        {
+            "id": "manual",
+            "definition": "hubLocation",
+            "value": {
+                "status": "available",
+                "source": "configured",
+                "path": "C:\\Tools\\Unity Hub.exe",
+                "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "configuredPathStatus": "available"
+            },
+            "valid": true
+        },
+        {
+            "id": "automatic",
+            "definition": "hubLocation",
+            "value": {
+                "status": "available",
+                "source": "discovered",
+                "path": "/opt/unityhub/unityhub",
+                "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "configuredPathStatus": "unset"
+            },
+            "valid": true
+        },
+        {
+            "id": "stale-fallback",
+            "definition": "hubLocation",
+            "value": {
+                "status": "available",
+                "source": "discovered",
+                "path": "/opt/unityhub/unityhub",
+                "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "configuredPathStatus": "invalid"
+            },
+            "valid": true
+        },
+        {
+            "id": "absent",
+            "definition": "hubLocation",
+            "value": {
+                "status": "not_found",
+                "source": "none",
+                "path": null,
+                "targetToken": null,
+                "configuredPathStatus": "unset"
+            },
+            "valid": true
+        },
+        {
+            "id": "io-error",
+            "definition": "hubLocation",
+            "value": {
+                "status": "unavailable",
+                "source": "none",
+                "path": null,
+                "targetToken": null,
+                "configuredPathStatus": "unavailable"
+            },
+            "valid": true
+        },
+        {
+            "id": "false-available",
+            "definition": "hubLocation",
+            "value": {
+                "status": "available",
+                "source": "none",
+                "path": null,
+                "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "configuredPathStatus": "unset"
+            },
+            "valid": false
+        },
+        {
+            "id": "false-source",
+            "definition": "hubLocation",
+            "value": {
+                "status": "not_found",
+                "source": "configured",
+                "path": "C:\\Tools\\Unity Hub.exe",
+                "targetToken": null,
+                "configuredPathStatus": "invalid"
+            },
+            "valid": false
+        },
+        {
+            "id": "contradictory-config",
+            "definition": "hubLocation",
+            "value": {
+                "status": "available",
+                "source": "discovered",
+                "path": "/opt/unityhub/unityhub",
+                "targetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "configuredPathStatus": "available"
+            },
+            "valid": false
+        }
     ],
     "implementationTestPlan": [
         "platform: valid file, missing file, directory, relative path, permissions, macOS bundle, Windows exe, Linux executable, Unicode, normalized symlink, candidate ordering and bounds",
-        "store: current Config7; legacy Config3 with no unity section; v1/v2/v3/v4/v5/v6 migration discards density and preserves other settings/revision; quoted/backslash/Unicode roundtrip; invalid control and oversized path; 16KiB limit; recovery preserves path and revision",
+        "store: Config1 with or without an explicit Hub path, quotes, backslashes and Unicode, invalid control characters, size limits, recovery preserves path and revision",
         "application: permission before inspection; CAS conflict before inspection; explicit path validation before any publish; mixed invalid update atomic rejection; clear; unrelated update does not revalidate missing Hub",
         "application: observation never writes or executes; response evidence uses accepted revision; observation failure after publish returns successful commit with unavailable evidence; cancellation/cache discipline unchanged",
         "RPC: all schema shape vectors, settings read/manage permission separation, omission/null semantics, strict unknown fields and response snapshots",
@@ -129,12 +457,19 @@
     ],
     "openActionProposal": {
         "status": "owner-approved-for-implementation",
-        "approval": {"date": "2026-10-31", "ownerResponse": "批准，按合同实现", "scope": "Exact method/capability/permission and fixed official download fallback; initial local-owner only"},
+        "approval": {
+            "date": "2026-10-31",
+            "ownerResponse": "批准，按合同实现",
+            "scope": "Exact method/capability/permission and fixed official download fallback; initial local-owner only"
+        },
         "ownerRequest": "Move Auto detect into card header and add Open Unity Hub, or Download Unity Hub if no Hub is specified",
         "layout": "Card header actions at the right: existing Auto detect plus new Open/Download; Select remains beside the editable path. Header, input and Retry share the existing focus group.",
         "method": "unity.hub.open",
-        "capability": "unity.hub.open.v2",
-        "permissions": ["settings.read", "unity.hub.open"],
+        "capability": "unity.hub.open.v1",
+        "permissions": [
+            "settings.read",
+            "unity.hub.open"
+        ],
         "principal": "Authenticated builtin:local-owner only; check principal and permissions before configuration/filesystem/process access. No new third-party/extension grants.",
         "whyExistingAuthorityCannotBeReused": "unity.launch and unity.launch.v1 are Project/exact-Editor launch authority; settings.manage and unity.manage explicitly exclude process launch. Do not widen their meanings or execute the Hub inside Tauri.",
         "input": "expectedRevision is the accepted settings revision; expectedTargetToken is the accepted Core activation token or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
@@ -147,7 +482,17 @@
             "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedTargetToken does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
         ],
         "result": "launch_requested means only that the OS accepted the requested activation or process creation; it does not prove successful child exit, a normally running Unity Hub or Hub window readiness. Synchronous OS rejection, subsequent child exit and owned-child reaping are separate outcomes. download_required means no process was started; GUI may open only the fixed official page.",
-        "errors": ["invalid_request", "permission_denied", "revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable", "hub_open_busy", "hub_open_failed", "internal_error with diagnosticId"],
+        "errors": [
+            "invalid_request",
+            "permission_denied",
+            "revision_conflict",
+            "hub_path_changed",
+            "hub_path_invalid",
+            "hub_unavailable",
+            "hub_open_busy",
+            "hub_open_failed",
+            "internal_error with diagnosticId"
+        ],
         "processLifetime": {
             "newPort": "Separate UnityHubLauncher command port; keep UnityHubPlatform strictly read-only. Daemon wires both; application owns the decision.",
             "maxActiveReapers": 4,
@@ -175,32 +520,153 @@
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$defs": {
                 "openParams": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["expectedRevision", "expectedTargetToken"],
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "expectedRevision",
+                        "expectedTargetToken"
+                    ],
                     "properties": {
-                        "expectedRevision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
-                        "expectedTargetToken": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"}
+                        "expectedRevision": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 18446744073709551615
+                        },
+                        "expectedTargetToken": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "pattern": "^[a-f0-9]{64}$"
+                        }
                     }
                 },
                 "openResult": {
-                    "type": "object", "additionalProperties": false, "required": ["outcome"],
-                    "properties": {"outcome": {"enum": ["launch_requested", "download_required"]}}
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "outcome"
+                    ],
+                    "properties": {
+                        "outcome": {
+                            "enum": [
+                                "launch_requested",
+                                "download_required"
+                            ]
+                        }
+                    }
                 }
             }
         },
         "shapeVectors": [
-            {"id": "resolved-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "valid": true},
-            {"id": "no-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null}, "valid": true},
-            {"id": "missing-revision", "definition": "openParams", "value": {"expectedTargetToken": null}, "valid": false},
-            {"id": "missing-path", "definition": "openParams", "value": {"expectedRevision": 153}, "valid": false},
-            {"id": "zero-revision", "definition": "openParams", "value": {"expectedRevision": 0, "expectedTargetToken": null}, "valid": false},
-            {"id": "empty-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": ""}, "valid": false},
-            {"id": "argv-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null, "arguments": ["--projectPath", "other"]}, "valid": false},
-            {"id": "url-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedTargetToken": null, "url": "https://example.invalid"}, "valid": false},
-            {"id": "launch_requested", "definition": "openResult", "value": {"outcome": "launch_requested"}, "valid": true},
-            {"id": "download", "definition": "openResult", "value": {"outcome": "download_required"}, "valid": true},
-            {"id": "false-ready", "definition": "openResult", "value": {"outcome": "window_ready"}, "valid": false},
-            {"id": "returned-url", "definition": "openResult", "value": {"outcome": "download_required", "url": "https://example.invalid"}, "valid": false}
+            {
+                "id": "resolved-path",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                "valid": true
+            },
+            {
+                "id": "no-path",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": null
+                },
+                "valid": true
+            },
+            {
+                "id": "missing-revision",
+                "definition": "openParams",
+                "value": {
+                    "expectedTargetToken": null
+                },
+                "valid": false
+            },
+            {
+                "id": "missing-path",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153
+                },
+                "valid": false
+            },
+            {
+                "id": "zero-revision",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 0,
+                    "expectedTargetToken": null
+                },
+                "valid": false
+            },
+            {
+                "id": "empty-path",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": ""
+                },
+                "valid": false
+            },
+            {
+                "id": "argv-injection",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": null,
+                    "arguments": [
+                        "--projectPath",
+                        "other"
+                    ]
+                },
+                "valid": false
+            },
+            {
+                "id": "url-injection",
+                "definition": "openParams",
+                "value": {
+                    "expectedRevision": 153,
+                    "expectedTargetToken": null,
+                    "url": "https://example.invalid"
+                },
+                "valid": false
+            },
+            {
+                "id": "launch_requested",
+                "definition": "openResult",
+                "value": {
+                    "outcome": "launch_requested"
+                },
+                "valid": true
+            },
+            {
+                "id": "download",
+                "definition": "openResult",
+                "value": {
+                    "outcome": "download_required"
+                },
+                "valid": true
+            },
+            {
+                "id": "false-ready",
+                "definition": "openResult",
+                "value": {
+                    "outcome": "window_ready"
+                },
+                "valid": false
+            },
+            {
+                "id": "returned-url",
+                "definition": "openResult",
+                "value": {
+                    "outcome": "download_required",
+                    "url": "https://example.invalid"
+                },
+                "valid": false
+            }
         ],
         "implementationVectors": [
             "principal/permission rejection before all IO, including local-owner missing permission and non-owner possessing named permissions",
@@ -214,5 +680,17 @@
             "capability absent, three locales, manual real Hub/browser/desktop evidence recorded separately from mocks"
         ]
     },
-    "excluded": ["Hub installation or installer download", "Hub config/CLI Editor discovery", "Windows registry detection", "new dependencies", "unsafe", "new platform API", "project Apply or writes", "new worktree", "commit", "push", "Visual Gate 2 signoff"]
+    "excluded": [
+        "Hub installation or installer download",
+        "Hub config/CLI Editor discovery",
+        "Windows registry detection",
+        "new dependencies",
+        "unsafe",
+        "new platform API",
+        "project Apply or writes",
+        "new worktree",
+        "commit",
+        "push",
+        "Visual Gate 2 signoff"
+    ]
 }

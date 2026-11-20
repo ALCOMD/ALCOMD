@@ -1067,7 +1067,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         access: &AccessContext,
         url: String,
     ) -> Result<crate::ExtensionSourcePreview, M6Error> {
-        require_remote_owner(access)?;
+        require_remote_install_permission(access)?;
         self.packages.inspect_source(url).await
     }
     pub async fn plan_install_from_source(
@@ -1078,7 +1078,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         fingerprint: String,
         now_ms: u64,
     ) -> Result<ExtensionPlanRecord, M6Error> {
-        require_remote_owner(access)?;
+        require_remote_install_permission(access)?;
         let prepared = self
             .packages
             .prepare_source(url, version, fingerprint)
@@ -1647,10 +1647,7 @@ fn m6_test_kill_gate(_checkpoint: &str) -> Result<(), M6Error> {
     Ok(())
 }
 
-fn require_remote_owner(access: &AccessContext) -> Result<(), M6Error> {
-    if access.principal() != &PrincipalId::local_owner() {
-        return Err(M6Error::new(M6ErrorCode::PermissionDenied));
-    }
+fn require_remote_install_permission(access: &AccessContext) -> Result<(), M6Error> {
     access
         .require(Permission::ExtensionsManage)
         .map_err(map_access)

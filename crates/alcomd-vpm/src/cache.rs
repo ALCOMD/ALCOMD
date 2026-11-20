@@ -1202,7 +1202,7 @@ mod tests {
             }
         }
 
-        let root = temporary_root("config12-proxy");
+        let root = temporary_root("settings-proxy");
         let platform = Arc::new(Platform(root.clone()));
         let settings = M7OfficialApplication::new(
             Arc::new(Config::default()),
@@ -1221,9 +1221,9 @@ mod tests {
             .for_request()
             .await
             .expect("in-flight system client");
-        let proxy_target = "http://config12-proxy.invalid";
-        let custom = std::env::var("ALCOMD_CONFIG12_CUSTOM").expect("custom proxy");
-        let direct = std::env::var("ALCOMD_CONFIG12_DIRECT").expect("direct origin");
+        let proxy_target = "http://settings-proxy.invalid";
+        let custom = std::env::var("ALCOMD_TEST_CUSTOM_PROXY").expect("custom proxy");
+        let direct = std::env::var("ALCOMD_TEST_DIRECT_ORIGIN").expect("direct origin");
         let mut revision = 1;
         for (index, (mode, origin, route)) in [
             (ConfigProxy::System, proxy_target, "system"),

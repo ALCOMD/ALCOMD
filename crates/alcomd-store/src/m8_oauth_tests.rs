@@ -51,6 +51,75 @@ async fn register(
         .await
         .expect("register")
 }
+#[tokio::test]
+async fn registration_mutations_bind_idempotency_and_revocation_to_the_authenticated_actor() {
+    let store = StateStoreHandle::open(path()).expect("store");
+    let service = OAuthApplication::new(store.clone(), [4; 32]);
+    let caller = seed(&store, "administrator").await;
+    let hash = mcp_credential_hash("isolated administrator credential");
+    let issued = store
+        .mcp_write(
+            PrincipalId::local_owner(),
+            "issue-admin".into(),
+            McpIdentityWrite::Issue {
+                id: caller.client_id,
+                expected: caller.revision,
+                hash,
+            },
+            101,
+        )
+        .await
+        .expect("credential");
+    let target = seed(&store, "registration").await;
+    let request = OAuthRegistrationSetParams {
+        client_id: target.client_id.to_string(),
+        issuer: oauth_issuer(5443),
+        resource: format!("{}/mcp", oauth_issuer(5443)),
+        redirect_uris: vec!["http://127.0.0.1:3456/callback".into()],
+        confidential: false,
+        allow_refresh: true,
+        expected_revision: 0,
+        idempotency_key: "registration".into(),
+    };
+    let access = mcp_access(&caller).expect("actor");
+    let set = || {
+        with_workflow_authentication(
+            ToolAuthentication::Credential(hash),
+            service.set_registration(&access, request.clone(), entropy(4), 102),
+        )
+    };
+    let original = set().await.expect("MCP administrator");
+    let replay = set().await.expect("same caller and key");
+    assert_eq!(
+        replay.registration.oauth_client_id,
+        original.registration.oauth_client_id
+    );
+    assert!(matches!(
+        service
+            .set_registration(
+                &AccessContext::local_owner(),
+                request.clone(),
+                entropy(5),
+                103
+            )
+            .await,
+        Err(OAuthError::RevisionConflict)
+    ));
+    store
+        .mcp_write(
+            PrincipalId::local_owner(),
+            "revoke-admin".into(),
+            McpIdentityWrite::Revoke {
+                id: caller.client_id,
+                expected: issued.client.revision,
+            },
+            104,
+        )
+        .await
+        .expect("revoke");
+    assert!(matches!(set().await, Err(OAuthError::Denied)));
+}
+
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 async fn begin(
     service: &OAuthApplication<StateStoreHandle>,
@@ -313,7 +382,7 @@ async fn pkce_client_redirect_audience_and_code_response_loss_do_not_mint_twice(
         .expect("access");
     assert!(access.require(Permission::StateCheck).is_ok());
     assert!(access.require(Permission::OperationsRead).is_ok());
-    assert!(access.require(Permission::McpClientsManage).is_err());
+    assert!(access.require(Permission::McpClientsManage).is_ok());
     let mut wrong = guard(&reg, &issued.access_token);
     assert!(matches!(
         service
@@ -436,7 +505,7 @@ async fn oauth_connection_has_business_access_until_rotation() {
         .expect("authenticated connection");
     assert!(access.require(Permission::StateCheck).is_ok());
     assert!(access.require(Permission::OperationsRead).is_ok());
-    assert!(access.require(Permission::McpClientsManage).is_err());
+    assert!(access.require(Permission::McpClientsManage).is_ok());
     store
         .mcp_write(
             PrincipalId::local_owner(),

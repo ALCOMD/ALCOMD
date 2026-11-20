@@ -1,4 +1,4 @@
--- Initial State46 database schema. Executed atomically before WAL is enabled.
+-- Initial State1 database schema. Executed atomically before WAL is enabled.
 
 CREATE TABLE projects (
     project_id TEXT PRIMARY KEY

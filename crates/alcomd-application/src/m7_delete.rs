@@ -387,7 +387,7 @@ where
     ) -> Result<ProjectDeletePlanOutcome, M7DeleteError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::ProjectsDelete)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         let project = self
             .store
             .get_project(access.principal().clone(), project_id)
@@ -427,7 +427,7 @@ where
         key: IdempotencyKey,
     ) -> Result<ProjectDeleteApplyOutcome, M7DeleteError> {
         require(access, Permission::ProjectsDelete)?;
-        local_owner(access)?;
+        require_interactive_client(access)?;
         if let Some(outcome) = self
             .store
             .replay_project_delete_apply(
@@ -701,8 +701,9 @@ fn project_delete_test_writer(_: ProjectId) -> Option<UnityWriterState> {
     None
 }
 
-fn local_owner(access: &AccessContext) -> Result<(), M7DeleteError> {
-    (access.principal() == &PrincipalId::local_owner())
+fn require_interactive_client(access: &AccessContext) -> Result<(), M7DeleteError> {
+    access
+        .is_interactive_client()
         .then_some(())
         .ok_or_else(|| error(M7DeleteErrorCode::PermissionDenied))
 }

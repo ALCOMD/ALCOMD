@@ -79,7 +79,7 @@ MCP、GUI 与 CLI 复用 Core 的已登记来源、可见性、解析与归档�
 
 ## 项目和备份
 
-`mcp.project-workflows.v2` 提供项目操作和备份文件操作。路径使用 Core 所在机器的文件系统。工具、参数及结果见[工具 Schema](project-workflows-v2.schema.json)和 [Core RPC Schema](../rpc/mcp-project-workflows-v2.schema.json)。
+`mcp.project-workflows.v1` 提供项目操作和备份文件操作。路径使用 Core 所在机器的文件系统。工具、参数及结果见[工具 Schema](project-workflows-v1.schema.json)和 [Core RPC Schema](../rpc/mcp-project-workflows-v1.schema.json)。
 
 - `alcomd_register_project` 接收现有项目目录的绝对路径，也可用相对路径在默认项目目录中选择项目。
 - `alcomd_create_project` 接收完整的新项目目录路径，也可给出默认项目目录下的目录名。`alcomd_list_project_templates` 提供可用于创建的模板 ID 和修订。含包的模板沿用现有包与仓库能力。

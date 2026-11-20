@@ -20,7 +20,7 @@ export interface RepositorySetDisplayNameParams {
     idempotencyKey: string;
     displayName: string | null;
 }
-export interface RepositoryListInspection { format?: RepositoryListFormat; entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
+export interface RepositoryListInspection { format: RepositoryListFormat; entries: RepositoryListEntry[]; ignoredLines: number; fingerprint: string }
 export interface RepositoryListImportParams { path: string; expectedFingerprint: string; idempotencyKey: string; overwriteExisting?: boolean }
 export type RepositoryListImportItem =
     | { line: number; status: "added" | "existing" | "updated" | "unprocessed" }

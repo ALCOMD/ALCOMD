@@ -4,7 +4,7 @@ use crate::{
 };
 use alcomd_application::{
     AccessContext, McpClientId, McpIdentityApplication, McpIdentityError, McpIdentityWrite,
-    PrincipalId, mcp_credential_hash,
+    mcp_credential_hash,
 };
 use alcomd_protocol::*;
 use alcomd_store::StateStoreHandle;
@@ -36,7 +36,7 @@ pub(super) async fn dispatch(
     store: &StateStoreHandle,
     access: &AccessContext,
 ) -> DispatchAction {
-    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_CLIENTS_V2) {
+    if let Some(action) = require_capability(&request.id, state, CAPABILITY_MCP_CLIENTS_V1) {
         return action;
     }
     let service = McpIdentityApplication::new(store.clone());
@@ -68,9 +68,6 @@ pub(super) async fn dispatch(
                     .map_err(|_| McpIdentityError::InvalidInput)?;
                 let client_id = id(&p.client_id)?;
                 let command = if request.method == METHOD_MCP_CLIENTS_ISSUE_CREDENTIAL {
-                    if access.principal() != &PrincipalId::local_owner() {
-                        return Err(McpIdentityError::PermissionDenied);
-                    }
                     let mut entropy = [0_u8; 32];
                     getrandom::fill(&mut entropy).map_err(|_| McpIdentityError::Unavailable)?;
                     let value = entropy
@@ -115,53 +112,10 @@ pub(super) async fn dispatch(
     }
 }
 
-/// Keep unsupported entry points closed even when a broad read permission is granted.
-pub(super) fn allowed_client_method(method: &str) -> bool {
-    matches!(
-        method,
-        METHOD_MCP_TRANSPORT_BIND_REQUEST
-            | alcomd_protocol::METHOD_MCP_PACKAGES_QUERY
-            | alcomd_protocol::METHOD_PROJECT_INVENTORY
-            | alcomd_protocol::METHOD_TEMPLATE_GET
-            | alcomd_protocol::METHOD_TEMPLATE_EDIT
-            | alcomd_protocol::METHOD_MCP_PACKAGES_PLAN
-            | alcomd_protocol::METHOD_MCP_REPOSITORIES_LIST
-            | alcomd_protocol::METHOD_MCP_REPOSITORIES_INSPECT
-            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REGISTER
-            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REFRESH
-            | alcomd_protocol::METHOD_MCP_REPOSITORIES_REMOVE
-            | alcomd_protocol::METHOD_BACKUPS_CREATE
-            | alcomd_protocol::METHOD_PROJECT_TEMPLATES_LIST
-            | alcomd_protocol::METHOD_PROJECT_TEMPLATES_SAVE
-            | alcomd_protocol::METHOD_PROJECT_TEMPLATES_EXPORT
-            | alcomd_protocol::METHOD_PROJECT_TEMPLATES_REMOVE
-            | alcomd_protocol::METHOD_SETTINGS_GET
-            | alcomd_protocol::METHOD_UNITY_INSTALLATIONS_LIST
-            | alcomd_protocol::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET
-            | alcomd_protocol::METHOD_MCP_PROJECTS_REGISTER
-            | alcomd_protocol::METHOD_MCP_PROJECTS_CREATE
-            | alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY
-            | alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY
-            | alcomd_protocol::METHOD_MCP_BACKUPS_RESTORE
-            | "mcp.tools.catalog"
-            | "extensions.mcpTools.call"
-            | "system.status"
-            | "projects.get"
-            | "projects.list"
-            | "state.check"
-            | "operations.get"
-            | "operations.list"
-            | "operations.cancel"
-            | "events.list"
-            | "packages.planRemove"
-            | "packages.applyPlan"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_application::McpIdentityStore;
+    use alcomd_application::{McpIdentityStore, PrincipalId};
     use std::collections::HashSet;
 
     #[tokio::test]
@@ -193,7 +147,7 @@ mod tests {
             "capability_required"
         );
         assert!(store.mcp_clients().await.expect("no mutation").is_empty());
-        state.capabilities.insert(CAPABILITY_MCP_CLIENTS_V2.into());
+        state.capabilities.insert(CAPABILITY_MCP_CLIENTS_V1.into());
         let unprivileged = AccessContext::new(
             PrincipalId::parse("test:unprivileged").expect("principal"),
             [],

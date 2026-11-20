@@ -242,7 +242,6 @@ fn request(f: &Fixture, action: PlanAction, target: Option<&str>) -> PackagePlan
         version_range: None,
         repository_id: None,
         include_prerelease: false,
-        plan_version: PackagePlanVersion::V2,
         source_selector: None,
         reinstall_selection: None,
         reinstall_sources: vec![],
@@ -1822,29 +1821,14 @@ async fn bulk_recommendations_match_single_upgrades_with_an_installed_prerelease
         let [target] = intents.as_array().expect("bulk intents array").as_slice() else {
             panic!("one upgrade")
         };
-        assert_eq!(target["kind"], "upgrade");
-        assert_eq!(target["versionRange"], format!("={expected}"));
-        assert_eq!(target["includePrerelease"], true);
+        assert_eq!(target, &json!({"kind":"upgrade","packageId":A}));
         let batch = bulk(
             &f,
             vec![PackageBulkIntent::Upgrade {
-                package_id: target["packageId"]
-                    .as_str()
-                    .expect("packageId string")
-                    .into(),
-                version_range: Some(
-                    target["versionRange"]
-                        .as_str()
-                        .expect("versionRange string")
-                        .into(),
-                ),
-                source: Some(
-                    serde_json::from_value(target["source"].clone())
-                        .expect("recommended package source"),
-                ),
-                include_prerelease: target["includePrerelease"]
-                    .as_bool()
-                    .expect("includePrerelease boolean"),
+                package_id: A.into(),
+                version_range: None,
+                source: None,
+                include_prerelease: true,
             }],
         );
         let mut single = request(&f, PlanAction::Upgrade, Some(A));

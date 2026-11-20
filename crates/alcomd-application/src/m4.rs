@@ -60,7 +60,7 @@ pub enum PlanState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RepositoryPackageSourcePin {
     pub repository_id: String,
     pub repository_revision: u64,
@@ -90,7 +90,7 @@ pub struct PackageDownloadHeaders {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UserPackageSourcePin {
     pub user_package_id: UserPackageId,
     pub source_revision: u64,
@@ -104,7 +104,7 @@ pub struct UserPackageSourcePin {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PackageSourcePin {
     Repository(RepositoryPackageSourcePin),
     UserPackage(UserPackageSourcePin),
@@ -166,17 +166,20 @@ pub enum PackageMutationKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageMutation {
     pub kind: PackageMutationKind,
     pub package_id: String,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub from_version: Option<String>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub to_version: Option<String>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
     pub source: Option<PackageSourcePin>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageDependencyEdge {
     pub from_package_id: String,
     pub to_package_id: String,
@@ -206,7 +209,7 @@ pub enum LegacyRemovalKind {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LegacyRemoval {
     pub path: String,
     pub kind: LegacyRemovalKind,
@@ -216,9 +219,21 @@ pub struct LegacyRemoval {
     pub fingerprint: [u8; 32],
 }
 
+fn package_change_set_version<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u32, D::Error> {
+    match u32::deserialize(deserializer)? {
+        1 => Ok(1),
+        _ => Err(serde::de::Error::custom(
+            "expected package change set format 1",
+        )),
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageChangeSet {
+    #[serde(deserialize_with = "package_change_set_version")]
     pub format_version: u32,
     pub mutations: Vec<PackageMutation>,
     pub dependency_edges: Vec<PackageDependencyEdge>,
@@ -249,12 +264,11 @@ pub struct PackageUnityCompatibilityOverride {
 
 impl PackageChangeSet {
     pub fn validate_bounds(&self) -> Result<(), M4Error> {
-        if !matches!(self.format_version, 1..=4)
+        if self.format_version != 1
             || self.mutations.len() > MAX_PACKAGE_MUTATIONS
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
             || !self.valid_removal_conflicts()
             || self.absent_removal_packages.len() > MAX_PACKAGE_MUTATIONS
-            || (!self.absent_removal_packages.is_empty() && self.format_version != 4)
             || self
                 .absent_removal_packages
                 .windows(2)
@@ -267,7 +281,6 @@ impl PackageChangeSet {
                 })
             })
             || self.legacy_reinstall_packages.len() > MAX_PACKAGE_MUTATIONS
-            || (!self.legacy_reinstall_packages.is_empty() && self.format_version != 4)
             || self
                 .legacy_reinstall_packages
                 .windows(2)
@@ -286,7 +299,6 @@ impl PackageChangeSet {
             || self.legacy_removals.len() > 4096
             || self.legacy_packages.len() > MAX_PACKAGE_MUTATIONS
             || self.unity_compatibility_overrides.len() > 1
-            || (!self.unity_compatibility_overrides.is_empty() && self.format_version != 4)
             || self.unity_compatibility_overrides.iter().any(|item| {
                 item.package_id.is_empty()
                     || item.package_id.len() > 128
@@ -298,22 +310,6 @@ impl PackageChangeSet {
                             && mutation.source.is_some()
                     })
             })
-            || (self.format_version < 4
-                && (!self.legacy_removals.is_empty() || !self.legacy_packages.is_empty()))
-            || (self.format_version == 1
-                && self.mutations.iter().any(|mutation| {
-                    mutation
-                        .source
-                        .as_ref()
-                        .is_some_and(PackageSourcePin::is_user_package)
-                }))
-            || (self.format_version == 2
-                && !self.mutations.iter().any(|mutation| {
-                    mutation
-                        .source
-                        .as_ref()
-                        .is_some_and(PackageSourcePin::is_user_package)
-                }))
         {
             return Err(M4Error::new(M4ErrorCode::PlanTooLarge));
         }
@@ -324,8 +320,7 @@ impl PackageChangeSet {
         if self.removal_conflicts.is_empty() {
             return true;
         }
-        if self.format_version != 4
-            || self.removal_conflicts.len() > MAX_PACKAGE_MUTATIONS
+        if self.removal_conflicts.len() > MAX_PACKAGE_MUTATIONS
             || self.removal_conflicts.iter().fold(0usize, |count, item| {
                 count.saturating_add(item.required_by.len())
             }) > MAX_DEPENDENCY_EDGES
@@ -464,7 +459,6 @@ pub struct PackagePlanRequest {
     pub version_range: Option<String>,
     pub repository_id: Option<String>,
     pub include_prerelease: bool,
-    pub plan_version: PackagePlanVersion,
     pub source_selector: Option<PackageSourceSelector>,
     pub reinstall_selection: Option<ReinstallSelection>,
     pub reinstall_sources: Vec<(String, PackageSourceSelector)>,
@@ -482,12 +476,6 @@ impl PackagePlanRequest {
                     .iter()
                     .all(|intent| matches!(intent, PackageBulkIntent::Remove { .. })))
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PackagePlanVersion {
-    V1,
-    V2,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1121,8 +1109,7 @@ where
             && (!matches!(
                 request.action,
                 PlanAction::Install | PlanAction::Upgrade | PlanAction::Downgrade
-            ) || request.plan_version != PackagePlanVersion::V2
-                || request.package_id.is_none()
+            ) || request.package_id.is_none()
                 || !request
                     .version_range
                     .as_deref()
@@ -1158,7 +1145,7 @@ where
                     } else {
                         access.principal().clone()
                     },
-                    request.plan_version == PackagePlanVersion::V2,
+                    true,
                     self.adapter.source_settings().await?,
                 )
                 .await?

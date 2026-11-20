@@ -10,14 +10,7 @@ use serde_json::Value;
 use super::{Failure, failure, invalid, ipc_fields, read, snake, success, write};
 
 pub(super) fn recognized(name: &str) -> bool {
-    matches!(
-        name,
-        "alcomd_list_repositories"
-            | "alcomd_inspect_repository"
-            | "alcomd_register_repository"
-            | "alcomd_refresh_repository"
-            | "alcomd_remove_repository"
-    )
+    rpc::mcp_repositories_tool_capability(name).is_some()
 }
 
 fn params<T: DeserializeOwned>(value: Value) -> Result<T, ErrorData> {
@@ -29,6 +22,37 @@ fn reply<T: Serialize>(value: Result<T, ClientError>, writing: bool) -> Result<V
     serde_json::to_value(value)
         .map(snake)
         .map_err(|_| Failure::InvalidCore)
+}
+
+async fn refresh(
+    client: &mut AlcomdClient,
+    input: rpc::RepositoryMutationParams,
+) -> Result<Value, Failure> {
+    let result = client.repository_refresh(input).await.map_err(write)?;
+    let record = result.repository;
+    let repository_id = record.repository_id.ok_or(Failure::InvalidCore)?;
+    let revision = record.revision.ok_or(Failure::InvalidCore)?;
+    let repository = rpc::McpRepositoryEntry {
+        repository_id: repository_id.clone(),
+        revision,
+        display_name: record.display_name.or(record.name),
+        source_kind: match record.source {
+            rpc::RepositorySource::Local { .. } => rpc::McpRepositorySourceKind::Local,
+            rpc::RepositorySource::Remote { .. } => rpc::McpRepositorySourceKind::Remote,
+        },
+        builtin: record.builtin.is_some(),
+        // Successful refresh has committed a resolver index or validated the existing index.
+        available: true,
+    };
+    reply(
+        Ok(rpc::McpRepositoryWriteResult {
+            repository: Some(repository),
+            repository_id,
+            revision,
+            replayed: result.replayed,
+        }),
+        true,
+    )
 }
 
 pub(super) async fn execute(
@@ -59,7 +83,7 @@ pub(super) async fn execute(
             )
         }
         "alcomd_refresh_repository" => (
-            reply(client.mcp_repository_refresh(params(value)?).await, true),
+            refresh(client, params(value)?).await,
             "Repository refreshed.",
         ),
         "alcomd_remove_repository" => {

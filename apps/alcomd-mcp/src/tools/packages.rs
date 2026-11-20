@@ -155,7 +155,7 @@ fn parse(params: CallToolRequestParams) -> Result<Request, ErrorData> {
             let (intent, package_id) = match params.name.as_ref() {
                 "alcomd_plan_package_install" => (
                     rpc::McpPackageIntent::Install {
-                        version_selector: args.optional("version_selector")?.unwrap_or_default(),
+                        version_selector: args.optional("version_selector")?,
                         include_prerelease: args.optional("include_prerelease")?,
                         allow_unity_incompatible: args
                             .optional("allow_unity_incompatible")?

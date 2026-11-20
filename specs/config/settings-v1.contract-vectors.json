@@ -1,10 +1,10 @@
 {
     "schema": 1,
-    "currentConfigSchema": 13,
+    "currentConfigSchema": 1,
     "current": {
-        "toml": "schema = 13\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+        "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
         "getResult": {
-            "configSchema": 13,
+            "configSchema": 1,
             "revision": 41,
             "settings": {
                 "appearance": {
@@ -396,12 +396,12 @@
     "rejectedCurrentFiles": [
         {
             "id": "unknown-config-field",
-            "toml": "schema = 13\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nunexpected_field = true\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+            "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nunexpected_field = true\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
             "error": "unknown-field"
         },
         {
             "id": "unsupported-config-number",
-            "toml": "schema = 12\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
+            "toml": "schema = 2\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nhidden_repository_packages = []\nshow_prerelease = false\nprefer_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n\n[integrations]\nhandle_vcc_links = true\n\n[network]\nproxy_mode = \"system\"\n",
             "error": "unsupported-schema"
         }
     ],

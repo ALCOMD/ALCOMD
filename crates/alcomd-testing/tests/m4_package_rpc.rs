@@ -92,7 +92,7 @@ async fn confirmed_manual_unity_override_round_trips_through_rpc_and_apply() {
         version_range: Some("=1.0.0".into()),
         repository_id: None,
         source: None,
-        include_prerelease: false,
+        include_prerelease: Some(false),
     };
     assert!(
         client.package_plan_install(request.clone()).await.is_err(),
@@ -213,7 +213,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
             source: None,
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan install");
@@ -297,7 +297,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         })
         .await
         .expect("plan exact reinstall");
-    assert_eq!(reinstall.change_set.format_version, 4);
+    assert_eq!(reinstall.change_set.format_version, 1);
     assert_eq!(reinstall.change_set.mutations.len(), 1);
     assert_eq!(
         reinstall.change_set.mutations[0].kind,
@@ -431,11 +431,11 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
             source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
                 user_package_id: user_package_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan User Package install");
-    assert_eq!(plan.change_set.format_version, 4);
+    assert_eq!(plan.change_set.format_version, 1);
     assert!(matches!(
         plan.change_set.mutations[0].source.as_ref(),
         Some(alcomd_protocol::PackageSourcePin::UserPackage(_))
@@ -547,7 +547,7 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
             source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
                 user_package_id: enrolled.user_package_id,
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await
         .expect("plan User Package install");
@@ -687,7 +687,7 @@ fn subprocess_runs_package_apply_until_killed() {
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
             source: None,
-            include_prerelease: false,
+            include_prerelease: Some(false),
         };
         let plan = if checkpoint.is_destructive() {
             client

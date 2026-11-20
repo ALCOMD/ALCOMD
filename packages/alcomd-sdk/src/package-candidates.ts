@@ -51,7 +51,7 @@ export interface PackageCandidateSummary {
     stableUpdate: PackageUpdateEvidence;
 }
 export type CandidateBulkIntent =
-    | { kind: "install" | "upgrade"; packageId: string; versionRange: string; source: CandidateSource; includePrerelease: boolean }
+    | { kind: "install" | "upgrade"; packageId: string; source?: CandidateSource; includePrerelease?: boolean }
     | { kind: "remove"; packageId: string }
     | { kind: "reinstall"; packageId: string; source?: CandidateSource };
 export interface CandidateBulkAction {

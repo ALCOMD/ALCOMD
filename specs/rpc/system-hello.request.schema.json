@@ -71,7 +71,7 @@
                 "authentication": {
                     "oneOf": [
                         {
-                            "$ref": "m8-mcp-oauth-v2.schema.json#/$defs/authentication"
+                            "$ref": "m8-mcp-oauth-v1.schema.json#/$defs/authentication"
                         },
                         {
                             "type": "object",

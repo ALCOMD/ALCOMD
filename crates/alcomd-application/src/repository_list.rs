@@ -358,7 +358,7 @@ impl<S: RepositoryListStore, F: RepositoryListFiles> RepositoryListApplication<S
 }
 
 fn require_import_manage(access: &AccessContext) -> Result<(), RepositoryListError> {
-    if access.principal() != &PrincipalId::local_owner() {
+    if !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     access
@@ -442,11 +442,14 @@ impl Drop for ImportGuard<'_> {
     }
 }
 
-fn require(access: &AccessContext, owner_only: bool) -> Result<(), RepositoryListError> {
+fn require(
+    access: &AccessContext,
+    requires_interactive_client: bool,
+) -> Result<(), RepositoryListError> {
     access
         .require(Permission::RepositoriesRead)
         .map_err(|_| RepositoryListError("permission_denied"))?;
-    if owner_only && access.principal().as_str() != PrincipalId::LOCAL_OWNER {
+    if requires_interactive_client && !access.is_interactive_client() {
         return Err(RepositoryListError("permission_denied"));
     }
     Ok(())

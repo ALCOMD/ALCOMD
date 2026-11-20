@@ -1,4 +1,4 @@
-use alcomd_application::{self as app, M7CopyStore};
+use alcomd_application as app;
 use alcomd_protocol as rpc;
 use std::path::{Component, Path, PathBuf};
 
@@ -71,7 +71,7 @@ pub(super) async fn dispatch(
     access: &app::AccessContext,
 ) -> DispatchAction {
     if let Some(error) =
-        super::require_capability(&request.id, state, rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2)
+        super::require_capability(&request.id, state, rpc::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1)
     {
         return error;
     }
@@ -100,12 +100,6 @@ pub(super) async fn dispatch(
                         return invalid(id);
                     };
                     plan_copy(id, apps, access, params).await
-                }
-                rpc::METHOD_MCP_PROJECTS_APPLY_COPY => {
-                    let Ok(params) = serde_json::from_value(request.params) else {
-                        return invalid(id);
-                    };
-                    apply_copy(id, apps, access, params).await
                 }
                 _ => error_action(Some(id), rpc::RpcError::method_not_found(), false),
             }
@@ -302,20 +296,6 @@ async fn project_target(
     resolve(parent, leaf).await
 }
 
-async fn check_apply_target(expected: &app::ProjectCopyPlanDraft) -> Result<(), rpc::RpcError> {
-    let parent = PathBuf::from(&expected.target_parent_path);
-    let current = resolve(parent.clone(), expected.target_leaf.clone()).await?;
-    if current.parent != parent || current.identity != expected.target_parent_identity {
-        return Err(rpc::RpcError::revision_conflict());
-    }
-    let path = current.parent.join(current.leaf);
-    match tokio::fs::symlink_metadata(path).await {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Ok(_) => Err(rpc::RpcError::revision_conflict()),
-        Err(_) => Err(rpc::RpcError::permission_denied()),
-    }
-}
-
 async fn plan_copy(
     id: String,
     apps: &Applications,
@@ -371,65 +351,4 @@ async fn plan_copy(
         },
         None,
     )
-}
-
-async fn apply_copy(
-    id: String,
-    apps: &Applications,
-    access: &app::AccessContext,
-    params: rpc::McpProjectsApplyCopyParams,
-) -> DispatchAction {
-    let (true, Ok(plan_id), Some(revision), Ok(key)) = (
-        params.confirm,
-        app::PlanId::parse(&params.plan_id),
-        app::Revision::new(params.expected_revision),
-        app::IdempotencyKey::parse(params.idempotency_key),
-    ) else {
-        return invalid(id);
-    };
-    let caller = access.principal();
-    match apps
-        .store
-        .replay_project_copy_apply(caller.clone(), plan_id, revision, key.clone())
-        .await
-    {
-        Ok(Some(value)) => return copy_action(id, Ok(value)),
-        Ok(None) => {}
-        Err(error) => return super::m7_copy_rpc::copy_error(id, error),
-    }
-    let plan = match apps
-        .store
-        .get_project_copy_plan(caller.clone(), plan_id)
-        .await
-    {
-        Ok(value) => value,
-        Err(error) => return super::m7_copy_rpc::copy_error(id, error),
-    };
-    if let Err(error) = check_apply_target(&plan.draft).await {
-        return error_action(Some(id), error, false);
-    }
-    copy_action(
-        id,
-        apps.project_copy
-            .apply_copy(access, plan_id, revision, key)
-            .await,
-    )
-}
-
-fn copy_action(
-    id: String,
-    result: Result<app::ProjectCopyApplyOutcome, app::M7CopyError>,
-) -> DispatchAction {
-    match result {
-        Ok(value) => success_action(
-            id,
-            rpc::ProjectsApplyCopyResult {
-                operation_id: value.operation_id.to_string(),
-                target_project_id: value.target_project_id.to_string(),
-                replayed: value.replayed,
-            },
-            None,
-        ),
-        Err(error) => super::m7_copy_rpc::copy_error(id, error),
-    }
 }

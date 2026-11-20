@@ -6,7 +6,7 @@
         "methodName": {
             "enum": [
                 "packages.planInstall", "packages.planRemove", "packages.planUpgrade",
-                "packages.planDowngrade", "packages.planResolve", "packages.applyPlan"
+                "packages.planDowngrade", "packages.planResolve", "packages.planReinstall", "packages.planBulk", "packages.applyPlan"
             ]
         },
         "capability": {"enum": ["packages.plan.v1", "packages.apply.v1"]},
@@ -72,13 +72,32 @@
             }
         },
         "sourcePin": {
+            "oneOf": [{"$ref": "#/$defs/repositorySourcePin"}, {"$ref": "#/$defs/userPackageSourcePin"}]
+        },
+        "userPackageSourcePin": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "userPackageId", "sourceRevision", "sourceIdentity", "manifestFingerprint", "packageId", "version", "archiveSha256"],
+            "properties": {
+                "kind": {"const": "user_package"},
+                "userPackageId": {"$ref": "#/$defs/uuid"},
+                "sourceRevision": {"$ref": "#/$defs/revision"},
+                "sourceIdentity": {"type": "string", "minLength": 1, "maxLength": 2048},
+                "manifestFingerprint": {"$ref": "#/$defs/sha256"},
+                "packageId": {"$ref": "#/$defs/packageId"},
+                "version": {"$ref": "#/$defs/versionText"},
+                "archiveSha256": {"$ref": "#/$defs/sha256"}
+            }
+        },
+        "repositorySourcePin": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-                "repositoryId", "repositoryRevision", "sourceIdentity", "manifestFingerprint",
+                "kind", "repositoryId", "repositoryRevision", "sourceIdentity", "manifestFingerprint",
                 "packageId", "version", "artifactUrl"
             ],
             "properties": {
+                "kind": {"const": "repository"},
                 "repositoryId": {"$ref": "#/$defs/uuid"},
                 "repositoryRevision": {"$ref": "#/$defs/revision"},
                 "sourceIdentity": {"type": "string", "minLength": 1, "maxLength": 2048},
@@ -118,12 +137,8 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["formatVersion", "mutations", "dependencyEdges", "vpmManifestSha256"],
-            "if": {"required": ["legacyRemovals"]},
-            "then": {"properties": {"formatVersion": {"const": 4}}},
-            "allOf": [
-                {"if": {"required": ["unityCompatibilityOverrides"]}, "then": {"properties": {"formatVersion": {"const": 4}}}},
-                {"if": {"required": ["removalConflicts"]}, "then": {"properties": {"formatVersion": {"const": 4}, "mutations": {"items": {"properties": {"kind": {"const": "remove"}}}}}}}
-            ],
+            "if": {"required": ["removalConflicts"]},
+            "then": {"properties": {"mutations": {"items": {"properties": {"kind": {"const": "remove"}}}}}},
             "properties": {
                 "removalConflicts": {
                     "type": "array", "minItems": 1, "maxItems": 1024,
@@ -147,7 +162,7 @@
                     }
                 },
                 "unityCompatibilityOverrides": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["packageId", "version"], "properties": {"packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}}}},
-                "formatVersion": {"enum": [1, 2, 3, 4]},
+                "formatVersion": {"const": 1},
                 "mutations": {
                     "type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/packageMutation"}
                 },
@@ -178,7 +193,7 @@
             ],
             "properties": {
                 "planId": {"$ref": "#/$defs/uuid"},
-                "action": {"enum": ["install", "remove", "upgrade", "downgrade", "resolve"]},
+                "action": {"enum": ["install", "remove", "upgrade", "downgrade", "resolve", "reinstall", "bulk"]},
                 "state": {"enum": ["unapplied", "applied"]},
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "projectRevision": {"$ref": "#/$defs/revision"},
@@ -205,8 +220,9 @@
                         "projectId": {"$ref": "#/$defs/uuid"},
                         "expectedRevision": {"$ref": "#/$defs/revision"},
                         "packageId": {"$ref": "#/$defs/packageId"},
-                        "versionRange": {"$ref": "#/$defs/versionText"},
-                        "repositoryId": {"$ref": "#/$defs/uuid"},
+                        "versionRange": {"oneOf": [{"$ref": "#/$defs/versionText"}, {"type": "null"}]},
+                        "repositoryId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+                        "source": {"oneOf": [{"$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"}, {"type": "null"}]},
                         "includePrerelease": {"type": "boolean", "default": true},
                         "allowUnityIncompatible": {"type": "boolean", "default": false}
                     }
@@ -236,7 +252,8 @@
                 "packageId": {"$ref": "#/$defs/packageId"},
                 "version": {"$ref": "#/$defs/versionText"},
                 "allowUnityIncompatible": {"type": "boolean", "default": false},
-                "repositoryId": {"$ref": "#/$defs/uuid"}
+                "repositoryId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+                "source": {"oneOf": [{"$ref": "https://alcomd.vrclearn.com/schema/proposals/m7-p6-package-closure.json#/$defs/sourceSelector"}, {"type": "null"}]}
             }
         },
         "planResolveParams": {
@@ -272,7 +289,7 @@
             "enum": [
                 "project_revision_changed", "project_identity_changed", "project_snapshot_changed",
                 "repository_revision_changed", "source_identity_changed", "manifest_fingerprint_changed",
-                "artifact_url_changed", "archive_digest_changed", "plan_already_applied", "implementation_basis_changed"
+                "artifact_url_changed", "archive_digest_changed", "plan_already_applied"
             ]
         },
         "operationProgress": {

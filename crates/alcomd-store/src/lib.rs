@@ -81,7 +81,7 @@ pub use sqlite::preflight_state_database;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 46;
+pub const CURRENT_DATA_SCHEMA: u32 = 1;
 
 fn is_regular_state_file(metadata: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
@@ -465,14 +465,23 @@ impl M3RegistryStore for StateStoreHandle {
 
     async fn list_project_view(
         &self,
-        owner: PrincipalId,
+        access: alcomd_application::AccessContext,
         cursor: Option<RegistryCursor<ProjectId>>,
         limit: u32,
         view: alcomd_application::ProjectListView,
         expected_sequence: Option<u64>,
     ) -> Result<alcomd_application::ProjectViewPage, M3Error> {
+        let authentication = alcomd_application::workflow_authentication();
         self.request_m3(move |connection| {
-            m3::list_project_view(connection, &owner, cursor, limit, &view, expected_sequence)
+            m3::list_project_view(
+                connection,
+                &access,
+                authentication.as_ref(),
+                cursor,
+                limit,
+                &view,
+                expected_sequence,
+            )
         })
         .await
     }
@@ -670,6 +679,18 @@ impl M3RegistryStore for StateStoreHandle {
         .await
     }
 
+    async fn replay_repository_refresh(
+        &self,
+        caller: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<Option<SyncWrite<RepositoryRecord>>, M3Error> {
+        let access = m3::RepositoryRefreshAccess::new(caller)?;
+        self.request_m3(move |db| m3::replay_repository_refresh(db, &access, id, expected, &key))
+            .await
+    }
+
     async fn refresh_repository(
         &self,
         owner: PrincipalId,
@@ -679,8 +700,9 @@ impl M3RegistryStore for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryRefreshAccess::new(owner)?;
         self.request_m3(move |connection| {
-            m3::refresh_repository(connection, &owner, id, expected, observation, &key, now_ms)
+            m3::refresh_repository(connection, &access, id, expected, observation, &key, now_ms)
         })
         .await
     }
@@ -694,9 +716,10 @@ impl M3RegistryStore for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        let access = m3::RepositoryRefreshAccess::new(owner)?;
         self.request_m3(move |connection| {
             m3::update_repository_validators(
-                connection, &owner, id, expected, validators, &key, now_ms,
+                connection, &access, id, expected, validators, &key, now_ms,
             )
         })
         .await

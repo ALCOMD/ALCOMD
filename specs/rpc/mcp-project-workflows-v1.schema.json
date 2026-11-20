@@ -1,0 +1,29 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "MCP project and backup workflows",
+    "x-capability": "mcp.project-workflows.v1",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/mcp-project-workflows-v1.json",
+    "x-methods": {
+        "mcp.projects.register": {
+            "params": "register",
+            "result": "registration"
+        },
+        "projectTemplates.list": {
+            "params": "listTemplates",
+            "result": "templates"
+        },
+        "mcp.projects.create": {
+            "params": "create",
+            "result": "projectAccepted"
+        },
+        "mcp.projects.planCopy": {
+            "params": "planCopy",
+            "result": "copyPlan"
+        },
+        "backups.create": {
+            "params": "createBackup",
+            "result": "backupAccepted"
+        }
+    },
+    "$defs": {}
+}

@@ -202,7 +202,7 @@ impl AlcomdClient {
     pub async fn connect(config: ClientConfig) -> Result<Self, ClientError> {
         let stream = connect_with_policy(&config).await?;
         let mut client = Self {
-            hello_result: HelloResult::m1(),
+            hello_result: HelloResult::ready(Vec::new(), 1),
             oauth_rejection: None,
             stream,
             next_request_id: 1,
@@ -243,22 +243,6 @@ impl AlcomdClient {
         params: alcomd_protocol::McpProjectsPlanCopyParams,
     ) -> Result<alcomd_protocol::McpProjectsCopyPlan, ClientError> {
         self.call(alcomd_protocol::METHOD_MCP_PROJECTS_PLAN_COPY, params)
-            .await
-    }
-
-    pub async fn mcp_project_apply_copy(
-        &mut self,
-        params: alcomd_protocol::McpProjectsApplyCopyParams,
-    ) -> Result<alcomd_protocol::ProjectsApplyCopyResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_PROJECTS_APPLY_COPY, params)
-            .await
-    }
-
-    pub async fn mcp_backup_restore(
-        &mut self,
-        params: alcomd_protocol::McpBackupRestoreParams,
-    ) -> Result<OperationAccepted, ClientError> {
-        self.call(alcomd_protocol::METHOD_MCP_BACKUPS_RESTORE, params)
             .await
     }
 
@@ -313,11 +297,11 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECT_INVENTORY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATE_EDIT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_REPOSITORIES_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_PROJECT_WORKFLOWS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_REPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_TRANSPORT_READ_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_OAUTH_V2.to_owned(),
-                alcomd_protocol::CAPABILITY_MCP_CLIENTS_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_OAUTH_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_MCP_CLIENTS_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_MCP_RUNTIME_READ_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
@@ -325,7 +309,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_LOGS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_CREATE_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECT_TEMPLATES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
@@ -336,16 +320,15 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_IMPORT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
-                alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
-                alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V2.to_owned(),
-                alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V2.to_owned(),
-                alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_REMOTE_INSTALL_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1.to_owned(),
@@ -1144,11 +1127,8 @@ impl AlcomdClient {
     pub async fn repository_list_preview_export(
         &mut self,
     ) -> Result<alcomd_protocol::RepositoryListPreview, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT,
-            alcomd_protocol::RepositoryListPreviewParams::default(),
-        )
-        .await
+        self.repository_configuration_preview_export(alcomd_protocol::RepositoryListFormat::Native)
+            .await
     }
 
     pub async fn repository_configuration_preview_export(
@@ -1206,13 +1186,10 @@ impl AlcomdClient {
         target_path: String,
         expected_fingerprint: String,
     ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
-            alcomd_protocol::RepositoryListExportParams {
-                format: alcomd_protocol::RepositoryListFormat::Legacy,
-                target_path,
-                expected_fingerprint,
-            },
+        self.repository_configuration_export_file(
+            target_path,
+            expected_fingerprint,
+            alcomd_protocol::RepositoryListFormat::Native,
         )
         .await
     }
@@ -1710,7 +1687,7 @@ mod connection_reuse_tests {
 
     fn client(stream: IpcStream) -> AlcomdClient {
         AlcomdClient {
-            hello_result: HelloResult::m1(),
+            hello_result: HelloResult::ready(Vec::new(), 1),
             oauth_rejection: None,
             stream,
             next_request_id: 1,
@@ -1742,8 +1719,8 @@ mod connection_reuse_tests {
                 "rpcVersion": RPC_VERSION,
                 "daemonVersion": "4.0.0-alpha.0",
                 "capabilities": [CAPABILITY_OPERATIONS_V1, "future.capability.v1"],
-                "dataSchema": 45,
-                "configSchema": 13,
+                "dataSchema": 1,
+                "configSchema": 1,
                 "futureOptional": true
             }),
         ));
@@ -1751,8 +1728,8 @@ mod connection_reuse_tests {
         assert!(client.is_usable());
         assert!(client.supports_capability(CAPABILITY_OPERATIONS_V1));
         assert!(!client.supports_capability("future.capability.v1"));
-        assert_eq!(client.hello_result().data_schema, Some(45));
-        assert_eq!(client.hello_result().config_schema, Some(13));
+        assert_eq!(client.hello_result().data_schema, 1);
+        assert_eq!(client.hello_result().config_schema, 1);
         task.await.expect("server task");
     }
 
@@ -1760,8 +1737,8 @@ mod connection_reuse_tests {
     async fn hello_rejects_wrong_major_and_malformed_capabilities() {
         for result in [
             json!({"rpcVersion": RPC_VERSION + 1, "daemonVersion": "4.0.0-alpha.0", "capabilities": []}),
-            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "capabilities": ["invalid name"]}),
-            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "capabilities": ["future.v1", "future.v1"]}),
+            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "dataSchema": 1, "configSchema": 1, "capabilities": ["invalid name"]}),
+            json!({"rpcVersion": RPC_VERSION, "daemonVersion": "4.0.0-alpha.0", "dataSchema": 1, "configSchema": 1, "capabilities": ["future.v1", "future.v1"]}),
         ] {
             let (stream, server) = pair().await;
             let mut client = client(stream);

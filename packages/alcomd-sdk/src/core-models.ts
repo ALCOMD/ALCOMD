@@ -68,7 +68,7 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 13;
+    configSchema: 1;
     revision: number;
     settings: OfficialSettings;
 }
@@ -236,6 +236,7 @@ export interface PackageCursor {
 }
 
 export interface RepositoryPackageSourcePin {
+    kind: "repository";
     repositoryId: string;
     repositoryRevision: number;
     sourceIdentity: string;
@@ -247,6 +248,7 @@ export interface RepositoryPackageSourcePin {
 }
 
 export interface UserPackageSourcePin {
+    kind: "user_package";
     userPackageId: string;
     sourceRevision: number;
     sourceIdentity: string;
@@ -264,15 +266,15 @@ export type PackageSourceSelector =
 export interface PackageMutation {
     kind: "install" | "remove" | "replace";
     packageId: string;
-    fromVersion?: string | null;
-    toVersion?: string | null;
-    source?: PackageSourcePin;
+    fromVersion: string | null;
+    toVersion: string | null;
+    source: PackageSourcePin | null;
 }
 
 export interface PackageChangeSet {
     removalConflicts?: PackageRemovalConflict[];
     unityCompatibilityOverrides?: { packageId: string; version: string }[];
-    formatVersion: number;
+    formatVersion: 1;
     legacyRemovals?: { path: string; kind: "file" | "directory"; packageId: string }[];
     mutations: PackageMutation[];
     dependencyEdges: Array<{ fromPackageId: string; toPackageId: string; range: string; direct: boolean }>;
@@ -307,8 +309,8 @@ export type PackageReinstallSelection = { kind: "packages"; packageIds: string[]
 export interface PackageReinstallSource { packageId: string; source: PackageSourceSelector }
 export interface PackagePlanReinstallParams { projectId: string; expectedRevision: number; selection: PackageReinstallSelection; sources?: PackageReinstallSource[] }
 export type PackageBulkIntent =
-    | { kind: "install"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
-    | { kind: "upgrade"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease: boolean }
+    | { kind: "install"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease?: boolean }
+    | { kind: "upgrade"; packageId: string; versionRange?: string | null; source?: PackageSourceSelector | null; includePrerelease?: boolean }
     | { kind: "remove"; packageId: string }
     | { kind: "reinstall"; packageId: string; source?: PackageSourceSelector | null };
 export interface PackagePlanBulkParams { projectId: string; expectedRevision: number; intents: PackageBulkIntent[] }

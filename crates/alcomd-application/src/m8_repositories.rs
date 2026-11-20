@@ -12,10 +12,6 @@ pub enum McpRepositoryCommand {
     Register {
         preview_id: OperationId,
     },
-    Refresh {
-        id: RepositoryId,
-        expected: Revision,
-    },
     Remove {
         id: RepositoryId,
         expected: Revision,
@@ -175,7 +171,7 @@ impl<S: M3RegistryStore + McpRepositoryStore, R: M3ReadAdapter> M3Application<S,
             None
         };
         let _repository = match command {
-            McpRepositoryCommand::Refresh { id, .. } | McpRepositoryCommand::Remove { id, .. } => {
+            McpRepositoryCommand::Remove { id, .. } => {
                 Some(self.locks.acquire(vec![ResourceKey::Repository(id)]).await)
             }
             McpRepositoryCommand::Register { .. } => None,
@@ -213,14 +209,6 @@ impl<S: M3RegistryStore + McpRepositoryStore, R: M3ReadAdapter> M3Application<S,
                     return Err(M3Error::new(M3ErrorCode::RevisionConflict));
                 }
                 (Some(RepositoryReadOutcome::Fresh(fresh)), None)
-            }
-            McpRepositoryCommand::Refresh { id, expected } => {
-                let current = self.store.get_repository(owner.clone(), id).await?;
-                if current.revision != expected {
-                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
-                }
-                let observed = self.fetch_repository_refresh(owner, id, current).await?;
-                (Some(observed), None)
             }
             McpRepositoryCommand::Remove { id, .. } => {
                 let credential = match self.store.repository_credential_reference(owner, id).await {

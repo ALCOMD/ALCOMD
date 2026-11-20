@@ -15,7 +15,7 @@ pub(super) async fn dispatch(
     match request.method.as_str() {
         rpc::METHOD_UNITY_HUB_OPEN => {
             if let Some(action) =
-                require_capability(&request.id, state, rpc::CAPABILITY_UNITY_HUB_OPEN_V2)
+                require_capability(&request.id, state, rpc::CAPABILITY_UNITY_HUB_OPEN_V1)
             {
                 return action;
             }
@@ -462,7 +462,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 13);
+        assert_eq!(result.config_schema, 1);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

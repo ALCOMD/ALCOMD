@@ -1,7 +1,7 @@
 package alcomd:mcp-runtime@1.0.0;
 
 interface observations {
-    use alcomd:mcp-management/clients@2.0.0.{management-error};
+    use alcomd:mcp-management/clients@1.0.0.{management-error};
     record connection-row {
         connection-id: string,
         client-id: string,
@@ -30,6 +30,6 @@ interface observations {
 }
 
 world runtime-v1 {
-    include alcomd:mcp-management/management-v2@2.0.0;
+    include alcomd:mcp-management/management-v1@1.0.0;
     import observations;
 }

@@ -82,16 +82,6 @@ fn source_selector(source: &app::PackageSourceSelector) -> rpc::PackageSourceSel
     }
 }
 
-fn hidden_source(
-    catalog: &[alcomd_store::DelegatedPackageSource],
-    source: &rpc::PackageSourceSelector,
-) -> bool {
-    catalog.iter().any(|row| {
-        source_selector(&row.source) == *source
-            && matches!(row.availability, DelegatedSourceAvailability::Hidden)
-    })
-}
-
 fn validate_query(input: &rpc::McpPackageQuery) -> Result<Option<app::ProjectId>, QueryError> {
     let invalid = QueryError::InvalidInput;
     if input.limit.is_some_and(|limit| !(1..=200).contains(&limit)) {
@@ -170,26 +160,6 @@ async fn query(
         && project.revision.get() != expected.expected_revision
     {
         return Err(QueryError::RevisionConflict);
-    }
-    let selected_source = match &input.view {
-        rpc::McpPackageView::Summary {
-            repository_id: Some(id),
-            ..
-        } => Some(rpc::PackageSourceSelector::Repository {
-            repository_id: id.clone(),
-        }),
-        rpc::McpPackageView::Versions { source, .. } => source.clone(),
-        _ => None,
-    };
-    if selected_source
-        .as_ref()
-        .is_some_and(|source| hidden_source(&catalog.sources, source))
-    {
-        return Err(if input.cursor.is_some() {
-            QueryError::RevisionConflict
-        } else {
-            QueryError::PermissionDenied
-        });
     }
     let project_binding = catalog
         .project
@@ -527,7 +497,6 @@ fn versions(
 
 fn plan_request(
     input: rpc::McpPackagePlanRequest,
-    default_prerelease: bool,
 ) -> Result<app::PackagePlanRequest, app::M4Error> {
     let invalid = || app::M4Error::new(app::M4ErrorCode::InvalidInput);
     let package_id = || input.package_id.clone().ok_or_else(invalid);
@@ -566,17 +535,19 @@ fn plan_request(
             if allow_unity_incompatible
                 && !matches!(
                     &version_selector,
-                    rpc::McpPackageVersionSelector::Exact { .. }
+                    Some(rpc::McpPackageVersionSelector::Exact { .. })
                 )
             {
                 return Err(invalid());
             }
             let version_range = match version_selector {
-                rpc::McpPackageVersionSelector::LatestCompatible => None,
-                rpc::McpPackageVersionSelector::Exact { version } if valid_version(&version) => {
+                None | Some(rpc::McpPackageVersionSelector::LatestCompatible) => None,
+                Some(rpc::McpPackageVersionSelector::Exact { version })
+                    if valid_version(&version) =>
+                {
                     Some(format!("={version}"))
                 }
-                rpc::McpPackageVersionSelector::Range { range } if valid_range(&range) => {
+                Some(rpc::McpPackageVersionSelector::Range { range }) if valid_range(&range) => {
                     Some(range)
                 }
                 _ => return Err(invalid()),
@@ -594,7 +565,7 @@ fn plan_request(
                     version_range,
                     repository_id: None,
                     source: input.source,
-                    include_prerelease: include_prerelease.unwrap_or(default_prerelease),
+                    include_prerelease,
                     allow_unity_incompatible,
                 }),
             )
@@ -627,7 +598,7 @@ fn plan_request(
             serde_json::to_value(rpc::PackagePlanResolveParams {
                 project_id,
                 expected_revision,
-                include_prerelease: include_prerelease.unwrap_or(default_prerelease),
+                include_prerelease,
             }),
         ),
         rpc::McpPackageIntent::Reinstall {
@@ -708,12 +679,7 @@ fn plan_request(
         }
         _ => return Err(invalid()),
     };
-    super::m4_rpc::plan_request(
-        action,
-        app::PackagePlanVersion::V2,
-        params.map_err(|_| invalid())?,
-    )
-    .map_err(|_| invalid())
+    super::m4_rpc::plan_request(action, params.map_err(|_| invalid())?).map_err(|_| invalid())
 }
 
 async fn plan(
@@ -723,7 +689,7 @@ async fn plan(
     input: rpc::McpPackagePlanRequest,
 ) -> Result<rpc::McpPackagePlan, app::M4Error> {
     let settings = apps.m4.package_source_settings().await?;
-    let request = plan_request(input, settings.show_prerelease)?;
+    let request = plan_request(input)?;
     let sources = apps
         .store
         .delegated_package_catalog(
@@ -742,24 +708,6 @@ async fn plan(
             })
         })?
         .sources;
-    let bulk_sources = request
-        .bulk_intents
-        .iter()
-        .filter_map(|intent| match intent {
-            app::PackageBulkIntent::Install { source, .. }
-            | app::PackageBulkIntent::Upgrade { source, .. }
-            | app::PackageBulkIntent::Reinstall { source, .. } => source.as_ref(),
-            app::PackageBulkIntent::Remove { .. } => None,
-        });
-    if request
-        .source_selector
-        .iter()
-        .chain(request.reinstall_sources.iter().map(|(_, source)| source))
-        .chain(bulk_sources)
-        .any(|source| hidden_source(&sources, &source_selector(source)))
-    {
-        return Err(app::M4Error::new(app::M4ErrorCode::PermissionDenied));
-    }
     let plan = if request.action.uses_delegated_catalog() {
         apps.m4
             .plan_delegated(access, request, authentication)

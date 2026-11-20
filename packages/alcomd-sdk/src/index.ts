@@ -6,7 +6,7 @@ export interface RepositoryPackageSettings {
     packageIds: string[];
 }
 
-/** Config13 package source preferences. Core normalizes and validates writes. */
+/** Config1 package source preferences. Core normalizes and validates writes. */
 export interface PackageSettings {
     showPrerelease: boolean;
     preferPrerelease: boolean;
@@ -26,8 +26,8 @@ export const RPC_CAPABILITIES = {
     logsRead: "logs.read.v1",
     repositoriesListFiles: "repositories.list-files.v1",
     repositoriesListImport: "repositories.list-import.v1",
-    unityHubOpen: "unity.hub.open.v2",
-    packagesCandidates: "packages.candidates.v2",
+    unityHubOpen: "unity.hub.open.v1",
+    packagesCandidates: "packages.candidates.v1",
     extensionsRemoteInstall: "extensions.remote-install.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1",
@@ -90,8 +90,8 @@ export interface HelloResponse {
     rpcVersion: typeof RPC_VERSION;
     daemonVersion: string;
     capabilities: string[];
-    dataSchema?: number;
-    configSchema?: number;
+    dataSchema: 1;
+    configSchema: 1;
     extensionApi?: {
         major: number;
         world: string;

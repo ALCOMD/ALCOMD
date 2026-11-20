@@ -3,7 +3,7 @@ use rusqlite::Connection;
 const INITIAL_SCHEMA: &str = include_str!("../../../alcomd-store/src/schema.sql");
 
 pub fn current() -> Connection {
-    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 46);
+    assert_eq!(alcomd_store::CURRENT_DATA_SCHEMA, 1);
     let db = Connection::open_in_memory().expect("open isolated State database");
     db.execute_batch("PRAGMA foreign_keys=ON;")
         .expect("enable foreign keys");

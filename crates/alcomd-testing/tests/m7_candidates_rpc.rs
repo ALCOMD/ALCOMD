@@ -159,7 +159,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .as_array()
             .expect("capabilities")
             .iter()
-            .any(|c| c == "packages.candidates.v2")
+            .any(|c| c == "packages.candidates.v1")
     );
     let registered = client
         .project_register(
@@ -455,7 +455,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             source: Some(alcomd_protocol::PackageSourceSelector::Repository {
                 repository_id: repository_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await;
     assert_eq!(
@@ -476,6 +476,20 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .expect("updated project summary"),
     );
     assert_eq!(new_summary["items"][0]["update"]["kind"], "target");
+    let bulk = serde_json::from_value(json!({
+        "projectId":project_id, "expectedRevision":2,
+        "intents":[{"kind":"upgrade","packageId":"com.example.candidate"}]
+    }))
+    .expect("default bulk upgrade");
+    assert_eq!(
+        remote_code(
+            client
+                .package_plan_bulk(bulk)
+                .await
+                .expect_err("bulk dependencies must be solvable")
+        ),
+        "package_dependency_missing"
+    );
     let failed_plan = client
         .package_plan_upgrade(alcomd_protocol::PackagePlanInstallParams {
             allow_unity_incompatible: false,
@@ -487,7 +501,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             source: Some(alcomd_protocol::PackageSourceSelector::Repository {
                 repository_id: repository_id.clone(),
             }),
-            include_prerelease: false,
+            include_prerelease: Some(false),
         })
         .await;
     assert_eq!(

@@ -1,38 +1,302 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "MCP project and backup workflows",
-    "x-capability": "mcp.project-workflows.v2",
-    "$id": "https://alcomd.vrclearn.com/schema/rpc/mcp-project-workflows-v2.json",
-    "x-methods": {
-        "mcp.projects.register": {
-            "params": "register",
-            "result": "registration"
+    "x-capability": "mcp.project-workflows.v1",
+    "$id": "https://alcomd.vrclearn.com/schema/mcp/project-workflows-v1.json",
+    "x-alcomd-tools": [
+        {
+            "name": "alcomd_register_project",
+            "title": "Register an existing project",
+            "description": "Register a project under the default project directory or by its absolute path on the Core machine.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/register"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/registration"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.manage"
+            ]
         },
-        "projectTemplates.list": {
-            "params": "listTemplates",
-            "result": "templates"
+        {
+            "name": "alcomd_list_project_templates",
+            "title": "List project templates",
+            "description": "Read templates available for project creation.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/listTemplates"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/templates"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "read",
+            "requiredPermissions": [
+                "projects.create"
+            ]
         },
-        "mcp.projects.create": {
-            "params": "create",
-            "result": "projectAccepted"
+        {
+            "name": "alcomd_create_project",
+            "title": "Create a project",
+            "description": "Create a project under the default project directory or at an absolute destination on the Core machine. A template with packages requires the existing package and repository permissions.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/create"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/projectAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.create"
+            ]
         },
-        "mcp.projects.planCopy": {
-            "params": "planCopy",
-            "result": "copyPlan"
+        {
+            "name": "alcomd_plan_project_copy",
+            "title": "Review a project copy",
+            "description": "Freeze the source revision and selected destination for review. Choose a name under the default project directory or supply an absolute destination on the Core machine.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/planCopy"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/copyPlan"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "plan",
+            "requiredPermissions": [
+                "projects.read",
+                "projects.create"
+            ]
         },
-        "mcp.projects.applyCopy": {
-            "params": "applyCopy",
-            "result": "copyAccepted"
+        {
+            "name": "alcomd_apply_project_copy",
+            "title": "Apply a reviewed project copy",
+            "description": "Use the original copy plan after the operator confirms it.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/applyCopy"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/copyAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.read",
+                "projects.create"
+            ]
         },
-        "backups.create": {
-            "params": "createBackup",
-            "result": "backupAccepted"
+        {
+            "name": "alcomd_create_backup",
+            "title": "Create a project backup",
+            "description": "Write a ZIP to a new absolute file path on the Core host, or use the configured backup directory.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/createBackup"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/backupAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "projects.read",
+                "backups.manage"
+            ]
         },
-        "mcp.backups.restore": {
-            "params": "restoreBackup",
-            "result": "backupAccepted"
+        {
+            "name": "alcomd_restore_backup",
+            "title": "Restore a Unity project from ZIP",
+            "description": "Restore a ZIP whose root is a Unity project. Supply an absolute archive path on the Core host and confirm the restore. An optional destination is a new absolute project directory.",
+            "inputSchema": {
+                "type": "object",
+                "$ref": "#/$defs/restoreBackup"
+            },
+            "outputSchema": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "data": {
+                                "$ref": "#/$defs/backupAccepted"
+                            }
+                        },
+                        "required": [
+                            "data"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "error": {
+                                "$ref": "#/$defs/toolError"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "effect": "apply",
+            "requiredPermissions": [
+                "backups.read",
+                "backups.manage",
+                "projects.create"
+            ]
         }
-    },
+    ],
     "$defs": {
         "id": {
             "type": "string",
@@ -66,7 +330,7 @@
                         "kind": {
                             "const": "default"
                         },
-                        "relativePath": {
+                        "relative_path": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 4096
@@ -74,7 +338,7 @@
                     },
                     "required": [
                         "kind",
-                        "relativePath"
+                        "relative_path"
                     ]
                 },
                 {
@@ -164,13 +428,13 @@
                 "source": {
                     "$ref": "#/$defs/source"
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 }
             },
             "required": [
                 "source",
-                "idempotencyKey"
+                "idempotency_key"
             ]
         },
         "registration": {
@@ -181,13 +445,13 @@
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                        "projectId": {
+                        "project_id": {
                             "$ref": "#/$defs/id"
                         },
                         "revision": {
                             "$ref": "#/$defs/revision"
                         },
-                        "displayName": {
+                        "display_name": {
                             "anyOf": [
                                 {
                                     "type": "string",
@@ -199,7 +463,7 @@
                                 }
                             ]
                         },
-                        "projectType": {
+                        "project_type": {
                             "enum": [
                                 "avatars",
                                 "worlds",
@@ -213,18 +477,18 @@
                                 "legacy-sdk2"
                             ]
                         },
-                        "unityVersion": {
+                        "unity_version": {
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
                         }
                     },
                     "required": [
-                        "projectId",
+                        "project_id",
                         "revision",
-                        "displayName",
-                        "projectType",
-                        "unityVersion"
+                        "display_name",
+                        "project_type",
+                        "unity_version"
                     ]
                 },
                 "replayed": {
@@ -272,7 +536,7 @@
                                 "minLength": 1,
                                 "maxLength": 128
                             },
-                            "editorVersion": {
+                            "editor_version": {
                                 "anyOf": [
                                     {
                                         "type": "string",
@@ -300,7 +564,7 @@
                     },
                     "maxItems": 100
                 },
-                "nextCursor": {
+                "next_cursor": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
@@ -317,7 +581,7 @@
                 "target": {
                     "$ref": "#/$defs/target"
                 },
-                "unityVersion": {
+                "unity_version": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
@@ -325,24 +589,24 @@
                 "template": {
                     "$ref": "#/$defs/templateReference"
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 }
             },
             "required": [
                 "target",
-                "unityVersion",
-                "idempotencyKey"
+                "unity_version",
+                "idempotency_key"
             ]
         },
         "projectAccepted": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "operationId": {
+                "operation_id": {
                     "$ref": "#/$defs/id"
                 },
-                "projectId": {
+                "project_id": {
                     "$ref": "#/$defs/id"
                 },
                 "replayed": {
@@ -350,8 +614,8 @@
                 }
             },
             "required": [
-                "operationId",
-                "projectId",
+                "operation_id",
+                "project_id",
                 "replayed"
             ]
         },
@@ -359,58 +623,58 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "sourceProjectId": {
+                "source_project_id": {
                     "$ref": "#/$defs/id"
                 },
-                "expectedRevision": {
+                "expected_revision": {
                     "$ref": "#/$defs/revision"
                 },
                 "target": {
                     "$ref": "#/$defs/target"
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 }
             },
             "required": [
-                "sourceProjectId",
-                "expectedRevision",
+                "source_project_id",
+                "expected_revision",
                 "target",
-                "idempotencyKey"
+                "idempotency_key"
             ]
         },
         "applyCopy": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "planId": {
+                "plan_id": {
                     "$ref": "#/$defs/id"
                 },
-                "expectedRevision": {
+                "expected_revision": {
                     "$ref": "#/$defs/revision"
                 },
                 "confirm": {
                     "const": true
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 }
             },
             "required": [
-                "planId",
-                "expectedRevision",
+                "plan_id",
+                "expected_revision",
                 "confirm",
-                "idempotencyKey"
+                "idempotency_key"
             ]
         },
         "copyAccepted": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "operationId": {
+                "operation_id": {
                     "$ref": "#/$defs/id"
                 },
-                "targetProjectId": {
+                "target_project_id": {
                     "$ref": "#/$defs/id"
                 },
                 "replayed": {
@@ -418,8 +682,8 @@
                 }
             },
             "required": [
-                "operationId",
-                "targetProjectId",
+                "operation_id",
+                "target_project_id",
                 "replayed"
             ]
         },
@@ -427,24 +691,24 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "planId": {
+                "plan_id": {
                     "$ref": "#/$defs/id"
                 },
-                "sourceProjectId": {
+                "source_project_id": {
                     "$ref": "#/$defs/id"
                 },
-                "expectedRevision": {
+                "expected_revision": {
                     "$ref": "#/$defs/revision"
                 },
-                "targetName": {
+                "target_name": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 255
                 },
-                "targetProjectId": {
+                "target_project_id": {
                     "$ref": "#/$defs/id"
                 },
-                "writerEvidence": {
+                "writer_evidence": {
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
@@ -456,13 +720,13 @@
                                 "unknown"
                             ]
                         },
-                        "observedAtMs": {
+                        "observed_at_ms": {
                             "$ref": "#/$defs/integer"
                         }
                     },
                     "required": [
                         "state",
-                        "observedAtMs"
+                        "observed_at_ms"
                     ]
                 },
                 "profile": {
@@ -508,28 +772,28 @@
                             "type": "object",
                             "additionalProperties": false,
                             "properties": {
-                                "maxEntries": {
+                                "max_entries": {
                                     "$ref": "#/$defs/integer"
                                 },
-                                "maxSingleFileBytes": {
+                                "max_single_file_bytes": {
                                     "$ref": "#/$defs/integer"
                                 },
-                                "maxTotalRegularFileBytes": {
+                                "max_total_regular_file_bytes": {
                                     "$ref": "#/$defs/integer"
                                 },
-                                "maxDepth": {
+                                "max_depth": {
                                     "$ref": "#/$defs/integer"
                                 },
-                                "maxNormalizedPathUtf8Bytes": {
+                                "max_normalized_path_utf8_bytes": {
                                     "$ref": "#/$defs/integer"
                                 }
                             },
                             "required": [
-                                "maxEntries",
-                                "maxSingleFileBytes",
-                                "maxTotalRegularFileBytes",
-                                "maxDepth",
-                                "maxNormalizedPathUtf8Bytes"
+                                "max_entries",
+                                "max_single_file_bytes",
+                                "max_total_regular_file_bytes",
+                                "max_depth",
+                                "max_normalized_path_utf8_bytes"
                             ]
                         }
                     },
@@ -542,10 +806,10 @@
                         "quota"
                     ]
                 },
-                "expiresAtMs": {
+                "expires_at_ms": {
                     "$ref": "#/$defs/integer"
                 },
-                "planFingerprint": {
+                "plan_fingerprint": {
                     "$ref": "#/$defs/fingerprint"
                 },
                 "replayed": {
@@ -553,15 +817,15 @@
                 }
             },
             "required": [
-                "planId",
-                "sourceProjectId",
-                "expectedRevision",
-                "targetName",
-                "targetProjectId",
-                "writerEvidence",
+                "plan_id",
+                "source_project_id",
+                "expected_revision",
+                "target_name",
+                "target_project_id",
+                "writer_evidence",
                 "profile",
-                "expiresAtMs",
-                "planFingerprint",
+                "expires_at_ms",
+                "plan_fingerprint",
                 "replayed"
             ]
         },
@@ -579,40 +843,40 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "projectId": {
+                "project_id": {
                     "$ref": "#/$defs/id"
                 },
-                "expectedRevision": {
+                "expected_revision": {
                     "$ref": "#/$defs/revision"
                 },
-                "compressionMode": {
+                "compression_mode": {
                     "$ref": "#/$defs/compression"
                 },
-                "excludeVpmPackages": {
+                "exclude_vpm_packages": {
                     "type": "boolean"
                 },
-                "includeLibrary": {
+                "include_library": {
                     "type": "boolean"
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 },
-                "destinationPath": {
+                "destination_path": {
                     "type": "string",
                     "minLength": 1
                 }
             },
             "required": [
-                "projectId",
-                "expectedRevision",
-                "idempotencyKey"
+                "project_id",
+                "expected_revision",
+                "idempotency_key"
             ]
         },
         "backupAccepted": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "operationId": {
+                "operation_id": {
                     "$ref": "#/$defs/id"
                 },
                 "replayed": {
@@ -620,32 +884,78 @@
                 }
             },
             "required": [
-                "operationId",
+                "operation_id",
                 "replayed"
+            ]
+        },
+        "toolError": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                },
+                "retryable": {
+                    "type": "boolean"
+                },
+                "diagnostic_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "outcome": {
+                    "const": "unknown"
+                },
+                "details": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "subreason": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "pattern": "^[a-zA-Z0-9_]*$"
+                        }
+                    },
+                    "required": [
+                        "subreason"
+                    ]
+                }
+            },
+            "required": [
+                "code",
+                "message",
+                "retryable"
             ]
         },
         "restoreBackup": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-                "archivePath",
-                "idempotencyKey",
+                "archive_path",
+                "idempotency_key",
                 "confirm"
             ],
             "properties": {
-                "archivePath": {
+                "archive_path": {
                     "type": "string",
                     "minLength": 1
                 },
-                "projectName": {
+                "project_name": {
                     "type": "string",
                     "minLength": 1
                 },
-                "destinationPath": {
+                "destination_path": {
                     "type": "string",
                     "minLength": 1
                 },
-                "idempotencyKey": {
+                "idempotency_key": {
                     "$ref": "#/$defs/key"
                 },
                 "confirm": {
@@ -654,8 +964,8 @@
             },
             "not": {
                 "required": [
-                    "projectName",
-                    "destinationPath"
+                    "project_name",
+                    "destination_path"
                 ]
             }
         }

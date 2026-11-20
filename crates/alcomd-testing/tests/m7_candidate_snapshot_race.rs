@@ -381,10 +381,12 @@ async fn subsequent_summary_pages_reuse_one_full_read_but_reject_stale_authority
         .expect("encode bulk projection");
     assert_eq!(bulk["installUpdate"]["targetCount"], 2);
     assert_eq!(
-        bulk["installUpdate"]["intents"][0]["packageId"],
-        "com.example.a"
+        bulk["installUpdate"]["intents"],
+        serde_json::json!([
+            {"kind": "install", "packageId": "com.example.a"},
+            {"kind": "install", "packageId": "com.example.b"}
+        ])
     );
-    assert_eq!(bulk["installUpdate"]["intents"][1]["kind"], "install");
     // Direct declarations without locked installation records are not removable.
     assert_eq!(bulk["remove"], serde_json::json!([]));
     assert_eq!(bulk["reinstall"], serde_json::json!([]));

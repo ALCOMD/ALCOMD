@@ -91,7 +91,7 @@
         "inspectListFileResult": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["entries", "ignoredLines", "fingerprint"],
+            "required": ["format", "entries", "ignoredLines", "fingerprint"],
             "properties": {
                 "entries": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/entry"}},
                 "ignoredLines": {"type": "integer", "minimum": 0, "maximum": 1048576},
@@ -135,7 +135,7 @@
                 "sha256": {"$ref": "#/$defs/fingerprint"}
             }
         },
-        "format": {"type": "string", "enum": ["native", "legacy"], "default": "legacy"},
+        "format": {"type": "string", "enum": ["native", "legacy"], "default": "native"},
         "configuration": {
             "type": "object",
             "additionalProperties": false,
