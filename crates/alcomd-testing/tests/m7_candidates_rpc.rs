@@ -324,11 +324,10 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
             .await
             .expect("hidden versions"),
     );
-    assert_eq!(hidden["items"].as_array().unwrap().len(), 3);
+    let hidden_items = hidden["items"].as_array().expect("hidden candidate items");
+    assert_eq!(hidden_items.len(), 3);
     assert!(
-        hidden["items"]
-            .as_array()
-            .unwrap()
+        hidden_items
             .iter()
             .all(|row| row["version"] != "1.8.0-beta.1")
     );

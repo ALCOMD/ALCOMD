@@ -1623,7 +1623,10 @@ async fn default_package_plans_follow_the_visible_version_preference() {
         let CandidatePageItems::Summary { items } = f.summary().await.page else {
             panic!("summary")
         };
-        let row = items.iter().find(|row| row.package_id == id).unwrap();
+        let row = items
+            .iter()
+            .find(|row| row.package_id == id)
+            .expect("candidate summary contains the requested package");
         assert!(
             matches!(&row.recommended, CandidateChoice::Candidate { candidate } if candidate.version == expected)
         );
@@ -1633,7 +1636,7 @@ async fn default_package_plans_follow_the_visible_version_preference() {
             .packages
             .plan(&AccessContext::local_owner(), intent)
             .await
-            .unwrap();
+            .expect("plan install using the configured version preference");
         assert_eq!(
             plan.change_set.mutations[0].to_version.as_deref(),
             Some(expected)
@@ -1646,7 +1649,7 @@ async fn default_package_plans_follow_the_visible_version_preference() {
         .packages
         .plan(&AccessContext::local_owner(), intent)
         .await
-        .unwrap();
+        .expect("plan install requiring a prerelease dependency");
     assert!(
         plan.change_set
             .mutations
@@ -1666,8 +1669,9 @@ async fn bulk_recommendations_match_single_upgrades_with_an_installed_prerelease
         f.settings(|p| p.prefer_prerelease = prefer).await;
         let summary = f.summary_with_bulk(Some(vec![A.into()])).await;
         let actions = summary.bulk.expect("bulk recommendations");
-        let intents = serde_json::to_value(actions.update_all.intents).unwrap();
-        let [target] = intents.as_array().unwrap().as_slice() else {
+        let intents = serde_json::to_value(actions.update_all.intents)
+            .expect("serialize recommended bulk intents");
+        let [target] = intents.as_array().expect("bulk intents array").as_slice() else {
             panic!("one upgrade")
         };
         assert_eq!(target["kind"], "upgrade");
@@ -1676,10 +1680,23 @@ async fn bulk_recommendations_match_single_upgrades_with_an_installed_prerelease
         let batch = bulk(
             &f,
             vec![PackageBulkIntent::Upgrade {
-                package_id: target["packageId"].as_str().unwrap().into(),
-                version_range: Some(target["versionRange"].as_str().unwrap().into()),
-                source: Some(serde_json::from_value(target["source"].clone()).unwrap()),
-                include_prerelease: target["includePrerelease"].as_bool().unwrap(),
+                package_id: target["packageId"]
+                    .as_str()
+                    .expect("packageId string")
+                    .into(),
+                version_range: Some(
+                    target["versionRange"]
+                        .as_str()
+                        .expect("versionRange string")
+                        .into(),
+                ),
+                source: Some(
+                    serde_json::from_value(target["source"].clone())
+                        .expect("recommended package source"),
+                ),
+                include_prerelease: target["includePrerelease"]
+                    .as_bool()
+                    .expect("includePrerelease boolean"),
             }],
         );
         let mut single = request(&f, PlanAction::Upgrade, Some(A));
@@ -1717,13 +1734,13 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
             .config
             .candidate_settings()
             .await
-            .unwrap()
+            .expect("read prerelease visibility settings")
             .settings
             .packages;
         f.store
             .resolver_catalog(PrincipalId::local_owner(), true, settings)
             .await
-            .unwrap()
+            .expect("read catalog using prerelease visibility settings")
             .entries
     };
     for id in [A, B] {
@@ -1771,7 +1788,7 @@ async fn closing_prereleases_overrides_request_opt_in_and_invalidates_a_frozen_p
     f.settings(|settings| settings.show_prerelease = true).await;
     let persisted = alcomd_store::FileConfigStore::new(f.directory.join("settings.toml"))
         .load()
-        .unwrap();
+        .expect("reopen persisted prerelease settings");
     assert!(persisted.settings.packages.show_prerelease);
     assert!(!persisted.settings.packages.prefer_prerelease);
 }

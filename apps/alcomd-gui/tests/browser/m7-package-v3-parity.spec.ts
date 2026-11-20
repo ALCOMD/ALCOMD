@@ -16,7 +16,7 @@ test("the expanded menu has plain versions and one selected current version with
     const installed = row(page, "Avatar tools");
     const picker = installed.locator(".package-version-picker");
     await picker.getByRole("combobox").click();
-    await expect(picker.locator("md-select-option")).toHaveText(["1.10.0", "1.2.3", "1.1.0"]);
+    await expect(picker.locator("md-select-option")).toHaveText(["2.0.0-beta.1", "1.10.0", "1.2.3", "1.1.0"]);
     await expect(picker.locator(".alcomd-select-heading")).toHaveCount(0);
     await expect(picker.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.2.3", exact: true }) })).toHaveJSProperty("selected", true);
     await expect(picker.locator("md-select-option").filter({ has: page.getByRole("option", { name: "1.2.3", exact: true }) })).toHaveJSProperty("disabled", false);
@@ -32,9 +32,10 @@ test("group labels are not selectable rows and technical explanations do not ent
     await open(page, "ready", "versionGroups=1");
     const picker = row(page, "Avatar tools").locator(".package-version-picker");
     await picker.getByRole("combobox").click();
-    await expect(picker.locator(".alcomd-select-heading")).toHaveText(["Compatibility unknown", "Incompatible versions"]);
     await expect(picker.getByRole("separator")).toHaveCount(2);
-    await expect(picker.locator("md-select-option")).toHaveText(["1.10.0", "1.2.3", "1.0.0", "1.1.0"]);
+    await expect(picker.locator("md-select-option, .alcomd-select-heading")).toHaveText([
+        "2.0.0-beta.1", "1.10.0", "1.2.3", "Compatibility unknown", "1.0.0", "Incompatible versions", "1.1.0"
+    ]);
     await expect(picker.getByRole("option", { name: "Incompatible versions", exact: true })).toHaveCount(0);
     await page.screenshot({ path: info.outputPath("incompatible-version-section.png") });
 });
